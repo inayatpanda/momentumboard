@@ -11,7 +11,8 @@ A mobile-first PWA for a UK swing trader (Trading 212 Stocks & Shares ISA, £5,0
 - fires alerts (price levels, relative volume >2x, RSI 70/30 crossings, ticker-in-headline news, new videos from followed YouTube channels) via Telegram and in-app toasts;
 - shows candlestick charts with 20/50/200 MAs and RSI;
 - keeps a trade journal that enforces visibility of the user's hard risk rules;
-- shows a daily digest (watchlist performance, earnings calendar, news, YouTube feed).
+- shows a daily digest (watchlist performance, earnings calendar, news, YouTube feed, congressional-trading link-out);
+- (stage 6) generates an AI-written interpretation of the day's watchlist data and news using the user's Google Gemini or Groq free-tier API key — always labelled as interpretation, never prediction.
 
 **Non-goals:** no order execution, no Trading 212 API integration, no promises of returns anywhere in UI copy, no multi-user auth, no Web Push in v1 (Telegram only), no Supabase in v1.
 
@@ -25,6 +26,9 @@ A mobile-first PWA for a UK swing trader (Trading 212 Stocks & Shares ISA, £5,0
 | Deployment | GitHub repo → Netlify auto-deploy |
 | Data path | All market data flows through Netlify Functions (Approach 1). Chosen on recommendation while the user was away — **revisit if the user objects.** |
 | YouTube feeds | Follow Stocks with Josh + a default list of larger stock channels via YouTube RSS (free, no API key); channel list editable in Settings |
+| Morning strategy report | Handled OUTSIDE the app: a scheduled claude.ai cloud routine (`trig_01UoyM7HFN1GNRon7auTZJmY`, cron `30 5 * * 1-5` UTC) runs the Daily Sweep research and writes the report each weekday morning. The app's digest complements it; it does not duplicate it. |
+| AI interpretation (stage 6) | User supplies a Google Gemini or Groq free-tier API key (server-side env var); an `ai-insights` function summarises/interprets watchlist data + news for the Digest screen. Deferred until core stages 1–5 work. |
+| Congressional trading | Digest links out to quiverquant.com/congresstrading (QuiverQuant has no free API; scraping it is brittle — revisit only if the user wants it in-app). The morning routine covers it in research. |
 
 ## 3. Stack
 
@@ -86,7 +90,7 @@ The client runs the exact same `rules.ts` on its polling cycle while the tab is 
 1. **Watchlist (home)** — per ticker: last price + day change (native currency — USD for US, GBp/GBP for LSE per Yahoo's `meta.currency`, labelled), RVOL, momentum badge (▲ above 20-day MA / ▼ below; RSI zone chip: <30 / 30–70 / >70). Pull-to-refresh; "last updated" timestamp; stale-data badge when a fetch fails. 15-min auto-poll while open. Watchlist capped at 30 tickers to respect rate limits.
 2. **Ticker detail** — lightweight-charts candlesticks + volume, 20/50/200 MA overlays, RSI(14) sub-panel; ranges 3M/6M/1Y (daily candles); recent news for that ticker; alert-rule editor (add/edit price level, RVOL, RSI, news rules).
 3. **Journal** — trade entry form: ticker, direction, instrument type (stock / ETP with leverage factor), entry price, position size (£), invalidation/stop, thesis, dates, exit price, outcome notes. Derived stats: running P&L, win rate, average win/loss. **Risk banners** (thresholds derived from the capital setting, default £5,000): position > 20% of capital; open leveraged-ETP exposure > 30% of capital; estimated risk to stop (leverage-adjusted for ETPs) > 2% of capital. Warnings appear on the entry form *before* saving and as a persistent banner while breached. ETP-tagged entries show two static reminders: "verify ISA eligibility for this product on Trading 212" and a daily-reset decay warning once held > 5 trading days. Journal is local-only (IndexedDB) with JSON export/import for backup.
-4. **Digest** — yesterday's watchlist performance (from cached candles), today/this-week's earnings for watchlist tickers (Finnhub calendar), latest headlines, latest videos from followed channels, link to an external economic calendar.
+4. **Digest** — yesterday's watchlist performance (from cached candles), today/this-week's earnings for watchlist tickers (Finnhub calendar), latest headlines, latest videos from followed channels, links to an external economic calendar and QuiverQuant congressional trading. Stage 6 adds an "AI read" card: the `ai-insights` function sends the digest's underlying data (quotes, indicator states, headlines) to Gemini/Groq and renders a short written interpretation — copy labels it "AI interpretation, not a prediction or advice".
 5. **Settings** — capital amount, app token, Telegram status (read-only check), followed YouTube channels (resolved to channel IDs on save), alert quiet hours, export/import. Default channel list — user-requested Stocks with Josh, plus well-known stocks channels: Meet Kevin, Financial Education, Everything Money, Tom Nash, Humbled Trader. All removable/replaceable in Settings; treat crowded coverage as sentiment data, not buy signals (per the master prompt's contrarian-warning stance).
 
 ### 4.4 Error handling
@@ -108,6 +112,7 @@ The client runs the exact same `rules.ts` on its polling cycle while the tab is 
 3. **Alerts** — `rules.ts` + tests, `config-sync` + Blobs mirror, in-app engine, `alert-check` scheduled function, Telegram delivery. *User setup: create bot via BotFather (walkthrough), get chat ID, set `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` env vars.*
 4. **Journal + risk banners** — journal screens, risk module + tests, export/import.
 5. **Digest + YouTube** — digest screen, calendar + news + YouTube RSS integration, followed-channels settings.
+6. **AI interpretation** — `ai-insights` function (Gemini or Groq, whichever key the user provides), "AI read" card on the Digest, honest labelling. Only starts once 1–5 are confirmed working.
 
 ## 6. Risks / caveats
 
