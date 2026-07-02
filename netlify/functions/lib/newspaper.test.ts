@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, type ComposedReport, type StoredNomination } from './newspaper'
+import { buildDataJson, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, type ComposedReport, type StoredNomination } from './newspaper'
 
 const sample: ComposedReport = {
   headline: 'Tech Leads a Cautious Tape Higher',
@@ -185,5 +185,48 @@ describe('mergeNominations', () => {
     expect(capped).toHaveLength(15)
     expect(capped[0].sym).toBe('S0') // newest first
     expect(capped.some(n => n.sym === 'S15')).toBe(false) // oldest trimmed
+  })
+})
+
+describe('buildDataJson', () => {
+  const obj = { keep: 'x'.repeat(50), colourA: 'y'.repeat(200), colourB: 'z'.repeat(200) }
+  it('fits → untouched, nothing dropped', () => {
+    const { json, dropped } = buildDataJson(obj, ['colourA', 'colourB'], 10_000)
+    expect(dropped).toEqual([])
+    expect(JSON.parse(json).keep).toBeDefined()
+  })
+  it('over budget → drops whole keys in order, minimally, stays valid JSON', () => {
+    const { json, dropped } = buildDataJson(obj, ['colourA', 'colourB'], 350)
+    expect(dropped).toEqual(['colourA']) // dropping A suffices — B survives
+    const parsed = JSON.parse(json) // must never be a mid-string cut
+    expect(parsed.keep).toBeDefined()
+    expect(parsed.colourB).toBeDefined()
+    expect(parsed.colourA).toBeUndefined()
+    // tighter budget takes both
+    expect(buildDataJson(obj, ['colourA', 'colourB'], 120).dropped).toEqual(['colourA', 'colourB'])
+  })
+})
+
+describe('deterministic board table in the paper', () => {
+  const composed: ComposedReport = {
+    headline: 'H', standfirst: 'S', lead: 'L', portfolioDesk: 'p', tape: 't', ideas: [],
+    shortDesk: 's', rotation: 'r', crypto: 'c', channels: 'ch', editorial: 'e', honestClose: 'h',
+    regime: 'amber', fedStance: 'neutral', macroNotes: [],
+  }
+  const board = [{
+    sym: 'IREN', side: 'short' as const, grade: 'C' as const, provisional: false, probability: 0.5,
+    entry: 38.82, stop: 46.16, target: 29.03, expectedMovePct: 8.8, paperOnly: true, earningsRisk: false, instrument: null,
+  }]
+  it('renders grades/levels in code even when the LLM wrote no ideas', () => {
+    const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: board })
+    expect(html).toContain('The Board — Engine Calls')
+    expect(html).toContain('IREN')
+    expect(html).toContain('50%')
+    expect(html).toContain('46.16')
+    expect(html).toContain('paper-only')
+  })
+  it('no board → no section', () => {
+    const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [] })
+    expect(html).not.toContain('The Board — Engine Calls')
   })
 })

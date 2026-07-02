@@ -188,14 +188,53 @@ export interface CalendarRow {
   previous?: string
 }
 
+export interface BoardRow {
+  sym: string
+  side: 'long' | 'short'
+  grade: 'A' | 'B' | 'C'
+  provisional: boolean
+  probability: number
+  entry: number
+  stop: number
+  target: number
+  expectedMovePct: number
+  paperOnly: boolean
+  earningsRisk: boolean
+  instrument: { ticker: string; leverage: number } | null
+}
+
 export interface PaperExtras {
   firstEdition?: boolean
   pdfLink?: string
+  engineBoard?: BoardRow[] // typeset in code — the numbers never depend on the LLM
   rotationTables?: RotationTable[]
   socialBoard?: SocialRow[]
   calendar?: CalendarRow[]
   spyCloses?: number[] // ~3 months for the masthead chart
   sectorBars?: { name: string; rs21: number | null }[]
+}
+
+/** Serialize the prompt data within budget by dropping WHOLE low-priority keys
+ * (in dropOrder) — a mid-string cut hands the model malformed JSON and silently
+ * deletes whatever serialized last (which was the headlines). */
+export function buildDataJson(
+  obj: Record<string, unknown>,
+  dropOrder: string[],
+  budget = 28_000,
+): { json: string; dropped: string[] } {
+  const work: Record<string, unknown> = { ...obj }
+  const dropped: string[] = []
+  let json = JSON.stringify(work, null, 1)
+  for (const key of dropOrder) {
+    if (json.length <= budget) break
+    if (key in work) {
+      delete work[key]
+      dropped.push(key)
+      json = JSON.stringify(work, null, 1)
+    }
+  }
+  if (json.length > budget) json = json.slice(0, budget) // still over with nothing left to drop — should not happen
+  return { json, dropped }
 }
 
 // A rotating masthead quote — curated, deterministic by date.
@@ -317,6 +356,7 @@ IF engineBoard IS PRESENT in the data (the quant engine's scored calls, each wit
 - Copy entry, invalidation (the stop), target and conviction (the grade) VERBATIM from the board entry. You write the caseText, chartRead (from its stage/note), streetCheck (channels by name, then Reddit/Stocktwits), and 2-4 numbered reasons from the factor details.
 - You get ONE qualitative power per idea: an optional overlay {"flag":"boost|caution|veto","reason":"<grounded in a REAL headline or event in the data>"}. veto = the idea is dropped from the paper (say why in shortDesk if a short, lead if a long). Use it sparingly — every overlay is logged and graded against what price then did.
 - paperOnly:true board shorts are analysis, not executable — present them as "fade/avoid" and say the ETP route is locked until the risk ladder earns it. Board entries with an instrument: name the ETP ticker and its leverage, warn on daily-rebalance decay, max hold 10 sessions.
+- The ideas array must NEVER be empty while engineBoard has entries: if the board offers no longs, promote its best 1-2 shorts into ideas (side:"short", playbook "S", framed as fade/avoid with the executable route or paper-only status stated). An empty ideas table on a day the engine spoke is a failure.
 - strength:"strong" only for grade A board entries with an independent confirming pillar (channel take, insider buys, headline) — cite it.
 IF engineBoard IS ABSENT (engine offline): fall back to candidateReads — an idea must have typical10dMovePct >= 8 AND a good entry (entryQuality early, never extended/exhausted); expectedMove <= 1.3x capacity; numeric levels ONLY if the price is in the data.`,
     shape: '{"ideas":[{"ticker":"XYZ","side":"long|short","playbook":"R|B|A|S","caseText":"...","expectedMove":"+X-Y% in N weeks","chartRead":"...","streetCheck":"...","entry":"...","invalidation":"...","target":"...","conviction":"A|B|C","strength":"strong (omit unless earned)","reasons":["..."],"overlay":{"flag":"boost|caution|veto","reason":"<omit overlay entirely unless earned>"}}],"shortDesk":"..."}',
@@ -583,6 +623,21 @@ ${wide(
     'Markets at a Glance',
     `<div class="glance">${x.spyCloses?.length ? `<figure>${sparklineSvg(x.spyCloses, 300, 64, 'auto')}<figcaption>S&amp;P 500 · three months</figcaption></figure>` : ''}${x.sectorBars?.length ? `<figure style="flex:1;min-width:280px">${sectorBarsSvg(x.sectorBars)}<figcaption>Sector strength vs S&amp;P · one month (pp)</figcaption></figure>` : ''}</div>`,
   )}
+${
+    x.engineBoard?.length
+      ? wide(
+          'The Board — Engine Calls',
+          `<table><thead><tr><th>Ticker</th><th>Side</th><th>Grade</th><th>Prob.</th><th>Entry</th><th>Stop</th><th>Target</th><th>~Move</th><th>Route</th></tr></thead><tbody>${x.engineBoard
+            .map(
+              b =>
+                `<tr><td><b>${esc(b.sym)}</b></td><td>${b.side === 'long' ? 'LONG' : 'SHORT'}</td><td>${b.grade}${b.provisional ? '·prov' : ''}</td><td class="num">${Math.round(b.probability * 100)}%</td><td class="num">${b.entry}</td><td class="num">${b.stop}</td><td class="num">${b.target}</td><td class="num">~${b.expectedMovePct}%</td><td>${
+                  b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
+                }${b.earningsRisk ? ' · earnings' : ''}</td></tr>`,
+            )
+            .join('')}</tbody></table><p class="foot">Calibrated on the engine's own graded history, excess vs S&amp;P. Paper-only calls are analysis — the risk ladder has not unlocked their route yet.</p>`,
+        )
+      : ''
+  }
 ${dept('Portfolio Desk', paras(r.portfolioDesk))}
 ${dept('The Tape', paras(r.tape))}
 ${

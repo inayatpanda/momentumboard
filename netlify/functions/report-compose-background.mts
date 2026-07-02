@@ -219,38 +219,56 @@ export default async (req: Request) => {
       calendar: (econ ?? []).filter(e => e.at > nowSec && e.at < nowSec + 5 * 86_400).slice(0, 6),
       spyCloses: spy?.slice(-63).map(c => c.c),
       sectorBars: (sectors ?? []).map(s => ({ name: SECTORS.find(x => x.sym === s.sym)?.name ?? s.sym, rs21: s.rs21 })),
+      // the board typeset in code — grades and levels never depend on the LLM
+      engineBoard: (engineBoard ?? []).map(b => ({
+        sym: b.sym,
+        side: b.side,
+        grade: b.grade,
+        provisional: b.provisional,
+        probability: b.probability,
+        entry: b.entry,
+        stop: b.stop,
+        target: b.target,
+        expectedMovePct: b.expectedMovePct,
+        paperOnly: b.paperOnly,
+        earningsRisk: b.earningsRisk,
+        instrument: b.instrument,
+      })),
     }
 
-    const data = JSON.stringify(
+    // Budget-aware: whole low-priority keys drop first — never a mid-JSON cut
+    // that silently deletes whatever serialized last (it was the headlines).
+    const { buildDataJson } = await import('./lib/newspaper')
+    const { json: data, dropped } = buildDataJson(
       {
         capital: cfg.capital,
         regime,
         engineBoard, // null = engine offline; ideas then fall back to candidateReads rules
+        mediaHeadlines,
+        headlines: news,
+        t212Holdings, // real broker book: count, unrealised P/L, top movers + engine stage
+        econCalendarThisWeek: econ,
         watchlistQuotes: quotes,
         portfolio,
-        t212Holdings, // real broker book: count, unrealised P/L, top movers + engine stage
-
         sectorRotation: sectors,
+        channelConsensus: consensus,
+        previousEditions: await blobAppStore.read('composed-history'),
+        ownScorecard: pickStats,
         candidateReads,
         rotationLeaders: rotationTables.map(t => ({ sector: t.sector, etf: t.etf, rows: t.rows.map(r => ({ sym: r.sym, price: r.price, wkPct: r.wkPct == null ? null : Math.round(r.wkPct * 10) / 10 })) })),
-        channelConsensus: consensus,
-        recentChannelVideos: channelVideos,
         socialPulse: social,
+        recentChannelVideos: channelVideos,
         insiderBuying: insiders,
-        econCalendarThisWeek: econ,
-        recentEventAssessments: dossiers,
         pickPersistence: picksHistory,
-        ownScorecard: pickStats,
-        previousEditions: await blobAppStore.read('composed-history'),
         userNotes: cfg.notes ?? [],
-        headlines: news,
-        mediaHeadlines,
+        recentEventAssessments: dossiers,
       },
-      null,
-      1,
-    ).slice(0, 28_000)
+      // drop order: least critical first — the engine board, headlines and the
+      // broker book must survive; colour and history give way
+      ['recentEventAssessments', 'userNotes', 'pickPersistence', 'insiderBuying', 'recentChannelVideos', 'socialPulse', 'rotationLeaders', 'candidateReads', 'ownScorecard', 'previousEditions', 'channelConsensus', 'sectorRotation', 'portfolio', 'watchlistQuotes'],
+    )
 
-    console.log('COMPOSE: gathered ok, data bytes', data.length)
+    console.log('COMPOSE: gathered ok, data bytes', data.length, dropped.length ? `| dropped to fit: ${dropped.join(',')}` : '')
     // ---- compose: six small sections in parallel (Groq-sized), per-section
     // Gemini retry, single-shot Gemini as plan C. Small outputs rarely truncate.
     const { SECTIONS, sectionPrompt, extractJson, mergeSections } = await import('./lib/newspaper')
