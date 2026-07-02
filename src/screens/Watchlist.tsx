@@ -69,7 +69,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
             </svg>
           </div>
           <h1>MomentumBoard</h1>
-          <p>Enter your app token — the APP_TOKEN value from your Netlify environment.</p>
+          <p>Enter your licence key once. This device stays unlocked for life. Tip: the unlock link in your Telegram does this with one tap.</p>
           <form
             onSubmit={e => {
               e.preventDefault()
@@ -80,7 +80,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
               }
             }}
           >
-            <input name="t" type="password" placeholder="App token" autoComplete="off" />
+            <input name="t" type="password" placeholder="Licence key" autoComplete="off" />
             <button>Unlock</button>
           </form>
         </div>

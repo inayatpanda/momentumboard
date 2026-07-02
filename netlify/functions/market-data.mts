@@ -145,6 +145,31 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'social') {
+    const hit = await getCached<unknown>('social-pulse')
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse } = await import('./lib/social')
+      const { blobAppStore } = await import('./lib/store')
+      const { computeConsensus } = await import('./lib/videoTrends')
+      const [reddit, stocktwits, extracts, cfg] = await Promise.all([
+        fetchRedditTrends(),
+        fetchStocktwitsTrending(),
+        blobAppStore.read<unknown[]>('video-extracts'),
+        blobAppStore.read<{ watchlist: { symbol: string }[] }>('config'),
+      ])
+      const consensus = computeConsensus(((extracts ?? []) as Parameters<typeof computeConsensus>[0]), Math.floor(Date.now() / 1000))
+      const data = {
+        pulse: combineSocialPulse(reddit, stocktwits, consensus.tickers.map(t => ({ sym: t.sym, net: t.net })), (cfg?.watchlist ?? []).map(w => w.symbol)),
+        at: Math.floor(Date.now() / 1000),
+      }
+      await setCached('social-pulse', data, 900)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
   if (type === 'econ') {
     const hit = await getCached<unknown>('econ-calendar')
     if (hit) return json(200, { ok: true, data: { events: hit } })

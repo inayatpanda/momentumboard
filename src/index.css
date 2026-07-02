@@ -417,6 +417,20 @@ button, input { font: inherit; }
 .price.flash-up { animation: flashUp 0.9s ease-out; }
 .price.flash-down { animation: flashDown 0.9s ease-out; }
 
+/* ---------- intel sub-tabs ---------- */
+.subtabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.subtabs button {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.subtabs button.active { color: #05130d; background: var(--green); border-color: var(--green); }
+
 /* ---------- gear + hero card ---------- */
 .gear {
   background: var(--panel);
