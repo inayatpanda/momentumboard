@@ -34,6 +34,14 @@ describe('fetchNews', () => {
   })
 })
 
+describe('cleanInstrumentName', () => {
+  it('extracts the underlying from ETP boilerplate', async () => {
+    const { cleanInstrumentName } = await import('./news')
+    expect(cleanInstrumentName('GraniteShares 3x Long Tesla Daily ETP')).toBe('Tesla')
+    expect(cleanInstrumentName('Bitcoin USD')).toBe('Bitcoin')
+  })
+})
+
 describe('fetchVideos', () => {
   it('maps feed entries to videos with channel names, skipping stale ones', async () => {
     const fetchFn = vi.fn(async () => new Response(ytFeed))

@@ -32,6 +32,7 @@ export function parseYahooChart(json: unknown, symbol: string): { candles: Candl
     candles,
     quote: {
       symbol,
+      name: m.longName ?? m.shortName ?? undefined,
       price: m.regularMarketPrice,
       prevClose: prev,
       changePct: prev ? ((m.regularMarketPrice - prev) / prev) * 100 : 0,

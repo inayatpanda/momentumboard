@@ -9,6 +9,7 @@ export interface Candle {
 
 export interface Quote {
   symbol: string
+  name?: string
   price: number
   prevClose: number
   changePct: number

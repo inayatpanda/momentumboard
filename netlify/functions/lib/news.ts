@@ -32,12 +32,20 @@ export interface SymbolNewsItem {
   publishedSec: number
 }
 
+/** "GraniteShares 3x Long Tesla Daily ETP" → "Tesla"; "Bitcoin USD" → "Bitcoin". */
+export function cleanInstrumentName(name: string): string {
+  const NOISE = /\b(graniteshares|wisdomtree|leverage shares|ishares|3x|2x|-1x|1x|long|short|daily|etp|etc|etn|usd|plc)\b/gi
+  const cleaned = name.replace(NOISE, '').replace(/\s+/g, ' ').trim()
+  return cleaned || name
+}
+
 /** News for ONE symbol: Finnhub company-news for US equities, Google News RSS otherwise. */
 export async function fetchSymbolNews(
   symbol: string,
   finnhubKey: string,
   nowSec: number,
   fetchFn: typeof fetch = fetch,
+  instrumentName?: string,
 ): Promise<SymbolNewsItem[]> {
   if (exchangeFor(symbol) === 'US') {
     const j = (await safeJson(
@@ -49,7 +57,9 @@ export async function fetchSymbolNews(
       .slice(0, 10)
       .map(n => ({ title: n.headline!, url: n.url!, publishedSec: n.datetime ?? 0 }))
   }
-  const q = encodeURIComponent(symbol.replace('-USD', '').replace('.L', '') + ' stock')
+  const isCrypto = exchangeFor(symbol) === 'CRYPTO'
+  const base = instrumentName ? cleanInstrumentName(instrumentName) : symbol.replace('-USD', '').replace('.L', '')
+  const q = encodeURIComponent(isCrypto ? base : `${base} stock`)
   const xml = await safeText(`https://news.google.com/rss/search?q=${q}&hl=en-GB&gl=GB&ceid=GB:en`, fetchFn)
   return parseFeed(xml)
     .slice(0, 10)

@@ -46,6 +46,6 @@ describe('market-data routing', () => {
     )
     const body = await res.json()
     expect(body.data.items[0].title).toBe('Apple thing')
-    expect(news).toHaveBeenCalledWith('AAPL', 'fk', expect.any(Number))
+    expect(news).toHaveBeenCalledWith('AAPL', 'fk', expect.any(Number), expect.anything(), undefined)
   })
 })

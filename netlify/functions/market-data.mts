@@ -60,7 +60,14 @@ export async function routeRequest(
     const hit = await getCached<unknown>(key)
     if (hit) return json(200, { ok: true, data: hit })
     try {
-      const items = await (deps.news ?? fetchSymbolNews)(symbol, env.FINNHUB_API_KEY ?? '', Math.floor(Date.now() / 1000))
+      // For LSE ETPs / crypto, resolve the instrument's long name so the query
+      // targets the underlying ("Tesla", "Bitcoin") instead of the raw symbol.
+      let name: string | undefined
+      if (isYahooSymbol(symbol)) {
+        const cachedQ = await getCached<Quote>(`quote:${symbol}`)
+        name = cachedQ?.name ?? (await deps.yahoo(symbol, '3mo').then(d => d.quote.name).catch(() => undefined))
+      }
+      const items = await (deps.news ?? fetchSymbolNews)(symbol, env.FINNHUB_API_KEY ?? '', Math.floor(Date.now() / 1000), fetch, name)
       const data = { items }
       await setCached(key, data, 240)
       return json(200, { ok: true, data })

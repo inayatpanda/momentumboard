@@ -113,7 +113,8 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
       <h3 className="section-title">Price alerts</h3>
       <AlertEditor symbol={symbol} rules={rules} onSave={saveRule} onDelete={deleteRule} />
 
-      <PositionCalculator defaultEntry={price} defaultStop={defaultStop} riskClass="normal" />
+      {/* key remounts the calculator when the price first arrives so defaults prefill */}
+      <PositionCalculator key={`${symbol}-${price == null ? 'loading' : 'ready'}`} defaultEntry={price} defaultStop={defaultStop} riskClass="normal" />
 
       {news.length > 0 && (
         <section>
