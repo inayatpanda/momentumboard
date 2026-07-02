@@ -66,7 +66,7 @@ TypeScript is an assumption (the brief says "match my existing pattern" but no e
 
 - `type=quote&symbols=AAPL,3LTS.L` — batched. US symbols → Finnhub `/quote`; `.L` symbols → Yahoo v8 chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/{sym}`), whose `meta` block carries current price, previous close, and currency without needing Yahoo's crumb/cookie auth.
 - `type=candles&symbol=X&range=1y&interval=1d` — Yahoo v8 chart for **all** tickers (basis for MAs, RSI, 30-day average volume).
-- `type=news&symbols=...` — Finnhub company-news (US) + Google News RSS queries; parsed server-side to a common shape.
+- `type=news&symbols=...` — Finnhub company-news (US) + Google News RSS queries + stockmarketloop.com/feed/ (user-requested, verified working RSS); parsed server-side to a common shape.
 - `type=calendar` — Finnhub earnings calendar (free). Finnhub's *economic* calendar is paid, so the digest shows earnings only plus a static link to an external economic calendar — no paid fallback.
 - `type=youtube` — fetches `youtube.com/feeds/videos.xml?channel_id=...` for each followed channel, returns recent videos (title, link, published). Channel IDs are resolved once at config time from channel URLs/handles.
 - Responses micro-cached in Blobs (60 s quotes, 15 min candles/news/RSS) so repeated opens and the alert checker don't hammer rate limits.
@@ -75,22 +75,23 @@ TypeScript is an assumption (the brief says "match my existing pattern" but no e
 
 **`portfolio`** — `PUT /api/portfolio` (app token) mirrors a journal-derived snapshot to Blobs whenever the journal changes: open positions (ticker, instrument type/leverage, entry, £ size, stop), exposure totals vs guardrails, recent closed-trade outcomes, and suggestion follow-ups. `GET /api/portfolio` serves it read-only, authenticated by a separate `REPORT_TOKEN` env var so the morning research routine can fetch it without holding the app's write token. This is what makes each morning's strategy report portfolio-aware.
 
-**`alert-check`** — scheduled `*/15 6-21 * * 1-5` (UTC; covers LSE 08:00 London through US close 21:00/22:00 London, weekdays). Each run: read config + last-alert state from Blobs → fetch quotes/candles/news/YouTube via the same internal modules → evaluate rules → send Telegram messages for newly triggered alerts → write updated state back. Each ticker/rule is wrapped in try/catch so one bad symbol cannot kill the run.
+**`alert-check`** — scheduled `*/5 6-21 * * 1-5` (UTC; covers LSE 08:00 London through US close, weekdays; ~4,000 invocations/month, well inside the 125k free tier). Five-minute cadence is the user's "alerts must be timely" requirement; each run must stay lean (batched quotes every run; candles/news/RSS refreshed only when their cache TTL has lapsed) to fit the 10 s function timeout. Each run: read config + last-alert state from Blobs → fetch quotes/candles/news/YouTube via the same internal modules → evaluate rules → send Telegram messages for newly triggered alerts → write updated state back. Each ticker/rule is wrapped in try/catch so one bad symbol cannot kill the run.
 
 **Auth:** every `/api/*` call requires an `x-app-token` header matching an `APP_TOKEN` env var (random secret). Single-user pragmatism: the client asks for the token once and keeps it in localStorage. This also stops strangers from burning the Finnhub quota through the public function URL.
 
 ### 4.2 Shared modules (`shared/`, imported by both client and functions)
 
-- `indicators.ts` — SMA(20/50/200), RSI(14). Pure, unit-tested against known-good values.
+- `indicators.ts` — SMA(20/50/200), RSI(14), ATR(14). Pure, unit-tested against known-good values.
+- `setups.ts` — setup detection from daily candles + quote (see §5 Strategy layer): regime state, basing, RSI divergence, reclaim trigger, pullback zone, breakout watch/live, PEAD, overextension, falling-knife warning. Pure functions, unit-tested with fixture candle series.
 - `rvol.ts` — relative volume = today's cumulative volume ÷ (30-day average daily volume × elapsed-session fraction). The elapsed-fraction adjustment is an approximation (volume is not uniform intraday — U-shaped in reality); documented as such in code and UI tooltip.
-- `rules.ts` — pure function `(config, marketData, lastState) → { alerts, newState }`. Rule types: price crosses level (above/below), RVOL > 2x, RSI crosses 70/30, watchlist ticker appears in a new headline, new video from a followed channel. **Dedup/re-arm:** an alert fires once, then re-arms only when the condition resets (price crosses back, RSI leaves the zone) or after 24 h; news/video alerts dedupe on item URL.
+- `rules.ts` — pure function `(config, marketData, lastState) → { alerts, newState }`. Rule types: price crosses level (above/below), RVOL > 2x, RSI crosses 70/30, watchlist ticker appears in a new headline, new video from a followed channel, and **setup transitions** from `setups.ts` (e.g., ticker enters Reclaim or Pullback zone, Breakout goes live, regime banner changes colour). **Dedup/re-arm:** an alert fires once, then re-arms only when the condition resets (price crosses back, RSI leaves the zone) or after 24 h; news/video alerts dedupe on item URL.
 - `types.ts` — shared TypeScript types for config, quotes, candles, alerts.
 
 The client runs the exact same `rules.ts` on its polling cycle while the tab is open (instant toasts); the scheduled function covers the rest of the time. One implementation, two hosts — no drift.
 
 ### 4.3 Client screens (bottom tab nav, mobile-first)
 
-1. **Watchlist (home)** — per ticker: last price + day change (native currency — USD for US, GBp/GBP for LSE per Yahoo's `meta.currency`, labelled), RVOL, momentum badge (▲ above 20-day MA / ▼ below; RSI zone chip: <30 / 30–70 / >70). Pull-to-refresh; "last updated" timestamp; stale-data badge when a fetch fails. 15-min auto-poll while open. Watchlist capped at 30 tickers to respect rate limits.
+1. **Watchlist (home)** — top of screen: **regime banner** (green/amber/red from §5, computed from SPY + QQQ daily structure). Per ticker: last price + day change (native currency — USD for US, GBp/GBP for LSE per Yahoo's `meta.currency`, labelled), RVOL, and **setup badges** from `setups.ts` (Basing / Divergence / Reclaim / Pullback zone / Breakout watch / Breakout live / PEAD / Overextended / Falling knife). Pull-to-refresh; "last updated" timestamp; stale-data badge when a fetch fails. While the app is open: quotes poll every 2 min (one batched call; Finnhub's 60/min limit supports ≤30 tickers comfortably), news/RSS every 3 min. Watchlist capped at 30 tickers to respect rate limits.
 2. **Ticker detail** — lightweight-charts candlesticks + volume, 20/50/200 MA overlays, RSI(14) sub-panel; ranges 3M/6M/1Y (daily candles); recent news for that ticker; alert-rule editor (add/edit price level, RVOL, RSI, news rules).
 3. **Journal** — trade entry form: ticker, direction, instrument type (stock / ETP with leverage factor), entry price, position size (£), invalidation/stop, thesis, dates, exit price, outcome notes. Derived stats: running P&L, win rate, average win/loss. **Risk banners** (thresholds derived from the capital setting, default £5,000): position > 20% of capital; open leveraged-ETP exposure > 30% of capital; estimated risk to stop (leverage-adjusted for ETPs) > 2% of capital. Warnings appear on the entry form *before* saving and as a persistent banner while breached. ETP-tagged entries show two static reminders: "verify ISA eligibility for this product on Trading 212" and a daily-reset decay warning once held > 5 trading days. Each entry can be tagged "followed a report suggestion" (ticker + date), so the app tracks which morning-report ideas were actually taken and how they worked out. Journal detail stays local (IndexedDB, JSON export/import); the summarised portfolio snapshot above is the only journal data that leaves the device.
 4. **Digest** — yesterday's watchlist performance (from cached candles), today/this-week's earnings for watchlist tickers (Finnhub calendar), latest headlines, latest videos from followed channels, links to an external economic calendar and QuiverQuant congressional trading. Stage 6 adds an "AI read" card: the `ai-insights` function sends the digest's underlying data (quotes, indicator states, headlines) to Gemini/Groq and renders a short written interpretation — copy labels it "AI interpretation, not a prediction or advice".
@@ -108,7 +109,25 @@ The client runs the exact same `rules.ts` on its polling cycle while the tab is 
 - Function handlers tested with mocked `fetch` (Finnhub/Yahoo/RSS fixtures checked into the repo).
 - Manual smoke test per stage, per the brief's "confirm each stage works before moving on".
 
-## 5. Build stages
+## 5. Strategy layer
+
+Settled interactively with the user on 2026-07-02. Honest framing first, and kept in UI copy: **nothing here predicts.** The edge this account can actually have is selectivity, asymmetric risk/reward, regime awareness, and journal-measured expectancy. The aspirational £100/day ≈ 500%/yr on £5,000 and is not a planning assumption.
+
+**Regime filter** (from SPY + QQQ daily candles): **green** = price above rising 20-day and 20 > 50 on both; **red** = either below its 50-day with the 20-day flat/declining; **amber** = anything between. Green: normal operations. Amber: half risk, A-grade setups only. Red: no new longs; short-side playbook eligible. Displayed as a banner; colour changes are alertable.
+
+**Playbooks** (every journal trade is tagged with one):
+
+- **R — Structured reversal** *(primary; the user's preferred style; confirmation required — user chose "wait for the turn")*. Prerequisites: decline ≥25% from 52-wk high or trading below the 200-day; a base of ≥10 sessions with no new 20-day low and contracting range; bonus signal: RSI(14) higher low against a price equal/lower low. Trigger: first daily close back above the 20-day MA or above the base high, with RVOL ≥1.5. Stop below the base low; first target the declining 50-day, then 2R; time stop after 7 sessions without follow-through. Never average down. A **Falling knife** state (fresh 20-day low + RSI <30 + heavy down volume) explicitly suppresses any entry suggestion until a base forms.
+- **B — Pullback-in-uptrend.** Price > 50-day > 200-day (or 20 > 50 rising); pullback 3–8% into the 20/50-day zone on fading volume with RSI 35–55. Trigger: a reversal day (higher low, close above the prior day's high). Stop below the swing low; target the prior high, then 2R.
+- **A — Breakout continuation** *(green regime only; secondary — user prefers not to chase highs)*. ≥3-week consolidation within 5% of the 52-wk high; trigger: new high on RVOL ≥2. Stop below the breakout level.
+- **S — Overextension fade** *(short side via LSE inverse ETPs; user opted in for index AND single-stock)*. Trigger: >2 ATR above the 20-day with RSI >75, or the regime banner flipping red (index case). Max hold 5 sessions (daily-reset decay); single-stock fades run at half risk.
+- **Catalyst overlay (PEAD):** an earnings gap >+5% on a beat that holds above its open upgrades any long playbook's conviction. Earnings due within 5 sessions blocks new entries by default (binary-event warning).
+
+**Sizing & exposure** (defaults; user-configurable; warn, never block): capital £5,000; risk per trade 2% (£100) to a structural stop; 2–3 open positions max; 20% (£1,000) max per position; 30% max leveraged-ETP exposure; **small-cap/story-stock class** (market cap <$2bn via Finnhub profile, or user-tagged) risks at half (1%) with spread/gap warnings; leverage only on A-grade conviction with ≤5-session intent.
+
+**App encoding:** `setups.ts` computes per-ticker states (Basing, Divergence, Reclaim, Pullback zone, Breakout watch/live, PEAD, Overextended, Falling knife) plus the regime state; the watchlist shows them as badges; alerts fire on state *transitions*; ticker detail includes a position-size calculator (entry + stop → shares/£, checked against every cap above); the journal's stats screen reports expectancy per playbook so that after ~20 trades the data — not opinion — says which playbooks to keep, shrink, or kill.
+
+## 6. Build stages
 
 1. **Scaffold + watchlist + quotes** — repo, Vite PWA scaffold, Dexie, `market-data` function (quotes + candles), watchlist screen with badges, GitHub → Netlify pipeline live. *User setup: Finnhub free API key, Netlify env vars.*
 2. **Charts** — ticker detail screen, lightweight-charts, indicators module + tests.
@@ -120,7 +139,7 @@ The client runs the exact same `rules.ts` on its polling cycle while the tab is 
 ## 6. Risks / caveats
 
 - **Yahoo endpoint is unofficial** and may change or add auth without notice; isolated in one adapter, LSE coverage degrades gracefully. If it dies permanently, the paid-free alternative is Twelve Data's free tier (revisit then).
-- **15-minute cadence** means alerts can be up to ~15 min late — acceptable for swing trading per the brief, stated honestly in UI copy.
+- **Alert latency, honestly stated:** background checks run every 5 min, so end-to-end alert delay ≈ source lag + ≤5 min. Note the source lag is irreducible on free tiers: YouTube RSS and Google News RSS can trail publication by several minutes. Fast enough for swing entries; this is not, and cannot be, a scalping tool — UI copy says so.
 - **RVOL intraday approximation** documented above.
 - **Netlify free tier** limits (125k function invocations/month) are comfortably above expected usage (~10–15k/month); the runlog makes usage visible.
 - **This app informs, it does not predict.** UI copy must never imply predictive power or promised returns.
