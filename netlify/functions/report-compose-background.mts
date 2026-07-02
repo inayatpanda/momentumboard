@@ -30,9 +30,11 @@ export default async (req: Request) => {
     const [spy, qqq] = await Promise.all([cachedCandles('SPY'), cachedCandles('QQQ')])
     const regime = spy && qqq ? regimeFromCandles(spy, qqq) : 'unknown'
 
+    // watchlist + benchmarks + the liquid sector ETFs, so ideas can carry REAL levels
+    const priceSymbols = [...new Set([...symbols, 'SPY', 'QQQ', 'BTC-USD', 'ETH-USD', 'XLK', 'XLY', 'XLC', 'XLE', 'XLF', 'XLV'])]
     const quotes = (
       await Promise.all(
-        symbols.map(async s => {
+        priceSymbols.map(async s => {
           const q = await cachedQuote(s, process.env.FINNHUB_API_KEY ?? '').catch(() => null)
           return q ? `${s} ${q.price} (${q.changePct.toFixed(1)}%)` : null
         }),
@@ -112,6 +114,7 @@ export default async (req: Request) => {
       composed = parseComposed(retry.text)
     }
     if (!composed) return new Response('compose-unparseable', { status: 502 })
+    if (!(cfg.notes ?? []).length) delete composed.readersNotes // no phantom reader feedback
 
     // ---- publish through the same pipe the routine uses ----
     const html = buildNewspaperHtml(composed, dateLabel)
