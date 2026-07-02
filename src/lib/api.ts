@@ -59,6 +59,20 @@ export const getSocialPulse = () =>
 export const evaluateNote = (text: string, kind: string) =>
   apiGet<{ take: string }>(`/api/market?type=evaluate-note&text=${encodeURIComponent(text)}&kind=${kind}`).then(d => d.take)
 
+export const getMonthMap = (month: string) =>
+  apiGet<Record<string, { r?: boolean; p?: number; a?: number; e?: number }>>(`/api/config?view=month&month=${month}`)
+
+export const getDayLedger = (date: string) =>
+  apiGet<{
+    date: string
+    hasReport: boolean
+    regime: string | null
+    picks: { ticker: string; side: string; conviction?: string; strength?: string; priceAtPick?: number }[]
+    alerts: { text: string; tier: string; at: number }[]
+    events: { kind: string; name: string; assessment: string; at: number }[]
+    videos: { title?: string; channel?: string; url: string }[]
+  }>(`/api/config?view=day&date=${date}`)
+
 export const getEventDossiers = () =>
   apiGet<{ kind: 'shock' | 'stretch'; sym: string; name: string; movePct?: number; zScore?: number; rsi?: number; dir: string; price: number; assessment: string; at: number }[]>('/api/config?view=events')
 

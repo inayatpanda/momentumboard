@@ -33,6 +33,55 @@ export async function routeConfig(
       const cfg = await store.read<{ notes?: unknown[] }>(`${ns}config`)
       return json(200, { ok: true, data: cfg?.notes ?? [] })
     }
+    if (url.searchParams.get('view') === 'month') {
+      // density map for the calendar: which days have a report / picks / alerts / events
+      const month = url.searchParams.get('month') ?? new Date().toISOString().slice(0, 7)
+      const [index, picksHistory, history, dossiers] = await Promise.all([
+        store.read<string[]>('report-index'),
+        store.read<{ date: string; picks: unknown[] }[]>('report-picks'),
+        store.read<{ at: number }[]>('alert-history'),
+        store.read<{ at: number }[]>('event-dossiers'),
+      ])
+      const days: Record<string, { r?: boolean; p?: number; a?: number; e?: number }> = {}
+      const bump = (date: string, k: 'p' | 'a' | 'e') => {
+        if (!date.startsWith(month)) return
+        days[date] = days[date] ?? {}
+        days[date][k] = (days[date][k] ?? 0) + 1
+      }
+      for (const d of index ?? []) if (d.startsWith(month)) (days[d] = days[d] ?? {}).r = true
+      for (const d of picksHistory ?? []) if (d.date.startsWith(month)) { days[d.date] = days[d.date] ?? {}; days[d.date].p = d.picks.length }
+      for (const h of history ?? []) bump(new Date(h.at * 1000).toISOString().slice(0, 10), 'a')
+      for (const e of dossiers ?? []) bump(new Date(e.at * 1000).toISOString().slice(0, 10), 'e')
+      return json(200, { ok: true, data: days })
+    }
+    if (url.searchParams.get('view') === 'day') {
+      // everything the system produced on one date — the calendar's day ledger
+      const date = url.searchParams.get('date')
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return json(400, { ok: false, error: 'bad-date' })
+      const dayStart = Date.parse(date) / 1000
+      const dayEnd = dayStart + 86_400
+      const inDay = (at: number) => at >= dayStart && at < dayEnd
+      const [index, picksHistory, history, dossiers, videos] = await Promise.all([
+        store.read<string[]>('report-index'),
+        store.read<{ date: string; regime?: string; picks: { ticker: string; side: string; conviction?: string; strength?: string; priceAtPick?: number }[] }[]>('report-picks'),
+        store.read<{ text: string; tier: string; at: number }[]>('alert-history'),
+        store.read<{ kind: string; name: string; assessment: string; at: number }[]>('event-dossiers'),
+        store.read<{ title?: string; channel?: string; url: string; at: number }[]>('video-analyses'),
+      ])
+      const dayPicks = (picksHistory ?? []).find(d => d.date === date)
+      return json(200, {
+        ok: true,
+        data: {
+          date,
+          hasReport: (index ?? []).includes(date),
+          regime: dayPicks?.regime ?? null,
+          picks: dayPicks?.picks ?? [],
+          alerts: (history ?? []).filter(h => inDay(h.at)).slice(-30),
+          events: (dossiers ?? []).filter(e => inDay(e.at)).map(e => ({ kind: e.kind, name: e.name, assessment: e.assessment.slice(0, 400), at: e.at })),
+          videos: (videos ?? []).filter(v => inDay(v.at)).map(v => ({ title: v.title, channel: v.channel, url: v.url })),
+        },
+      })
+    }
     if (url.searchParams.get('view') === 'llm-key') {
       const creds = await store.read<{ groqKey?: string }>(`${ns}llm`)
       return json(200, { ok: true, data: { hasKey: !!creds?.groqKey } }) // never echo the key itself

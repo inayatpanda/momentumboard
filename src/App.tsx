@@ -6,6 +6,7 @@ import { TickerDetail } from './screens/TickerDetail'
 import { Journal } from './screens/Journal'
 import { Research } from './screens/Research'
 import { Intel } from './screens/Intel'
+import { CalendarScreen } from './screens/CalendarScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { TabBar } from './components/TabBar'
 
@@ -15,6 +16,7 @@ type View =
   | { screen: 'journal' }
   | { screen: 'research' }
   | { screen: 'intel' }
+  | { screen: 'calendar' }
   | { screen: 'settings'; from: string }
 
 export default function App() {
@@ -38,6 +40,7 @@ export default function App() {
     if (tab === 'journal') setView({ screen: 'journal' })
     if (tab === 'research') setView({ screen: 'research' })
     if (tab === 'intel') setView({ screen: 'intel' })
+    if (tab === 'calendar') setView({ screen: 'calendar' })
   }
 
   const openSettings = () => setView(v => ({ screen: 'settings', from: v.screen }))
@@ -60,6 +63,7 @@ export default function App() {
           {view.screen === 'journal' && <Journal />}
           {view.screen === 'research' && <Research onOpenSettings={openSettings} />}
           {view.screen === 'intel' && <Intel onOpenSettings={openSettings} />}
+          {view.screen === 'calendar' && <CalendarScreen onOpenSettings={openSettings} />}
           {view.screen === 'settings' && <SettingsScreen onBack={() => navigate(view.from === 'detail' ? 'watchlist' : view.from)} />}
         </motion.div>
       </AnimatePresence>
