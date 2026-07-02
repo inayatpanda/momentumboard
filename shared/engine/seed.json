@@ -1,0 +1,153 @@
+{
+ "generatedAt": "2026-07-02T18:30:39.873Z",
+ "symbols": 66,
+ "weights": {
+  "base": {
+   "technical": 1,
+   "momentum": 0.8,
+   "sector": 0.6,
+   "social": 0.5,
+   "channels": 0.6,
+   "insiders": 0.4,
+   "news": 0.4,
+   "seasonality": 0.3
+  },
+  "current": {
+   "technical": 0.9973676470588235,
+   "momentum": 0.7993317431599158,
+   "sector": 0.6,
+   "social": 0.5,
+   "channels": 0.6,
+   "insiders": 0.4,
+   "news": 0.4,
+   "seasonality": 0.3
+  },
+  "ic": {
+   "technical": {
+    "nAgree": 816,
+    "sumAgree": -143.19999999999993,
+    "nDisagree": 0,
+    "sumDisagree": 0
+   },
+   "momentum": {
+    "nAgree": 742,
+    "sumAgree": -132.79999999999987,
+    "nDisagree": 73,
+    "sumDisagree": -9.000000000000002
+   },
+   "sector": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
+   },
+   "social": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
+   },
+   "channels": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
+   },
+   "insiders": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
+   },
+   "news": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
+   },
+   "seasonality": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
+   }
+  },
+  "gradedSinceNudge": 0,
+  "history": [
+   {
+    "date": "2026-07-02",
+    "changes": {
+     "technical": {
+      "from": 1,
+      "to": 0.997,
+      "ic": -0.02
+     },
+     "momentum": {
+      "from": 0.8,
+      "to": 0.799,
+      "ic": -0.01
+     }
+    },
+    "evidence": "816 predictions graded since last nudge"
+   }
+  ]
+ },
+ "calibration": {
+  "buckets": {
+   "short:red:25-40": {
+    "n": 170,
+    "hits": 67
+   },
+   "short:green:25-40": {
+    "n": 132,
+    "hits": 50
+   },
+   "long:green:25-40": {
+    "n": 217,
+    "hits": 101
+   },
+   "long:amber:25-40": {
+    "n": 69,
+    "hits": 28
+   },
+   "short:amber:25-40": {
+    "n": 84,
+    "hits": 37
+   },
+   "short:red:40-55": {
+    "n": 45,
+    "hits": 18
+   },
+   "long:red:25-40": {
+    "n": 12,
+    "hits": 7
+   },
+   "long:green:40-55": {
+    "n": 55,
+    "hits": 31
+   },
+   "short:red:55-70": {
+    "n": 12,
+    "hits": 5
+   },
+   "short:amber:40-55": {
+    "n": 13,
+    "hits": 3
+   },
+   "long:green:55-70": {
+    "n": 3,
+    "hits": 0
+   },
+   "long:red:40-55": {
+    "n": 2,
+    "hits": 1
+   },
+   "long:amber:40-55": {
+    "n": 2,
+    "hits": 2
+   }
+  },
+  "brier": [],
+  "seeded": true
+ }
+}
