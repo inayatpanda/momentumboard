@@ -283,6 +283,9 @@ body{margin:0;background:#f7f4ec;color:#191713;font:16px/1.65 Georgia,'Times New
 table{width:100%;border-collapse:collapse;font-size:14px;margin:4px 0 8px}
 th{font-size:11px;letter-spacing:.14em;text-transform:uppercase;text-align:left;border-bottom:1px solid #191713;padding:6px 8px}
 td{border-bottom:1px solid #d8d2c4;padding:7px 8px;vertical-align:middle}
+table.ideas{table-layout:fixed}
+table.ideas th:nth-child(1){width:9%}table.ideas th:nth-child(2){width:6%}table.ideas th:nth-child(3){width:43%}table.ideas th:nth-child(4),table.ideas th:nth-child(5),table.ideas th:nth-child(6){width:12%}table.ideas th:nth-child(7){width:6%}
+table.ideas td{white-space:normal}table.ideas td.num{white-space:normal;overflow-wrap:break-word}
 .tk{font-weight:700;white-space:nowrap}.short{color:#b03040;font-size:10.5px;letter-spacing:.08em}
 .num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .up{color:#0c7a55}.dn{color:#b03040}
@@ -327,7 +330,7 @@ ${
   }
 ${
     r.ideas.length
-      ? wide("Today's Ideas", `<table><thead><tr><th>Ticker</th><th>Play</th><th>The case</th><th>Entry</th><th>Invalidation</th><th>Target</th><th>Grade</th></tr></thead><tbody>${ideasRows}</tbody></table>`)
+      ? wide("Today's Ideas", `<table class="ideas"><thead><tr><th>Ticker</th><th>Play</th><th>The case</th><th>Entry</th><th>Invalidation</th><th>Target</th><th>Grade</th></tr></thead><tbody>${ideasRows}</tbody></table>`)
       : ''
   }
 <div class="pull">&ldquo;${esc(pull)}&rdquo;</div>
