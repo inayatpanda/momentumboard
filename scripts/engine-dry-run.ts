@@ -48,6 +48,12 @@ for (const p of board) {
   }
 }
 
+const today = new Date(nowSec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+const ledger = (await store.read<{ sym: string; side: string; composite: number; probability: number; shadow?: boolean }[]>(`predictions:${today}`)) ?? []
+const shadows = ledger.filter(p => p.shadow)
+console.log(`\nledger today: ${ledger.length} (${shadows.length} shadow — graded for learning, never published)`)
+for (const s of shadows) console.log(`   shadow ${s.sym} ${s.side} composite ${s.composite} p=${s.probability}`)
+
 const roster = (await store.read<{ sym: string; capUsdM: number | null; source: string }[]>('engine-roster')) ?? []
 const smalls = roster.filter(r => r.capUsdM != null && r.capUsdM < 2000).length
 console.log(`\nroster: ${roster.length} names, ${smalls} small caps`)
