@@ -24,3 +24,12 @@ export function sessionElapsedFraction(exchange: 'US' | 'LSE', nowUtcSec: number
 export function relativeVolume(todayVolume: number, avgVol: number, elapsedFraction: number): number {
   return todayVolume / (avgVol * elapsedFraction)
 }
+
+export function isMarketOpen(exchange: 'US' | 'LSE', nowUtcSec: number): boolean {
+  const d = new Date(nowUtcSec * 1000)
+  const day = d.getUTCDay()
+  if (day === 0 || day === 6) return false
+  const hours = d.getUTCHours() + d.getUTCMinutes() / 60
+  const { open, close } = SESSIONS[exchange]
+  return hours >= open && hours < close
+}

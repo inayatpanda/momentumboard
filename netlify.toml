@@ -10,3 +10,8 @@
   from = "/api/market"
   to = "/.netlify/functions/market-data"
   status = 200
+
+[[redirects]]
+  from = "/api/config"
+  to = "/.netlify/functions/config-sync"
+  status = 200

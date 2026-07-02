@@ -1,4 +1,4 @@
-import type { VideoItem } from '../../shared/alerts'
+import type { VideoItem } from '../../../shared/alerts'
 import { parseFeed } from './rss'
 
 export async function fetchVideos(

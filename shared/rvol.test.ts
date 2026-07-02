@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { avgDailyVolume, sessionElapsedFraction, relativeVolume } from './rvol'
+import { avgDailyVolume, sessionElapsedFraction, relativeVolume, isMarketOpen } from './rvol'
 import type { Candle } from './types'
 
 const withVol = (v: number): Candle => ({ t: 0, o: 1, h: 1, l: 1, c: 1, v })
@@ -26,6 +26,16 @@ describe('sessionElapsedFraction', () => {
   })
   it('floors at 0.05 just after the open to avoid divide-by-tiny spikes', () => {
     expect(sessionElapsedFraction('US', utc(13, 31))).toBe(0.05)
+  })
+})
+
+describe('isMarketOpen', () => {
+  it('respects session hours and weekends', () => {
+    const thu17 = Date.UTC(2026, 6, 2, 17, 0) / 1000 // Thursday, mid US session
+    const sat17 = Date.UTC(2026, 6, 4, 17, 0) / 1000 // Saturday
+    expect(isMarketOpen('US', thu17)).toBe(true)
+    expect(isMarketOpen('LSE', thu17)).toBe(false) // LSE closed by 17:00 UTC
+    expect(isMarketOpen('US', sat17)).toBe(false)
   })
 })
 

@@ -1,4 +1,4 @@
-import type { NewsItem } from '../../shared/alerts'
+import type { NewsItem } from '../../../shared/alerts'
 import { parseFeed } from './rss'
 
 const DAY = 24 * 3600
