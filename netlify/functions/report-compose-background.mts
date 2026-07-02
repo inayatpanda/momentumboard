@@ -152,14 +152,17 @@ export default async (req: Request) => {
       1,
     ).slice(0, 28_000)
 
+    console.log('COMPOSE: gathered ok, data bytes', data.length)
     // ---- compose: the LLM writes the journalism as strict JSON ----
-    const { text, provider } = await callLlm(composePrompt(data, dateLabel), { maxTokens: 3500 })
+    // the paper is a big prompt: Groq free-tier TPM chokes on it, so Gemini leads here (Groq stays primary for small cards)
+    const { text, provider } = await callLlm(composePrompt(data, dateLabel), { maxTokens: 6500, LLM_PROVIDER: 'gemini' })
     let composed = parseComposed(text)
     if (!composed) {
-      const retry = await callLlm(`${composePrompt(data, dateLabel)}\n\nIMPORTANT: your previous answer was not valid JSON. Return ONLY the JSON object.`, { maxTokens: 3500 })
+      const retry = await callLlm(`${composePrompt(data, dateLabel)}\n\nIMPORTANT: your previous answer was not valid JSON or was cut off. Return ONLY the JSON object and keep every field concise.`, { maxTokens: 6500, LLM_PROVIDER: 'gemini' })
       composed = parseComposed(retry.text)
     }
-    if (!composed) return new Response('compose-unparseable', { status: 502 })
+    console.log('COMPOSE: llm ok via', provider, '| parsed:', !!composed)
+    if (!composed) { console.error('COMPOSE: unparseable, first 300:', text.slice(0,300)); return new Response('compose-unparseable', { status: 502 }) }
     if (!(cfg.notes ?? []).length) delete composed.readersNotes // no phantom reader feedback
 
     // ---- publish through the same pipe the routine uses ----
@@ -183,12 +186,14 @@ export default async (req: Request) => {
         })
       : null
 
+    console.log('COMPOSE: putHtml', putHtml.status, 'putPicks', putPicks?.status)
     const runlog = (await blobAppStore.read<unknown[]>('runlog')) ?? []
     runlog.push({ at: nowSec, kind: 'report-compose', provider, htmlOk: putHtml.ok, picksOk: putPicks?.ok ?? 'none', ideas: composed.ideas.length })
     await blobAppStore.write('runlog', runlog.slice(-200))
 
     return new Response('ok')
   } catch (e) {
+    console.error('COMPOSE-FAILED:', e)
     return new Response(String(e), { status: 502 })
   }
 }

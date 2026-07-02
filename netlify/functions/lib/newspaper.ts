@@ -126,7 +126,8 @@ Respond with ONLY a JSON object, no markdown fences, exactly this shape:
 {"headline":"...","standfirst":"...","lead":"<3-4 paragraphs \\n\\n separated>","portfolioDesk":"...","tape":"<incl. 48h event previews with forecast vs previous>","ideas":[{"ticker":"XYZ","side":"long","playbook":"R","caseText":"...","entry":"...","invalidation":"...","target":"...","conviction":"A","strength":"strong","reasons":["..."]}],"shortDesk":"...","smallCap":"<omit if none>","rotation":"...","crypto":"...","channels":"...","readersNotes":"<omit if no notes>","editorial":"<The Long View: 2-3 paragraphs>","honestClose":"...","regime":"green|amber|red","fedStance":"hawkish|neutral|dovish","macroNotes":["..."]}`
 }
 
-export function parseComposed(text: string): ComposedReport | null {
+export function parseComposed(raw: string): ComposedReport | null {
+  const text = raw.replace(/```(?:json)?/g, '') // models love fences
   const m = text.match(/\{[\s\S]*\}/)
   if (!m) return null
   try {
