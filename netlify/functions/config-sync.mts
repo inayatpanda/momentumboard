@@ -10,12 +10,19 @@ export async function routeConfig(
   method: string,
   headers: Headers,
   bodyText: string | null,
-  env: { APP_TOKEN?: string },
+  env: { APP_TOKEN?: string; REPORT_TOKEN?: string },
   store: AppStore,
 ): Promise<Response> {
-  if (!env.APP_TOKEN || headers.get('x-app-token') !== env.APP_TOKEN) return json(401, { ok: false, error: 'unauthorized' })
+  const appOk = !!env.APP_TOKEN && headers.get('x-app-token') === env.APP_TOKEN
+  // read-only views are also open to the research routine's report token
+  const reportOk = !!env.REPORT_TOKEN && headers.get('x-report-token') === env.REPORT_TOKEN
+  if (!appOk && !(method === 'GET' && reportOk)) return json(401, { ok: false, error: 'unauthorized' })
 
   if (method === 'GET') {
+    if (url.searchParams.get('view') === 'signals') {
+      const signals = (await store.read<unknown[]>('signal-log')) ?? []
+      return json(200, { ok: true, data: signals })
+    }
     if (url.searchParams.get('view') === 'runlog') {
       const runlog = (await store.read<unknown[]>('runlog')) ?? []
       return json(200, { ok: true, data: runlog.slice(-20) })
@@ -43,6 +50,6 @@ export default async (req: Request, _context: Context) =>
     req.method,
     req.headers,
     req.method === 'PUT' ? await req.text() : null,
-    { APP_TOKEN: process.env.APP_TOKEN },
+    { APP_TOKEN: process.env.APP_TOKEN, REPORT_TOKEN: process.env.REPORT_TOKEN },
     blobAppStore,
   )
