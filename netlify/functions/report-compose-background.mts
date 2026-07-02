@@ -154,16 +154,34 @@ export default async (req: Request) => {
     ).slice(0, 28_000)
 
     console.log('COMPOSE: gathered ok, data bytes', data.length)
-    // ---- compose: the LLM writes the journalism as strict JSON ----
-    // the paper is a big prompt: Groq free-tier TPM chokes on it, so Gemini leads here (Groq stays primary for small cards)
-    const { text, provider } = await callLlm(composePrompt(data, dateLabel), { maxTokens: 8000, LLM_PROVIDER: 'gemini' })
-    let composed = parseComposed(text)
-    if (!composed) {
-      const retry = await callLlm(`${composePrompt(data, dateLabel)}\n\nIMPORTANT: your previous answer was not valid JSON or was cut off. Return ONLY the JSON object and keep every field concise.`, { maxTokens: 8000, LLM_PROVIDER: 'gemini' })
-      composed = parseComposed(retry.text)
+    // ---- compose: six small sections in parallel (Groq-sized), per-section
+    // Gemini retry, single-shot Gemini as plan C. Small outputs rarely truncate.
+    const { SECTIONS, sectionPrompt, extractJson, mergeSections } = await import('./lib/newspaper')
+    const writeSection = async (spec: (typeof SECTIONS)[0]) => {
+      try {
+        const first = await callLlm(sectionPrompt(spec, data, dateLabel), { maxTokens: 1600 })
+        const parsed = extractJson<Record<string, unknown>>(first.text)
+        if (parsed) return { parsed, provider: first.provider }
+      } catch { /* fall through to gemini retry */ }
+      try {
+        const retry = await callLlm(`${sectionPrompt(spec, data, dateLabel)}\nIMPORTANT: return ONLY valid JSON.`, { maxTokens: 1600, LLM_PROVIDER: 'gemini' })
+        return { parsed: extractJson<Record<string, unknown>>(retry.text), provider: retry.provider }
+      } catch {
+        return { parsed: null, provider: 'none' }
+      }
     }
-    console.log('COMPOSE: llm ok via', provider, '| parsed:', !!composed)
-    if (!composed) { console.error('COMPOSE: unparseable, first 300:', text.slice(0,300)); return new Response('compose-unparseable', { status: 502 }) }
+    const sectionResults = await Promise.all(SECTIONS.map(writeSection))
+    let provider = sectionResults.map(r => r.provider).join(',')
+    let composed = mergeSections(sectionResults.map(r => r.parsed))
+    console.log('COMPOSE: sections', sectionResults.map((r, i) => `${SECTIONS[i].key}:${r.parsed ? r.provider : 'FAIL'}`).join(' '))
+    if (!composed) {
+      // plan C: the single-shot big compose on gemini
+      const single = await callLlm(composePrompt(data, dateLabel), { maxTokens: 8000, LLM_PROVIDER: 'gemini' })
+      provider = `single:${single.provider}`
+      composed = parseComposed(single.text)
+    }
+    console.log('COMPOSE: via', provider, '| parsed:', !!composed)
+    if (!composed) { console.error('COMPOSE: unparseable after all fallbacks'); return new Response('compose-unparseable', { status: 502 }) }
     if (!(cfg.notes ?? []).length) delete composed.readersNotes // no phantom reader feedback
 
     // ---- publish through the same pipe the routine uses ----

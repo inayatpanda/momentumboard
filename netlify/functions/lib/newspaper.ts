@@ -134,22 +134,104 @@ Respond with ONLY a JSON object, no markdown fences, exactly this shape:
 {"headline":"...","standfirst":"...","lead":"<3-4 paragraphs \\n\\n separated>","portfolioDesk":"...","tape":"<incl. 48h event previews with forecast vs previous>","ideas":[{"ticker":"XYZ","side":"long","playbook":"R","caseText":"...","entry":"...","invalidation":"...","target":"...","conviction":"A","strength":"strong","reasons":["..."]}],"shortDesk":"...","smallCap":"<omit if none>","rotation":"...","crypto":"...","channels":"...","readersNotes":"<omit if no notes>","editorial":"<The Long View: 2-3 paragraphs>","honestClose":"...","regime":"green|amber|red","fedStance":"hawkish|neutral|dovish","macroNotes":["..."]}`
 }
 
-export function parseComposed(raw: string): ComposedReport | null {
+export function extractJson<T>(raw: string): T | null {
   const text = raw.replace(/```(?:json)?/g, '') // models love fences
   const m = text.match(/\{[\s\S]*\}/)
   if (!m) return null
   try {
-    const r = JSON.parse(m[0]) as ComposedReport
-    if (!r.headline || !r.standfirst || !Array.isArray(r.ideas)) return null
-    if (!['green', 'amber', 'red'].includes(r.regime)) r.regime = 'amber'
-    // models sneak markdown emphasis into prose; the paper sets its own type
-    const clean = (s: unknown) => (typeof s === 'string' ? s.replace(/(^|\s)[_*]+|[_*]+(?=\s|$)/g, '$1').trim() : s)
-    for (const k of Object.keys(r) as (keyof ComposedReport)[]) (r as unknown as Record<string, unknown>)[k] = clean(r[k])
-    r.ideas = r.ideas.map(i => ({ ...i, caseText: clean(i.caseText) as string }))
-    return r
+    return JSON.parse(m[0]) as T
   } catch {
     return null
   }
+}
+
+export function sanitizeComposed(r: ComposedReport): ComposedReport | null {
+  if (!r.headline || !r.standfirst || !Array.isArray(r.ideas)) return null
+  if (!['green', 'amber', 'red'].includes(r.regime)) r.regime = 'amber'
+  // models sneak markdown emphasis into prose; the paper sets its own type
+  const clean = (s: unknown) => (typeof s === 'string' ? s.replace(/(^|\s)[_*]+|[_*]+(?=\s|$)/g, '$1').trim() : s)
+  for (const k of Object.keys(r) as (keyof ComposedReport)[]) (r as unknown as Record<string, unknown>)[k] = clean(r[k])
+  r.ideas = r.ideas.map(i => ({ ...i, caseText: clean(i.caseText) as string }))
+  return r
+}
+
+export function parseComposed(raw: string): ComposedReport | null {
+  const r = extractJson<ComposedReport>(raw)
+  return r ? sanitizeComposed(r) : null
+}
+
+// ---------- sectioned compose: six small writes instead of one big one ----------
+// Small outputs fit Groq's free-tier limits, truncate rarely, and retry cheaply.
+
+export interface SectionSpec {
+  key: string
+  fields: string[]
+  brief: string // what this section must deliver
+  shape: string // the exact JSON shape line
+}
+
+export const SECTIONS: SectionSpec[] = [
+  {
+    key: 'lead',
+    fields: ['headline', 'standfirst', 'lead', 'regime', 'fedStance', 'macroNotes'],
+    brief: 'The front page: a punchy newspaper headline for the day\'s most important thing, a 1-2 sentence italic standfirst, and a lead of 3-4 substantial paragraphs telling today\'s story. Also your regime/fedStance verdicts and 1-3 macroNotes.',
+    shape: '{"headline":"...","standfirst":"...","lead":"<3-4 paragraphs \\n\\n separated>","regime":"green|amber|red","fedStance":"hawkish|neutral|dovish","macroNotes":["..."]}',
+  },
+  {
+    key: 'desk',
+    fields: ['portfolioDesk', 'tape'],
+    brief: 'portfolioDesk: review of the actual positions (hold/tighten/exit/scale-in/rotate with reasons; one honest line if the journal is empty). tape: the macro brief, and it MUST preview the next 48h of high-impact events from econCalendarThisWeek using their forecast vs previous numbers and say how to position around each.',
+    shape: '{"portfolioDesk":"...","tape":"..."}',
+  },
+  {
+    key: 'ideas',
+    fields: ['ideas', 'shortDesk'],
+    brief: '1-3 long ideas MAX and the short desk (0-2 fades via LSE inverse ETPs, or say no clean fade). Every idea: full company name once in caseText, playbook tag, entry/invalidation/target (numeric ONLY if the price is in the data, else qualitative), conviction A/B/C. strength:"strong" ONLY on multi-factor alignment with 3-5 numbered reasons.',
+    shape: '{"ideas":[{"ticker":"XYZ","side":"long|short","playbook":"R|B|A|S","caseText":"...","entry":"...","invalidation":"...","target":"...","conviction":"A|B|C","strength":"strong (omit unless earned)","reasons":["..."]}],"shortDesk":"..."}',
+  },
+  {
+    key: 'discovery',
+    fields: ['smallCap', 'channels', 'readersNotes'],
+    brief: 'smallCap: the 0-1 discovery from socialPulse with full company name, surge evidence, market cap, liquidity check (omit field if none deserves it). channels: what the channels said, several names each with YOUR take. readersNotes: his observations tested against data — held up or contradicted (omit if userNotes is empty).',
+    shape: '{"smallCap":"<omit if none>","channels":"...","readersNotes":"<omit if no notes>"}',
+  },
+  {
+    key: 'rotation',
+    fields: ['rotation', 'crypto'],
+    brief: 'rotation: where money is going per the sector numbers (rs5 vs rs21 tells you one-day blip vs confirmed) and how to front-run it. crypto: BTC/ETH regime with only the levels present in the data, alts, crypto equities.',
+    shape: '{"rotation":"...","crypto":"..."}',
+  },
+  {
+    key: 'voice',
+    fields: ['editorial', 'honestClose'],
+    brief: 'editorial (The Long View): 2-3 paragraphs of well-established market history or a great investor\'s principle that rhymes with TODAY\'s tape — tied explicitly to current conditions, no invented statistics. honestClose: confidence grade, what proves today wrong, what was unverifiable.',
+    shape: '{"editorial":"...","honestClose":"..."}',
+  },
+]
+
+const PERSONA = (dateLabel: string) => `You are a seasoned, decisive Wall Street analyst writing THE STREET SIGNAL for ${dateLabel} — a morning newspaper for one UK retail swing trader (Trading 212 ISA, reversal-first, 1 day-3 week holds, LSE inverse ETPs for shorts, small caps welcome at half size). Confident; both directions are opportunity; numbered reasons; no hedging filler.
+NUMERIC DISCIPLINE: use ONLY numbers present in the data; never invent a price, level or statistic; no price for a ticker → qualitative levels only.
+CONTINUITY: previousEditions in the data show what the reader was already told. Never re-introduce a covered theme as new — reference and build ("the healthcare rotation we flagged is now day 3 and CONFIRMED: rs5 still leads rs21" / "yesterday's call is fading — one-day event"). Repeated picks: say it is a repeat and what changed.
+NAMES: full company name once at first mention of any ticker.`
+
+export function sectionPrompt(spec: SectionSpec, data: string, dateLabel: string): string {
+  return `${PERSONA(dateLabel)}
+
+YOUR SECTION — write ONLY these fields: ${spec.fields.join(', ')}.
+${spec.brief}
+
+TODAY'S DATA (ground everything in it):
+${data}
+
+Respond with ONLY this JSON object, no markdown fences:
+${spec.shape}`
+}
+
+/** Merge section outputs into a full report; null if the essentials are missing. */
+export function mergeSections(parts: (Record<string, unknown> | null)[]): ComposedReport | null {
+  const merged = Object.assign({}, ...parts.filter(Boolean)) as ComposedReport
+  if (!Array.isArray(merged.ideas)) merged.ideas = []
+  return sanitizeComposed(merged)
 }
 
 // ---------- svg charts (pure, deterministic) ----------

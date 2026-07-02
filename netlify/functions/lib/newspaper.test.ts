@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseComposed, buildNewspaperHtml, type ComposedReport } from './newspaper'
+import { parseComposed, buildNewspaperHtml, mergeSections, sectionPrompt, SECTIONS, type ComposedReport } from './newspaper'
 
 const sample: ComposedReport = {
   headline: 'Tech Leads a Cautious Tape Higher',
@@ -54,5 +54,29 @@ describe('buildNewspaperHtml', () => {
     const first = buildNewspaperHtml(sample, 'x', { firstEdition: true, pdfLink: 'https://canva/x.pdf' })
     expect(first).toContain('First edition')
     expect(first).toContain('Print edition (PDF)')
+  })
+})
+
+describe('sectioned compose', () => {
+  it('merges section outputs into a valid report', () => {
+    const parts = [
+      { headline: 'H', standfirst: 'S', lead: 'L', regime: 'green', fedStance: 'neutral', macroNotes: ['x'] },
+      { portfolioDesk: 'empty', tape: 'tape' },
+      { ideas: [], shortDesk: 'none' },
+      { channels: 'c' },
+      { rotation: 'r', crypto: 'b' },
+      { editorial: 'e', honestClose: 'h' },
+    ]
+    const merged = mergeSections(parts as never)
+    expect(merged?.headline).toBe('H')
+    expect(merged?.editorial).toBe('e')
+    expect(mergeSections([null, { tape: 'only' }] as never)).toBeNull() // essentials missing
+  })
+  it('every section prompt names its own fields and carries the data', () => {
+    for (const spec of SECTIONS) {
+      const p = sectionPrompt(spec, 'DATA-MARKER', 'Friday 3 July 2026')
+      expect(p).toContain('DATA-MARKER')
+      for (const f of spec.fields) expect(p).toContain(f)
+    }
   })
 })
