@@ -83,6 +83,11 @@ export default async (req: Request) => {
       }),
     ])
 
+    const channelVideos = await grab(async () => {
+      const { fetchVideos } = await import('./lib/youtube')
+      return (await fetchVideos(cfg.ytChannels, nowSec)).slice(0, 10).map(v => ({ channel: v.channel, title: v.title }))
+    })
+
     const news = await grab(async () => {
       const { fetchNews } = await import('./lib/news')
       return (await fetchNews(symbols, process.env.FINNHUB_API_KEY ?? '', nowSec)).slice(0, 10).map(n => n.title)
@@ -157,6 +162,7 @@ export default async (req: Request) => {
         moveCapacity,
         rotationLeaders: rotationTables.map(t => ({ sector: t.sector, etf: t.etf, rows: t.rows.map(r => ({ sym: r.sym, price: r.price, wkPct: r.wkPct == null ? null : Math.round(r.wkPct * 10) / 10 })) })),
         channelConsensus: consensus,
+        recentChannelVideos: channelVideos,
         socialPulse: social,
         insiderBuying: insiders,
         econCalendarThisWeek: econ,

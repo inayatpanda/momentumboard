@@ -191,7 +191,7 @@ export const SECTIONS: SectionSpec[] = [
     brief: `1-3 long ideas MAX and the short desk (0-2 fades via LSE inverse ETPs, or say no clean fade). THE BAR: an idea must be able to MOVE — use moveCapacity in the data (typical10dMovePct = that name's usual 10-session travel). Rules:
 - expectedMove: state the realistic move and window ("+8-12% in 2 weeks"), justified by that ticker's typical10dMovePct. NEVER promise more than ~1.3x its capacity number.
 - strength:"strong" requires BOTH capable10pct:true (capacity >= 8%) AND independent confirmation from channelConsensus, socialPulse, insiderBuying or an event — cite it.
-- streetCheck (every idea): what the channels/social say about this exact name — "2 channels bullish, 340 Reddit mentions surging 2x" or honestly "silent on the channels".
+- streetCheck (every idea): the YOUTUBE CHANNELS first (by name, from channelConsensus/recentChannelVideos), then Reddit/Stocktwits — "2 channels bullish, 340 Reddit mentions surging 2x" or honestly "silent on the channels".
 - Slow mega-caps (capacity < 6%) are NOT swing ideas — context only, or route them through a leveraged LSE ETP (state the ETP; capacity roughly x3 the underlying).
 - Full company name once in caseText; playbook tag; entry/invalidation/target numeric ONLY if the price is in the data, else qualitative; conviction A/B/C; strong needs 3-5 numbered reasons.`,
     shape: '{"ideas":[{"ticker":"XYZ","side":"long|short","playbook":"R|B|A|S","caseText":"...","expectedMove":"+X-Y% in N weeks","streetCheck":"...","entry":"...","invalidation":"...","target":"...","conviction":"A|B|C","strength":"strong (omit unless earned)","reasons":["..."]}],"shortDesk":"..."}',
@@ -199,7 +199,7 @@ export const SECTIONS: SectionSpec[] = [
   {
     key: 'discovery',
     fields: ['smallCap', 'channels', 'readersNotes'],
-    brief: 'smallCap: the 0-1 discovery from socialPulse with full company name, surge evidence, market cap, liquidity check (omit field if none deserves it). channels: what the channels said, several names each with YOUR take. readersNotes: his observations tested against data — held up or contradicted (omit if userNotes is empty).',
+    brief: 'smallCap: the 0-1 discovery from socialPulse with full company name, surge evidence, market cap, liquidity check (omit field if none deserves it). channels: NAME the YouTube channels explicitly (e.g. \'Stocks with Josh\') — use channelConsensus stances where present AND recentChannelVideos titles for what each channel just covered; give YOUR take on each; if transcript data is thin say plainly what is known only from titles. readersNotes: his observations tested against data — held up or contradicted (omit if userNotes is empty).',
     shape: '{"smallCap":"<omit if none>","channels":"...","readersNotes":"<omit if no notes>"}',
   },
   {
