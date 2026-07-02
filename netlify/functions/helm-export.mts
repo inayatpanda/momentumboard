@@ -2,15 +2,20 @@ import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 
 // The Helm integration (Option A): one stable, read-only contract The Helm's
-// pull-agent hits on a schedule to archive every edition, pick, event and the
-// scorecard into its own SQLite. StreetSignal never depends on The Helm — it
-// just serves; The Helm pulls when the laptop is awake.
+// pull-agent hits on a schedule to archive every edition, pick, event, the
+// scorecard, and the owner's own trading data (journal trades, notes, config)
+// into its own SQLite. StreetSignal never depends on The Helm — it just serves;
+// The Helm pulls when the laptop is awake.
 //
 //   GET /api/export?summary=1        → cheap card payload for the Helm dashboard
 //   GET /api/export?since=<unixSec>  → everything changed since (incremental)
 //   GET /api/export                  → full snapshot (first backfill)
 //
 // Auth: the REPORT_TOKEN (the read-only external-reader credential) or APP_TOKEN.
+//
+// Helm's POST always inserts (auto-increment id) — it does NOT upsert by a
+// caller key. So the pull-agent must get-or-create per record. The natural,
+// stable srcId for each collection is noted inline on the payload below.
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -79,13 +84,29 @@ export async function routeExport(
   const allEvents = (await store.read<{ at: number }[]>('event-dossiers')) ?? []
   const events = allEvents.filter(e => e.at > since)
 
+  // Trading data — the owner's own irreplaceable records, for the private mirror.
+  // Trades ride the journal-backup blob's `at` watermark (rewritten on every
+  // journal change). Config has no per-record modified-time, so it and its notes
+  // ride along on every pull — the agent's get-or-create keeps that idempotent.
+  const backup = await store.read<{ trades?: unknown[]; at?: number }>('journal-backup')
+  const trades = backup && (backup.at ?? 0) > since ? backup.trades ?? [] : []
+
+  const configBlob = (await store.read<{ notes?: unknown[] } & Record<string, unknown>>('config')) ?? null
+  const notes = configBlob?.notes ?? []
+  // config as a single settings/watchlist doc, with notes split into their own
+  // collection above (avoids double-storing them).
+  const config = configBlob ? (({ notes: _drop, ...rest }) => rest)(configBlob) : null
+
   return json(200, {
     ok: true,
     data: {
       summary,
-      editions, // [{date, at, html}]
-      picks, // [{date, regime, picks:[...]}]
-      events, // [{kind, name, assessment, at, ...}]
+      editions, // [{date, at, html}]     — srcId: date
+      picks, // [{date, regime, picks}]    — srcId: date
+      events, // [{kind, name, at, ...}]   — srcId: `${at}:${name}`
+      trades, // [{id, ...}]               — srcId: id (present when journal changed since `since`)
+      notes, // [{id, kind, text, ...}]    — srcId: id
+      config, // single settings/watchlist doc (notes stripped) — srcId: 'current'
       now, // store this as the next `since` watermark
     },
   })

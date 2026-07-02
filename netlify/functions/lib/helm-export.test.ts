@@ -19,6 +19,18 @@ async function seed() {
     { date: '2026-07-02', at: 5_000, picks: [{ ticker: 'MS', side: 'long', priceAtPick: 110 }] },
   ])
   await store.write('event-dossiers', [{ kind: 'shock', name: 'Oil', assessment: 'up', at: 5_000 }])
+  await store.write('journal-backup', {
+    trades: [{ id: 't1', symbol: 'MS', side: 'long' }],
+    rules: [],
+    watchlist: [],
+    settings: {},
+    at: 5_000,
+  })
+  await store.write('config', {
+    watchlist: [{ symbol: 'MS' }],
+    capital: 5000,
+    notes: [{ id: 'n1', kind: 'observation', text: 'buy the dip not the chase' }],
+  })
   return store
 }
 
@@ -54,5 +66,24 @@ describe('routeExport', () => {
     const res = await routeExport(new URL('http://x/api/export'), new Headers({ 'x-report-token': 'rep' }), env, store)
     const body = await res.json()
     expect(body.data.editions).toHaveLength(2)
+  })
+
+  it('includes trades (when the journal changed), notes, and a notes-stripped config doc', async () => {
+    const store = await seed()
+    const res = await routeExport(new URL('http://x/api/export?since=2000'), new Headers({ 'x-app-token': 'app' }), env, store)
+    const body = await res.json()
+    expect(body.data.trades.map((t: { id: string }) => t.id)).toEqual(['t1']) // backup.at 5000 > 2000
+    expect(body.data.notes.map((n: { id: string }) => n.id)).toEqual(['n1'])
+    expect(body.data.config.capital).toBe(5000)
+    expect(body.data.config.notes).toBeUndefined() // notes split into their own collection
+  })
+
+  it('omits trades when the journal has not changed since the watermark; notes/config still ride along', async () => {
+    const store = await seed()
+    const res = await routeExport(new URL('http://x/api/export?since=9000'), new Headers({ 'x-app-token': 'app' }), env, store)
+    const body = await res.json()
+    expect(body.data.trades).toEqual([]) // backup.at 5000 <= 9000
+    expect(body.data.notes).toHaveLength(1)
+    expect(body.data.config.capital).toBe(5000)
   })
 })
