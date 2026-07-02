@@ -63,15 +63,16 @@ export async function routeVideoAnalyze(
 
   // mode=extract — tier-1 breadth: transcript + cheap text extraction → trend store
   if (body.mode === 'extract') {
-    if (!env.SUPADATA_API_KEY) return new Response('transcripts-unconfigured', { status: 200 })
-    const { fetchTranscript } = await import('./lib/transcripts')
+    // free scrape first (no key needed), Supadata as paid fallback if keyed
+    const { fetchTranscriptAny } = await import('./lib/transcripts')
     const { EXTRACT_PROMPT, parseExtract } = await import('./lib/videoTrends')
     const { callLlm } = await import('./ai-insights.mts')
     const extracts = (await store.read<{ url: string; at: number }[]>('video-extracts')) ?? []
     if (extracts.some(e => e.url === body.url)) return new Response('already-extracted', { status: 200 })
-    if (extracts.filter(e => nowSec - e.at < 86_400).length >= 15) return new Response('extract-daily-cap', { status: 200 })
-    const transcript = await fetchTranscript(body.url, env.SUPADATA_API_KEY)
-    if (!transcript) return new Response('no-transcript', { status: 200 })
+    if (extracts.filter(e => nowSec - e.at < 86_400).length >= 25) return new Response('extract-daily-cap', { status: 200 })
+    const got = await fetchTranscriptAny(body.url, env.SUPADATA_API_KEY)
+    if (!got) return new Response('no-transcript', { status: 200 })
+    const transcript = got.text
     try {
       const { text } = await callLlm(EXTRACT_PROMPT(body.title ?? '', body.channel ?? '', transcript), env)
       const extract = parseExtract(text, { url: body.url, title: body.title ?? '', channel: body.channel ?? '', at: nowSec })

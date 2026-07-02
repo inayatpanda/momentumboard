@@ -1,5 +1,65 @@
-/** Supadata transcript fetch — the one paid-tier dependency in the trend
- * pipeline (free tier: 100/mo). Absent key → callers skip gracefully. */
+/** Transcript chain: free scrape first (the same caption track the YouTube
+ * player loads — what browser extensions like Glasp read), Supadata as the
+ * paid fallback, null → callers degrade to titles. YouTube blocks datacenter
+ * IPs unpredictably, so the free tier is best-effort by design. */
+
+export function videoIdFrom(url: string): string | null {
+  return url.match(/(?:v=|youtu\.be\/|\/shorts\/)([A-Za-z0-9_-]{11})/)?.[1] ?? null
+}
+
+/** Pick the best caption track: human english > auto english > first. */
+export function pickTrack<T extends { languageCode?: string; kind?: string }>(tracks: T[]): T | null {
+  const en = tracks.find(t => t.languageCode?.startsWith('en') && t.kind !== 'asr')
+  const enAuto = tracks.find(t => t.languageCode?.startsWith('en'))
+  return en ?? enAuto ?? tracks[0] ?? null
+}
+
+/** Parse YouTube timedtext XML (<p t="..">text</p>) into clean plain text. */
+export function parseTimedText(xml: string): string {
+  const parts: string[] = []
+  for (const m of xml.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)) {
+    const text = m[1].replace(/<[^>]+>/g, '')
+    if (text.trim()) parts.push(text)
+  }
+  return parts
+    .join(' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Free tier: the InnerTube ANDROID player endpoint hands out caption URLs that
+ * work without a proof-of-origin token (the watch-page route returns empty
+ * bodies since YouTube's 2024 POT enforcement — verified). Best-effort: if
+ * YouTube closes this too, the chain falls through to Supadata. */
+export async function fetchTranscriptFree(videoUrl: string, fetchFn: typeof fetch = fetch): Promise<string | null> {
+  try {
+    const id = videoIdFrom(videoUrl)
+    if (!id) return null
+    const ANDROID_UA = 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip'
+    const res = await fetchFn('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'user-agent': ANDROID_UA },
+      body: JSON.stringify({ context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30, hl: 'en' } }, videoId: id }),
+    })
+    if (!res.ok) return null
+    const j = (await res.json()) as { captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: { baseUrl: string; languageCode?: string; kind?: string }[] } } }
+    const track = pickTrack(j.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [])
+    if (!track) return null
+    const cap = await fetchFn(track.baseUrl, { headers: { 'user-agent': ANDROID_UA } })
+    if (!cap.ok) return null
+    const text = parseTimedText(await cap.text())
+    return text.length > 100 ? text : null // too short = blocked/empty artefact
+  } catch {
+    return null
+  }
+}
+
+/** Supadata (paid fallback; free tier 100/mo). Absent key → callers skip gracefully. */
 export async function fetchTranscript(videoUrl: string, apiKey: string, fetchFn: typeof fetch = fetch): Promise<string | null> {
   try {
     const res = await fetchFn(`https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(videoUrl)}&text=true`, {
@@ -13,4 +73,15 @@ export async function fetchTranscript(videoUrl: string, apiKey: string, fetchFn:
   } catch {
     return null
   }
+}
+
+/** The chain: free scrape → Supadata (if keyed) → null. */
+export async function fetchTranscriptAny(videoUrl: string, supadataKey: string | undefined, fetchFn: typeof fetch = fetch): Promise<{ text: string; source: 'free' | 'supadata' } | null> {
+  const free = await fetchTranscriptFree(videoUrl, fetchFn)
+  if (free) return { text: free, source: 'free' }
+  if (supadataKey) {
+    const paid = await fetchTranscript(videoUrl, supadataKey, fetchFn)
+    if (paid) return { text: paid, source: 'supadata' }
+  }
+  return null
 }

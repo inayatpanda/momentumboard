@@ -119,7 +119,8 @@ export default async () => {
   // depth tier: Gemini fully watches the few videos that earn it (202 returns instantly)
   for (const v of worthWatching) await dispatch(v, 'watch')
   // breadth tier: EVERY new video gets transcript+extraction for the consensus maths
-  if (process.env.SUPADATA_API_KEY) for (const v of newVideos.slice(0, 8)) await dispatch(v, 'extract')
+  // (free caption scrape needs no key; Supadata is the fallback when keyed)
+  for (const v of newVideos.slice(0, 8)) await dispatch(v, 'extract')
 
   // alert history for the in-app screen
   if (events.length) {
