@@ -21,8 +21,12 @@ export function Watchlist() {
   const mirrorTimer = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
-    db.watchlist.toArray().then(items => setSymbols(items.map(i => i.symbol)))
+    db.watchlist.toArray().then(items => {
+      setSymbols(items.map(i => i.symbol))
+      if (items.length) mirror() // ensure the server sees pre-existing watchlists
+    })
     db.rules.toArray().then(setRules)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const mirror = useCallback(() => {
