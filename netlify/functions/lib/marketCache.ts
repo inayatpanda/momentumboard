@@ -29,3 +29,36 @@ export async function cachedCandles(sym: string): Promise<Candle[] | null> {
     return null
   }
 }
+
+/** 5y bars exist ONLY for seasonality — the lib refuses to call a tendency
+ * reliable under ~2 years, and the 1y cache can never satisfy that. Weekly TTL:
+ * five years of history doesn't change overnight. */
+export async function cachedCandles5y(sym: string): Promise<Candle[] | null> {
+  const key = `candles:${sym}:5y`
+  const hit = await getCached<{ candles: Candle[] }>(key)
+  if (hit) return hit.candles
+  try {
+    const data = await fetchYahooChart(sym, '5y')
+    await setCached(key, data, 7 * 86_400)
+    return data.candles
+  } catch {
+    return null
+  }
+}
+
+/** Market cap in $M — same `cap:` keys market-data already writes, so the two
+ * paths share one cache. */
+export async function cachedCapUsdM(sym: string, finnhubKey: string): Promise<number | null> {
+  const key = `cap:${sym}`
+  const hit = await getCached<{ capUsdM: number | null; name?: string }>(key)
+  if (hit) return hit.capUsdM
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${sym}&token=${finnhubKey}`)
+    const j = (await res.json()) as { marketCapitalization?: number; name?: string }
+    const cap = { capUsdM: j.marketCapitalization ?? null, name: j.name }
+    await setCached(key, cap, 86_400)
+    return cap.capUsdM
+  } catch {
+    return null
+  }
+}

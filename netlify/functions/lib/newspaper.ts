@@ -18,6 +18,60 @@ export interface Idea {
   expectedMove?: string
   chartRead?: string
   streetCheck?: string
+  predictionId?: string // joins the idea to its engine-ledger record
+  overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string } // the LLM's one qualitative power — logged and graded
+}
+
+// what the composer is allowed to know (and must not alter) about a board call
+export interface BoardIdeaSlim {
+  id: string
+  sym: string
+  side: 'long' | 'short'
+  entry: number
+  stop: number
+  target: number
+  probability: number
+  grade: 'A' | 'B' | 'C'
+  expectedMovePct: number
+  instrument: { ticker: string; leverage: number } | null
+  paperOnly: boolean
+}
+
+/** The journalist writes the case; the engine wrote the numbers. Ideas not on
+ * the board are rejected outright; board numbers overwrite whatever the LLM
+ * typed; vetoes drop from the paper but live on in the ledger to be graded. */
+export function constrainIdeasToBoard(
+  ideas: Idea[],
+  board: BoardIdeaSlim[],
+): { ideas: Idea[]; overlays: { predictionId: string; flag: 'boost' | 'caution' | 'veto'; reason: string }[]; rejected: string[] } {
+  const out: Idea[] = []
+  const overlays: { predictionId: string; flag: 'boost' | 'caution' | 'veto'; reason: string }[] = []
+  const rejected: string[] = []
+  for (const idea of ideas) {
+    const b = board.find(x => x.sym === idea.ticker?.toUpperCase() && x.side === idea.side)
+    if (!b) {
+      rejected.push(`${idea.ticker} ${idea.side}`)
+      continue
+    }
+    const overlay =
+      idea.overlay && ['boost', 'caution', 'veto'].includes(idea.overlay.flag) && typeof idea.overlay.reason === 'string'
+        ? { flag: idea.overlay.flag, reason: idea.overlay.reason.slice(0, 200) }
+        : undefined
+    if (overlay) overlays.push({ predictionId: b.id, ...overlay })
+    if (overlay?.flag === 'veto') continue
+    out.push({
+      ...idea,
+      ticker: b.sym,
+      entry: String(b.entry),
+      invalidation: String(b.stop),
+      target: String(b.target),
+      conviction: b.grade,
+      predictionId: b.id,
+      overlay,
+      expectedMove: idea.expectedMove ?? `~${b.expectedMovePct}% over 5-10 sessions`,
+    })
+  }
+  return { ideas: out, overlays, rejected }
 }
 
 export interface ComposedReport {
@@ -199,14 +253,15 @@ export const SECTIONS: SectionSpec[] = [
   {
     key: 'ideas',
     fields: ['ideas', 'shortDesk'],
-    brief: `1-3 long ideas MAX and the short desk (0-2 fades via LSE inverse ETPs, or say no clean fade). THE BAR: an idea must (a) be able to MOVE — typical10dMovePct at least 8 in candidateReads — AND (b) be at a GOOD ENTRY (entryQuality early or a clean setup), NOT extended/exhausted. A stretched momentum leader is a chase; reject it as a long. Rules:
-- expectedMove: state the realistic move and window ("+8-12% in 2 weeks"), justified by that ticker's typical10dMovePct. NEVER promise more than ~1.3x its capacity number.
-- strength:"strong" requires BOTH capable10pct:true (capacity >= 8%) AND independent confirmation from channelConsensus, socialPulse, insiderBuying or an event — cite it.
-- chartRead (every idea): its stage and volume read from candidateReads (e.g. 'early reversal, turning up on volume' or 'extended, wait for a pullback to X').
-- streetCheck (every idea): the YOUTUBE CHANNELS first (by name, from channelConsensus/recentChannelVideos), then Reddit/Stocktwits — "2 channels bullish, 340 Reddit mentions surging 2x" or honestly "silent on the channels".
-- Slow mega-caps (capacity < 6%) are NOT swing ideas — context only, or route them through a leveraged LSE ETP (state the ETP; capacity roughly x3 the underlying).
-- Full company name once in caseText; playbook tag; entry/invalidation/target numeric ONLY if the price is in the data, else qualitative; conviction A/B/C; strong needs 3-5 numbered reasons.`,
-    shape: '{"ideas":[{"ticker":"XYZ","side":"long|short","playbook":"R|B|A|S","caseText":"...","expectedMove":"+X-Y% in N weeks","chartRead":"...","streetCheck":"...","entry":"...","invalidation":"...","target":"...","conviction":"A|B|C","strength":"strong (omit unless earned)","reasons":["..."]}],"shortDesk":"..."}',
+    brief: `1-3 long ideas MAX and the short desk (0-2 fades), plus shortDesk prose.
+IF engineBoard IS PRESENT in the data (the quant engine's scored calls, each with probability/grade/entry/stop/target): you are the JOURNALIST, not the analyst. HARD RULES:
+- Select ideas ONLY from engineBoard entries — ticker and side copied exactly; you may NOT introduce any other ticker as an idea.
+- Copy entry, invalidation (the stop), target and conviction (the grade) VERBATIM from the board entry. You write the caseText, chartRead (from its stage/note), streetCheck (channels by name, then Reddit/Stocktwits), and 2-4 numbered reasons from the factor details.
+- You get ONE qualitative power per idea: an optional overlay {"flag":"boost|caution|veto","reason":"<grounded in a REAL headline or event in the data>"}. veto = the idea is dropped from the paper (say why in shortDesk if a short, lead if a long). Use it sparingly — every overlay is logged and graded against what price then did.
+- paperOnly:true board shorts are analysis, not executable — present them as "fade/avoid" and say the ETP route is locked until the risk ladder earns it. Board entries with an instrument: name the ETP ticker and its leverage, warn on daily-rebalance decay, max hold 10 sessions.
+- strength:"strong" only for grade A board entries with an independent confirming pillar (channel take, insider buys, headline) — cite it.
+IF engineBoard IS ABSENT (engine offline): fall back to candidateReads — an idea must have typical10dMovePct >= 8 AND a good entry (entryQuality early, never extended/exhausted); expectedMove <= 1.3x capacity; numeric levels ONLY if the price is in the data.`,
+    shape: '{"ideas":[{"ticker":"XYZ","side":"long|short","playbook":"R|B|A|S","caseText":"...","expectedMove":"+X-Y% in N weeks","chartRead":"...","streetCheck":"...","entry":"...","invalidation":"...","target":"...","conviction":"A|B|C","strength":"strong (omit unless earned)","reasons":["..."],"overlay":{"flag":"boost|caution|veto","reason":"<omit overlay entirely unless earned>"}}],"shortDesk":"..."}',
   },
   {
     key: 'discovery',

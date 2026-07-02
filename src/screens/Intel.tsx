@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
 import { getEcon, getCalendar, getConsensus, getInsiders, getSmartMoney, getVideoAnalyses, getFeed, getAlertHistory, getSocialPulse, getSectors } from '../lib/api'
 import { IconGear, IconCalendar, IconLandmark, IconFlame, IconPlay, stripEmoji } from '../components/icons'
+import { EngineBoard } from '../components/EngineBoard'
 
 // Intel, in three streams the user asked for:
 //   Markets: macro, earnings, 13F, headlines, alerts
@@ -59,6 +60,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
 
         {tab === 'Markets' && (
           <>
+            <EngineBoard />
             {econ.length > 0 && (
               <section className="digest-section">
                 <h3 className="section-title">Macro this week: Fed, data, tape-movers</h3>

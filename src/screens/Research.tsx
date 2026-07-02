@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getAiRead, getPicks, getPickStats, getOutcomes, getEventDossiers } from '../lib/api'
 import { IconGear, IconNews, IconFlame, IconBalloon, IconPin, IconTarget, IconShare } from '../components/icons'
+import { EnginePanel } from '../components/EnginePanel'
 
 // Research: everything the analyst produces and how it performs.
 // The accountability page: reports, picks, persistence, scorecard, track record.
@@ -27,6 +28,7 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
       <div className="content digest-cols">
+        <EnginePanel />
         {events.length > 0 && (
           <section className="digest-section">
             <h3 className="section-title">Event assessments</h3>

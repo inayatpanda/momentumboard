@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed-engine": "vite-node scripts/seed-engine.ts",
+    "engine-dry-run": "vite-node scripts/engine-dry-run.ts"
   },
   "dependencies": {
     "dexie": "^4.0.8",

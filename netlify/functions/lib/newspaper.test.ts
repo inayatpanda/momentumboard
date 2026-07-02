@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseComposed, buildNewspaperHtml, mergeSections, sectionPrompt, SECTIONS, type ComposedReport } from './newspaper'
+import { parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, type ComposedReport } from './newspaper'
 
 const sample: ComposedReport = {
   headline: 'Tech Leads a Cautious Tape Higher',
@@ -78,5 +78,48 @@ describe('sectioned compose', () => {
       expect(p).toContain('DATA-MARKER')
       for (const f of spec.fields) expect(p).toContain(f)
     }
+  })
+})
+
+describe('constrainIdeasToBoard', () => {
+  const board = [
+    { id: '2026-07-02:NVDA:short', sym: 'NVDA', side: 'short' as const, entry: 162, stop: 178.2, target: 145.8, probability: 0.67, grade: 'A' as const, expectedMovePct: 6.1, instrument: null, paperOnly: true },
+    { id: '2026-07-02:PLTR:long', sym: 'PLTR', side: 'long' as const, entry: 30, stop: 27, target: 36, probability: 0.58, grade: 'B' as const, expectedMovePct: 8, instrument: { ticker: 'LPLT', leverage: 2 }, paperOnly: false },
+  ]
+  const idea = (over: Record<string, unknown> = {}) => ({
+    ticker: 'NVDA', side: 'short' as const, playbook: 'S' as const, caseText: 'case',
+    entry: '999', invalidation: '1', target: '2', conviction: 'C' as const, ...over,
+  })
+
+  it('rejects tickers not on the board; board numbers overwrite LLM numbers', () => {
+    const { ideas, rejected } = constrainIdeasToBoard([idea(), idea({ ticker: 'HALLUCIN' })] as never, board)
+    expect(rejected).toEqual(['HALLUCIN short'])
+    expect(ideas).toHaveLength(1)
+    expect(ideas[0].entry).toBe('162')
+    expect(ideas[0].invalidation).toBe('178.2')
+    expect(ideas[0].target).toBe('145.8')
+    expect(ideas[0].conviction).toBe('A') // grade, not the LLM's C
+    expect(ideas[0].predictionId).toBe('2026-07-02:NVDA:short')
+  })
+
+  it('veto drops the idea from the paper but records the overlay for grading', () => {
+    const { ideas, overlays } = constrainIdeasToBoard(
+      [idea({ overlay: { flag: 'veto', reason: 'CEO subpoenaed this morning' } }), idea({ ticker: 'PLTR', side: 'long', overlay: { flag: 'boost', reason: 'earnings beat in headlines' } })] as never,
+      board,
+    )
+    expect(ideas).toHaveLength(1)
+    expect(ideas[0].ticker).toBe('PLTR')
+    expect(ideas[0].overlay?.flag).toBe('boost')
+    expect(overlays).toEqual([
+      { predictionId: '2026-07-02:NVDA:short', flag: 'veto', reason: 'CEO subpoenaed this morning' },
+      { predictionId: '2026-07-02:PLTR:long', flag: 'boost', reason: 'earnings beat in headlines' },
+    ])
+  })
+
+  it('junk overlay flags are ignored, idea kept', () => {
+    const { ideas, overlays } = constrainIdeasToBoard([idea({ overlay: { flag: 'nuke', reason: 'x' } })] as never, board)
+    expect(ideas).toHaveLength(1)
+    expect(ideas[0].overlay).toBeUndefined()
+    expect(overlays).toEqual([])
   })
 })

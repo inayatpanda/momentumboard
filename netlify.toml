@@ -12,8 +12,18 @@
   status = 200
 
 [[redirects]]
+  from = "/api/engine"
+  to = "/.netlify/functions/engine"
+  status = 200
+
+[[redirects]]
   from = "/api/config"
   to = "/.netlify/functions/config-sync"
+  status = 200
+
+[[redirects]]
+  from = "/api/export"
+  to = "/.netlify/functions/export"
   status = 200
 
 [[redirects]]
