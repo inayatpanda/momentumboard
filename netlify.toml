@@ -15,3 +15,8 @@
   from = "/api/config"
   to = "/.netlify/functions/config-sync"
   status = 200
+
+[[redirects]]
+  from = "/report"
+  to = "/.netlify/functions/report"
+  status = 200
