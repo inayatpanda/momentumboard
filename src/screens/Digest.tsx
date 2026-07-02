@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory, getVideoAnalyses, getConsensus } from '../lib/api'
+import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory, getVideoAnalyses, getConsensus, getPicks } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPct } from '../lib/format'
 import { useMarketData } from '../hooks/useMarketData'
@@ -24,6 +24,7 @@ export function Digest() {
   const [history, setHistory] = useState<Awaited<ReturnType<typeof getAlertHistory>>>([])
   const [videoAnalyses, setVideoAnalyses] = useState<Awaited<ReturnType<typeof getVideoAnalyses>>>([])
   const [consensus, setConsensus] = useState<Awaited<ReturnType<typeof getConsensus>> | null>(null)
+  const [picks, setPicks] = useState<Awaited<ReturnType<typeof getPicks>> | null>(null)
   const { rows } = useMarketData(symbols)
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export function Digest() {
     getAlertHistory().then(setHistory).catch(() => {})
     getVideoAnalyses().then(setVideoAnalyses).catch(() => {})
     getConsensus().then(setConsensus).catch(() => {})
+    getPicks().then(setPicks).catch(() => {})
     getCapital().then(c => setCapital(String(c)))
     getChannels().then(setChannels)
   }, [])
@@ -144,6 +146,25 @@ export function Digest() {
             ))}
           </ul>
         </section>
+
+        {picks && picks.persistence.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Report picks — persistence ({picks.reports} reports tracked)</h3>
+            {picks.persistence.slice(0, 10).map(p => (
+              <div key={p.ticker + p.side} className="perf-row" style={p.persistent ? { borderColor: 'rgba(34,201,141,0.5)' } : undefined}>
+                <span>
+                  {p.ticker} <span className={`badge ${p.side === 'long' ? 'good' : 'bad'}`}>{p.side}</span>{' '}
+                  {p.persistent && <span className="badge good">📌 persistent</span>}
+                </span>
+                <span style={{ color: 'var(--muted)' }}>
+                  {p.streak > 1 ? `${p.streak} in a row` : `${p.appearances} of last 7`}
+                  {p.latestConviction ? ` · grade ${p.latestConviction}` : ''}
+                </span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>A pick surviving several independent daily analyses is stronger evidence than one day's conviction — but persistence is not a guarantee.</p>
+          </section>
+        )}
 
         {consensus && consensus.tickers.length > 0 && (
           <section className="digest-section">

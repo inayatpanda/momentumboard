@@ -35,6 +35,33 @@ export async function routeReport(
 
   if (method === 'PUT') {
     if (!env.REPORT_TOKEN || headers.get('x-report-token') !== env.REPORT_TOKEN) return json(401, { ok: false, error: 'unauthorized' })
+
+    // JSON body = the day's structured picks (published alongside the HTML article)
+    if ((headers.get('content-type') ?? '').includes('application/json')) {
+      const { validatePicks, newlyPersistent } = await import('./lib/picks')
+      let picks
+      try {
+        picks = validatePicks(bodyText ? JSON.parse(bodyText) : null)
+      } catch {
+        picks = null
+      }
+      if (!picks) return json(400, { ok: false, error: 'invalid-picks' })
+      const history = ((await store.read<(typeof picks)[]>('report-picks')) ?? []).filter(h => h.date !== picks.date)
+      history.push(picks)
+      history.sort((a, b) => a.date.localeCompare(b.date))
+      await store.write('report-picks', history.slice(-60))
+      const monthKey = `report-picks:${picks.date.slice(0, 7)}`
+      const archive = ((await store.read<unknown[]>(monthKey)) ?? []).filter(h => (h as { date: string }).date !== picks.date)
+      archive.push(picks)
+      await store.write(monthKey, archive)
+      const fresh = newlyPersistent(history.slice(-60))
+      if (fresh.length && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+        const msg = fresh.map(p => `📌 ${p.ticker} (${p.side}) is now a PERSISTENT pick — ${p.streak >= 3 ? `${p.streak} reports running` : `${p.appearances} of the last 7 reports`}. Independent daily analyses keep converging on it.`).join('\n')
+        await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, msg).catch(() => {})
+      }
+      return json(200, { ok: true, data: { stored: picks.date, newlyPersistent: fresh } })
+    }
+
     if (!bodyText || !bodyText.includes('<') || bodyText.length > MAX_BYTES) return json(400, { ok: false, error: 'invalid-html' })
     const at = Math.floor(Date.now() / 1000)
     const report: StoredReport = { html: bodyText, at }

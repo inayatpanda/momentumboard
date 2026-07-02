@@ -27,6 +27,11 @@ export async function routeConfig(
       const analyses = (await store.read<unknown[]>('video-analyses')) ?? []
       return json(200, { ok: true, data: analyses.slice(-10).reverse() })
     }
+    if (url.searchParams.get('view') === 'picks') {
+      const { computePersistence } = await import('./lib/picks')
+      const history = ((await store.read<unknown[]>('report-picks')) ?? []) as Parameters<typeof computePersistence>[0]
+      return json(200, { ok: true, data: { persistence: computePersistence(history), reports: history.length, latest: history[history.length - 1] ?? null } })
+    }
     if (url.searchParams.get('view') === 'consensus') {
       const { computeConsensus } = await import('./lib/videoTrends')
       const extracts = ((await store.read<unknown[]>('video-extracts')) ?? []) as Parameters<typeof computeConsensus>[0]
