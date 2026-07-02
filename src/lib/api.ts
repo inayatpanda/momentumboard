@@ -173,3 +173,48 @@ export async function putConfig(cfg: AppConfig): Promise<void> {
   const body = (await res.json()) as ApiEnvelope<AppConfig>
   if (!body.ok) throw new Error(body.error ?? `http-${res.status}`)
 }
+
+// ---- the prediction engine ----
+
+export interface EnginePrediction {
+  id: string
+  sym: string
+  side: 'long' | 'short'
+  composite: number
+  probability: number
+  provisional: boolean
+  grade: 'A' | 'B' | 'C'
+  expectedMovePct: number
+  entry: number
+  stop: number
+  target: number
+  capacityPct: number
+  smallCap: boolean
+  earningsRisk: boolean
+  stage: string | null
+  note: string
+  riskRung: number
+  riskPct: number
+  instrument: { ticker: string; leverage: number } | null
+  paperOnly: boolean
+  factors: Record<string, { score: number | null; detail: string; weight: number }>
+  overlay?: { flag: string; reason: string }
+}
+
+export interface EngineData {
+  board: { date: string; generatedAt: number; regime: string; board: EnginePrediction[] } | null
+  scorecard: {
+    byGrade: Record<string, { n: number; hits: number; sumExcess: number }>
+    byRegime: Record<string, { n: number; hits: number }>
+    overlays: Record<string, { n: number; hits: number }>
+    brierTail: { date: string; mean: number; n: number }[]
+    totalGraded: number
+  } | null
+  weights: { base: Record<string, number>; current: Record<string, number>; history: { date: string; changes: Record<string, { from: number; to: number; ic: number }>; evidence: string }[] } | null
+  calibration: { buckets: Record<string, { n: number; hits: number }>; brier: { date: string; mean: number; n: number }[]; seeded: boolean } | null
+  riskState: { rung: number; sinceDate: string; gradedAtRung: number; history: { date: string; from: number; to: number; evidence: string }[] } | null
+  roster: { entries: { sym: string; joined: string; source: string; capUsdM: number | null; lastCapacity: number | null }[]; changes: { date: string; joined: string[]; dropped: { sym: string; why: string }[] }[] } | null
+  channelCred: Record<string, { graded: number; hits: number; avgExcess: number | null }>
+}
+
+export const getEngine = () => apiGet<EngineData>('/api/engine')
