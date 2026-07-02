@@ -26,6 +26,7 @@ export interface StopWatch {
 export interface TickerSnapshot {
   symbol: string
   price: number | null
+  changePct?: number | null
   rvol: number | null
   rsi: number | null
   setups: SetupKind[]

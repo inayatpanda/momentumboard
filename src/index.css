@@ -417,6 +417,23 @@ button, input { font: inherit; }
 .price.flash-up { animation: flashUp 0.9s ease-out; }
 .price.flash-down { animation: flashDown 0.9s ease-out; }
 
+/* ---------- trending strip ---------- */
+.trend-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 10px; scrollbar-width: none; }
+.trend-strip::-webkit-scrollbar { display: none; }
+.trend-chip {
+  flex: 0 0 auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-num);
+  white-space: nowrap;
+}
+.trend-chip em { font-style: normal; margin-left: 3px; }
+.trend-chip.mkt { border-style: dashed; color: var(--muted); }
+
 /* ---------- journal ---------- */
 .risk-banner {
   background: var(--amber-soft);

@@ -51,7 +51,7 @@ export default async () => {
             rsiVal = r[r.length - 1]
             setups = detectSetups(candles, rvol)
           }
-          return { symbol, price: quote?.price ?? null, rvol, rsi: rsiVal, setups, marketOpen: open }
+          return { symbol, price: quote?.price ?? null, changePct: quote?.changePct ?? null, rvol, rsi: rsiVal, setups, marketOpen: open }
         } catch (e) {
           errors.push(`${symbol}: ${e}`)
           return null
@@ -153,6 +153,52 @@ export default async () => {
   }
 
   for (const e of events.filter((e: AlertEvent) => e.tier === 'instant')) await deliver(e.text.startsWith('🛑') ? e.text : `🔔 ${e.text}`)
+
+  // macro-event warnings: FOMC/CPI/NFP morning-of + 1h before (idempotent via seenItems keys)
+  try {
+    const { fetchEconCalendar, dueMacroWarnings } = await import('./lib/econCalendar')
+    const { getCached, setCached } = await import('./lib/cache')
+    let econ = await getCached<Awaited<ReturnType<typeof fetchEconCalendar>>>('econ-calendar')
+    if (!econ) {
+      econ = await fetchEconCalendar()
+      await setCached('econ-calendar', econ, 21_600)
+    }
+    for (const w of dueMacroWarnings(econ, nowSec, afterEval.seenItems)) {
+      afterEval.seenItems.push(w.key)
+      await deliver(w.text)
+      const history = (await store.read<unknown[]>('alert-history')) ?? []
+      history.push({ text: w.text, tier: 'instant', at: nowSec })
+      await store.write('alert-history', history.slice(-200))
+    }
+  } catch (e) {
+    errors.push(`econ: ${e}`)
+  }
+
+  // intraday trending: watchlist movers + market-wide (Yahoo trending), snapshotted through the day
+  try {
+    const { getCached, setCached } = await import('./lib/cache')
+    let market = await getCached<{ sym: string; changePct: number | null }[]>('mkt-trending')
+    if (!market) {
+      const res = await fetch('https://query1.finance.yahoo.com/v1/finance/trending/US?count=8', { headers: { 'User-Agent': 'Mozilla/5.0 (MomentumBoard)' } })
+      const j = (await res.json()) as { finance?: { result?: { quotes?: { symbol: string }[] }[] } }
+      const syms = (j.finance?.result?.[0]?.quotes ?? []).map(q => q.symbol).slice(0, 8)
+      market = await Promise.all(syms.map(async sym => ({ sym, changePct: (await cachedQuote(sym, finnhubKey))?.changePct ?? null })))
+      await setCached('mkt-trending', market, 600)
+    }
+    const watchlistMovers = snapshots
+      .filter((s): s is TickerSnapshot => s !== null && s.changePct != null)
+      .sort((a, b) => Math.abs(b.changePct!) - Math.abs(a.changePct!))
+      .slice(0, 8)
+      .map(s => ({ sym: s.symbol, changePct: s.changePct!, rvol: s.rvol, setups: s.setups }))
+    await store.write('trending', { at: nowSec, watchlist: watchlistMovers, market })
+    const timeline = (await store.read<{ at: number }[]>('trending-timeline')) ?? []
+    if (!timeline.length || nowSec - timeline[timeline.length - 1].at > 1700) {
+      timeline.push({ at: nowSec, watchlist: watchlistMovers.slice(0, 3), market: market.slice(0, 3) } as never)
+      await store.write('trending-timeline', timeline.slice(-30))
+    }
+  } catch (e) {
+    errors.push(`trending: ${e}`)
+  }
 
   const { digest, state: finalState } = flushBatch(afterEval, nowSec)
   if (digest) await deliver(digest)

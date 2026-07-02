@@ -27,6 +27,31 @@ export async function routeConfig(
       const analyses = (await store.read<unknown[]>('video-analyses')) ?? []
       return json(200, { ok: true, data: analyses.slice(-10).reverse() })
     }
+    if (url.searchParams.get('view') === 'trending') {
+      const [current, timeline] = await Promise.all([store.read('trending'), store.read('trending-timeline')])
+      return json(200, { ok: true, data: { current: current ?? null, timeline: (timeline as unknown[])?.slice(-12) ?? [] } })
+    }
+    if (url.searchParams.get('view') === 'outcomes') {
+      const { perDayOutcomes } = await import('./lib/picks')
+      const { cachedCandles } = await import('./lib/marketCache')
+      const history = ((await store.read<unknown[]>('report-picks')) ?? []) as Parameters<typeof perDayOutcomes>[0]
+      const symbols = [...new Set(history.flatMap(d => d.picks.map(p => p.ticker)))].slice(0, 40)
+      const pairs = await Promise.all(symbols.map(async s => [s, await cachedCandles(s)] as const))
+      const candlesBySymbol = new Map(pairs.filter((p): p is [string, NonNullable<(typeof pairs)[0][1]>] => p[1] !== null))
+      return json(200, { ok: true, data: perDayOutcomes(history, candlesBySymbol).slice(0, 14) })
+    }
+    if (url.searchParams.get('view') === 'scorecard') {
+      const { getCached } = await import('./lib/cache')
+      const cached = await getCached('pick-stats')
+      if (cached) return json(200, { ok: true, data: cached })
+      const { scorePicks } = await import('./lib/picks')
+      const { cachedCandles } = await import('./lib/marketCache')
+      const history = ((await store.read<unknown[]>('report-picks')) ?? []) as Parameters<typeof scorePicks>[0]
+      const symbols = [...new Set(history.flatMap(d => d.picks.map(p => p.ticker)))].slice(0, 40)
+      const pairs = await Promise.all(symbols.map(async s => [s, await cachedCandles(s)] as const))
+      const candlesBySymbol = new Map(pairs.filter((p): p is [string, NonNullable<(typeof pairs)[0][1]>] => p[1] !== null))
+      return json(200, { ok: true, data: { scores: scorePicks(history, candlesBySymbol), reports: history.length } })
+    }
     if (url.searchParams.get('view') === 'picks') {
       const { computePersistence } = await import('./lib/picks')
       const history = ((await store.read<unknown[]>('report-picks')) ?? []) as Parameters<typeof computePersistence>[0]

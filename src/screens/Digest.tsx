@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory, getVideoAnalyses, getConsensus, getPicks, getPickStats } from '../lib/api'
+import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory, getVideoAnalyses, getConsensus, getPicks, getPickStats, getEcon, getOutcomes } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPct } from '../lib/format'
 import { useMarketData } from '../hooks/useMarketData'
@@ -26,6 +26,8 @@ export function Digest() {
   const [consensus, setConsensus] = useState<Awaited<ReturnType<typeof getConsensus>> | null>(null)
   const [picks, setPicks] = useState<Awaited<ReturnType<typeof getPicks>> | null>(null)
   const [pickStats, setPickStats] = useState<Awaited<ReturnType<typeof getPickStats>> | null>(null)
+  const [econ, setEcon] = useState<Awaited<ReturnType<typeof getEcon>>>([])
+  const [outcomes, setOutcomes] = useState<Awaited<ReturnType<typeof getOutcomes>>>([])
   const { rows } = useMarketData(symbols)
 
   useEffect(() => {
@@ -46,6 +48,8 @@ export function Digest() {
     getConsensus().then(setConsensus).catch(() => {})
     getPicks().then(setPicks).catch(() => {})
     getPickStats().then(setPickStats).catch(() => {})
+    getEcon().then(setEcon).catch(() => {})
+    getOutcomes().then(setOutcomes).catch(() => {})
     getCapital().then(c => setCapital(String(c)))
     getChannels().then(setChannels)
   }, [])
@@ -121,6 +125,48 @@ export function Digest() {
           ))}
           {perf.length === 0 && <p className="empty-line">No watchlist data yet.</p>}
         </section>
+
+        {econ.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Macro this week — Fed, data, tape-movers</h3>
+            {econ.slice(0, 8).map(e => (
+              <div key={e.title + e.at} className="perf-row">
+                <span>
+                  {e.title} <span className={`badge ${e.impact === 'High' ? 'bad' : 'warn'}`}>{e.impact}</span>
+                </span>
+                <span style={{ color: 'var(--muted)' }}>
+                  {new Date(e.at * 1000).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })} UK · {e.country}
+                </span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>High-impact events ping Telegram the morning of and an hour before.</p>
+          </section>
+        )}
+
+        {outcomes.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Past reports — the research record</h3>
+            {outcomes.slice(0, 7).map(d => (
+              <div key={d.date} className="perf-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 3 }}>
+                <span>
+                  <a href={`/report?date=${d.date}`} target="_blank" rel="noreferrer" style={{ color: 'var(--text)' }}>
+                    {new Date(d.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </a>
+                  {d.regime && <span className={`badge ${d.regime === 'green' ? 'good' : d.regime === 'red' ? 'bad' : 'warn'}`} style={{ marginLeft: 6 }}>{d.regime}</span>}
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  {d.picks.map(p => (
+                    <span key={p.ticker + p.side} style={{ marginRight: 10 }}>
+                      {p.strength === 'strong' && '🎯'}{p.ticker}{p.side === 'short' ? '↓' : ''}
+                      {p.f5 != null && <em className={p.f5 >= 0 ? 'up-text' : 'down-text'} style={{ fontStyle: 'normal' }}> {p.f5 >= 0 ? '+' : ''}{p.f5.toFixed(1)}%</em>}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>Each date links to the full article; the % is what price did in the 5 sessions after the call.</p>
+          </section>
+        )}
 
         <section className="digest-section">
           <h3 className="section-title">Earnings — next 14 days</h3>

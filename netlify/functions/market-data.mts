@@ -145,6 +145,19 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'econ') {
+    const hit = await getCached<unknown>('econ-calendar')
+    if (hit) return json(200, { ok: true, data: { events: hit } })
+    try {
+      const { fetchEconCalendar } = await import('./lib/econCalendar')
+      const events = await fetchEconCalendar()
+      await setCached('econ-calendar', events, 21_600)
+      return json(200, { ok: true, data: { events } })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
   if (type === 'pick-stats') {
     const hit = await getCached<unknown>('pick-stats')
     if (hit) return json(200, { ok: true, data: hit })

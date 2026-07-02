@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
-import { getToken, setToken, getRunlog } from '../lib/api'
+import { getToken, setToken, getRunlog, getTrending } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { useMarketData } from '../hooks/useMarketData'
 import { useAlerts } from '../hooks/useAlerts'
@@ -16,6 +16,7 @@ export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
   const [hasToken, setHasToken] = useState(!!getToken())
   const [sortBy, setSortBy] = useState<'default' | 'change' | 'rvol' | 'setups'>('default')
   const [checkerStale, setCheckerStale] = useState(false)
+  const [trending, setTrending] = useState<Awaited<ReturnType<typeof getTrending>>['current']>(null)
   const { rows, regime, lastUpdated, error } = useMarketData(symbols)
   const toasts = useAlerts(rows, regime, rules)
 
@@ -31,6 +32,10 @@ export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
         setCheckerStale(!!last && Date.now() / 1000 - last.at > 1200)
       })
       .catch(() => {})
+    const loadTrending = () => getTrending().then(t => setTrending(t.current)).catch(() => {})
+    loadTrending()
+    const ti = setInterval(loadTrending, 300_000)
+    return () => clearInterval(ti)
   }, [])
 
   const sortedRows = [...rows].sort((a, b) => {
@@ -103,6 +108,20 @@ export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
           </div>
         )}
         {checkerStale && <div className="risk-banner">⚠ The background alert checker hasn't run in 20+ minutes — alerts may be delayed.</div>}
+        {trending && (trending.watchlist.length > 0 || trending.market.length > 0) && (
+          <div className="trend-strip" aria-label="Trending today">
+            {trending.watchlist.slice(0, 4).map(t => (
+              <span key={t.sym} className="trend-chip">
+                {t.sym} <em className={t.changePct >= 0 ? 'up-text' : 'down-text'}>{t.changePct >= 0 ? '+' : ''}{t.changePct.toFixed(1)}%</em>
+              </span>
+            ))}
+            {trending.market.filter(m => !trending.watchlist.some(w => w.sym === m.sym)).slice(0, 4).map(m => (
+              <span key={m.sym} className="trend-chip mkt">
+                ⚡{m.sym} {m.changePct != null && <em className={m.changePct >= 0 ? 'up-text' : 'down-text'}>{m.changePct >= 0 ? '+' : ''}{m.changePct.toFixed(1)}%</em>}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="card-grid">
           {sortedRows.map((row, i) => (
             <div key={row.symbol} onClick={() => onOpen(row.symbol)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpen(row.symbol)} style={{ cursor: 'pointer' }}>

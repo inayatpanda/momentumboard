@@ -35,6 +35,15 @@ export const getSignalStats = () =>
 export const getSmartMoney = () =>
   apiGet<{ funds: { fund: string; filedAt: string; newPositions: { issuer: string }[]; increased: { issuer: string; pctChange: number }[]; exited: { issuer: string }[] }[]; lagNote: string }>('/api/market?type=smart-money')
 
+export const getEcon = () =>
+  apiGet<{ events: { title: string; country: string; at: number; impact: string }[] }>('/api/market?type=econ').then(d => d.events)
+
+export const getTrending = () =>
+  apiGet<{ current: { at: number; watchlist: { sym: string; changePct: number; rvol: number | null; setups: string[] }[]; market: { sym: string; changePct: number | null }[] } | null; timeline: unknown[] }>('/api/config?view=trending')
+
+export const getOutcomes = () =>
+  apiGet<{ date: string; regime?: string; picks: { ticker: string; side: string; strength?: string; conviction?: string; priceAtPick?: number; f5: number | null; f10: number | null }[] }[]>('/api/config?view=outcomes')
+
 export const getPickStats = () =>
   apiGet<{ scores: { bucket: string; n: number; scored: number; win5: number | null; avg5: number | null; avg10: number | null }[]; reports: number }>('/api/market?type=pick-stats')
 

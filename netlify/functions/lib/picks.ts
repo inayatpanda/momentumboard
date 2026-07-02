@@ -7,12 +7,15 @@ export interface Pick {
   side: 'long' | 'short'
   playbook?: string
   conviction?: string
+  strength?: 'strong' | 'standard' // 'strong' = multi-factor "I strongly suggest" call — scored separately
+  reasons?: string[] // the WHY behind the call, mandatory for strong calls
   priceAtPick?: number // captured server-side when the pick is stored — outcome scoring baseline
 }
 
 export interface DailyPicks {
   date: string // YYYY-MM-DD; one entry per report
   regime?: string
+  macro?: { fedStance?: string; notes?: string[] } // structured macro read, archived daily
   picks: Pick[]
 }
 
@@ -31,8 +34,22 @@ export function validatePicks(raw: unknown): DailyPicks | null {
   const picks = d.picks
     .filter(p => typeof p?.ticker === 'string' && (p.side === 'long' || p.side === 'short'))
     .slice(0, 8)
-    .map(p => ({ ticker: p.ticker.toUpperCase().slice(0, 12), side: p.side, playbook: p.playbook, conviction: p.conviction }))
-  return { date: d.date, regime: typeof d.regime === 'string' ? d.regime : undefined, picks }
+    .map(p => ({
+      ticker: p.ticker.toUpperCase().slice(0, 12),
+      side: p.side,
+      playbook: p.playbook,
+      conviction: p.conviction,
+      strength: p.strength === 'strong' ? ('strong' as const) : undefined,
+      reasons: Array.isArray(p.reasons) ? p.reasons.filter(r => typeof r === 'string').slice(0, 6).map(r => r.slice(0, 220)) : undefined,
+    }))
+  const macro =
+    d.macro && typeof d.macro === 'object'
+      ? {
+          fedStance: typeof d.macro.fedStance === 'string' ? d.macro.fedStance.slice(0, 40) : undefined,
+          notes: Array.isArray(d.macro.notes) ? d.macro.notes.filter(n => typeof n === 'string').slice(0, 5).map(n => n.slice(0, 220)) : undefined,
+        }
+      : undefined
+  return { date: d.date, regime: typeof d.regime === 'string' ? d.regime : undefined, macro, picks }
 }
 
 export function computePersistence(history: DailyPicks[]): Persistence[] {
@@ -100,6 +117,7 @@ export function scorePicks(history: DailyPicks[], candlesBySymbol: Map<string, C
         if (idx + 10 < candles.length) f10 = (sign * (candles[idx + 10].c - p.priceAtPick) * 100) / p.priceAtPick
       }
       add('ALL', f5, f10)
+      if (p.strength === 'strong') add('STRONG calls', f5, f10)
       if (p.conviction) add(`grade ${p.conviction}`, f5, f10)
       if (p.playbook) add(`playbook ${p.playbook}`, f5, f10)
     }
@@ -115,6 +133,38 @@ export function scorePicks(history: DailyPicks[], candlesBySymbol: Map<string, C
       avg10: mean(b.f10),
     }))
     .sort((a, b) => (a.bucket === 'ALL' ? -1 : b.bucket === 'ALL' ? 1 : b.n - a.n))
+}
+
+export interface DayOutcome {
+  date: string
+  regime?: string
+  picks: { ticker: string; side: 'long' | 'short'; strength?: string; conviction?: string; priceAtPick?: number; f5: number | null; f10: number | null }[]
+}
+
+/** Per-date research record: each report's picks joined with what price did after. */
+export function perDayOutcomes(history: DailyPicks[], candlesBySymbol: Map<string, Candle[]>): DayOutcome[] {
+  return [...history]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map(day => {
+      const dayEpoch = Date.parse(day.date) / 1000
+      return {
+        date: day.date,
+        regime: day.regime,
+        picks: day.picks.map(p => {
+          let f5: number | null = null
+          let f10: number | null = null
+          const candles = p.priceAtPick != null ? candlesBySymbol.get(p.ticker) : undefined
+          if (candles && p.priceAtPick != null) {
+            let idx = candles.findIndex(c => c.t >= dayEpoch)
+            if (idx === -1) idx = candles.length
+            const sign = p.side === 'short' ? -1 : 1
+            if (idx + 5 < candles.length) f5 = (sign * (candles[idx + 5].c - p.priceAtPick) * 100) / p.priceAtPick
+            if (idx + 10 < candles.length) f10 = (sign * (candles[idx + 10].c - p.priceAtPick) * 100) / p.priceAtPick
+          }
+          return { ticker: p.ticker, side: p.side, strength: p.strength, conviction: p.conviction, priceAtPick: p.priceAtPick, f5, f10 }
+        }),
+      }
+    })
 }
 
 /** Tickers that became persistent BECAUSE of the latest report — ping-worthy. */

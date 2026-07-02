@@ -27,8 +27,18 @@ export async function routeReport(
   env: { REPORT_TOKEN?: string; TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; URL?: string; FINNHUB_API_KEY?: string },
   store: AppStore,
   telegramSend: typeof sendTelegram = sendTelegram,
+  url?: URL,
 ): Promise<Response> {
   if (method === 'GET') {
+    const wantedDate = url?.searchParams.get('date')
+    if (url?.searchParams.get('list') != null) {
+      const index = (await store.read<string[]>('report-index')) ?? []
+      return json(200, { ok: true, data: index.slice().reverse() })
+    }
+    if (wantedDate) {
+      const archived = await store.read<StoredReport>(`report:${wantedDate}`)
+      return page(archived ? 200 : 404, archived?.html ?? PLACEHOLDER)
+    }
     const report = await store.read<StoredReport>('morning-report')
     return page(200, report?.html ?? PLACEHOLDER)
   }
@@ -63,9 +73,13 @@ export async function routeReport(
       archive.push(picks)
       await store.write(monthKey, archive)
       const fresh = newlyPersistent(history.slice(-60))
-      if (fresh.length && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-        const msg = fresh.map(p => `📌 ${p.ticker} (${p.side}) is now a PERSISTENT pick — ${p.streak >= 3 ? `${p.streak} reports running` : `${p.appearances} of the last 7 reports`}. Independent daily analyses keep converging on it.`).join('\n')
-        await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, msg).catch(() => {})
+      const lines: string[] = []
+      for (const p of picks.picks.filter(p => p.strength === 'strong')) {
+        lines.push(`🎯 STRONG call: ${p.ticker} (${p.side})${p.reasons?.length ? ` — ${p.reasons[0]}` : ''}. Full reasoning in the report.`)
+      }
+      lines.push(...fresh.map(p => `📌 ${p.ticker} (${p.side}) is now a PERSISTENT pick — ${p.streak >= 3 ? `${p.streak} reports running` : `${p.appearances} of the last 7 reports`}. Independent daily analyses keep converging on it.`))
+      if (lines.length && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+        await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, lines.join('\n')).catch(() => {})
       }
       return json(200, { ok: true, data: { stored: picks.date, newlyPersistent: fresh } })
     }
@@ -73,8 +87,14 @@ export async function routeReport(
     if (!bodyText || !bodyText.includes('<') || bodyText.length > MAX_BYTES) return json(400, { ok: false, error: 'invalid-html' })
     const at = Math.floor(Date.now() / 1000)
     const report: StoredReport = { html: bodyText, at }
+    const dateKey = new Date(at * 1000).toISOString().slice(0, 10)
     await store.write('morning-report', report)
-    await store.write(`report:${new Date(at * 1000).toISOString().slice(0, 10)}`, report) // daily archive
+    await store.write(`report:${dateKey}`, report) // daily archive
+    const index = (await store.read<string[]>('report-index')) ?? []
+    if (!index.includes(dateKey)) {
+      index.push(dateKey)
+      await store.write('report-index', index.slice(-90))
+    }
     if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
       const link = `${env.URL ?? 'https://momentumboard-inayat.netlify.app'}/report`
       await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, `📰 Morning report is ready → ${link}`).catch(() => {})
@@ -98,4 +118,6 @@ export default async (req: Request, _context: Context) =>
       FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
     },
     blobAppStore,
+    sendTelegram,
+    new URL(req.url),
   )
