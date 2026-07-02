@@ -1,6 +1,7 @@
 import type { Context } from '@netlify/functions'
 import { fetchYahooChart } from './lib/yahoo'
 import { fetchFinnhubQuote } from './lib/finnhub'
+import { fetchSymbolNews } from './lib/news'
 import { getCached, setCached } from './lib/cache'
 import type { Quote } from '../../shared/types'
 import { isYahooSymbol } from '../../shared/symbols'
@@ -12,7 +13,7 @@ export async function routeRequest(
   url: URL,
   headers: Headers,
   env: { APP_TOKEN?: string; FINNHUB_API_KEY?: string },
-  deps: { yahoo: typeof fetchYahooChart; finnhub: typeof fetchFinnhubQuote },
+  deps: { yahoo: typeof fetchYahooChart; finnhub: typeof fetchFinnhubQuote; news?: typeof fetchSymbolNews },
 ): Promise<Response> {
   if (!env.APP_TOKEN || headers.get('x-app-token') !== env.APP_TOKEN) return json(401, { ok: false, error: 'unauthorized' })
   const type = url.searchParams.get('type')
@@ -46,6 +47,22 @@ export async function routeRequest(
     try {
       const data = await deps.yahoo(symbol, range)
       await setCached(key, data, 900)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'news') {
+    const symbol = url.searchParams.get('symbol')
+    if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })
+    const key = `news:${symbol}`
+    const hit = await getCached<unknown>(key)
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const items = await (deps.news ?? fetchSymbolNews)(symbol, env.FINNHUB_API_KEY ?? '', Math.floor(Date.now() / 1000))
+      const data = { items }
+      await setCached(key, data, 240)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })

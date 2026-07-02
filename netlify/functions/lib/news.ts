@@ -26,6 +26,36 @@ async function safeText(url: string, fetchFn: typeof fetch): Promise<string> {
 
 const iso = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10)
 
+export interface SymbolNewsItem {
+  title: string
+  url: string
+  publishedSec: number
+}
+
+/** News for ONE symbol: Finnhub company-news for US equities, Google News RSS otherwise. */
+export async function fetchSymbolNews(
+  symbol: string,
+  finnhubKey: string,
+  nowSec: number,
+  fetchFn: typeof fetch = fetch,
+): Promise<SymbolNewsItem[]> {
+  if (exchangeFor(symbol) === 'US') {
+    const j = (await safeJson(
+      `https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${iso(nowSec - 3 * DAY)}&to=${iso(nowSec)}&token=${finnhubKey}`,
+      fetchFn,
+    )) as { headline?: string; url?: string; datetime?: number }[] | null
+    return (j ?? [])
+      .filter(n => n.headline && n.url)
+      .slice(0, 10)
+      .map(n => ({ title: n.headline!, url: n.url!, publishedSec: n.datetime ?? 0 }))
+  }
+  const q = encodeURIComponent(symbol.replace('-USD', '').replace('.L', '') + ' stock')
+  const xml = await safeText(`https://news.google.com/rss/search?q=${q}&hl=en-GB&gl=GB&ceid=GB:en`, fetchFn)
+  return parseFeed(xml)
+    .slice(0, 10)
+    .map(i => ({ title: i.title, url: i.url, publishedSec: i.publishedSec }))
+}
+
 /** Finnhub per-symbol company news (US symbols only) + stockmarketloop + Google News market RSS. */
 export async function fetchNews(
   watchlist: string[],

@@ -36,4 +36,16 @@ describe('market-data routing', () => {
     const body = await (await call('type=quote&symbols=BTC-USD', 'secret')).json()
     expect(body.data.quotes[0]?.source).toBe('yahoo')
   })
+  it('serves per-symbol news via the injected fetcher', async () => {
+    const news = vi.fn(async () => [{ title: 'Apple thing', url: 'https://n/1', publishedSec: 5 }])
+    const res = await routeRequest(
+      new URL('http://x/api/market?type=news&symbol=AAPL'),
+      new Headers({ 'x-app-token': 'secret' }),
+      env,
+      { ...deps, news } as never,
+    )
+    const body = await res.json()
+    expect(body.data.items[0].title).toBe('Apple thing')
+    expect(news).toHaveBeenCalledWith('AAPL', 'fk', expect.any(Number))
+  })
 })
