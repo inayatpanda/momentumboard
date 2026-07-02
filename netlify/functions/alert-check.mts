@@ -110,14 +110,16 @@ export default async () => {
   const worthWatching = newVideos
     .filter(v => v.channel === 'Stocks with Josh' || symbols.some(s => v.title.toUpperCase().includes(s.split('.')[0].split('-')[0])))
     .slice(0, 2)
-  for (const v of worthWatching) {
-    // background function returns 202 immediately; analysis lands in Blobs later
-    await fetch(`${process.env.URL ?? 'https://momentumboard-inayat.netlify.app'}/.netlify/functions/video-analyze-background`, {
+  const dispatch = (v: { url: string; title: string; channel: string }, mode: 'watch' | 'extract') =>
+    fetch(`${process.env.URL ?? 'https://momentumboard-inayat.netlify.app'}/.netlify/functions/video-analyze-background`, {
       method: 'POST',
       headers: { 'x-app-token': process.env.APP_TOKEN ?? '', 'content-type': 'application/json' },
-      body: JSON.stringify({ url: v.url, title: v.title, channel: v.channel }),
-    }).catch(() => errors.push('video-analyze-dispatch'))
-  }
+      body: JSON.stringify({ url: v.url, title: v.title, channel: v.channel, mode }),
+    }).catch(() => errors.push(`video-${mode}-dispatch`))
+  // depth tier: Gemini fully watches the few videos that earn it (202 returns instantly)
+  for (const v of worthWatching) await dispatch(v, 'watch')
+  // breadth tier: EVERY new video gets transcript+extraction for the consensus maths
+  if (process.env.SUPADATA_API_KEY) for (const v of newVideos.slice(0, 8)) await dispatch(v, 'extract')
 
   // alert history for the in-app screen
   if (events.length) {

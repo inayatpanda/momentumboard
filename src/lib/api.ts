@@ -35,6 +35,9 @@ export const getSignalStats = () =>
 export const getSmartMoney = () =>
   apiGet<{ funds: { fund: string; filedAt: string; newPositions: { issuer: string }[]; increased: { issuer: string; pctChange: number }[]; exited: { issuer: string }[] }[]; lagNote: string }>('/api/market?type=smart-money')
 
+export const getConsensus = () =>
+  apiGet<{ tickers: { sym: string; mentions7d: number; mentionsPrior7d: number; channels: number; bulls: number; bears: number; net: number; crowded: boolean; shifted: boolean }[]; themes: { theme: string; count7d: number }[] }>('/api/config?view=consensus')
+
 export const getVideoAnalyses = () =>
   apiGet<{ url: string; title: string; channel: string; analysis: string; at: number }[]>('/api/config?view=videos')
 

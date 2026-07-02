@@ -103,15 +103,17 @@ export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
           </div>
         )}
         {checkerStale && <div className="risk-banner">⚠ The background alert checker hasn't run in 20+ minutes — alerts may be delayed.</div>}
-        {sortedRows.map((row, i) => (
-          <div key={row.symbol} onClick={() => onOpen(row.symbol)} role="button" style={{ cursor: 'pointer' }}>
-            <TickerRow
-              row={row}
-              index={i}
-              onRemove={() => remove(row.symbol)}
-            />
-          </div>
-        ))}
+        <div className="card-grid">
+          {sortedRows.map((row, i) => (
+            <div key={row.symbol} onClick={() => onOpen(row.symbol)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpen(row.symbol)} style={{ cursor: 'pointer' }}>
+              <TickerRow
+                row={row}
+                index={i}
+                onRemove={() => remove(row.symbol)}
+              />
+            </div>
+          ))}
+        </div>
         {rows.length === 0 && (
           <div className="empty">
             <p>Your watchlist is empty.</p>

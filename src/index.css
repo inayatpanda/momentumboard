@@ -469,6 +469,73 @@ button, input { font: inherit; }
 .settings-grid input { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; color: var(--text); font-family: var(--font-num); outline: none; }
 .chan-row { display: flex; justify-content: space-between; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
 
+/* ---------- accessibility & motion ---------- */
+:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---------- desktop layout (installable desktop PWA) ---------- */
+@media (min-width: 1024px) {
+  .shell {
+    max-width: none;
+    margin: 0;
+    padding-left: 216px; /* side rail */
+    padding-bottom: 24px;
+  }
+  .topbar, .content, .detail { max-width: 1060px; margin-left: auto; margin-right: auto; width: 100%; }
+  .topbar { padding: 20px 24px 12px; }
+  .topbar .brand { visibility: hidden; } /* the rail already shows the brand */
+  .content, .detail { padding-left: 24px; padding-right: 24px; }
+
+  /* bottom tab bar → left navigation rail */
+  .tabs {
+    top: 0; bottom: 0; right: auto; left: 0;
+    width: 216px; max-width: none;
+    margin: 0;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 88px 12px 16px;
+    border-top: none;
+    border-right: 1px solid var(--line);
+    background: rgba(13, 18, 24, 0.85);
+  }
+  .tabs::before {
+    content: 'MomentumBoard';
+    position: absolute; top: 28px; left: 20px;
+    font-weight: 800; font-size: 17px; letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .tab {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    width: 100%;
+    padding: 11px 14px;
+    font-size: 13.5px;
+    border-radius: 10px;
+  }
+  .tab.active { background: var(--green-soft); }
+  .tab:not(:disabled):hover { background: var(--panel-2); }
+
+  /* denser, multi-column content */
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { margin-bottom: 0; height: 100%; transition: border-color 0.15s ease, transform 0.15s ease; }
+  .card:hover { border-color: rgba(34, 201, 141, 0.4); transform: translateY(-1px); }
+  .content.digest-cols { column-count: 2; column-gap: 18px; }
+  .content.digest-cols > * { break-inside: avoid; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .detail-grid .calc { margin-top: 30px; }
+  .stats-row strong { font-size: 17px; }
+  .foot { column-span: all; }
+}
+
+@media (max-width: 1023.9px) {
+  .card-grid { display: block; }
+  .card-grid .card, .card-grid > div { margin-bottom: 10px; }
+}
+
 /* ---------- token gate ---------- */
 .gate {
   min-height: 100dvh;

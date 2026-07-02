@@ -117,11 +117,14 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
       <PriceChart candles={candles} />
       <RsiChart candles={candles} />
 
-      <h3 className="section-title">Price alerts</h3>
-      <AlertEditor symbol={symbol} rules={rules} onSave={saveRule} onDelete={deleteRule} />
-
-      {/* key remounts the calculator when the price first arrives so defaults prefill */}
-      <PositionCalculator key={`${symbol}-${price == null ? 'loading' : 'ready'}`} defaultEntry={price} defaultStop={defaultStop} riskClass="normal" capital={capital} />
+      <div className="detail-grid">
+        <div>
+          <h3 className="section-title">Price alerts</h3>
+          <AlertEditor symbol={symbol} rules={rules} onSave={saveRule} onDelete={deleteRule} />
+        </div>
+        {/* key remounts the calculator when the price first arrives so defaults prefill */}
+        <PositionCalculator key={`${symbol}-${price == null ? 'loading' : 'ready'}`} defaultEntry={price} defaultStop={defaultStop} riskClass="normal" capital={capital} />
+      </div>
 
       <section className="calc" style={{ marginTop: 18 }}>
         <h3>Setup backtest <span className="calc-sub">this ticker · {range} of daily bars</span></h3>

@@ -146,13 +146,13 @@ export async function routeRequest(
   }
 
   if (type === 'smart-money') {
-    const hit = await getCached<unknown>('smart-money')
+    const hit = await getCached<unknown>('smart-money:v2') // v2: entity-decoded issuer names
     if (hit) return json(200, { ok: true, data: hit })
     try {
       const { FUNDS, fetchFundMoves } = await import('./lib/edgar')
       const funds = (await Promise.all(FUNDS.map(f => fetchFundMoves(f.cik, f.name)))).filter(Boolean)
       const data = { funds, lagNote: '13F holdings are filed up to 45 days after quarter end — context, not timing.' }
-      await setCached('smart-money', data, 86_400)
+      await setCached('smart-money:v2', data, 86_400)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })

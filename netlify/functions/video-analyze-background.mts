@@ -20,6 +20,7 @@ interface Env {
   REPORT_TOKEN?: string
   GEMINI_API_KEY?: string
   GOOGLE_GEMINI_BASE_URL?: string
+  SUPADATA_API_KEY?: string
 }
 
 export const watchVideo: GeminiVideoCall = async (videoUrl, prompt, env) => {
@@ -55,10 +56,37 @@ export async function routeVideoAnalyze(
   const reportOk = !!env.REPORT_TOKEN && headers.get('x-report-token') === env.REPORT_TOKEN
   if (!appOk && !reportOk) return new Response('unauthorized', { status: 401 })
 
-  const body = bodyText ? (JSON.parse(bodyText) as { url?: string; title?: string; channel?: string }) : null
+  const body = bodyText ? (JSON.parse(bodyText) as { url?: string; title?: string; channel?: string; mode?: string }) : null
   if (!body?.url || !/youtube\.com|youtu\.be/.test(body.url)) return new Response('bad-url', { status: 400 })
 
   const nowSec = Math.floor(Date.now() / 1000)
+
+  // mode=extract — tier-1 breadth: transcript + cheap text extraction → trend store
+  if (body.mode === 'extract') {
+    if (!env.SUPADATA_API_KEY) return new Response('transcripts-unconfigured', { status: 200 })
+    const { fetchTranscript } = await import('./lib/transcripts')
+    const { EXTRACT_PROMPT, parseExtract } = await import('./lib/videoTrends')
+    const { callLlm } = await import('./ai-insights.mts')
+    const extracts = (await store.read<{ url: string; at: number }[]>('video-extracts')) ?? []
+    if (extracts.some(e => e.url === body.url)) return new Response('already-extracted', { status: 200 })
+    if (extracts.filter(e => nowSec - e.at < 86_400).length >= 15) return new Response('extract-daily-cap', { status: 200 })
+    const transcript = await fetchTranscript(body.url, env.SUPADATA_API_KEY)
+    if (!transcript) return new Response('no-transcript', { status: 200 })
+    try {
+      const { text } = await callLlm(EXTRACT_PROMPT(body.title ?? '', body.channel ?? '', transcript), env)
+      const extract = parseExtract(text, { url: body.url, title: body.title ?? '', channel: body.channel ?? '', at: nowSec })
+      if (!extract) return new Response('unparseable', { status: 200 })
+      extracts.push(extract)
+      await store.write('video-extracts', extracts.slice(-400))
+      const monthKey = `video-extracts:${new Date(nowSec * 1000).toISOString().slice(0, 7)}`
+      const archive = (await store.read<unknown[]>(monthKey)) ?? []
+      archive.push(extract)
+      await store.write(monthKey, archive)
+      return new Response('extracted', { status: 200 })
+    } catch (e) {
+      return new Response(String(e), { status: 502 })
+    }
+  }
   const list = (await store.read<VideoAnalysis[]>('video-analyses')) ?? []
   if (list.some(v => v.url === body.url)) return new Response('already-analyzed', { status: 200 })
   if (list.filter(v => nowSec - v.at < 86_400).length >= DAILY_CAP) return new Response('daily-cap', { status: 200 })
@@ -82,6 +110,7 @@ export default async (req: Request) =>
       REPORT_TOKEN: process.env.REPORT_TOKEN,
       GEMINI_API_KEY: process.env.GEMINI_API_KEY,
       GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL,
+      SUPADATA_API_KEY: process.env.SUPADATA_API_KEY,
     },
     blobAppStore,
   )

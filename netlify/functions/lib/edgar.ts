@@ -27,8 +27,9 @@ export interface FundMoves {
 export function parseInfoTable(xml: string): Holding[] {
   const byIssuer = new Map<string, Holding>()
   const blocks = xml.match(/<(?:\w+:)?infoTable>[\s\S]*?<\/(?:\w+:)?infoTable>/g) ?? []
+  const decode = (s: string) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#0?39;|&apos;/g, "'").replace(/&quot;/g, '"')
   for (const b of blocks) {
-    const issuer = b.match(/<(?:\w+:)?nameOfIssuer>([\s\S]*?)<\/(?:\w+:)?nameOfIssuer>/)?.[1]?.trim()
+    const issuer = decode(b.match(/<(?:\w+:)?nameOfIssuer>([\s\S]*?)<\/(?:\w+:)?nameOfIssuer>/)?.[1]?.trim() ?? '')
     const value = Number(b.match(/<(?:\w+:)?value>(\d+)<\/(?:\w+:)?value>/)?.[1])
     const shares = Number(b.match(/<(?:\w+:)?sshPrnamt>(\d+)<\/(?:\w+:)?sshPrnamt>/)?.[1])
     if (!issuer || !Number.isFinite(value)) continue

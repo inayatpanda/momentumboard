@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory, getVideoAnalyses } from '../lib/api'
+import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory, getVideoAnalyses, getConsensus } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPct } from '../lib/format'
 import { useMarketData } from '../hooks/useMarketData'
@@ -23,6 +23,7 @@ export function Digest() {
   const [smartMoney, setSmartMoney] = useState<Awaited<ReturnType<typeof getSmartMoney>> | null>(null)
   const [history, setHistory] = useState<Awaited<ReturnType<typeof getAlertHistory>>>([])
   const [videoAnalyses, setVideoAnalyses] = useState<Awaited<ReturnType<typeof getVideoAnalyses>>>([])
+  const [consensus, setConsensus] = useState<Awaited<ReturnType<typeof getConsensus>> | null>(null)
   const { rows } = useMarketData(symbols)
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export function Digest() {
     getSmartMoney().then(setSmartMoney).catch(() => {})
     getAlertHistory().then(setHistory).catch(() => {})
     getVideoAnalyses().then(setVideoAnalyses).catch(() => {})
+    getConsensus().then(setConsensus).catch(() => {})
     getCapital().then(c => setCapital(String(c)))
     getChannels().then(setChannels)
   }, [])
@@ -83,7 +85,7 @@ export function Digest() {
       <header className="topbar">
         <span className="brand">Digest</span>
       </header>
-      <div className="content">
+      <div className="content digest-cols">
         <div className="ai-card">
           <h3>AI read</h3>
           {ai?.text ? (
@@ -142,6 +144,29 @@ export function Digest() {
             ))}
           </ul>
         </section>
+
+        {consensus && consensus.tickers.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Channel consensus — last 7 days</h3>
+            {consensus.tickers.slice(0, 10).map(t => (
+              <div key={t.sym} className="perf-row">
+                <span>
+                  {t.sym}{' '}
+                  {t.crowded && <span className="badge warn">crowded</span>}{' '}
+                  {t.shifted && <span className="badge info">stance flip</span>}
+                </span>
+                <span style={{ color: 'var(--muted)' }}>
+                  {t.mentions7d}× ({t.mentionsPrior7d}× prior) · {t.channels}ch ·{' '}
+                  <span className={t.net > 0 ? 'up-text' : t.net < 0 ? 'down-text' : ''}>{t.net > 0 ? `+${t.net} bull` : t.net < 0 ? `${t.net} bear` : 'split'}</span>
+                </span>
+              </div>
+            ))}
+            {consensus.themes.length > 0 && (
+              <p className="empty-line" style={{ fontSize: 12 }}>Themes: {consensus.themes.map(t => `${t.theme} (${t.count7d})`).join(' · ')}</p>
+            )}
+            <p className="empty-line" style={{ fontSize: 11 }}>Deterministic counts from video transcripts. "Crowded" = one-sided coverage — a contrarian warning, never a buy signal.</p>
+          </section>
+        )}
 
         {videoAnalyses.length > 0 && (
           <section className="digest-section">
