@@ -28,11 +28,13 @@ export function PriceChart({ candles }: { candles: Candle[] }) {
     })
     chartRef.current = chart
 
+    const up = themed('--green', '#22c98d')
+    const down = themed('--red', '#ff5d73')
     const candleSeries = chart.addCandlestickSeries({
-      upColor: '#22c98d',
-      downColor: '#ff5d73',
-      wickUpColor: '#22c98d',
-      wickDownColor: '#ff5d73',
+      upColor: up,
+      downColor: down,
+      wickUpColor: up,
+      wickDownColor: down,
       borderVisible: false,
     })
     candleSeries.setData(toCandleSeries(candles))

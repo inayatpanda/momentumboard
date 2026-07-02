@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData, type EnginePrediction } from '../lib/api'
+import { GradeChip } from './GradeChip'
 
 // THE BOARD: today's scored calls from the prediction engine. Numbers only —
 // grade, calibrated probability, entry/stop/target — with the factor evidence
 // one tap away. The paper narrates this; here it stands naked.
-
-const gradeColor: Record<string, string> = { A: 'var(--green, #37b26c)', B: 'var(--amber, #f5b83d)', C: 'var(--muted)' }
 
 function Call({ p }: { p: EnginePrediction }) {
   const [open, setOpen] = useState(false)
@@ -14,7 +13,7 @@ function Call({ p }: { p: EnginePrediction }) {
     <div className="perf-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 3 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
         <span style={{ fontWeight: 700 }}>
-          <span style={{ color: gradeColor[p.grade], marginRight: 6 }}>{p.grade}{p.provisional ? '·prov' : ''}</span>
+          <GradeChip grade={p.grade} provisional={p.provisional} />{' '}
           {p.sym}
           <span style={{ color: p.side === 'long' ? 'var(--green, #37b26c)' : 'var(--red, #ff5d73)', fontSize: 11, marginLeft: 6 }}>{dir}</span>
           {p.smallCap && <span className="badge warn" style={{ marginLeft: 6 }}>small cap</span>}
