@@ -87,6 +87,26 @@ describe('buildBoard', () => {
     const { board } = await buildBoard(store, deps({ screens: async () => [], mediaTitles: async () => [] }), NOW)
     expect(Array.isArray(board)).toBe(true) // seeded calibration suppresses the weak-band short
   })
+
+  it('suppressed calls become shadow ledger entries — the learning loop eats even when the paper does not', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    // suppressing calibration: this band has PROVEN it loses → grade null → shadow
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [] })
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const { board } = await buildBoard(store, deps(), NOW)
+    expect(board.find(b => b.sym === 'NVDA')).toBeUndefined() // not on the public board
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
+    const shadow = ledger.find(p => p.sym === 'NVDA')!
+    expect(shadow.shadow).toBe(true)
+    expect(shadow.riskPct).toBe(0)
+    expect(shadow.instrument).toBeNull()
+    const publicBoard = (await store.read<{ board: Prediction[] }>('engine-board'))!
+    expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
+  })
 })
 
 describe('gradeOutstanding', () => {

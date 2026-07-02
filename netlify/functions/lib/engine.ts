@@ -188,7 +188,9 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           changed = true
         }
       }
-      if (pred.outcome5) allOutcomes.push({ hit: pred.outcome5.hit, stopped: pred.outcome5.stopped, leveraged: !!pred.instrument })
+      // shadows feed calibration/IC above but never the risk ladder — the rung
+      // is earned on calls the reader could actually take
+      if (pred.outcome5 && !pred.shadow) allOutcomes.push({ hit: pred.outcome5.hit, stopped: pred.outcome5.stopped, leveraged: !!pred.instrument })
     }
     if (changed) await store.write(`predictions:${date}`, preds)
   }
@@ -227,13 +229,15 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     const preds = (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     for (const p of preds) {
       if (!p.outcome5) continue
-      const g = (byGrade[p.grade] ??= { n: 0, hits: 0, sumExcess: 0 })
+      const g = (byGrade[p.shadow ? 'shadow' : p.grade] ??= { n: 0, hits: 0, sumExcess: 0 })
       g.n++
       if (p.outcome5.hit) g.hits++
       g.sumExcess += p.outcome5.excessPct
-      const r = (byRegime[p.regime] ??= { n: 0, hits: 0 })
-      r.n++
-      if (p.outcome5.hit) r.hits++
+      if (!p.shadow) {
+        const r = (byRegime[p.regime] ??= { n: 0, hits: 0 })
+        r.n++
+        if (p.outcome5.hit) r.hits++
+      }
       if (p.overlay) {
         const o = (overlays[p.overlay.flag] ??= { n: 0, hits: 0 })
         o.n++
@@ -420,28 +424,37 @@ export async function buildBoard(
 
     const { p, provisional } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite))
     const grade = gradeFor(p, provisional, call.capacityPct)
-    if (!grade) continue // no edge in this bucket — the call does not exist
+    // grade null = calibration sees no edge in this bucket. The call stays off
+    // the paper — but it MUST enter the ledger as a shadow, or buckets below
+    // 50% can never earn their way back up (nothing would ever get graded).
+    const shadow = !grade
 
-    const instrument = mapInstrument(call.side, call.sym, grade, risk.rung, cfg.levMap ?? {})
+    const instrument = shadow ? null : mapInstrument(call.side, call.sym, grade!, risk.rung, cfg.levMap ?? {})
     board.push({
       ...call,
       id: `${today}:${call.sym}:${call.side}`,
       date: today,
       regime,
       priceAtPrediction: call.entry,
+      shadow: shadow || undefined,
       probability: Math.round(p * 100) / 100,
       provisional,
-      grade,
+      grade: grade ?? 'C',
       riskRung: risk.rung,
-      riskPct: RUNG_RISK_PCT[risk.rung] * (call.earningsRisk ? 0.5 : 1),
+      riskPct: shadow ? 0 : RUNG_RISK_PCT[risk.rung] * (call.earningsRisk ? 0.5 : 1),
       instrument,
       paperOnly: call.side === 'short' && !instrument,
     })
   }
 
-  const longs = board.filter(b => b.side === 'long').sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite)).slice(0, 12)
-  const shorts = board.filter(b => b.side === 'short').sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite)).slice(0, 12)
-  const final = [...longs, ...shorts].sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))
+  const pick = (side: 'long' | 'short', shadow: boolean, cap: number) =>
+    board
+      .filter(b => b.side === side && !!b.shadow === shadow)
+      .sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))
+      .slice(0, cap)
+  const live = [...pick('long', false, 12), ...pick('short', false, 12)].sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))
+  const shadows = [...pick('long', true, 5), ...pick('short', true, 5)]
+  const final = [...live, ...shadows]
 
   // reruns preserve overlays and outcomes already earned today
   const existing = (await store.read<Prediction[]>(`predictions:${today}`)) ?? []
@@ -455,7 +468,8 @@ export async function buildBoard(
   await store.write(`predictions:${today}`, final)
   const index = (await store.read<string[]>('predictions-index')) ?? []
   if (!index.includes(today)) await store.write('predictions-index', [...index, today].slice(-250))
-  await store.write('engine-board', { date: today, generatedAt: nowSec, regime, board: final })
+  // the paper and the app see only live calls; shadows exist to be graded
+  await store.write('engine-board', { date: today, generatedAt: nowSec, regime, board: live })
 
-  return { board: final, rosterSize: roster.length, regime }
+  return { board: live, rosterSize: roster.length, regime }
 }

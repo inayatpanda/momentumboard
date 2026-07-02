@@ -46,6 +46,7 @@ export interface Prediction extends GradedCall {
   date: string
   regime: RegimeColor | 'unknown'
   priceAtPrediction: number
+  shadow?: boolean // suppressed by calibration but logged anyway — the learning loop must eat even when the paper doesn't
   overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string }
   outcome5?: PredOutcome
   outcome10?: PredOutcome
