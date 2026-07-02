@@ -1,0 +1,89 @@
+⬥ Injecting environment variable values for all scopes
+⬥ Ignored general context env var: LANG (defined in process)
+⬥ Ignored project settings env var: APP_TOKEN (defined in .env file)
+⬥ Ignored project settings env var: FINNHUB_API_KEY (defined in .env file)
+⬥ Ignored project settings env var: REPORT_TOKEN (defined in .env file)
+⬥ Ignored project settings env var: TELEGRAM_BOT_TOKEN (defined in .env file)
+⬥ Ignored project settings env var: TELEGRAM_CHAT_ID (defined in .env file)
+⬥ Ignored project settings env var: VAPID_PRIVATE_KEY (defined in .env file)
+⬥ Ignored project settings env var: VAPID_PUBLIC_KEY (defined in .env file)
+⬥ Injected .env file env vars: APP_TOKEN, FINNHUB_API_KEY, REPORT_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, GROQ_API_KEY
+⬥ Setting up local dev server
+
+⬥ Starting Vite dev server
+⠋ Waiting for Vite dev server to be ready on port 5173
+✔ Vite dev server ready on port 5173
+
+   ╭─────────────────────── ⬥  ────────────────────────╮
+   │                                                   │
+   │   Local dev server ready: http://localhost:8899   │
+   │                                                   │
+   ╰───────────────────────────────────────────────────╯
+
+
+> momentumboard@0.1.0 dev
+> vite
+
+Port 5173 is in use, trying another one...
+Port 5174 is in use, trying another one...
+Port 5175 is in use, trying another one...
+
+  VITE v5.4.21  ready in 431 ms
+
+  ➜  Local:   http://localhost:5176/
+  ➜  Network: use --host to expose
+⬥ Loaded function report-kick
+⬥ Loaded function telegram-webhook
+⬥ Loaded function t212
+⬥ Loaded function push
+⬥ Loaded function portfolio
+⬥ Loaded function backup
+⬥ Loaded function licences
+⬥ Loaded function event-dossier-background
+⬥ Loaded function video-analyze-background
+⬥ Loaded function config-sync
+⬥ Loaded function ai-insights
+⬥ Loaded function report-compose-background
+⬥ Loaded function market-data
+⬥ Loaded function alert-check
+⬥ Loaded function report
+(node:3227) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+⬥ Rewrote URL to /.netlify/functions/market-data?type=candles&symbol=SPY&range=1y
+Request from ::1: GET /.netlify/functions/market-data?type=candles&symbol=SPY&range=1y
+⬥ Rewrote URL to /.netlify/functions/config-sync?view=runlog
+⬥ Rewrote URL to /.netlify/functions/config-sync?view=trending
+Request from ::1: GET /.netlify/functions/config-sync?view=runlog
+Request from ::1: GET /.netlify/functions/config-sync?view=trending
+Response with status 401 in 266 ms.
+Response with status 401 in 271 ms.
+Response with status 401 in 294 ms.
+⬥ Rewrote URL to /.netlify/functions/config-sync?view=runlog
+⬥ Rewrote URL to /.netlify/functions/config-sync?view=trending
+Request from ::1: GET /.netlify/functions/config-sync?view=runlog
+⬥ Rewrote URL to /.netlify/functions/market-data?type=candles&symbol=SPY&range=1y
+Request from ::1: GET /.netlify/functions/config-sync?view=trending
+Request from ::1: GET /.netlify/functions/market-data?type=candles&symbol=SPY&range=1y
+⬥ Rewrote URL to /.netlify/functions/market-data?type=candles&symbol=QQQ&range=1y
+Request from ::1: GET /.netlify/functions/market-data?type=candles&symbol=QQQ&range=1y
+Response with status 401 in 396 ms.
+Response with status 401 in 393 ms.
+Response with status 401 in 401 ms.
+Response with status 401 in 511 ms.
+⬥ Rewrote URL to /.netlify/functions/market-data?type=candles&symbol=QQQ&range=1y
+Request from ::1: GET /.netlify/functions/market-data?type=candles&symbol=QQQ&range=1y
+Response with status 401 in 95 ms.
+Request from ::1: POST /.netlify/functions/report-compose-background
+⬥ Queueing background function report-compose-background for execution
+Response with status 202 in 1 ms.
+⬥ Netlify Blobs running in sandbox mode for local development. Refer to https://ntl.fyi/local-blobs for more information.
+COMPOSE: gathered ok, data bytes 24145
+COMPOSE: llm ok via gemini | parsed: true
+⬥ Rewrote URL to /.netlify/functions/report
+Request from ::1: PUT /.netlify/functions/report
+Response with status 200 in 339 ms.
+⬥ Rewrote URL to /.netlify/functions/report
+Request from ::1: PUT /.netlify/functions/report
+Response with status 200 in 290 ms.
+COMPOSE: putHtml 200 putPicks 200
+⬥ Done executing background function report-compose-background

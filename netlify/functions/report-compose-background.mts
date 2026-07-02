@@ -155,10 +155,10 @@ export default async (req: Request) => {
     console.log('COMPOSE: gathered ok, data bytes', data.length)
     // ---- compose: the LLM writes the journalism as strict JSON ----
     // the paper is a big prompt: Groq free-tier TPM chokes on it, so Gemini leads here (Groq stays primary for small cards)
-    const { text, provider } = await callLlm(composePrompt(data, dateLabel), { maxTokens: 6500, LLM_PROVIDER: 'gemini' })
+    const { text, provider } = await callLlm(composePrompt(data, dateLabel), { maxTokens: 8000, LLM_PROVIDER: 'gemini' })
     let composed = parseComposed(text)
     if (!composed) {
-      const retry = await callLlm(`${composePrompt(data, dateLabel)}\n\nIMPORTANT: your previous answer was not valid JSON or was cut off. Return ONLY the JSON object and keep every field concise.`, { maxTokens: 6500, LLM_PROVIDER: 'gemini' })
+      const retry = await callLlm(`${composePrompt(data, dateLabel)}\n\nIMPORTANT: your previous answer was not valid JSON or was cut off. Return ONLY the JSON object and keep every field concise.`, { maxTokens: 8000, LLM_PROVIDER: 'gemini' })
       composed = parseComposed(retry.text)
     }
     console.log('COMPOSE: llm ok via', provider, '| parsed:', !!composed)

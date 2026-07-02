@@ -179,11 +179,21 @@ export function sectorBarsSvg(bars: { name: string; rs21: number | null }[], w =
 
 // ---------- the paper ----------
 
-const esc = (s: string | undefined) =>
-  (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+// models sometimes hand back arrays where strings were asked for — coerce, never crash
+const asText = (s: unknown): string =>
+  Array.isArray(s)
+    ? s.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join('\n\n')
+    : typeof s === 'string'
+      ? s
+      : s == null
+        ? ''
+        : String(s)
 
-const paras = (s: string | undefined) =>
-  (s ?? '')
+const esc = (s: unknown) =>
+  asText(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+const paras = (s: unknown) =>
+  asText(s)
     .split(/\n\n+/)
     .filter(Boolean)
     .map(p => `<p>${esc(p.trim())}</p>`)

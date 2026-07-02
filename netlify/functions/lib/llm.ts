@@ -47,7 +47,8 @@ const PROVIDERS: Provider[] = [
       const res = await fetchFn(`${base}/v1beta/models/gemini-2.5-flash:generateContent`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': e.GEMINI_API_KEY! },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: e.maxTokens ?? 2048 } }),
+        // thinkingBudget 0: 2.5-flash otherwise spends the output budget on hidden reasoning and truncates long JSON
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: e.maxTokens ?? 2048, thinkingConfig: { thinkingBudget: 0 } } }),
       })
       const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
       const text = j.candidates?.[0]?.content?.parts?.[0]?.text

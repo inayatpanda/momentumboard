@@ -106,3 +106,41 @@ Request from ::1: POST /.netlify/functions/report-compose-background
 ⬥ Queueing background function report-compose-background for execution
 Response with status 202 in 1 ms.
 COMPOSE: gathered ok, data bytes 24142
+⬥ Rewrote URL to /.netlify/functions/config-sync?view=trending
+Request from ::1: GET /.netlify/functions/config-sync?view=trending
+Response with status 401 in 140 ms.
+COMPOSE: llm ok via gemini | parsed: true
+COMPOSE-FAILED: TypeError: (s ?? "").split is not a function
+    at paras (file:///Users/inayatsmac/Desktop/Stocks-shares/.netlify/functions-serve/report-compose-background/netlify/functions/netlify/functions/lib/newspaper.ts:187:6)
+    at buildNewspaperHtml (file:///Users/inayatsmac/Desktop/Stocks-shares/.netlify/functions-serve/report-compose-background/netlify/functions/netlify/functions/lib/newspaper.ts:324:26)
+    at Object.report_compose_background_default [as handler] (file:///Users/inayatsmac/Desktop/Stocks-shares/.netlify/functions-serve/report-compose-background/netlify/functions/netlify/functions/report-compose-background.mts:169:18)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at RO (file:///Users/inayatsmac/Desktop/Stocks-shares/.netlify/functions-serve/report-compose-background/___netlify-bootstrap.mjs:2:171376)
+    at file:///Users/inayatsmac/Desktop/Stocks-shares/.netlify/functions-serve/report-compose-background/___netlify-bootstrap.mjs:2:170529
+⬥ Done executing background function report-compose-background
+⬥ Rewrote URL to /.netlify/functions/config-sync?view=trending
+Request from ::1: GET /.netlify/functions/config-sync?view=trending
+Response with status 401 in 166 ms.
+⬥ Reloading function report-compose-background...
+⬥ Reloaded function report-compose-background
+Request from ::1: POST /.netlify/functions/report-compose-background
+⬥ Queueing background function report-compose-background for execution
+Response with status 202 in 0 ms.
+COMPOSE: gathered ok, data bytes 24145
+COMPOSE: llm ok via gemini | parsed: false
+COMPOSE: unparseable, first 300: ```json
+{
+ "headline": "The Amber Alert: Healthcare Surges, Tech Dips, and High-Impact Data on the Docket",
+ "standfirst": "Market caution remains, but opportunities abound in sector strength and extreme reversals. Healthcare leads the charge, while a dip in Tech presents a familiar entry. Brace for
+⬥ Done executing background function report-compose-background
+⬥ Reloading function report-compose-background...
+⬥ Reloading function video-analyze-background...
+⬥ Reloading function market-data...
+⬥ Reloading function event-dossier-background...
+⬥ Reloading function ai-insights...
+⬥ Reloaded function ai-insights
+⬥ Reloaded function event-dossier-background
+⬥ Reloaded function report-compose-background
+⬥ Reloaded function video-analyze-background
+⬥ Reloaded function market-data
+⬥ Reloading function report-compose-background...
