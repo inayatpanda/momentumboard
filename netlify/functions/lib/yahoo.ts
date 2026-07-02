@@ -20,13 +20,14 @@ export function parseYahooChart(json: unknown, symbol: string): { candles: Candl
   const m = r.meta
   // chartPreviousClose is relative to the RANGE START (6mo ago on a 6mo chart),
   // not yesterday — derive the true previous close from the bars instead.
+  const lastClose = candles.length ? candles[candles.length - 1].c : null
+  // Tolerance, not equality: meta reports 197.58 while the bar holds 197.5800018…
+  const lastBarIsCurrent = lastClose != null && Math.abs(lastClose - m.regularMarketPrice) <= Math.abs(m.regularMarketPrice) * 0.0005
   const prev =
     m.regularMarketPreviousClose ??
-    (candles.length >= 2 && candles[candles.length - 1].c === m.regularMarketPrice
+    (lastBarIsCurrent && candles.length >= 2
       ? candles[candles.length - 2].c
-      : candles.length >= 1 && candles[candles.length - 1].c !== m.regularMarketPrice
-        ? candles[candles.length - 1].c
-        : (m.chartPreviousClose ?? m.previousClose))
+      : (lastClose ?? m.chartPreviousClose ?? m.previousClose))
   return {
     candles,
     quote: {

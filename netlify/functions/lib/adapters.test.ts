@@ -31,6 +31,13 @@ describe('parseYahooChart', () => {
     const { quote } = parseYahooChart(fx, '3LTS.L')
     expect(quote.prevClose).toBe(2.981)
   })
+  it('treats float-noise differences as the same bar (197.58 vs 197.5800018)', () => {
+    const fx = structuredClone(yahooFixture)
+    fx.chart.result[0].meta.regularMarketPrice = 2.981
+    fx.chart.result[0].indicators.quote[0].close[1] = 2.9810000183105 as unknown as number
+    const { quote } = parseYahooChart(fx, '3LTS.L')
+    expect(quote.prevClose).toBe(2.167) // prior session, not the same bar
+  })
   it('throws yahoo-shape on garbage', () => {
     expect(() => parseYahooChart({ nope: 1 }, 'X')).toThrow('yahoo-shape')
   })
