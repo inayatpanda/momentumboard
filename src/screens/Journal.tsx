@@ -1,16 +1,48 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital, type NoteItem } from '../lib/db'
-import { evaluateNote } from '../lib/api'
+import { evaluateNote, getEngine, getQuotes, type EngineData } from '../lib/api'
+import type { Quote } from '../../shared/types'
 import { mirrorConfig } from '../lib/configMirror'
 import { mirrorPortfolio, restoreBackup } from '../lib/portfolioMirror'
 import { computeStats, exposureWarnings, tradePnl, type Trade } from '../../shared/journal'
 import { getT212 } from '../lib/api'
 import { TradeForm } from '../components/TradeForm'
+import { RiskDial } from '../components/RiskDial'
+import { GradeChip } from '../components/GradeChip'
 import { Sparkline } from '../components/Sparkline'
 import { IconSwap, IconWarn, IconNews, IconSparkle } from '../components/icons'
 import { fmtPct } from '../lib/format'
 
 const gbp = (v: number) => `${v < 0 ? '−' : ''}£${Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`
+// Neutral figures stay ink; only genuine gains/losses take market colour.
+const pnlClass = (v: number) => (v > 0 ? 'up-text' : v < 0 ? 'down-text' : '')
+
+// The engine's second opinion on a held name: today's live board call first, else
+// the most recent live (non-shadow) ledger prediction within the last 10 sessions.
+interface EngineView {
+  grade: string
+  provisional: boolean
+  side: 'long' | 'short'
+  entry: number
+  stop: number
+  target: number
+  stage: string | null
+  source: 'board' | 'ledger'
+}
+
+function engineViewFor(sym: string, engine: EngineData | null): EngineView | null {
+  if (!engine) return null
+  const call = engine.board?.board.find(p => p.sym === sym)
+  if (call) {
+    return { grade: call.grade, provisional: call.provisional, side: call.side, entry: call.entry, stop: call.stop, target: call.target, stage: call.stage, source: 'board' }
+  }
+  const days = [...(engine.ledger ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10)
+  for (const d of days) {
+    const p = d.predictions.find(pr => pr.sym === sym && !pr.shadow)
+    if (p) return { grade: p.grade, provisional: p.provisional, side: p.side, entry: p.entry, stop: p.stop, target: p.target, stage: p.stage, source: 'ledger' }
+  }
+  return null
+}
 
 export function Journal() {
   const [trades, setTrades] = useState<Trade[]>([])
@@ -20,11 +52,14 @@ export function Journal() {
   const [notes, setNotes] = useState<NoteItem[]>([])
   const [noteText, setNoteText] = useState('')
   const [noteKind, setNoteKind] = useState<'observation' | 'lesson' | 'hypothesis'>('observation')
+  const [engine, setEngine] = useState<EngineData | null>(null)
+  const [quotes, setQuotes] = useState<Record<string, Quote | null>>({})
 
   useEffect(() => {
     db.trades.toArray().then(setTrades)
     db.notes.orderBy('at').reverse().toArray().then(setNotes)
     getCapital().then(setCapital)
+    getEngine().then(setEngine).catch(() => {})
   }, [])
 
   const addNote = async () => {
@@ -45,6 +80,29 @@ export function Journal() {
 
   const open = trades.filter(t => t.exitPrice == null).sort((a, b) => b.openedAt - a.openedAt)
   const closed = trades.filter(t => t.exitPrice != null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
+
+  // Live prices for open names via the existing quote flow — these drive the
+  // unrealised P&L and the distances to both the user's and the engine's stops.
+  const openSymbols = [...new Set(open.map(t => t.symbol))]
+  useEffect(() => {
+    if (openSymbols.length === 0) {
+      setQuotes({})
+      return
+    }
+    let alive = true
+    getQuotes(openSymbols)
+      .then(qs => {
+        if (!alive) return
+        const map: Record<string, Quote | null> = {}
+        openSymbols.forEach((s, i) => (map[s] = qs[i] ?? null))
+        setQuotes(map)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSymbols.join(',')])
   const stats = computeStats(trades)
   const warnings = exposureWarnings(open, capital, Math.floor(Date.now() / 1000))
 
@@ -105,7 +163,7 @@ export function Journal() {
         ))}
 
         <div className="stats-row">
-          <div><strong className={stats.realizedPnl >= 0 ? 'up-text' : 'down-text'}>{gbp(stats.realizedPnl)}</strong><span>realised P&L</span></div>
+          <div><strong className={pnlClass(stats.realizedPnl)}>{gbp(stats.realizedPnl)}</strong><span>realised P&L</span></div>
           <div><strong>{stats.winRate == null ? '—' : `${Math.round(stats.winRate * 100)}%`}</strong><span>win rate ({stats.closedCount})</span></div>
           <div><strong>{stats.avgWin == null ? '—' : gbp(stats.avgWin)}</strong><span>avg win</span></div>
           <div><strong>{stats.avgLoss == null ? '—' : gbp(stats.avgLoss)}</strong><span>avg loss</span></div>
@@ -133,7 +191,8 @@ export function Journal() {
         )}
 
         <h3 className="section-title">Log a trade</h3>
-        <TradeForm onAdd={add} />
+        <RiskDial riskState={engine?.riskState ?? null} />
+        <TradeForm onAdd={add} board={engine?.board?.board} riskState={engine?.riskState ?? undefined} capital={capital} />
         <button
           className="mini-btn ghost"
           style={{ marginTop: 8 }}
@@ -177,16 +236,51 @@ export function Journal() {
         </button>
 
         <h3 className="section-title">Open positions ({open.length})</h3>
-        {open.map(t => (
+        {open.map(t => {
+          const cur = quotes[t.symbol]?.price ?? null
+          const livePnl = cur != null ? ((cur - t.entryPrice) / t.entryPrice) * t.positionValue : null
+          const livePct = cur != null ? ((cur - t.entryPrice) / t.entryPrice) * 100 : null
+          const distYourStop = cur != null ? ((t.stop - cur) / cur) * 100 : null
+          const ev = engineViewFor(t.symbol, engine)
+          const distEngStop = ev && cur != null ? ((ev.stop - cur) / cur) * 100 : null
+          const distEngTgt = ev && cur != null ? ((ev.target - cur) / cur) * 100 : null
+          const conflict = ev != null && ev.side !== t.direction
+          return (
           <div key={t.id} className="card">
             <div className="row-top">
               <span className="sym">{t.symbol} <span className="badge info">{t.playbook}</span> {t.instrument === 'etp' && <span className="badge warn">{t.leverage}x ETP</span>}</span>
-              <span className="prices"><span className="price">{gbp(t.positionValue)}</span></span>
+              <span className="prices">
+                {livePnl != null ? (
+                  <>
+                    <span className={`price ${pnlClass(livePnl)}`}>{gbp(livePnl)}</span>
+                    <span className={`pos-subpnl num ${pnlClass(livePnl)}`}>{fmtPct(livePct!)}</span>
+                  </>
+                ) : (
+                  <span className="price">{gbp(t.positionValue)}</span>
+                )}
+              </span>
             </div>
             <div className="trade-meta">
-              in {t.entryPrice} · stop {t.stop} · {new Date(t.openedAt * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              {gbp(t.positionValue)} in · at {t.entryPrice}
+              {cur != null && <> · now <span className="num">{cur}</span></>} · your stop {t.stop}
+              {distYourStop != null && <span className="num"> ({fmtPct(distYourStop)})</span>} · {new Date(t.openedAt * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
               {t.thesis && <em> — {t.thesis}</em>}
             </div>
+            {ev ? (
+              <div className="engine-read">
+                <GradeChip grade={ev.grade} provisional={ev.provisional} />
+                <span className="engine-read-lv num">
+                  engine {ev.side === 'long' ? '▲ long' : '▼ short'} · stop {ev.stop}
+                  {distEngStop != null && ` (${fmtPct(distEngStop)})`} · tgt {ev.target}
+                  {distEngTgt != null && ` (${fmtPct(distEngTgt)})`}
+                </span>
+                {conflict && (
+                  <span className="engine-conflict">engine disagrees{ev.stage ? ` — ${ev.stage}` : ''}</span>
+                )}
+              </div>
+            ) : (
+              <div className="engine-read no-read">no engine read</div>
+            )}
             <div className="row-bottom">
               {closing === t.id ? (
                 <>
@@ -202,7 +296,8 @@ export function Journal() {
               )}
             </div>
           </div>
-        ))}
+          )
+        })}
         {open.length === 0 && <p className="empty-line">No open positions.</p>}
 
         <h3 className="section-title">Closed ({closed.length})</h3>
@@ -211,7 +306,7 @@ export function Journal() {
           return (
             <div key={t.id} className="closed-row">
               <span>{t.symbol} <span className="badge info">{t.playbook}</span>{t.fromSuggestion && <IconNews size={11} />}</span>
-              <span className={pnl >= 0 ? 'up-text' : 'down-text'}>
+              <span className={pnlClass(pnl)}>
                 {gbp(pnl)} ({fmtPct((pnl / t.positionValue) * 100)})
               </span>
             </div>

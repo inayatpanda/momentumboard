@@ -558,6 +558,48 @@ button, input { font: inherit; }
 
 .trade-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .trade-meta em { color: var(--faint); font-style: italic; }
+
+/* ---------- Desk: risk dial ---------- */
+.risk-dial { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
+.risk-dial-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.risk-dial-label { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.risk-dial-now { font-size: 13px; font-weight: 700; color: var(--blue); }
+.risk-dial-track { display: flex; gap: 6px; }
+.risk-rung {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 6px 2px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--faint);
+}
+.risk-rung-r { font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
+.risk-rung-pct { font-size: 11px; }
+.risk-rung.is-passed { color: var(--muted); }
+.risk-rung.is-current { color: var(--on-accent); background: var(--blue); border-color: var(--blue); }
+.risk-dial-meta { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.risk-dial-meta > span:first-child { font-size: 12px; color: var(--muted); }
+.risk-dial-ev { font-size: 11px; color: var(--faint); }
+
+/* ---------- Desk: point-of-commitment calculator ---------- */
+.tf-engine { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.use-engine {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--blue); font-weight: 700; font-size: 12px; letter-spacing: 0.01em;
+}
+.use-engine:hover { text-decoration: underline; }
+.tf-engine-lv { font-size: 11.5px; color: var(--faint); }
+.tf-size { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+.tf-size-main { font-size: 13px; color: var(--text); }
+.tf-size-sub { color: var(--muted); font-weight: 400; }
+
+/* ---------- Desk: position P&L + engine second opinion ---------- */
+.card .pos-subpnl { display: block; font-size: 12px; font-weight: 600; margin-top: 1px; }
+.engine-read { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.engine-read-lv { color: var(--muted); }
+.engine-read.no-read { color: var(--faint); font-style: italic; }
+.engine-conflict {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+  color: var(--amber); border: 1px solid rgba(245, 184, 61, 0.5);
+  background: var(--amber-soft); border-radius: 999px; padding: 2px 9px;
+}
 .mini-btn { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
 .mini-btn.ghost { color: var(--muted); }
 .exit-input { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; color: var(--text); font-family: var(--font-num); width: 110px; }
@@ -747,6 +789,7 @@ button, input { font: inherit; }
 .calc-out strong, .stats-row strong, .dow-cell,
 .addform input, .alert-editor input, .calc-inputs input,
 .trade-form input:not([type='checkbox']), .trade-form select,
+.risk-rung-pct, .tf-size-main, .engine-read-lv, .pos-subpnl,
 .exit-input, .settings-grid input {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;

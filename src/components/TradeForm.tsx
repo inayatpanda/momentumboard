@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import type { Trade } from '../../shared/journal'
+import type { EnginePrediction, EngineData } from '../lib/api'
+import { positionSize } from '../../shared/risk'
+import { IconWarn } from './icons'
 
 const PLAYBOOKS = [
   { key: 'R', label: 'R — Reversal' },
@@ -8,9 +11,43 @@ const PLAYBOOKS = [
   { key: 'S', label: 'S — Fade (inverse)' },
 ] as const
 
-export function TradeForm({ onAdd }: { onAdd: (t: Trade) => void }) {
+const gbp0 = (v: number) => v.toLocaleString('en-GB', { maximumFractionDigits: 0 })
+const trim = (n: number) => +n.toFixed(2)
+
+export function TradeForm({
+  onAdd,
+  board,
+  riskState,
+  capital = 5000,
+}: {
+  onAdd: (t: Trade) => void
+  board?: EnginePrediction[]
+  riskState?: EngineData['riskState']
+  capital?: number
+}) {
   const [f, setF] = useState({ symbol: '', playbook: 'R', instrument: 'stock', leverage: '1', riskClass: 'normal', entry: '', stop: '', value: '', thesis: '', fromSuggestion: false })
   const set = (k: string, v: string | boolean) => setF(s => ({ ...s, [k]: v }))
+
+  const symbol = f.symbol.trim().toUpperCase()
+  // The engine's own view of this ticker, if it made a live call today.
+  const call = symbol ? board?.find(p => p.sym === symbol) ?? null : null
+  const riskClass = f.riskClass as 'normal' | 'speculative'
+  const entryN = parseFloat(f.entry)
+  const stopN = parseFloat(f.stop)
+
+  // Risk budget: the engine's rung-adjusted riskPct when it has called this name,
+  // else shared/risk defaults by class (2% / 1% spec). Engine pct already reflects
+  // the rung, so it isn't re-halved for a speculative class — the engine's number wins.
+  const riskPct = call ? call.riskPct : 2
+  const size = positionSize({ capital, riskPct, entry: entryN || 0, stop: stopN || 0, riskClass: call ? 'normal' : riskClass })
+  const naturalShares = size ? Math.floor(size.riskAmount / size.perUnitRisk) : null
+  const effPct = size ? trim((size.riskAmount / capital) * 100) : 0
+  const rungLabel = call ? `at R${call.riskRung}` : riskState ? `default · ladder at R${riskState.rung}` : 'default'
+
+  const useEngineLevels = () => {
+    if (!call) return
+    setF(s => ({ ...s, entry: String(call.entry), stop: String(call.stop), fromSuggestion: true }))
+  }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,11 +57,11 @@ export function TradeForm({ onAdd }: { onAdd: (t: Trade) => void }) {
     if (!f.symbol.trim() || !Number.isFinite(entry) || !Number.isFinite(stop) || !Number.isFinite(value) || entry <= 0 || value <= 0) return
     onAdd({
       id: `tr-${Date.now()}`,
-      symbol: f.symbol.trim().toUpperCase(),
+      symbol,
       direction: f.playbook === 'S' ? 'short' : 'long',
       instrument: f.instrument as 'stock' | 'etp',
       leverage: parseInt(f.leverage) || 1,
-      riskClass: f.riskClass as 'normal' | 'speculative',
+      riskClass,
       playbook: f.playbook as Trade['playbook'],
       fromSuggestion: f.fromSuggestion,
       units: value / entry,
@@ -52,6 +89,27 @@ export function TradeForm({ onAdd }: { onAdd: (t: Trade) => void }) {
         <label>Stop<input inputMode="decimal" value={f.stop} onChange={e => set('stop', e.target.value)} aria-label="Trade stop" /></label>
         <label>£ invested<input inputMode="decimal" value={f.value} onChange={e => set('value', e.target.value)} aria-label="Trade value" /></label>
       </div>
+
+      {call && (
+        <div className="tf-engine">
+          <button type="button" className="use-engine" onClick={useEngineLevels}>
+            use engine levels
+          </button>
+          <span className="tf-engine-lv num">in {call.entry} · stop {call.stop} · tgt {call.target}</span>
+        </div>
+      )}
+
+      {size && naturalShares != null && (
+        <div className="tf-size">
+          <span className="tf-size-main num">
+            risk £{size.riskAmount.toFixed(2)} <span className="tf-size-sub">({effPct}% {rungLabel})</span> → {naturalShares} shares ≈ £{gbp0(naturalShares * entryN)}
+          </span>
+          {size.warnings.map(w => (
+            <span key={w} className="calc-warn"><IconWarn size={12} /> {w}</span>
+          ))}
+        </div>
+      )}
+
       <div className="tf-row">
         <label>Instrument
           <select value={f.instrument} onChange={e => set('instrument', e.target.value)}>
