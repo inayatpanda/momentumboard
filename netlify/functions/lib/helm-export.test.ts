@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { routeExport } from './helm-export.mts'
-import { memoryStore } from './lib/store'
+import { routeExport } from '../helm-export.mts'
+import { memoryStore } from './store'
 
 const env = { APP_TOKEN: 'app', REPORT_TOKEN: 'rep' }
 
