@@ -1,0 +1,17 @@
+import type { ApiEnvelope, Candle, Quote } from '../../shared/types'
+
+export const getToken = () => localStorage.getItem('mb-token')
+export const setToken = (t: string) => localStorage.setItem('mb-token', t)
+
+export async function apiGet<T>(path: string): Promise<T> {
+  const res = await fetch(path, { headers: { 'x-app-token': getToken() ?? '' } })
+  const body = (await res.json()) as ApiEnvelope<T>
+  if (!body.ok || body.data === undefined) throw new Error(body.error ?? `http-${res.status}`)
+  return body.data
+}
+
+export const getQuotes = (symbols: string[]) =>
+  apiGet<{ quotes: (Quote | null)[] }>(`/api/market?type=quote&symbols=${symbols.join(',')}`).then(d => d.quotes)
+
+export const getCandles = (symbol: string, range = '1y') =>
+  apiGet<{ candles: Candle[]; quote: Quote }>(`/api/market?type=candles&symbol=${encodeURIComponent(symbol)}&range=${range}`)
