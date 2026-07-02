@@ -9,7 +9,7 @@ import { RegimeBanner } from '../components/RegimeBanner'
 import { TickerRow } from '../components/TickerRow'
 import { AddTickerForm } from '../components/AddTickerForm'
 import { Toasts } from '../components/Toasts'
-import { IconGear } from '../components/icons'
+import { IconGear, IconWarn } from '../components/icons'
 
 export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string) => void; onOpenSettings: () => void }) {
   const [items, setItems] = useState<{ symbol: string; category?: string }[]>([])
@@ -124,7 +124,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
             ))}
           </div>
         )}
-        {checkerStale && <div className="risk-banner">⚠ The background alert checker hasn't run in 20+ minutes — alerts may be delayed.</div>}
+        {checkerStale && <div className="risk-banner"><IconWarn /> The background alert checker hasn't run in 20+ minutes — alerts may be delayed.</div>}
         {trending && (trending.watchlist.length > 0 || trending.market.length > 0) && (
           <div className="trend-strip" aria-label="Trending today">
             {trending.watchlist.slice(0, 4).map(t => (
@@ -134,7 +134,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
             ))}
             {trending.market.filter(m => !trending.watchlist.some(w => w.sym === m.sym)).slice(0, 4).map(m => (
               <span key={m.sym} className="trend-chip mkt">
-                ⚡{m.sym} {m.changePct != null && <em className={m.changePct >= 0 ? 'up-text' : 'down-text'}>{m.changePct >= 0 ? '+' : ''}{m.changePct.toFixed(1)}%</em>}
+                {m.sym} {m.changePct != null && <em className={m.changePct >= 0 ? 'up-text' : 'down-text'}>{m.changePct >= 0 ? '+' : ''}{m.changePct.toFixed(1)}%</em>}
               </span>
             ))}
           </div>
@@ -159,7 +159,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
           </div>
         )}
         <footer className="foot">
-          {error ? <span className="stale">⚠ data stale: {error}</span> : lastUpdated ? `Updated ${new Date(lastUpdated).toLocaleTimeString()}` : 'Loading…'}
+          {error ? <span className="stale"><IconWarn size={12} /> data stale: {error}</span> : lastUpdated ? `Updated ${new Date(lastUpdated).toLocaleTimeString()}` : 'Loading…'}
           <br />
           Tap a ticker for charts, alerts and sizing. Data delayed up to ~2 min. This app informs. It does not predict.
         </footer>

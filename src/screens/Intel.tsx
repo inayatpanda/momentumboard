@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
 import { getEcon, getCalendar, getConsensus, getInsiders, getSmartMoney, getVideoAnalyses, getFeed, getAlertHistory, getSocialPulse, getSectors } from '../lib/api'
-import { IconGear, IconCalendar, IconLandmark } from '../components/icons'
+import { IconGear, IconCalendar, IconLandmark, IconFlame, IconPlay, stripEmoji } from '../components/icons'
 
 // Intel, in three streams the user asked for:
 //   Markets: macro, earnings, 13F, headlines, alerts
@@ -125,7 +125,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                 <h3 className="section-title">Recent alerts</h3>
                 {history.slice(0, 10).map((h, i) => (
                   <div key={i} className="perf-row" style={{ fontFamily: 'var(--font-ui)', fontSize: 12.5 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.text}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stripEmoji(h.text)}</span>
                     <span style={{ color: 'var(--faint)', flex: '0 0 auto', marginLeft: 8 }}>
                       {new Date(h.at * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -218,7 +218,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                 {pulse.discoveries.map(d => (
                   <div key={d.sym} className="ai-card" style={{ marginBottom: 8, borderColor: 'rgba(34,201,141,0.4)' }}>
                     <h3 style={{ fontSize: 14, color: 'var(--text)' }}>
-                      {d.sym} {d.surging && <span className="badge warn">🔥 {d.surgeMultiple}x in 24h</span>} {d.sources >= 2 && <span className="badge good">{d.sources} platforms</span>}
+                      {d.sym} {d.surging && <span className="badge warn"><IconFlame size={11} /> {d.surgeMultiple}x in 24h</span>} {d.sources >= 2 && <span className="badge good">{d.sources} platforms</span>}
                       <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 12 }}>
                         {' '}{d.companyName ?? ''}{d.capUsdM ? ` · $${(d.capUsdM / 1000).toFixed(1)}B` : ''}
                       </span>
@@ -242,7 +242,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                 {pulse.pulse.slice(0, 8).map(p => (
                   <div key={p.sym} className="perf-row" style={p.onWatchlist ? { borderColor: 'rgba(90,169,255,0.5)' } : undefined}>
                     <span>
-                      {p.sym} {p.surging && <span className="badge warn">🔥</span>}
+                      {p.sym} {p.surging && <span className="badge warn"><IconFlame size={11} /></span>}
                       {p.onWatchlist && <span className="badge info">watchlist</span>}
                     </span>
                     <span style={{ color: 'var(--muted)', fontSize: 12 }}>
@@ -281,7 +281,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                 {videoAnalyses.map(v => (
                   <div key={v.url} className="ai-card" style={{ marginBottom: 8 }}>
                     <h3 style={{ fontSize: 13 }}>
-                      <a href={v.url} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>▶ {v.title || v.url}</a>
+                      <a href={v.url} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}><IconPlay /> {v.title || v.url}</a>
                       <span style={{ color: 'var(--faint)', fontWeight: 400 }}> · {v.channel}</span>
                     </h3>
                     <p style={{ fontSize: 13 }}>{v.analysis}</p>
@@ -296,7 +296,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
               <ul className="news-list">
                 {feed.videos.slice(0, 8).map(v => (
                   <li key={v.url}>
-                    <a href={v.url} target="_blank" rel="noreferrer">▶ {v.title}</a>
+                    <a href={v.url} target="_blank" rel="noreferrer"><IconPlay /> {v.title}</a>
                     <span>{v.channel}</span>
                   </li>
                 ))}

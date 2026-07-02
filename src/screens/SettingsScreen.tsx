@@ -3,7 +3,7 @@ import { db, getCapital, getChannels } from '../lib/db'
 import { resolveChannel, getLicences, createLicence, revokeLicence } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { enablePush, pushSupported, type PushStatus } from '../lib/push'
-import { IconBack } from '../components/icons'
+import { IconBack, IconBell, IconSun, IconMoon } from '../components/icons'
 
 function LicenceManager() {
   const [licences, setLicences] = useState<Awaited<ReturnType<typeof getLicences>> | null>(null)
@@ -96,7 +96,7 @@ function NotificationSettings() {
           setStatus(await enablePush())
         }}
       >
-        🔔 {label}
+        <IconBell /> {label}
       </button>
       <p className="empty-line" style={{ fontSize: 11, marginTop: 4 }}>
         Alerts arrive as native notifications on every enabled device. Telegram stays on as the reliable backup; /mute silences both.
@@ -118,7 +118,7 @@ function ThemeSettings() {
     <div className="subtabs" style={{ marginBottom: 4 }}>
       {(['auto', 'light', 'dark'] as const).map(p => (
         <button key={p} className={pref === p ? 'active' : ''} onClick={() => apply(p)}>
-          {p === 'auto' ? 'Auto' : p === 'light' ? '☀ Light' : '🌙 Dark'}
+          {p === 'auto' ? 'Auto' : p === 'light' ? <><IconSun /> Light</> : <><IconMoon /> Dark</>}
         </button>
       ))}
     </div>

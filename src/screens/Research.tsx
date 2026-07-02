@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getAiRead, getPicks, getPickStats, getOutcomes, getEventDossiers } from '../lib/api'
-import { IconGear, IconNews } from '../components/icons'
+import { IconGear, IconNews, IconFlame, IconBalloon, IconPin, IconTarget } from '../components/icons'
 
 // Research: everything the analyst produces and how it performs.
 // The accountability page: reports, picks, persistence, scorecard, track record.
@@ -33,7 +33,7 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
             {events.map(e => (
               <div key={e.sym + e.at} className="ai-card" style={{ marginBottom: 8, borderColor: e.kind === 'shock' ? 'rgba(255,93,115,0.45)' : 'rgba(245,184,61,0.45)' }}>
                 <h3 style={{ color: 'var(--text)', fontSize: 14 }}>
-                  {e.kind === 'shock' ? `⚡ ${e.name} ${e.movePct! > 0 ? '+' : ''}${e.movePct}%` : `🎈 ${e.name} stretched (${e.zScore}σ, RSI ${e.rsi})`}
+                  {e.kind === 'shock' ? <><IconFlame /> {e.name} {e.movePct! > 0 ? '+' : ''}{e.movePct}%</> : <><IconBalloon /> {e.name} stretched ({e.zScore}σ, RSI {e.rsi})</>}
                   <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 11 }}>
                     {' '}{new Date(e.at * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   </span>
@@ -73,7 +73,7 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
               <div key={p.ticker + p.side} className="perf-row" style={p.persistent ? { borderColor: 'rgba(34,201,141,0.5)' } : undefined}>
                 <span>
                   {p.ticker} <span className={`badge ${p.side === 'long' ? 'good' : 'bad'}`}>{p.side}</span>{' '}
-                  {p.persistent && <span className="badge good">📌 persistent</span>}
+                  {p.persistent && <span className="badge good"><IconPin /> persistent</span>}
                 </span>
                 <span style={{ color: 'var(--muted)' }}>
                   {p.streak > 1 ? `${p.streak} in a row` : `${p.appearances} of last 7`}
@@ -112,7 +112,7 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                   {d.picks.map(p => (
                     <span key={p.ticker + p.side} style={{ marginRight: 10 }}>
-                      {p.strength === 'strong' && '🎯'}{p.ticker}{p.side === 'short' ? '↓' : ''}
+                      {p.strength === 'strong' && <IconTarget size={11} />}{p.ticker}{p.side === 'short' ? '↓' : ''}
                       {p.f5 != null && <em className={p.f5 >= 0 ? 'up-text' : 'down-text'} style={{ fontStyle: 'normal' }}> {p.f5 >= 0 ? '+' : ''}{p.f5.toFixed(1)}%</em>}
                     </span>
                   ))}

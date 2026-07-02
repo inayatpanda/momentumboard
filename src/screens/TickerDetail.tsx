@@ -13,7 +13,7 @@ import { RsiChart } from '../components/RsiChart'
 import { PositionCalculator } from '../components/PositionCalculator'
 import { AlertEditor } from '../components/AlertEditor'
 import { Badge } from '../components/Badge'
-import { IconBack } from '../components/icons'
+import { IconBack, IconWarn } from '../components/icons'
 
 const RANGES = ['3mo', '6mo', '1y'] as const
 type Range = (typeof RANGES)[number]
@@ -117,7 +117,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
         </div>
       </header>
 
-      {error && <p className="calc-warn">⚠ {error}</p>}
+      {error && <p className="calc-warn"><IconWarn size={12} /> {error}</p>}
 
       <div className="detail-badges">
         {rvol != null && <span className={`rvol ${rvol >= 2 ? 'hot' : ''}`}>RVOL {rvol.toFixed(1)}x</span>}

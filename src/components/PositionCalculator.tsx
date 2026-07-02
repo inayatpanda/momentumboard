@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { positionSize } from '../../shared/risk'
+import { IconWarn } from './icons'
 
 export function PositionCalculator({ defaultEntry, defaultStop, riskClass, capital = 5000 }: { defaultEntry: number | null; defaultStop: number | null; riskClass: 'normal' | 'speculative'; capital?: number }) {
   const [entry, setEntry] = useState(defaultEntry != null ? String(+defaultEntry.toFixed(4)) : '')
@@ -29,7 +30,7 @@ export function PositionCalculator({ defaultEntry, defaultStop, riskClass, capit
         <p className="calc-hint">Enter an entry and a stop to size the trade.</p>
       )}
       {result?.warnings.map(w => (
-        <p key={w} className="calc-warn">⚠ {w}</p>
+        <p key={w} className="calc-warn"><IconWarn size={12} /> {w}</p>
       ))}
       <p className="calc-hint">Figures in the instrument's own currency; treats capital 1:1 across GBP/USD — fine for risk discipline, not accounting.</p>
     </section>

@@ -7,7 +7,7 @@ import { computeStats, exposureWarnings, tradePnl, type Trade } from '../../shar
 import { getT212 } from '../lib/api'
 import { TradeForm } from '../components/TradeForm'
 import { Sparkline } from '../components/Sparkline'
-import { IconSwap } from '../components/icons'
+import { IconSwap, IconWarn, IconNews, IconSparkle } from '../components/icons'
 import { fmtPct } from '../lib/format'
 
 const gbp = (v: number) => `${v < 0 ? '−' : ''}£${Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`
@@ -101,7 +101,7 @@ export function Journal() {
       </header>
       <div className="content">
         {warnings.map(w => (
-          <div key={w.code + (w.symbol ?? '')} className="risk-banner">⚠ {w.message}</div>
+          <div key={w.code + (w.symbol ?? '')} className="risk-banner"><IconWarn /> {w.message}</div>
         ))}
 
         <div className="stats-row">
@@ -210,7 +210,7 @@ export function Journal() {
           const pnl = tradePnl(t)!
           return (
             <div key={t.id} className="closed-row">
-              <span>{t.symbol} <span className="badge info">{t.playbook}</span>{t.fromSuggestion && ' 📰'}</span>
+              <span>{t.symbol} <span className="badge info">{t.playbook}</span>{t.fromSuggestion && <IconNews size={11} />}</span>
               <span className={pnl >= 0 ? 'up-text' : 'down-text'}>
                 {gbp(pnl)} ({fmtPct((pnl / t.positionValue) * 100)})
               </span>
@@ -244,7 +244,7 @@ export function Journal() {
               <span style={{ fontSize: 13.5 }}><span className="badge info">{n.kind}</span> {n.text}</span>
               <button className="remove" onClick={async () => { await db.notes.delete(n.id); setNotes(x => x.filter(y => y.id !== n.id)); mirrorConfig() }} aria-label="Delete note">✕</button>
             </div>
-            {n.aiTake && <p style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 6, marginBottom: 0 }}>🧠 {n.aiTake}</p>}
+            {n.aiTake && <p style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 6, marginBottom: 0 }}><IconSparkle /> {n.aiTake}</p>}
           </div>
         ))}
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { syncFromServer } from './lib/sync'
 import { Watchlist } from './screens/Watchlist'
 import { TickerDetail } from './screens/TickerDetail'
@@ -41,15 +42,27 @@ export default function App() {
 
   const openSettings = () => setView(v => ({ screen: 'settings', from: v.screen }))
   const active = view.screen === 'detail' ? 'charts' : view.screen === 'settings' ? view.from : view.screen
+  const reduced = useReducedMotion()
+  const screenKey = view.screen + (view.screen === 'detail' ? view.symbol : '')
 
   return (
     <div className="shell" key={syncTick}>
-      {view.screen === 'watchlist' && <Watchlist onOpen={open} onOpenSettings={openSettings} />}
-      {view.screen === 'detail' && <TickerDetail symbol={view.symbol} onBack={() => setView({ screen: 'watchlist' })} />}
-      {view.screen === 'journal' && <Journal />}
-      {view.screen === 'research' && <Research onOpenSettings={openSettings} />}
-      {view.screen === 'intel' && <Intel onOpenSettings={openSettings} />}
-      {view.screen === 'settings' && <SettingsScreen onBack={() => navigate(view.from === 'detail' ? 'watchlist' : view.from)} />}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={screenKey}
+          initial={reduced ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduced ? undefined : { opacity: 0, y: -6 }}
+          transition={{ duration: 0.16, ease: 'easeOut' }}
+        >
+          {view.screen === 'watchlist' && <Watchlist onOpen={open} onOpenSettings={openSettings} />}
+          {view.screen === 'detail' && <TickerDetail symbol={view.symbol} onBack={() => setView({ screen: 'watchlist' })} />}
+          {view.screen === 'journal' && <Journal />}
+          {view.screen === 'research' && <Research onOpenSettings={openSettings} />}
+          {view.screen === 'intel' && <Intel onOpenSettings={openSettings} />}
+          {view.screen === 'settings' && <SettingsScreen onBack={() => navigate(view.from === 'detail' ? 'watchlist' : view.from)} />}
+        </motion.div>
+      </AnimatePresence>
       <TabBar active={active} chartsReady={!!lastSymbol} onNavigate={navigate} />
     </div>
   )
