@@ -1,44 +1,15 @@
 import type { Config } from '@netlify/functions'
-import { fetchYahooChart } from './lib/yahoo'
-import { fetchFinnhubQuote } from './lib/finnhub'
-import { getCached, setCached } from './lib/cache'
+import { cachedQuote, cachedCandles } from './lib/marketCache'
 import { blobAppStore } from './lib/store'
 import { fetchNews } from './lib/news'
 import { fetchVideos } from './lib/youtube'
 import { sendTelegram } from './lib/telegram'
 import { evaluateAlerts, flushBatch, emptyAlertState, type AlertState, type TickerSnapshot } from '../../shared/alerts'
 import type { AppConfig } from '../../shared/config'
-import type { Candle, Quote } from '../../shared/types'
 import { rsi } from '../../shared/indicators'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction, isMarketOpen } from '../../shared/rvol'
 import { detectSetups, regimeFromCandles } from '../../shared/setups'
-import { exchangeFor, isYahooSymbol as isYahoo } from '../../shared/symbols'
-
-async function cachedQuote(sym: string, finnhubKey: string): Promise<Quote | null> {
-  const key = `quote:${sym}`
-  const hit = await getCached<Quote>(key)
-  if (hit) return hit
-  try {
-    const q = isYahoo(sym) ? (await fetchYahooChart(sym, '3mo')).quote : await fetchFinnhubQuote(sym, finnhubKey)
-    await setCached(key, q, 60)
-    return q
-  } catch {
-    return null
-  }
-}
-
-async function cachedCandles(sym: string): Promise<Candle[] | null> {
-  const key = `candles:${sym}:1y`
-  const hit = await getCached<{ candles: Candle[] }>(key)
-  if (hit) return hit.candles
-  try {
-    const data = await fetchYahooChart(sym, '1y')
-    await setCached(key, data, 900)
-    return data.candles
-  } catch {
-    return null
-  }
-}
+import { exchangeFor } from '../../shared/symbols'
 
 export default async () => {
   const nowSec = Math.floor(Date.now() / 1000)

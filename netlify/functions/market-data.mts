@@ -53,6 +53,64 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'calendar') {
+    const symbols = (url.searchParams.get('symbols') ?? '').split(',').filter(Boolean).slice(0, 30)
+    if (!symbols.length) return json(200, { ok: true, data: { earnings: [] } })
+    const key = `calendar:${symbols.slice().sort().join(',')}`
+    const hit = await getCached<unknown>(key)
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const now = new Date()
+      const to = new Date(now.getTime() + 14 * 86_400_000)
+      const iso = (d: Date) => d.toISOString().slice(0, 10)
+      const res = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${iso(now)}&to=${iso(to)}&token=${env.FINNHUB_API_KEY}`)
+      const j = (await res.json()) as { earningsCalendar?: { symbol: string; date: string; hour: string; epsEstimate: number | null }[] }
+      const wanted = new Set(symbols.map(s => s.split('.')[0].split('-')[0]))
+      const earnings = (j.earningsCalendar ?? []).filter(e => wanted.has(e.symbol)).map(e => ({ symbol: e.symbol, date: e.date, hour: e.hour, epsEstimate: e.epsEstimate }))
+      const data = { earnings }
+      await setCached(key, data, 21_600)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'feed') {
+    const hit = await getCached<unknown>('digest-feed')
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { blobAppStore } = await import('./lib/store')
+      const { fetchNews } = await import('./lib/news')
+      const { fetchVideos } = await import('./lib/youtube')
+      const cfg = await blobAppStore.read<{ watchlist: { symbol: string }[]; ytChannels: { id: string; name: string }[] }>('config')
+      const nowSec = Math.floor(Date.now() / 1000)
+      const [news, videos] = await Promise.all([
+        fetchNews((cfg?.watchlist ?? []).map(w => w.symbol), env.FINNHUB_API_KEY ?? '', nowSec),
+        fetchVideos(cfg?.ytChannels ?? [], nowSec),
+      ])
+      const data = { news: news.slice(0, 20), videos: videos.slice(0, 12) }
+      await setCached('digest-feed', data, 600)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'resolve-channel') {
+    const handle = (url.searchParams.get('handle') ?? '').replace(/^@/, '')
+    if (!handle) return json(400, { ok: false, error: 'missing-handle' })
+    try {
+      const res = await fetch(`https://www.youtube.com/@${encodeURIComponent(handle)}`, { headers: { 'User-Agent': 'Mozilla/5.0 (MomentumBoard)' } })
+      const page = await res.text()
+      const id = page.match(/channel_id=(UC[A-Za-z0-9_-]{10,})/)?.[1]
+      const name = page.match(/<title>([^<]+?)\s*- YouTube<\/title>/)?.[1] ?? handle
+      if (!id) return json(404, { ok: false, error: 'channel-not-found' })
+      return json(200, { ok: true, data: { id, name } })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
   if (type === 'news') {
     const symbol = url.searchParams.get('symbol')
     if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })

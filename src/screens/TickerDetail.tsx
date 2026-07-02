@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Candle, Quote } from '../../shared/types'
 import { getCandles, getNews } from '../lib/api'
-import { db, type RuleItem } from '../lib/db'
+import { db, getCapital, type RuleItem } from '../lib/db'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPrice, fmtPct } from '../lib/format'
 import { detectSetups } from '../../shared/setups'
@@ -22,7 +22,12 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
   const [quote, setQuote] = useState<Quote | null>(null)
   const [news, setNews] = useState<{ title: string; url: string; publishedSec: number }[]>([])
   const [rules, setRules] = useState<RuleItem[]>([])
+  const [capital, setCapital] = useState(5000)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getCapital().then(setCapital)
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -114,7 +119,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
       <AlertEditor symbol={symbol} rules={rules} onSave={saveRule} onDelete={deleteRule} />
 
       {/* key remounts the calculator when the price first arrives so defaults prefill */}
-      <PositionCalculator key={`${symbol}-${price == null ? 'loading' : 'ready'}`} defaultEntry={price} defaultStop={defaultStop} riskClass="normal" />
+      <PositionCalculator key={`${symbol}-${price == null ? 'loading' : 'ready'}`} defaultEntry={price} defaultStop={defaultStop} riskClass="normal" capital={capital} />
 
       {news.length > 0 && (
         <section>

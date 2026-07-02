@@ -405,6 +405,58 @@ button, input { font: inherit; }
 .news-list a:hover { color: var(--accent); }
 .news-list span { color: var(--faint); font-size: 11px; }
 
+/* ---------- journal ---------- */
+.risk-banner {
+  background: var(--amber-soft);
+  border: 1px solid rgba(245, 184, 61, 0.5);
+  color: var(--amber);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.stats-row { display: flex; gap: 8px; margin: 10px 0; }
+.stats-row > div { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 6px; text-align: center; }
+.stats-row strong { display: block; font-family: var(--font-num); font-size: 15px; }
+.stats-row span { color: var(--muted); font-size: 10px; }
+.playbook-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+
+.trade-form { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.tf-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.tf-row label, .tf-full { flex: 1; display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.tf-full { display: flex; margin-bottom: 8px; }
+.trade-form input:not([type='checkbox']), .trade-form select {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 10px; color: var(--text); font-family: var(--font-num); width: 100%; outline: none;
+}
+.trade-form input:focus, .trade-form select:focus { border-color: var(--green); }
+.tf-bottom { align-items: center; justify-content: space-between; margin-bottom: 0; }
+.tf-check { flex-direction: row !important; align-items: center; gap: 6px !important; text-transform: none !important; font-size: 12px !important; }
+.trade-form button { background: var(--green); border: none; border-radius: 10px; padding: 9px 16px; color: #05130d; font-weight: 700; cursor: pointer; }
+
+.trade-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.trade-meta em { color: var(--faint); font-style: italic; }
+.mini-btn { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+.mini-btn.ghost { color: var(--muted); }
+.exit-input { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; color: var(--text); font-family: var(--font-num); width: 110px; }
+.closed-row { display: flex; justify-content: space-between; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; font-size: 13.5px; font-family: var(--font-num); }
+.empty-line { color: var(--faint); font-size: 13px; }
+.journal-io { display: flex; gap: 8px; margin-top: 16px; }
+
+/* ---------- digest ---------- */
+.digest-section { margin-bottom: 18px; }
+.perf-row { display: flex; justify-content: space-between; padding: 7px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 5px; font-family: var(--font-num); font-size: 13.5px; }
+.link-card { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 8px; color: var(--text); text-decoration: none; font-size: 14px; }
+.link-card:hover { border-color: var(--green); }
+.link-card span { color: var(--muted); font-size: 12px; display: block; margin-top: 2px; }
+.ai-card { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid rgba(199, 146, 234, 0.35); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
+.ai-card h3 { margin: 0 0 6px; font-size: 14px; color: #c792ea; }
+.ai-card p { margin: 0 0 6px; font-size: 13.5px; white-space: pre-wrap; }
+.ai-card .ai-note { color: var(--faint); font-size: 11px; }
+.settings-grid { display: flex; flex-direction: column; gap: 8px; }
+.settings-grid input { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; color: var(--text); font-family: var(--font-num); outline: none; }
+.chan-row { display: flex; justify-content: space-between; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
+
 /* ---------- token gate ---------- */
 .gate {
   min-height: 100dvh;

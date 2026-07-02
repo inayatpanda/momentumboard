@@ -1,0 +1,153 @@
+import { useEffect, useState } from 'react'
+import { db, getCapital } from '../lib/db'
+import { mirrorPortfolio } from '../lib/portfolioMirror'
+import { computeStats, exposureWarnings, tradePnl, type Trade } from '../../shared/journal'
+import { TradeForm } from '../components/TradeForm'
+import { fmtPct } from '../lib/format'
+
+const gbp = (v: number) => `${v < 0 ? '−' : ''}£${Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`
+
+export function Journal() {
+  const [trades, setTrades] = useState<Trade[]>([])
+  const [capital, setCapital] = useState(5000)
+  const [closing, setClosing] = useState<string | null>(null)
+  const [exitPrice, setExitPrice] = useState('')
+
+  useEffect(() => {
+    db.trades.toArray().then(setTrades)
+    getCapital().then(setCapital)
+  }, [])
+
+  const open = trades.filter(t => t.exitPrice == null).sort((a, b) => b.openedAt - a.openedAt)
+  const closed = trades.filter(t => t.exitPrice != null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
+  const stats = computeStats(trades)
+  const warnings = exposureWarnings(open, capital, Math.floor(Date.now() / 1000))
+
+  const add = async (t: Trade) => {
+    await db.trades.put(t)
+    setTrades(x => [...x, t])
+    mirrorPortfolio()
+  }
+
+  const close = async (id: string) => {
+    const px = parseFloat(exitPrice)
+    if (!Number.isFinite(px) || px <= 0) return
+    const t = trades.find(x => x.id === id)
+    if (!t) return
+    const updated = { ...t, exitPrice: px, closedAt: Math.floor(Date.now() / 1000) }
+    await db.trades.put(updated)
+    setTrades(x => x.map(y => (y.id === id ? updated : y)))
+    setClosing(null)
+    setExitPrice('')
+    mirrorPortfolio()
+  }
+
+  const remove = async (id: string) => {
+    await db.trades.delete(id)
+    setTrades(x => x.filter(y => y.id !== id))
+    mirrorPortfolio()
+  }
+
+  const exportJson = () => {
+    const blob = new Blob([JSON.stringify(trades, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `momentumboard-journal-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+  }
+
+  const importJson = async (file: File) => {
+    try {
+      const imported = JSON.parse(await file.text()) as Trade[]
+      if (!Array.isArray(imported)) return
+      await db.trades.bulkPut(imported)
+      setTrades(await db.trades.toArray())
+      mirrorPortfolio()
+    } catch {
+      /* bad file — ignore */
+    }
+  }
+
+  return (
+    <>
+      <header className="topbar">
+        <span className="brand">Journal</span>
+        <span className="regime" style={{ marginLeft: 'auto' }}>£{capital.toLocaleString('en-GB')} capital</span>
+      </header>
+      <div className="content">
+        {warnings.map(w => (
+          <div key={w.code + (w.symbol ?? '')} className="risk-banner">⚠ {w.message}</div>
+        ))}
+
+        <div className="stats-row">
+          <div><strong className={stats.realizedPnl >= 0 ? 'up-text' : 'down-text'}>{gbp(stats.realizedPnl)}</strong><span>realised P&L</span></div>
+          <div><strong>{stats.winRate == null ? '—' : `${Math.round(stats.winRate * 100)}%`}</strong><span>win rate ({stats.closedCount})</span></div>
+          <div><strong>{stats.avgWin == null ? '—' : gbp(stats.avgWin)}</strong><span>avg win</span></div>
+          <div><strong>{stats.avgLoss == null ? '—' : gbp(stats.avgLoss)}</strong><span>avg loss</span></div>
+        </div>
+
+        {Object.keys(stats.byPlaybook).length > 0 && (
+          <div className="playbook-row">
+            {Object.entries(stats.byPlaybook).map(([k, v]) => (
+              <span key={k} className={`badge ${v.expectancy >= 0 ? 'good' : 'bad'}`}>{k}: {gbp(v.expectancy)}/trade ({v.n})</span>
+            ))}
+          </div>
+        )}
+
+        <h3 className="section-title">Log a trade</h3>
+        <TradeForm onAdd={add} />
+
+        <h3 className="section-title">Open positions ({open.length})</h3>
+        {open.map(t => (
+          <div key={t.id} className="card">
+            <div className="row-top">
+              <span className="sym">{t.symbol} <span className="badge info">{t.playbook}</span> {t.instrument === 'etp' && <span className="badge warn">{t.leverage}x ETP</span>}</span>
+              <span className="prices"><span className="price">{gbp(t.positionValue)}</span></span>
+            </div>
+            <div className="trade-meta">
+              in {t.entryPrice} · stop {t.stop} · {new Date(t.openedAt * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              {t.thesis && <em> — {t.thesis}</em>}
+            </div>
+            <div className="row-bottom">
+              {closing === t.id ? (
+                <>
+                  <input className="exit-input" inputMode="decimal" placeholder="Exit price" value={exitPrice} onChange={e => setExitPrice(e.target.value)} autoFocus />
+                  <button className="mini-btn" onClick={() => close(t.id)}>Confirm</button>
+                  <button className="mini-btn ghost" onClick={() => setClosing(null)}>Cancel</button>
+                </>
+              ) : (
+                <>
+                  <button className="mini-btn" onClick={() => { setClosing(t.id); setExitPrice('') }}>Close position</button>
+                  <button className="remove" onClick={() => remove(t.id)} aria-label={`Delete ${t.symbol} trade`}>✕</button>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+        {open.length === 0 && <p className="empty-line">No open positions.</p>}
+
+        <h3 className="section-title">Closed ({closed.length})</h3>
+        {closed.slice(0, 15).map(t => {
+          const pnl = tradePnl(t)!
+          return (
+            <div key={t.id} className="closed-row">
+              <span>{t.symbol} <span className="badge info">{t.playbook}</span>{t.fromSuggestion && ' 📰'}</span>
+              <span className={pnl >= 0 ? 'up-text' : 'down-text'}>
+                {gbp(pnl)} ({fmtPct((pnl / t.positionValue) * 100)})
+              </span>
+            </div>
+          )
+        })}
+        {closed.length === 0 && <p className="empty-line">No closed trades yet — expectancy per playbook appears after ~20.</p>}
+
+        <div className="journal-io">
+          <button className="mini-btn ghost" onClick={exportJson}>Export JSON</button>
+          <label className="mini-btn ghost">
+            Import<input type="file" accept="application/json" hidden onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} />
+          </label>
+        </div>
+        <footer className="foot">Journal data stays on this device; only a summary snapshot syncs for the morning report.</footer>
+      </div>
+    </>
+  )
+}

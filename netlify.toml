@@ -20,3 +20,13 @@
   from = "/report"
   to = "/.netlify/functions/report"
   status = 200
+
+[[redirects]]
+  from = "/api/portfolio"
+  to = "/.netlify/functions/portfolio"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai"
+  to = "/.netlify/functions/ai-insights"
+  status = 200

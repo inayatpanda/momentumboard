@@ -12,7 +12,7 @@ const TABS = [
 ] as const
 
 export function TabBar({ active, chartsReady = false, onNavigate }: { active: string; chartsReady?: boolean; onNavigate?: (tab: string) => void }) {
-  const ready = (key: string) => key === 'watchlist' || (key === 'charts' && chartsReady)
+  const ready = (key: string) => key !== 'charts' || chartsReady
   return (
     <nav className="tabs" aria-label="Main">
       {TABS.map(t => (
@@ -25,7 +25,6 @@ export function TabBar({ active, chartsReady = false, onNavigate }: { active: st
         >
           <Icon d={t.icon} />
           {t.label}
-          {t.key !== 'watchlist' && t.key !== 'charts' && <span className="soon">SOON</span>}
         </button>
       ))}
     </nav>

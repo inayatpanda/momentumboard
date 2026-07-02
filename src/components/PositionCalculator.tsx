@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { positionSize } from '../../shared/risk'
 
-export function PositionCalculator({ defaultEntry, defaultStop, riskClass }: { defaultEntry: number | null; defaultStop: number | null; riskClass: 'normal' | 'speculative' }) {
+export function PositionCalculator({ defaultEntry, defaultStop, riskClass, capital = 5000 }: { defaultEntry: number | null; defaultStop: number | null; riskClass: 'normal' | 'speculative'; capital?: number }) {
   const [entry, setEntry] = useState(defaultEntry != null ? String(+defaultEntry.toFixed(4)) : '')
   const [stop, setStop] = useState(defaultStop != null ? String(+defaultStop.toFixed(4)) : '')
-  const result = positionSize({ capital: 5000, riskPct: 2, entry: parseFloat(entry) || 0, stop: parseFloat(stop) || 0, riskClass })
+  const result = positionSize({ capital, riskPct: 2, entry: parseFloat(entry) || 0, stop: parseFloat(stop) || 0, riskClass })
 
   return (
     <section className="calc">
-      <h3>Position size <span className="calc-sub">£5,000 capital · {riskClass === 'speculative' ? '1% (speculative)' : '2%'} risk</span></h3>
+      <h3>Position size <span className="calc-sub">£{capital.toLocaleString('en-GB')} capital · {riskClass === 'speculative' ? '1% (speculative)' : '2%'} risk</span></h3>
       <div className="calc-inputs">
         <label>
           Entry
