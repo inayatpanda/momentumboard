@@ -23,6 +23,10 @@ export async function routeConfig(
       const signals = (await store.read<unknown[]>('signal-log')) ?? []
       return json(200, { ok: true, data: signals })
     }
+    if (url.searchParams.get('view') === 'videos') {
+      const analyses = (await store.read<unknown[]>('video-analyses')) ?? []
+      return json(200, { ok: true, data: analyses.slice(-10).reverse() })
+    }
     if (url.searchParams.get('view') === 'runlog') {
       const runlog = (await store.read<unknown[]>('runlog')) ?? []
       return json(200, { ok: true, data: runlog.slice(-20) })

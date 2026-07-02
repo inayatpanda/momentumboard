@@ -104,6 +104,21 @@ export default async () => {
     await store.write(monthKey, archive)
   }
 
+  // queue AI video-watching for NEW videos worth the credits: Josh always,
+  // others only when the title names a watchlist ticker (cap enforced downstream)
+  const newVideos = videos.filter(v => !state.seenItems.includes(v.url))
+  const worthWatching = newVideos
+    .filter(v => v.channel === 'Stocks with Josh' || symbols.some(s => v.title.toUpperCase().includes(s.split('.')[0].split('-')[0])))
+    .slice(0, 2)
+  for (const v of worthWatching) {
+    // background function returns 202 immediately; analysis lands in Blobs later
+    await fetch(`${process.env.URL ?? 'https://momentumboard-inayat.netlify.app'}/.netlify/functions/video-analyze-background`, {
+      method: 'POST',
+      headers: { 'x-app-token': process.env.APP_TOKEN ?? '', 'content-type': 'application/json' },
+      body: JSON.stringify({ url: v.url, title: v.title, channel: v.channel }),
+    }).catch(() => errors.push('video-analyze-dispatch'))
+  }
+
   // alert history for the in-app screen
   if (events.length) {
     const history = (await store.read<unknown[]>('alert-history')) ?? []

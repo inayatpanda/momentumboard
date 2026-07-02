@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory } from '../lib/api'
+import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory, getVideoAnalyses } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPct } from '../lib/format'
 import { useMarketData } from '../hooks/useMarketData'
@@ -22,6 +22,7 @@ export function Digest() {
   const [signalStats, setSignalStats] = useState<Awaited<ReturnType<typeof getSignalStats>> | null>(null)
   const [smartMoney, setSmartMoney] = useState<Awaited<ReturnType<typeof getSmartMoney>> | null>(null)
   const [history, setHistory] = useState<Awaited<ReturnType<typeof getAlertHistory>>>([])
+  const [videoAnalyses, setVideoAnalyses] = useState<Awaited<ReturnType<typeof getVideoAnalyses>>>([])
   const { rows } = useMarketData(symbols)
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export function Digest() {
     getSignalStats().then(setSignalStats).catch(() => {})
     getSmartMoney().then(setSmartMoney).catch(() => {})
     getAlertHistory().then(setHistory).catch(() => {})
+    getVideoAnalyses().then(setVideoAnalyses).catch(() => {})
     getCapital().then(c => setCapital(String(c)))
     getChannels().then(setChannels)
   }, [])
@@ -140,6 +142,22 @@ export function Digest() {
             ))}
           </ul>
         </section>
+
+        {videoAnalyses.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">AI-watched videos</h3>
+            {videoAnalyses.map(v => (
+              <div key={v.url} className="ai-card" style={{ marginBottom: 8 }}>
+                <h3 style={{ fontSize: 13 }}>
+                  <a href={v.url} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>▶ {v.title || v.url}</a>
+                  <span style={{ color: 'var(--faint)', fontWeight: 400 }}> · {v.channel}</span>
+                </h3>
+                <p style={{ fontSize: 13 }}>{v.analysis}</p>
+                <span className="ai-note">Gemini watched the full video (frames + audio). Sentiment input, not signals — verify levels yourself.</span>
+              </div>
+            ))}
+          </section>
+        )}
 
         <section className="digest-section">
           <h3 className="section-title">Channels</h3>
