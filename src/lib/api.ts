@@ -26,6 +26,21 @@ export const getFeed = () =>
 export const resolveChannel = (handle: string) =>
   apiGet<{ id: string; name: string }>(`/api/market?type=resolve-channel&handle=${encodeURIComponent(handle)}`)
 
+export const getInsiders = (symbols: string[]) =>
+  apiGet<{ insiders: { symbol: string; buyers: string[]; totalValueUsd: number; isCluster: boolean; latest: { name: string; shares: number; date: string }[] }[] }>(`/api/market?type=insiders&symbols=${symbols.join(',')}`).then(d => d.insiders)
+
+export const getSignalStats = () =>
+  apiGet<{ scores: { setup: string; n: number; scored: number; win5: number | null; avg5: number | null; avg10: number | null }[]; totalSignals: number }>('/api/market?type=signal-stats')
+
+export const getSmartMoney = () =>
+  apiGet<{ funds: { fund: string; filedAt: string; newPositions: { issuer: string }[]; increased: { issuer: string; pctChange: number }[]; exited: { issuer: string }[] }[]; lagNote: string }>('/api/market?type=smart-money')
+
+export const getAlertHistory = () =>
+  apiGet<{ text: string; tier: string; at: number }[]>('/api/config?view=history')
+
+export const getRunlog = () =>
+  apiGet<{ at: number; events: number; sent: number; errors: string[] }[]>('/api/config?view=runlog')
+
 export const getAiRead = () =>
   apiGet<{ text?: string; provider?: string; at?: number; unconfigured?: boolean; empty?: boolean }>('/api/ai')
 

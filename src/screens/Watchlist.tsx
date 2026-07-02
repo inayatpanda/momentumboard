@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
-import { getToken, setToken } from '../lib/api'
+import { getToken, setToken, getRunlog } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { useMarketData } from '../hooks/useMarketData'
 import { useAlerts } from '../hooks/useAlerts'
@@ -14,6 +14,8 @@ export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
   const [symbols, setSymbols] = useState<string[]>([])
   const [rules, setRules] = useState<RuleItem[]>([])
   const [hasToken, setHasToken] = useState(!!getToken())
+  const [sortBy, setSortBy] = useState<'default' | 'change' | 'rvol' | 'setups'>('default')
+  const [checkerStale, setCheckerStale] = useState(false)
   const { rows, regime, lastUpdated, error } = useMarketData(symbols)
   const toasts = useAlerts(rows, regime, rules)
 
@@ -23,7 +25,20 @@ export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
       if (items.length) mirrorConfig() // ensure the server sees pre-existing watchlists
     })
     db.rules.toArray().then(setRules)
+    getRunlog()
+      .then(log => {
+        const last = log[log.length - 1]
+        setCheckerStale(!!last && Date.now() / 1000 - last.at > 1200)
+      })
+      .catch(() => {})
   }, [])
+
+  const sortedRows = [...rows].sort((a, b) => {
+    if (sortBy === 'change') return (b.quote?.changePct ?? -Infinity) - (a.quote?.changePct ?? -Infinity)
+    if (sortBy === 'rvol') return (b.rvol ?? -Infinity) - (a.rvol ?? -Infinity)
+    if (sortBy === 'setups') return b.setups.length - a.setups.length
+    return 0
+  })
 
   const add = async (symbol: string) => {
     if (symbols.includes(symbol) || symbols.length >= 30) return
@@ -78,7 +93,17 @@ export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
       </header>
       <div className="content">
         <AddTickerForm onAdd={add} disabled={symbols.length >= 30} />
-        {rows.map((row, i) => (
+        {rows.length > 1 && (
+          <div className="sort-chips">
+            {(['default', 'change', 'rvol', 'setups'] as const).map(k => (
+              <button key={k} className={sortBy === k ? 'active' : ''} onClick={() => setSortBy(k)}>
+                {k === 'default' ? 'A–Z' : k === 'change' ? '% chg' : k === 'rvol' ? 'RVOL' : 'Setups'}
+              </button>
+            ))}
+          </div>
+        )}
+        {checkerStale && <div className="risk-banner">⚠ The background alert checker hasn't run in 20+ minutes — alerts may be delayed.</div>}
+        {sortedRows.map((row, i) => (
           <div key={row.symbol} onClick={() => onOpen(row.symbol)} role="button" style={{ cursor: 'pointer' }}>
             <TickerRow
               row={row}

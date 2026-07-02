@@ -7,6 +7,7 @@ import { fmtPrice, fmtPct } from '../lib/format'
 import { detectSetups } from '../../shared/setups'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction } from '../../shared/rvol'
 import { exchangeFor } from '../../shared/symbols'
+import { runBacktest, type BacktestSummary } from '../../shared/backtest'
 import { PriceChart } from '../components/PriceChart'
 import { RsiChart } from '../components/RsiChart'
 import { PositionCalculator } from '../components/PositionCalculator'
@@ -23,6 +24,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
   const [news, setNews] = useState<{ title: string; url: string; publishedSec: number }[]>([])
   const [rules, setRules] = useState<RuleItem[]>([])
   const [capital, setCapital] = useState(5000)
+  const [backtest, setBacktest] = useState<BacktestSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -120,6 +122,27 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
 
       {/* key remounts the calculator when the price first arrives so defaults prefill */}
       <PositionCalculator key={`${symbol}-${price == null ? 'loading' : 'ready'}`} defaultEntry={price} defaultStop={defaultStop} riskClass="normal" capital={capital} />
+
+      <section className="calc" style={{ marginTop: 18 }}>
+        <h3>Setup backtest <span className="calc-sub">this ticker · {range} of daily bars</span></h3>
+        {backtest === null ? (
+          <button className="mini-btn" onClick={() => setBacktest(runBacktest(candles).summary)} disabled={candles.length < 60}>
+            Run backtest
+          </button>
+        ) : backtest.length === 0 ? (
+          <p className="calc-hint">No setup triggers occurred in this window.</p>
+        ) : (
+          <>
+            {backtest.map(b => (
+              <div key={b.setup} className="perf-row" style={{ marginTop: 6 }}>
+                <span>{b.setup} <span style={{ color: 'var(--faint)' }}>×{b.n}</span></span>
+                <span>{b.win5 != null ? `${Math.round(b.win5 * 100)}% win · ${b.avg5!.toFixed(1)}% @5d · ${b.avg20 != null ? b.avg20.toFixed(1) : '—'}% @20d` : 'no scoreable window'}</span>
+              </div>
+            ))}
+            <p className="calc-hint">Daily closes, no costs/slippage; small samples mislead — treat as calibration, not proof.</p>
+          </>
+        )}
+      </section>
 
       {news.length > 0 && (
         <section>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { getCalendar, getFeed, getAiRead, resolveChannel } from '../lib/api'
+import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPct } from '../lib/format'
 import { useMarketData } from '../hooks/useMarketData'
@@ -18,16 +18,26 @@ export function Digest() {
   const [channels, setChannels] = useState<{ id: string; name: string }[]>([])
   const [newHandle, setNewHandle] = useState('')
   const [resolving, setResolving] = useState(false)
+  const [insiders, setInsiders] = useState<Awaited<ReturnType<typeof getInsiders>>>([])
+  const [signalStats, setSignalStats] = useState<Awaited<ReturnType<typeof getSignalStats>> | null>(null)
+  const [smartMoney, setSmartMoney] = useState<Awaited<ReturnType<typeof getSmartMoney>> | null>(null)
+  const [history, setHistory] = useState<Awaited<ReturnType<typeof getAlertHistory>>>([])
   const { rows } = useMarketData(symbols)
 
   useEffect(() => {
     db.watchlist.toArray().then(items => {
       const syms = items.map(i => i.symbol)
       setSymbols(syms)
-      if (syms.length) getCalendar(syms).then(setEarnings).catch(() => {})
+      if (syms.length) {
+        getCalendar(syms).then(setEarnings).catch(() => {})
+        getInsiders(syms).then(setInsiders).catch(() => {})
+      }
     })
     getFeed().then(setFeed).catch(() => {})
     getAiRead().then(setAi).catch(() => {})
+    getSignalStats().then(setSignalStats).catch(() => {})
+    getSmartMoney().then(setSmartMoney).catch(() => {})
+    getAlertHistory().then(setHistory).catch(() => {})
     getCapital().then(c => setCapital(String(c)))
     getChannels().then(setChannels)
   }, [])
@@ -143,6 +153,69 @@ export function Digest() {
           </ul>
           {feed.videos.length === 0 && <p className="empty-line">No new videos in the last 24h.</p>}
         </section>
+
+        {insiders.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Insider buying — last 90 days</h3>
+            {insiders.map(i => (
+              <div key={i.symbol} className="perf-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                <span>
+                  {i.symbol} {i.isCluster && <span className="badge good">cluster</span>}{' '}
+                  <span style={{ color: 'var(--muted)' }}>
+                    {i.buyers.length} insider{i.buyers.length > 1 ? 's' : ''}
+                    {i.totalValueUsd > 0 && ` · ~$${Math.round(i.totalValueUsd / 1000)}k`}
+                  </span>
+                </span>
+                <span style={{ color: 'var(--faint)', fontSize: 11 }}>{i.latest.map(l => `${l.name.split(' ')[0]} +${l.shares.toLocaleString()}`).join(' · ')}</span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>Open-market buys (Form 4 code P) only — clustered buying has real empirical support; single buys are weak evidence.</p>
+          </section>
+        )}
+
+        {signalStats && signalStats.scores.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Signal scoreboard — live calibration</h3>
+            {signalStats.scores.map(s => (
+              <div key={s.setup} className="perf-row">
+                <span>{s.setup} <span style={{ color: 'var(--faint)' }}>×{s.n}</span></span>
+                <span>{s.win5 != null ? `${Math.round(s.win5 * 100)}% win · ${s.avg5!.toFixed(1)}% @5d` : 'too recent to score'}</span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>{signalStats.totalSignals} signals logged. Treat nothing here as meaningful below ~30 scored signals per setup.</p>
+          </section>
+        )}
+
+        {smartMoney && smartMoney.funds.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Smart money — latest 13F moves</h3>
+            {smartMoney.funds.map(f => (
+              <div key={f.fund} className="perf-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                <span>{f.fund} <span style={{ color: 'var(--faint)', fontSize: 11 }}>filed {f.filedAt}</span></span>
+                <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+                  {f.newPositions.length > 0 && <>NEW: {f.newPositions.map(h => h.issuer).join(', ')} </>}
+                  {f.increased.length > 0 && <>· ADDED: {f.increased.map(h => `${h.issuer} +${h.pctChange}%`).join(', ')} </>}
+                  {f.exited.length > 0 && <>· EXITED: {f.exited.map(h => h.issuer).join(', ')}</>}
+                </span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>{smartMoney.lagNote}</p>
+          </section>
+        )}
+
+        {history.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Recent alerts</h3>
+            {history.slice(0, 12).map((h, i) => (
+              <div key={i} className="perf-row" style={{ fontFamily: 'var(--font-ui)', fontSize: 12.5 }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.text}</span>
+                <span style={{ color: 'var(--faint)', flex: '0 0 auto', marginLeft: 8 }}>
+                  {new Date(h.at * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            ))}
+          </section>
+        )}
 
         <section className="digest-section">
           <h3 className="section-title">Elsewhere</h3>

@@ -111,6 +111,54 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'insiders') {
+    const symbols = (url.searchParams.get('symbols') ?? '').split(',').filter(Boolean).slice(0, 30)
+    const key = `insiders:${symbols.slice().sort().join(',')}`
+    const hit = await getCached<unknown>(key)
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { fetchInsiderBuys } = await import('./lib/insiders')
+      const data = { insiders: await fetchInsiderBuys(symbols, env.FINNHUB_API_KEY ?? '') }
+      await setCached(key, data, 21_600)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'signal-stats') {
+    const hit = await getCached<unknown>('signal-stats')
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { blobAppStore } = await import('./lib/store')
+      const { scoreSignals } = await import('./lib/signalStats')
+      const { cachedCandles } = await import('./lib/marketCache')
+      const log = ((await blobAppStore.read<unknown[]>('signal-log')) ?? []) as Parameters<typeof scoreSignals>[0]
+      const symbols = [...new Set(log.map(l => l.symbol))].slice(0, 40)
+      const candlePairs = await Promise.all(symbols.map(async s => [s, await cachedCandles(s)] as const))
+      const candlesBySymbol = new Map(candlePairs.filter((p): p is [string, NonNullable<(typeof candlePairs)[0][1]>] => p[1] !== null))
+      const data = { scores: scoreSignals(log, candlesBySymbol), totalSignals: log.length }
+      await setCached('signal-stats', data, 3600)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'smart-money') {
+    const hit = await getCached<unknown>('smart-money')
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { FUNDS, fetchFundMoves } = await import('./lib/edgar')
+      const funds = (await Promise.all(FUNDS.map(f => fetchFundMoves(f.cik, f.name)))).filter(Boolean)
+      const data = { funds, lagNote: '13F holdings are filed up to 45 days after quarter end — context, not timing.' }
+      await setCached('smart-money', data, 86_400)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
   if (type === 'news') {
     const symbol = url.searchParams.get('symbol')
     if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })

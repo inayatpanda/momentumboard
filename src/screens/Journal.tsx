@@ -3,6 +3,7 @@ import { db, getCapital } from '../lib/db'
 import { mirrorPortfolio } from '../lib/portfolioMirror'
 import { computeStats, exposureWarnings, tradePnl, type Trade } from '../../shared/journal'
 import { TradeForm } from '../components/TradeForm'
+import { Sparkline } from '../components/Sparkline'
 import { fmtPct } from '../lib/format'
 
 const gbp = (v: number) => `${v < 0 ? '−' : ''}£${Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`
@@ -85,6 +86,19 @@ export function Journal() {
           <div><strong>{stats.avgWin == null ? '—' : gbp(stats.avgWin)}</strong><span>avg win</span></div>
           <div><strong>{stats.avgLoss == null ? '—' : gbp(stats.avgLoss)}</strong><span>avg loss</span></div>
         </div>
+
+        {closed.length >= 2 && (
+          <div className="card" style={{ padding: '10px 14px' }}>
+            <span style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Equity curve — realised P&L</span>
+            <div style={{ marginTop: 4 }}>
+              <Sparkline
+                closes={[...closed].reverse().reduce<number[]>((acc, t) => [...acc, (acc[acc.length - 1] ?? 0) + tradePnl(t)!], [0])}
+                width={320}
+                height={48}
+              />
+            </div>
+          </div>
+        )}
 
         {Object.keys(stats.byPlaybook).length > 0 && (
           <div className="playbook-row">

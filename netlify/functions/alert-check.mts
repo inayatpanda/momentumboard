@@ -4,7 +4,7 @@ import { blobAppStore } from './lib/store'
 import { fetchNews } from './lib/news'
 import { fetchVideos } from './lib/youtube'
 import { sendTelegram } from './lib/telegram'
-import { evaluateAlerts, flushBatch, emptyAlertState, type AlertState, type TickerSnapshot } from '../../shared/alerts'
+import { evaluateAlerts, flushBatch, emptyAlertState, type AlertState, type TickerSnapshot, type StopWatch, type AlertEvent } from '../../shared/alerts'
 import type { AppConfig } from '../../shared/config'
 import { rsi } from '../../shared/indicators'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction, isMarketOpen } from '../../shared/rvol'
@@ -27,8 +27,12 @@ export default async () => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   const chatId = process.env.TELEGRAM_CHAT_ID
 
+  // open journal positions: their stops are watched even if off the watchlist
+  const portfolio = await store.read<{ openPositions?: { symbol: string; entryPrice: number; stop: number }[] }>('portfolio')
+  const positions: StopWatch[] = (portfolio?.openPositions ?? []).map(p => ({ symbol: p.symbol, entryPrice: p.entryPrice, stop: p.stop }))
+
   // gather market data in parallel; every branch is failure-isolated
-  const symbols = cfg.watchlist.map(w => w.symbol)
+  const symbols = [...new Set([...cfg.watchlist.map(w => w.symbol), ...positions.map(p => p.symbol)])].slice(0, 40)
   const [snapshots, spy, qqq, news, videos] = await Promise.all([
     Promise.all(
       symbols.map(async (symbol): Promise<TickerSnapshot | null> => {
@@ -73,12 +77,44 @@ export default async () => {
   const regime = spy && qqq ? regimeFromCandles(spy, qqq) : null
   const { events, state: afterEval } = evaluateAlerts(
     { rules: cfg.rules, watchlist: symbols },
-    { tickers: snapshots.filter((s): s is TickerSnapshot => s !== null), regime, news, videos, nowSec },
+    { tickers: snapshots.filter((s): s is TickerSnapshot => s !== null), regime, news, videos, nowSec, positions },
     state,
   )
 
+  // Signal outcome log — the raw material for long-horizon learning.
+  // Context (regime, rvol) is recorded so lessons can be conditioned on it;
+  // a rolling copy feeds the live scoreboard, monthly archives keep everything.
+  const setupEvents = events.filter(e => e.meta?.kind === 'setup' && e.meta.price != null)
+  if (setupEvents.length) {
+    const snapBySym = new Map(snapshots.filter((s): s is TickerSnapshot => s !== null).map(s => [s.symbol, s]))
+    const entries = setupEvents.map(e => ({
+      symbol: e.symbol,
+      setup: e.meta!.setup,
+      price: e.meta!.price,
+      at: e.at,
+      regime,
+      rvol: snapBySym.get(e.symbol ?? '')?.rvol ?? null,
+    }))
+    const log = (await store.read<unknown[]>('signal-log')) ?? []
+    log.push(...entries)
+    await store.write('signal-log', log.slice(-500))
+    const monthKey = `signal-log:${new Date(nowSec * 1000).toISOString().slice(0, 7)}`
+    const archive = (await store.read<unknown[]>(monthKey)) ?? []
+    archive.push(...entries)
+    await store.write(monthKey, archive)
+  }
+
+  // alert history for the in-app screen
+  if (events.length) {
+    const history = (await store.read<unknown[]>('alert-history')) ?? []
+    for (const e of events) history.push({ text: e.text, tier: e.tier, at: e.at })
+    await store.write('alert-history', history.slice(-200))
+  }
+
   let sent = 0
+  const muteUntil = (await store.read<number>('mute-until')) ?? 0
   const deliver = async (text: string) => {
+    if (nowSec < muteUntil) return // /mute via the Telegram bot
     if (!botToken || !chatId) {
       if (!errors.includes('telegram-unconfigured')) errors.push('telegram-unconfigured')
       return
@@ -99,7 +135,7 @@ export default async () => {
     return new Response(JSON.stringify({ seeded: true, events: events.length }))
   }
 
-  for (const e of events.filter(e => e.tier === 'instant')) await deliver(`🔔 ${e.text}`)
+  for (const e of events.filter((e: AlertEvent) => e.tier === 'instant')) await deliver(e.text.startsWith('🛑') ? e.text : `🔔 ${e.text}`)
 
   const { digest, state: finalState } = flushBatch(afterEval, nowSec)
   if (digest) await deliver(digest)

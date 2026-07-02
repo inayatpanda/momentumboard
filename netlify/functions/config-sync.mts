@@ -20,6 +20,10 @@ export async function routeConfig(
       const runlog = (await store.read<unknown[]>('runlog')) ?? []
       return json(200, { ok: true, data: runlog.slice(-20) })
     }
+    if (url.searchParams.get('view') === 'history') {
+      const history = (await store.read<unknown[]>('alert-history')) ?? []
+      return json(200, { ok: true, data: history.slice(-50).reverse() })
+    }
     return json(200, { ok: true, data: await store.read('config') })
   }
 
