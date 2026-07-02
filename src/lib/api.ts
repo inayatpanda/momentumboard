@@ -85,6 +85,17 @@ export const getTickerBrief = (symbol: string) =>
 export const getLicences = () =>
   apiGet<{ key: string; label: string; createdAt: number; revoked?: boolean; unlockLink: string }[]>('/api/licences')
 
+export const getLlmKeyStatus = () => apiGet<{ hasKey: boolean }>('/api/config?view=llm-key')
+
+export async function putLlmKey(groqKey: string) {
+  const res = await fetch('/api/config?view=llm-key', {
+    method: 'PUT',
+    headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
+    body: JSON.stringify({ groqKey }),
+  })
+  if (!res.ok) throw new Error('failed')
+}
+
 export async function createLicence(label: string) {
   const res = await fetch('/api/licences', {
     method: 'POST',
