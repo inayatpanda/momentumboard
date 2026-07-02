@@ -1,0 +1,34 @@
+import { describe, it, expect } from 'vitest'
+import { avgDailyVolume, sessionElapsedFraction, relativeVolume } from './rvol'
+import type { Candle } from './types'
+
+const withVol = (v: number): Candle => ({ t: 0, o: 1, h: 1, l: 1, c: 1, v })
+
+describe('avgDailyVolume', () => {
+  it('averages the prior bars, excluding the last (partial today)', () => {
+    const candles = [...Array(30).fill(0).map(() => withVol(1000)), withVol(50)]
+    expect(avgDailyVolume(candles, 30)).toBe(1000)
+  })
+  it('returns null with fewer than 5 completed bars', () => {
+    expect(avgDailyVolume([withVol(1), withVol(1)], 30)).toBeNull()
+  })
+})
+
+describe('sessionElapsedFraction', () => {
+  const utc = (h: number, m = 0) => Date.UTC(2026, 6, 2, h, m) / 1000
+  it('is ~0.54 midway through the US session', () => {
+    expect(sessionElapsedFraction('US', utc(17, 0))).toBeCloseTo((17 - 13.5) / 6.5, 2)
+  })
+  it('clamps to 1 after the close and 0.05 before the open', () => {
+    expect(sessionElapsedFraction('US', utc(22, 0))).toBe(1)
+    expect(sessionElapsedFraction('US', utc(11, 0))).toBe(0.05)
+    expect(sessionElapsedFraction('LSE', utc(12, 15))).toBeCloseTo(4.25 / 8.5, 2)
+  })
+})
+
+describe('relativeVolume', () => {
+  it('time-adjusts: half the average volume at half the session = 1x', () => {
+    expect(relativeVolume(500, 1000, 0.5)).toBe(1)
+    expect(relativeVolume(2000, 1000, 0.5)).toBe(4)
+  })
+})
