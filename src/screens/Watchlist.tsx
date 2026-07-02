@@ -75,7 +75,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
               <polyline points="15,70 40,45 55,58 85,25" fill="none" stroke="var(--green)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <h1>MomentumBoard</h1>
+          <h1>StreetSignal</h1>
           <p>Enter your licence key once. This device stays unlocked for life. Tip: the unlock link in your Telegram does this with one tap.</p>
           <form
             onSubmit={e => {
@@ -99,7 +99,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
     <>
       <header className="topbar">
         <span className="brand">
-          Momentum<span className="tick">Board</span>
+          Street<span className="tick">Signal</span>
         </span>
         <RegimeBanner regime={regime} />
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>

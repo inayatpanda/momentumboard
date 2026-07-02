@@ -17,7 +17,7 @@ self.addEventListener('push', event => {
     data = { body: event.data?.text() ?? '' }
   }
   event.waitUntil(
-    self.registration.showNotification(data.title ?? 'MomentumBoard', {
+    self.registration.showNotification(data.title ?? 'StreetSignal', {
       body: data.body ?? '',
       icon: '/icon-192.png',
       badge: '/icon-192.png',

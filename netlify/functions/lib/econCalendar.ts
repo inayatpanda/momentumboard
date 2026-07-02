@@ -3,6 +3,8 @@
 
 export interface EconEvent {
   title: string
+  forecast?: string
+  previous?: string
   country: string
   at: number // epoch seconds
   impact: 'High' | 'Medium' | 'Low'
@@ -12,11 +14,13 @@ export function parseEconFeed(raw: unknown): EconEvent[] {
   if (!Array.isArray(raw)) return []
   return raw
     .map(e => {
-      const r = e as { title?: string; country?: string; date?: string; impact?: string }
+      const r = e as { title?: string; country?: string; date?: string; impact?: string; forecast?: string; previous?: string }
       const at = r.date ? Date.parse(r.date) / 1000 : NaN
       if (!r.title || !Number.isFinite(at)) return null
       return {
         title: r.title,
+        forecast: r.forecast || undefined,
+        previous: r.previous || undefined,
         country: r.country ?? '',
         at,
         impact: r.impact === 'High' ? 'High' : r.impact === 'Medium' ? 'Medium' : 'Low',

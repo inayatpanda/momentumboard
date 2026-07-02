@@ -46,7 +46,7 @@ export async function routeTelegramWebhook(
     await store.write('mute-until', 0)
     await reply('🔔 Alerts resumed.')
   } else if (text.startsWith('/report')) {
-    await reply(`📰 ${env.URL ?? 'https://momentumboard-inayat.netlify.app'}/report`)
+    await reply(`📰 ${env.URL ?? 'https://streetsignal.netlify.app'}/report`)
   } else if (text.startsWith('/')) {
     await reply('Commands: /status /portfolio /mute [hours] /unmute /report')
   }

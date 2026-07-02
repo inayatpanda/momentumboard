@@ -56,7 +56,7 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
             onClick={e => {
               e.preventDefault()
               const url = `${location.origin}/report`
-              if (navigator.share) navigator.share({ title: 'MomentumBoard Daily', url }).catch(() => {})
+              if (navigator.share) navigator.share({ title: 'The Street Signal', url }).catch(() => {})
               else navigator.clipboard?.writeText(url)
             }}
             aria-label="Share report"

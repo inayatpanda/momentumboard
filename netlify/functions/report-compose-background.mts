@@ -12,7 +12,7 @@ import type { AppConfig } from '../../shared/config'
 // Runs as a background function (15-min budget); kicked by report-kick on
 // weekday mornings or manually by the admin.
 
-const SITE = process.env.URL ?? 'https://momentumboard-inayat.netlify.app'
+const SITE = process.env.URL ?? 'https://streetsignal.netlify.app'
 
 export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
@@ -46,8 +46,11 @@ export default async (req: Request) => {
     const [portfolio, sectors, consensus, social, insiders, econ, dossiers, picksHistory, pickStats] = await Promise.all([
       grab(() => blobAppStore.read('portfolio')),
       grab(async () => {
-        const { getCached } = await import('./lib/cache')
-        return getCached('sector-rotation')
+        // computed fresh so the paper's charts and tables never depend on cache warmth
+        const { SECTORS, computeSectorRows } = await import('./lib/sectors')
+        const pairs = await Promise.all(SECTORS.map(async s => [s.sym as string, await cachedCandles(s.sym)] as const))
+        const bySym = new Map(pairs.filter((p): p is [string, NonNullable<(typeof pairs)[1][1]>] => p[1] !== null))
+        return spy ? computeSectorRows(bySym, spy) : null
       }),
       grab(async () => {
         const { computeConsensus } = await import('./lib/videoTrends')
@@ -85,6 +88,48 @@ export default async (req: Request) => {
       return (await fetchNews(symbols, process.env.FINNHUB_API_KEY ?? '', nowSec)).slice(0, 10).map(n => n.title)
     })
 
+    // ---- deterministic paper extras: rotation tables, social board, charts ----
+    const { SECTOR_MEMBERS, SECTORS, returnOver } = await import('./lib/sectors')
+    const topSectors = (sectors ?? []).filter(s => s.rs21 != null).slice(0, 2)
+    const rotationTables = await Promise.all(
+      topSectors.map(async s => ({
+        sector: SECTORS.find(x => x.sym === s.sym)?.name ?? s.sym,
+        etf: s.sym,
+        rows: await Promise.all(
+          (SECTOR_MEMBERS[s.sym] ?? []).map(async sym => {
+            const [q, candles] = await Promise.all([
+              cachedQuote(sym, process.env.FINNHUB_API_KEY ?? '').catch(() => null),
+              cachedCandles(sym).catch(() => null),
+            ])
+            return {
+              sym,
+              price: q?.price ?? null,
+              wkPct: candles ? returnOver(candles, 5) : null,
+              closes: candles?.slice(-63).map(c => c.c),
+            }
+          }),
+        ),
+      })),
+    )
+    const { getCached } = await import('./lib/cache')
+    const socialBoard = await Promise.all(
+      (social ?? []).slice(0, 10).map(async s => ({
+        sym: s.sym,
+        redditRank: s.redditRank,
+        redditMentions: s.redditMentions,
+        surgeMultiple: s.surgeMultiple,
+        sources: s.sources,
+        capUsdM: ((await getCached<{ capUsdM: number | null }>(`cap:${s.sym}`)) ?? {}).capUsdM ?? null,
+      })),
+    )
+    const extras = {
+      rotationTables,
+      socialBoard,
+      calendar: (econ ?? []).filter(e => e.at > nowSec && e.at < nowSec + 5 * 86_400).slice(0, 6),
+      spyCloses: spy?.slice(-63).map(c => c.c),
+      sectorBars: (sectors ?? []).map(s => ({ name: SECTORS.find(x => x.sym === s.sym)?.name ?? s.sym, rs21: s.rs21 })),
+    }
+
     const data = JSON.stringify(
       {
         capital: cfg.capital,
@@ -92,6 +137,7 @@ export default async (req: Request) => {
         watchlistQuotes: quotes,
         portfolio,
         sectorRotation: sectors,
+        rotationLeaders: rotationTables,
         channelConsensus: consensus,
         socialPulse: social,
         insiderBuying: insiders,
@@ -117,7 +163,7 @@ export default async (req: Request) => {
     if (!(cfg.notes ?? []).length) delete composed.readersNotes // no phantom reader feedback
 
     // ---- publish through the same pipe the routine uses ----
-    const html = buildNewspaperHtml(composed, dateLabel)
+    const html = buildNewspaperHtml(composed, dateLabel, extras)
     const putHtml = await fetch(`${SITE}/report`, {
       method: 'PUT',
       headers: { 'x-report-token': process.env.REPORT_TOKEN ?? '', 'content-type': 'text/html' },

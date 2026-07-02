@@ -15,6 +15,7 @@ const sample: ComposedReport = {
   rotation: 'Money into tech and comms, out of defensives.',
   crypto: 'BTC holding 60k; Uptober seasonality far off.',
   channels: 'Josh cautious; take: agrees with regime.',
+  editorial: 'In 1999 the same rotation preceded the melt-up.\n\nDiscipline beat conviction then too.',
   honestClose: 'Confidence B. Wrong if SPY loses 20-day.',
   regime: 'green',
   fedStance: 'neutral',
@@ -36,7 +37,7 @@ describe('parseComposed', () => {
 describe('buildNewspaperHtml', () => {
   const html = buildNewspaperHtml(sample, 'Thursday 2 July 2026')
   it('renders masthead, departments, ideas table and og meta', () => {
-    expect(html).toContain('MOMENTUMBOARD DAILY')
+    expect(html).toContain('THE STREET SIGNAL')
     expect(html).toContain('Regime: <b>GREEN</b>')
     expect(html).toContain('og:title" content="Tech Leads a Cautious Tape Higher"')
     expect(html).toContain('Portfolio Desk')

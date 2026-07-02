@@ -19,7 +19,7 @@ export async function routeLicences(
   const licences = (await store.read<Licence[]>('licences')) ?? []
 
   if (method === 'GET') {
-    return json(200, { ok: true, data: licences.map(l => ({ ...l, unlockLink: `${env.URL ?? 'https://momentumboard-inayat.netlify.app'}/?key=${l.key}` })) })
+    return json(200, { ok: true, data: licences.map(l => ({ ...l, unlockLink: `${env.URL ?? 'https://streetsignal.netlify.app'}/?key=${l.key}` })) })
   }
 
   if (method === 'POST') {
@@ -28,7 +28,7 @@ export async function routeLicences(
     const lic: Licence = { key: generateLicenceKey(), label: label.slice(0, 40), createdAt: Math.floor(Date.now() / 1000) }
     licences.push(lic)
     await store.write('licences', licences)
-    return json(200, { ok: true, data: { ...lic, unlockLink: `${env.URL ?? 'https://momentumboard-inayat.netlify.app'}/?key=${lic.key}` } })
+    return json(200, { ok: true, data: { ...lic, unlockLink: `${env.URL ?? 'https://streetsignal.netlify.app'}/?key=${lic.key}` } })
   }
 
   if (method === 'DELETE') {

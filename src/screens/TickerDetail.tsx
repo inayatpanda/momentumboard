@@ -58,7 +58,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
   }, [symbol])
 
   const shareBrief = () => {
-    const text = `${symbol} — MomentumBoard brief\n${brief?.brief ?? ''}`
+    const text = `${symbol} — StreetSignal brief\n${brief?.brief ?? ''}`
     if (navigator.share) navigator.share({ title: `${symbol} brief`, text }).catch(() => {})
     else navigator.clipboard?.writeText(text)
   }

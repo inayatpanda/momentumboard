@@ -79,7 +79,7 @@ function LicenceManager() {
                 className="mini-btn ghost"
                 onClick={() => {
                   navigator.clipboard?.writeText(l.unlockLink)
-                  if (navigator.share) navigator.share({ title: 'MomentumBoard access', url: l.unlockLink }).catch(() => {})
+                  if (navigator.share) navigator.share({ title: 'StreetSignal access', url: l.unlockLink }).catch(() => {})
                 }}
               >
                 Share link

@@ -17,6 +17,21 @@ export const SECTORS = [
   { sym: 'XLRE', name: 'Real Estate' },
 ] as const
 
+// Liquid representative names per sector, for the paper's "inside the rotation" tables
+export const SECTOR_MEMBERS: Record<string, string[]> = {
+  XLK: ['AAPL', 'MSFT', 'NVDA', 'AVGO', 'CRM'],
+  XLF: ['JPM', 'BAC', 'GS', 'MS', 'BLK'],
+  XLE: ['XOM', 'CVX', 'COP', 'SLB', 'OXY'],
+  XLV: ['LLY', 'UNH', 'JNJ', 'ABBV', 'MRK'],
+  XLI: ['GE', 'CAT', 'UNP', 'HON', 'DE'],
+  XLY: ['AMZN', 'TSLA', 'HD', 'MCD', 'NKE'],
+  XLP: ['PG', 'KO', 'PEP', 'COST', 'WMT'],
+  XLU: ['NEE', 'SO', 'DUK', 'VST', 'CEG'],
+  XLB: ['LIN', 'APD', 'FCX', 'SHW', 'NUE'],
+  XLC: ['META', 'GOOGL', 'NFLX', 'TMUS', 'DIS'],
+  XLRE: ['PLD', 'AMT', 'EQIX', 'SPG', 'O'],
+}
+
 export function returnOver(candles: Candle[], days: number): number | null {
   if (candles.length <= days) return null
   const end = candles[candles.length - 1].c

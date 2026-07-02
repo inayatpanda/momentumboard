@@ -604,7 +604,7 @@ button, input { font: inherit; }
     background: var(--nav-bg);
   }
   .tabs::before {
-    content: 'MomentumBoard';
+    content: 'StreetSignal';
     position: absolute; top: 28px; left: 20px;
     font-weight: 800; font-size: 17px; letter-spacing: -0.02em;
     color: var(--text);

@@ -13,8 +13,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png}'] },
       manifest: {
-        name: 'MomentumBoard',
-        short_name: 'MBoard',
+        name: 'StreetSignal',
+        short_name: 'StreetSignal',
         description: 'Watchlist, setups and alerts for swing trading. Informs; does not predict.',
         theme_color: '#0b0e14',
         background_color: '#0b0e14',
