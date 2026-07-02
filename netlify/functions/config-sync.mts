@@ -29,6 +29,10 @@ export async function routeConfig(
       const analyses = (await store.read<unknown[]>('video-analyses')) ?? []
       return json(200, { ok: true, data: analyses.slice(-10).reverse() })
     }
+    if (url.searchParams.get('view') === 'events') {
+      const dossiers = (await store.read<unknown[]>('event-dossiers')) ?? []
+      return json(200, { ok: true, data: dossiers.slice(-5).reverse() })
+    }
     if (url.searchParams.get('view') === 'trending') {
       const [current, timeline] = await Promise.all([store.read('trending'), store.read('trending-timeline')])
       return json(200, { ok: true, data: { current: current ?? null, timeline: (timeline as unknown[])?.slice(-12) ?? [] } })

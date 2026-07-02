@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getAiRead, getPicks, getPickStats, getOutcomes } from '../lib/api'
+import { getAiRead, getPicks, getPickStats, getOutcomes, getEventDossiers } from '../lib/api'
 
 // Research: everything the analyst produces and how it performs.
 // The accountability page: reports, picks, persistence, scorecard, track record.
@@ -9,12 +9,14 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [picks, setPicks] = useState<Awaited<ReturnType<typeof getPicks>> | null>(null)
   const [pickStats, setPickStats] = useState<Awaited<ReturnType<typeof getPickStats>> | null>(null)
   const [outcomes, setOutcomes] = useState<Awaited<ReturnType<typeof getOutcomes>>>([])
+  const [events, setEvents] = useState<Awaited<ReturnType<typeof getEventDossiers>>>([])
 
   useEffect(() => {
     getAiRead().then(setAi).catch(() => {})
     getPicks().then(setPicks).catch(() => {})
     getPickStats().then(setPickStats).catch(() => {})
     getOutcomes().then(setOutcomes).catch(() => {})
+    getEventDossiers().then(setEvents).catch(() => {})
   }, [])
 
   return (
@@ -24,6 +26,24 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
         <button className="gear" onClick={onOpenSettings} aria-label="Settings">⚙</button>
       </header>
       <div className="content digest-cols">
+        {events.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Event assessments</h3>
+            {events.map(e => (
+              <div key={e.sym + e.at} className="ai-card" style={{ marginBottom: 8, borderColor: e.kind === 'shock' ? 'rgba(255,93,115,0.45)' : 'rgba(245,184,61,0.45)' }}>
+                <h3 style={{ color: 'var(--text)', fontSize: 14 }}>
+                  {e.kind === 'shock' ? `⚡ ${e.name} ${e.movePct! > 0 ? '+' : ''}${e.movePct}%` : `🎈 ${e.name} stretched (${e.zScore}σ, RSI ${e.rsi})`}
+                  <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 11 }}>
+                    {' '}{new Date(e.at * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </h3>
+                <p style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{e.assessment}</p>
+                <span className="ai-note">Magnitude scenarios are grounded in measured historical analogues. Assessment, not advice.</span>
+              </div>
+            ))}
+          </section>
+        )}
+
         <a className="link-card hero-card" href="/report">
           📰 Today's strategy report
           <span>Fresh analysis every weekday morning. Sundays: the week ahead.</span>

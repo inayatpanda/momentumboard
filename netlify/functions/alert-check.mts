@@ -161,6 +161,33 @@ export default async () => {
 
   for (const e of events.filter((e: AlertEvent) => e.tier === 'instant')) await deliver(e.text.startsWith('🛑') ? e.text : `🔔 ${e.text}`)
 
+  // macro SHOCK sentinel: oil/gold/VIX/dollar/natgas one-day shocks and stretches
+  try {
+    const { MACRO_ASSETS, detectShock, detectStretch } = await import('./lib/macroEvents')
+    for (const asset of MACRO_ASSETS) {
+      const candles = await cachedCandles(asset.sym)
+      if (!candles) continue
+      const today = new Date(nowSec * 1000).toISOString().slice(0, 10)
+      const shock = detectShock(asset, candles)
+      const stretch = detectStretch(asset, candles)
+      const isoWeek = `${new Date(nowSec * 1000).getUTCFullYear()}-w${Math.ceil(new Date(nowSec * 1000).getUTCDate() / 7)}${new Date(nowSec * 1000).getUTCMonth()}`
+      const fire = async (evt: object, key: string, ping: string) => {
+        if (afterEval.seenItems.includes(key)) return
+        afterEval.seenItems.push(key)
+        await deliver(ping)
+        await fetch(`${process.env.URL ?? 'https://momentumboard-inayat.netlify.app'}/.netlify/functions/event-dossier-background`, {
+          method: 'POST',
+          headers: { 'x-app-token': process.env.APP_TOKEN ?? '', 'content-type': 'application/json' },
+          body: JSON.stringify(evt),
+        }).catch(() => errors.push('dossier-dispatch'))
+      }
+      if (shock) await fire(shock, `shock:${asset.sym}:${today}`, `⚡ ${asset.name} ${shock.movePct > 0 ? '+' : ''}${shock.movePct}% today — building the event assessment now`)
+      else if (stretch) await fire(stretch, `stretch:${asset.sym}:${isoWeek}`, `🎈 ${asset.name} stretched to ${stretch.zScore}σ (RSI ${stretch.rsi}) — reversion assessment incoming`)
+    }
+  } catch (e) {
+    errors.push(`macro-sentinel: ${e}`)
+  }
+
   // macro-event warnings: FOMC/CPI/NFP morning-of + 1h before (idempotent via seenItems keys)
   try {
     const { fetchEconCalendar, dueMacroWarnings } = await import('./lib/econCalendar')

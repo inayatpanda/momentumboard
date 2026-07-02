@@ -56,6 +56,9 @@ export const getSocialPulse = () =>
     at: number
   }>('/api/market?type=social')
 
+export const getEventDossiers = () =>
+  apiGet<{ kind: 'shock' | 'stretch'; sym: string; name: string; movePct?: number; zScore?: number; rsi?: number; dir: string; price: number; assessment: string; at: number }[]>('/api/config?view=events')
+
 export const getSeasonality = (symbol: string) =>
   apiGet<{
     sym: string; years: number; reliable: boolean
