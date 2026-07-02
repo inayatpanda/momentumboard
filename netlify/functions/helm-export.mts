@@ -51,9 +51,9 @@ export async function routeExport(
 
   // cheap summary for the dashboard card — no heavy HTML
   const summary = {
-    app: 'streetsignal',
-    site: 'https://streetsignal.netlify.app',
-    reportUrl: 'https://streetsignal.netlify.app/report',
+    app: 'streetsignal', // stable Helm app-id; independent of the pretty URL
+    site: 'https://thestreetsignal.netlify.app',
+    reportUrl: 'https://thestreetsignal.netlify.app/report',
     latestEdition: latest
       ? { date: latest.date, headline: latest.headline, standfirst: latest.standfirst, regime: latest.regime, ideas: latest.ideas }
       : null,

@@ -111,7 +111,7 @@ export default async () => {
     .filter(v => v.channel === 'Stocks with Josh' || symbols.some(s => v.title.toUpperCase().includes(s.split('.')[0].split('-')[0])))
     .slice(0, 2)
   const dispatch = (v: { url: string; title: string; channel: string }, mode: 'watch' | 'extract') =>
-    fetch(`${process.env.URL ?? 'https://streetsignal.netlify.app'}/.netlify/functions/video-analyze-background`, {
+    fetch(`${process.env.URL ?? 'https://thestreetsignal.netlify.app'}/.netlify/functions/video-analyze-background`, {
       method: 'POST',
       headers: { 'x-app-token': process.env.APP_TOKEN ?? '', 'content-type': 'application/json' },
       body: JSON.stringify({ url: v.url, title: v.title, channel: v.channel, mode }),
@@ -176,7 +176,7 @@ export default async () => {
         if (afterEval.seenItems.includes(key)) return
         afterEval.seenItems.push(key)
         await deliver(ping)
-        await fetch(`${process.env.URL ?? 'https://streetsignal.netlify.app'}/.netlify/functions/event-dossier-background`, {
+        await fetch(`${process.env.URL ?? 'https://thestreetsignal.netlify.app'}/.netlify/functions/event-dossier-background`, {
           method: 'POST',
           headers: { 'x-app-token': process.env.APP_TOKEN ?? '', 'content-type': 'application/json' },
           body: JSON.stringify(evt),

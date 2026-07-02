@@ -425,8 +425,8 @@ ${t.rows
 <meta property="og:title" content="${esc(r.headline)}"/>
 <meta property="og:description" content="${esc(r.standfirst)}"/>
 <meta property="og:type" content="article"/>
-<meta property="og:url" content="https://streetsignal.netlify.app/report"/>
-<meta property="og:image" content="https://streetsignal.netlify.app/icon-512.png"/>
+<meta property="og:url" content="https://thestreetsignal.netlify.app/report"/>
+<meta property="og:image" content="https://thestreetsignal.netlify.app/icon-512.png"/>
 <meta name="twitter:card" content="summary"/>
 <style>
 :root{color-scheme:light}

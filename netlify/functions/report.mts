@@ -95,7 +95,7 @@ export async function routeReport(
       index.push(dateKey)
       await store.write('report-index', index.slice(-90))
     }
-    const link = `${env.URL ?? 'https://streetsignal.netlify.app'}/report`
+    const link = `${env.URL ?? 'https://thestreetsignal.netlify.app'}/report`
     if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
       await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, `📰 Morning report is ready → ${link}`).catch(() => {})
     }
