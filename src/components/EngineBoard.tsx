@@ -59,6 +59,21 @@ export function EngineBoard() {
       <h3 className="section-title">
         The Board — engine calls, {b.date} <span className={`badge ${b.regime === 'green' ? '' : b.regime === 'red' ? 'bad' : 'warn'}`}>{b.regime}</span>
       </h3>
+      <p className="board-strip">
+        <span>regime {b.regime}</span>
+        {b.worldTape && (
+          <>
+            <span className="sep">·</span>
+            <span>world tape {b.worldTape.tone}{b.worldTape.detail ? ` — ${b.worldTape.detail}` : ''}</span>
+          </>
+        )}
+        {b.newsTone && (
+          <>
+            <span className="sep">·</span>
+            <span>news {b.newsTone.label}</span>
+          </>
+        )}
+      </p>
       {b.board.length === 0 && <p className="empty-line">No edge today — every candidate failed the gates. An honest empty board beats a forced call.</p>}
       {b.board.map(p => (
         <Call key={p.id} p={p} />

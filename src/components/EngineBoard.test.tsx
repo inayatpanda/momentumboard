@@ -28,7 +28,14 @@ const prediction = {
 }
 
 const data: EngineData = {
-  board: { date: '2026-07-02', generatedAt: 1, regime: 'amber', board: [prediction] },
+  board: {
+    date: '2026-07-02',
+    generatedAt: 1,
+    regime: 'amber',
+    board: [prediction],
+    worldTape: { tone: 'risk-off', votes: { on: 1, off: 4 }, detail: 'Asia red, VIX bid' },
+    newsTone: { score: -0.3, label: 'cautious', hits: 12 },
+  },
   scorecard: null,
   weights: null,
   calibration: null,
@@ -46,5 +53,12 @@ describe('EngineBoard', () => {
     expect(screen.getByText(/67%/)).toBeInTheDocument()
     expect(screen.getByText(/stop 178.2/)).toBeInTheDocument()
     expect(screen.getByText(/paper-only/)).toBeInTheDocument()
+  })
+
+  it('shows the world-tape header strip when the board provides one', async () => {
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText(/Asia red, VIX bid/)).toBeInTheDocument())
+    expect(screen.getByText(/world tape risk-off/)).toBeInTheDocument()
+    expect(screen.getByText(/news cautious/)).toBeInTheDocument()
   })
 })

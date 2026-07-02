@@ -19,7 +19,7 @@ export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
   if (!auth) return new Response(JSON.stringify({ ok: false, error: 'unauthorised' }), { status: 401 })
 
-  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory] = await Promise.all([
+  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory, predIndex] = await Promise.all([
     blobAppStore.read<{
       date: string
       generatedAt: number
@@ -36,12 +36,53 @@ export default async (req: Request) => {
     blobAppStore.read<{ date: string; joined: string[]; dropped: { sym: string; why: string }[] }[]>('engine-roster-log'),
     blobAppStore.read<ChannelCredState>('channel-credibility'),
     blobAppStore.read<{ date: string; score: number; label: string }[]>('news-tone-history'),
+    blobAppStore.read<string[]>('predictions-index'),
   ])
+
+  // The LEDGER: the last 30 dates of predictions, SLIMMED — every id, level and
+  // outcome the accountability pane needs, but NOT the heavy per-factor
+  // breakdown (that stays behind the daily board's evidence toggle). Newest
+  // date first. Each date reads one blob; fail-soft to an empty day.
+  const ledgerDates = ((predIndex ?? []).slice(-30)).reverse()
+  const ledger = await Promise.all(
+    ledgerDates.map(async date => {
+      const preds = (await blobAppStore.read<Prediction[]>(`predictions:${date}`)) ?? []
+      return {
+        date,
+        predictions: preds.map(p => ({
+          id: p.id,
+          date: p.date,
+          sym: p.sym,
+          side: p.side,
+          grade: p.grade,
+          probability: p.probability,
+          provisional: p.provisional,
+          shadow: p.shadow ?? false,
+          composite: p.composite,
+          entry: p.entry,
+          stop: p.stop,
+          target: p.target,
+          expectedMovePct: p.expectedMovePct,
+          stage: p.stage,
+          regime: p.regime,
+          worldTape: p.worldTape,
+          earningsRisk: p.earningsRisk,
+          overlay: p.overlay,
+          outcome5: p.outcome5,
+          outcome10: p.outcome10,
+          instrument: p.instrument,
+          paperOnly: p.paperOnly,
+          note: p.note,
+        })),
+      }
+    }),
+  )
 
   return json({
     // board carries worldTape + newsTone inline (written by buildBoard); the
     // news-tone history is surfaced as a bounded tail for the display-only trend.
     board,
+    ledger,
     newsToneHistory: (newsToneHistory ?? []).slice(-30),
     scorecard,
     weights: weights ? { base: weights.base, current: weights.current, history: weights.history.slice(-10) } : null,

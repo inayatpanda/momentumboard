@@ -201,8 +201,60 @@ export interface EnginePrediction {
   overlay?: { flag: string; reason: string }
 }
 
+// A prediction's realised outcome over one horizon: side-adjusted excess vs SPY,
+// plus whether it hit / got stopped. Absent horizon = not yet matured.
+export interface PredOutcome {
+  excessPct: number
+  rawPct: number
+  spyPct: number
+  stopped: boolean
+  hit: boolean
+}
+
+// The slimmed ledger prediction: everything the accountability pane shows for a
+// card, minus the per-factor breakdown (that rides the live board's evidence).
+export interface LedgerPrediction {
+  id: string
+  date: string
+  sym: string
+  side: 'long' | 'short'
+  grade: 'A' | 'B' | 'C'
+  probability: number
+  provisional: boolean
+  shadow: boolean
+  composite: number
+  entry: number
+  stop: number
+  target: number
+  expectedMovePct: number
+  stage: string | null
+  regime: string
+  worldTape?: { tone: string; mult: number }
+  earningsRisk: boolean
+  overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string }
+  outcome5?: PredOutcome
+  outcome10?: PredOutcome
+  instrument: { ticker: string; leverage: number } | null
+  paperOnly: boolean
+  note: string
+}
+
+export interface LedgerDay {
+  date: string
+  predictions: LedgerPrediction[]
+}
+
 export interface EngineData {
-  board: { date: string; generatedAt: number; regime: string; board: EnginePrediction[] } | null
+  board: {
+    date: string
+    generatedAt: number
+    regime: string
+    board: EnginePrediction[]
+    worldTape?: { tone: string; votes: { on: number; off: number }; detail: string }
+    newsTone?: { score: number; label: string; hits: number }
+  } | null
+  ledger?: LedgerDay[]
+  newsToneHistory?: { date: string; score: number; label: string }[]
   scorecard: {
     byGrade: Record<string, { n: number; hits: number; sumExcess: number }>
     byRegime: Record<string, { n: number; hits: number }>
