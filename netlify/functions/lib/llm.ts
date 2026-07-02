@@ -4,6 +4,7 @@
 // Note: YouTube video WATCHING stays Gemini-only (native video input).
 
 export interface LlmEnv {
+  strict?: boolean // true = use ONLY the keys in this object (never the server's own) — licensee isolation
   LLM_PROVIDER?: string
   GROQ_API_KEY?: string
   GEMINI_API_KEY?: string
@@ -93,7 +94,7 @@ export function anyProviderAvailable(env: Partial<LlmEnv> = {}): boolean {
 }
 
 export async function callLlm(prompt: string, env: Partial<LlmEnv> = {}, fetchFn: typeof fetch = fetch): Promise<LlmResult> {
-  const e = { ...(process.env as LlmEnv), ...env }
+  const e = env.strict ? (env as LlmEnv) : { ...(process.env as LlmEnv), ...env }
   const forced = e.LLM_PROVIDER?.toLowerCase()
   const order = forced ? [...PROVIDERS.filter(p => p.name === forced), ...PROVIDERS.filter(p => p.name !== forced)] : PROVIDERS
   let lastErr: unknown = new Error('no-llm-provider-configured')

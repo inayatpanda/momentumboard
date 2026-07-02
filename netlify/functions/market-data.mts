@@ -17,8 +17,17 @@ export async function routeRequest(
 ): Promise<Response> {
   const { authenticate } = await import('./lib/auth')
   const { blobAppStore } = await import('./lib/store')
-  if (!(await authenticate(headers, env, blobAppStore))) return json(401, { ok: false, error: 'unauthorized' })
+  const auth = await authenticate(headers, env, blobAppStore)
+  if (!auth) return json(401, { ok: false, error: 'unauthorized' })
   const type = url.searchParams.get('type')
+
+  // Admin AI calls use the server's keys; licensees use their own stored key or none.
+  const llmEnvForCaller = async (): Promise<{ [k: string]: unknown } | null> => {
+    if (auth.level === 'admin')
+      return { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL, GROQ_API_KEY: process.env.GROQ_API_KEY }
+    const creds = await blobAppStore.read<{ groqKey?: string }>(`${auth.ns}llm`)
+    return creds?.groqKey ? { GROQ_API_KEY: creds.groqKey, strict: true } : null
+  }
 
   if (type === 'quote') {
     const symbols = (url.searchParams.get('symbols') ?? '').split(',').filter(Boolean).slice(0, 30)
@@ -152,10 +161,12 @@ export async function routeRequest(
     const kind = url.searchParams.get('kind') ?? 'observation'
     if (!text) return json(400, { ok: false, error: 'missing-text' })
     try {
+      const llmEnv = await llmEnvForCaller()
+      if (!llmEnv) return json(200, { ok: true, data: { take: 'Add your own AI key in Settings to get instant takes on your notes.' } })
       const { callLlm } = await import('./ai-insights.mts')
       const prompt = `A retail swing trader logged this personal ${kind}: "${text}"
 As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this consistent with market evidence and research, partially true, or a common misconception? Be direct — the trader explicitly WANTS pushback when wrong. If it's testable, say what data would settle it. No flattery.`
-      const { text: take } = await callLlm(prompt, { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL, GROQ_API_KEY: process.env.GROQ_API_KEY })
+      const { text: take } = await callLlm(prompt, llmEnv)
       return json(200, { ok: true, data: { take: take.trim() } })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
@@ -208,7 +219,9 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
     if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })
     const key = `brief:${symbol}`
     const hit = await getCached<unknown>(key)
-    if (hit) return json(200, { ok: true, data: hit })
+    if (hit) return json(200, { ok: true, data: hit }) // cached briefs are free to every licensee
+    const briefLlmEnv = await llmEnvForCaller()
+    if (!briefLlmEnv) return json(200, { ok: true, data: { sym: symbol, brief: 'Add your own AI key in Settings to enable fresh ticker briefs.', at: 0 } })
     try {
       const { cachedQuote, cachedCandles } = await import('./lib/marketCache')
       const { detectSetups } = await import('../../shared/setups')
@@ -222,7 +235,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
       ])
       const setups = candles && candles.length > 25 ? detectSetups(candles, null) : []
       const prompt = `You are a decisive, seasoned analyst. In 3-4 sentences, brief a swing trader on WHAT HAS CHANGED lately for ${symbol}${quote?.name ? ` (${quote.name})` : ''}: price ${quote?.price ?? '?'} (${quote?.changePct?.toFixed(1) ?? '?'}% today), active technical states: ${setups.join(', ') || 'none'}, latest headlines: ${news.slice(0, 3).map(n => n.title).join(' | ') || 'none notable'}. Give your read and the one thing to watch next. No hedging filler; end with one honesty note only if truly needed.`
-      const { text } = await callLlm(prompt, { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL, GROQ_API_KEY: process.env.GROQ_API_KEY })
+      const { text } = await callLlm(prompt, briefLlmEnv)
       const data = { sym: symbol, brief: text.trim(), at: nowSec }
       await setCached(key, data, 21_600)
       return json(200, { ok: true, data })

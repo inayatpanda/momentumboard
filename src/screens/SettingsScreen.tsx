@@ -1,9 +1,50 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { resolveChannel, getLicences, createLicence, revokeLicence } from '../lib/api'
+import { resolveChannel, getLicences, createLicence, revokeLicence, getLlmKeyStatus, putLlmKey } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { enablePush, pushSupported, type PushStatus } from '../lib/push'
 import { IconBack, IconBell, IconSun, IconMoon } from '../components/icons'
+
+function ByoAiKey() {
+  // Licensees run AI features on THEIR OWN key (free at console.groq.com);
+  // the owner's key lives in server env and is never used for licensees.
+  const [isAdmin, setIsAdmin] = useState(true) // assume admin until probe says otherwise → section hidden for the owner
+  const [hasKey, setHasKey] = useState(false)
+  const [key, setKey] = useState('')
+  const [saved, setSaved] = useState(false)
+  useEffect(() => {
+    getLicences().then(() => setIsAdmin(true)).catch(() => setIsAdmin(false))
+    getLlmKeyStatus().then(s => setHasKey(s.hasKey)).catch(() => {})
+  }, [])
+  if (isAdmin) return null
+  return (
+    <>
+      <h3 className="section-title">Your AI key</h3>
+      <div className="settings-grid">
+        <p className="empty-line" style={{ fontSize: 12 }}>
+          AI briefs and note feedback run on your own free Groq key (console.groq.com). {hasKey ? 'A key is saved for this licence.' : 'No key saved yet — AI features are off until you add one.'}
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input type="password" placeholder="gsk_..." value={key} onChange={e => setKey(e.target.value)} style={{ flex: 1 }} aria-label="Groq API key" />
+          <button
+            className="mini-btn"
+            onClick={async () => {
+              try {
+                await putLlmKey(key.trim())
+                setHasKey(!!key.trim())
+                setKey('')
+                setSaved(true)
+                setTimeout(() => setSaved(false), 2500)
+              } catch { /* leave input for retry */ }
+            }}
+          >
+            {saved ? 'Saved' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
 
 function LicenceManager() {
   const [licences, setLicences] = useState<Awaited<ReturnType<typeof getLicences>> | null>(null)
@@ -203,6 +244,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           <p className="empty-line" style={{ fontSize: 11 }}>Channels feed the alert engine, the consensus tracker, and AI video watching.</p>
         </div>
 
+        <ByoAiKey />
         <LicenceManager />
 
         <footer className="foot">Journal backup and export live on the Journal tab.</footer>

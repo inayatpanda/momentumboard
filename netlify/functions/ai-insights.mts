@@ -29,14 +29,25 @@ export const callLlm: LlmCall = async (prompt, env) => {
 
 export async function routeAi(headers: Headers, env: Env, store: AppStore, llm: LlmCall = callLlm): Promise<Response> {
   const { authenticate } = await import('./lib/auth')
-  if (!(await authenticate(headers, env, store))) return json(401, { ok: false, error: 'unauthorized' })
-  if (!env.GEMINI_API_KEY && !env.GROQ_API_KEY && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY) return json(200, { ok: true, data: { unconfigured: true } })
+  const auth = await authenticate(headers, env, store)
+  if (!auth) return json(401, { ok: false, error: 'unauthorized' })
+  const ns = auth.ns
 
-  const cached = await store.read<{ text: string; provider: string; at: number }>('ai-read')
+  // The owner's keys live in server env; licensees bring their own (strict: no fallback to ours)
+  let llmEnv: Env & { strict?: boolean } = env
+  if (auth.level !== 'admin') {
+    const creds = await store.read<{ groqKey?: string }>(`${ns}llm`)
+    if (!creds?.groqKey) return json(200, { ok: true, data: { unconfigured: true, byok: true } })
+    llmEnv = { GROQ_API_KEY: creds.groqKey, strict: true }
+  } else if (!env.GEMINI_API_KEY && !env.GROQ_API_KEY && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+    return json(200, { ok: true, data: { unconfigured: true } })
+  }
+
+  const cached = await store.read<{ text: string; provider: string; at: number }>(`${ns}ai-read`)
   const nowSec = Math.floor(Date.now() / 1000)
   if (cached && nowSec - cached.at < CACHE_SEC) return json(200, { ok: true, data: cached })
 
-  const cfg = await store.read<AppConfig>('config')
+  const cfg = await store.read<AppConfig>(`${ns}config`)
   if (!cfg?.watchlist?.length) return json(200, { ok: true, data: { empty: true } })
 
   const symbols = cfg.watchlist.map(w => w.symbol)
@@ -62,9 +73,9 @@ Recent headlines: ${news.slice(0, 8).map(n => n.title).join(' • ') || 'none'}
 In 150-200 words: what genuinely stands out today, which watchlist setups (if any) deserve attention and why, and what to avoid. If nothing is actionable, say "nothing actionable today" plainly. No hype, no predictions, no advice language.`
 
   try {
-    const { text, provider } = await llm(prompt, env)
+    const { text, provider } = await llm(prompt, llmEnv)
     const data = { text, provider, at: nowSec }
-    await store.write('ai-read', data)
+    await store.write(`${ns}ai-read`, data)
     return json(200, { ok: true, data })
   } catch (e) {
     return json(502, { ok: false, error: String(e) })
