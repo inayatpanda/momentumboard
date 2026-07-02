@@ -174,23 +174,47 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
 
         {tab === 'Social' && (
           <>
+            {pulse && pulse.discoveries.length > 0 && (
+              <section className="digest-section">
+                <h3 className="section-title">Up &amp; coming: chatter worth a look</h3>
+                {pulse.discoveries.map(d => (
+                  <div key={d.sym} className="ai-card" style={{ marginBottom: 8, borderColor: 'rgba(34,201,141,0.4)' }}>
+                    <h3 style={{ fontSize: 14, color: 'var(--text)' }}>
+                      {d.sym} {d.surging && <span className="badge warn">🔥 {d.surgeMultiple}x in 24h</span>} {d.sources >= 2 && <span className="badge good">{d.sources} platforms</span>}
+                      <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 12 }}>
+                        {' '}{d.companyName ?? ''}{d.capUsdM ? ` · $${(d.capUsdM / 1000).toFixed(1)}B` : ''}
+                      </span>
+                    </h3>
+                    <p style={{ fontSize: 13 }}>{d.opinion ?? `Reddit #${d.redditRank}, ${d.redditMentions} mentions${d.stocktwits ? ', trending on StockTwits' : ''}. Take pending.`}</p>
+                    <span className="ai-note">The analyst's read, not a recommendation. Small caps: half-size risk.</span>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {pulse && pulse.alsoLoud.length > 0 && (
+              <p className="empty-line" style={{ fontSize: 12 }}>
+                Also loud today (household names, already everywhere): {pulse.alsoLoud.join(' · ')}
+              </p>
+            )}
+
             {pulse && pulse.pulse.length > 0 && (
               <section className="digest-section">
-                <h3 className="section-title">Social pulse: Reddit + StockTwits + your channels</h3>
-                {pulse.pulse.map(p => (
+                <h3 className="section-title">Rest of the pulse</h3>
+                {pulse.pulse.slice(0, 8).map(p => (
                   <div key={p.sym} className="perf-row" style={p.onWatchlist ? { borderColor: 'rgba(90,169,255,0.5)' } : undefined}>
                     <span>
-                      {p.sym} {p.surging && <span className="badge warn">🔥 surging</span>} {p.sources >= 2 && <span className="badge good">{p.sources} sources</span>}
+                      {p.sym} {p.surging && <span className="badge warn">🔥</span>}
                       {p.onWatchlist && <span className="badge info">watchlist</span>}
                     </span>
                     <span style={{ color: 'var(--muted)', fontSize: 12 }}>
                       {p.redditMentions != null && `r/ #${p.redditRank} · ${p.redditMentions}×`}
-                      {p.stocktwits && ' · ST trending'}
-                      {p.channelNet != null && ` · YT ${p.channelNet > 0 ? `+${p.channelNet} bull` : p.channelNet < 0 ? `${p.channelNet} bear` : 'split'}`}
+                      {p.stocktwits && ' · ST'}
+                      {p.channelNet != null && ` · YT ${p.channelNet > 0 ? `+${p.channelNet}` : p.channelNet}`}
                     </span>
                   </div>
                 ))}
-                <p className="empty-line" style={{ fontSize: 11 }}>Multi-source names matter; 🔥 = mentions doubled in 24h. Early chatter on a small name is opportunity; mature crowding is the contrarian tell.</p>
+                <p className="empty-line" style={{ fontSize: 11 }}>Early chatter on a small name is opportunity; mature crowding is the contrarian tell.</p>
               </section>
             )}
 

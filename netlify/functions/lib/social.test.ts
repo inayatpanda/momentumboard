@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fetchRedditTrends, combineSocialPulse } from './social'
+import { fetchRedditTrends, combineSocialPulse, pickDiscoveries } from './social'
 
 describe('fetchRedditTrends', () => {
   it('parses the apewisdom shape', async () => {
@@ -8,6 +8,23 @@ describe('fetchRedditTrends', () => {
     })))
     const t = await fetchRedditTrends(fetchFn as unknown as typeof fetch)
     expect(t[0]).toEqual({ ticker: 'MU', name: 'Micron', rank: 1, mentions: 1098, mentions24hAgo: 564 })
+  })
+})
+
+describe('pickDiscoveries', () => {
+  const row = (sym: string, over: object = {}) => ({
+    sym, redditRank: 5, redditMentions: 100, surging: true, surgeMultiple: null as number | null,
+    stocktwits: true, channelNet: null, sources: 2, onWatchlist: false, ...over,
+  })
+  it('excludes mega-caps and oversized names, keeps surging small caps, ranks by surge', () => {
+    const d = pickDiscoveries([
+      row('NVDA', { surgeMultiple: 5 }), // mega: out, however loud
+      row('BIGCO', { capUsdM: 80_000, surgeMultiple: 4 }), // too big: out
+      row('NBIS', { capUsdM: 8_000, surgeMultiple: 2.2 }),
+      row('TINY', { capUsdM: null, surgeMultiple: 3.1 }), // unknown cap allowed
+      row('QUIET', { capUsdM: 500, surging: false, sources: 1 }), // no momentum: out
+    ])
+    expect(d.map(x => x.sym)).toEqual(['TINY', 'NBIS'])
   })
 })
 

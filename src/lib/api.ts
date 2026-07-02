@@ -35,8 +35,26 @@ export const getSignalStats = () =>
 export const getSmartMoney = () =>
   apiGet<{ funds: { fund: string; filedAt: string; newPositions: { issuer: string }[]; increased: { issuer: string; pctChange: number }[]; exited: { issuer: string }[] }[]; lagNote: string }>('/api/market?type=smart-money')
 
+interface PulseRow {
+  sym: string
+  name?: string
+  redditRank: number | null
+  redditMentions: number | null
+  surging: boolean
+  surgeMultiple: number | null
+  stocktwits: boolean
+  channelNet: number | null
+  sources: number
+  onWatchlist: boolean
+}
+
 export const getSocialPulse = () =>
-  apiGet<{ pulse: { sym: string; name?: string; redditRank: number | null; redditMentions: number | null; surging: boolean; stocktwits: boolean; channelNet: number | null; sources: number; onWatchlist: boolean }[]; at: number }>('/api/market?type=social')
+  apiGet<{
+    discoveries: (PulseRow & { capUsdM: number | null; companyName?: string; opinion?: string })[]
+    alsoLoud: string[]
+    pulse: PulseRow[]
+    at: number
+  }>('/api/market?type=social')
 
 export const getEcon = () =>
   apiGet<{ events: { title: string; country: string; at: number; impact: string }[] }>('/api/market?type=econ').then(d => d.events)

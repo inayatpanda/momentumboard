@@ -146,10 +146,10 @@ export async function routeRequest(
   }
 
   if (type === 'social') {
-    const hit = await getCached<unknown>('social-pulse')
+    const hit = await getCached<unknown>('social-pulse:v2')
     if (hit) return json(200, { ok: true, data: hit })
     try {
-      const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse } = await import('./lib/social')
+      const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse, pickDiscoveries, isMega } = await import('./lib/social')
       const { blobAppStore } = await import('./lib/store')
       const { computeConsensus } = await import('./lib/videoTrends')
       const [reddit, stocktwits, extracts, cfg] = await Promise.all([
@@ -159,11 +159,54 @@ export async function routeRequest(
         blobAppStore.read<{ watchlist: { symbol: string }[] }>('config'),
       ])
       const consensus = computeConsensus(((extracts ?? []) as Parameters<typeof computeConsensus>[0]), Math.floor(Date.now() / 1000))
+      const pulse = combineSocialPulse(reddit, stocktwits, consensus.tickers.map(t => ({ sym: t.sym, net: t.net })), (cfg?.watchlist ?? []).map(w => w.symbol))
+
+      // enrich the non-household candidates with market cap (Finnhub, 24h cached)
+      const candidates = pulse.filter(p => !isMega(p.sym)).slice(0, 8)
+      await Promise.all(
+        candidates.map(async c => {
+          const capKey = `cap:${c.sym}`
+          let cap = await getCached<{ capUsdM: number | null; name?: string }>(capKey)
+          if (!cap) {
+            try {
+              const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${c.sym}&token=${env.FINNHUB_API_KEY}`)
+              const j = (await res.json()) as { marketCapitalization?: number; name?: string }
+              cap = { capUsdM: j.marketCapitalization ?? null, name: j.name }
+              await setCached(capKey, cap, 86_400)
+            } catch {
+              cap = { capUsdM: null }
+            }
+          }
+          Object.assign(c, { capUsdM: cap.capUsdM, companyName: cap.name })
+        }),
+      )
+      const discoveries = pickDiscoveries(candidates as never[])
+
+      // the analyst's take on each up-and-comer: ONE model call, opinions not noise
+      if (discoveries.length) {
+        try {
+          const { callLlm } = await import('./ai-insights.mts')
+          const prompt = `You are a seasoned, decisive stock analyst. For each up-and-coming name below (small/mid caps with surging social chatter), give a 2-3 sentence take: what the company does, the most likely driver of the chatter, and YOUR opinion (worth a look / needs a catalyst / likely pump). End each with what would validate it. Respond ONLY with JSON: {"opinions":[{"sym":"X","take":"..."}]}\n${discoveries
+            .map(d => `${d.sym} (${d.companyName ?? '?'}, cap ${d.capUsdM ? `$${(d.capUsdM / 1000).toFixed(1)}B` : 'unknown'}): reddit #${d.redditRank}, mentions ${d.redditMentions} (${d.surgeMultiple ?? '?'}x vs 24h ago), ${d.sources} platforms`)
+            .join('\n')}`
+          const { text } = await callLlm(prompt, { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL, GROQ_API_KEY: process.env.GROQ_API_KEY })
+          const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? '{}') as { opinions?: { sym: string; take: string }[] }
+          for (const o of parsed.opinions ?? []) {
+            const d = discoveries.find(x => x.sym === o.sym.toUpperCase())
+            if (d) d.opinion = o.take
+          }
+        } catch {
+          /* opinions are best-effort; numbers still ship */
+        }
+      }
+
       const data = {
-        pulse: combineSocialPulse(reddit, stocktwits, consensus.tickers.map(t => ({ sym: t.sym, net: t.net })), (cfg?.watchlist ?? []).map(w => w.symbol)),
+        discoveries,
+        alsoLoud: pulse.filter(p => isMega(p.sym)).slice(0, 6).map(p => p.sym),
+        pulse: pulse.filter(p => !discoveries.some(d => d.sym === p.sym)),
         at: Math.floor(Date.now() / 1000),
       }
-      await setCached('social-pulse', data, 900)
+      await setCached('social-pulse:v2', data, 3600)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })

@@ -16,6 +16,7 @@ export interface SocialPulseRow {
   redditRank: number | null
   redditMentions: number | null
   surging: boolean // mentions ≥2x vs 24h ago
+  surgeMultiple: number | null
   stocktwits: boolean
   channelNet: number | null // bull-bear balance from YouTube consensus
   sources: number
@@ -50,6 +51,34 @@ export async function fetchStocktwitsTrending(fetchFn: typeof fetch = fetch): Pr
   }
 }
 
+// Household mega-caps: already on every screen; chatter about them is noise here.
+const MEGA = new Set(['AAPL', 'MSFT', 'NVDA', 'META', 'GOOGL', 'GOOG', 'AMZN', 'TSLA', 'AVGO', 'BRK.B', 'BRK.A', 'JPM', 'V', 'MA', 'LLY', 'UNH', 'MU', 'AMD', 'NFLX', 'COST', 'WMT', 'XOM', 'ORCL', 'PLTR', 'COIN', 'INTC', 'BA', 'DIS', 'SPY', 'QQQ'])
+
+export interface Discovery extends SocialPulseRow {
+  capUsdM: number | null // market cap in $ millions (Finnhub), null if unknown
+  companyName?: string
+  surgeMultiple: number | null
+  opinion?: string // the analyst's take, attached at the endpoint layer
+}
+
+/** The up-and-comers: NOT household names, with real momentum in the chatter.
+ * capUsdM null is allowed (tiny names often lack data) but MEGA names never pass. */
+export function pickDiscoveries(
+  rows: (SocialPulseRow & { capUsdM?: number | null; companyName?: string; surgeMultiple?: number | null })[],
+  maxCapUsdM = 20_000,
+  count = 3,
+): Discovery[] {
+  return rows
+    .filter(r => !MEGA.has(r.sym))
+    .filter(r => r.capUsdM == null || r.capUsdM <= maxCapUsdM)
+    .filter(r => r.surging || r.sources >= 2)
+    .map(r => ({ ...r, capUsdM: r.capUsdM ?? null, surgeMultiple: r.surgeMultiple ?? null }))
+    .sort((a, b) => (b.surgeMultiple ?? 1) - (a.surgeMultiple ?? 1) || b.sources - a.sources)
+    .slice(0, count)
+}
+
+export const isMega = (sym: string) => MEGA.has(sym)
+
 export function combineSocialPulse(
   reddit: RedditTrend[],
   stocktwits: string[],
@@ -62,6 +91,7 @@ export function combineSocialPulse(
     redditRank: null,
     redditMentions: null,
     surging: false,
+    surgeMultiple: null,
     stocktwits: false,
     channelNet: null,
     sources: 0,
@@ -73,7 +103,8 @@ export function combineSocialPulse(
     row.name = r.name
     row.redditRank = r.rank
     row.redditMentions = r.mentions
-    row.surging = r.mentions24hAgo > 0 && r.mentions >= 2 * r.mentions24hAgo
+    row.surgeMultiple = r.mentions24hAgo > 0 ? Math.round((r.mentions / r.mentions24hAgo) * 10) / 10 : null
+    row.surging = row.surgeMultiple != null && row.surgeMultiple >= 2
     row.sources++
     bySym.set(r.ticker, row)
   }
