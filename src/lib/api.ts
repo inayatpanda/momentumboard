@@ -56,6 +56,20 @@ export const getSocialPulse = () =>
     at: number
   }>('/api/market?type=social')
 
+export const getSeasonality = (symbol: string) =>
+  apiGet<{
+    sym: string; years: number; reliable: boolean
+    dow: { day: number; name: string; n: number; winRate: number | null; avgPct: number | null }[]
+    months: { month: number; name: string; n: number; winRate: number | null; avgPct: number | null }[]
+    bestMonth: { name: string; avgPct: number | null } | null
+    worstMonth: { name: string; avgPct: number | null } | null
+    strongestDay: { name: string; avgPct: number | null } | null
+    weakestDay: { name: string; avgPct: number | null } | null
+  }>(`/api/market?type=seasonality&symbol=${encodeURIComponent(symbol)}`)
+
+export const getSectors = () =>
+  apiGet<{ rows: { sym: string; name: string; rs5: number | null; rs21: number | null; rs63: number | null; trend: 'in' | 'out' | 'flat' }[]; rotatingIn: string[]; rotatingOut: string[]; at: number }>('/api/market?type=sectors')
+
 export const getT212 = () =>
   apiGet<{ unconfigured?: boolean; positions?: { symbol: string; quantity: number; averagePrice: number; currentPrice: number; pplPct: number | null }[]; at?: number }>('/api/t212')
 

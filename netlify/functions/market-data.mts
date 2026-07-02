@@ -147,6 +147,47 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'seasonality') {
+    const symbol = url.searchParams.get('symbol')?.toUpperCase()
+    if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })
+    const key = `seasonality:${symbol}`
+    const hit = await getCached<unknown>(key)
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { seasonalitySummary } = await import('../../shared/seasonality')
+      const { candles } = await deps.yahoo(symbol, '5y')
+      const data = { sym: symbol, years: Math.round((candles.length / 252) * 10) / 10, ...seasonalitySummary(candles) }
+      await setCached(key, data, 86_400)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'sectors') {
+    const hit = await getCached<unknown>('sector-rotation')
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { SECTORS, computeSectorRows } = await import('./lib/sectors')
+      const { cachedCandles } = await import('./lib/marketCache')
+      const pairs = await Promise.all([...SECTORS.map(s => s.sym), 'SPY'].map(async sym => [sym, await cachedCandles(sym)] as const))
+      const bySym = new Map(pairs.filter((p): p is [string, NonNullable<(typeof pairs)[0][1]>] => p[1] !== null))
+      const spy = bySym.get('SPY')
+      if (!spy) return json(502, { ok: false, error: 'no-spy-data' })
+      const rows = computeSectorRows(bySym, spy)
+      const data = {
+        rows,
+        rotatingIn: rows.filter(r => r.trend === 'in').map(r => r.name),
+        rotatingOut: rows.filter(r => r.trend === 'out').map(r => r.name),
+        at: Math.floor(Date.now() / 1000),
+      }
+      await setCached('sector-rotation', data, 14_400)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
   if (type === 'brief') {
     const symbol = url.searchParams.get('symbol')?.toUpperCase()
     if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })

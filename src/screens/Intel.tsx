@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
-import { getEcon, getCalendar, getConsensus, getInsiders, getSmartMoney, getVideoAnalyses, getFeed, getAlertHistory, getSocialPulse } from '../lib/api'
+import { getEcon, getCalendar, getConsensus, getInsiders, getSmartMoney, getVideoAnalyses, getFeed, getAlertHistory, getSocialPulse, getSectors } from '../lib/api'
 
 // Intel, in three streams the user asked for:
 //   Markets: macro, earnings, 13F, headlines, alerts
 //   Congress & insiders: political + Form 4 positioning
 //   Social: unified pulse across Reddit, StockTwits and the YouTube channels
 
-const SUBTABS = ['Markets', 'Congress & insiders', 'Social'] as const
+const SUBTABS = ['Markets', 'Sectors', 'Congress & insiders', 'Social'] as const
 type SubTab = (typeof SUBTABS)[number]
 
 export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
@@ -21,6 +21,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [feed, setFeed] = useState<Awaited<ReturnType<typeof getFeed>>>({ news: [], videos: [] })
   const [history, setHistory] = useState<Awaited<ReturnType<typeof getAlertHistory>>>([])
   const [pulse, setPulse] = useState<Awaited<ReturnType<typeof getSocialPulse>> | null>(null)
+  const [sectors, setSectors] = useState<Awaited<ReturnType<typeof getSectors>> | null>(null)
 
   useEffect(() => {
     db.watchlist.toArray().then(items => {
@@ -37,6 +38,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
     getFeed().then(setFeed).catch(() => {})
     getAlertHistory().then(setHistory).catch(() => {})
     getSocialPulse().then(setPulse).catch(() => {})
+    getSectors().then(setSectors).catch(() => {})
   }, [])
 
   return (
@@ -137,6 +139,41 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                 📅 Full economic calendar <span>Everything beyond the high-impact list above.</span>
               </a>
             </section>
+          </>
+        )}
+
+        {tab === 'Sectors' && (
+          <>
+            {sectors ? (
+              <section className="digest-section">
+                <h3 className="section-title">Rotation monitor: relative strength vs SPY</h3>
+                {(sectors.rotatingIn.length > 0 || sectors.rotatingOut.length > 0) && (
+                  <p className="empty-line" style={{ fontSize: 12.5, color: 'var(--text)' }}>
+                    {sectors.rotatingIn.length > 0 && <>Money rotating <span className="up-text">into {sectors.rotatingIn.join(', ')}</span>. </>}
+                    {sectors.rotatingOut.length > 0 && <>Rotating <span className="down-text">out of {sectors.rotatingOut.join(', ')}</span>.</>}
+                  </p>
+                )}
+                {sectors.rows.map(s => (
+                  <div key={s.sym} className="perf-row">
+                    <span>
+                      {s.trend === 'in' ? '↗ ' : s.trend === 'out' ? '↘ ' : ''}
+                      {s.name} <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-num)', fontSize: 11 }}>{s.sym}</span>
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-num)', fontSize: 12 }}>
+                      <em className={s.rs5 != null && s.rs5 >= 0 ? 'up-text' : 'down-text'} style={{ fontStyle: 'normal' }}>{s.rs5 != null ? `${s.rs5 >= 0 ? '+' : ''}${s.rs5}` : '·'}</em>
+                      <span style={{ color: 'var(--faint)' }}> / </span>
+                      <em className={s.rs21 != null && s.rs21 >= 0 ? 'up-text' : 'down-text'} style={{ fontStyle: 'normal' }}>{s.rs21 != null ? `${s.rs21 >= 0 ? '+' : ''}${s.rs21}` : '·'}</em>
+                      <span style={{ color: 'var(--faint)' }}> / </span>
+                      <em className={s.rs63 != null && s.rs63 >= 0 ? 'up-text' : 'down-text'} style={{ fontStyle: 'normal' }}>{s.rs63 != null ? `${s.rs63 >= 0 ? '+' : ''}${s.rs63}` : '·'}</em>
+                    </span>
+                  </div>
+                ))}
+                <p className="empty-line" style={{ fontSize: 11 }}>Columns: 1-week / 1-month / 3-month excess return vs SPY (%). ↗ short-term strength leading = rotation in. Position ahead of the rotation, not after it is obvious.</p>
+              </section>
+            ) : (
+              <p className="empty-line">Loading sector data…</p>
+            )}
+            <p className="empty-line" style={{ fontSize: 11 }}>Per-ticker seasonality (day-of-week and monthly tendencies over 5 years) lives on each ticker's chart page.</p>
           </>
         )}
 

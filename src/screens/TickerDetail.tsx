@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Candle, Quote } from '../../shared/types'
-import { getCandles, getNews, getTickerBrief } from '../lib/api'
+import { getCandles, getNews, getTickerBrief, getSeasonality } from '../lib/api'
 import { db, getCapital, type RuleItem } from '../lib/db'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPrice, fmtPct } from '../lib/format'
@@ -25,6 +25,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
   const [rules, setRules] = useState<RuleItem[]>([])
   const [capital, setCapital] = useState(5000)
   const [backtest, setBacktest] = useState<BacktestSummary[] | null>(null)
+  const [seasonality, setSeasonality] = useState<Awaited<ReturnType<typeof getSeasonality>> | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -51,6 +52,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
   useEffect(() => {
     getNews(symbol).then(setNews).catch(() => setNews([]))
     getTickerBrief(symbol).then(setBrief).catch(() => setBrief(null))
+    getSeasonality(symbol).then(setSeasonality).catch(() => setSeasonality(null))
     db.rules.where('symbol').equals(symbol).toArray().then(setRules)
   }, [symbol])
 
@@ -166,6 +168,31 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
           </>
         )}
       </section>
+
+      {seasonality && (
+        <section className="calc" style={{ marginTop: 18 }}>
+          <h3>Seasonality <span className="calc-sub">{seasonality.years} years of history</span></h3>
+          <div className="dow-grid">
+            {seasonality.dow.map(d => (
+              <div key={d.day} className="dow-cell">
+                <span className={`dow-avg ${d.avgPct != null && d.avgPct >= 0 ? 'up-text' : 'down-text'}`}>{d.avgPct != null ? `${d.avgPct >= 0 ? '+' : ''}${d.avgPct.toFixed(2)}%` : '·'}</span>
+                <span className="dow-name">{d.name}</span>
+              </div>
+            ))}
+          </div>
+          <p className="calc-hint" style={{ marginTop: 8 }}>
+            {seasonality.strongestDay && seasonality.weakestDay && (
+              <>Strongest day historically: {seasonality.strongestDay.name}. Weakest: {seasonality.weakestDay.name}. </>
+            )}
+            {seasonality.bestMonth && seasonality.worstMonth && (
+              <>Best month: {seasonality.bestMonth.name} ({seasonality.bestMonth.avgPct?.toFixed(1)}%); worst: {seasonality.worstMonth.name} ({seasonality.worstMonth.avgPct?.toFixed(1)}%). </>
+            )}
+            {seasonality.reliable
+              ? 'Averages of history, not promises; use for timing discipline, not as signals.'
+              : 'Under 2 years of data: treat all of this as noise.'}
+          </p>
+        </section>
+      )}
 
       {news.length > 0 && (
         <section>

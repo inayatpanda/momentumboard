@@ -44,7 +44,7 @@ export function parseYahooChart(json: unknown, symbol: string): { candles: Candl
   }
 }
 
-export async function fetchYahooChart(symbol: string, range: '3mo' | '6mo' | '1y', fetchFn: typeof fetch = fetch) {
+export async function fetchYahooChart(symbol: string, range: '3mo' | '6mo' | '1y' | '5y', fetchFn: typeof fetch = fetch) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d`
   const res = await fetchFn(url, { headers: { 'User-Agent': 'Mozilla/5.0 (MomentumBoard)' } })
   if (!res.ok) throw new Error(`yahoo-http-${res.status}`)
