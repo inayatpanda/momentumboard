@@ -147,14 +147,13 @@ function NotificationSettings() {
 }
 
 function ThemeSettings() {
-  // Broadsheet (light) is the default when nothing is stored — mirrors the boot script.
-  const [pref, setPref] = useState(localStorage.getItem('mb-theme') ?? 'light')
+  const [pref, setPref] = useState(localStorage.getItem('mb-theme') ?? 'auto')
   const apply = (p: string) => {
     localStorage.setItem('mb-theme', p)
     setPref(p)
     const dark = p === 'dark' || (p === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0a0e12' : '#f7f4ec')
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0a0e12' : '#f6f7f9')
   }
   return (
     <div className="subtabs" style={{ marginBottom: 4 }}>

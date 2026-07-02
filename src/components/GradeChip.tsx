@@ -1,12 +1,11 @@
-// GradeChip — a press-stamp chip for the engine's letter grades.
+// GradeChip — a rounded chip for the engine's letter grades.
 //
-// A serif letter (A/B/C) in a 1.5px inked border with a faint letterpress
-// inset and a per-grade background tint: green-tinted A, ochre B, neutral C.
-// Print language — bordered, never filled-neon. Styles live in index.css
-// (`.grade-chip` and friends).
+// A letter (A/B/C) in a rounded pill with simple per-grade colour coding:
+// green-tinted A (a positive market grade), amber B, neutral C. Reads as
+// data, not a button. Styles live in index.css (`.grade-chip` and friends).
 //
 // Props:
-//   grade        the letter to stamp: 'A' | 'B' | 'C' (any other string
+//   grade        the letter to show: 'A' | 'B' | 'C' (any other string
 //                falls back to the neutral "C" treatment).
 //   provisional  when true, appends a small "prov" tag — the thin-evidence
 //                bucket whose grade isn't yet fully earned.

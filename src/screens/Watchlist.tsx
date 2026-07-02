@@ -72,7 +72,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
         <div className="gate-card">
           <div className="logo">
             <svg width="26" height="26" viewBox="0 0 100 100">
-              <polyline points="15,70 40,45 55,58 85,25" fill="none" stroke="var(--green)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+              <polyline points="15,70 40,45 55,58 85,25" fill="none" stroke="var(--blue)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
           <h1>StreetSignal</h1>

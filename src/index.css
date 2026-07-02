@@ -1,26 +1,28 @@
 /* =====================================================================
-   STREETSIGNAL DESIGN TOKENS — "a broadsheet that trades"
+   STREETSIGNAL DESIGN TOKENS
    ---------------------------------------------------------------------
    Two themes drive everything off semantic CSS vars on :root[data-theme].
-   The DEFAULT is the light "broadsheet" (ink on paper); "dark" is the
-   evening "night desk". Every token below has a counterpart in both.
+   The default follows the OS ('auto'); users pick light or dark in Settings.
+   Every token below has a counterpart in both themes.
 
-   SURFACES        --bg (paper)  --panel / --panel-2 (raised sheets)
-   INK             --text (ink)  --muted (secondary)  --faint (meta)
-   HAIRLINES       --line        (1px rules, NOT shadows)
-   SEMANTIC ACCENTS — exactly ONE hue each, no gradients:
-     --green  long / up          --red   short / down
-     --amber  warn / caution     --blue  informational (used sparingly;
-                                          links lean on ink + underline)
+   SURFACES        --bg  --panel / --panel-2 (raised surfaces)
+   INK             --text  --muted (secondary)  --faint (meta)
+   LINES           --line        (1px borders / hairlines)
+   ACCENTS:
+     --blue   PRIMARY INTERACTIVE — buttons, active tabs/chips, links,
+              focus rings, selection, brand tick. This is the app's colour.
+     --green  RESERVED for positive MARKET semantics — up moves, positive
+              P&L, hits, long side.  --red  negative / short / miss.
+     --amber  warn / caution.
+   (Interactive = blue; green/red carry market meaning only. Neutral figures
+    stay ink/--text, never green.)
    Each accent ships a faint --*-soft tint for backgrounds/badges.
-   ON-INK          --on-accent   (text sitting on a solid accent)
-   SHAPE           --radius (crisp in light, rounded in dark)  --shadow
-   TYPE            --font-serif (mastheads, section titles, screen headers)
-                   --font-ui (body)   --font-num (dense numeric tables)
+   ON-ACCENT       --on-accent   (text sitting on a solid accent)
+   SHAPE           --radius  --shadow
+   TYPE            --font-ui (body/headings)   --font-num (numeric tables)
+                   --font-serif is defined but intentionally unused by the app.
 
-   HOUSE RULES for the surfaces built on top of these tokens:
-     • Hairline rules, not shadows — this is print, not glass.
-     • One accent per semantic — never mix hues to signal the same thing.
+   NOTES:
      • Tabular numerals everywhere money/figures are shown
        (use .num / .tabular-nums, or a class already in the numeric list).
    ===================================================================== */
@@ -28,7 +30,7 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #0a0e12;
-  --bg-glow: radial-gradient(120% 60% at 50% -10%, rgba(34, 201, 141, 0.09) 0%, rgba(10, 14, 18, 0) 60%);
+  --bg-glow: radial-gradient(120% 60% at 50% -10%, rgba(90, 169, 255, 0.09) 0%, rgba(10, 14, 18, 0) 60%);
   --panel: #11161d;
   --panel-2: #161d26;
   --line: rgba(148, 168, 190, 0.14);
@@ -37,7 +39,7 @@
   --faint: #5c6878;
   --green: #22c98d;
   --green-soft: rgba(34, 201, 141, 0.14);
-  --on-accent: var(--on-accent);
+  --on-accent: #08111a;      /* dark ink for text on a solid (light-blue) accent */
   --red: #ff5d73;
   --red-soft: rgba(255, 93, 115, 0.14);
   --amber: #f5b83d;
@@ -55,28 +57,26 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  /* Broadsheet — ink on paper. Flat surfaces, hairline rules, no glow. */
-  --bg: #f7f4ec;             /* paper */
-  --bg-glow: none;           /* print has no neon halo */
-  --panel: #fffdf7;          /* raised sheet — a hair brighter than paper */
-  --panel-2: #fdfbf4;        /* near-flat; keeps card gradients imperceptible */
-  --line: #d9d2c3;           /* hairline rule */
-  --text: #191713;           /* ink */
-  --muted: #5f594e;          /* secondary ink (~6.3:1 on paper) */
-  --faint: #7a7264;          /* meta ink (~4.4:1 on paper) */
-  --green: #1f7a4d;          /* long / up — ink green (~4.9:1) */
-  --green-soft: rgba(31, 122, 77, 0.1);
-  --on-accent: #fffdf7;      /* paper-white text on a solid accent */
-  --red: #a02c2c;            /* short / down — ink red (~6.6:1) */
-  --red-soft: rgba(160, 44, 44, 0.09);
-  --amber: #8f6300;          /* warn — ochre (~4.9:1) */
-  --amber-soft: rgba(143, 99, 0, 0.12);
-  --blue: #2f5f86;           /* informational — muted ink blue (used sparingly) */
-  --blue-soft: rgba(47, 95, 134, 0.09);
-  --nav-bg: rgba(255, 253, 247, 0.92);
-  --top-fade: rgba(247, 244, 236, 0.94);
-  --shadow: 0 2px 10px rgba(25, 23, 19, 0.08);
-  --radius: 6px;             /* crisp paper corners (dark keeps its 16px) */
+  --bg: #f6f7f9;
+  --bg-glow: radial-gradient(120% 60% at 50% -10%, rgba(33, 102, 198, 0.06) 0%, rgba(246, 247, 249, 0) 60%);
+  --panel: #ffffff;
+  --panel-2: #fbfcfe;
+  --line: rgba(15, 23, 42, 0.12);
+  --text: #101826;
+  --muted: #55657a;
+  --faint: #8a99ac;
+  --green: #0c9d6c;
+  --green-soft: rgba(12, 157, 108, 0.1);
+  --on-accent: #ffffff;
+  --red: #cf2f4e;
+  --red-soft: rgba(207, 47, 78, 0.09);
+  --amber: #9a6a03;
+  --amber-soft: rgba(184, 130, 10, 0.12);
+  --blue: #2166c6;
+  --blue-soft: rgba(33, 102, 198, 0.1);
+  --nav-bg: rgba(255, 255, 255, 0.94);
+  --top-fade: rgba(246, 247, 249, 0.96);
+  --shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
 }
 
 * { box-sizing: border-box; }
@@ -117,16 +117,14 @@ button, input { font: inherit; }
   padding: 14px 16px 10px;
   background: linear-gradient(to bottom, var(--top-fade) 70%, transparent);
   backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line);
 }
 
 .brand {
-  font-family: var(--font-serif);
-  font-weight: 700;
-  font-size: 20px;
-  letter-spacing: -0.01em;
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.02em;
 }
-.brand .tick { color: var(--green); }
+.brand .tick { color: var(--blue); }
 
 .content { flex: 1; padding: 4px 16px 16px; }
 
@@ -167,9 +165,9 @@ button, input { font: inherit; }
   transition: border-color 0.15s ease;
 }
 .addform input::placeholder { text-transform: none; font-family: var(--font-ui); color: var(--faint); }
-.addform input:focus { border-color: var(--green); }
+.addform input:focus { border-color: var(--blue); }
 .addform button {
-  background: var(--green);
+  background: var(--blue);
   border: none;
   border-radius: 12px;
   padding: 0 18px;
@@ -216,23 +214,18 @@ button, input { font: inherit; }
 .rvol { font-family: var(--font-num); font-size: 11.5px; color: var(--muted); letter-spacing: 0.02em; }
 .rvol.hot { color: var(--amber); }
 
-/* Print-language tags: bordered stamps, not filled-neon pills. */
 .badge {
-  font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  background: transparent;
+  letter-spacing: 0.03em;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid;
 }
-.badge.good { color: var(--green); border-color: var(--green); background: var(--green-soft); }
-.badge.warn { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
-.badge.bad { color: var(--red); border-color: var(--red); background: var(--red-soft); }
-.badge.info { color: var(--blue); border-color: var(--blue); background: var(--blue-soft); }
+.badge.good { color: var(--green); border-color: rgba(34, 201, 141, 0.5); background: var(--green-soft); }
+.badge.warn { color: var(--amber); border-color: rgba(245, 184, 61, 0.5); background: var(--amber-soft); }
+.badge.bad { color: var(--red); border-color: rgba(255, 93, 115, 0.5); background: var(--red-soft); }
+.badge.info { color: var(--blue); border-color: rgba(90, 169, 255, 0.45); background: var(--blue-soft); }
 
 .remove {
   margin-left: auto;
@@ -299,7 +292,7 @@ button, input { font: inherit; }
   transition: color 0.15s ease, background 0.15s ease;
 }
 .tab svg { width: 21px; height: 21px; transition: transform 0.15s ease; }
-.tab.active { color: var(--green); background: var(--green-soft); }
+.tab.active { color: var(--blue); background: var(--blue-soft); }
 .tab.active svg { transform: translateY(-1px); }
 .tab:not(.active):not(:disabled):hover { color: var(--muted); }
 .tab:disabled { opacity: 0.45; cursor: default; }
@@ -338,9 +331,9 @@ button, input { font: inherit; }
   width: 100%;
   outline: none;
 }
-.alert-editor input:focus { border-color: var(--green); }
+.alert-editor input:focus { border-color: var(--blue); }
 .alert-editor button {
-  background: var(--green);
+  background: var(--blue);
   border: none;
   border-radius: 10px;
   padding: 9px 16px;
@@ -374,7 +367,7 @@ button, input { font: inherit; }
 /* ---------- ticker detail ---------- */
 .detail { padding: 12px 16px 16px; }
 .detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.detail-head h2 { margin: 0; font-family: var(--font-serif); font-weight: 700; font-size: 22px; letter-spacing: -0.01em; }
+.detail-head h2 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
 .detail-price { font-family: var(--font-num); font-size: 14px; color: var(--muted); }
 .up-text { color: var(--green); }
 .down-text { color: var(--red); }
@@ -399,7 +392,7 @@ button, input { font: inherit; }
   font-weight: 600;
   cursor: pointer;
 }
-.range-pills button.active { color: var(--on-accent); background: var(--green); border-color: var(--green); }
+.range-pills button.active { color: var(--on-accent); background: var(--blue); border-color: var(--blue); }
 
 .detail-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
 
@@ -419,7 +412,7 @@ button, input { font: inherit; }
   font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
 }
 
-.section-title { font-family: var(--font-serif); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+.section-title { font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
 
 .calc {
   background: var(--panel);
@@ -428,7 +421,7 @@ button, input { font: inherit; }
   padding: 14px;
   margin-top: 18px;
 }
-.calc h3 { margin: 0 0 10px; font-family: var(--font-serif); font-weight: 700; font-size: 15px; }
+.calc h3 { margin: 0 0 10px; font-size: 14px; }
 .calc-sub { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
 .calc-inputs { display: flex; gap: 10px; }
 .calc-inputs label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -442,7 +435,7 @@ button, input { font: inherit; }
   width: 100%;
   outline: none;
 }
-.calc-inputs input:focus { border-color: var(--green); }
+.calc-inputs input:focus { border-color: var(--blue); }
 .calc-out { display: flex; gap: 8px; margin-top: 12px; }
 .calc-out > div {
   flex: 1;
@@ -478,7 +471,7 @@ button, input { font: inherit; }
   background: var(--panel); border: 1px solid var(--line); color: var(--muted);
   border-radius: 999px; padding: 3px 12px; font-size: 11.5px; font-weight: 600; cursor: pointer;
 }
-.sort-chips button.active { color: var(--on-accent); background: var(--green); border-color: var(--green); }
+.sort-chips button.active { color: var(--on-accent); background: var(--blue); border-color: var(--blue); }
 @keyframes flashUp { 0% { color: var(--green); text-shadow: 0 0 12px rgba(34,201,141,0.7); } 100% { color: inherit; text-shadow: none; } }
 @keyframes flashDown { 0% { color: var(--red); text-shadow: 0 0 12px rgba(255,93,115,0.7); } 100% { color: inherit; text-shadow: none; } }
 .price.flash-up { animation: flashUp 0.9s ease-out; }
@@ -496,7 +489,7 @@ button, input { font: inherit; }
   font-weight: 600;
   cursor: pointer;
 }
-.subtabs button.active { color: var(--on-accent); background: var(--green); border-color: var(--green); }
+.subtabs button.active { color: var(--on-accent); background: var(--blue); border-color: var(--blue); }
 
 /* ---------- gear + hero card ---------- */
 .gear {
@@ -510,7 +503,7 @@ button, input { font: inherit; }
   flex: 0 0 auto;
   margin-left: 8px;
 }
-.gear:hover { color: var(--text); border-color: var(--green); }
+.gear:hover { color: var(--text); border-color: var(--blue); }
 .hero-card {
   background: linear-gradient(135deg, rgba(34, 201, 141, 0.12), var(--panel));
   border-color: rgba(34, 201, 141, 0.35);
@@ -558,10 +551,10 @@ button, input { font: inherit; }
   background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
   padding: 8px 10px; color: var(--text); font-family: var(--font-num); width: 100%; outline: none;
 }
-.trade-form input:focus, .trade-form select:focus { border-color: var(--green); }
+.trade-form input:focus, .trade-form select:focus { border-color: var(--blue); }
 .tf-bottom { align-items: center; justify-content: space-between; margin-bottom: 0; }
 .tf-check { flex-direction: row !important; align-items: center; gap: 6px !important; text-transform: none !important; font-size: 12px !important; }
-.trade-form button { background: var(--green); border: none; border-radius: 10px; padding: 9px 16px; color: var(--on-accent); font-weight: 700; cursor: pointer; }
+.trade-form button { background: var(--blue); border: none; border-radius: 10px; padding: 9px 16px; color: var(--on-accent); font-weight: 700; cursor: pointer; }
 
 .trade-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .trade-meta em { color: var(--faint); font-style: italic; }
@@ -576,7 +569,7 @@ button, input { font: inherit; }
 .digest-section { margin-bottom: 18px; }
 .perf-row { display: flex; justify-content: space-between; padding: 7px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 5px; font-family: var(--font-num); font-size: 13.5px; }
 .link-card { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 8px; color: var(--text); text-decoration: none; font-size: 14px; }
-.link-card:hover { border-color: var(--green); }
+.link-card:hover { border-color: var(--blue); }
 .link-card span { color: var(--muted); font-size: 12px; display: block; margin-top: 2px; }
 .ai-card { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid rgba(199, 146, 234, 0.35); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
 .ai-card h3 { margin: 0 0 6px; font-size: 14px; color: #c792ea; }
@@ -604,7 +597,7 @@ button, input { font: inherit; }
   padding-top: 4px;
 }
 .cal-day.today { border-color: var(--blue); }
-.cal-day.sel { background: var(--green-soft); border-color: var(--green); }
+.cal-day.sel { background: var(--blue-soft); border-color: var(--blue); }
 .cal-dots { position: absolute; bottom: 4px; left: 0; right: 0; display: flex; gap: 3px; justify-content: center; }
 .cal-dots .dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
 .dot.report { background: var(--green); }
@@ -634,7 +627,7 @@ button, input { font: inherit; }
 .link-card:active { transform: scale(0.99); }
 
 /* ---------- accessibility & motion ---------- */
-:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; border-radius: 4px; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
@@ -668,7 +661,7 @@ button, input { font: inherit; }
   .tabs::before {
     content: 'StreetSignal';
     position: absolute; top: 28px; left: 20px;
-    font-family: var(--font-serif); font-weight: 700; font-size: 18px; letter-spacing: -0.01em;
+    font-weight: 800; font-size: 17px; letter-spacing: -0.02em;
     color: var(--text);
   }
   .tab {
@@ -680,7 +673,7 @@ button, input { font: inherit; }
     font-size: 13.5px;
     border-radius: 10px;
   }
-  .tab.active { background: var(--green-soft); }
+  .tab.active { background: var(--blue-soft); }
   .tab:not(:disabled):hover { background: var(--panel-2); }
 
   /* denser, multi-column content */
@@ -718,11 +711,11 @@ button, input { font: inherit; }
 }
 .gate-card .logo {
   width: 52px; height: 52px; border-radius: 14px;
-  background: var(--green-soft);
+  background: var(--blue-soft);
   display: grid; place-items: center;
   margin-bottom: 16px;
 }
-.gate-card h1 { font-family: var(--font-serif); font-size: 24px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 6px; }
+.gate-card h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 6px; }
 .gate-card p { color: var(--muted); font-size: 13.5px; margin: 0 0 18px; }
 .gate-card input {
   width: 100%;
@@ -734,14 +727,14 @@ button, input { font: inherit; }
   font-family: var(--font-num);
   outline: none;
 }
-.gate-card input:focus { border-color: var(--green); }
+.gate-card input:focus { border-color: var(--blue); }
 .gate-card button {
   margin-top: 12px;
   width: 100%;
   padding: 12px;
   border-radius: 12px;
   border: none;
-  background: var(--green);
+  background: var(--blue);
   color: var(--on-accent);
   font-weight: 700;
   cursor: pointer;
@@ -760,48 +753,37 @@ button, input { font: inherit; }
 }
 .num { font-family: var(--font-num); white-space: nowrap; }
 
-/* ---------- GradeChip: press-stamp for engine letter grades ---------- */
+/* ---------- GradeChip: rounded chip for engine letter grades ---------- */
+/* Reads as data, not a button: simple per-grade colour coding. A keeps a
+   green tint (positive semantic), B amber, C neutral. Shadow = ghosted/dashed. */
 .grade-chip {
   display: inline-flex;
   align-items: baseline;
-  gap: 3px;
-  font-family: var(--font-serif);
+  gap: 4px;
   font-weight: 700;
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1;
-  letter-spacing: 0.01em;
-  padding: 2px 6px 3px;
-  border: 1.5px solid var(--line);
-  border-radius: 3px;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: 999px;
   color: var(--text);
-  background: var(--panel);
-  /* letterpress: faint raised highlight above, hairline seat below */
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -1px 0 rgba(25, 23, 19, 0.06);
 }
-.grade-chip.g-a { color: var(--green); border-color: var(--green); background: var(--green-soft); }
-.grade-chip.g-b { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+.grade-chip.g-a { color: var(--green); border-color: rgba(34, 201, 141, 0.5); background: var(--green-soft); }
+.grade-chip.g-b { color: var(--amber); border-color: rgba(245, 184, 61, 0.5); background: var(--amber-soft); }
 .grade-chip.g-c { color: var(--muted); border-color: var(--line); background: transparent; }
 .grade-chip .prov {
-  font-family: var(--font-ui);
   font-weight: 600;
   font-size: 8px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   opacity: 0.75;
-  text-shadow: none;
 }
 /* shadow grade: a ghosted "what-if", dashed and de-inked */
 .grade-chip.is-shadow {
   border-style: dashed;
   background: transparent;
   opacity: 0.55;
-  box-shadow: none;
-  text-shadow: none;
-}
-:root[data-theme='dark'] .grade-chip {
-  text-shadow: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -1px 0 rgba(0, 0, 0, 0.25);
 }
 
 /* ---------- The Board: header strip ---------- */
@@ -824,7 +806,6 @@ button, input { font: inherit; }
 
 .ledger-day { margin-bottom: 10px; }
 .ledger-date {
-  font-family: var(--font-serif);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -885,5 +866,5 @@ button, input { font: inherit; }
 
 .ledger-note { margin-top: 6px; font-size: 11px; color: var(--faint); line-height: 1.4; }
 
-/* each learning table sits under its own serif rule with a little air */
+/* each learning table sits under its own rule with a little air */
 .ledger-block { margin-top: 8px; }
