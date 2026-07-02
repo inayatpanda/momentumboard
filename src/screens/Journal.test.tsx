@@ -32,6 +32,11 @@ const engine: EngineData = {
     ],
   },
   ledger: [],
+  holdingsReads: [
+    { sym: 'TSLA', stage: 'extended', entryQuality: 'chase', note: 'Extended above the 20-day', capacityPct: 12, pplPct: 24.5, quantity: 3 },
+    { sym: 'AAPL', stage: 'pullback', entryQuality: 'early', note: 'Healthy dip', capacityPct: 6, pplPct: -8.1, quantity: 10 },
+    { sym: 'ZZZ', stage: null, entryQuality: null, note: null, capacityPct: null, pplPct: null, quantity: 1 },
+  ],
   scorecard: null, weights: null, calibration: null,
   riskState: { rung: 1, sinceDate: '2026-06-01', gradedAtRung: 8, history: [] },
   roster: null, channelCred: {},
@@ -91,5 +96,32 @@ describe('Journal — positions joined to the ledger', () => {
     const card = cardFor(container, 'XYZ')
     expect(card.querySelector('.engine-read.no-read')?.textContent).toBe('no engine read')
     expect(card.querySelector('.grade-chip')).toBeNull()
+  })
+})
+
+describe('Journal — T212 holdings tracking pane', () => {
+  it('lists holdings sorted by |P&L%|, colours the P&L, shows the engine stage, and reads null names gracefully', async () => {
+    const { container } = render(<Journal />)
+    await waitFor(() => expect(container.querySelector('.t212-holdings')).toBeTruthy())
+    const section = container.querySelector('.t212-holdings')!
+    expect(section.querySelector('summary')!.textContent).toContain('T212 holdings (3)')
+
+    const rows = [...section.querySelectorAll('.t212-holding-row')]
+    // sorted by |pplPct|: TSLA 24.5, AAPL 8.1, ZZZ null(0)
+    expect(rows.map(r => r.querySelector('.t212-h-sym')!.textContent)).toEqual(['TSLA', 'AAPL', 'ZZZ'])
+
+    const tsla = rows[0]
+    expect(tsla.querySelector('.t212-h-ppl')!.textContent).toContain('+24.50%')
+    expect(tsla.querySelector('.t212-h-ppl')!.classList.contains('up-text')).toBe(true)
+    expect(tsla.querySelector('.t212-h-stage')!.textContent).toContain('extended')
+    expect(tsla.querySelector('.t212-h-stage')!.textContent).toContain('chase')
+
+    const aapl = rows[1]
+    expect(aapl.querySelector('.t212-h-ppl')!.classList.contains('down-text')).toBe(true)
+
+    // a name the engine couldn't read still tracks, just with a dash + "no read"
+    const zzz = rows[2]
+    expect(zzz.querySelector('.t212-h-ppl')!.textContent).toBe('—')
+    expect(zzz.querySelector('.t212-h-stage')!.textContent).toContain('no read')
   })
 })

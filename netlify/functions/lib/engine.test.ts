@@ -31,6 +31,7 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
   earningsSyms: async () => new Set<string>(),
   worldReads: async () => [], // quiet world by default → mixed tone → mult 1
+  holdings: async () => null, // no T212 book by default
   ...over,
 })
 
@@ -251,6 +252,56 @@ describe('buildBoard', () => {
     expect(call).toBeDefined()
     expect(call.factors.insiders.score).toBe(45) // rotation coverage scored it despite no watchlist membership
     expect(call.factors.insiders.detail).toContain('cluster')
+  })
+
+  it('T212 holdings: writes holdings + holdings-reads blobs, a held mover earns a roster slot (source holding), an unreadable name reads null', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    const d = deps({
+      screens: async () => [], // HELD's ONLY candidate source is the holdings pool
+      social: async () => [],
+      candles: async sym => (sym === 'HELD' ? shorty : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      holdings: async () => [
+        { symbol: 'HELD', rawTicker: 'HELDl_EQ', quantity: 3, averagePrice: 100, currentPrice: 130, pplPct: 30 },
+        { symbol: 'GHOST', rawTicker: 'GHOST_US_EQ', quantity: 10, averagePrice: 5, currentPrice: 4, pplPct: -20 }, // no candles → unreadable
+      ],
+    })
+    const { holdingsCount } = await buildBoard(store, d, NOW)
+    expect(holdingsCount).toBe(2)
+
+    const held = (await store.read<{ at: number; positions: { symbol: string }[] }>('holdings'))!
+    expect(held.positions).toHaveLength(2)
+    expect(held.at).toBe(NOW)
+
+    const reads = (await store.read<{ sym: string; stage: string | null; entryQuality: string | null; capacityPct: number | null; pplPct: number | null; quantity: number }[]>('holdings-reads'))!
+    expect(reads).toHaveLength(2)
+    const heldRead = reads.find(r => r.sym === 'HELD')!
+    expect(heldRead.stage).not.toBeNull() // real candle history → a real stage
+    expect(heldRead.capacityPct).toBeGreaterThan(0)
+    expect(heldRead.pplPct).toBe(30)
+    expect(heldRead.quantity).toBe(3)
+    const ghostRead = reads.find(r => r.sym === 'GHOST')!
+    expect(ghostRead.stage).toBeNull() // no candles → the engine can't read it, but it's still tracked
+    expect(ghostRead.capacityPct).toBeNull()
+    expect(ghostRead.pplPct).toBe(-20)
+
+    // HELD moved enough to qualify → joined the roster via the holdings pool
+    const roster = (await store.read<{ sym: string; source: string }[]>('engine-roster'))!
+    const heldEntry = roster.find(r => r.sym === 'HELD')
+    expect(heldEntry).toBeDefined()
+    expect(heldEntry!.source).toBe('holding') // attribution rides the roster entry
+    expect(roster.find(r => r.sym === 'GHOST')).toBeUndefined() // unreadable → never a candidate
+  })
+
+  it('T212 holdings fail-soft: a null book leaves the holdings blobs untouched', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    const { holdingsCount } = await buildBoard(store, deps({ holdings: async () => null }), NOW)
+    expect(holdingsCount).toBe(0)
+    expect(await store.read('holdings')).toBeNull()
+    expect(await store.read('holdings-reads')).toBeNull()
   })
 
   it('Fix B: a smartMoney 13F match surfaces in the prediction factor breakdown', async () => {

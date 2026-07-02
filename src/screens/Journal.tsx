@@ -235,6 +235,33 @@ export function Journal() {
           <IconSwap /> Import positions from Trading 212
         </button>
 
+        {engine?.holdingsReads && engine.holdingsReads.length > 0 && (
+          <details className="t212-holdings">
+            <summary>
+              T212 holdings ({engine.holdingsReads.length}) — engine read
+            </summary>
+            <div className="t212-holdings-list">
+              {[...engine.holdingsReads]
+                .sort((a, b) => Math.abs(b.pplPct ?? 0) - Math.abs(a.pplPct ?? 0))
+                .map(h => (
+                  <div key={h.sym} className="t212-holding-row">
+                    <span className="t212-h-sym">{h.sym}</span>
+                    <span className={`t212-h-ppl num ${pnlClass(h.pplPct ?? 0)}`}>
+                      {h.pplPct == null ? '—' : fmtPct(h.pplPct)}
+                    </span>
+                    <span className="t212-h-stage">
+                      {h.stage ?? 'no read'}
+                      {h.entryQuality ? ` · ${h.entryQuality}` : ''}
+                    </span>
+                  </div>
+                ))}
+            </div>
+            <p className="t212-holdings-foot">
+              Read-only tracking, refreshed each morning. Use “Import positions” above to journal one for stop alerts.
+            </p>
+          </details>
+        )}
+
         <h3 className="section-title">Open positions ({open.length})</h3>
         {open.map(t => {
           const cur = quotes[t.symbol]?.price ?? null

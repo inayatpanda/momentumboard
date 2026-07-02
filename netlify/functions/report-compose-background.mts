@@ -95,6 +95,21 @@ export default async (req: Request) => {
       return (await fetchMediaTitles()).slice(0, 18)
     })
 
+    // the reader's REAL Trading 212 book, so portfolioDesk reviews actual holdings
+    // (not a wish-list). Slim: a count, the real unrealised P/L, and the 8 biggest
+    // movers with the engine's stage read. Written by the daily predict run.
+    const t212Holdings = await grab(async () => {
+      const reads = (await blobAppStore.read<{ sym: string; stage: string | null; note: string | null; pplPct: number | null; quantity: number }[]>('holdings-reads')) ?? []
+      if (!reads.length) return null
+      const book = await blobAppStore.read<{ positions: { averagePrice: number; currentPrice: number; quantity: number }[] }>('holdings')
+      const totalPpl = Math.round((book?.positions ?? []).reduce((s, p) => s + (p.currentPrice - p.averagePrice) * p.quantity, 0))
+      const top = [...reads]
+        .sort((a, b) => Math.abs(b.pplPct ?? 0) - Math.abs(a.pplPct ?? 0))
+        .slice(0, 8)
+        .map(r => ({ sym: r.sym, pplPct: r.pplPct, stage: r.stage, note: (r.note ?? '').slice(0, 90) }))
+      return { count: reads.length, totalPpl, top }
+    })
+
     // the engine's scored board: fresh = composed today (London). Stale or
     // missing → the paper still publishes, in legacy qualitative mode.
     const engineBoard = await grab(async () => {
@@ -213,6 +228,8 @@ export default async (req: Request) => {
         engineBoard, // null = engine offline; ideas then fall back to candidateReads rules
         watchlistQuotes: quotes,
         portfolio,
+        t212Holdings, // real broker book: count, unrealised P/L, top movers + engine stage
+
         sectorRotation: sectors,
         candidateReads,
         rotationLeaders: rotationTables.map(t => ({ sector: t.sector, etf: t.etf, rows: t.rows.map(r => ({ sym: r.sym, price: r.price, wkPct: r.wkPct == null ? null : Math.round(r.wkPct * 10) / 10 })) })),

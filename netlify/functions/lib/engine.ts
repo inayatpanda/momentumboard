@@ -33,7 +33,8 @@ import {
 } from '../../../shared/engine/calibration'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
 import { computeRung, initRisk, mapInstrument, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
-import { avgDollarVol20, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
+import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
+import type { T212Position } from './t212lib'
 import type { FactorName, FactorScore, PredOutcome, Prediction } from '../../../shared/engine/types'
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { SECTOR_MEMBERS, computeSectorRows } from './sectors'
@@ -63,6 +64,9 @@ export interface EngineDeps {
   // futures and VIX (^VIX carried in the same list, split out in buildBoard).
   // Fail-soft: any read the source can't supply is null — a vote it cannot cast.
   worldReads: () => Promise<WorldRead[]>
+  // the reader's REAL Trading 212 book, or null when T212 is unconfigured / down.
+  // Fail-soft: a broker outage must never stop the board building.
+  holdings: () => Promise<T212Position[] | null>
 }
 
 const londonDate = (nowSec: number) => new Date(nowSec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
@@ -96,7 +100,7 @@ export async function fetchMediaTitles(fetchFn: typeof fetch = fetch): Promise<s
   return out.slice(0, 40)
 }
 
-export function defaultDeps(env: { FINNHUB_API_KEY?: string }): EngineDeps {
+export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: string; T212_SECRET_KEY?: string; T212_HOST?: string }): EngineDeps {
   return {
     candles: async sym => {
       const { cachedCandles } = await import('./marketCache')
@@ -156,6 +160,10 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string }): EngineDeps {
           return { sym, name, changePct: changePct == null ? null : Math.round(changePct * 100) / 100 }
         }),
       )
+    },
+    holdings: async () => {
+      const { fetchT212Positions } = await import('./t212lib')
+      return fetchT212Positions({ T212_API_KEY: env.T212_API_KEY, T212_SECRET_KEY: env.T212_SECRET_KEY, T212_HOST: env.T212_HOST })
     },
     earningsSyms: async () => {
       try {
@@ -321,7 +329,7 @@ export async function buildBoard(
   store: AppStore,
   deps: EngineDeps,
   nowSec: number,
-): Promise<{ board: Prediction[]; rosterSize: number; regime: string }> {
+): Promise<{ board: Prediction[]; rosterSize: number; regime: string; holdingsCount: number }> {
   const today = londonDate(nowSec)
   const cfg = validateConfig(await store.read('config')) ?? { watchlist: [], rules: [], ytChannels: [], capital: 5000 }
   const watchSyms = cfg.watchlist.map(w => w.symbol)
@@ -360,6 +368,18 @@ export async function buildBoard(
 
   const currentRoster = (await store.read<RosterEntry[]>('engine-roster')) ?? []
   for (const e of currentRoster) addSource(e.sym, e.source, e.capUsdM) // members get re-examined daily
+
+  // The reader's REAL Trading 212 book. Fetched fail-soft (a broker outage never
+  // stops the board). Held names join the CANDIDATE pool with source 'holding' —
+  // gated exactly like any mover, so they must EARN their roster slot and are NOT
+  // watchlist-immortal. Added LAST so a large book never evicts the movers from the
+  // 110-candidate evaluation cap. The engine's per-holding opinion (holdings-reads)
+  // is written separately below, after the board is scored.
+  const holdings = await deps.holdings().catch(() => null)
+  if (holdings) {
+    await store.write('holdings', { at: nowSec, positions: holdings })
+    for (const p of holdings.slice(0, ROSTER_MAX)) addSource(p.symbol, 'holding')
+  }
 
   const candidateSyms = [...sources.keys()].slice(0, 110)
   const candleMap = new Map<string, Candle[]>()
@@ -581,5 +601,32 @@ export async function buildBoard(
     newsTone: globalNews,
   })
 
-  return { board: live, rosterSize: roster.length, regime }
+  // ---- the engine's daily opinion on every REAL holding ----
+  // For each held name (cap 80): where is it in its move (technicalStage) and can
+  // it travel (swingCapacity)? Candles are reused from candleMap when the name was
+  // already a candidate, else fetched fresh (cachedCandles dedupes). This is the
+  // Desk's read-only tracking pane and the paper's portfolioDesk input. Per-holding
+  // fail-soft: a name the engine can't read gets null stage, not a thrown run.
+  let holdingsCount = 0
+  if (holdings) {
+    const held = holdings.slice(0, ROSTER_MAX)
+    holdingsCount = held.length
+    const reads = await mapLimit(held, 8, async p => {
+      const candles = candleMap.get(p.symbol) ?? (await deps.candles(p.symbol).catch(() => null))
+      const readable = candles != null && candles.length >= 30
+      const read = readable ? technicalStage(p.symbol, candles!) : null
+      return {
+        sym: p.symbol,
+        stage: read?.stage ?? null,
+        entryQuality: read?.entryQuality ?? null,
+        note: read?.note ?? null,
+        capacityPct: readable ? swingCapacity(candles!.map(c => c.c)) : null,
+        pplPct: p.pplPct,
+        quantity: p.quantity,
+      }
+    })
+    await store.write('holdings-reads', reads)
+  }
+
+  return { board: live, rosterSize: roster.length, regime, holdingsCount }
 }

@@ -1,5 +1,5 @@
 import type { Context } from '@netlify/functions'
-import { validateConfig } from '../../shared/config'
+import { validateConfig, type AppConfig } from '../../shared/config'
 import { blobAppStore, type AppStore } from './lib/store'
 import { authenticate } from './lib/auth'
 
@@ -151,8 +151,20 @@ export async function routeConfig(
   if (method === 'PUT') {
     const cfg = validateConfig(bodyText ? JSON.parse(bodyText) : null)
     if (!cfg) return json(400, { ok: false, error: 'invalid-config' })
-    await store.write(`${ns}config`, cfg)
-    return json(200, { ok: true, data: cfg })
+    // Merge-on-write: the phone's config mirror builds its payload from the local
+    // watchlist/rules/notes only — it never carries the engine-only fields. Without
+    // this merge a routine phone sync would WIPE the seeded levMap, the manual risk
+    // pin and the favourite channels. Preserve each stored value when the incoming
+    // body left it out; an explicit value (incl. an explicit null override) replaces.
+    const stored = await store.read<AppConfig>(`${ns}config`)
+    const merged: AppConfig = {
+      ...cfg,
+      levMap: cfg.levMap ?? stored?.levMap,
+      favouriteChannels: cfg.favouriteChannels ?? stored?.favouriteChannels,
+      riskRungOverride: cfg.riskRungOverride === undefined ? (stored?.riskRungOverride ?? null) : cfg.riskRungOverride,
+    }
+    await store.write(`${ns}config`, merged)
+    return json(200, { ok: true, data: merged })
   }
 
   return json(405, { ok: false, error: 'method-not-allowed' })

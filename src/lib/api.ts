@@ -244,6 +244,19 @@ export interface LedgerDay {
   predictions: LedgerPrediction[]
 }
 
+// One held name as the engine reads it: the daily stage/quality opinion plus the
+// live P&L% and size. Read-only tracking — journalling for stop alerts stays the
+// existing T212 import button.
+export interface HoldingRead {
+  sym: string
+  stage: string | null
+  entryQuality: string | null
+  note: string | null
+  capacityPct: number | null
+  pplPct: number | null
+  quantity: number
+}
+
 export interface EngineData {
   board: {
     date: string
@@ -255,6 +268,9 @@ export interface EngineData {
   } | null
   ledger?: LedgerDay[]
   newsToneHistory?: { date: string; score: number; label: string }[]
+  // the engine's daily read-only opinion on every REAL T212 holding (null until the
+  // first predict run writes it). Powers the Desk's read-only holdings-tracking pane.
+  holdingsReads?: HoldingRead[] | null
   scorecard: {
     byGrade: Record<string, { n: number; hits: number; sumExcess: number }>
     byRegime: Record<string, { n: number; hits: number }>

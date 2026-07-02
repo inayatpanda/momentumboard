@@ -19,7 +19,7 @@ export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
   if (!auth) return new Response(JSON.stringify({ ok: false, error: 'unauthorised' }), { status: 401 })
 
-  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory, predIndex] = await Promise.all([
+  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory, holdingsReads, predIndex] = await Promise.all([
     blobAppStore.read<{
       date: string
       generatedAt: number
@@ -36,6 +36,10 @@ export default async (req: Request) => {
     blobAppStore.read<{ date: string; joined: string[]; dropped: { sym: string; why: string }[] }[]>('engine-roster-log'),
     blobAppStore.read<ChannelCredState>('channel-credibility'),
     blobAppStore.read<{ date: string; score: number; label: string }[]>('news-tone-history'),
+    // the engine's daily read-only opinion on every REAL T212 holding — surfaced
+    // here so the Desk gets it in the /api/engine call it already makes (no extra
+    // round-trip, and it belongs with the rest of the engine aggregation)
+    blobAppStore.read<{ sym: string; stage: string | null; entryQuality: string | null; note: string | null; capacityPct: number | null; pplPct: number | null; quantity: number }[]>('holdings-reads'),
     blobAppStore.read<string[]>('predictions-index'),
   ])
 
@@ -84,6 +88,7 @@ export default async (req: Request) => {
     board,
     ledger,
     newsToneHistory: (newsToneHistory ?? []).slice(-30),
+    holdingsReads: holdingsReads ?? null,
     scorecard,
     weights: weights ? { base: weights.base, current: weights.current, history: weights.history.slice(-10) } : null,
     calibration: calibration ? { buckets: calibration.buckets, brier: calibration.brier.slice(-30), seeded: calibration.seeded ?? false } : null,

@@ -635,6 +635,26 @@ button, input { font: inherit; }
 .empty-line { color: var(--faint); font-size: 13px; }
 .journal-io { display: flex; gap: 8px; margin-top: 16px; }
 
+/* ---------- Desk: T212 holdings (read-only tracking) ---------- */
+.t212-holdings { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.t212-holdings > summary {
+  cursor: pointer; list-style: none; padding: 9px 12px;
+  font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted);
+}
+.t212-holdings > summary::-webkit-details-marker { display: none; }
+.t212-holdings > summary::before { content: '▸'; color: var(--blue); margin-right: 8px; font-size: 10px; } /* blue only on the interactive marker */
+.t212-holdings[open] > summary::before { content: '▾'; }
+.t212-holdings > summary:hover { color: var(--text); }
+.t212-holdings-list { padding: 0 12px 4px; }
+.t212-holding-row {
+  display: grid; grid-template-columns: 64px 74px 1fr; align-items: baseline; gap: 8px;
+  padding: 5px 0; border-top: 1px solid var(--line); font-size: 12.5px;
+}
+.t212-h-sym { font-weight: 700; letter-spacing: 0.01em; }
+.t212-h-ppl { text-align: right; font-weight: 600; }
+.t212-h-stage { color: var(--muted); font-size: 11.5px; }
+.t212-holdings-foot { color: var(--faint); font-size: 11px; padding: 4px 12px 10px; margin: 0; }
+
 /* ---------- digest ---------- */
 .digest-section { margin-bottom: 18px; }
 .perf-row { display: flex; justify-content: space-between; padding: 7px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 5px; font-family: var(--font-num); font-size: 13.5px; }

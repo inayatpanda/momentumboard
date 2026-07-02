@@ -14,22 +14,29 @@ export default async (req: Request) => {
   if (auth?.level !== 'admin') return new Response('admin-only', { status: 401 })
 
   const nowSec = Math.floor(Date.now() / 1000)
-  const deps = defaultDeps({ FINNHUB_API_KEY: process.env.FINNHUB_API_KEY })
+  const deps = defaultDeps({
+    FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
+    T212_API_KEY: process.env.T212_API_KEY,
+    T212_SECRET_KEY: process.env.T212_SECRET_KEY,
+    T212_HOST: process.env.T212_HOST,
+  })
   let graded = 0
   let boardSize = -1
   let rosterSize = -1
+  let holdingsCount = -1
   try {
     const cfg = validateConfig(await blobAppStore.read('config'))
     graded = (await gradeOutstanding(blobAppStore, deps, nowSec, cfg)).graded
     const built = await buildBoard(blobAppStore, deps, nowSec)
     boardSize = built.board.length
     rosterSize = built.rosterSize
-    console.log('PREDICT: graded', graded, '| board', boardSize, '| roster', rosterSize, '| regime', built.regime)
+    holdingsCount = built.holdingsCount
+    console.log('PREDICT: graded', graded, '| board', boardSize, '| roster', rosterSize, '| holdings', holdingsCount, '| regime', built.regime)
   } catch (e) {
     console.error('PREDICT-FAILED:', e)
   } finally {
     const runlog = (await blobAppStore.read<unknown[]>('runlog')) ?? []
-    runlog.push({ at: nowSec, kind: 'predict', graded, boardSize, rosterSize })
+    runlog.push({ at: nowSec, kind: 'predict', graded, boardSize, rosterSize, holdingsCount })
     await blobAppStore.write('runlog', runlog.slice(-200))
     // chain to the composer regardless — it degrades to legacy mode without a fresh board
     await fetch(`${SITE}/.netlify/functions/report-compose-background`, {

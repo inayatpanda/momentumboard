@@ -21,4 +21,11 @@ describe('validateConfig engine fields', () => {
     expect(cfg.levMap).toBeUndefined()
     expect(validateConfig(minimal)!.favouriteChannels).toBeUndefined()
   })
+  it('distinguishes an ABSENT override (undefined → caller may preserve) from an explicit null (→ clear)', () => {
+    // absent: the phone mirror never sends this field — must stay undefined so the
+    // server merge can preserve a stored pin
+    expect(validateConfig(minimal)!.riskRungOverride).toBeUndefined()
+    // explicit null: the user cleared the pin — a real "engine decides" instruction
+    expect(validateConfig({ ...minimal, riskRungOverride: null })!.riskRungOverride).toBeNull()
+  })
 })

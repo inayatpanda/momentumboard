@@ -51,10 +51,15 @@ export function validateConfig(raw: unknown): AppConfig | null {
       if (Object.keys(entry).length) levMap[sym.toUpperCase().slice(0, 12)] = entry
     }
   }
-  const riskRungOverride =
+  // ABSENT (undefined) must stay undefined so a server-side merge can preserve a
+  // stored pin — the phone's config mirror never sends this field. An explicit
+  // null (or any present-but-invalid value) means "engine decides" → null.
+  const riskRungOverride: 0 | 1 | 2 | 3 | null | undefined =
     typeof c.riskRungOverride === 'number' && Number.isInteger(c.riskRungOverride) && c.riskRungOverride >= 0 && c.riskRungOverride <= 3
       ? (c.riskRungOverride as 0 | 1 | 2 | 3)
-      : null
+      : c.riskRungOverride === undefined
+        ? undefined
+        : null
   const favouriteChannels = Array.isArray(c.favouriteChannels)
     ? c.favouriteChannels.filter(f => typeof f === 'string').slice(0, 10).map(f => f.slice(0, 40))
     : undefined

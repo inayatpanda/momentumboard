@@ -35,4 +35,52 @@ describe('config-sync', () => {
     const res = await routeConfig(new URL('http://x/api/config?view=runlog'), 'GET', headers, null, env, store)
     expect((await res.json()).data).toEqual([{ at: 1, events: 2 }])
   })
+
+  // The phone's config mirror builds its payload from the local watchlist/rules/
+  // notes ONLY — it never carries the engine-only fields. Without a server-side
+  // merge, every routine phone sync would wipe the seeded levMap, the risk pin
+  // and the favourite channels. These prove the preservation.
+  it('phone-style PUT without levMap/override/favourites preserves the stored values', async () => {
+    const store = memoryStore()
+    await store.write('config', {
+      ...goodConfig,
+      levMap: { TSLA: { short3x: '3STS.L', long3x: '3LTS.L' } },
+      riskRungOverride: 2,
+      favouriteChannels: ['Stocks with Josh'],
+    })
+    // exactly what mirrorConfig() sends: no levMap, no riskRungOverride, no favouriteChannels
+    const put = await routeConfig(new URL('http://x/api/config'), 'PUT', headers, JSON.stringify(goodConfig), env, store)
+    expect(put.status).toBe(200)
+    const body = await (await routeConfig(new URL('http://x/api/config'), 'GET', headers, null, env, store)).json()
+    expect(body.data.levMap).toEqual({ TSLA: { short3x: '3STS.L', long3x: '3LTS.L' } })
+    expect(body.data.riskRungOverride).toBe(2)
+    expect(body.data.favouriteChannels).toEqual(['Stocks with Josh'])
+    // the phone's real fields still land
+    expect(body.data.watchlist[0].symbol).toBe('AAPL')
+  })
+
+  it('explicit levMap in a PUT replaces the stored one', async () => {
+    const store = memoryStore()
+    await store.write('config', { ...goodConfig, levMap: { TSLA: { short3x: '3STS.L' } } })
+    const put = await routeConfig(
+      new URL('http://x/api/config'),
+      'PUT',
+      headers,
+      JSON.stringify({ ...goodConfig, levMap: { NVDA: { long3x: '3LNV.L' } } }),
+      env,
+      store,
+    )
+    expect(put.status).toBe(200)
+    const body = await (await routeConfig(new URL('http://x/api/config'), 'GET', headers, null, env, store)).json()
+    expect(body.data.levMap).toEqual({ NVDA: { long3x: '3LNV.L' } })
+  })
+
+  it('an explicit riskRungOverride of null clears the stored pin (absent would have preserved)', async () => {
+    const store = memoryStore()
+    await store.write('config', { ...goodConfig, riskRungOverride: 3 })
+    const put = await routeConfig(new URL('http://x/api/config'), 'PUT', headers, JSON.stringify({ ...goodConfig, riskRungOverride: null }), env, store)
+    expect(put.status).toBe(200)
+    const body = await (await routeConfig(new URL('http://x/api/config'), 'GET', headers, null, env, store)).json()
+    expect(body.data.riskRungOverride).toBeNull()
+  })
 })
