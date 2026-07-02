@@ -88,6 +88,25 @@ export default async (req: Request) => {
       return (await fetchVideos(cfg.ytChannels, nowSec)).slice(0, 10).map(v => ({ channel: v.channel, title: v.title }))
     })
 
+    const mediaHeadlines = await grab(async () => {
+      // hard-paywalled outlets still publish headline RSS — titles are real signal
+      const feeds = [
+        ['FT', 'https://www.ft.com/markets?format=rss'],
+        ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'],
+        ['CNBC', 'https://www.cnbc.com/id/100003114/device/rss/rss.html'],
+      ]
+      const out: string[] = []
+      await Promise.all(
+        feeds.map(async ([src, feedUrl]) => {
+          try {
+            const xml = await (await fetch(feedUrl, { headers: { 'user-agent': 'StreetSignal research inayatc2002@gmail.com' } })).text()
+            for (const m of [...xml.matchAll(/<title>(?:<!\[CDATA\[)?([^<\]]{15,140})/g)].slice(1, 6)) out.push(`[${src}] ${m[1].trim()}`)
+          } catch { /* one dead feed must not matter */ }
+        }),
+      )
+      return out.slice(0, 14)
+    })
+
     const news = await grab(async () => {
       const { fetchNews } = await import('./lib/news')
       return (await fetchNews(symbols, process.env.FINNHUB_API_KEY ?? '', nowSec)).slice(0, 10).map(n => n.title)
@@ -172,6 +191,7 @@ export default async (req: Request) => {
         previousEditions: await blobAppStore.read('composed-history'),
         userNotes: cfg.notes ?? [],
         headlines: news,
+        mediaHeadlines,
       },
       null,
       1,

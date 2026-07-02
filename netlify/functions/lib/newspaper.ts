@@ -33,6 +33,16 @@ export interface ComposedReport {
   channels: string
   readersNotes?: string
   editorial: string // THE LONG VIEW: market history & investor wisdom tied to today
+  signal?: {
+    ticker: string
+    company: string
+    thesis: string
+    evidence: { data: string; news: string; channels: string; social: string; company: string }
+    expectedMove: string
+    conviction: 'A' | 'B' | 'C'
+    action: string
+  } | null
+  signalWhy?: string
   honestClose: string
   regime: 'green' | 'amber' | 'red'
   fedStance: 'hawkish' | 'neutral' | 'dovish'
@@ -207,6 +217,12 @@ export const SECTIONS: SectionSpec[] = [
     fields: ['rotation', 'crypto'],
     brief: 'rotation: where money is going per the sector numbers (rs5 vs rs21 tells you one-day blip vs confirmed) and how to front-run it. crypto: BTC/ETH regime with only the levels present in the data, alts, crypto equities.',
     shape: '{"rotation":"...","crypto":"..."}',
+  },
+  {
+    key: 'signal',
+    fields: ['signal', 'signalWhy'],
+    brief: `THE SIGNAL — the single suggestion that matters most today, chosen ONLY when the full evidence stack aligns: (1) data: moveCapacity >= 8% + technical/rotation backing, (2) news: a concrete headline or catalyst, (3) channels: what the YouTube channels say (by name; or honestly silent), (4) social: mention/surge numbers, (5) company: one plain line on what the business is and why it is positioned. Give thesis (2-3 sentences), expectedMove (<=1.3x its capacity), conviction, and action (exact entry plan + invalidation). If NO name earns the full stack today, set signal to null and explain in signalWhy — an honest no-signal day beats a forced one.`,
+    shape: '{"signal":{"ticker":"XYZ","company":"Full Name","thesis":"...","evidence":{"data":"...","news":"...","channels":"...","social":"...","company":"..."},"expectedMove":"+X-Y% in N weeks","conviction":"A|B|C","action":"..."} OR {"signal":null,"signalWhy":"..."}}',
   },
   {
     key: 'voice',
@@ -393,6 +409,15 @@ tr.strong td{background:rgba(12,122,85,.06)}
 .glance{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
 .glance figure{margin:0}.glance figcaption{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b6257;margin-top:4px}
 .editorial{background:rgba(25,23,19,.035);padding:16px 18px;border-top:2px solid #191713}
+.signalbox{border:2px solid #191713;padding:16px 18px;margin:8px 0 26px;background:rgba(12,122,85,.05)}
+.signalbox.none{background:rgba(25,23,19,.03)}
+.sigrow{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.sigtk{font-size:26px;font-weight:700}
+.signame{font-size:15px;color:#3d382f}
+.sigmove{margin-left:auto;font-variant-numeric:tabular-nums;color:#0c7a55;font-weight:700}
+.sigthesis{font-size:16.5px;margin:8px 0}
+table.evidence td:first-child{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b6257;width:90px;white-space:nowrap}
+.sigaction{margin:8px 0 0}
 .notice{font-size:13px;font-style:italic;color:#6b6257;text-align:center;margin:8px 0 0}
 footer{margin-top:34px;border-top:2px solid #191713;padding-top:12px;font-size:12.5px;color:#6b6257;text-align:center;letter-spacing:.08em}
 @media(max-width:600px){
@@ -419,6 +444,24 @@ ${x.firstEdition ? `<p class="notice">First edition — the full edition follows
 <div class="byline">By The Desk · Street Signal Research</div>
 ${paras(r.lead)}
 </div>
+${
+    r.signal
+      ? `<section class="dept wide signalbox"><h2>The Signal — Today's Conviction Call</h2>
+<div class="sigrow"><span class="sigtk">${esc(r.signal.ticker)}</span><span class="signame">${esc(r.signal.company)}</span><span class="sigmove">${esc(r.signal.expectedMove)} · Grade ${esc(r.signal.conviction)}</span></div>
+<p class="sigthesis">${esc(r.signal.thesis)}</p>
+<table class="evidence"><tbody>
+<tr><td>Data</td><td>${esc(r.signal.evidence.data)}</td></tr>
+<tr><td>News</td><td>${esc(r.signal.evidence.news)}</td></tr>
+<tr><td>Channels</td><td>${esc(r.signal.evidence.channels)}</td></tr>
+<tr><td>Social</td><td>${esc(r.signal.evidence.social)}</td></tr>
+<tr><td>Company</td><td>${esc(r.signal.evidence.company)}</td></tr>
+</tbody></table>
+<p class="sigaction"><strong>Action:</strong> ${esc(r.signal.action)}</p>
+</section>`
+      : r.signalWhy
+        ? `<section class="dept wide signalbox none"><h2>The Signal</h2><p class="sigthesis">No conviction call today — ${esc(r.signalWhy)}</p></section>`
+        : ''
+  }
 <div class="cols">
 ${wide(
     'Markets at a Glance',
