@@ -427,7 +427,11 @@ export async function buildBoard(
     // grade null = calibration sees no edge in this bucket. The call stays off
     // the paper — but it MUST enter the ledger as a shadow, or buckets below
     // 50% can never earn their way back up (nothing would ever get graded).
-    const shadow = !grade
+    // An earnings print inside the horizon also forces shadow: a binary coin
+    // flip has no place on the live board, but its outcome is kept (earningsRisk
+    // stays on the record) so the ledger can later show whether the engine has
+    // any edge INTO prints — half-sizing a coin flip just pollutes the buckets.
+    const shadow = !grade || call.earningsRisk
 
     const instrument = shadow ? null : mapInstrument(call.side, call.sym, grade!, risk.rung, cfg.levMap ?? {})
     board.push({
@@ -441,15 +445,26 @@ export async function buildBoard(
       provisional,
       grade: grade ?? 'C',
       riskRung: risk.rung,
-      riskPct: shadow ? 0 : RUNG_RISK_PCT[risk.rung] * (call.earningsRisk ? 0.5 : 1),
+      riskPct: shadow ? 0 : RUNG_RISK_PCT[risk.rung],
       instrument,
       paperOnly: call.side === 'short' && !instrument,
     })
   }
 
+  // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side
+  // already has an ungraded (no outcome5) prediction on a recent prior date —
+  // three correlated CEG shorts in three weeks teach nothing while starving the
+  // tiny shadow budget of fresh names. Live (non-shadow) calls are never deduped.
+  const priorDates = ((await store.read<string[]>('predictions-index')) ?? []).filter(d => d !== today).slice(-10)
+  const outstandingShadowKeys = new Set<string>()
+  for (const date of priorDates) {
+    for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
+      if (!p.outcome5) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
+    }
+  }
   const pick = (side: 'long' | 'short', shadow: boolean, cap: number) =>
     board
-      .filter(b => b.side === side && !!b.shadow === shadow)
+      .filter(b => b.side === side && !!b.shadow === shadow && (!shadow || !outstandingShadowKeys.has(`${b.sym}:${b.side}`)))
       .sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))
       .slice(0, cap)
   const live = [...pick('long', false, 12), ...pick('short', false, 12)].sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))

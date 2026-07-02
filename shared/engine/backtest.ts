@@ -69,10 +69,13 @@ export function seedFromHistory(bySym: Map<string, Candle[]>, spy: Candle[]): { 
       })
       if (!call) continue
 
-      // outcome: entry session is bar i+1; graded at the close of bar i+1+HORIZON
-      const price = closes[i]
-      const rawPct = ((closes[i + 1 + HORIZON] - price) / price) * 100
-      const spyPct = ((spy[j + 1 + HORIZON].c - spy[j].c) / spy[j].c) * 100
+      // outcome: entry session is bar i+1; graded at the close of bar i+1+HORIZON.
+      // grading measures the capturable move from the first tradeable print — the
+      // base is the OPEN of the entry session (bar i+1), not the prior close, so
+      // the untradeable overnight gap is never scored (mirrors gradePrediction()).
+      const base = candles[i + 1].o
+      const rawPct = ((closes[i + 1 + HORIZON] - base) / base) * 100
+      const spyPct = ((spy[j + 1 + HORIZON].c - spy[j + 1].o) / spy[j + 1].o) * 100
       // close-based stop check — must match gradePrediction() exactly so the
       // seeded calibration and live grading measure the same thing
       let stopped = false

@@ -55,13 +55,16 @@ export function gradeChannelStances(
       if (seen.has(key)) continue
       const candles = candlesBySym.get(t.sym)
       if (!candles) continue
-      const entryIdx = candles.findIndex(c => c.t > ex.at) // close of first session after the video
+      const entryIdx = candles.findIndex(c => c.t > ex.at) // first session after the video
       if (entryIdx === -1 || entryIdx + 5 >= candles.length) continue
       const spyIdx = spyCandles.findIndex(c => c.t > ex.at)
       if (spyIdx === -1 || spyIdx + 5 >= spyCandles.length) continue
-      const base = candles[entryIdx].c
+      // grading measures the capturable move from the first tradeable print: base
+      // at the OPEN of the first session after the video, not its close (a viewer
+      // acts at the next session's open, not at a close they couldn't have filled)
+      const base = candles[entryIdx].o
       const rawPct = ((candles[entryIdx + 5].c - base) / base) * 100
-      const spyBase = spyCandles[spyIdx].c
+      const spyBase = spyCandles[spyIdx].o
       const spyPct = ((spyCandles[spyIdx + 5].c - spyBase) / spyBase) * 100
       const sign = t.stance === 'bear' ? -1 : 1
       const excess = round1(sign * (rawPct - spyPct))

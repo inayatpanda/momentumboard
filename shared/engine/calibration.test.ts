@@ -24,6 +24,18 @@ const mkCandles = (startClose: number, slope: number, days = 30, lowOffset = 1, 
     return { t, o: c, h: c + highOffset, l: c - lowOffset, c, v: 1_000_000 }
   })
 
+// explicit open/close per bar, one per day from 2026-01-05 — lets a bar's OPEN
+// diverge from the prior close so we can model an overnight gap
+const seq = (bars: { o: number; c: number }[]): Candle[] =>
+  bars.map((b, i) => ({
+    t: Date.parse('2026-01-05') / 1000 + i * 86_400,
+    o: b.o,
+    h: Math.max(b.o, b.c) + 1,
+    l: Math.min(b.o, b.c) - 1,
+    c: b.c,
+    v: 1_000_000,
+  }))
+
 describe('bandFor', () => {
   it('maps |composite| to bands', () => {
     expect(bandFor(25)).toBe('25-40')
@@ -94,6 +106,44 @@ describe('gradePrediction', () => {
     const o = gradePrediction({ date: '2026-01-06', side: 'short', priceAtPrediction: 100, stop: 110 }, candles, spy, 5)!
     expect(o.hit).toBe(true)
     expect(o.excessPct).toBeGreaterThan(8)
+  })
+  it('grades from the entry OPEN, not the prior close: a long that gaps up overnight then fades is a MISS', () => {
+    // prior close 100, but the entry session OPENS at 115 (gap up) and drifts to
+    // close 112 by the 5-session mark. From the prior close this looks like +12%;
+    // from the only fillable print (the open) it is −2.6% — an honest miss.
+    const candles = seq([
+      { o: 100, c: 100 }, // prior session
+      { o: 115, c: 114 }, // entry session — gaps up
+      { o: 113, c: 113 },
+      { o: 113, c: 112.8 },
+      { o: 112.6, c: 112.5 },
+      { o: 112.3, c: 112.2 },
+      { o: 112, c: 112 }, // graded close (+5 sessions)
+      { o: 112, c: 112 },
+    ])
+    const o = gradePrediction({ date: '2026-01-06', side: 'long', priceAtPrediction: 100, stop: 80 }, candles, spy, 5)!
+    expect(o.stopped).toBe(false)
+    expect(o.hit).toBe(false) // close-from-prior-close would have credited a fake +12% win
+    expect(o.excessPct).toBeLessThan(0)
+  })
+  it('...and a long that gaps DOWN overnight then recovers off the open is a HIT', () => {
+    // prior close 100, entry session OPENS at 90 (gap down), recovers to 95.
+    // From the prior close that is −5% (looks like a loss); from the fillable
+    // open it is +5.6% — the reader who filled at the open actually won.
+    const candles = seq([
+      { o: 100, c: 100 },
+      { o: 90, c: 91 }, // entry session — gaps down
+      { o: 92, c: 92 },
+      { o: 93, c: 93 },
+      { o: 94, c: 94 },
+      { o: 94.5, c: 94.5 },
+      { o: 95, c: 95 }, // graded close (+5 sessions)
+      { o: 95, c: 95 },
+    ])
+    const o = gradePrediction({ date: '2026-01-06', side: 'long', priceAtPrediction: 100, stop: 80 }, candles, spy, 5)!
+    expect(o.stopped).toBe(false)
+    expect(o.hit).toBe(true)
+    expect(o.excessPct).toBeGreaterThan(0)
   })
   it('too recent → null', () => {
     const candles = mkCandles(100, 2, 4)

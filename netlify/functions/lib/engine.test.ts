@@ -88,6 +88,65 @@ describe('buildBoard', () => {
     expect(Array.isArray(board)).toBe(true) // seeded calibration suppresses the weak-band short
   })
 
+  it('an earnings print inside the horizon forces SHADOW — off the public board, still logged for the print-edge ledger', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    // calibration that would otherwise grade this an A live call
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const { board } = await buildBoard(store, deps({ earningsSyms: async () => new Set(['NVDA']) }), NOW)
+    expect(board.find(b => b.sym === 'NVDA')).toBeUndefined() // a coin-flip binary never reaches the live board
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
+    const shadow = ledger.find(p => p.sym === 'NVDA')!
+    expect(shadow.shadow).toBe(true)
+    expect(shadow.earningsRisk).toBe(true) // field kept — the ledger can later answer "edge into prints?"
+    expect(shadow.riskPct).toBe(0)
+    expect(shadow.instrument).toBeNull()
+    const publicBoard = (await store.read<{ board: Prediction[] }>('engine-board'))!
+    expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
+  })
+
+  it('one outstanding shadow per sym+side: a repeat shadow is skipped while the first is still ungraded', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [] }) // suppresses → shadow
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    // a prior-date NVDA:short shadow still ungraded (no outcome5) → it holds the one slot
+    const priorDate = '2026-05-01'
+    await store.write('predictions-index', [priorDate])
+    await store.write(`predictions:${priorDate}`, [{ id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: true }])
+
+    const { board } = await buildBoard(store, deps(), NOW)
+    expect(board.find(b => b.sym === 'NVDA')).toBeUndefined()
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
+    expect(ledger.find(p => p.sym === 'NVDA')).toBeUndefined() // correlated repeat teaches nothing — skipped
+  })
+
+  it('...but once the first shadow has matured (graded), a fresh same-name shadow is allowed back in', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [] })
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const priorDate = '2026-05-01'
+    await store.write('predictions-index', [priorDate])
+    await store.write(`predictions:${priorDate}`, [
+      { id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: true, outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
+    ])
+
+    await buildBoard(store, deps(), NOW)
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
+    expect(ledger.find(p => p.sym === 'NVDA' && p.shadow)).toBeDefined() // prior slot freed → fresh shadow allowed
+  })
+
   it('suppressed calls become shadow ledger entries — the learning loop eats even when the paper does not', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })

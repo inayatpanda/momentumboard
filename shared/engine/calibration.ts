@@ -67,9 +67,13 @@ export function gradePrediction(
   const spyIdx = spyCandles.findIndex(c => c.t >= dayEpoch)
   if (spyIdx === -1 || spyIdx + horizon >= spyCandles.length) return null
 
-  const price = pred.priceAtPrediction
-  const rawPct = ((candles[entryIdx + horizon].c - price) / price) * 100
-  const spyBase = spyCandles[Math.max(spyIdx - 1, 0)].c
+  // grading measures the capturable move from the first tradeable print: the
+  // paper publishes pre-open, so the base is the entry session's OPEN, not the
+  // prior close (priceAtPrediction, the level the card printed) — nobody could
+  // fill at yesterday's close, so the untradeable overnight gap is not scored.
+  const base = candles[entryIdx].o
+  const rawPct = ((candles[entryIdx + horizon].c - base) / base) * 100
+  const spyBase = spyCandles[spyIdx].o
   const spyPct = ((spyCandles[spyIdx + horizon].c - spyBase) / spyBase) * 100
 
   // GRADING is close-based: a wick through the stop is survivable noise (1.5×ATR
