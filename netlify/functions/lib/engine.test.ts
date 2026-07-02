@@ -30,8 +30,20 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   smartMoney: async () => [],
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
   earningsSyms: async () => new Set<string>(),
+  worldReads: async () => [], // quiet world by default → mixed tone → mult 1
   ...over,
 })
+
+// every index/future red, VIX spiking → an unambiguous risk-off overnight tape
+const riskOffReads = async () => [
+  { sym: '^N225', name: 'Nikkei', changePct: -1.2 },
+  { sym: '^HSI', name: 'Hang Seng', changePct: -1.5 },
+  { sym: '^GDAXI', name: 'DAX', changePct: -1.1 },
+  { sym: '^FTSE', name: 'FTSE 100', changePct: -1.0 },
+  { sym: 'ES=F', name: 'S&P fut', changePct: -1.3 },
+  { sym: 'NQ=F', name: 'Nasdaq fut', changePct: -1.4 },
+  { sym: '^VIX', name: 'VIX', changePct: 8 },
+]
 
 // calibration where this band has proven itself — so the call grades
 const calWith = (key: string): CalibrationState => ({ buckets: { [key]: { n: 20, hits: 14 } }, brier: [] })
@@ -70,6 +82,34 @@ describe('buildBoard', () => {
     const roster = (await store.read<{ sym: string }[]>('engine-roster'))!
     expect(roster.some(r => r.sym === 'NVDA')).toBe(true)
     expect(await store.read('engine-roster-log')).toHaveLength(1)
+  })
+
+  it('a risk-off world tape rides the board blob and nudges each call by side', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    // both bands covered so the 1.1 short nudge can shift NVDA's band without ungrading it
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 20, hits: 14 }, 'short:amber:40-55': { n: 20, hits: 14 } }, brier: [] })
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const { board } = await buildBoard(store, deps({ worldReads: riskOffReads }), NOW)
+
+    const call = board.find(b => b.sym === 'NVDA')!
+    expect(call).toBeDefined()
+    expect(call.side).toBe('short')
+    expect(call.worldTape).toEqual({ tone: 'risk-off', mult: 1.1 }) // short in risk-off → conviction lifted
+
+    const blob = (await store.read<{ worldTape: { tone: string; votes: { on: number; off: number }; detail: string }; newsTone: { label: string; score: number } }>('engine-board'))!
+    expect(blob.worldTape.tone).toBe('risk-off')
+    expect(blob.worldTape.votes).toEqual({ on: 0, off: 7 }) // 6 red indices + VIX spike
+    expect(blob.worldTape.detail).toContain('risk-off')
+    expect(blob.newsTone).toBeDefined()
+    expect(['sour', 'neutral', 'upbeat']).toContain(blob.newsTone.label)
+
+    // and the news-tone history advanced, display/log only
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const hist = (await store.read<{ date: string; label: string }[]>('news-tone-history'))!
+    expect(hist.at(-1)!.date).toBe(today)
   })
 
   it('maps an instrument once the rung and levMap allow it', async () => {

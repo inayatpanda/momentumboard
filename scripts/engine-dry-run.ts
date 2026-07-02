@@ -48,6 +48,10 @@ for (const p of board) {
   }
 }
 
+const blob = (await store.read<{ worldTape?: { tone: string; votes: { on: number; off: number }; detail: string }; newsTone?: { score: number; label: string; hits: number } }>('engine-board')) ?? {}
+console.log(`\nworld tape: ${blob.worldTape?.detail ?? 'n/a'}`)
+console.log(`news tone: ${blob.newsTone ? `${blob.newsTone.label} (score ${blob.newsTone.score}, ${blob.newsTone.hits} polarity hits)` : 'n/a'} — display/log only, not a factor`)
+
 const today = new Date(nowSec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
 const ledger = (await store.read<{ sym: string; side: string; composite: number; probability: number; shadow?: boolean }[]>(`predictions:${today}`)) ?? []
 const shadows = ledger.filter(p => p.shadow)

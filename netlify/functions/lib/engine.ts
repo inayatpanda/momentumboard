@@ -18,6 +18,7 @@ import {
   type SmartMoneyInput,
 } from '../../../shared/engine/factors'
 import { composeCall } from '../../../shared/engine/composite'
+import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
 import {
   brierPoint,
   gradeFor,
@@ -58,6 +59,10 @@ export interface EngineDeps {
   smartMoney: () => Promise<FundMoves[]>
   mediaTitles: () => Promise<string[]>
   earningsSyms: () => Promise<Set<string>>
+  // overnight world tape: latest daily % change for the Asia/Europe indices, US
+  // futures and VIX (^VIX carried in the same list, split out in buildBoard).
+  // Fail-soft: any read the source can't supply is null — a vote it cannot cast.
+  worldReads: () => Promise<WorldRead[]>
 }
 
 const londonDate = (nowSec: number) => new Date(nowSec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
@@ -130,6 +135,23 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string }): EngineDeps {
       return cachedFundMoves()
     },
     mediaTitles: () => fetchMediaTitles(),
+    // ^N225/^HSI/^GDAXI/^FTSE/ES=F/NQ=F/^VIX are index & futures symbols Finnhub's
+    // free quote endpoint won't serve, and isYahooSymbol() routes them to Finnhub
+    // (no '.'/'-' → treated as US). So derive the daily change from the last two
+    // Yahoo candle closes instead — cachedCandles always hits Yahoo directly and
+    // handles the ^/=F symbols fine. Any missing series → null (an uncast vote).
+    worldReads: async () => {
+      const { cachedCandles } = await import('./marketCache')
+      const symbols = [...WORLD_SYMBOLS, VIX_SYMBOL]
+      return Promise.all(
+        symbols.map(async ({ sym, name }) => {
+          const c = await cachedCandles(sym)
+          const changePct =
+            c && c.length >= 2 && c[c.length - 2].c ? ((c[c.length - 1].c - c[c.length - 2].c) / c[c.length - 2].c) * 100 : null
+          return { sym, name, changePct: changePct == null ? null : Math.round(changePct * 100) / 100 }
+        }),
+      )
+    },
     earningsSyms: async () => {
       try {
         const from = new Date().toISOString().slice(0, 10)
@@ -371,12 +393,21 @@ export async function buildBoard(
   const { weights, calibration, channelCred } = await loadState(store)
   const risk = (await store.read<RiskState>('risk-state')) ?? initRisk(today)
   const rosterSyms = roster.map(e => e.sym)
-  const [insiderCoverage, mediaTitles, earningsSet, fundMoves] = await Promise.all([
+  const [insiderCoverage, mediaTitles, earningsSet, fundMoves, worldReads] = await Promise.all([
     deps.insiderCoverage(rosterSyms, watchSyms, today),
     deps.mediaTitles(),
     deps.earningsSyms(),
     deps.smartMoney(),
+    deps.worldReads(),
   ])
+  // World tape read once for the whole board: Asia/Europe indices + US futures
+  // vote on direction; ^VIX votes on fear at a wider threshold. tone → a bounded
+  // per-side conviction nudge (worldMult), NEVER a change to the calibration bucket.
+  const vixRead = worldReads.find(r => r.sym === VIX_SYMBOL.sym)
+  const tone = worldTone(
+    worldReads.filter(r => r.sym !== VIX_SYMBOL.sym),
+    vixRead?.changePct ?? null,
+  )
   // 13F overlap: match each roster name (via its cap: company name, else alias map)
   // against the tracked funds' latest moves. Cheap and cached; skipped if no filings.
   const smartMoneyBySym = new Map<string, SmartMoneyInput | null>()
@@ -457,8 +488,12 @@ export async function buildBoard(
       if (c5 && c5.length >= 500) {
         const month = Number(today.slice(5, 7))
         factors.seasonality = seasonalityFactor(seasonalitySummary(c5), month)
-        call = composeCall({ ...composeInput, factors }) // seasonality may push it either way — honest both ways
       }
+      // now the side is known → apply the overnight world-tape nudge for it and
+      // re-score. The mult is > 0 so the side never flips, but it can push a
+      // marginal call under the dead zone (→ null, correctly suppressed).
+      // seasonality (if it loaded) rides the same re-score — honest both ways.
+      call = composeCall({ ...composeInput, factors, worldMult: worldMult(tone.tone, call.side) })
     }
     if (!call) continue
 
@@ -488,6 +523,7 @@ export async function buildBoard(
       riskPct: shadow ? 0 : RUNG_RISK_PCT[risk.rung],
       instrument,
       paperOnly: call.side === 'short' && !instrument,
+      worldTape: { tone: tone.tone, mult: worldMult(tone.tone, call.side) },
     })
   }
 
@@ -523,8 +559,22 @@ export async function buildBoard(
   await store.write(`predictions:${today}`, final)
   const index = (await store.read<string[]>('predictions-index')) ?? []
   if (!index.includes(today)) await store.write('predictions-index', [...index, today].slice(-250))
+  // Global news tone: DISPLAY / LOG ONLY, explicitly NOT a factor. It rides the
+  // board blob and accumulates its own bounded history — factor status must be
+  // EARNED from that logged history before it may ever enter a composite/multiplier.
+  const globalNews = newsTone(mediaTitles)
+  const newsHist = ((await store.read<{ date: string; score: number; label: string }[]>('news-tone-history')) ?? []).filter(h => h.date !== today)
+  await store.write('news-tone-history', [...newsHist, { date: today, score: globalNews.score, label: globalNews.label }].slice(-250))
+
   // the paper and the app see only live calls; shadows exist to be graded
-  await store.write('engine-board', { date: today, generatedAt: nowSec, regime, board: live })
+  await store.write('engine-board', {
+    date: today,
+    generatedAt: nowSec,
+    regime,
+    board: live,
+    worldTape: { tone: tone.tone, votes: tone.votes, detail: tone.detail },
+    newsTone: globalNews,
+  })
 
   return { board: live, rosterSize: roster.length, regime }
 }

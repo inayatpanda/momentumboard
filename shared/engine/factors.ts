@@ -96,8 +96,10 @@ export function smartMoneyFactor(m: SmartMoneyInput | null): FactorScore {
   return { score, detail: `${parts.join('; ')} (13F, filed ${m.filedAt} — up to 45d lag)` }
 }
 
-const POS = new Set(['beat', 'beats', 'surge', 'surges', 'soar', 'soars', 'jump', 'jumps', 'upgrade', 'upgraded', 'record', 'wins', 'rally', 'top', 'tops'])
-const NEG = new Set(['miss', 'misses', 'plunge', 'plunges', 'sink', 'sinks', 'fall', 'falls', 'cut', 'cuts', 'downgrade', 'downgraded', 'probe', 'lawsuit', 'recall', 'warn', 'warns', 'slump', 'slumps'])
+// Exported so the display-only global newsTone (worldTape.ts) scores headlines
+// on the SAME keyword sets as this per-ticker factor — one lexicon, no drift.
+export const POS = new Set(['beat', 'beats', 'surge', 'surges', 'soar', 'soars', 'jump', 'jumps', 'upgrade', 'upgraded', 'record', 'wins', 'rally', 'top', 'tops'])
+export const NEG = new Set(['miss', 'misses', 'plunge', 'plunges', 'sink', 'sinks', 'fall', 'falls', 'cut', 'cuts', 'downgrade', 'downgraded', 'probe', 'lawsuit', 'recall', 'warn', 'warns', 'slump', 'slumps'])
 
 /** Crude by design: counts polarity words in ticker-tagged titles. Nuance is
  * the LLM overlay's job — this factor only measures pressure and direction. */

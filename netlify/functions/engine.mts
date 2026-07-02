@@ -19,8 +19,15 @@ export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
   if (!auth) return new Response(JSON.stringify({ ok: false, error: 'unauthorised' }), { status: 401 })
 
-  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred] = await Promise.all([
-    blobAppStore.read<{ date: string; generatedAt: number; regime: string; board: Prediction[] }>('engine-board'),
+  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory] = await Promise.all([
+    blobAppStore.read<{
+      date: string
+      generatedAt: number
+      regime: string
+      board: Prediction[]
+      worldTape?: { tone: string; votes: { on: number; off: number }; detail: string }
+      newsTone?: { score: number; label: string; hits: number }
+    }>('engine-board'),
     blobAppStore.read('engine-scorecard'),
     blobAppStore.read<WeightsState>('engine-weights'),
     blobAppStore.read<CalibrationState>('engine-calibration'),
@@ -28,10 +35,14 @@ export default async (req: Request) => {
     blobAppStore.read<RosterEntry[]>('engine-roster'),
     blobAppStore.read<{ date: string; joined: string[]; dropped: { sym: string; why: string }[] }[]>('engine-roster-log'),
     blobAppStore.read<ChannelCredState>('channel-credibility'),
+    blobAppStore.read<{ date: string; score: number; label: string }[]>('news-tone-history'),
   ])
 
   return json({
+    // board carries worldTape + newsTone inline (written by buildBoard); the
+    // news-tone history is surfaced as a bounded tail for the display-only trend.
     board,
+    newsToneHistory: (newsToneHistory ?? []).slice(-30),
     scorecard,
     weights: weights ? { base: weights.base, current: weights.current, history: weights.history.slice(-10) } : null,
     calibration: calibration ? { buckets: calibration.buckets, brier: calibration.brier.slice(-30), seeded: calibration.seeded ?? false } : null,

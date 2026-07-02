@@ -96,4 +96,32 @@ describe('composeCall', () => {
     expect(composeCall(base({ factors: longFactors(), lastClose: null }))).toBeNull()
     expect(composeCall(base({ factors: longFactors() }))!.note).toContain('technical')
   })
+
+  it('worldMult 0.85 pushes a marginal long under the dead zone → suppressed', () => {
+    // single technical factor → composite == score; green regime ×1.0. Score 28
+    // clears the 25 dead zone on its own, but the risk-off long nudge kills it.
+    const marginal = { ...nullFactors(), technical: { score: 28, detail: 'basing' } }
+    const bull = base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' })
+    expect(composeCall(bull)!.composite).toBeCloseTo(28, 1) // passes with no nudge
+    expect(composeCall({ ...bull, worldMult: 0.85 })).toBeNull() // 28 × 0.85 = 23.8 < 25
+  })
+
+  it('worldMult 1.1 lifts a sub-threshold call over the dead zone → passes', () => {
+    const under = { ...nullFactors(), technical: { score: 23, detail: 'basing' } }
+    const bull = base({ factors: under, stage: 'basing', entryQuality: 'neutral' })
+    expect(composeCall(bull)).toBeNull() // 23 < 25 with no nudge
+    const lifted = composeCall({ ...bull, worldMult: 1.1 })! // 23 × 1.1 = 25.3 ≥ 25
+    expect(lifted).not.toBeNull()
+    expect(lifted.composite).toBeCloseTo(25.3, 1)
+    expect(lifted.side).toBe('long') // a positive mult never flips the side
+  })
+
+  it('the world nudge scales conviction but leaves the side sign intact', () => {
+    const shortF = { ...nullFactors(), technical: { score: -60, detail: 'exhausted' } }
+    const bear = base({ factors: shortF, stage: 'exhausted', entryQuality: 'chase' })
+    const plain = composeCall(bear)!
+    const boosted = composeCall({ ...bear, worldMult: 1.1 })!
+    expect(boosted.side).toBe('short')
+    expect(Math.abs(boosted.composite)).toBeGreaterThan(Math.abs(plain.composite))
+  })
 })

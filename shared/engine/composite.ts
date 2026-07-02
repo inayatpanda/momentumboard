@@ -31,6 +31,10 @@ export interface ComposeInput {
   stage: Stage | null
   earningsWithinHorizon: boolean
   capUsdM: number | null
+  // Overnight world-tape nudge (worldTape.ts), bounded to {0.85, 1, 1.1}. Scales
+  // conviction only — the `regime` string above (the calibration bucket key) is
+  // never derived from it. Default 1 = no nudge.
+  worldMult?: number
 }
 
 /** Weighted composite over the factors that HAVE data → a concrete call, or
@@ -49,7 +53,10 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   if (!den) return null
   const raw = num / den
   const side: 'long' | 'short' = raw >= 0 ? 'long' : 'short'
-  const adj = raw * (side === 'long' ? LONG_REGIME_MULT[input.regime] : SHORT_REGIME_MULT[input.regime])
+  // regime mult first, then the overnight world-tape nudge (both scale conviction;
+  // worldMult is > 0 so the side never flips). The regime STRING stays untouched —
+  // world tape can move a call across the dead zone but never into another bucket.
+  const adj = raw * (side === 'long' ? LONG_REGIME_MULT[input.regime] : SHORT_REGIME_MULT[input.regime]) * (input.worldMult ?? 1)
   if (Math.abs(adj) < 25) return null
   if (input.capacityPct == null || input.capacityPct < 6) return null
   if (input.atr == null || input.lastClose == null) return null
