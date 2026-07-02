@@ -75,7 +75,9 @@ TypeScript is an assumption (the brief says "match my existing pattern" but no e
 
 **`portfolio`** — `PUT /api/portfolio` (app token) mirrors a journal-derived snapshot to Blobs whenever the journal changes: open positions (ticker, instrument type/leverage, entry, £ size, stop), exposure totals vs guardrails, recent closed-trade outcomes, and suggestion follow-ups. `GET /api/portfolio` serves it read-only, authenticated by a separate `REPORT_TOKEN` env var so the morning research routine can fetch it without holding the app's write token. This is what makes each morning's strategy report portfolio-aware.
 
-**`alert-check`** — scheduled `*/5 6-21 * * 1-5` (UTC; covers LSE 08:00 London through US close, weekdays; ~4,000 invocations/month, well inside the 125k free tier). Five-minute cadence is the user's "alerts must be timely" requirement; each run must stay lean (batched quotes every run; candles/news/RSS refreshed only when their cache TTL has lapsed) to fit the 10 s function timeout. Each run: read config + last-alert state from Blobs → fetch quotes/candles/news/YouTube via the same internal modules → evaluate rules → send Telegram messages for newly triggered alerts → write updated state back. Each ticker/rule is wrapped in try/catch so one bad symbol cannot kill the run.
+**`alert-check`** — scheduled `*/5 * * * *`, 24/7 (~8,600 invocations/month, well inside the 125k free tier) per the user's "never quiet" choice. Inside each run: quote/setup rules evaluate only while the relevant market (LSE or US, incl. US extended hours) is open — prices can't trigger when both are shut; news/YouTube rules evaluate every run. Five-minute cadence is the user's "alerts must be timely" requirement; each run stays lean (one batched quote call; candles/news/RSS refreshed only when their cache TTL lapses) to fit the 10 s function timeout.
+
+**Two-tier routing (user choice):** INSTANT Telegram ping — user-set price levels, setup-state triggers (Reclaim fires, Breakout live, Falling knife → Basing), regime flips, and headlines/videos naming a watchlist ticker. BATCHED — everything else accumulates in Blobs and is sent as a Telegram digest message three times daily (07:00, 14:30, 21:00 UK). No quiet hours: instant-tier pings deliver 24/7. Each run: read config + last-alert state from Blobs → fetch quotes/candles/news/YouTube via the same internal modules → evaluate rules → send Telegram messages for newly triggered alerts → write updated state back. Each ticker/rule is wrapped in try/catch so one bad symbol cannot kill the run.
 
 **Auth:** every `/api/*` call requires an `x-app-token` header matching an `APP_TOKEN` env var (random secret). Single-user pragmatism: the client asks for the token once and keeps it in localStorage. This also stops strangers from burning the Finnhub quota through the public function URL.
 
@@ -129,9 +131,11 @@ Settled interactively with the user on 2026-07-02. Honest framing first, and kep
 
 ## 6. Build stages
 
-1. **Scaffold + watchlist + quotes** — repo, Vite PWA scaffold, Dexie, `market-data` function (quotes + candles), watchlist screen with badges, GitHub → Netlify pipeline live. *User setup: Finnhub free API key, Netlify env vars.*
-2. **Charts** — ticker detail screen, lightweight-charts, indicators module + tests.
-3. **Alerts** — `rules.ts` + tests, `config-sync` + Blobs mirror, in-app engine, `alert-check` scheduled function, Telegram delivery. *User setup: create bot via BotFather (walkthrough), get chat ID, set `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` env vars.*
+Order changed 2026-07-02 (user choice): alerts moved ahead of charts because timeliness is the priority; charts can be done on TradingView/T212 in the interim.
+
+1. **Scaffold + watchlist + quotes** — repo, Vite PWA scaffold, Dexie, `market-data` function (quotes + candles), `indicators.ts` + `setups.ts` with tests (needed for badges), watchlist screen with regime banner + setup badges, GitHub → Netlify pipeline live. *User setup: Finnhub key (provided 2026-07-02), Netlify env vars.*
+2. **Alerts + Telegram** — `rules.ts` + tests, two-tier routing, `config-sync` + Blobs mirror, in-app engine, `alert-check` scheduled function (24/7, 5-min), Telegram delivery. *User setup: create bot via BotFather (walkthrough), get chat ID, set `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` env vars.*
+3. **Charts** — ticker detail screen, lightweight-charts (candles + volume + 20/50/200 MAs + RSI panel), position-size calculator.
 4. **Journal + risk banners** — journal screens, risk module + tests, export/import, suggestion-followed tagging, portfolio snapshot mirror + `GET /api/portfolio`. *After this stage: update the morning routine's prompt to fetch the portfolio endpoint so reports are based on actual holdings.*
 5. **Digest + YouTube** — digest screen, calendar + news + YouTube RSS integration, followed-channels settings.
 6. **AI interpretation** — `ai-insights` function (Gemini or Groq, whichever key the user provides), "AI read" card on the Digest, honest labelling. Only starts once 1–5 are confirmed working.
