@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getAiRead, getPicks, getPickStats, getOutcomes, getEventDossiers } from '../lib/api'
-import { IconGear, IconNews, IconFlame, IconBalloon, IconPin, IconTarget } from '../components/icons'
+import { IconGear, IconNews, IconFlame, IconBalloon, IconPin, IconTarget, IconShare } from '../components/icons'
 
 // Research: everything the analyst produces and how it performs.
 // The accountability page: reports, picks, persistence, scorecard, track record.
@@ -45,10 +45,25 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
           </section>
         )}
 
-        <a className="link-card hero-card" href="/report">
-          <IconNews /> Today's strategy report
-          <span>Fresh analysis every weekday morning. Sundays: the week ahead.</span>
-        </a>
+        <div style={{ position: 'relative' }}>
+          <a className="link-card hero-card" href="/report">
+            <IconNews /> Today's strategy report
+            <span>Fresh analysis every weekday morning. Sundays: the week ahead.</span>
+          </a>
+          <button
+            className="mini-btn ghost"
+            style={{ position: 'absolute', top: 12, right: 12 }}
+            onClick={e => {
+              e.preventDefault()
+              const url = `${location.origin}/report`
+              if (navigator.share) navigator.share({ title: 'MomentumBoard Daily', url }).catch(() => {})
+              else navigator.clipboard?.writeText(url)
+            }}
+            aria-label="Share report"
+          >
+            <IconShare size={13} /> Share
+          </button>
+        </div>
 
         <div className="ai-card">
           <h3>AI read</h3>

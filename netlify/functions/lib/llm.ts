@@ -5,6 +5,7 @@
 
 export interface LlmEnv {
   strict?: boolean // true = use ONLY the keys in this object (never the server's own) — licensee isolation
+  maxTokens?: number // response budget; default 700
   LLM_PROVIDER?: string
   GROQ_API_KEY?: string
   GEMINI_API_KEY?: string
@@ -30,7 +31,7 @@ const PROVIDERS: Provider[] = [
       const res = await fetchFn('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${e.GROQ_API_KEY}` },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 700 }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: e.maxTokens ?? 700 }),
       })
       const j = (await res.json()) as { choices?: { message?: { content?: string } }[] }
       const text = j.choices?.[0]?.message?.content
@@ -46,7 +47,7 @@ const PROVIDERS: Provider[] = [
       const res = await fetchFn(`${base}/v1beta/models/gemini-2.5-flash:generateContent`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': e.GEMINI_API_KEY! },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] }),
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: e.maxTokens ?? 2048 } }),
       })
       const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
       const text = j.candidates?.[0]?.content?.parts?.[0]?.text
@@ -62,7 +63,7 @@ const PROVIDERS: Provider[] = [
       const res = await fetchFn(`${base.replace(/\/$/, '')}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${e.OPENAI_API_KEY}` },
-        body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }], max_tokens: 700 }),
+        body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }], max_tokens: e.maxTokens ?? 700 }),
       })
       const j = (await res.json()) as { choices?: { message?: { content?: string } }[] }
       const text = j.choices?.[0]?.message?.content
@@ -78,7 +79,7 @@ const PROVIDERS: Provider[] = [
       const res = await fetchFn(`${base.replace(/\/$/, '')}/v1/messages`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': e.ANTHROPIC_API_KEY!, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 700, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: e.maxTokens ?? 700, messages: [{ role: 'user', content: prompt }] }),
       })
       const j = (await res.json()) as { content?: { text?: string }[] }
       const text = j.content?.[0]?.text
