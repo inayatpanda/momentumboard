@@ -9,6 +9,7 @@ import { RegimeBanner } from '../components/RegimeBanner'
 import { TickerRow } from '../components/TickerRow'
 import { AddTickerForm } from '../components/AddTickerForm'
 import { Toasts } from '../components/Toasts'
+import { IconGear } from '../components/icons'
 
 export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string) => void; onOpenSettings: () => void }) {
   const [items, setItems] = useState<{ symbol: string; category?: string }[]>([])
@@ -101,7 +102,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
           Momentum<span className="tick">Board</span>
         </span>
         <RegimeBanner regime={regime} />
-        <button className="gear" onClick={onOpenSettings} aria-label="Settings">⚙</button>
+        <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
       <div className="content">
         <AddTickerForm onAdd={add} disabled={symbols.length >= 30} categories={categories} />

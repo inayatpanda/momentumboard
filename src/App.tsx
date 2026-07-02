@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { syncFromServer } from './lib/sync'
 import { Watchlist } from './screens/Watchlist'
 import { TickerDetail } from './screens/TickerDetail'
 import { Journal } from './screens/Journal'
@@ -18,6 +19,12 @@ type View =
 export default function App() {
   const [view, setView] = useState<View>({ screen: 'watchlist' })
   const [lastSymbol, setLastSymbol] = useState<string | null>(null)
+  const [syncTick, setSyncTick] = useState(0)
+
+  // phone ↔ desktop: pull server state on launch; screens remount when it lands
+  useEffect(() => {
+    syncFromServer().then(changed => changed && setSyncTick(t => t + 1))
+  }, [])
 
   const open = (symbol: string) => {
     setLastSymbol(symbol)
@@ -36,7 +43,7 @@ export default function App() {
   const active = view.screen === 'detail' ? 'charts' : view.screen === 'settings' ? view.from : view.screen
 
   return (
-    <div className="shell">
+    <div className="shell" key={syncTick}>
       {view.screen === 'watchlist' && <Watchlist onOpen={open} onOpenSettings={openSettings} />}
       {view.screen === 'detail' && <TickerDetail symbol={view.symbol} onBack={() => setView({ screen: 'watchlist' })} />}
       {view.screen === 'journal' && <Journal />}

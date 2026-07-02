@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getAiRead, getPicks, getPickStats, getOutcomes, getEventDossiers } from '../lib/api'
+import { IconGear, IconNews } from '../components/icons'
 
 // Research: everything the analyst produces and how it performs.
 // The accountability page: reports, picks, persistence, scorecard, track record.
@@ -23,7 +24,7 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
     <>
       <header className="topbar">
         <span className="brand">Research</span>
-        <button className="gear" onClick={onOpenSettings} aria-label="Settings">⚙</button>
+        <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
       <div className="content digest-cols">
         {events.length > 0 && (
@@ -45,7 +46,7 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
         )}
 
         <a className="link-card hero-card" href="/report">
-          📰 Today's strategy report
+          <IconNews /> Today's strategy report
           <span>Fresh analysis every weekday morning. Sundays: the week ahead.</span>
         </a>
 

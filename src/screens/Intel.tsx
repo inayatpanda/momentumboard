@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
 import { getEcon, getCalendar, getConsensus, getInsiders, getSmartMoney, getVideoAnalyses, getFeed, getAlertHistory, getSocialPulse, getSectors } from '../lib/api'
+import { IconGear, IconCalendar, IconLandmark } from '../components/icons'
 
 // Intel, in three streams the user asked for:
 //   Markets: macro, earnings, 13F, headlines, alerts
@@ -45,7 +46,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
     <>
       <header className="topbar">
         <span className="brand">Intel</span>
-        <button className="gear" onClick={onOpenSettings} aria-label="Settings">⚙</button>
+        <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
       <div className="content digest-cols">
         <div className="subtabs" style={{ columnSpan: 'all' }}>
@@ -136,7 +137,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
             <section className="digest-section">
               <h3 className="section-title">Elsewhere</h3>
               <a className="link-card" href="https://www.investing.com/economic-calendar/" target="_blank" rel="noreferrer">
-                📅 Full economic calendar <span>Everything beyond the high-impact list above.</span>
+                <IconCalendar /> Full economic calendar <span>Everything beyond the high-impact list above.</span>
               </a>
             </section>
           </>
@@ -203,7 +204,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
             <section className="digest-section">
               <h3 className="section-title">Congressional trading</h3>
               <a className="link-card" href="https://www.quiverquant.com/congresstrading/" target="_blank" rel="noreferrer">
-                🏛 QuiverQuant congress tracker <span>Clustered political buying is a positioning signal, not gospel. The morning report checks this daily; free structured feeds for in-app tables no longer exist.</span>
+                <IconLandmark /> QuiverQuant congress tracker <span>Clustered political buying is a positioning signal, not gospel. The morning report checks this daily; free structured feeds for in-app tables no longer exist.</span>
               </a>
             </section>
           </>

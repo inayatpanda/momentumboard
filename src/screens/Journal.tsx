@@ -7,6 +7,7 @@ import { computeStats, exposureWarnings, tradePnl, type Trade } from '../../shar
 import { getT212 } from '../lib/api'
 import { TradeForm } from '../components/TradeForm'
 import { Sparkline } from '../components/Sparkline'
+import { IconSwap } from '../components/icons'
 import { fmtPct } from '../lib/format'
 
 const gbp = (v: number) => `${v < 0 ? '−' : ''}£${Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`
@@ -172,7 +173,7 @@ export function Journal() {
             }
           }}
         >
-          ⇄ Import positions from Trading 212
+          <IconSwap /> Import positions from Trading 212
         </button>
 
         <h3 className="section-title">Open positions ({open.length})</h3>

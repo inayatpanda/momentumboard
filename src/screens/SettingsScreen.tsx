@@ -3,6 +3,7 @@ import { db, getCapital, getChannels } from '../lib/db'
 import { resolveChannel, getLicences, createLicence, revokeLicence } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { enablePush, pushSupported, type PushStatus } from '../lib/push'
+import { IconBack } from '../components/icons'
 
 function LicenceManager() {
   const [licences, setLicences] = useState<Awaited<ReturnType<typeof getLicences>> | null>(null)
@@ -170,7 +171,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   return (
     <>
       <header className="topbar">
-        <button className="back" onClick={onBack} aria-label="Back">←</button>
+        <button className="back" onClick={onBack} aria-label="Back"><IconBack /></button>
         <span className="brand">Settings</span>
       </header>
       <div className="content">

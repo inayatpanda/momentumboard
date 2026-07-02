@@ -13,6 +13,7 @@ import { RsiChart } from '../components/RsiChart'
 import { PositionCalculator } from '../components/PositionCalculator'
 import { AlertEditor } from '../components/AlertEditor'
 import { Badge } from '../components/Badge'
+import { IconBack } from '../components/icons'
 
 const RANGES = ['3mo', '6mo', '1y'] as const
 type Range = (typeof RANGES)[number]
@@ -97,7 +98,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
   return (
     <div className="detail">
       <header className="detail-head">
-        <button className="back" onClick={onBack} aria-label="Back to watchlist">←</button>
+        <button className="back" onClick={onBack} aria-label="Back to watchlist"><IconBack /></button>
         <div>
           <h2>{symbol}</h2>
           {quote && (
