@@ -54,7 +54,7 @@ export function gradeFor(p: number, provisional: boolean, capacityPct: number): 
 }
 
 /** Outcome vs what price actually did: excess return over SPY, side-adjusted;
- * a pierced stop is a miss forever — recoveries after the stop don't count. */
+ * a stop CLOSE-through is a miss forever — recoveries after don't count. */
 export function gradePrediction(
   pred: { date: string; side: 'long' | 'short'; priceAtPrediction: number; stop: number },
   candles: Candle[],
@@ -72,9 +72,14 @@ export function gradePrediction(
   const spyBase = spyCandles[Math.max(spyIdx - 1, 0)].c
   const spyPct = ((spyCandles[spyIdx + horizon].c - spyBase) / spyBase) * 100
 
+  // GRADING is close-based: a wick through the stop is survivable noise (1.5×ATR
+  // sits inside normal weekly range on these names — replay evidence 2026-07-02:
+  // intraday-pierce grading scored directional judgment as coin-flip misses).
+  // EXECUTION advice on prediction cards is unchanged: the stop remains a hard
+  // intraday level for anyone actually in the trade.
   let stopped = false
   for (let i = entryIdx; i <= entryIdx + horizon; i++) {
-    if (pred.side === 'long' ? candles[i].l <= pred.stop : candles[i].h >= pred.stop) {
+    if (pred.side === 'long' ? candles[i].c <= pred.stop : candles[i].c >= pred.stop) {
       stopped = true
       break
     }

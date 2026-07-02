@@ -73,9 +73,11 @@ export function seedFromHistory(bySym: Map<string, Candle[]>, spy: Candle[]): { 
       const price = closes[i]
       const rawPct = ((closes[i + 1 + HORIZON] - price) / price) * 100
       const spyPct = ((spy[j + 1 + HORIZON].c - spy[j].c) / spy[j].c) * 100
+      // close-based stop check — must match gradePrediction() exactly so the
+      // seeded calibration and live grading measure the same thing
       let stopped = false
       for (let k = i + 1; k <= i + 1 + HORIZON; k++) {
-        if (call.side === 'long' ? candles[k].l <= call.stop : candles[k].h >= call.stop) {
+        if (call.side === 'long' ? candles[k].c <= call.stop : candles[k].c >= call.stop) {
           stopped = true
           break
         }

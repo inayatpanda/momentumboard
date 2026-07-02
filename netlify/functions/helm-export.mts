@@ -51,7 +51,7 @@ export async function routeExport(
 
   // cheap summary for the dashboard card — no heavy HTML
   const summary = {
-    app: 'streetsignal', // stable Helm app-id; independent of the pretty URL
+    app: 'thestreetsignal', // Helm app-id — matches the site name; onboard this in The Helm
     site: 'https://thestreetsignal.netlify.app',
     reportUrl: 'https://thestreetsignal.netlify.app/report',
     latestEdition: latest

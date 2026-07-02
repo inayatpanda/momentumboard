@@ -71,11 +71,23 @@ describe('gradePrediction', () => {
     expect(o.hit).toBe(true)
     expect(o.excessPct).toBeGreaterThan(8)
   })
-  it('stopped intraday then recovered = miss, whatever the close says', () => {
-    const candles = mkCandles(100, 2, 30, 15) // lows dip 15 below close → pierces a 95 stop
+  it('wick through the stop is survivable: closes hold above → not stopped, hit stands', () => {
+    const candles = mkCandles(100, 2, 30, 15) // lows dip 15 below close → wicks pierce a 95 stop, closes never do
+    const o = gradePrediction({ date: '2026-01-06', side: 'long', priceAtPrediction: 100, stop: 95 }, candles, spy, 5)!
+    expect(o.stopped).toBe(false)
+    expect(o.hit).toBe(true)
+  })
+  it('a CLOSE through the stop = miss forever, even if price recovers by the horizon', () => {
+    // bar 2 closes at 94, through the 95 stop; then recovers to 112 by the 5-session mark
+    const closes = [100, 100, 94, 100, 104, 108, 112, 114, 116]
+    const candles: Candle[] = closes.map((c, i) => ({
+      t: Date.parse('2026-01-05') / 1000 + i * 86_400,
+      o: c, h: c + 1, l: c - 1, c, v: 1_000_000,
+    }))
     const o = gradePrediction({ date: '2026-01-06', side: 'long', priceAtPrediction: 100, stop: 95 }, candles, spy, 5)!
     expect(o.stopped).toBe(true)
     expect(o.hit).toBe(false)
+    expect(o.rawPct).toBeGreaterThan(0) // the recovery is real — but the stop close-through already ended the trade
   })
   it('short grading flips the sign', () => {
     const candles = mkCandles(100, -2) // falling
