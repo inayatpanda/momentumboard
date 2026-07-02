@@ -149,7 +149,7 @@ export function sanitizeComposed(r: ComposedReport): ComposedReport | null {
   if (!r.headline || !r.standfirst || !Array.isArray(r.ideas)) return null
   if (!['green', 'amber', 'red'].includes(r.regime)) r.regime = 'amber'
   // models sneak markdown emphasis into prose; the paper sets its own type
-  const clean = (s: unknown) => (typeof s === 'string' ? s.replace(/(^|\s)[_*]+|[_*]+(?=\s|$)/g, '$1').trim() : s)
+  const clean = (s: unknown) => (typeof s === 'string' ? s.replace(/(^|\s)[_*]+|[_*]+(?=\s|$)/g, '$1').replace(/(\d+\.\d)\d{2,}/g, '$1').trim() : s)
   for (const k of Object.keys(r) as (keyof ComposedReport)[]) (r as unknown as Record<string, unknown>)[k] = clean(r[k])
   r.ideas = r.ideas.map(i => ({ ...i, caseText: clean(i.caseText) as string }))
   return r
