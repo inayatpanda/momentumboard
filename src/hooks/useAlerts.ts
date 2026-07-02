@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { RegimeColor } from '../../shared/types'
 import { evaluateAlerts, emptyAlertState, type AlertState, type TickerSnapshot } from '../../shared/alerts'
 import { isMarketOpen } from '../../shared/rvol'
+import { exchangeFor } from '../../shared/symbols'
 import { db, type RuleItem } from '../lib/db'
 import type { Row } from '../components/TickerRow'
 
@@ -32,7 +33,7 @@ export function useAlerts(rows: Row[], regime: RegimeColor | null, rules: RuleIt
         rvol: r.rvol,
         rsi: r.rsi ?? null,
         setups: r.setups,
-        marketOpen: isMarketOpen(r.symbol.includes('.') ? 'LSE' : 'US', nowSec),
+        marketOpen: isMarketOpen(exchangeFor(r.symbol), nowSec),
       }))
       const { events, state } = evaluateAlerts(
         { rules, watchlist: rows.map(r => r.symbol) },

@@ -12,8 +12,7 @@ import type { Candle, Quote } from '../../shared/types'
 import { rsi } from '../../shared/indicators'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction, isMarketOpen } from '../../shared/rvol'
 import { detectSetups, regimeFromCandles } from '../../shared/setups'
-
-const isYahoo = (s: string) => s.includes('.')
+import { exchangeFor, isYahooSymbol as isYahoo } from '../../shared/symbols'
 
 async function cachedQuote(sym: string, finnhubKey: string): Promise<Quote | null> {
   const key = `quote:${sym}`
@@ -63,7 +62,7 @@ export default async () => {
     Promise.all(
       symbols.map(async (symbol): Promise<TickerSnapshot | null> => {
         try {
-          const exchange = isYahoo(symbol) ? 'LSE' : 'US'
+          const exchange = exchangeFor(symbol)
           const open = isMarketOpen(exchange, nowSec)
           const [quote, candles] = await Promise.all([cachedQuote(symbol, finnhubKey), cachedCandles(symbol)])
           let rvol: number | null = null

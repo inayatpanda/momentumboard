@@ -1,4 +1,5 @@
 import type { NewsItem } from '../../../shared/alerts'
+import { exchangeFor } from '../../../shared/symbols'
 import { parseFeed } from './rss'
 
 const DAY = 24 * 3600
@@ -33,7 +34,8 @@ export async function fetchNews(
   fetchFn: typeof fetch = fetch,
 ): Promise<NewsItem[]> {
   const out: NewsItem[] = []
-  const usSymbols = watchlist.filter(s => !s.includes('.')).slice(0, 15)
+  const usSymbols = watchlist.filter(s => exchangeFor(s) === 'US').slice(0, 15)
+  const hasCrypto = watchlist.some(s => exchangeFor(s) === 'CRYPTO')
 
   await Promise.all([
     ...usSymbols.map(async sym => {
@@ -54,6 +56,13 @@ export async function fetchNews(
     (async () => {
       const xml = await safeText('https://news.google.com/rss/search?q=stock%20market&hl=en-GB&gl=GB&ceid=GB:en', fetchFn)
       for (const item of parseFeed(xml).slice(0, 10)) {
+        if (nowSec - item.publishedSec < DAY) out.push({ title: item.title, url: item.url, symbols: [] })
+      }
+    })(),
+    (async () => {
+      if (!hasCrypto) return
+      const xml = await safeText('https://news.google.com/rss/search?q=bitcoin%20OR%20ethereum%20OR%20crypto&hl=en-GB&gl=GB&ceid=GB:en', fetchFn)
+      for (const item of parseFeed(xml).slice(0, 8)) {
         if (nowSec - item.publishedSec < DAY) out.push({ title: item.title, url: item.url, symbols: [] })
       }
     })(),

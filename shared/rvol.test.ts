@@ -37,6 +37,11 @@ describe('isMarketOpen', () => {
     expect(isMarketOpen('LSE', thu17)).toBe(false) // LSE closed by 17:00 UTC
     expect(isMarketOpen('US', sat17)).toBe(false)
   })
+  it('crypto is always open, with a midnight-UTC daily bar fraction', () => {
+    const sat17 = Date.UTC(2026, 6, 4, 17, 0) / 1000
+    expect(isMarketOpen('CRYPTO', sat17)).toBe(true)
+    expect(sessionElapsedFraction('CRYPTO', sat17)).toBeCloseTo(17 / 24, 3)
+  })
 })
 
 describe('relativeVolume', () => {

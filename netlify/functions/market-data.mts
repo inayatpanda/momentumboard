@@ -3,11 +3,10 @@ import { fetchYahooChart } from './lib/yahoo'
 import { fetchFinnhubQuote } from './lib/finnhub'
 import { getCached, setCached } from './lib/cache'
 import type { Quote } from '../../shared/types'
+import { isYahooSymbol } from '../../shared/symbols'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
-
-const isYahooSymbol = (s: string) => s.includes('.')
 
 export async function routeRequest(
   url: URL,

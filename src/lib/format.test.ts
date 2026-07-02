@@ -5,6 +5,7 @@ describe('fmtPrice', () => {
   it('renders pence for GBp', () => expect(fmtPrice(123.4, 'GBp')).toBe('123.4p'))
   it('renders pounds for GBP', () => expect(fmtPrice(1.234, 'GBP')).toBe('£1.23'))
   it('renders dollars for USD', () => expect(fmtPrice(2.981, 'USD')).toBe('$2.98'))
+  it('drops decimals and adds separators for large prices (BTC)', () => expect(fmtPrice(109432.55, 'USD')).toBe('$109,433'))
 })
 
 describe('fmtPct', () => {

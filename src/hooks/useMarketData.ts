@@ -4,6 +4,7 @@ import { getQuotes, getCandles } from '../lib/api'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction } from '../../shared/rvol'
 import { detectSetups, regimeFromCandles } from '../../shared/setups'
 import { rsi } from '../../shared/indicators'
+import { exchangeFor } from '../../shared/symbols'
 import type { Row } from '../components/TickerRow'
 
 const QUOTE_MS = 120_000
@@ -58,7 +59,7 @@ export function useMarketData(symbols: string[]) {
             if (candles && candles.length > 25) {
               const avg = avgDailyVolume(candles)
               const todayVol = quote?.todayVolume ?? candles[candles.length - 1].v
-              if (avg) rvol = relativeVolume(todayVol, avg, sessionElapsedFraction(symbol.includes('.') ? 'LSE' : 'US', now))
+              if (avg) rvol = relativeVolume(todayVol, avg, sessionElapsedFraction(exchangeFor(symbol), now))
               setups = detectSetups(candles, rvol)
               spark = candles.slice(-30).map(c => c.c)
               const r = rsi(candles.map(c => c.c))

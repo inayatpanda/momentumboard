@@ -32,4 +32,8 @@ describe('market-data routing', () => {
   it('400s unknown type', async () => {
     expect((await call('type=wat', 'secret')).status).toBe(400)
   })
+  it('routes crypto symbols to yahoo', async () => {
+    const body = await (await call('type=quote&symbols=BTC-USD', 'secret')).json()
+    expect(body.data.quotes[0]?.source).toBe('yahoo')
+  })
 })
