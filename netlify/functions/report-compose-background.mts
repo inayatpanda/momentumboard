@@ -1,7 +1,7 @@
 import { blobAppStore } from './lib/store'
 import { authenticate } from './lib/auth'
 import { callLlm } from './lib/llm'
-import { composePrompt, parseComposed, buildNewspaperHtml } from './lib/newspaper'
+import { composePrompt, parseComposed, buildNewspaperHtml, constrainIdeasToBoard } from './lib/newspaper'
 import { cachedQuote, cachedCandles } from './lib/marketCache'
 import { regimeFromCandles } from '../../shared/setups'
 import type { AppConfig } from '../../shared/config'
@@ -89,23 +89,41 @@ export default async (req: Request) => {
     })
 
     const mediaHeadlines = await grab(async () => {
-      // hard-paywalled outlets still publish headline RSS — titles are real signal
-      const feeds = [
-        ['FT', 'https://www.ft.com/markets?format=rss'],
-        ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'],
-        ['CNBC', 'https://www.cnbc.com/id/100003114/device/rss/rss.html'],
-      ]
-      const out: string[] = []
-      await Promise.all(
-        feeds.map(async ([src, feedUrl]) => {
-          try {
-            const xml = await (await fetch(feedUrl, { headers: { 'user-agent': 'StreetSignal research inayatc2002@gmail.com' } })).text()
-            for (const m of [...xml.matchAll(/<title>(?:<!\[CDATA\[)?([^<\]]{15,140})/g)].slice(1, 6)) out.push(`[${src}] ${m[1].trim()}`)
-          } catch { /* one dead feed must not matter */ }
-        }),
-      )
-      return out.slice(0, 14)
+      // hard-paywalled outlets still publish headline RSS — titles are real
+      // signal. Feed list (incl. Barron's + Bloomberg) shared with the engine.
+      const { fetchMediaTitles } = await import('./lib/engine')
+      return (await fetchMediaTitles()).slice(0, 18)
     })
+
+    // the engine's scored board: fresh = composed today (London). Stale or
+    // missing → the paper still publishes, in legacy qualitative mode.
+    const engineBoard = await grab(async () => {
+      const b = await blobAppStore.read<{ date: string; board: import('../../shared/engine/types').Prediction[] }>('engine-board')
+      if (!b || b.date !== dateISO || !Array.isArray(b.board)) return null
+      return b.board.slice(0, 16).map(p => ({
+        id: p.id,
+        sym: p.sym,
+        side: p.side,
+        grade: p.grade,
+        probability: p.probability,
+        provisional: p.provisional,
+        composite: p.composite,
+        entry: p.entry,
+        stop: p.stop,
+        target: p.target,
+        expectedMovePct: p.expectedMovePct,
+        capacityPct: p.capacityPct,
+        stage: p.stage,
+        note: p.note,
+        smallCap: p.smallCap,
+        earningsRisk: p.earningsRisk,
+        riskPct: p.riskPct,
+        instrument: p.instrument,
+        paperOnly: p.paperOnly,
+        factorDetails: Object.fromEntries(Object.entries(p.factors).filter(([, f]) => f.score != null).map(([k, f]) => [k, `${f.score} — ${f.detail}`])),
+      }))
+    })
+    const engineFresh = !!engineBoard?.length
 
     const news = await grab(async () => {
       const { fetchNews } = await import('./lib/news')
@@ -192,6 +210,7 @@ export default async (req: Request) => {
       {
         capital: cfg.capital,
         regime,
+        engineBoard, // null = engine offline; ideas then fall back to candidateReads rules
         watchlistQuotes: quotes,
         portfolio,
         sectorRotation: sectors,
@@ -244,6 +263,25 @@ export default async (req: Request) => {
     console.log('COMPOSE: via', provider, '| parsed:', !!composed)
     if (!composed) { console.error('COMPOSE: unparseable after all fallbacks'); return new Response('compose-unparseable', { status: 502 }) }
     if (!(cfg.notes ?? []).length) delete composed.readersNotes // no phantom reader feedback
+
+    if (engineFresh) {
+      // the journalist narrates the board — numbers come from the engine, verbatim
+      const constrained = constrainIdeasToBoard(composed.ideas, engineBoard!)
+      composed.ideas = constrained.ideas
+      if (constrained.rejected.length) console.log('COMPOSE: rejected off-board ideas:', constrained.rejected.join(', '))
+      if (constrained.overlays.length) {
+        // overlays land in the ledger so the LLM's judgment gets graded too
+        const preds = (await blobAppStore.read<import('../../shared/engine/types').Prediction[]>(`predictions:${dateISO}`)) ?? []
+        for (const o of constrained.overlays) {
+          const p = preds.find(x => x.id === o.predictionId)
+          if (p) p.overlay = { flag: o.flag, reason: o.reason }
+        }
+        await blobAppStore.write(`predictions:${dateISO}`, preds)
+        console.log('COMPOSE: overlays', constrained.overlays.map(o => `${o.predictionId}:${o.flag}`).join(' '))
+      }
+    } else {
+      composed.standfirst = `${composed.standfirst} — Engine offline this morning; qualitative edition.`
+    }
 
     // ---- publish through the same pipe the routine uses ----
     const html = buildNewspaperHtml(composed, dateLabel, extras)

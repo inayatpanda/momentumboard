@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeRung, initRisk, leverageAllowed, mapInstrument, RUNG_RISK_PCT, type OutcomeLite } from './riskLadder'
+import { computeRung, initRisk, leverageAllowed, mapInstrument, RUNG_RISK_PCT, type OutcomeLite, type RiskState } from './riskLadder'
 
 const wins = (n: number, leveraged = false): OutcomeLite[] => Array.from({ length: n }, () => ({ hit: true, stopped: false, leveraged }))
 const losses = (n: number, stopped = true, leveraged = false): OutcomeLite[] => Array.from({ length: n }, () => ({ hit: false, stopped, leveraged }))
@@ -23,7 +23,7 @@ describe('computeRung', () => {
   })
 
   it('demotes on a cold streak (<45% over last 20)', () => {
-    let s = { ...initRisk('2026-06-01'), rung: 2 as const, gradedAtRung: 10 }
+    let s: RiskState = { ...initRisk('2026-06-01'), rung: 2, gradedAtRung: 10 }
     const cold = [...wins(8), ...losses(12, false)] // 40%
     s = computeRung(s, cold, 5, true, null, '2026-07-01')
     expect(s.rung).toBe(1)
@@ -31,7 +31,7 @@ describe('computeRung', () => {
   })
 
   it('three straight leveraged stop-outs demote even with a fine overall record', () => {
-    let s = { ...initRisk('2026-06-01'), rung: 3 as const, gradedAtRung: 10 }
+    let s: RiskState = { ...initRisk('2026-06-01'), rung: 3, gradedAtRung: 10 }
     const recent = [...wins(17), ...losses(3, true, true)]
     s = computeRung(s, recent, 3, true, null, '2026-07-01')
     expect(s.rung).toBe(2)
@@ -39,11 +39,11 @@ describe('computeRung', () => {
   })
 
   it('override wins and is logged as manual; floor 0, ceiling 3', () => {
-    let s = { ...initRisk('2026-06-01'), rung: 1 as const }
+    let s: RiskState = { ...initRisk('2026-06-01'), rung: 1 }
     s = computeRung(s, [], 0, true, 3, '2026-07-01')
     expect(s.rung).toBe(3)
     expect(s.history.at(-1)?.evidence).toBe('manual override')
-    let low = { ...initRisk('2026-06-01'), rung: 0 as const, gradedAtRung: 0 }
+    let low: RiskState = { ...initRisk('2026-06-01'), rung: 0, gradedAtRung: 0 }
     low = computeRung(low, losses(20, false), 20, true, null, '2026-07-01')
     expect(low.rung).toBe(0) // can't go below 0
   })

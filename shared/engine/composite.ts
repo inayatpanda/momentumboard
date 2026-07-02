@@ -1,6 +1,6 @@
 import type { RegimeColor } from '../types'
 import type { Stage } from '../technicals'
-import { clamp, round1, round2, type EngineCall, type FactorName, type FactorScore } from './types'
+import { round1, round2, type EngineCall, type FactorName, type FactorScore } from './types'
 
 export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
   technical: 1.0,
