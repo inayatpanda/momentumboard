@@ -388,6 +388,12 @@ tr.strong td{background:rgba(12,122,85,.06)}
 .editorial{background:rgba(25,23,19,.035);padding:16px 18px;border-top:2px solid #191713}
 .notice{font-size:13px;font-style:italic;color:#6b6257;text-align:center;margin:8px 0 0}
 footer{margin-top:34px;border-top:2px solid #191713;padding-top:12px;font-size:12.5px;color:#6b6257;text-align:center;letter-spacing:.08em}
+@media(max-width:600px){
+.masthead h1{letter-spacing:.1em}
+.dept table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.glance{gap:14px}
+}
+body{overflow-x:hidden}
 @media print{body{background:#fff}.sheet{max-width:none;padding:0}}
 </style></head>
 <body><div class="sheet">
