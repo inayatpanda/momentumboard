@@ -238,6 +238,72 @@ button, input { font: inherit; }
 .tab:disabled { opacity: 0.45; cursor: default; }
 .tab .soon { font-size: 8.5px; color: var(--faint); letter-spacing: 0.06em; }
 
+/* ---------- alert editor ---------- */
+.alert-editor {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  margin: -12px 6px 10px;
+  padding: 14px 12px 12px;
+  animation: rise 0.2s ease both;
+}
+.alert-editor label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.alert-editor input {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-family: var(--font-num);
+  width: 100%;
+  outline: none;
+}
+.alert-editor input:focus { border-color: var(--green); }
+.alert-editor button {
+  background: var(--green);
+  border: none;
+  border-radius: 10px;
+  padding: 9px 16px;
+  color: #05130d;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ---------- toasts ---------- */
+.toasts {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(92vw, 480px);
+}
+.toast {
+  background: var(--panel-2);
+  border: 1px solid rgba(34, 201, 141, 0.5);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: rise 0.25s ease both;
+}
+
 /* ---------- token gate ---------- */
 .gate {
   min-height: 100dvh;

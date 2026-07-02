@@ -3,6 +3,7 @@ import type { Candle, Quote, RegimeColor, SetupKind } from '../../shared/types'
 import { getQuotes, getCandles } from '../lib/api'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction } from '../../shared/rvol'
 import { detectSetups, regimeFromCandles } from '../../shared/setups'
+import { rsi } from '../../shared/indicators'
 import type { Row } from '../components/TickerRow'
 
 const QUOTE_MS = 120_000
@@ -53,14 +54,17 @@ export function useMarketData(symbols: string[]) {
             let rvol: number | null = null
             let setups: SetupKind[] = []
             let spark: number[] | undefined
+            let rsiVal: number | null = null
             if (candles && candles.length > 25) {
               const avg = avgDailyVolume(candles)
               const todayVol = quote?.todayVolume ?? candles[candles.length - 1].v
               if (avg) rvol = relativeVolume(todayVol, avg, sessionElapsedFraction(symbol.includes('.') ? 'LSE' : 'US', now))
               setups = detectSetups(candles, rvol)
               spark = candles.slice(-30).map(c => c.c)
+              const r = rsi(candles.map(c => c.c))
+              rsiVal = r[r.length - 1]
             }
-            return { symbol, quote, rvol, setups, spark }
+            return { symbol, quote, rvol, setups, spark, rsi: rsiVal }
           }),
         )
         setLastUpdated(Date.now())

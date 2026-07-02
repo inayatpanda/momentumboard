@@ -1,4 +1,5 @@
 import type { ApiEnvelope, Candle, Quote } from '../../shared/types'
+import type { AppConfig } from '../../shared/config'
 
 export const getToken = () => localStorage.getItem('mb-token')
 export const setToken = (t: string) => localStorage.setItem('mb-token', t)
@@ -15,3 +16,13 @@ export const getQuotes = (symbols: string[]) =>
 
 export const getCandles = (symbol: string, range = '1y') =>
   apiGet<{ candles: Candle[]; quote: Quote }>(`/api/market?type=candles&symbol=${encodeURIComponent(symbol)}&range=${range}`)
+
+export async function putConfig(cfg: AppConfig): Promise<void> {
+  const res = await fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
+    body: JSON.stringify(cfg),
+  })
+  const body = (await res.json()) as ApiEnvelope<AppConfig>
+  if (!body.ok) throw new Error(body.error ?? `http-${res.status}`)
+}

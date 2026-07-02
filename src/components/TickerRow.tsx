@@ -9,6 +9,7 @@ export interface Row {
   rvol: number | null
   setups: SetupKind[]
   spark?: number[]
+  rsi?: number | null
 }
 
 export function TickerRow({ row, onRemove, index = 0 }: { row: Row; onRemove: () => void; index?: number }) {
