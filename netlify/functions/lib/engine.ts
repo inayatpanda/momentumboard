@@ -74,6 +74,9 @@ export const MEDIA_FEEDS: [string, string][] = [
   ['CNBC', 'https://www.cnbc.com/id/100003114/device/rss/rss.html'],
   ["Barron's", 'https://www.barrons.com/xml/rss/3_7510.xml'],
   ['Bloomberg', 'https://feeds.bloomberg.com/markets/news.rss'],
+  // India watch — context only (NSE/BSE aren't tradeable in the user's ISA); verified 2026-07-02
+  ['ET India', 'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms'],
+  ['LiveMint', 'https://www.livemint.com/rss/markets'],
 ]
 
 export async function fetchMediaTitles(fetchFn: typeof fetch = fetch): Promise<string[]> {
@@ -88,7 +91,9 @@ export async function fetchMediaTitles(fetchFn: typeof fetch = fetch): Promise<s
       }
     }),
   )
-  return out.slice(0, 30)
+  // 7 feeds × ≤6 titles can exceed 30 — raised modestly so the 2 India feeds
+  // don't crowd out FT/MarketWatch/CNBC/Barron's/Bloomberg on a busy morning.
+  return out.slice(0, 40)
 }
 
 export function defaultDeps(env: { FINNHUB_API_KEY?: string }): EngineDeps {

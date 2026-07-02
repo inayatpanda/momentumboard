@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { newsTone, worldMult, worldTone, type WorldRead } from './worldTape'
+import { newsTone, worldMult, worldTone, WORLD_SYMBOLS, type WorldRead } from './worldTape'
 
 const reads = (pcts: (number | null)[]): WorldRead[] =>
   pcts.map((changePct, i) => ({ sym: `IDX${i}`, name: `Index ${i}`, changePct }))
@@ -66,6 +66,20 @@ describe('worldTone', () => {
   it('empty / all-null reads → mixed, zero votes', () => {
     expect(worldTone([], null).tone).toBe('mixed')
     expect(worldTone(reads([null, null]), null).votes).toEqual({ on: 0, off: 0 })
+  })
+
+  it('a Nifty 50 read votes under the same ±0.75% rule as the rest of the panel', () => {
+    const withNifty: WorldRead[] = [...reads([-1, -1, -1, 0, 0, 0]), { sym: '^NSEI', name: 'Nifty 50', changePct: -1.5 }]
+    const t = worldTone(withNifty, null)
+    expect(t.votes).toEqual({ on: 0, off: 4 }) // 3 red indices + a red Nifty 50 tips the gate
+    expect(t.tone).toBe('risk-off')
+    expect(t.detail).toContain('Nifty 50 -1.5%')
+  })
+})
+
+describe('WORLD_SYMBOLS', () => {
+  it("includes Nifty 50 — India's session is live at the engine's 05:20 UTC run", () => {
+    expect(WORLD_SYMBOLS).toContainEqual({ sym: '^NSEI', name: 'Nifty 50' })
   })
 })
 

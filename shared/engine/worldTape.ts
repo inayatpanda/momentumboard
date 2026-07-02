@@ -17,6 +17,7 @@ export interface WorldRead {
 export const WORLD_SYMBOLS: { sym: string; name: string }[] = [
   { sym: '^N225', name: 'Nikkei' },
   { sym: '^HSI', name: 'Hang Seng' },
+  { sym: '^NSEI', name: 'Nifty 50' }, // India's session is live at the 05:20 UTC run, same as Europe — no special handling
   { sym: '^GDAXI', name: 'DAX' },
   { sym: '^FTSE', name: 'FTSE 100' },
   { sym: 'ES=F', name: 'S&P fut' },
