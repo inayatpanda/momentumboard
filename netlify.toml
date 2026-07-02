@@ -30,3 +30,8 @@
   from = "/api/ai"
   to = "/.netlify/functions/ai-insights"
   status = 200
+
+[[redirects]]
+  from = "/api/backup"
+  to = "/.netlify/functions/backup"
+  status = 200

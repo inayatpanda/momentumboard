@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory, getVideoAnalyses, getConsensus, getPicks } from '../lib/api'
+import { getCalendar, getFeed, getAiRead, resolveChannel, getInsiders, getSignalStats, getSmartMoney, getAlertHistory, getVideoAnalyses, getConsensus, getPicks, getPickStats } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPct } from '../lib/format'
 import { useMarketData } from '../hooks/useMarketData'
@@ -25,6 +25,7 @@ export function Digest() {
   const [videoAnalyses, setVideoAnalyses] = useState<Awaited<ReturnType<typeof getVideoAnalyses>>>([])
   const [consensus, setConsensus] = useState<Awaited<ReturnType<typeof getConsensus>> | null>(null)
   const [picks, setPicks] = useState<Awaited<ReturnType<typeof getPicks>> | null>(null)
+  const [pickStats, setPickStats] = useState<Awaited<ReturnType<typeof getPickStats>> | null>(null)
   const { rows } = useMarketData(symbols)
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export function Digest() {
     getVideoAnalyses().then(setVideoAnalyses).catch(() => {})
     getConsensus().then(setConsensus).catch(() => {})
     getPicks().then(setPicks).catch(() => {})
+    getPickStats().then(setPickStats).catch(() => {})
     getCapital().then(c => setCapital(String(c)))
     getChannels().then(setChannels)
   }, [])
@@ -163,6 +165,19 @@ export function Digest() {
               </div>
             ))}
             <p className="empty-line" style={{ fontSize: 11 }}>A pick surviving several independent daily analyses is stronger evidence than one day's conviction — but persistence is not a guarantee.</p>
+          </section>
+        )}
+
+        {pickStats && pickStats.scores.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Report scorecard — is the research earning?</h3>
+            {pickStats.scores.slice(0, 8).map(s => (
+              <div key={s.bucket} className="perf-row">
+                <span>{s.bucket} <span style={{ color: 'var(--faint)' }}>×{s.n}</span></span>
+                <span>{s.win5 != null ? <><span className={s.avg5! >= 0 ? 'up-text' : 'down-text'}>{s.avg5!.toFixed(1)}% @5d</span> · {Math.round(s.win5 * 100)}% win</> : 'too recent to score'}</span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>Every morning-report pick scored against what price actually did. Below ~30 scored picks, treat as noise.</p>
           </section>
         )}
 

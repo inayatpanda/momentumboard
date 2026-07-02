@@ -24,7 +24,7 @@ export async function routeReport(
   method: string,
   headers: Headers,
   bodyText: string | null,
-  env: { REPORT_TOKEN?: string; TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; URL?: string },
+  env: { REPORT_TOKEN?: string; TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; URL?: string; FINNHUB_API_KEY?: string },
   store: AppStore,
   telegramSend: typeof sendTelegram = sendTelegram,
 ): Promise<Response> {
@@ -46,6 +46,14 @@ export async function routeReport(
         picks = null
       }
       if (!picks) return json(400, { ok: false, error: 'invalid-picks' })
+      // capture the price at recommendation time — the outcome-scoring baseline
+      const { cachedQuote } = await import('./lib/marketCache')
+      await Promise.all(
+        picks.picks.map(async p => {
+          const q = await cachedQuote(p.ticker, env.FINNHUB_API_KEY ?? '')
+          if (q) p.priceAtPick = q.price
+        }),
+      )
       const history = ((await store.read<(typeof picks)[]>('report-picks')) ?? []).filter(h => h.date !== picks.date)
       history.push(picks)
       history.sort((a, b) => a.date.localeCompare(b.date))
@@ -87,6 +95,7 @@ export default async (req: Request, _context: Context) =>
       TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
       TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
       URL: process.env.URL,
+      FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
     },
     blobAppStore,
   )

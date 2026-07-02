@@ -7,6 +7,7 @@ export interface Pick {
   side: 'long' | 'short'
   playbook?: string
   conviction?: string
+  priceAtPick?: number // captured server-side when the pick is stored — outcome scoring baseline
 }
 
 export interface DailyPicks {
@@ -60,6 +61,60 @@ export function computePersistence(history: DailyPicks[]): Persistence[] {
     cur.persistent = streak >= 3 || cur.appearances >= 4
   }
   return [...all.values()].sort((a, b) => b.streak - a.streak || b.appearances - a.appearances)
+}
+
+import type { Candle } from '../../../shared/types'
+
+export interface PickScore {
+  bucket: string // 'ALL' | conviction grade | playbook
+  n: number
+  scored: number
+  win5: number | null
+  avg5: number | null
+  avg10: number | null
+}
+
+/** Scores the REPORT itself: what did price do after each recommendation?
+ * Shorts are scored inverted (price falling = the call working). */
+export function scorePicks(history: DailyPicks[], candlesBySymbol: Map<string, Candle[]>): PickScore[] {
+  const buckets = new Map<string, { f5: number[]; f10: number[]; total: number }>()
+  const add = (bucket: string, f5: number | null, f10: number | null) => {
+    const b = buckets.get(bucket) ?? { f5: [], f10: [], total: 0 }
+    b.total++
+    if (f5 != null) b.f5.push(f5)
+    if (f10 != null) b.f10.push(f10)
+    buckets.set(bucket, b)
+  }
+  for (const day of history) {
+    const dayEpoch = Date.parse(day.date) / 1000
+    for (const p of day.picks) {
+      if (p.priceAtPick == null) continue
+      const candles = candlesBySymbol.get(p.ticker)
+      let f5: number | null = null
+      let f10: number | null = null
+      if (candles) {
+        let idx = candles.findIndex(c => c.t >= dayEpoch)
+        if (idx === -1) idx = candles.length
+        const sign = p.side === 'short' ? -1 : 1
+        if (idx + 5 < candles.length) f5 = (sign * (candles[idx + 5].c - p.priceAtPick) * 100) / p.priceAtPick
+        if (idx + 10 < candles.length) f10 = (sign * (candles[idx + 10].c - p.priceAtPick) * 100) / p.priceAtPick
+      }
+      add('ALL', f5, f10)
+      if (p.conviction) add(`grade ${p.conviction}`, f5, f10)
+      if (p.playbook) add(`playbook ${p.playbook}`, f5, f10)
+    }
+  }
+  const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null)
+  return [...buckets.entries()]
+    .map(([bucket, b]) => ({
+      bucket,
+      n: b.total,
+      scored: b.f5.length,
+      win5: b.f5.length ? b.f5.filter(x => x > 0).length / b.f5.length : null,
+      avg5: mean(b.f5),
+      avg10: mean(b.f10),
+    }))
+    .sort((a, b) => (a.bucket === 'ALL' ? -1 : b.bucket === 'ALL' ? 1 : b.n - a.n))
 }
 
 /** Tickers that became persistent BECAUSE of the latest report — ping-worthy. */

@@ -145,6 +145,25 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'pick-stats') {
+    const hit = await getCached<unknown>('pick-stats')
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { blobAppStore } = await import('./lib/store')
+      const { scorePicks } = await import('./lib/picks')
+      const { cachedCandles } = await import('./lib/marketCache')
+      const history = ((await blobAppStore.read<unknown[]>('report-picks')) ?? []) as Parameters<typeof scorePicks>[0]
+      const symbols = [...new Set(history.flatMap(d => d.picks.map(p => p.ticker)))].slice(0, 40)
+      const pairs = await Promise.all(symbols.map(async s => [s, await cachedCandles(s)] as const))
+      const candlesBySymbol = new Map(pairs.filter((p): p is [string, NonNullable<(typeof pairs)[0][1]>] => p[1] !== null))
+      const data = { scores: scorePicks(history, candlesBySymbol), reports: history.length }
+      await setCached('pick-stats', data, 3600)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
   if (type === 'smart-money') {
     const hit = await getCached<unknown>('smart-money:v2') // v2: entity-decoded issuer names
     if (hit) return json(200, { ok: true, data: hit })

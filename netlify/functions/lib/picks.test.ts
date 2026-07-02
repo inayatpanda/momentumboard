@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { computePersistence, newlyPersistent, validatePicks, type DailyPicks } from './picks'
+import { computePersistence, newlyPersistent, validatePicks, scorePicks, type DailyPicks } from './picks'
+import type { Candle } from '../../../shared/types'
 
 const day = (date: string, tickers: string[], side: 'long' | 'short' = 'long'): DailyPicks => ({
   date,
@@ -43,6 +44,36 @@ describe('newlyPersistent', () => {
     expect(newlyPersistent(h3).map(p => p.ticker)).toEqual(['NVDA'])
     const h4 = [...h3, day('2026-07-04', ['NVDA'])]
     expect(newlyPersistent(h4)).toHaveLength(0) // already persistent yesterday
+  })
+})
+
+describe('scorePicks', () => {
+  const DAY = 86_400
+  const base = Date.parse('2026-06-01') / 1000
+  const candles: Candle[] = Array.from({ length: 20 }, (_, i) => ({ t: base + i * DAY, o: 100, h: 101, l: 99, c: 100 + i, v: 1000 }))
+
+  it('scores longs on rises and shorts inverted', () => {
+    const history: DailyPicks[] = [
+      { date: '2026-06-01', picks: [
+        { ticker: 'UP', side: 'long', conviction: 'A', priceAtPick: 100 },
+        { ticker: 'UP', side: 'short', conviction: 'C', priceAtPick: 100 },
+      ] },
+    ]
+    const scores = scorePicks(history, new Map([['UP', candles]]))
+    const all = scores.find(s => s.bucket === 'ALL')!
+    expect(all.n).toBe(2)
+    expect(all.scored).toBe(2)
+    expect(all.win5).toBe(0.5) // the long won (+5%), the short lost (−5%)
+    const gradeA = scores.find(s => s.bucket === 'grade A')!
+    expect(gradeA.avg5).toBeCloseTo(5, 4)
+    expect(scores.find(s => s.bucket === 'grade C')!.avg5).toBeCloseTo(-5, 4)
+  })
+
+  it('counts unscoreable picks (no price or too recent) without failing', () => {
+    const history: DailyPicks[] = [{ date: '2026-06-18', picks: [{ ticker: 'UP', side: 'long', priceAtPick: 117 }] }]
+    const all = scorePicks(history, new Map([['UP', candles]])).find(s => s.bucket === 'ALL')!
+    expect(all.n).toBe(1)
+    expect(all.scored).toBe(0)
   })
 })
 

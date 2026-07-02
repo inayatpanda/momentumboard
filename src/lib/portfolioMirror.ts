@@ -34,5 +34,26 @@ export function mirrorPortfolio(delayMs = 1500) {
       headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
       body: JSON.stringify(snapshot),
     }).catch(() => {/* offline is fine */})
+
+    // full backup rides along: trades + rules + watchlist + settings → private Blobs
+    const [rules, watchlist, settings] = await Promise.all([db.rules.toArray(), db.watchlist.toArray(), db.settings.toArray()])
+    fetch('/api/backup', {
+      method: 'PUT',
+      headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
+      body: JSON.stringify({ trades, rules, watchlist, settings }),
+    }).catch(() => {/* offline is fine */})
   }, delayMs)
+}
+
+/** Pull the server backup and restore it into local IndexedDB (merge by id/key). */
+export async function restoreBackup(): Promise<{ trades: number; at: number } | null> {
+  const res = await fetch('/api/backup', { headers: { 'x-app-token': getToken() ?? '' } })
+  const body = (await res.json()) as { ok: boolean; data?: { trades?: unknown[]; rules?: unknown[]; watchlist?: unknown[]; settings?: unknown[]; at: number } | null }
+  if (!body.ok || !body.data) return null
+  const d = body.data
+  if (Array.isArray(d.trades)) await db.trades.bulkPut(d.trades as never[])
+  if (Array.isArray(d.rules)) await db.rules.bulkPut(d.rules as never[])
+  if (Array.isArray(d.watchlist)) await db.watchlist.bulkPut(d.watchlist as never[])
+  if (Array.isArray(d.settings)) await db.settings.bulkPut(d.settings as never[])
+  return { trades: d.trades?.length ?? 0, at: d.at }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital } from '../lib/db'
-import { mirrorPortfolio } from '../lib/portfolioMirror'
+import { mirrorPortfolio, restoreBackup } from '../lib/portfolioMirror'
 import { computeStats, exposureWarnings, tradePnl, type Trade } from '../../shared/journal'
 import { TradeForm } from '../components/TradeForm'
 import { Sparkline } from '../components/Sparkline'
@@ -159,8 +159,21 @@ export function Journal() {
           <label className="mini-btn ghost">
             Import<input type="file" accept="application/json" hidden onChange={e => e.target.files?.[0] && importJson(e.target.files[0])} />
           </label>
+          <button
+            className="mini-btn ghost"
+            onClick={async () => {
+              if (!confirm('Restore trades/rules/watchlist from the server backup? Existing entries with the same ids are overwritten.')) return
+              const r = await restoreBackup()
+              if (r) {
+                setTrades(await db.trades.toArray())
+                alert(`Restored ${r.trades} trades (backup from ${new Date(r.at * 1000).toLocaleString('en-GB')}).`)
+              } else alert('No server backup found yet.')
+            }}
+          >
+            Restore from server
+          </button>
         </div>
-        <footer className="foot">Journal data stays on this device; only a summary snapshot syncs for the morning report.</footer>
+        <footer className="foot">Every change backs up privately to your own Netlify storage; the morning report sees only a summary.</footer>
       </div>
     </>
   )
