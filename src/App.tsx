@@ -1,3 +1,5 @@
+import { Watchlist } from './screens/Watchlist'
+
 export default function App() {
-  return <main style={{ padding: 16 }}>MomentumBoard</main>
+  return <Watchlist />
 }
