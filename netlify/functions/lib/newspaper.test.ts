@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, type ComposedReport } from './newspaper'
+import { parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, type ComposedReport, type StoredNomination } from './newspaper'
 
 const sample: ComposedReport = {
   headline: 'Tech Leads a Cautious Tape Higher',
@@ -121,5 +121,69 @@ describe('constrainIdeasToBoard', () => {
     expect(ideas).toHaveLength(1)
     expect(ideas[0].overlay).toBeUndefined()
     expect(overlays).toEqual([])
+  })
+})
+
+describe('validateNominations', () => {
+  it('uppercases the ticker, trims the reason to 180 chars, dedupes, caps at 3', () => {
+    const out = validateNominations([
+      { ticker: 'nbis', reason: '  AI data-centre deal in [FT] headline  ' },
+      { ticker: 'NBIS', reason: 'duplicate — dropped before the cap' },
+      { ticker: 'brk.b', reason: 'a'.repeat(300) },
+      { ticker: 'SMCI', reason: 'third unique — the last that fits' },
+      { ticker: 'TSLA', reason: 'a fourth unique — over the cap' },
+    ])
+    expect(out).toHaveLength(3)
+    expect(out[0]).toEqual({ sym: 'NBIS', reason: 'AI data-centre deal in [FT] headline' })
+    expect(out.find(n => n.sym === 'BRK.B')!.reason).toHaveLength(180)
+    expect(out.some(n => n.sym === 'SMCI')).toBe(true) // dupe freed the slot
+    expect(out.some(n => n.sym === 'TSLA')).toBe(false) // cap of 3
+  })
+
+  it('rejects junk: non-array, non-objects, bad tickers, empty/whitespace reasons, non-string fields', () => {
+    expect(validateNominations(null)).toEqual([])
+    expect(validateNominations('nope')).toEqual([])
+    expect(validateNominations(undefined)).toEqual([])
+    expect(
+      validateNominations([
+        { ticker: 'TOOLONGTICKER1', reason: 'over 10 chars' },
+        { ticker: 'BAD SYM', reason: 'space fails the regex' },
+        { ticker: 'AAPL', reason: '' },
+        { ticker: 'AAPL', reason: '   ' },
+        { ticker: 42, reason: 'ticker not a string' },
+        { ticker: 'MSFT', reason: 99 },
+        'garbage',
+        { reason: 'no ticker at all' },
+      ]),
+    ).toEqual([])
+  })
+})
+
+describe('mergeNominations', () => {
+  const DAY = 86_400
+  const now = 2_000_000_000
+  it('merges fresh over existing, dedupes by sym keeping the newest, drops >7d, refreshes date/at', () => {
+    const existing: StoredNomination[] = [
+      { sym: 'AAA', reason: 'old aaa', date: '2026-06-01', at: now - 2 * DAY },
+      { sym: 'BBB', reason: 'keep bbb', date: '2026-06-01', at: now - 3 * DAY },
+      { sym: 'OLD', reason: 'expired', date: '2026-05-01', at: now - 8 * DAY },
+    ]
+    const out = mergeNominations(existing, [{ sym: 'AAA', reason: 'new aaa' }, { sym: 'CCC', reason: 'new ccc' }], '2026-06-10', now)
+    const bySym = Object.fromEntries(out.map(n => [n.sym, n]))
+    expect(out).toHaveLength(3)
+    expect(bySym.AAA).toEqual({ sym: 'AAA', reason: 'new aaa', date: '2026-06-10', at: now }) // newest wins
+    expect(bySym.BBB.reason).toBe('keep bbb') // untouched, still fresh
+    expect(bySym.CCC).toBeDefined()
+    expect(bySym.OLD).toBeUndefined() // expired past the 7-day TTL
+  })
+
+  it('runs expiry with no fresh nominations and caps at 15 newest-first', () => {
+    const stale = mergeNominations([{ sym: 'Z', reason: 'z', date: 'x', at: now - 10 * DAY }], [], '2026-06-10', now)
+    expect(stale).toEqual([])
+    const many: StoredNomination[] = Array.from({ length: 20 }, (_, i) => ({ sym: `S${i}`, reason: 'r', date: 'd', at: now - i * 3600 }))
+    const capped = mergeNominations(many, [], '2026-06-10', now)
+    expect(capped).toHaveLength(15)
+    expect(capped[0].sym).toBe('S0') // newest first
+    expect(capped.some(n => n.sym === 'S15')).toBe(false) // oldest trimmed
   })
 })

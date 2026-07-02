@@ -171,6 +171,35 @@ describe('buildBoard', () => {
     expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
   })
 
+  it('an AI nomination joins the roster as a scored candidate (source ai-nomination); an expired one is ignored', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'GNOM', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    // GNOM nominated 2 days ago (fresh); STALE 8 days ago (expired). BOTH have
+    // qualifying candles, so only the 7-day TTL separates them.
+    await store.write('ai-nominations', [
+      { sym: 'GNOM', reason: 'cited a real [Bloomberg] headline', date: '2026-06-30', at: NOW - 2 * 86_400 },
+      { sym: 'STALE', reason: 'week-old idea', date: '2026-06-24', at: NOW - 8 * 86_400 },
+    ])
+    const d = deps({
+      screens: async () => [], // the nomination is GNOM's ONLY candidate source
+      social: async () => [],
+      candles: async sym => (sym === 'GNOM' || sym === 'STALE' ? shorty : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      mediaTitles: async () => ['[Bloomberg] GNOM plunges as demand warnings mount'],
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const roster = (await store.read<{ sym: string; source: string }[]>('engine-roster'))!
+    const gnom = roster.find(r => r.sym === 'GNOM')
+    expect(gnom).toBeDefined()
+    expect(gnom!.source).toBe('ai-nomination') // attribution rides the roster entry
+    expect(roster.find(r => r.sym === 'STALE')).toBeUndefined() // expired → never sourced, never fetched
+    expect(board.find(b => b.sym === 'GNOM')).toBeDefined() // gated + priced like any other candidate
+  })
+
   it('Fix A: a non-watchlist roster name with a cached cluster-buy gets a non-null insiders factor', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] }) // NVDA is roster-only, never on the watchlist

@@ -321,6 +321,15 @@ export async function buildBoard(
   for (const s of social.slice(0, 12)) addSource(s.sym, 'social')
   for (const sym of topSectorMembers) addSource(sym, 'rotation')
   for (const sym of watchSyms) addSource(sym, 'watchlist')
+  // AI roster nominations: the paper's analyst nominated these for the engine to
+  // EXAMINE — one more candidate source, never a call by fiat; it faces the same
+  // capacity/liquidity gates and full factor stack. Unexpired only (7-day TTL
+  // mirrors mergeNominations in newspaper.ts — a safety net over the writer's own expiry).
+  const nominations = (await store.read<{ sym: string; at: number }[]>('ai-nominations')) ?? []
+  const nomCutoff = nowSec - 7 * 86_400
+  for (const n of nominations) {
+    if (n && typeof n.sym === 'string' && typeof n.at === 'number' && n.at >= nomCutoff) addSource(n.sym, 'ai-nomination')
+  }
 
   const currentRoster = (await store.read<RosterEntry[]>('engine-roster')) ?? []
   for (const e of currentRoster) addSource(e.sym, e.source, e.capUsdM) // members get re-examined daily

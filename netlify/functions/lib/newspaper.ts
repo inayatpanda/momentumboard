@@ -74,6 +74,63 @@ export function constrainIdeasToBoard(
   return { ideas: out, overlays, rejected }
 }
 
+// ---------- AI roster nominations (the one-way pipe to the engine) ----------
+// The paper's analyst may nominate tickers for the prediction engine's ROSTER
+// (its hunting ground) — never its board. A nomination is just one more
+// candidate source: the engine gates and prices it identically. These pure
+// helpers validate the LLM's raw output and merge/expire the persisted list.
+
+const NOMINATION_TICKER = /^[A-Z0-9.-]{1,10}$/i
+export const NOMINATION_TTL_DAYS = 7 // ~5 sessions
+const NOMINATION_CAP = 15
+
+/** Junk-in, clean-out: uppercase the ticker (must match the ticker regex),
+ * non-empty reason sliced to 180 chars, deduped, at most 3. */
+export function validateNominations(raw: unknown): { sym: string; reason: string }[] {
+  if (!Array.isArray(raw)) return []
+  const out: { sym: string; reason: string }[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const { ticker, reason } = item as { ticker?: unknown; reason?: unknown }
+    if (typeof ticker !== 'string' || typeof reason !== 'string') continue
+    const sym = ticker.trim().toUpperCase()
+    if (!NOMINATION_TICKER.test(sym) || seen.has(sym)) continue
+    const cleaned = reason.trim().slice(0, 180)
+    if (!cleaned) continue
+    seen.add(sym)
+    out.push({ sym, reason: cleaned })
+    if (out.length >= 3) break
+  }
+  return out
+}
+
+export interface StoredNomination {
+  sym: string
+  reason: string
+  date: string // YYYY-MM-DD nominated
+  at: number // epoch seconds
+}
+
+/** Merge freshly-validated nominations into the persisted list: dedupe by sym
+ * (newest wins), expire entries older than the TTL, sort newest-first, cap.
+ * Runs even with no fresh nominations so expiry always advances. */
+export function mergeNominations(
+  existing: StoredNomination[],
+  fresh: { sym: string; reason: string }[],
+  dateISO: string,
+  nowSec: number,
+): StoredNomination[] {
+  const cutoff = nowSec - NOMINATION_TTL_DAYS * 86_400
+  const bySym = new Map<string, StoredNomination>()
+  for (const e of Array.isArray(existing) ? existing : []) {
+    if (!e || typeof e.sym !== 'string' || typeof e.at !== 'number' || e.at < cutoff) continue
+    bySym.set(e.sym, e)
+  }
+  for (const f of fresh) bySym.set(f.sym, { sym: f.sym, reason: f.reason, date: dateISO, at: nowSec })
+  return [...bySym.values()].sort((a, b) => b.at - a.at).slice(0, NOMINATION_CAP)
+}
+
 export interface ComposedReport {
   headline: string
   standfirst: string
@@ -87,6 +144,7 @@ export interface ComposedReport {
   crypto: string
   channels: string
   readersNotes?: string
+  nominations?: { ticker: string; reason: string }[] // roster nominations for the engine — never rendered
   editorial: string // THE LONG VIEW: market history & investor wisdom tied to today
   signal?: {
     ticker: string
@@ -265,9 +323,9 @@ IF engineBoard IS ABSENT (engine offline): fall back to candidateReads — an id
   },
   {
     key: 'discovery',
-    fields: ['smallCap', 'channels', 'readersNotes'],
-    brief: 'smallCap: the 0-1 discovery from socialPulse with full company name, surge evidence, market cap, liquidity check (omit field if none deserves it). channels: NAME the YouTube channels explicitly (e.g. \'Stocks with Josh\') — use channelConsensus stances where present AND recentChannelVideos titles for what each channel just covered; give YOUR take on each; if transcript data is thin say plainly what is known only from titles. readersNotes: his observations tested against data — held up or contradicted (omit if userNotes is empty).',
-    shape: '{"smallCap":"<omit if none>","channels":"...","readersNotes":"<omit if no notes>"}',
+    fields: ['smallCap', 'channels', 'readersNotes', 'nominations'],
+    brief: 'smallCap: the 0-1 discovery from socialPulse with full company name, surge evidence, market cap, liquidity check (omit field if none deserves it). channels: NAME the YouTube channels explicitly (e.g. \'Stocks with Josh\') — use channelConsensus stances where present AND recentChannelVideos titles for what each channel just covered; give YOUR take on each; if transcript data is thin say plainly what is known only from titles. readersNotes: his observations tested against data — held up or contradicted (omit if userNotes is empty). nominations: up to 3 tickers you believe deserve the QUANT ENGINE\'s attention TOMORROW — each REQUIRES a citation of a concrete headline or event from the data (mediaHeadlines/headlines). A nomination is NOT a trade call: it only asks the engine to examine the name, which then gates and prices it exactly like any other candidate. NEVER nominate a ticker already in engineBoard or on the watchlist. Omit the field entirely if none deserves it.',
+    shape: '{"smallCap":"<omit if none>","channels":"...","readersNotes":"<omit if no notes>","nominations":[{"ticker":"XYZ","reason":"<cites a specific headline from the data>"}]}',
   },
   {
     key: 'rotation',

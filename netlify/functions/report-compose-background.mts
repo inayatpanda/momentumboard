@@ -1,7 +1,7 @@
 import { blobAppStore } from './lib/store'
 import { authenticate } from './lib/auth'
 import { callLlm } from './lib/llm'
-import { composePrompt, parseComposed, buildNewspaperHtml, constrainIdeasToBoard } from './lib/newspaper'
+import { composePrompt, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, validateNominations, mergeNominations, type StoredNomination } from './lib/newspaper'
 import { cachedQuote, cachedCandles } from './lib/marketCache'
 import { regimeFromCandles } from '../../shared/setups'
 import type { AppConfig } from '../../shared/config'
@@ -282,6 +282,17 @@ export default async (req: Request) => {
     } else {
       composed.standfirst = `${composed.standfirst} — Engine offline this morning; qualitative edition.`
     }
+
+    // ---- AI roster nominations → feed the NEXT morning's predict run ----
+    // The analyst may nominate tickers for the ENGINE'S ROSTER (its hunting
+    // ground) — never its board. They persist here; because compose runs AFTER
+    // predict in the daily chain, tomorrow's buildBoard consumes them as one more
+    // candidate source, gated and priced like any other. Written even when empty
+    // so the 7-day expiry always advances.
+    const freshNoms = validateNominations(composed.nominations)
+    const priorNoms = (await blobAppStore.read<StoredNomination[]>('ai-nominations')) ?? []
+    await blobAppStore.write('ai-nominations', mergeNominations(priorNoms, freshNoms, dateISO, nowSec))
+    console.log('COMPOSE: nominations', freshNoms.map(n => n.sym).join(',') || 'none')
 
     // ---- publish through the same pipe the routine uses ----
     const html = buildNewspaperHtml(composed, dateLabel, extras)
