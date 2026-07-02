@@ -396,6 +396,34 @@ button, input { font: inherit; }
 
 .detail-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
 
+/* ---------- Explore: engine read strip + factor breakdown ---------- */
+.engine-read {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px 12px;
+  margin: 0 0 10px;
+}
+.engine-read-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.engine-read-label { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.engine-stage { font-weight: 700; font-size: 14px; }
+.engine-quality { font-size: 11px; letter-spacing: 0.02em; text-transform: uppercase; }
+.engine-vol { margin-left: auto; font-family: var(--font-num); font-size: 11.5px; color: var(--faint); }
+.engine-vol.is-confirmed { color: var(--muted); }
+.engine-read-note { margin: 5px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+
+.engine-nocall { color: var(--faint); font-size: 12px; margin: 0 0 10px; }
+
+.engine-factors { margin-top: 14px; }
+.engine-factor-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.engine-factor-dir { margin-left: 6px; font-size: 12px; }
+.engine-factor-prob { color: var(--muted); font-size: 12.5px; }
+.engine-factor-meta { display: flex; flex-wrap: wrap; gap: 14px; margin: 4px 0 8px; font-size: 12px; color: var(--faint); }
+.engine-factor-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); padding: 4px 0; border-top: 1px solid var(--line); }
+.engine-factor-w { color: var(--faint); }
+.engine-factor-score { color: var(--text); text-align: right; }
+.engine-factor-detail { color: var(--muted); }
+
 .chart-box {
   position: relative;
   background: var(--panel);
@@ -790,6 +818,7 @@ button, input { font: inherit; }
 .addform input, .alert-editor input, .calc-inputs input,
 .trade-form input:not([type='checkbox']), .trade-form select,
 .risk-rung-pct, .tf-size-main, .engine-read-lv, .pos-subpnl,
+.engine-factor-prob, .engine-factor-meta, .engine-factor-score,
 .exit-input, .settings-grid input {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;

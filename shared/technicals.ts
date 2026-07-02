@@ -86,19 +86,20 @@ export function technicalStage(sym: string, candles: Candle[]): TechnicalRead | 
 function buildNote(stage: Stage, m: { r: number | null; pctFrom20d: number | null; rangePos: number | null; rvol: number | null; volumeConfirmed: boolean }): string {
   const vol = m.volumeConfirmed ? `volume-confirmed (RVOL ${m.rvol})` : `on light volume (RVOL ${m.rvol ?? '?'})`
   const rangeStr = m.rangePos != null ? `${Math.round(m.rangePos * 100)}% up its 60-day range` : ''
+  const rsiStr = m.r != null ? Math.round(m.r) : '?'
   switch (stage) {
     case 'early-reversal':
       return `Turning up out of a base, ${vol} — the reversal-first entry, near support with room to run.`
     case 'basing':
       return `Coiling after a decline, no trigger yet (${rangeStr}). Watch for a volume reclaim of the 20-day.`
     case 'pullback':
-      return `Healthy pullback in an uptrend (RSI ${m.r ?? '?'}) — buying the dip near support, not chasing.`
+      return `Healthy pullback in an uptrend (RSI ${rsiStr}) — buying the dip near support, not chasing.`
     case 'trending':
       return `Advancing but not extended (${m.pctFrom20d ?? '?'}% above the 20-day) — acceptable, not a fresh setup.`
     case 'extended':
-      return `Already extended ${m.pctFrom20d ?? '?'}% above the 20-day, RSI ${m.r ?? '?'} — chasing here is poor risk/reward; wait for a pullback.`
+      return `Already extended ${m.pctFrom20d ?? '?'}% above the 20-day, RSI ${rsiStr} — chasing here is poor risk/reward; wait for a pullback.`
     case 'exhausted':
-      return `Stretched and pinned at the highs (${rangeStr}, RSI ${m.r ?? '?'}) — reversal risk; a fade candidate, not a long.`
+      return `Stretched and pinned at the highs (${rangeStr}, RSI ${rsiStr}) — reversal risk; a fade candidate, not a long.`
     case 'falling-knife':
       return `Still falling, oversold, no turn confirmed — wait for a base and a reclaim before touching it.`
     case 'weak':

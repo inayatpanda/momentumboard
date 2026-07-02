@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Candle, Quote } from '../../shared/types'
-import { getCandles, getNews, getTickerBrief, getSeasonality } from '../lib/api'
+import { getCandles, getNews, getTickerBrief, getSeasonality, getEngine, type EnginePrediction } from '../lib/api'
 import { db, getCapital, type RuleItem } from '../lib/db'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPrice, fmtPct } from '../lib/format'
 import { detectSetups } from '../../shared/setups'
+import { technicalStage } from '../../shared/technicals'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction } from '../../shared/rvol'
 import { exchangeFor } from '../../shared/symbols'
 import { runBacktest, type BacktestSummary } from '../../shared/backtest'
+import { engineLevelLines, stageMarkerSpec, type PriceLineSpec, type StageMarkerSpec } from '../lib/engineLevels'
 import { PriceChart } from '../components/PriceChart'
 import { RsiChart } from '../components/RsiChart'
+import { EngineReadStrip, EngineFactors } from '../components/EngineRead'
 import { PositionCalculator } from '../components/PositionCalculator'
 import { AlertEditor } from '../components/AlertEditor'
 import { Badge } from '../components/Badge'
@@ -49,6 +52,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
   }, [symbol, range])
 
   const [brief, setBrief] = useState<{ brief: string; at: number } | null>(null)
+  const [engineCall, setEngineCall] = useState<EnginePrediction | null>(null)
 
   useEffect(() => {
     getNews(symbol).then(setNews).catch(() => setNews([]))
@@ -56,6 +60,24 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
     getSeasonality(symbol).then(setSeasonality).catch(() => setSeasonality(null))
     db.rules.where('symbol').equals(symbol).toArray().then(setRules)
   }, [symbol])
+
+  // Today's live board call for this symbol (if any) — drives the drawn levels
+  // and factor panel. Reset first so a stale symbol's lines never flash.
+  useEffect(() => {
+    let alive = true
+    setEngineCall(null)
+    getEngine()
+      .then(d => alive && setEngineCall(d.board?.board.find(p => p.sym === symbol) ?? null))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [symbol])
+
+  // The engine's chart read — pure client maths on the candles, no board needed.
+  const engineRead = useMemo(() => technicalStage(symbol, candles), [symbol, candles])
+  const priceLines = useMemo<PriceLineSpec[]>(() => (engineCall ? engineLevelLines(engineCall) : []), [engineCall])
+  const stageMarker = useMemo<StageMarkerSpec | undefined>(() => (engineRead ? stageMarkerSpec(engineRead) : undefined), [engineRead])
 
   const shareBrief = () => {
     const text = `${symbol} — StreetSignal brief\n${brief?.brief ?? ''}`
@@ -137,8 +159,12 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
         </div>
       )}
 
-      <PriceChart candles={candles} />
+      <EngineReadStrip read={engineRead} />
+
+      <PriceChart candles={candles} priceLines={priceLines} marker={stageMarker} />
       <RsiChart candles={candles} />
+
+      <EngineFactors call={engineCall} hasRead={!!engineRead} />
 
       <div className="detail-grid">
         <div>
