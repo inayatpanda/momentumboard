@@ -16,6 +16,7 @@ export interface Idea {
   strength?: 'strong'
   reasons?: string[]
   expectedMove?: string
+  chartRead?: string
   streetCheck?: string
 }
 
@@ -198,13 +199,14 @@ export const SECTIONS: SectionSpec[] = [
   {
     key: 'ideas',
     fields: ['ideas', 'shortDesk'],
-    brief: `1-3 long ideas MAX and the short desk (0-2 fades via LSE inverse ETPs, or say no clean fade). THE BAR: an idea must be able to MOVE — use moveCapacity in the data (typical10dMovePct = that name's usual 10-session travel). Rules:
+    brief: `1-3 long ideas MAX and the short desk (0-2 fades via LSE inverse ETPs, or say no clean fade). THE BAR: an idea must (a) be able to MOVE — typical10dMovePct at least 8 in candidateReads — AND (b) be at a GOOD ENTRY (entryQuality early or a clean setup), NOT extended/exhausted. A stretched momentum leader is a chase; reject it as a long. Rules:
 - expectedMove: state the realistic move and window ("+8-12% in 2 weeks"), justified by that ticker's typical10dMovePct. NEVER promise more than ~1.3x its capacity number.
 - strength:"strong" requires BOTH capable10pct:true (capacity >= 8%) AND independent confirmation from channelConsensus, socialPulse, insiderBuying or an event — cite it.
+- chartRead (every idea): its stage and volume read from candidateReads (e.g. 'early reversal, turning up on volume' or 'extended, wait for a pullback to X').
 - streetCheck (every idea): the YOUTUBE CHANNELS first (by name, from channelConsensus/recentChannelVideos), then Reddit/Stocktwits — "2 channels bullish, 340 Reddit mentions surging 2x" or honestly "silent on the channels".
 - Slow mega-caps (capacity < 6%) are NOT swing ideas — context only, or route them through a leveraged LSE ETP (state the ETP; capacity roughly x3 the underlying).
 - Full company name once in caseText; playbook tag; entry/invalidation/target numeric ONLY if the price is in the data, else qualitative; conviction A/B/C; strong needs 3-5 numbered reasons.`,
-    shape: '{"ideas":[{"ticker":"XYZ","side":"long|short","playbook":"R|B|A|S","caseText":"...","expectedMove":"+X-Y% in N weeks","streetCheck":"...","entry":"...","invalidation":"...","target":"...","conviction":"A|B|C","strength":"strong (omit unless earned)","reasons":["..."]}],"shortDesk":"..."}',
+    shape: '{"ideas":[{"ticker":"XYZ","side":"long|short","playbook":"R|B|A|S","caseText":"...","expectedMove":"+X-Y% in N weeks","chartRead":"...","streetCheck":"...","entry":"...","invalidation":"...","target":"...","conviction":"A|B|C","strength":"strong (omit unless earned)","reasons":["..."]}],"shortDesk":"..."}',
   },
   {
     key: 'discovery',
@@ -221,7 +223,7 @@ export const SECTIONS: SectionSpec[] = [
   {
     key: 'signal',
     fields: ['signal', 'signalWhy'],
-    brief: `THE SIGNAL — the single suggestion that matters most today, chosen ONLY when the full evidence stack aligns: (1) data: moveCapacity >= 8% + technical/rotation backing, (2) news: a concrete headline or catalyst, (3) channels: what the YouTube channels say (by name; or honestly silent), (4) social: mention/surge numbers, (5) company: one plain line on what the business is and why it is positioned. Give thesis (2-3 sentences), expectedMove (<=1.3x its capacity), conviction, and action (exact entry plan + invalidation). HARD GATE: a signal requires the data pillar PLUS at least TWO other pillars with CONCRETE POSITIVE evidence (a real headline, a named channel take, actual mention numbers, insider buys). "Silent on the channels" and "no direct catalyst" are NOT evidence — if three pillars read empty, set signal to null and explain in signalWhy. An honest no-signal day beats a forced one, and conviction A is reserved for four or five live pillars.`,
+    brief: `THE SIGNAL — the single suggestion that matters most today, chosen ONLY when the full stack aligns AND the chart is at a GOOD ENTRY (entryQuality early strongly preferred; NEVER an extended/exhausted chase — the reader is reversal-first): (1) data: typical10dMovePct >= 8% AND a favourable stage (early-reversal/pullback/basing turning up), volume-confirmed, (2) news: a concrete headline or catalyst, (3) channels: what the YouTube channels say (by name; or honestly silent), (4) social: mention/surge numbers, (5) company: one plain line on what the business is and why it is positioned. Give thesis (2-3 sentences), expectedMove (<=1.3x its capacity), conviction, and action (exact entry plan + invalidation). HARD GATE: a signal requires the data pillar PLUS at least TWO other pillars with CONCRETE POSITIVE evidence (a real headline, a named channel take, actual mention numbers, insider buys). "Silent on the channels" and "no direct catalyst" are NOT evidence — if three pillars read empty, set signal to null and explain in signalWhy. An honest no-signal day beats a forced one, and conviction A is reserved for four or five live pillars.`,
     shape: '{"signal":{"ticker":"XYZ","company":"Full Name","thesis":"...","evidence":{"data":"...","news":"...","channels":"...","social":"...","company":"..."},"expectedMove":"+X-Y% in N weeks","conviction":"A|B|C","action":"..."} OR {"signal":null,"signalWhy":"..."}}',
   },
   {
@@ -235,6 +237,7 @@ export const SECTIONS: SectionSpec[] = [
 const PERSONA = (dateLabel: string) => `You are a seasoned, decisive Wall Street analyst writing THE STREET SIGNAL for ${dateLabel} — a morning newspaper for one UK retail swing trader (Trading 212 ISA, reversal-first, 1 day-3 week holds, LSE inverse ETPs for shorts, small caps welcome at half size). Confident; both directions are opportunity; numbered reasons; no hedging filler.
 NUMERIC DISCIPLINE: use ONLY numbers present in the data; never invent a price, level or statistic; no price for a ticker → qualitative levels only. Round every percentage to ONE decimal place in prose — never print long raw decimals.
 CONTINUITY: previousEditions in the data show what the reader was already told. Never re-introduce a covered theme as new — reference and build ("the healthcare rotation we flagged is now day 3 and CONFIRMED: rs5 still leads rs21" / "yesterday's call is fading — one-day event"). Repeated picks: say it is a repeat and what changed.
+REVERSAL-FIRST (the reader's core edge — obey it): candidateReads gives each name's STAGE and entryQuality from real chart+volume analysis. STRONGLY PREFER entryQuality "early" (early-reversal or healthy pullback near support — turning up with room to run). A name that has already climbed and reads "extended" or "exhausted" (high RSI, stretched above the 20-day, pinned at range highs) is a CHASE, not a buy — do NOT make it a long however strong its momentum or rotation; skip it, wait for a pullback (name the level), or treat it as a SHORT/fade via an inverse ETP. "falling-knife" = wait. Volume must confirm — call out light-volume (unconfirmed) moves.
 NAMES: full company name once at first mention of any ticker.`
 
 export function sectionPrompt(spec: SectionSpec, data: string, dateLabel: string): string {
@@ -324,7 +327,7 @@ export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: Pape
       i => `<tr${i.strength === 'strong' ? ' class="strong"' : ''}>
 <td class="tk">${esc(i.ticker)}${i.side === 'short' ? ' <span class="short">SHORT</span>' : ''}</td>
 <td>${esc(i.playbook)}</td>
-<td>${esc(i.caseText)}${i.expectedMove || i.streetCheck ? `<div class="reasons">${i.expectedMove ? `<strong>Potential:</strong> ${esc(i.expectedMove)} ` : ''}${i.streetCheck ? `· <strong>Street check:</strong> ${esc(i.streetCheck)}` : ''}</div>` : ''}${i.strength === 'strong' && i.reasons?.length ? `<div class="reasons"><strong>I STRONGLY SUGGEST — </strong>${i.reasons.map((t, n) => `${n + 1}) ${esc(t)}`).join(' ')}</div>` : ''}</td>
+<td>${esc(i.caseText)}${i.expectedMove || i.streetCheck ? `<div class="reasons">${i.expectedMove ? `<strong>Potential:</strong> ${esc(i.expectedMove)} ` : ''}${i.chartRead ? `· <strong>Chart:</strong> ${esc(i.chartRead)} ` : ''}${i.streetCheck ? `· <strong>Street:</strong> ${esc(i.streetCheck)}` : ''}</div>` : ''}${i.strength === 'strong' && i.reasons?.length ? `<div class="reasons"><strong>I STRONGLY SUGGEST — </strong>${i.reasons.map((t, n) => `${n + 1}) ${esc(t)}`).join(' ')}</div>` : ''}</td>
 <td class="num">${esc(i.entry)}</td><td class="num">${esc(i.invalidation)}</td><td class="num">${esc(i.target)}</td><td class="num">${esc(i.conviction)}</td></tr>`,
     )
     .join('')
@@ -450,7 +453,7 @@ ${
 <div class="sigrow"><span class="sigtk">${esc(r.signal.ticker)}</span><span class="signame">${esc(r.signal.company)}</span><span class="sigmove">${esc(r.signal.expectedMove)} · Grade ${esc(r.signal.conviction)}</span></div>
 <p class="sigthesis">${esc(r.signal.thesis)}</p>
 <table class="evidence"><tbody>
-<tr><td>Data</td><td>${esc(r.signal.evidence.data)}</td></tr>
+<tr><td>Chart</td><td>${esc(r.signal.evidence.data)}</td></tr>
 <tr><td>News</td><td>${esc(r.signal.evidence.news)}</td></tr>
 <tr><td>Channels</td><td>${esc(r.signal.evidence.channels)}</td></tr>
 <tr><td>Social</td><td>${esc(r.signal.evidence.social)}</td></tr>

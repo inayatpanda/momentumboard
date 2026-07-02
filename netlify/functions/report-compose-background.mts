@@ -135,19 +135,36 @@ export default async (req: Request) => {
         ),
       })),
     )
-    // movement capacity: can each candidate ACTUALLY travel 10% in ~2 weeks?
+    // for each candidate: can it MOVE (capacity) AND where is it in its move (stage)?
     const { swingCapacity } = await import('../../shared/indicators')
+    const { technicalStage } = await import('../../shared/technicals')
     const candidateSyms = [...new Set([
       ...rotationTables.flatMap(t => t.rows.map(r => r.sym)),
       ...(social ?? []).slice(0, 6).map(s2 => s2.sym),
       ...symbols,
     ])].slice(0, 24)
-    const moveCapacity = (
+    const candidateReads = (
       await Promise.all(
         candidateSyms.map(async sym => {
           const candles = await cachedCandles(sym).catch(() => null)
-          const cap = candles ? swingCapacity(candles.map(c => c.c)) : null
-          return cap != null ? { sym, typical10dMovePct: cap, capable10pct: cap >= 8 } : null
+          if (!candles) return null
+          const cap = swingCapacity(candles.map(c => c.c))
+          const tech = technicalStage(sym, candles)
+          if (cap == null && !tech) return null
+          return {
+            sym,
+            typical10dMovePct: cap,
+            capable10pct: cap != null && cap >= 8,
+            stage: tech?.stage ?? null,
+            entryQuality: tech?.entryQuality ?? null,
+            rsi: tech?.rsi ?? null,
+            pctFrom20d: tech?.pctFrom20d ?? null,
+            rangePos: tech?.rangePos ?? null,
+            rvol: tech?.rvol ?? null,
+            volumeConfirmed: tech?.volumeConfirmed ?? false,
+            setups: tech?.setups ?? [],
+            read: tech?.note ?? null,
+          }
         }),
       )
     ).filter(Boolean)
@@ -178,7 +195,7 @@ export default async (req: Request) => {
         watchlistQuotes: quotes,
         portfolio,
         sectorRotation: sectors,
-        moveCapacity,
+        candidateReads,
         rotationLeaders: rotationTables.map(t => ({ sector: t.sector, etf: t.etf, rows: t.rows.map(r => ({ sym: r.sym, price: r.price, wkPct: r.wkPct == null ? null : Math.round(r.wkPct * 10) / 10 })) })),
         channelConsensus: consensus,
         recentChannelVideos: channelVideos,
