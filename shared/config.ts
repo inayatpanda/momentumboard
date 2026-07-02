@@ -1,4 +1,5 @@
 import type { AlertRule } from './alerts'
+import type { LevMap } from './engine/riskLadder'
 
 export interface UserNote {
   id: string
@@ -14,6 +15,9 @@ export interface AppConfig {
   ytChannels: { id: string; name: string }[]
   capital: number
   notes?: UserNote[]
+  levMap?: LevMap // underlying → ISA-eligible leveraged/inverse ETP tickers
+  riskRungOverride?: 0 | 1 | 2 | 3 | null // manual risk-ladder pin; null = engine decides
+  favouriteChannels?: string[] // credibility prior 0.6 instead of 0.5
 }
 
 export function validateConfig(raw: unknown): AppConfig | null {
@@ -35,5 +39,33 @@ export function validateConfig(raw: unknown): AppConfig | null {
           at: typeof n.at === 'number' ? n.at : 0,
         }))
     : undefined
-  return { watchlist: c.watchlist, rules: c.rules, ytChannels: c.ytChannels, capital: typeof c.capital === 'number' ? c.capital : 5000, notes }
+  const levMap: LevMap = {}
+  if (c.levMap && typeof c.levMap === 'object') {
+    for (const [sym, m] of Object.entries(c.levMap).slice(0, 40)) {
+      if (!m || typeof m !== 'object') continue
+      const entry: LevMap[string] = {}
+      for (const k of ['long2x', 'long3x', 'short2x', 'short3x'] as const) {
+        const v = (m as Record<string, unknown>)[k]
+        if (typeof v === 'string' && v.length) entry[k] = v.toUpperCase().slice(0, 12)
+      }
+      if (Object.keys(entry).length) levMap[sym.toUpperCase().slice(0, 12)] = entry
+    }
+  }
+  const riskRungOverride =
+    typeof c.riskRungOverride === 'number' && Number.isInteger(c.riskRungOverride) && c.riskRungOverride >= 0 && c.riskRungOverride <= 3
+      ? (c.riskRungOverride as 0 | 1 | 2 | 3)
+      : null
+  const favouriteChannels = Array.isArray(c.favouriteChannels)
+    ? c.favouriteChannels.filter(f => typeof f === 'string').slice(0, 10).map(f => f.slice(0, 40))
+    : undefined
+  return {
+    watchlist: c.watchlist,
+    rules: c.rules,
+    ytChannels: c.ytChannels,
+    capital: typeof c.capital === 'number' ? c.capital : 5000,
+    notes,
+    levMap: Object.keys(levMap).length ? levMap : undefined,
+    riskRungOverride,
+    favouriteChannels,
+  }
 }
