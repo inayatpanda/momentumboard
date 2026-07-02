@@ -30,7 +30,14 @@ export function TickerRow({ row, onRemove, index = 0 }: { row: Row; onRemove: ()
         {setups.map(s => (
           <Badge key={s} kind={s} />
         ))}
-        <button className="remove" onClick={onRemove} aria-label={`Remove ${symbol}`}>
+        <button
+          className="remove"
+          onClick={e => {
+            e.stopPropagation() // row tap navigates; ✕ must only remove
+            onRemove()
+          }}
+          aria-label={`Remove ${symbol}`}
+        >
           ✕
         </button>
       </div>

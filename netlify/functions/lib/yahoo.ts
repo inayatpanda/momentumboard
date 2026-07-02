@@ -10,8 +10,23 @@ export function parseYahooChart(json: unknown, symbol: string): { candles: Candl
     if (c == null) continue
     candles.push({ t: r.timestamp[i], o: q.open[i] ?? c, h: q.high[i] ?? c, l: q.low[i] ?? c, c, v: q.volume[i] ?? 0 })
   }
+  // Pre/post-market Yahoo appends a zero-volume placeholder bar whose OHLC all
+  // mirror the last price — it corrupts prev-close, RVOL and indicators. Drop it.
+  while (candles.length) {
+    const lastBar = candles[candles.length - 1]
+    if (lastBar.v === 0 && lastBar.o === lastBar.c && lastBar.h === lastBar.l) candles.pop()
+    else break
+  }
   const m = r.meta
-  const prev = m.chartPreviousClose ?? m.previousClose
+  // chartPreviousClose is relative to the RANGE START (6mo ago on a 6mo chart),
+  // not yesterday — derive the true previous close from the bars instead.
+  const prev =
+    m.regularMarketPreviousClose ??
+    (candles.length >= 2 && candles[candles.length - 1].c === m.regularMarketPrice
+      ? candles[candles.length - 2].c
+      : candles.length >= 1 && candles[candles.length - 1].c !== m.regularMarketPrice
+        ? candles[candles.length - 1].c
+        : (m.chartPreviousClose ?? m.previousClose))
   return {
     candles,
     quote: {

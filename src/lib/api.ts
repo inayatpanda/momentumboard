@@ -17,6 +17,9 @@ export const getQuotes = (symbols: string[]) =>
 export const getCandles = (symbol: string, range = '1y') =>
   apiGet<{ candles: Candle[]; quote: Quote }>(`/api/market?type=candles&symbol=${encodeURIComponent(symbol)}&range=${range}`)
 
+export const getNews = (symbol: string) =>
+  apiGet<{ items: { title: string; url: string; publishedSec: number }[] }>(`/api/market?type=news&symbol=${encodeURIComponent(symbol)}`).then(d => d.items)
+
 export async function putConfig(cfg: AppConfig): Promise<void> {
   const res = await fetch('/api/config', {
     method: 'PUT',

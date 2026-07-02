@@ -304,6 +304,107 @@ button, input { font: inherit; }
   animation: rise 0.25s ease both;
 }
 
+/* ---------- ticker detail ---------- */
+.detail { padding: 12px 16px 16px; }
+.detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.detail-head h2 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+.detail-price { font-family: var(--font-num); font-size: 14px; color: var(--muted); }
+.up-text { color: var(--green); }
+.down-text { color: var(--red); }
+.back {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  width: 36px; height: 36px;
+  font-size: 16px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.range-pills { margin-left: auto; display: flex; gap: 4px; }
+.range-pills button {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.range-pills button.active { color: #05130d; background: var(--green); border-color: var(--green); }
+
+.detail-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
+
+.chart-box {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 4px 4px;
+  margin-bottom: 10px;
+}
+.chart-legend {
+  position: absolute;
+  top: 8px; left: 12px;
+  z-index: 3;
+  display: flex; gap: 10px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+}
+
+.section-title { font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+
+.calc {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-top: 18px;
+}
+.calc h3 { margin: 0 0 10px; font-size: 14px; }
+.calc-sub { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+.calc-inputs { display: flex; gap: 10px; }
+.calc-inputs label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.calc-inputs input {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: var(--text);
+  font-family: var(--font-num);
+  width: 100%;
+  outline: none;
+}
+.calc-inputs input:focus { border-color: var(--green); }
+.calc-out { display: flex; gap: 8px; margin-top: 12px; }
+.calc-out > div {
+  flex: 1;
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 10px 8px;
+  text-align: center;
+}
+.calc-out strong { display: block; font-family: var(--font-num); font-size: 16px; }
+.calc-out span { color: var(--muted); font-size: 10.5px; }
+.calc-warn { color: var(--amber); font-size: 12.5px; margin: 8px 0 0; }
+.calc-hint { color: var(--faint); font-size: 11px; margin: 8px 0 0; }
+
+.news-list { list-style: none; margin: 0; padding: 0; }
+.news-list li {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  font-size: 13.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.news-list a { color: var(--text); text-decoration: none; }
+.news-list a:hover { color: var(--accent); }
+.news-list span { color: var(--faint); font-size: 11px; }
+
 /* ---------- token gate ---------- */
 .gate {
   min-height: 100dvh;
