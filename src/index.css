@@ -1,0 +1,8 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0e14; --panel: #141a24; --text: #e6e9ef; --muted: #8b93a5;
+  --green: #2ecc71; --amber: #f1c40f; --red: #e74c3c; --accent: #4da3ff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 -apple-system, system-ui, sans-serif; }
+button, input { font: inherit; }
