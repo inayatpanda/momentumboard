@@ -53,3 +53,17 @@ export function atr(candles: Candle[], period = 14): (number | null)[] {
   }
   return out
 }
+
+/** Historical capacity to move: 80th percentile of absolute N-session returns
+ * over the lookback. A swing candidate should demonstrably be ABLE to travel —
+ * a 4% p80 name cannot deliver a 10%-in-two-weeks call, whatever the story. */
+export function swingCapacity(closes: number[], window = 10, lookback = 250): number | null {
+  const usable = closes.slice(-lookback - window)
+  if (usable.length < window + 30) return null
+  const moves: number[] = []
+  for (let i = window; i < usable.length; i++) {
+    moves.push(Math.abs((usable[i] - usable[i - window]) / usable[i - window]) * 100)
+  }
+  moves.sort((a, b) => a - b)
+  return Math.round(moves[Math.floor(moves.length * 0.8)] * 10) / 10
+}

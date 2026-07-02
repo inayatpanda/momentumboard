@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sma, rsi, atr } from './indicators'
+import { sma, rsi, atr, swingCapacity } from './indicators'
 import type { Candle } from './types'
 
 const bar = (h: number, l: number, c: number): Candle => ({ t: 0, o: c, h, l, c, v: 1000 })
@@ -41,5 +41,20 @@ describe('atr (period 2)', () => {
     expect(out[0]).toBeNull()
     expect(out[1]).toBe(2) // mean of TR [2, 2]
     expect(out[2]).toBe(2) // (2*(2-1) + 2)/2
+  })
+})
+
+describe('swingCapacity', () => {
+  it('scores volatile series high and sleepy series low', () => {
+    // sleepy: ±0.2% daily wiggle → 10-day p80 well under 3%
+    const sleepy = Array.from({ length: 300 }, (_, i) => 100 + Math.sin(i) * 0.2)
+    // volatile: ±1.5% daily trend swings in alternating 10-day waves
+    let p = 100
+    const wild = Array.from({ length: 300 }, (_, i) => (p *= i % 20 < 10 ? 1.015 : 0.985))
+    const s = swingCapacity(sleepy)!
+    const w = swingCapacity(wild)!
+    expect(s).toBeLessThan(3)
+    expect(w).toBeGreaterThan(8)
+    expect(swingCapacity([1, 2, 3])).toBeNull() // too little history
   })
 })

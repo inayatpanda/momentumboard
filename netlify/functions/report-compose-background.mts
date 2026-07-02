@@ -111,6 +111,23 @@ export default async (req: Request) => {
         ),
       })),
     )
+    // movement capacity: can each candidate ACTUALLY travel 10% in ~2 weeks?
+    const { swingCapacity } = await import('../../shared/indicators')
+    const candidateSyms = [...new Set([
+      ...rotationTables.flatMap(t => t.rows.map(r => r.sym)),
+      ...(social ?? []).slice(0, 6).map(s2 => s2.sym),
+      ...symbols,
+    ])].slice(0, 24)
+    const moveCapacity = (
+      await Promise.all(
+        candidateSyms.map(async sym => {
+          const candles = await cachedCandles(sym).catch(() => null)
+          const cap = candles ? swingCapacity(candles.map(c => c.c)) : null
+          return cap != null ? { sym, typical10dMovePct: cap, capable10pct: cap >= 8 } : null
+        }),
+      )
+    ).filter(Boolean)
+
     const { getCached } = await import('./lib/cache')
     const socialBoard = await Promise.all(
       (social ?? []).slice(0, 10).map(async s => ({
@@ -137,6 +154,7 @@ export default async (req: Request) => {
         watchlistQuotes: quotes,
         portfolio,
         sectorRotation: sectors,
+        moveCapacity,
         rotationLeaders: rotationTables.map(t => ({ sector: t.sector, etf: t.etf, rows: t.rows.map(r => ({ sym: r.sym, price: r.price, wkPct: r.wkPct == null ? null : Math.round(r.wkPct * 10) / 10 })) })),
         channelConsensus: consensus,
         socialPulse: social,

@@ -15,6 +15,8 @@ export interface Idea {
   conviction: 'A' | 'B' | 'C'
   strength?: 'strong'
   reasons?: string[]
+  expectedMove?: string
+  streetCheck?: string
 }
 
 export interface ComposedReport {
@@ -186,8 +188,13 @@ export const SECTIONS: SectionSpec[] = [
   {
     key: 'ideas',
     fields: ['ideas', 'shortDesk'],
-    brief: '1-3 long ideas MAX and the short desk (0-2 fades via LSE inverse ETPs, or say no clean fade). Every idea: full company name once in caseText, playbook tag, entry/invalidation/target (numeric ONLY if the price is in the data, else qualitative), conviction A/B/C. strength:"strong" ONLY on multi-factor alignment with 3-5 numbered reasons.',
-    shape: '{"ideas":[{"ticker":"XYZ","side":"long|short","playbook":"R|B|A|S","caseText":"...","entry":"...","invalidation":"...","target":"...","conviction":"A|B|C","strength":"strong (omit unless earned)","reasons":["..."]}],"shortDesk":"..."}',
+    brief: `1-3 long ideas MAX and the short desk (0-2 fades via LSE inverse ETPs, or say no clean fade). THE BAR: an idea must be able to MOVE — use moveCapacity in the data (typical10dMovePct = that name's usual 10-session travel). Rules:
+- expectedMove: state the realistic move and window ("+8-12% in 2 weeks"), justified by that ticker's typical10dMovePct. NEVER promise more than ~1.3x its capacity number.
+- strength:"strong" requires BOTH capable10pct:true (capacity >= 8%) AND independent confirmation from channelConsensus, socialPulse, insiderBuying or an event — cite it.
+- streetCheck (every idea): what the channels/social say about this exact name — "2 channels bullish, 340 Reddit mentions surging 2x" or honestly "silent on the channels".
+- Slow mega-caps (capacity < 6%) are NOT swing ideas — context only, or route them through a leveraged LSE ETP (state the ETP; capacity roughly x3 the underlying).
+- Full company name once in caseText; playbook tag; entry/invalidation/target numeric ONLY if the price is in the data, else qualitative; conviction A/B/C; strong needs 3-5 numbered reasons.`,
+    shape: '{"ideas":[{"ticker":"XYZ","side":"long|short","playbook":"R|B|A|S","caseText":"...","expectedMove":"+X-Y% in N weeks","streetCheck":"...","entry":"...","invalidation":"...","target":"...","conviction":"A|B|C","strength":"strong (omit unless earned)","reasons":["..."]}],"shortDesk":"..."}',
   },
   {
     key: 'discovery',
@@ -301,7 +308,7 @@ export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: Pape
       i => `<tr${i.strength === 'strong' ? ' class="strong"' : ''}>
 <td class="tk">${esc(i.ticker)}${i.side === 'short' ? ' <span class="short">SHORT</span>' : ''}</td>
 <td>${esc(i.playbook)}</td>
-<td>${esc(i.caseText)}${i.strength === 'strong' && i.reasons?.length ? `<div class="reasons"><strong>I STRONGLY SUGGEST — </strong>${i.reasons.map((t, n) => `${n + 1}) ${esc(t)}`).join(' ')}</div>` : ''}</td>
+<td>${esc(i.caseText)}${i.expectedMove || i.streetCheck ? `<div class="reasons">${i.expectedMove ? `<strong>Potential:</strong> ${esc(i.expectedMove)} ` : ''}${i.streetCheck ? `· <strong>Street check:</strong> ${esc(i.streetCheck)}` : ''}</div>` : ''}${i.strength === 'strong' && i.reasons?.length ? `<div class="reasons"><strong>I STRONGLY SUGGEST — </strong>${i.reasons.map((t, n) => `${n + 1}) ${esc(t)}`).join(' ')}</div>` : ''}</td>
 <td class="num">${esc(i.entry)}</td><td class="num">${esc(i.invalidation)}</td><td class="num">${esc(i.target)}</td><td class="num">${esc(i.conviction)}</td></tr>`,
     )
     .join('')
