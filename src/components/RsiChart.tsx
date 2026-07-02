@@ -9,10 +9,12 @@ export function RsiChart({ candles }: { candles: Candle[] }) {
 
   useEffect(() => {
     if (!ref.current || candles.length === 0) return
+    const css = getComputedStyle(document.documentElement)
+    const themed = (v: string, fallback: string) => css.getPropertyValue(v).trim() || fallback
     const chart = createChart(ref.current, {
       height: 110,
-      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#8b98a8', fontSize: 10 },
-      grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(148,168,190,0.06)' } },
+      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: themed('--muted', '#8b98a8'), fontSize: 10 },
+      grid: { vertLines: { visible: false }, horzLines: { color: themed('--line', 'rgba(148,168,190,0.06)') } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, visible: false },
     })

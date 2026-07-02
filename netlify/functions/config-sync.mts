@@ -1,6 +1,7 @@
 import type { Context } from '@netlify/functions'
 import { validateConfig } from '../../shared/config'
 import { blobAppStore, type AppStore } from './lib/store'
+import { authenticate } from './lib/auth'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -13,10 +14,11 @@ export async function routeConfig(
   env: { APP_TOKEN?: string; REPORT_TOKEN?: string },
   store: AppStore,
 ): Promise<Response> {
-  const appOk = !!env.APP_TOKEN && headers.get('x-app-token') === env.APP_TOKEN
+  const auth = await authenticate(headers, env, store) // admin OR licensed user
   // read-only views are also open to the research routine's report token
   const reportOk = !!env.REPORT_TOKEN && headers.get('x-report-token') === env.REPORT_TOKEN
-  if (!appOk && !(method === 'GET' && reportOk)) return json(401, { ok: false, error: 'unauthorized' })
+  if (!auth && !(method === 'GET' && reportOk)) return json(401, { ok: false, error: 'unauthorized' })
+  const ns = auth?.ns ?? '' // licensees get their own config/portfolio namespace
 
   if (method === 'GET') {
     if (url.searchParams.get('view') === 'signals') {
@@ -70,13 +72,13 @@ export async function routeConfig(
       const history = (await store.read<unknown[]>('alert-history')) ?? []
       return json(200, { ok: true, data: history.slice(-50).reverse() })
     }
-    return json(200, { ok: true, data: await store.read('config') })
+    return json(200, { ok: true, data: await store.read(`${ns}config`) })
   }
 
   if (method === 'PUT') {
     const cfg = validateConfig(bodyText ? JSON.parse(bodyText) : null)
     if (!cfg) return json(400, { ok: false, error: 'invalid-config' })
-    await store.write('config', cfg)
+    await store.write(`${ns}config`, cfg)
     return json(200, { ok: true, data: cfg })
   }
 

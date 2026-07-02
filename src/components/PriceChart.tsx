@@ -16,13 +16,15 @@ export function PriceChart({ candles }: { candles: Candle[] }) {
 
   useEffect(() => {
     if (!ref.current || candles.length === 0) return
+    const css = getComputedStyle(document.documentElement)
+    const themed = (v: string, fallback: string) => css.getPropertyValue(v).trim() || fallback
     const chart = createChart(ref.current, {
       height: 300,
-      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#8b98a8', fontSize: 11 },
-      grid: { vertLines: { color: 'rgba(148,168,190,0.06)' }, horzLines: { color: 'rgba(148,168,190,0.06)' } },
+      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: themed('--muted', '#8b98a8'), fontSize: 11 },
+      grid: { vertLines: { color: themed('--line', 'rgba(148,168,190,0.06)') }, horzLines: { color: themed('--line', 'rgba(148,168,190,0.06)') } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, timeVisible: false },
-      crosshair: { horzLine: { labelBackgroundColor: '#11161d' }, vertLine: { labelBackgroundColor: '#11161d' } },
+      crosshair: { horzLine: { labelBackgroundColor: themed('--panel', '#11161d') }, vertLine: { labelBackgroundColor: themed('--panel', '#11161d') } },
     })
     chartRef.current = chart
 

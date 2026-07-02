@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { db, getCapital } from '../lib/db'
 import { mirrorPortfolio, restoreBackup } from '../lib/portfolioMirror'
 import { computeStats, exposureWarnings, tradePnl, type Trade } from '../../shared/journal'
+import { getT212 } from '../lib/api'
 import { TradeForm } from '../components/TradeForm'
 import { Sparkline } from '../components/Sparkline'
 import { fmtPct } from '../lib/format'
@@ -110,6 +111,47 @@ export function Journal() {
 
         <h3 className="section-title">Log a trade</h3>
         <TradeForm onAdd={add} />
+        <button
+          className="mini-btn ghost"
+          style={{ marginTop: 8 }}
+          onClick={async () => {
+            try {
+              const t212 = await getT212()
+              if (t212.unconfigured) {
+                alert('Connect Trading 212 first: open the T212 app → Settings → API (Beta) → generate a key with read scopes, then run: npx netlify env:set T212_API_KEY <key> and redeploy.')
+                return
+              }
+              const openSymbols = new Set(trades.filter(t => t.exitPrice == null).map(t => t.symbol))
+              const fresh = (t212.positions ?? []).filter(p => !openSymbols.has(p.symbol))
+              for (const p of fresh) {
+                const trade: Trade = {
+                  id: `t212-${p.symbol}-${Date.now()}`,
+                  symbol: p.symbol,
+                  direction: 'long',
+                  instrument: 'stock',
+                  leverage: 1,
+                  riskClass: 'normal',
+                  playbook: 'B',
+                  fromSuggestion: false,
+                  units: p.quantity,
+                  entryPrice: p.averagePrice,
+                  stop: Math.round(p.averagePrice * 0.95 * 100) / 100,
+                  positionValue: Math.round(p.averagePrice * p.quantity * 100) / 100,
+                  thesis: 'Imported from Trading 212. Set your real stop.',
+                  openedAt: Math.floor(Date.now() / 1000),
+                }
+                await db.trades.put(trade)
+              }
+              setTrades(await db.trades.toArray())
+              mirrorPortfolio()
+              alert(fresh.length ? `Imported ${fresh.length} position(s). Review each stop: defaults are entry −5%.` : 'All T212 positions are already in the journal.')
+            } catch {
+              alert('Trading 212 fetch failed. Check the API key and try again.')
+            }
+          }}
+        >
+          ⇄ Import positions from Trading 212
+        </button>
 
         <h3 className="section-title">Open positions ({open.length})</h3>
         {open.map(t => (

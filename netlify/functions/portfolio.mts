@@ -1,5 +1,6 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
+import { authenticate } from './lib/auth'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -11,16 +12,18 @@ export async function routePortfolio(
   env: { APP_TOKEN?: string; REPORT_TOKEN?: string },
   store: AppStore,
 ): Promise<Response> {
-  const appOk = !!env.APP_TOKEN && headers.get('x-app-token') === env.APP_TOKEN
+  const auth = await authenticate(headers, env, store)
   const reportOk = !!env.REPORT_TOKEN && headers.get('x-report-token') === env.REPORT_TOKEN
+  const ns = auth?.ns ?? ''
 
   if (method === 'GET') {
-    if (!appOk && !reportOk) return json(401, { ok: false, error: 'unauthorized' })
-    return json(200, { ok: true, data: (await store.read('portfolio')) ?? null })
+    if (!auth && !reportOk) return json(401, { ok: false, error: 'unauthorized' })
+    // the research routine (report token) always reads the ADMIN portfolio
+    return json(200, { ok: true, data: (await store.read(`${auth ? ns : ''}portfolio`)) ?? null })
   }
 
   if (method === 'PUT') {
-    if (!appOk) return json(401, { ok: false, error: 'unauthorized' })
+    if (!auth) return json(401, { ok: false, error: 'unauthorized' })
     let snapshot: unknown
     try {
       snapshot = bodyText ? JSON.parse(bodyText) : null
@@ -30,7 +33,7 @@ export async function routePortfolio(
     if (!snapshot || typeof snapshot !== 'object' || !Array.isArray((snapshot as { openPositions?: unknown }).openPositions)) {
       return json(400, { ok: false, error: 'invalid-snapshot' })
     }
-    await store.write('portfolio', { ...(snapshot as object), at: Math.floor(Date.now() / 1000) })
+    await store.write(`${ns}portfolio`, { ...(snapshot as object), at: Math.floor(Date.now() / 1000) })
     return json(200, { ok: true })
   }
 

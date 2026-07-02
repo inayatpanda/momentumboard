@@ -1,24 +1,53 @@
-:root {
+:root,
+:root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #0a0e12;
   --bg-glow: radial-gradient(120% 60% at 50% -10%, rgba(34, 201, 141, 0.09) 0%, rgba(10, 14, 18, 0) 60%);
   --panel: #11161d;
   --panel-2: #161d26;
-  --line: rgba(148, 168, 190, 0.12);
+  --line: rgba(148, 168, 190, 0.14);
   --text: #e9eef4;
   --muted: #8b98a8;
   --faint: #5c6878;
   --green: #22c98d;
   --green-soft: rgba(34, 201, 141, 0.14);
+  --on-accent: var(--on-accent);
   --red: #ff5d73;
   --red-soft: rgba(255, 93, 115, 0.14);
   --amber: #f5b83d;
-  --amber-soft: rgba(245, 184, 61, 0.14);
+  --amber-soft: rgba(245, 184, 61, 0.16);
   --blue: #5aa9ff;
   --blue-soft: rgba(90, 169, 255, 0.14);
+  --nav-bg: rgba(13, 18, 24, 0.92);
+  --top-fade: rgba(10, 14, 18, 0.96);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   --radius: 16px;
-  --font-ui: 'Outfit', -apple-system, system-ui, sans-serif;
-  --font-num: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  --font-ui: 'Geist', 'Outfit', -apple-system, system-ui, sans-serif;
+  --font-num: 'Geist Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --bg-glow: radial-gradient(120% 60% at 50% -10%, rgba(12, 157, 108, 0.07) 0%, rgba(246, 247, 249, 0) 60%);
+  --panel: #ffffff;
+  --panel-2: #fbfcfe;
+  --line: rgba(15, 23, 42, 0.12);
+  --text: #101826;
+  --muted: #55657a;
+  --faint: #8a99ac;
+  --green: #0c9d6c;
+  --green-soft: rgba(12, 157, 108, 0.1);
+  --on-accent: #ffffff;
+  --red: #cf2f4e;
+  --red-soft: rgba(207, 47, 78, 0.09);
+  --amber: #9a6a03;
+  --amber-soft: rgba(184, 130, 10, 0.12);
+  --blue: #2166c6;
+  --blue-soft: rgba(33, 102, 198, 0.09);
+  --nav-bg: rgba(255, 255, 255, 0.94);
+  --top-fade: rgba(246, 247, 249, 0.96);
+  --shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
 }
 
 * { box-sizing: border-box; }
@@ -57,7 +86,7 @@ button, input { font: inherit; }
   align-items: center;
   gap: 10px;
   padding: 14px 16px 10px;
-  background: linear-gradient(to bottom, rgba(10, 14, 18, 0.96) 70%, rgba(10, 14, 18, 0));
+  background: linear-gradient(to bottom, var(--top-fade) 70%, transparent);
   backdrop-filter: blur(8px);
 }
 
@@ -113,7 +142,7 @@ button, input { font: inherit; }
   border: none;
   border-radius: 12px;
   padding: 0 18px;
-  color: #05130d;
+  color: var(--on-accent);
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.1s ease, opacity 0.15s ease;
@@ -212,7 +241,7 @@ button, input { font: inherit; }
   max-width: 560px;
   margin: 0 auto;
   padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-  background: rgba(13, 18, 24, 0.92);
+  background: var(--nav-bg);
   backdrop-filter: blur(14px);
   border-top: 1px solid var(--line);
 }
@@ -228,12 +257,14 @@ button, input { font: inherit; }
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  padding: 4px 14px;
+  padding: 5px 12px;
   border-radius: 12px;
   cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
 }
-.tab svg { width: 21px; height: 21px; }
-.tab.active { color: var(--green); }
+.tab svg { width: 21px; height: 21px; transition: transform 0.15s ease; }
+.tab.active { color: var(--green); background: var(--green-soft); }
+.tab.active svg { transform: translateY(-1px); }
 .tab:not(.active):not(:disabled):hover { color: var(--muted); }
 .tab:disabled { opacity: 0.45; cursor: default; }
 .tab .soon { font-size: 8.5px; color: var(--faint); letter-spacing: 0.06em; }
@@ -277,7 +308,7 @@ button, input { font: inherit; }
   border: none;
   border-radius: 10px;
   padding: 9px 16px;
-  color: #05130d;
+  color: var(--on-accent);
   font-weight: 700;
   cursor: pointer;
 }
@@ -300,7 +331,7 @@ button, input { font: inherit; }
   border-radius: 12px;
   padding: 10px 14px;
   font-size: 13.5px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow);
   animation: rise 0.25s ease both;
 }
 
@@ -332,7 +363,7 @@ button, input { font: inherit; }
   font-weight: 600;
   cursor: pointer;
 }
-.range-pills button.active { color: #05130d; background: var(--green); border-color: var(--green); }
+.range-pills button.active { color: var(--on-accent); background: var(--green); border-color: var(--green); }
 
 .detail-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
 
@@ -411,7 +442,7 @@ button, input { font: inherit; }
   background: var(--panel); border: 1px solid var(--line); color: var(--muted);
   border-radius: 999px; padding: 3px 12px; font-size: 11.5px; font-weight: 600; cursor: pointer;
 }
-.sort-chips button.active { color: #05130d; background: var(--green); border-color: var(--green); }
+.sort-chips button.active { color: var(--on-accent); background: var(--green); border-color: var(--green); }
 @keyframes flashUp { 0% { color: var(--green); text-shadow: 0 0 12px rgba(34,201,141,0.7); } 100% { color: inherit; text-shadow: none; } }
 @keyframes flashDown { 0% { color: var(--red); text-shadow: 0 0 12px rgba(255,93,115,0.7); } 100% { color: inherit; text-shadow: none; } }
 .price.flash-up { animation: flashUp 0.9s ease-out; }
@@ -429,7 +460,7 @@ button, input { font: inherit; }
   font-weight: 600;
   cursor: pointer;
 }
-.subtabs button.active { color: #05130d; background: var(--green); border-color: var(--green); }
+.subtabs button.active { color: var(--on-accent); background: var(--green); border-color: var(--green); }
 
 /* ---------- gear + hero card ---------- */
 .gear {
@@ -494,7 +525,7 @@ button, input { font: inherit; }
 .trade-form input:focus, .trade-form select:focus { border-color: var(--green); }
 .tf-bottom { align-items: center; justify-content: space-between; margin-bottom: 0; }
 .tf-check { flex-direction: row !important; align-items: center; gap: 6px !important; text-transform: none !important; font-size: 12px !important; }
-.trade-form button { background: var(--green); border: none; border-radius: 10px; padding: 9px 16px; color: #05130d; font-weight: 700; cursor: pointer; }
+.trade-form button { background: var(--green); border: none; border-radius: 10px; padding: 9px 16px; color: var(--on-accent); font-weight: 700; cursor: pointer; }
 
 .trade-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .trade-meta em { color: var(--faint); font-style: italic; }
@@ -518,6 +549,21 @@ button, input { font: inherit; }
 .settings-grid { display: flex; flex-direction: column; gap: 8px; }
 .settings-grid input { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; color: var(--text); font-family: var(--font-num); outline: none; }
 .chan-row { display: flex; justify-content: space-between; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
+
+/* ---------- micro-interactions (taste pass) ---------- */
+.mini-btn, .tab, .subtabs button, .sort-chips button, .addform button, .trade-form button, .range-pills button, .gear, .remove {
+  transition: transform 0.12s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.mini-btn:active, .subtabs button:active, .sort-chips button:active, .addform button:active, .trade-form button:active, .range-pills button:active, .gear:active {
+  transform: scale(0.95);
+}
+.card:active { transform: scale(0.99); }
+.digest-cols > section:nth-of-type(1) { animation: rise 0.3s ease both 0.03s; }
+.digest-cols > section:nth-of-type(2) { animation: rise 0.3s ease both 0.08s; }
+.digest-cols > section:nth-of-type(3) { animation: rise 0.3s ease both 0.13s; }
+.digest-cols > section:nth-of-type(4) { animation: rise 0.3s ease both 0.18s; }
+.link-card, .chan-row { transition: border-color 0.15s ease, transform 0.12s ease; }
+.link-card:active { transform: scale(0.99); }
 
 /* ---------- accessibility & motion ---------- */
 :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 6px; }
@@ -549,7 +595,7 @@ button, input { font: inherit; }
     padding: 88px 12px 16px;
     border-top: none;
     border-right: 1px solid var(--line);
-    background: rgba(13, 18, 24, 0.85);
+    background: var(--nav-bg);
   }
   .tabs::before {
     content: 'MomentumBoard';
@@ -628,7 +674,7 @@ button, input { font: inherit; }
   border-radius: 12px;
   border: none;
   background: var(--green);
-  color: #05130d;
+  color: var(--on-accent);
   font-weight: 700;
   cursor: pointer;
 }

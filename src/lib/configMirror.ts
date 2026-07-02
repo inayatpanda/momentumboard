@@ -9,7 +9,7 @@ export function mirrorConfig(delayMs = 1500) {
   timer = setTimeout(async () => {
     const [watch, ruleItems, capital, ytChannels] = await Promise.all([db.watchlist.toArray(), db.rules.toArray(), getCapital(), getChannels()])
     putConfig({
-      watchlist: watch.map(w => ({ symbol: w.symbol, riskClass: w.riskClass })),
+      watchlist: watch.map(w => ({ symbol: w.symbol, riskClass: w.riskClass, category: w.category })),
       rules: ruleItems.map(({ id, symbol, kind, level }) => ({ id, symbol, kind, level })),
       ytChannels,
       capital,

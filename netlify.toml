@@ -40,3 +40,13 @@
   from = "/api/push"
   to = "/.netlify/functions/push"
   status = 200
+
+[[redirects]]
+  from = "/api/licences"
+  to = "/.netlify/functions/licences"
+  status = 200
+
+[[redirects]]
+  from = "/api/t212"
+  to = "/.netlify/functions/t212"
+  status = 200

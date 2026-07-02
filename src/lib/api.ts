@@ -56,6 +56,34 @@ export const getSocialPulse = () =>
     at: number
   }>('/api/market?type=social')
 
+export const getT212 = () =>
+  apiGet<{ unconfigured?: boolean; positions?: { symbol: string; quantity: number; averagePrice: number; currentPrice: number; pplPct: number | null }[]; at?: number }>('/api/t212')
+
+export const getTickerBrief = (symbol: string) =>
+  apiGet<{ sym: string; brief: string; at: number }>(`/api/market?type=brief&symbol=${encodeURIComponent(symbol)}`)
+
+export const getLicences = () =>
+  apiGet<{ key: string; label: string; createdAt: number; revoked?: boolean; unlockLink: string }[]>('/api/licences')
+
+export async function createLicence(label: string) {
+  const res = await fetch('/api/licences', {
+    method: 'POST',
+    headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
+    body: JSON.stringify({ label }),
+  })
+  const body = (await res.json()) as ApiEnvelope<{ key: string; label: string; unlockLink: string }>
+  if (!body.ok || !body.data) throw new Error(body.error ?? 'failed')
+  return body.data
+}
+
+export async function revokeLicence(key: string) {
+  await fetch('/api/licences', {
+    method: 'DELETE',
+    headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
+    body: JSON.stringify({ key }),
+  })
+}
+
 export const getEcon = () =>
   apiGet<{ events: { title: string; country: string; at: number; impact: string }[] }>('/api/market?type=econ').then(d => d.events)
 

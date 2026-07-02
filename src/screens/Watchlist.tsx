@@ -11,19 +11,21 @@ import { AddTickerForm } from '../components/AddTickerForm'
 import { Toasts } from '../components/Toasts'
 
 export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string) => void; onOpenSettings: () => void }) {
-  const [symbols, setSymbols] = useState<string[]>([])
+  const [items, setItems] = useState<{ symbol: string; category?: string }[]>([])
+  const [categoryFilter, setCategoryFilter] = useState<string>('All')
   const [rules, setRules] = useState<RuleItem[]>([])
   const [hasToken, setHasToken] = useState(!!getToken())
   const [sortBy, setSortBy] = useState<'default' | 'change' | 'rvol' | 'setups'>('default')
   const [checkerStale, setCheckerStale] = useState(false)
   const [trending, setTrending] = useState<Awaited<ReturnType<typeof getTrending>>['current']>(null)
+  const symbols = items.map(i => i.symbol)
   const { rows, regime, lastUpdated, error } = useMarketData(symbols)
   const toasts = useAlerts(rows, regime, rules)
 
   useEffect(() => {
-    db.watchlist.toArray().then(items => {
-      setSymbols(items.map(i => i.symbol))
-      if (items.length) mirrorConfig() // ensure the server sees pre-existing watchlists
+    db.watchlist.toArray().then(list => {
+      setItems(list.map(i => ({ symbol: i.symbol, category: i.category })))
+      if (list.length) mirrorConfig() // ensure the server sees pre-existing watchlists
     })
     db.rules.toArray().then(setRules)
     getRunlog()
@@ -38,24 +40,28 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
     return () => clearInterval(ti)
   }, [])
 
-  const sortedRows = [...rows].sort((a, b) => {
-    if (sortBy === 'change') return (b.quote?.changePct ?? -Infinity) - (a.quote?.changePct ?? -Infinity)
-    if (sortBy === 'rvol') return (b.rvol ?? -Infinity) - (a.rvol ?? -Infinity)
-    if (sortBy === 'setups') return b.setups.length - a.setups.length
-    return 0
-  })
+  const categories = [...new Set(items.map(i => i.category).filter((c): c is string => !!c))]
+  const visibleSymbols = categoryFilter === 'All' ? symbols : items.filter(i => i.category === categoryFilter).map(i => i.symbol)
+  const sortedRows = rows
+    .filter(r => visibleSymbols.includes(r.symbol))
+    .sort((a, b) => {
+      if (sortBy === 'change') return (b.quote?.changePct ?? -Infinity) - (a.quote?.changePct ?? -Infinity)
+      if (sortBy === 'rvol') return (b.rvol ?? -Infinity) - (a.rvol ?? -Infinity)
+      if (sortBy === 'setups') return b.setups.length - a.setups.length
+      return 0
+    })
 
-  const add = async (symbol: string) => {
-    if (symbols.includes(symbol) || symbols.length >= 30) return
-    await db.watchlist.put({ symbol, addedAt: Date.now(), riskClass: 'normal' })
-    setSymbols(s => [...s, symbol])
+  const add = async (symbol: string, category?: string) => {
+    if (items.some(i => i.symbol === symbol) || items.length >= 30) return
+    await db.watchlist.put({ symbol, addedAt: Date.now(), riskClass: 'normal', category })
+    setItems(s => [...s, { symbol, category }])
     mirrorConfig()
   }
 
   const remove = async (symbol: string) => {
     await db.watchlist.delete(symbol)
     await db.rules.where('symbol').equals(symbol).delete()
-    setSymbols(s => s.filter(x => x !== symbol))
+    setItems(s => s.filter(x => x.symbol !== symbol))
     mirrorConfig()
   }
 
@@ -98,7 +104,16 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
         <button className="gear" onClick={onOpenSettings} aria-label="Settings">⚙</button>
       </header>
       <div className="content">
-        <AddTickerForm onAdd={add} disabled={symbols.length >= 30} />
+        <AddTickerForm onAdd={add} disabled={symbols.length >= 30} categories={categories} />
+        {categories.length > 0 && (
+          <div className="sort-chips">
+            {['All', ...categories].map(c => (
+              <button key={c} className={categoryFilter === c ? 'active' : ''} onClick={() => setCategoryFilter(c)}>
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
         {rows.length > 1 && (
           <div className="sort-chips">
             {(['default', 'change', 'rvol', 'setups'] as const).map(k => (

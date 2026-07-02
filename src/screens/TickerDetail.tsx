@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Candle, Quote } from '../../shared/types'
-import { getCandles, getNews } from '../lib/api'
+import { getCandles, getNews, getTickerBrief } from '../lib/api'
 import { db, getCapital, type RuleItem } from '../lib/db'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPrice, fmtPct } from '../lib/format'
@@ -46,10 +46,19 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
     }
   }, [symbol, range])
 
+  const [brief, setBrief] = useState<{ brief: string; at: number } | null>(null)
+
   useEffect(() => {
     getNews(symbol).then(setNews).catch(() => setNews([]))
+    getTickerBrief(symbol).then(setBrief).catch(() => setBrief(null))
     db.rules.where('symbol').equals(symbol).toArray().then(setRules)
   }, [symbol])
+
+  const shareBrief = () => {
+    const text = `${symbol} — MomentumBoard brief\n${brief?.brief ?? ''}`
+    if (navigator.share) navigator.share({ title: `${symbol} brief`, text }).catch(() => {})
+    else navigator.clipboard?.writeText(text)
+  }
 
   const { rvol, setups } = useMemo(() => {
     if (candles.length < 26) return { rvol: null as number | null, setups: [] as ReturnType<typeof detectSetups> }
@@ -113,6 +122,17 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
           <Badge key={s} kind={s} />
         ))}
       </div>
+
+      {brief && (
+        <div className="ai-card" style={{ marginBottom: 10 }}>
+          <h3>What's new · {symbol}</h3>
+          <p style={{ fontSize: 13.5 }}>{brief.brief}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="ai-note">AI brief, refreshed every 6h. Not advice.</span>
+            <button className="mini-btn ghost" onClick={shareBrief}>Share</button>
+          </div>
+        </div>
+      )}
 
       <PriceChart candles={candles} />
       <RsiChart candles={candles} />

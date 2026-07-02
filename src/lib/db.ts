@@ -5,6 +5,7 @@ export interface WatchItem {
   symbol: string
   addedAt: number
   riskClass: 'normal' | 'speculative'
+  category?: string
 }
 
 export interface RuleItem {

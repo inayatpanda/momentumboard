@@ -1,5 +1,6 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
+import { authenticate } from './lib/auth'
 
 // Full journal/config backup to the site's private Blobs storage. The device's
 // IndexedDB is the primary copy; this protects it from cleared browser storage
@@ -17,10 +18,12 @@ export async function routeBackup(
   env: { APP_TOKEN?: string },
   store: AppStore,
 ): Promise<Response> {
-  if (!env.APP_TOKEN || headers.get('x-app-token') !== env.APP_TOKEN) return json(401, { ok: false, error: 'unauthorized' })
+  const auth = await authenticate(headers, env, store)
+  if (!auth) return json(401, { ok: false, error: 'unauthorized' })
+  const ns = auth.ns
 
   if (method === 'GET') {
-    return json(200, { ok: true, data: (await store.read('journal-backup')) ?? null })
+    return json(200, { ok: true, data: (await store.read(`${ns}journal-backup`)) ?? null })
   }
 
   if (method === 'PUT') {
@@ -32,7 +35,7 @@ export async function routeBackup(
       return json(400, { ok: false, error: 'invalid-json' })
     }
     if (!Array.isArray(parsed.trades)) return json(400, { ok: false, error: 'invalid-backup' })
-    await store.write('journal-backup', { ...parsed, at: Math.floor(Date.now() / 1000) })
+    await store.write(`${ns}journal-backup`, { ...parsed, at: Math.floor(Date.now() / 1000) })
     return json(200, { ok: true })
   }
 

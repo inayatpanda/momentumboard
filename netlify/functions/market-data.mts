@@ -15,7 +15,9 @@ export async function routeRequest(
   env: { APP_TOKEN?: string; FINNHUB_API_KEY?: string },
   deps: { yahoo: typeof fetchYahooChart; finnhub: typeof fetchFinnhubQuote; news?: typeof fetchSymbolNews },
 ): Promise<Response> {
-  if (!env.APP_TOKEN || headers.get('x-app-token') !== env.APP_TOKEN) return json(401, { ok: false, error: 'unauthorized' })
+  const { authenticate } = await import('./lib/auth')
+  const { blobAppStore } = await import('./lib/store')
+  if (!(await authenticate(headers, env, blobAppStore))) return json(401, { ok: false, error: 'unauthorized' })
   const type = url.searchParams.get('type')
 
   if (type === 'quote') {
@@ -139,6 +141,34 @@ export async function routeRequest(
       const candlesBySymbol = new Map(candlePairs.filter((p): p is [string, NonNullable<(typeof candlePairs)[0][1]>] => p[1] !== null))
       const data = { scores: scoreSignals(log, candlesBySymbol), totalSignals: log.length }
       await setCached('signal-stats', data, 3600)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'brief') {
+    const symbol = url.searchParams.get('symbol')?.toUpperCase()
+    if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })
+    const key = `brief:${symbol}`
+    const hit = await getCached<unknown>(key)
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { cachedQuote, cachedCandles } = await import('./lib/marketCache')
+      const { detectSetups } = await import('../../shared/setups')
+      const { fetchSymbolNews } = await import('./lib/news')
+      const { callLlm } = await import('./ai-insights.mts')
+      const nowSec = Math.floor(Date.now() / 1000)
+      const [quote, candles, news] = await Promise.all([
+        cachedQuote(symbol, env.FINNHUB_API_KEY ?? ''),
+        cachedCandles(symbol),
+        fetchSymbolNews(symbol, env.FINNHUB_API_KEY ?? '', nowSec).catch(() => []),
+      ])
+      const setups = candles && candles.length > 25 ? detectSetups(candles, null) : []
+      const prompt = `You are a decisive, seasoned analyst. In 3-4 sentences, brief a swing trader on WHAT HAS CHANGED lately for ${symbol}${quote?.name ? ` (${quote.name})` : ''}: price ${quote?.price ?? '?'} (${quote?.changePct?.toFixed(1) ?? '?'}% today), active technical states: ${setups.join(', ') || 'none'}, latest headlines: ${news.slice(0, 3).map(n => n.title).join(' | ') || 'none notable'}. Give your read and the one thing to watch next. No hedging filler; end with one honesty note only if truly needed.`
+      const { text } = await callLlm(prompt, { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL, GROQ_API_KEY: process.env.GROQ_API_KEY })
+      const data = { sym: symbol, brief: text.trim(), at: nowSec }
+      await setCached(key, data, 21_600)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
