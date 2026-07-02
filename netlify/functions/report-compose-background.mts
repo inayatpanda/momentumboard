@@ -145,6 +145,7 @@ export default async (req: Request) => {
         recentEventAssessments: dossiers,
         pickPersistence: picksHistory,
         ownScorecard: pickStats,
+        previousEditions: await blobAppStore.read('composed-history'),
         userNotes: cfg.notes ?? [],
         headlines: news,
       },
@@ -187,6 +188,20 @@ export default async (req: Request) => {
       : null
 
     console.log('COMPOSE: putHtml', putHtml.status, 'putPicks', putPicks?.status)
+    // continuity memory: tomorrow's edition reads what today's said, so it builds instead of repeating
+    const historyEntry = {
+      date: dateISO,
+      headline: composed.headline,
+      standfirst: composed.standfirst,
+      regime: composed.regime,
+      ideas: composed.ideas.map(i => ({ ticker: i.ticker, side: i.side, strength: i.strength })),
+      rotationGist: composed.rotation.slice(0, 300),
+      smallCapGist: (composed.smallCap ?? '').slice(0, 200),
+    }
+    const composedHistory = ((await blobAppStore.read<{ date: string }[]>('composed-history')) ?? []).filter(h => h.date !== dateISO)
+    composedHistory.push(historyEntry)
+    await blobAppStore.write('composed-history', composedHistory.slice(-4))
+
     const runlog = (await blobAppStore.read<unknown[]>('runlog')) ?? []
     runlog.push({ at: nowSec, kind: 'report-compose', provider, htmlOk: putHtml.ok, picksOk: putPicks?.ok ?? 'none', ideas: composed.ideas.length })
     await blobAppStore.write('runlog', runlog.slice(-200))

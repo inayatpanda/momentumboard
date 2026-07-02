@@ -113,6 +113,14 @@ NUMERIC DISCIPLINE (hard rules):
 - Crypto/index levels only if present in the data.
 - If userNotes is empty, OMIT readersNotes. If portfolio is null/empty, portfolioDesk is one honest line.
 
+CONTINUITY (you write this paper EVERY day — the reader read yesterday's):
+- previousEditions in the data show what you already told him. NEVER re-explain or re-introduce a theme covered in the last editions as if it were new.
+- Track open narratives instead: "the healthcare rotation we flagged yesterday is now on day 3 and looks CONFIRMED — 1-week strength (rs5) still leads 1-month (rs21)" or "yesterday's rotation call is fading; one-day event, stand down."
+- Grade every recurring theme explicitly: one-day blip vs confirmed trend, judged from rs5 vs rs21 and pick persistence.
+- Repeated picks: say plainly it is a repeat, what has changed since, and whether conviction rose or fell.
+
+NAMES: give each company's FULL name once at first mention (e.g. "AbbVie (ABBV)", "Nebius Group (NBIS)") in caseText, smallCap and channels — the reader should never meet a bare unfamiliar ticker.
+
 DEPTH REQUIREMENTS:
 - lead: 3-4 substantial paragraphs telling today's story.
 - tape MUST preview the next 48h of high-impact events from econCalendar using their forecast vs previous numbers ("Jobs report Friday: consensus X vs Y prior — a miss revives cut bets") and say how to position around each.
