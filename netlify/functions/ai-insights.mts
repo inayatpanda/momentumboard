@@ -16,15 +16,17 @@ interface Env {
   APP_TOKEN?: string
   FINNHUB_API_KEY?: string
   GEMINI_API_KEY?: string
+  GOOGLE_GEMINI_BASE_URL?: string // set by Netlify AI Gateway; keys are gateway-scoped
   GROQ_API_KEY?: string
 }
 
 export const callLlm: LlmCall = async (prompt, env) => {
   if (env.GEMINI_API_KEY) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`, {
+    const base = env.GOOGLE_GEMINI_BASE_URL ?? 'https://generativelanguage.googleapis.com'
+    const res = await fetch(`${base}/v1beta/models/gemini-2.5-flash:generateContent`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] }),
     })
     const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
     const text = j.candidates?.[0]?.content?.parts?.[0]?.text
@@ -95,6 +97,7 @@ export default async (req: Request, _context: Context) =>
       APP_TOKEN: process.env.APP_TOKEN,
       FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
       GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+      GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL,
       GROQ_API_KEY: process.env.GROQ_API_KEY,
     },
     blobAppStore,
