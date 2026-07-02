@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { db, getCapital } from '../lib/db'
+import { db, getCapital, type NoteItem } from '../lib/db'
+import { evaluateNote } from '../lib/api'
+import { mirrorConfig } from '../lib/configMirror'
 import { mirrorPortfolio, restoreBackup } from '../lib/portfolioMirror'
 import { computeStats, exposureWarnings, tradePnl, type Trade } from '../../shared/journal'
 import { getT212 } from '../lib/api'
@@ -14,11 +16,31 @@ export function Journal() {
   const [capital, setCapital] = useState(5000)
   const [closing, setClosing] = useState<string | null>(null)
   const [exitPrice, setExitPrice] = useState('')
+  const [notes, setNotes] = useState<NoteItem[]>([])
+  const [noteText, setNoteText] = useState('')
+  const [noteKind, setNoteKind] = useState<'observation' | 'lesson' | 'hypothesis'>('observation')
 
   useEffect(() => {
     db.trades.toArray().then(setTrades)
+    db.notes.orderBy('at').reverse().toArray().then(setNotes)
     getCapital().then(setCapital)
   }, [])
+
+  const addNote = async () => {
+    const text = noteText.trim()
+    if (!text) return
+    const note: NoteItem = { id: `n-${Date.now()}`, text, kind: noteKind, at: Math.floor(Date.now() / 1000) }
+    await db.notes.put(note)
+    setNotes(n => [note, ...n])
+    setNoteText('')
+    mirrorConfig() // the morning analyst reads these (lightly) and will push back when data disagrees
+    evaluateNote(text, noteKind)
+      .then(async take => {
+        await db.notes.update(note.id, { aiTake: take })
+        setNotes(n => n.map(x => (x.id === note.id ? { ...x, aiTake: take } : x)))
+      })
+      .catch(() => {})
+  }
 
   const open = trades.filter(t => t.exitPrice == null).sort((a, b) => b.openedAt - a.openedAt)
   const closed = trades.filter(t => t.exitPrice != null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
@@ -195,6 +217,35 @@ export function Journal() {
           )
         })}
         {closed.length === 0 && <p className="empty-line">No closed trades yet — expectancy per playbook appears after ~20.</p>}
+
+        <h3 className="section-title">Observations &amp; lessons</h3>
+        <div className="trade-form">
+          <div className="tf-row">
+            <label style={{ flex: 3 }}>What did you notice or learn?
+              <input value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="e.g. Stocks seem to sell off into Friday closes" aria-label="Observation text" />
+            </label>
+            <label>Type
+              <select value={noteKind} onChange={e => setNoteKind(e.target.value as typeof noteKind)}>
+                <option value="observation">Observation</option>
+                <option value="hypothesis">Hypothesis</option>
+                <option value="lesson">Lesson</option>
+              </select>
+            </label>
+          </div>
+          <div className="tf-row tf-bottom">
+            <span className="empty-line" style={{ fontSize: 11 }}>The analyst weighs these lightly, tests them, and will push back with data when you're wrong — as requested.</span>
+            <button type="button" onClick={addNote}>Save</button>
+          </div>
+        </div>
+        {notes.slice(0, 8).map(n => (
+          <div key={n.id} className="card" style={{ marginTop: 8 }}>
+            <div className="row-top">
+              <span style={{ fontSize: 13.5 }}><span className="badge info">{n.kind}</span> {n.text}</span>
+              <button className="remove" onClick={async () => { await db.notes.delete(n.id); setNotes(x => x.filter(y => y.id !== n.id)); mirrorConfig() }} aria-label="Delete note">✕</button>
+            </div>
+            {n.aiTake && <p style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 6, marginBottom: 0 }}>🧠 {n.aiTake}</p>}
+          </div>
+        ))}
 
         <div className="journal-io">
           <button className="mini-btn ghost" onClick={exportJson}>Export JSON</button>

@@ -17,6 +17,7 @@ describe('ai-insights', () => {
     expect((await res.json()).data.empty).toBe(true)
   })
   it('calls the LLM once, then serves from cache', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline')) // market fetches fail fast; route degrades gracefully
     const store = memoryStore()
     await store.write('config', { watchlist: [{ symbol: 'ZZZTEST' }], rules: [], ytChannels: [], capital: 5000 })
     const llm = vi.fn(async (_prompt: string) => ({ text: 'calm tape, nothing actionable today', provider: 'gemini' }))
@@ -27,5 +28,6 @@ describe('ai-insights', () => {
     const second = await (await routeAi(auth, env, store, llm)).json()
     expect(second.data.text).toBe(first.data.text)
     expect(llm).toHaveBeenCalledTimes(1) // cached
+    vi.restoreAllMocks()
   })
 })

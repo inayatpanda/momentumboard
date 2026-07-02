@@ -8,6 +8,15 @@ export interface WatchItem {
   category?: string
 }
 
+export interface NoteItem {
+  id: string
+  text: string
+  kind: 'observation' | 'lesson' | 'hypothesis'
+  ticker?: string
+  at: number
+  aiTake?: string
+}
+
 export interface RuleItem {
   id: string
   symbol: string
@@ -21,11 +30,13 @@ class MBDatabase extends Dexie {
   settings!: Table<{ key: string; value: string }, string>
   rules!: Table<RuleItem, string>
   trades!: Table<Trade, string>
+  notes!: Table<NoteItem, string>
   constructor() {
     super('momentumboard')
     this.version(1).stores({ watchlist: 'symbol', settings: 'key' })
     this.version(2).stores({ watchlist: 'symbol', settings: 'key', rules: 'id, symbol' })
     this.version(3).stores({ watchlist: 'symbol', settings: 'key', rules: 'id, symbol', trades: 'id, symbol, openedAt' })
+    this.version(4).stores({ watchlist: 'symbol', settings: 'key', rules: 'id, symbol', trades: 'id, symbol, openedAt', notes: 'id, at' })
   }
 }
 

@@ -147,6 +147,21 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'evaluate-note') {
+    const text = url.searchParams.get('text')?.slice(0, 500)
+    const kind = url.searchParams.get('kind') ?? 'observation'
+    if (!text) return json(400, { ok: false, error: 'missing-text' })
+    try {
+      const { callLlm } = await import('./ai-insights.mts')
+      const prompt = `A retail swing trader logged this personal ${kind}: "${text}"
+As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this consistent with market evidence and research, partially true, or a common misconception? Be direct — the trader explicitly WANTS pushback when wrong. If it's testable, say what data would settle it. No flattery.`
+      const { text: take } = await callLlm(prompt, { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL, GROQ_API_KEY: process.env.GROQ_API_KEY })
+      return json(200, { ok: true, data: { take: take.trim() } })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
   if (type === 'seasonality') {
     const symbol = url.searchParams.get('symbol')?.toUpperCase()
     if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })

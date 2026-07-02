@@ -56,6 +56,9 @@ export const getSocialPulse = () =>
     at: number
   }>('/api/market?type=social')
 
+export const evaluateNote = (text: string, kind: string) =>
+  apiGet<{ take: string }>(`/api/market?type=evaluate-note&text=${encodeURIComponent(text)}&kind=${kind}`).then(d => d.take)
+
 export const getEventDossiers = () =>
   apiGet<{ kind: 'shock' | 'stretch'; sym: string; name: string; movePct?: number; zScore?: number; rsi?: number; dir: string; price: number; assessment: string; at: number }[]>('/api/config?view=events')
 

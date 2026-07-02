@@ -29,6 +29,14 @@ export async function routeConfig(
       const analyses = (await store.read<unknown[]>('video-analyses')) ?? []
       return json(200, { ok: true, data: analyses.slice(-10).reverse() })
     }
+    if (url.searchParams.get('view') === 'notes') {
+      const cfg = await store.read<{ notes?: unknown[] }>(`${ns}config`)
+      return json(200, { ok: true, data: cfg?.notes ?? [] })
+    }
+    if (url.searchParams.get('view') === 'sectors') {
+      const { getCached } = await import('./lib/cache')
+      return json(200, { ok: true, data: (await getCached('sector-rotation')) ?? null })
+    }
     if (url.searchParams.get('view') === 'events') {
       const dossiers = (await store.read<unknown[]>('event-dossiers')) ?? []
       return json(200, { ok: true, data: dossiers.slice(-5).reverse() })
