@@ -19,10 +19,13 @@ describe('sessionElapsedFraction', () => {
   it('is ~0.54 midway through the US session', () => {
     expect(sessionElapsedFraction('US', utc(17, 0))).toBeCloseTo((17 - 13.5) / 6.5, 2)
   })
-  it('clamps to 1 after the close and 0.05 before the open', () => {
-    expect(sessionElapsedFraction('US', utc(22, 0))).toBe(1)
-    expect(sessionElapsedFraction('US', utc(11, 0))).toBe(0.05)
+  it('is 1 whenever the market is closed (last bar is a complete day)', () => {
+    expect(sessionElapsedFraction('US', utc(22, 0))).toBe(1) // after close
+    expect(sessionElapsedFraction('US', utc(11, 0))).toBe(1) // before open
     expect(sessionElapsedFraction('LSE', utc(12, 15))).toBeCloseTo(4.25 / 8.5, 2)
+  })
+  it('floors at 0.05 just after the open to avoid divide-by-tiny spikes', () => {
+    expect(sessionElapsedFraction('US', utc(13, 31))).toBe(0.05)
   })
 })
 

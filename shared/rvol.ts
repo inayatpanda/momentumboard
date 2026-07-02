@@ -15,8 +15,10 @@ export function sessionElapsedFraction(exchange: 'US' | 'LSE', nowUtcSec: number
   const d = new Date(nowUtcSec * 1000)
   const hours = d.getUTCHours() + d.getUTCMinutes() / 60
   const { open, close } = SESSIONS[exchange]
-  const frac = (hours - open) / (close - open)
-  return Math.min(1, Math.max(0.05, frac))
+  // Outside the session the last bar is a COMPLETE day, so compare against a
+  // full average day (fraction 1) — a small fraction here inflates RVOL ~20x.
+  if (hours < open || hours >= close) return 1
+  return Math.max(0.05, (hours - open) / (close - open))
 }
 
 export function relativeVolume(todayVolume: number, avgVol: number, elapsedFraction: number): number {

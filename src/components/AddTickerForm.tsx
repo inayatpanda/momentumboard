@@ -4,6 +4,7 @@ export function AddTickerForm({ onAdd, disabled }: { onAdd: (symbol: string) => 
   const [value, setValue] = useState('')
   return (
     <form
+      className="addform"
       onSubmit={e => {
         e.preventDefault()
         const s = value.trim().toUpperCase()
@@ -12,18 +13,15 @@ export function AddTickerForm({ onAdd, disabled }: { onAdd: (symbol: string) => 
           setValue('')
         }
       }}
-      style={{ display: 'flex', gap: 8, marginBottom: 12 }}
     >
       <input
         value={value}
         onChange={e => setValue(e.target.value)}
-        placeholder="Add ticker (AAPL or 3LTS.L)"
+        placeholder="Add ticker — AAPL, NVDA or 3LTS.L"
         disabled={disabled}
-        style={{ flex: 1, background: 'var(--panel)', border: '1px solid #2a3242', borderRadius: 8, padding: '8px 10px', color: 'var(--text)' }}
+        aria-label="Add ticker"
       />
-      <button disabled={disabled} style={{ background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '8px 14px', color: '#0b0e14', fontWeight: 600 }}>
-        Add
-      </button>
+      <button disabled={disabled}>Add</button>
     </form>
   )
 }

@@ -1,0 +1,7 @@
+- generic [ref=e4]:
+  - img [ref=e6]
+  - heading "MomentumBoard" [level=1] [ref=e8]
+  - paragraph [ref=e9]: Enter your app token — the APP_TOKEN value from your Netlify environment.
+  - generic [ref=e10]:
+    - textbox "App token" [ref=e11]
+    - button "Unlock" [ref=e12] [cursor=pointer]

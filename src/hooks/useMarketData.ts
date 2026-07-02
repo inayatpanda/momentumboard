@@ -52,13 +52,15 @@ export function useMarketData(symbols: string[]) {
             const candles = candlesRef.current.get(symbol)
             let rvol: number | null = null
             let setups: SetupKind[] = []
+            let spark: number[] | undefined
             if (candles && candles.length > 25) {
               const avg = avgDailyVolume(candles)
               const todayVol = quote?.todayVolume ?? candles[candles.length - 1].v
               if (avg) rvol = relativeVolume(todayVol, avg, sessionElapsedFraction(symbol.includes('.') ? 'LSE' : 'US', now))
               setups = detectSetups(candles, rvol)
+              spark = candles.slice(-30).map(c => c.c)
             }
-            return { symbol, quote, rvol, setups }
+            return { symbol, quote, rvol, setups, spark }
           }),
         )
         setLastUpdated(Date.now())

@@ -1,17 +1,21 @@
 import type { RegimeColor } from '../../shared/types'
 
 const COPY: Record<RegimeColor, string> = {
-  green: 'Regime: GREEN — tape supports longs',
-  amber: 'Regime: AMBER — half size, A-grade setups only',
-  red: 'Regime: RED — defensive; no new longs',
+  green: 'Tape: long OK',
+  amber: 'Tape: half size',
+  red: 'Tape: defensive',
 }
 
 export function RegimeBanner({ regime }: { regime: RegimeColor | null }) {
   if (!regime) return null
-  const color = regime === 'green' ? 'var(--green)' : regime === 'amber' ? 'var(--amber)' : 'var(--red)'
   return (
-    <div style={{ background: color, color: '#0b0e14', padding: '6px 12px', borderRadius: 8, fontWeight: 600, marginBottom: 12 }}>
+    <span className={`regime ${regime}`} title={
+      regime === 'green' ? 'SPY & QQQ above rising 20/50-day averages — tape supports longs'
+      : regime === 'amber' ? 'Mixed index structure — half size, A-grade setups only'
+      : 'Index breakdown — defensive; no new longs'
+    }>
+      <span className="dot" />
       {COPY[regime]}
-    </div>
+    </span>
   )
 }

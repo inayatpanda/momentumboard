@@ -11,13 +11,7 @@ const LABELS: Record<SetupKind, { text: string; tone: 'good' | 'warn' | 'bad' | 
   fallingKnife: { text: 'Falling knife', tone: 'bad' },
 }
 
-const COLORS = { good: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)', info: 'var(--accent)' }
-
 export function Badge({ kind }: { kind: SetupKind }) {
   const { text, tone } = LABELS[kind]
-  return (
-    <span style={{ border: `1px solid ${COLORS[tone]}`, color: COLORS[tone], borderRadius: 999, padding: '1px 8px', fontSize: 12, marginRight: 4 }}>
-      {text}
-    </span>
-  )
+  return <span className={`badge ${tone}`}>{text}</span>
 }
