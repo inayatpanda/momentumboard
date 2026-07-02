@@ -13,6 +13,14 @@ export interface AlertEvent {
   text: string
   symbol?: string
   at: number
+  meta?: { kind: 'setup'; setup: SetupKind; price: number | null }
+}
+
+/** An open journal position whose stop should be watched. */
+export interface StopWatch {
+  symbol: string
+  entryPrice: number
+  stop: number
 }
 
 export interface TickerSnapshot {
@@ -45,6 +53,7 @@ export interface AlertState {
   lastRegime: RegimeColor | null
   queue: AlertEvent[]
   lastBatchAt: number
+  stopFired: Record<string, boolean>
 }
 
 export interface AlertsConfig {
@@ -58,6 +67,7 @@ export interface AlertsInput {
   news: NewsItem[]
   videos: VideoItem[]
   nowSec: number
+  positions?: StopWatch[]
 }
 
 export const emptyAlertState = (): AlertState => ({
@@ -69,6 +79,7 @@ export const emptyAlertState = (): AlertState => ({
   lastRegime: null,
   queue: [],
   lastBatchAt: 0,
+  stopFired: {},
 })
 
 const INSTANT_SETUPS: SetupKind[] = ['reclaim', 'breakoutLive']
@@ -103,6 +114,7 @@ export function evaluateAlerts(cfg: AlertsConfig, input: AlertsInput, prev: Aler
     rvolHot: { ...prev.rvolHot },
     lastSetups: { ...prev.lastSetups },
     queue: [...prev.queue],
+    stopFired: { ...(prev.stopFired ?? {}) }, // older persisted states lack this field
   }
   const events: AlertEvent[] = []
   let seq = 0
@@ -154,9 +166,24 @@ export function evaluateAlerts(cfg: AlertsConfig, input: AlertsInput, prev: Aler
     for (const s of added) {
       const knifeToBase = s === 'basing' && before.includes('fallingKnife')
       const tier = INSTANT_SETUPS.includes(s) || knifeToBase ? 'instant' : 'batched'
-      emit(tier, `${t.symbol}: ${SETUP_LABEL[s]}${knifeToBase ? ' (knife stabilising)' : ''}`, t.symbol)
+      const e: AlertEvent = { id: `${input.nowSec}-${seq++}`, tier, text: `${t.symbol}: ${SETUP_LABEL[s]}${knifeToBase ? ' (knife stabilising)' : ''}`, symbol: t.symbol, at: input.nowSec, meta: { kind: 'setup', setup: s, price: t.price } }
+      events.push(e)
+      if (tier === 'batched') state.queue.push(e)
     }
     state.lastSetups[t.symbol] = t.setups
+  }
+
+  // journaled stop breaches — the highest-priority alert in the app
+  for (const p of input.positions ?? []) {
+    const key = `${p.symbol}:${p.stop}`
+    if (state.stopFired[key]) continue
+    const t = input.tickers.find(x => x.symbol === p.symbol)
+    if (!t || t.price == null || !t.marketOpen) continue
+    const breached = p.stop < p.entryPrice ? t.price <= p.stop : t.price >= p.stop
+    if (breached) {
+      emit('instant', `🛑 ${p.symbol} hit your stop ${p.stop} (now ${t.price}) — thesis invalidated, exit per plan`, p.symbol)
+      state.stopFired[key] = true
+    }
   }
 
   // regime flips

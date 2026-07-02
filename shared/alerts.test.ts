@@ -83,6 +83,44 @@ describe('built-in ticker rules', () => {
   })
 })
 
+describe('journaled stop breaches', () => {
+  const position = { symbol: 'AAPL', entryPrice: 100, stop: 95 }
+
+  it('fires instantly once when price crosses the stop, never refires', () => {
+    let out = evaluateAlerts(cfg(), input({ tickers: [snap({ price: 96 })], positions: [position] }), emptyAlertState())
+    expect(out.events).toHaveLength(0)
+    out = evaluateAlerts(cfg(), input({ tickers: [snap({ price: 94.8 })], positions: [position] }), out.state)
+    expect(out.events).toHaveLength(1)
+    expect(out.events[0].tier).toBe('instant')
+    expect(out.events[0].text).toContain('stop')
+    out = evaluateAlerts(cfg(), input({ tickers: [snap({ price: 93 })], positions: [position] }), out.state)
+    expect(out.events).toHaveLength(0)
+  })
+
+  it('handles inverse-style stops above entry and closed markets', () => {
+    const inverse = { symbol: 'AAPL', entryPrice: 100, stop: 108 }
+    let out = evaluateAlerts(cfg(), input({ tickers: [snap({ price: 109, marketOpen: false })], positions: [inverse] }), emptyAlertState())
+    expect(out.events).toHaveLength(0) // closed market: quotes are stale
+    out = evaluateAlerts(cfg(), input({ tickers: [snap({ price: 109 })], positions: [inverse] }), out.state)
+    expect(out.events).toHaveLength(1)
+  })
+
+  it('tolerates old persisted states without the stopFired field', () => {
+    const legacy = emptyAlertState() as Partial<ReturnType<typeof emptyAlertState>>
+    delete legacy.stopFired
+    const out = evaluateAlerts(cfg(), input({ tickers: [snap({ price: 94 })], positions: [position] }), legacy as ReturnType<typeof emptyAlertState>)
+    expect(out.events).toHaveLength(1)
+  })
+})
+
+describe('setup event metadata', () => {
+  it('carries structured setup info for signal logging', () => {
+    let out = evaluateAlerts(cfg(), input({ tickers: [snap({ setups: [] })] }), emptyAlertState())
+    out = evaluateAlerts(cfg(), input({ tickers: [snap({ setups: ['reclaim'], price: 101 })] }), out.state)
+    expect(out.events[0].meta).toEqual({ kind: 'setup', setup: 'reclaim', price: 101 })
+  })
+})
+
 describe('regime, news, videos', () => {
   it('regime change is instant; first observation is not', () => {
     let out = evaluateAlerts(cfg(), input({ regime: 'green' }), emptyAlertState())
