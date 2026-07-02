@@ -128,6 +128,19 @@ export function initWeights(base: Record<FactorName, number> = DEFAULT_WEIGHTS):
   }
 }
 
+/** Forward-migrate a stored/seeded weights snapshot that predates a newly added
+ * factor: backfill any missing key into base/current (from defaults) and ic
+ * (zeroed) so an old blob never silently zeroes a new factor's weight. Mutates
+ * and returns the same object; idempotent. */
+export function migrateWeights(state: WeightsState, base: Record<FactorName, number> = DEFAULT_WEIGHTS): WeightsState {
+  for (const name of Object.keys(base) as FactorName[]) {
+    if (state.base[name] == null) state.base[name] = base[name]
+    if (state.current[name] == null) state.current[name] = base[name]
+    if (!state.ic[name]) state.ic[name] = { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }
+  }
+  return state
+}
+
 export function updateIcStats(state: WeightsState, pred: Prediction, outcome: PredOutcome): WeightsState {
   for (const name of FACTOR_NAMES) {
     const f = pred.factors[name]

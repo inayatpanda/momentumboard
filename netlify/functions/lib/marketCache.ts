@@ -62,3 +62,12 @@ export async function cachedCapUsdM(sym: string, finnhubKey: string): Promise<nu
     return null
   }
 }
+
+/** Company display name from the same `cap:` cache profile2 already writes —
+ * read-only, no dedicated network call (it rides along with cap lookups). Used
+ * to match roster tickers against 13F issuer names; a cache miss just means that
+ * name falls back to the alias map. */
+export async function cachedCompanyName(sym: string): Promise<string | null> {
+  const hit = await getCached<{ capUsdM: number | null; name?: string }>(`cap:${sym}`)
+  return hit?.name ?? null
+}

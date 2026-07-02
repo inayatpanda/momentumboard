@@ -1,5 +1,7 @@
 // SEC EDGAR 13F reader. Institutional holdings file ~45 days after quarter end,
 // so this is CONTEXT (what proven allocators accumulated), never timing.
+import type { SmartMoneyInput } from '../../../shared/engine/factors'
+
 const UA = { 'User-Agent': 'MomentumBoard research inayatc2002@gmail.com' }
 
 export const FUNDS = [
@@ -93,4 +95,125 @@ export async function fetchFundMoves(cik: string, name: string, fetchFn: typeof 
   } catch {
     return null
   }
+}
+
+export async function fetchAllFundMoves(fetchFn: typeof fetch = fetch): Promise<FundMoves[]> {
+  const out: FundMoves[] = []
+  for (const f of FUNDS) {
+    const m = await fetchFundMoves(f.cik, f.name, fetchFn) // sequential — SEC asks for gentle, single-threaded access
+    if (m) out.push(m)
+  }
+  return out
+}
+
+/** 13F moves change only on filing (~quarterly), so a 12h cache keeps the daily
+ * sweep from re-walking EDGAR every run while staying SEC-polite. edgar.ts had
+ * no cache before — this is the one referenced by the engine dep. */
+export async function cachedFundMoves(fetchFn: typeof fetch = fetch): Promise<FundMoves[]> {
+  const { getCached, setCached } = await import('./cache')
+  const KEY = 'edgar:fund-moves'
+  const hit = await getCached<FundMoves[]>(KEY)
+  if (hit) return hit
+  const moves = await fetchAllFundMoves(fetchFn)
+  if (moves.length) await setCached(KEY, moves, 12 * 3600)
+  return moves
+}
+
+// ---- 13F issuer-name → roster-ticker matching ----
+//
+// 13F rows carry issuer NAMES (often SEC-abbreviated: "BANK AMER CORP",
+// "OCCIDENTAL PETE"), not tickers. Match conservatively: a MISSED match is
+// fine, a WRONG match is not. Two paths, both token-boundary safe:
+//   1. a curated ticker→issuer alias map (handles the abbreviated mega-caps)
+//   2. exact normalised equality with the Finnhub profile2 `name` (cap: cache)
+// Anything else → no match → the factor stays null for that name.
+
+const CORP_NOISE = /\b(INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|COS|LTD|LIMITED|PLC|LLC|LP|HLDG|HLDGS|HOLDING|HOLDINGS|GROUP|GRP|TR|TRUST|CL|CLASS|COM|COMMON|SHS|SHARES|CAP|STK|NEW|THE|NV|SA|AG|USA|US|DEL)\b/g
+
+export function normIssuer(s: string): string {
+  return s
+    .toUpperCase()
+    .replace(/&/g, ' AND ')
+    .replace(/[^A-Z0-9 ]/g, ' ')
+    .replace(CORP_NOISE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/ [ABC]$/, '') // drop a trailing share-class letter ("ALPHABET A", "META PLATFORMS A")
+}
+
+// Curated aliases keyed by ticker → the EXACT normalised SEC issuer form(s). We
+// match by exact normalised equality (not prefix), so 'APPLE' can never grab
+// "Apple Hospitality REIT". Multiple values cover SEC's spelling variants.
+const SMART_MONEY_ALIASES: Record<string, string[]> = {
+  AAPL: ['APPLE'],
+  BAC: ['BANK AMER', 'BANK OF AMERICA', 'BANKAMERICA'],
+  KO: ['COCA COLA'],
+  CVX: ['CHEVRON'],
+  OXY: ['OCCIDENTAL PETE', 'OCCIDENTAL PETROLEUM'],
+  AXP: ['AMERICAN EXPRESS', 'AMER EXPRESS'],
+  KHC: ['KRAFT HEINZ'],
+  MCO: ['MOODYS'],
+  CB: ['CHUBB'],
+  DVA: ['DAVITA'],
+  KR: ['KROGER'],
+  VRSN: ['VERISIGN'],
+  V: ['VISA'],
+  MA: ['MASTERCARD'],
+  AMZN: ['AMAZON'],
+  NVDA: ['NVIDIA'],
+  GOOGL: ['ALPHABET'],
+  GOOG: ['ALPHABET'],
+  META: ['META PLATFORMS'],
+  MSFT: ['MICROSOFT'],
+  CMG: ['CHIPOTLE MEXICAN GRILL', 'CHIPOTLE MEXICAN'],
+  QSR: ['RESTAURANT BRANDS INTL', 'RESTAURANT BRANDS INTERNATIONAL'],
+  HLT: ['HILTON WORLDWIDE'],
+  NKE: ['NIKE'],
+  HHH: ['HOWARD HUGHES'],
+  BABA: ['ALIBABA'],
+  UBER: ['UBER TECHNOLOGIES', 'UBER TECH'],
+  SIRI: ['SIRIUS XM', 'SIRIUS XM HLDGS'],
+  LPX: ['LOUISIANA PAC', 'LOUISIANA PACIFIC'],
+  ALLY: ['ALLY FINL', 'ALLY FINANCIAL'],
+  C: ['CITIGROUP'],
+  LEN: ['LENNAR'],
+  DHI: ['D R HORTON', 'HORTON D R'],
+  PHM: ['PULTEGROUP'],
+  DPZ: ['DOMINOS PIZZA'],
+  POOL: ['POOL'],
+}
+
+const baseTicker = (sym: string) => sym.split('.')[0].split('-')[0].toUpperCase()
+
+/** Conservative issuer↔ticker test: exact normalised equality against a curated
+ * alias OR against the Finnhub company name. No prefix/substring matching — a
+ * missed match is acceptable, a wrong one is not. */
+export function matchesIssuer(sym: string, companyName: string | null, issuerNorm: string): boolean {
+  if (!issuerNorm) return false
+  const aliases = SMART_MONEY_ALIASES[baseTicker(sym)]
+  if (aliases && aliases.some(a => normIssuer(a) === issuerNorm)) return true
+  if (companyName) {
+    const cn = normIssuer(companyName)
+    if (cn.length >= 4 && cn === issuerNorm) return true
+  }
+  return false
+}
+
+/** Per-symbol 13F overlap against the tracked funds' latest moves, or null if no
+ * confident match. bought = funds that newly bought or increased; exited = funds
+ * that sold out entirely. */
+export function matchSmartMoney(sym: string, companyName: string | null, moves: FundMoves[]): SmartMoneyInput | null {
+  const bought = new Set<string>()
+  const exited = new Set<string>()
+  let filedAt = ''
+  for (const m of moves) {
+    const hits = (hs: Holding[]) => hs.some(h => matchesIssuer(sym, companyName, normIssuer(h.issuer)))
+    const b = hits(m.newPositions) || hits(m.increased)
+    const e = hits(m.exited)
+    if (b) bought.add(m.fund)
+    if (e) exited.add(m.fund)
+    if ((b || e) && m.filedAt > filedAt) filedAt = m.filedAt
+  }
+  if (!bought.size && !exited.size) return null
+  return { bought: [...bought], exited: [...exited], filedAt }
 }

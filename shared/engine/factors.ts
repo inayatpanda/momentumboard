@@ -76,6 +76,26 @@ export function insiderFactor(summary: { isCluster: boolean; buyers: string[] } 
     : { score: 20, detail: 'insider buying' }
 }
 
+/** 13F smart-money overlap. What a tracked fund did to a roster name in its
+ * latest filing: newly-bought or increased → +25 per fund, exited → −20 per
+ * fund, clamped ±30. Small AND explicitly stale (up to ~45d filing lag), so the
+ * learning loop is EXPECTED to decay this toward the floor if it's just noise —
+ * that decay is the experiment, not a failure. No confident match → null. */
+export interface SmartMoneyInput {
+  bought: string[] // fund names that newly bought or increased
+  exited: string[] // fund names that exited
+  filedAt: string // latest relevant filing date, ISO
+}
+
+export function smartMoneyFactor(m: SmartMoneyInput | null): FactorScore {
+  if (!m || (!m.bought.length && !m.exited.length)) return { score: null, detail: 'no 13F match' }
+  const score = round1(clamp(25 * m.bought.length - 20 * m.exited.length, -30, 30))
+  const parts: string[] = []
+  if (m.bought.length) parts.push(`${m.bought.join(', ')} bought/added`)
+  if (m.exited.length) parts.push(`${m.exited.join(', ')} exited`)
+  return { score, detail: `${parts.join('; ')} (13F, filed ${m.filedAt} — up to 45d lag)` }
+}
+
 const POS = new Set(['beat', 'beats', 'surge', 'surges', 'soar', 'soars', 'jump', 'jumps', 'upgrade', 'upgraded', 'record', 'wins', 'rally', 'top', 'tops'])
 const NEG = new Set(['miss', 'misses', 'plunge', 'plunges', 'sink', 'sinks', 'fall', 'falls', 'cut', 'cuts', 'downgrade', 'downgraded', 'probe', 'lawsuit', 'recall', 'warn', 'warns', 'slump', 'slumps'])
 

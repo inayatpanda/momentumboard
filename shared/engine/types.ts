@@ -1,6 +1,6 @@
 import type { RegimeColor } from '../types'
 
-export type FactorName = 'technical' | 'momentum' | 'sector' | 'social' | 'channels' | 'insiders' | 'news' | 'seasonality'
+export type FactorName = 'technical' | 'momentum' | 'sector' | 'social' | 'channels' | 'insiders' | 'news' | 'seasonality' | 'smartMoney'
 
 export interface FactorScore {
   score: number | null // signed −100..+100 toward LONG; null = no data (weight renormalises away)

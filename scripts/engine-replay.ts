@@ -216,6 +216,7 @@ for (const pd of predictionDates) {
       channels: { score: null, detail: 'not replayable' },
       insiders: { score: null, detail: 'not replayable' },
       news: { score: null, detail: 'not replayable' },
+      smartMoney: { score: null, detail: 'not replayable' },
     }
 
     const lastClose = sliceCloses[sliceCloses.length - 1]

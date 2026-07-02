@@ -4,6 +4,8 @@ import { memoryStore } from './store'
 import type { Candle } from '../../../shared/types'
 import type { Prediction } from '../../../shared/engine/types'
 import type { CalibrationState } from '../../../shared/engine/calibration'
+import type { InsiderSummary } from './insiders'
+import type { FundMoves } from './edgar'
 
 const T0 = Date.parse('2025-06-02') / 1000
 const mk = (fn: (i: number) => number, days = 260): Candle[] =>
@@ -21,9 +23,11 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   candles: async sym => (sym === 'NVDA' ? shorty : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null),
   candles5y: async () => null,
   capUsdM: async () => null,
+  companyName: async () => null,
   screens: async () => [{ row: { sym: 'NVDA', price: 162, capUsdM: 50_000 }, source: 'screener:gainers' }],
   social: async () => [],
-  insiders: async () => [],
+  insiderCoverage: async () => new Map(),
+  smartMoney: async () => [],
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
   earningsSyms: async () => new Set<string>(),
   ...over,
@@ -165,6 +169,38 @@ describe('buildBoard', () => {
     expect(shadow.instrument).toBeNull()
     const publicBoard = (await store.read<{ board: Prediction[] }>('engine-board'))!
     expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
+  })
+
+  it('Fix A: a non-watchlist roster name with a cached cluster-buy gets a non-null insiders factor', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] }) // NVDA is roster-only, never on the watchlist
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    const cluster: InsiderSummary = { symbol: 'NVDA', buyers: ['CEO', 'CFO'], totalBought: 9000, totalValueUsd: 900_000, isCluster: true, latest: [] }
+    const coverage = new Map<string, InsiderSummary | null>([['NVDA', cluster]])
+    const { board } = await buildBoard(store, deps({ insiderCoverage: async () => coverage }), NOW)
+    const call = board.find(b => b.sym === 'NVDA')!
+    expect(call).toBeDefined()
+    expect(call.factors.insiders.score).toBe(45) // rotation coverage scored it despite no watchlist membership
+    expect(call.factors.insiders.detail).toContain('cluster')
+  })
+
+  it('Fix B: a smartMoney 13F match surfaces in the prediction factor breakdown', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    const moves: FundMoves[] = [
+      { fund: 'Scion Asset Management', filedAt: '2026-05-15', newPositions: [{ issuer: 'NVIDIA CORP', shares: 100, value: 100 }], increased: [], exited: [] },
+    ]
+    const { board } = await buildBoard(
+      store,
+      deps({ smartMoney: async () => moves, companyName: async s => (s === 'NVDA' ? 'NVIDIA Corp' : null) }),
+      NOW,
+    )
+    const call = board.find(b => b.sym === 'NVDA')!
+    expect(call).toBeDefined()
+    expect(call.factors.smartMoney.score).toBe(25) // Scion newly bought NVIDIA → +25
+    expect(call.factors.smartMoney.detail).toContain('Scion')
+    expect(call.factors.smartMoney.detail).toContain('45d lag')
   })
 })
 

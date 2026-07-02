@@ -27,6 +27,7 @@ const nullFactors = (): Record<FactorName, FactorScore> => ({
   insiders: { score: null, detail: '' },
   news: { score: null, detail: '' },
   seasonality: { score: null, detail: '' },
+  smartMoney: { score: null, detail: '' },
 })
 
 export function seedFromHistory(bySym: Map<string, Candle[]>, spy: Candle[]): { weights: WeightsState; calibration: CalibrationState } {

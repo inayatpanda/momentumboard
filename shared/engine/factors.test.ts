@@ -6,6 +6,7 @@ import {
   newsFactor,
   seasonalityFactor,
   sectorFactor,
+  smartMoneyFactor,
   socialFactor,
   technicalFactor,
 } from './factors'
@@ -82,6 +83,26 @@ describe('insiderFactor', () => {
     expect(insiderFactor({ isCluster: false, buyers: ['a'] }).score).toBe(20)
     expect(insiderFactor(null).score).toBe(0)
     expect(insiderFactor(undefined).score).toBeNull()
+  })
+})
+
+describe('smartMoneyFactor', () => {
+  it('scores a tracked-fund buy +25, an exit −20, and notes the 13F staleness', () => {
+    const buy = smartMoneyFactor({ bought: ['Berkshire Hathaway'], exited: [], filedAt: '2026-05-15' })
+    expect(buy.score).toBe(25)
+    expect(buy.detail).toContain('Berkshire Hathaway')
+    expect(buy.detail).toContain('2026-05-15')
+    expect(buy.detail).toContain('45d lag')
+    expect(smartMoneyFactor({ bought: [], exited: ['Scion Asset Management'], filedAt: '2026-05-15' }).score).toBe(-20)
+  })
+  it('clamps at ±30 across multiple funds; a mixed signal nets out', () => {
+    expect(smartMoneyFactor({ bought: ['A', 'B'], exited: [], filedAt: '2026-05-15' }).score).toBe(30) // 50 → 30
+    expect(smartMoneyFactor({ bought: [], exited: ['A', 'B'], filedAt: '2026-05-15' }).score).toBe(-30)
+    expect(smartMoneyFactor({ bought: ['A'], exited: ['B'], filedAt: '2026-05-15' }).score).toBe(5) // 25 − 20
+  })
+  it('no confident match → null (renormalises away, never a fake 0)', () => {
+    expect(smartMoneyFactor(null).score).toBeNull()
+    expect(smartMoneyFactor({ bought: [], exited: [], filedAt: '' }).score).toBeNull()
   })
 })
 

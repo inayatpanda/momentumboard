@@ -12,8 +12,10 @@ import {
   newsFactor,
   seasonalityFactor,
   sectorFactor,
+  smartMoneyFactor,
   socialFactor,
   technicalFactor,
+  type SmartMoneyInput,
 } from '../../../shared/engine/factors'
 import { composeCall } from '../../../shared/engine/composite'
 import {
@@ -21,6 +23,7 @@ import {
   gradeFor,
   gradePrediction,
   maybeNudgeWeights,
+  migrateWeights,
   probabilityFor,
   updateCalibration,
   updateIcStats,
@@ -35,6 +38,7 @@ import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { SECTOR_MEMBERS, computeSectorRows } from './sectors'
 import type { SocialPulseRow } from './social'
 import type { InsiderSummary } from './insiders'
+import { matchSmartMoney, type FundMoves } from './edgar'
 import type { ScreenRow } from './screener'
 import seed from '../../../shared/engine/seed.json'
 
@@ -45,9 +49,13 @@ export interface EngineDeps {
   candles: (sym: string) => Promise<Candle[] | null>
   candles5y: (sym: string) => Promise<Candle[] | null>
   capUsdM: (sym: string) => Promise<number | null>
+  companyName: (sym: string) => Promise<string | null>
   screens: () => Promise<{ row: ScreenRow; source: string }[]>
   social: (watchSyms: string[]) => Promise<SocialPulseRow[]>
-  insiders: (symbols: string[]) => Promise<InsiderSummary[]>
+  // roster-wide insider coverage: watchlist every run + a rotating cached slice
+  // of the rest. Map value: summary → buys; null → checked-empty; absent → never checked.
+  insiderCoverage: (rosterSyms: string[], watchSyms: string[], dateISO: string) => Promise<Map<string, InsiderSummary | null>>
+  smartMoney: () => Promise<FundMoves[]>
   mediaTitles: () => Promise<string[]>
   earningsSyms: () => Promise<Set<string>>
 }
@@ -92,6 +100,10 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string }): EngineDeps {
       const { cachedCapUsdM } = await import('./marketCache')
       return cachedCapUsdM(sym, env.FINNHUB_API_KEY ?? '')
     },
+    companyName: async sym => {
+      const { cachedCompanyName } = await import('./marketCache')
+      return cachedCompanyName(sym)
+    },
     screens: async () => {
       const { fetchScreen, fetchTrending } = await import('./screener')
       const kinds = [
@@ -109,9 +121,13 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string }): EngineDeps {
       const [r, st] = await Promise.all([fetchRedditTrends(), fetchStocktwitsTrending()])
       return combineSocialPulse(r, st, [], watchSyms)
     },
-    insiders: async symbols => {
-      const { fetchInsiderBuys } = await import('./insiders')
-      return fetchInsiderBuys(symbols, env.FINNHUB_API_KEY ?? '')
+    insiderCoverage: async (rosterSyms, watchSyms, dateISO) => {
+      const { collectInsiderCoverage } = await import('./insiders')
+      return collectInsiderCoverage(rosterSyms, watchSyms, dateISO, env.FINNHUB_API_KEY ?? '')
+    },
+    smartMoney: async () => {
+      const { cachedFundMoves } = await import('./edgar')
+      return cachedFundMoves()
     },
     mediaTitles: () => fetchMediaTitles(),
     earningsSyms: async () => {
@@ -131,7 +147,9 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string }): EngineDeps {
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T
 
 async function loadState(store: AppStore) {
-  const weights = (await store.read<WeightsState>('engine-weights')) ?? clone(seed.weights as unknown as WeightsState)
+  // migrateWeights backfills factors added after a snapshot was stored/seeded
+  // (seed.json predates smartMoney) so an old blob never silently zeroes them.
+  const weights = migrateWeights((await store.read<WeightsState>('engine-weights')) ?? clone(seed.weights as unknown as WeightsState))
   const calibration = (await store.read<CalibrationState>('engine-calibration')) ?? clone(seed.calibration as unknown as CalibrationState)
   const channelCred = (await store.read<ChannelCredState>('channel-credibility')) ?? {}
   return { weights, calibration, channelCred }
@@ -343,12 +361,23 @@ export async function buildBoard(
   // shared context for factor computation
   const { weights, calibration, channelCred } = await loadState(store)
   const risk = (await store.read<RiskState>('risk-state')) ?? initRisk(today)
-  const [insiderList, mediaTitles, earningsSet] = await Promise.all([
-    watchSyms.length ? deps.insiders(watchSyms) : Promise.resolve([]),
+  const rosterSyms = roster.map(e => e.sym)
+  const [insiderCoverage, mediaTitles, earningsSet, fundMoves] = await Promise.all([
+    deps.insiderCoverage(rosterSyms, watchSyms, today),
     deps.mediaTitles(),
     deps.earningsSyms(),
+    deps.smartMoney(),
   ])
-  const insidersBySym = new Map(insiderList.map(i => [i.symbol, i]))
+  // 13F overlap: match each roster name (via its cap: company name, else alias map)
+  // against the tracked funds' latest moves. Cheap and cached; skipped if no filings.
+  const smartMoneyBySym = new Map<string, SmartMoneyInput | null>()
+  if (fundMoves.length) {
+    await Promise.all(
+      rosterSyms.map(async sym => {
+        smartMoneyBySym.set(sym, matchSmartMoney(sym, await deps.companyName(sym), fundMoves))
+      }),
+    )
+  }
   const socialBySym = new Map(social.map(s => [s.sym, s]))
   const weekAgo = nowSec - 7 * 86_400
   const extracts = ((await store.read<ExtractLike[]>('video-extracts')) ?? []).filter(e => e.at > weekAgo)
@@ -393,9 +422,11 @@ export async function buildBoard(
         read.rsi,
       ),
       channels: channelsFactor(stancesBySym.get(entry.sym) ?? stancesBySym.get(baseSym(entry.sym)) ?? [], credOf),
-      insiders: insiderFactor(watchSyms.includes(entry.sym) ? (insidersBySym.get(entry.sym) ?? null) : undefined),
+      // coverage.get: summary → scored, null → checked-empty (0), undefined (absent) → not checked (null)
+      insiders: insiderFactor(insiderCoverage.get(entry.sym)),
       news: newsFactor(titleMatches(entry.sym)),
       seasonality: { score: null, detail: 'checked only for candidates' },
+      smartMoney: smartMoneyFactor(smartMoneyBySym.get(entry.sym) ?? null),
     }
     const composeInput = {
       sym: entry.sym,

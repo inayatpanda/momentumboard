@@ -58,3 +58,28 @@ const roster = (await store.read<{ sym: string; capUsdM: number | null; source: 
 const smalls = roster.filter(r => r.capUsdM != null && r.capUsdM < 2000).length
 console.log(`\nroster: ${roster.length} names, ${smalls} small caps`)
 console.log(roster.map(r => r.sym).join(' '))
+
+// Fix A/B observability: insider coverage this run + 13F smart-money firings.
+const rosterSyms = roster.map(r => r.sym)
+const watchSyms = ['NVDA', 'TSLA', 'PLTR']
+const cov = await deps.insiderCoverage(rosterSyms, watchSyms, today) // cached from the build — no fresh burst
+const withBuys = [...cov.entries()].filter(([, v]) => v && v.buyers.length)
+console.log(`\ninsider coverage: ${cov.size}/${rosterSyms.length} roster names checked (${withBuys.length} with open-market buys)`)
+for (const [sym, v] of withBuys) console.log(`   ${sym}: ${v!.buyers.length} buyer(s)${v!.isCluster ? ' — CLUSTER' : ''}`)
+
+const moves = await deps.smartMoney()
+console.log(`\n13F funds parsed: ${moves.length} (${moves.map(m => `${m.fund}@${m.filedAt}`).join(', ') || 'none'})`)
+if (moves.length) {
+  const { matchSmartMoney } = await import('../netlify/functions/lib/edgar')
+  let matchable = 0
+  const firings: string[] = []
+  for (const sym of rosterSyms) {
+    const m = matchSmartMoney(sym, await deps.companyName(sym), moves)
+    if (m) {
+      matchable++
+      firings.push(`${sym}: ${[...(m.bought.length ? [`+${m.bought.join('/')}`] : []), ...(m.exited.length ? [`-${m.exited.join('/')}`] : [])].join(' ')}`)
+    }
+  }
+  console.log(`smartMoney matchable roster names: ${matchable}/${rosterSyms.length}`)
+  for (const f of firings) console.log(`   ${f}`)
+}

@@ -11,6 +11,7 @@ export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
   insiders: 0.4,
   news: 0.4,
   seasonality: 0.3,
+  smartMoney: 0.3, // small on purpose: 13F is stale, so we EXPECT the IC loop to decay it
 }
 
 // Regime scales conviction, by side: longs shrink as the tape reddens,

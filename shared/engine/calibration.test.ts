@@ -6,10 +6,12 @@ import {
   gradePrediction,
   initWeights,
   maybeNudgeWeights,
+  migrateWeights,
   probabilityFor,
   updateCalibration,
   updateIcStats,
   type CalibrationState,
+  type WeightsState,
 } from './calibration'
 import type { Candle } from '../types'
 import type { FactorName, Prediction } from './types'
@@ -186,6 +188,36 @@ describe('weight learning', () => {
     w = updateIcStats(w, pred('long', { technical: 50 }), win)
     const cur = w.current.technical
     expect(maybeNudgeWeights(w, '2026-07-02').current.technical).toBe(cur)
+  })
+})
+
+describe('migrateWeights', () => {
+  // an old snapshot from before smartMoney existed — no key in base/current/ic
+  const legacy = (): WeightsState => {
+    const eight = { technical: 1, momentum: 0.8, sector: 0.6, social: 0.5, channels: 0.6, insiders: 0.4, news: 0.4, seasonality: 0.3 }
+    return {
+      base: { ...eight } as Record<FactorName, number>,
+      current: { ...eight, technical: 0.92 } as Record<FactorName, number>, // a learned value that must survive
+      ic: Object.fromEntries(Object.keys(eight).map(k => [k, { nAgree: 3, sumAgree: 1, nDisagree: 0, sumDisagree: 0 }])) as WeightsState['ic'],
+      gradedSinceNudge: 4,
+      history: [],
+    }
+  }
+
+  it('backfills a factor missing from an old snapshot into base/current/ic', () => {
+    const w = migrateWeights(legacy())
+    expect(w.base.smartMoney).toBe(0.3)
+    expect(w.current.smartMoney).toBe(0.3) // NOT silently zeroed
+    expect(w.ic.smartMoney).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+  })
+
+  it('leaves already-present (learned) values untouched and is idempotent', () => {
+    const once = migrateWeights(legacy())
+    expect(once.current.technical).toBe(0.92)
+    expect(once.ic.technical.nAgree).toBe(3)
+    const twice = migrateWeights(once)
+    expect(twice.current.smartMoney).toBe(0.3)
+    expect(twice.current.technical).toBe(0.92)
   })
 })
 

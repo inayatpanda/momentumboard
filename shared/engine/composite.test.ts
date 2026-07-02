@@ -11,6 +11,7 @@ const nullFactors = (): Record<FactorName, FactorScore> => ({
   insiders: { score: null, detail: '' },
   news: { score: null, detail: '' },
   seasonality: { score: null, detail: '' },
+  smartMoney: { score: null, detail: '' },
 })
 
 const base = (over: Partial<ComposeInput> = {}): ComposeInput => ({
