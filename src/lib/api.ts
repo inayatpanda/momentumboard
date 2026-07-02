@@ -138,10 +138,12 @@ export const getNews = (symbol: string) =>
   apiGet<{ items: { title: string; url: string; publishedSec: number }[] }>(`/api/market?type=news&symbol=${encodeURIComponent(symbol)}`).then(d => d.items)
 
 export async function putConfig(cfg: AppConfig): Promise<void> {
+  // keepalive: the request survives the user switching away from the app mid-send
   const res = await fetch('/api/config', {
     method: 'PUT',
     headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
     body: JSON.stringify(cfg),
+    keepalive: true,
   })
   const body = (await res.json()) as ApiEnvelope<AppConfig>
   if (!body.ok) throw new Error(body.error ?? `http-${res.status}`)

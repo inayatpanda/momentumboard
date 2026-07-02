@@ -3,8 +3,18 @@ import { putConfig } from './api'
 
 let timer: ReturnType<typeof setTimeout> | undefined
 
+// If the app is being hidden/closed with a pending mirror, flush immediately.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && timer) {
+      clearTimeout(timer)
+      mirrorConfig(0)
+    }
+  })
+}
+
 /** Debounced push of the local watchlist + rules + settings to the server config (read by the alert checker). */
-export function mirrorConfig(delayMs = 1500) {
+export function mirrorConfig(delayMs = 400) {
   clearTimeout(timer)
   timer = setTimeout(async () => {
     const [watch, ruleItems, capital, ytChannels, noteItems] = await Promise.all([db.watchlist.toArray(), db.rules.toArray(), getCapital(), getChannels(), db.notes.toArray()])

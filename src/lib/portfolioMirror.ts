@@ -33,6 +33,7 @@ export function mirrorPortfolio(delayMs = 1500) {
       method: 'PUT',
       headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
       body: JSON.stringify(snapshot),
+      keepalive: true,
     }).catch(() => {/* offline is fine */})
 
     // full backup rides along: trades + rules + watchlist + settings → private Blobs
