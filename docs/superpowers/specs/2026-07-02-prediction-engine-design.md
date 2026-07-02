@@ -209,3 +209,9 @@ Technical/momentum/sector/**seasonality** factors are computable from candle his
 5. Compose integration (board-constrained ideas + overlay flags + Barron's/Bloomberg feeds).
 6. Backtest seed script + initial weights.
 7. UI: board + engine scorecard + risk dial + channel credibility + roster view.
+
+## Amendment 2026-07-02: close-based stop grading
+
+A point-in-time replay (`scripts/engine-replay.ts`, 29 shadow + 1 live calls over 5 weeks) showed intraday-pierce stop grading was measuring noise, not judgment: 1.5×ATR ≈ 4.9% of entry sits inside normal weekly range, 5 calls were wick-pierced yet closed positive by day 10 (10d hit 31.0% pierced vs 51.7% ignoring stops), and the sole live call (LLY, +4.0% excess) graded 0-for-2 on one tick. **Change:** `gradePrediction()` and the seed's inline check now mark `stopped` only when a bar CLOSES beyond the stop; wicks are survivable. Stop distance unchanged (1.5×ATR; close-based@1.5× tied intraday@2.0× on the ledger and keeps grading aligned with the advertised level); execution advice on cards still treats the stop as a hard intraday level. Re-scored ledger: 10/30→13/30 at 5d, 9/30→12/30 at 10d; PLTR 5/18 and OXY 6/8 losers still grade stopped misses. Seed reground: same 816 outcomes, hits 350→384 (42.9%→47.1%).
+
+**WATCHPOINTS deliberately not implemented** (small-n, left to the live learning loop): weak-stage shorts on persistent-theme names went 0/3 (CEG); weak-shorts with capacityPct ≥ 9% hit 25% vs 50% below — squeeze-prone; trending-longs 1/7 in a flat tape.

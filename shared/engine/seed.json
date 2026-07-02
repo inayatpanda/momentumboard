@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-07-02T18:30:39.873Z",
+ "generatedAt": "2026-07-02T19:22:14.376Z",
  "symbols": 66,
  "weights": {
   "base": {
@@ -13,8 +13,8 @@
    "seasonality": 0.3
   },
   "current": {
-   "technical": 0.9973676470588235,
-   "momentum": 0.7993317431599158,
+   "technical": 0.9973639705882353,
+   "momentum": 0.7993285086585682,
    "sector": 0.6,
    "social": 0.5,
    "channels": 0.6,
@@ -25,13 +25,13 @@
   "ic": {
    "technical": {
     "nAgree": 816,
-    "sumAgree": -143.19999999999993,
+    "sumAgree": -143.3999999999999,
     "nDisagree": 0,
     "sumDisagree": 0
    },
    "momentum": {
     "nAgree": 742,
-    "sumAgree": -132.79999999999987,
+    "sumAgree": -132.99999999999986,
     "nDisagree": 73,
     "sumDisagree": -9.000000000000002
    },
@@ -96,23 +96,23 @@
   "buckets": {
    "short:red:25-40": {
     "n": 170,
-    "hits": 67
+    "hits": 76
    },
    "short:green:25-40": {
     "n": 132,
-    "hits": 50
+    "hits": 55
    },
    "long:green:25-40": {
     "n": 217,
-    "hits": 101
+    "hits": 110
    },
    "long:amber:25-40": {
     "n": 69,
-    "hits": 28
+    "hits": 32
    },
    "short:amber:25-40": {
     "n": 84,
-    "hits": 37
+    "hits": 42
    },
    "short:red:40-55": {
     "n": 45,
@@ -120,11 +120,11 @@
    },
    "long:red:25-40": {
     "n": 12,
-    "hits": 7
+    "hits": 8
    },
    "long:green:40-55": {
     "n": 55,
-    "hits": 31
+    "hits": 32
    },
    "short:red:55-70": {
     "n": 12,
