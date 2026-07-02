@@ -95,9 +95,15 @@ export async function routeReport(
       index.push(dateKey)
       await store.write('report-index', index.slice(-90))
     }
+    const link = `${env.URL ?? 'https://momentumboard-inayat.netlify.app'}/report`
     if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-      const link = `${env.URL ?? 'https://momentumboard-inayat.netlify.app'}/report`
       await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, `📰 Morning report is ready → ${link}`).catch(() => {})
+    }
+    try {
+      const { sendPushAll } = await import('./lib/pushSend')
+      await sendPushAll(store, { VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY }, { title: 'Morning report is ready', body: 'Tap to read today’s analysis', url: '/report' })
+    } catch {
+      /* push is best-effort */
     }
     return json(200, { ok: true, data: { at } })
   }

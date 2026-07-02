@@ -131,7 +131,14 @@ export default async () => {
   let sent = 0
   const muteUntil = (await store.read<number>('mute-until')) ?? 0
   const deliver = async (text: string) => {
-    if (nowSec < muteUntil) return // /mute via the Telegram bot
+    if (nowSec < muteUntil) return // /mute via the Telegram bot silences both channels
+    // native app push (installed PWA devices)
+    try {
+      const { sendPushAll } = await import('./lib/pushSend')
+      sent += await sendPushAll(store, { VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY }, { title: 'MomentumBoard', body: text })
+    } catch (e) {
+      errors.push(`push: ${e}`)
+    }
     if (!botToken || !chatId) {
       if (!errors.includes('telegram-unconfigured')) errors.push('telegram-unconfigured')
       return

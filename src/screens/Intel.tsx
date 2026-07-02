@@ -1,0 +1,201 @@
+import { useEffect, useState } from 'react'
+import { db } from '../lib/db'
+import { getEcon, getCalendar, getConsensus, getInsiders, getSmartMoney, getVideoAnalyses, getFeed, getAlertHistory } from '../lib/api'
+
+// Intel: what the market, the smart money, the insiders and the channels are doing.
+// The situational-awareness page.
+
+export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const [econ, setEcon] = useState<Awaited<ReturnType<typeof getEcon>>>([])
+  const [earnings, setEarnings] = useState<Awaited<ReturnType<typeof getCalendar>>>([])
+  const [consensus, setConsensus] = useState<Awaited<ReturnType<typeof getConsensus>> | null>(null)
+  const [insiders, setInsiders] = useState<Awaited<ReturnType<typeof getInsiders>>>([])
+  const [smartMoney, setSmartMoney] = useState<Awaited<ReturnType<typeof getSmartMoney>> | null>(null)
+  const [videoAnalyses, setVideoAnalyses] = useState<Awaited<ReturnType<typeof getVideoAnalyses>>>([])
+  const [feed, setFeed] = useState<Awaited<ReturnType<typeof getFeed>>>({ news: [], videos: [] })
+  const [history, setHistory] = useState<Awaited<ReturnType<typeof getAlertHistory>>>([])
+
+  useEffect(() => {
+    db.watchlist.toArray().then(items => {
+      const syms = items.map(i => i.symbol)
+      if (syms.length) {
+        getCalendar(syms).then(setEarnings).catch(() => {})
+        getInsiders(syms).then(setInsiders).catch(() => {})
+      }
+    })
+    getEcon().then(setEcon).catch(() => {})
+    getConsensus().then(setConsensus).catch(() => {})
+    getSmartMoney().then(setSmartMoney).catch(() => {})
+    getVideoAnalyses().then(setVideoAnalyses).catch(() => {})
+    getFeed().then(setFeed).catch(() => {})
+    getAlertHistory().then(setHistory).catch(() => {})
+  }, [])
+
+  return (
+    <>
+      <header className="topbar">
+        <span className="brand">Intel</span>
+        <button className="gear" onClick={onOpenSettings} aria-label="Settings">⚙</button>
+      </header>
+      <div className="content digest-cols">
+        {econ.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Macro this week: Fed, data, tape-movers</h3>
+            {econ.slice(0, 8).map(e => (
+              <div key={e.title + e.at} className="perf-row">
+                <span>
+                  {e.title} <span className={`badge ${e.impact === 'High' ? 'bad' : 'warn'}`}>{e.impact}</span>
+                </span>
+                <span style={{ color: 'var(--muted)' }}>
+                  {new Date(e.at * 1000).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })} UK · {e.country}
+                </span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>High-impact events ping you the morning of, and an hour before.</p>
+          </section>
+        )}
+
+        <section className="digest-section">
+          <h3 className="section-title">Earnings next 14 days</h3>
+          {earnings.map(e => (
+            <div key={e.symbol + e.date} className="perf-row">
+              <span>{e.symbol}</span>
+              <span>
+                {new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                {e.hour ? ` · ${e.hour}` : ''}
+                {e.epsEstimate != null ? ` · est ${e.epsEstimate}` : ''}
+              </span>
+            </div>
+          ))}
+          {earnings.length === 0 && <p className="empty-line">No watchlist earnings in the window. Binary-event risk: avoid fresh entries into a print.</p>}
+        </section>
+
+        {consensus && consensus.tickers.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Channel consensus, last 7 days</h3>
+            {consensus.tickers.slice(0, 10).map(t => (
+              <div key={t.sym} className="perf-row">
+                <span>
+                  {t.sym}{' '}
+                  {t.crowded && <span className="badge warn">crowded</span>}{' '}
+                  {t.shifted && <span className="badge info">stance flip</span>}
+                </span>
+                <span style={{ color: 'var(--muted)' }}>
+                  {t.mentions7d}× ({t.mentionsPrior7d}× prior) · {t.channels}ch ·{' '}
+                  <span className={t.net > 0 ? 'up-text' : t.net < 0 ? 'down-text' : ''}>{t.net > 0 ? `+${t.net} bull` : t.net < 0 ? `${t.net} bear` : 'split'}</span>
+                </span>
+              </div>
+            ))}
+            {consensus.themes.length > 0 && (
+              <p className="empty-line" style={{ fontSize: 12 }}>Themes: {consensus.themes.map(t => `${t.theme} (${t.count7d})`).join(' · ')}</p>
+            )}
+            <p className="empty-line" style={{ fontSize: 11 }}>"Crowded" means one-sided coverage: a contrarian warning, never a buy signal.</p>
+          </section>
+        )}
+
+        {insiders.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Insider buying, last 90 days</h3>
+            {insiders.map(i => (
+              <div key={i.symbol} className="perf-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                <span>
+                  {i.symbol} {i.isCluster && <span className="badge good">cluster</span>}{' '}
+                  <span style={{ color: 'var(--muted)' }}>
+                    {i.buyers.length} insider{i.buyers.length > 1 ? 's' : ''}
+                    {i.totalValueUsd > 0 && ` · ~$${Math.round(i.totalValueUsd / 1000)}k`}
+                  </span>
+                </span>
+                <span style={{ color: 'var(--faint)', fontSize: 11 }}>{i.latest.map(l => `${l.name.split(' ')[0]} +${l.shares.toLocaleString()}`).join(' · ')}</span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>Open-market buys only. Clustered buying has real empirical support; single buys are weak evidence.</p>
+          </section>
+        )}
+
+        {smartMoney && smartMoney.funds.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Smart money: latest 13F moves</h3>
+            {smartMoney.funds.map(f => (
+              <div key={f.fund} className="perf-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                <span>{f.fund} <span style={{ color: 'var(--faint)', fontSize: 11 }}>filed {f.filedAt}</span></span>
+                <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+                  {f.newPositions.length > 0 && <>NEW: {f.newPositions.map(h => h.issuer).join(', ')} </>}
+                  {f.increased.length > 0 && <>· ADDED: {f.increased.map(h => `${h.issuer} +${h.pctChange}%`).join(', ')} </>}
+                  {f.exited.length > 0 && <>· EXITED: {f.exited.map(h => h.issuer).join(', ')}</>}
+                </span>
+              </div>
+            ))}
+            <p className="empty-line" style={{ fontSize: 11 }}>{smartMoney.lagNote}</p>
+          </section>
+        )}
+
+        {videoAnalyses.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">AI-watched videos</h3>
+            {videoAnalyses.map(v => (
+              <div key={v.url} className="ai-card" style={{ marginBottom: 8 }}>
+                <h3 style={{ fontSize: 13 }}>
+                  <a href={v.url} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>▶ {v.title || v.url}</a>
+                  <span style={{ color: 'var(--faint)', fontWeight: 400 }}> · {v.channel}</span>
+                </h3>
+                <p style={{ fontSize: 13 }}>{v.analysis}</p>
+                <span className="ai-note">Gemini watched the full video. Sentiment input, not signals. Verify levels yourself.</span>
+              </div>
+            ))}
+          </section>
+        )}
+
+        <section className="digest-section">
+          <h3 className="section-title">Headlines</h3>
+          <ul className="news-list">
+            {feed.news.slice(0, 8).map(n => (
+              <li key={n.url}>
+                <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
+                {n.symbols.length > 0 && <span>{n.symbols.join(', ')}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="digest-section">
+          <h3 className="section-title">New from the channels</h3>
+          <ul className="news-list">
+            {feed.videos.slice(0, 8).map(v => (
+              <li key={v.url}>
+                <a href={v.url} target="_blank" rel="noreferrer">▶ {v.title}</a>
+                <span>{v.channel}</span>
+              </li>
+            ))}
+          </ul>
+          {feed.videos.length === 0 && <p className="empty-line">No new videos in the last 24h.</p>}
+        </section>
+
+        {history.length > 0 && (
+          <section className="digest-section">
+            <h3 className="section-title">Recent alerts</h3>
+            {history.slice(0, 12).map((h, i) => (
+              <div key={i} className="perf-row" style={{ fontFamily: 'var(--font-ui)', fontSize: 12.5 }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.text}</span>
+                <span style={{ color: 'var(--faint)', flex: '0 0 auto', marginLeft: 8 }}>
+                  {new Date(h.at * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            ))}
+          </section>
+        )}
+
+        <section className="digest-section">
+          <h3 className="section-title">Elsewhere</h3>
+          <a className="link-card" href="https://www.quiverquant.com/congresstrading/" target="_blank" rel="noreferrer">
+            🏛 Congressional trading <span>QuiverQuant. A positioning signal, not gospel.</span>
+          </a>
+          <a className="link-card" href="https://www.investing.com/economic-calendar/" target="_blank" rel="noreferrer">
+            📅 Full economic calendar <span>Everything beyond the high-impact list above.</span>
+          </a>
+        </section>
+
+        <footer className="foot">This intel informs. It does not predict.</footer>
+      </div>
+    </>
+  )
+}

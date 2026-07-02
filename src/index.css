@@ -417,6 +417,25 @@ button, input { font: inherit; }
 .price.flash-up { animation: flashUp 0.9s ease-out; }
 .price.flash-down { animation: flashDown 0.9s ease-out; }
 
+/* ---------- gear + hero card ---------- */
+.gear {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  width: 34px; height: 34px;
+  font-size: 15px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  margin-left: 8px;
+}
+.gear:hover { color: var(--text); border-color: var(--green); }
+.hero-card {
+  background: linear-gradient(135deg, rgba(34, 201, 141, 0.12), var(--panel));
+  border-color: rgba(34, 201, 141, 0.35);
+  font-weight: 600;
+}
+
 /* ---------- trending strip ---------- */
 .trend-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 10px; scrollbar-width: none; }
 .trend-strip::-webkit-scrollbar { display: none; }

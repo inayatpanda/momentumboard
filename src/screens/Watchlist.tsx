@@ -10,7 +10,7 @@ import { TickerRow } from '../components/TickerRow'
 import { AddTickerForm } from '../components/AddTickerForm'
 import { Toasts } from '../components/Toasts'
 
-export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
+export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string) => void; onOpenSettings: () => void }) {
   const [symbols, setSymbols] = useState<string[]>([])
   const [rules, setRules] = useState<RuleItem[]>([])
   const [hasToken, setHasToken] = useState(!!getToken())
@@ -95,6 +95,7 @@ export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
           Momentum<span className="tick">Board</span>
         </span>
         <RegimeBanner regime={regime} />
+        <button className="gear" onClick={onOpenSettings} aria-label="Settings">⚙</button>
       </header>
       <div className="content">
         <AddTickerForm onAdd={add} disabled={symbols.length >= 30} />
@@ -144,7 +145,7 @@ export function Watchlist({ onOpen }: { onOpen: (symbol: string) => void }) {
         <footer className="foot">
           {error ? <span className="stale">⚠ data stale: {error}</span> : lastUpdated ? `Updated ${new Date(lastUpdated).toLocaleTimeString()}` : 'Loading…'}
           <br />
-          Tap a ticker for charts, alerts and sizing. Data delayed up to ~2 min. This app informs — it does not predict.
+          Tap a ticker for charts, alerts and sizing. Data delayed up to ~2 min. This app informs. It does not predict.
         </footer>
       </div>
       <Toasts toasts={toasts} />

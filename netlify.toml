@@ -35,3 +35,8 @@
   from = "/api/backup"
   to = "/.netlify/functions/backup"
   status = 200
+
+[[redirects]]
+  from = "/api/push"
+  to = "/.netlify/functions/push"
+  status = 200
