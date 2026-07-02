@@ -137,7 +137,7 @@ export default async (req: Request) => {
         watchlistQuotes: quotes,
         portfolio,
         sectorRotation: sectors,
-        rotationLeaders: rotationTables,
+        rotationLeaders: rotationTables.map(t => ({ sector: t.sector, etf: t.etf, rows: t.rows.map(r => ({ sym: r.sym, price: r.price, wkPct: r.wkPct == null ? null : Math.round(r.wkPct * 10) / 10 })) })),
         channelConsensus: consensus,
         socialPulse: social,
         insiderBuying: insiders,
