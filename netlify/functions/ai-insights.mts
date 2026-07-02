@@ -20,36 +20,17 @@ interface Env {
   GROQ_API_KEY?: string
 }
 
+// Shared LLM entry: the multi-provider router (Groq-first, then Gemini,
+// OpenAI, Anthropic — each activated by its key, with fall-through on error).
 export const callLlm: LlmCall = async (prompt, env) => {
-  if (env.GEMINI_API_KEY) {
-    const base = env.GOOGLE_GEMINI_BASE_URL ?? 'https://generativelanguage.googleapis.com'
-    const res = await fetch(`${base}/v1beta/models/gemini-2.5-flash:generateContent`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] }),
-    })
-    const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
-    const text = j.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!text) throw new Error('gemini-empty')
-    return { text, provider: 'gemini' }
-  }
-  if (env.GROQ_API_KEY) {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.GROQ_API_KEY}` },
-      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 500 }),
-    })
-    const j = (await res.json()) as { choices?: { message?: { content?: string } }[] }
-    const text = j.choices?.[0]?.message?.content
-    if (!text) throw new Error('groq-empty')
-    return { text, provider: 'groq' }
-  }
-  throw new Error('unconfigured')
+  const { callLlm: route } = await import('./lib/llm')
+  return route(prompt, env)
 }
 
 export async function routeAi(headers: Headers, env: Env, store: AppStore, llm: LlmCall = callLlm): Promise<Response> {
-  if (!env.APP_TOKEN || headers.get('x-app-token') !== env.APP_TOKEN) return json(401, { ok: false, error: 'unauthorized' })
-  if (!env.GEMINI_API_KEY && !env.GROQ_API_KEY) return json(200, { ok: true, data: { unconfigured: true } })
+  const { authenticate } = await import('./lib/auth')
+  if (!(await authenticate(headers, env, store))) return json(401, { ok: false, error: 'unauthorized' })
+  if (!env.GEMINI_API_KEY && !env.GROQ_API_KEY && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY) return json(200, { ok: true, data: { unconfigured: true } })
 
   const cached = await store.read<{ text: string; provider: string; at: number }>('ai-read')
   const nowSec = Math.floor(Date.now() / 1000)
