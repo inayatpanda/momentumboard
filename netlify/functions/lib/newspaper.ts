@@ -214,6 +214,25 @@ export interface PaperExtras {
   sectorBars?: { name: string; rs21: number | null }[]
 }
 
+/** When the journalist files no ideas despite a speaking board, the desk sets
+ * the table itself: top board calls become ideas verbatim — numbers from the
+ * engine, one-line case from its own note. Picks capture must never starve. */
+export function fallbackIdeasFromBoard(board: (BoardIdeaSlim & { note?: string; stage?: string | null })[], max = 2): Idea[] {
+  return board.slice(0, max).map(b => ({
+    ticker: b.sym,
+    side: b.side,
+    playbook: (b.side === 'short' ? 'S' : 'B') as Idea['playbook'],
+    caseText: `${b.note ?? `Engine call at composite conviction`}${b.paperOnly ? ' Paper-only until the risk ladder unlocks the route.' : ''}`,
+    entry: String(b.entry),
+    invalidation: String(b.stop),
+    target: String(b.target),
+    conviction: b.grade,
+    predictionId: b.id,
+    expectedMove: `~${b.expectedMovePct}% over 5-10 sessions`,
+    chartRead: b.stage ?? undefined,
+  }))
+}
+
 /** Serialize the prompt data within budget by dropping WHOLE low-priority keys
  * (in dropOrder) — a mid-string cut hands the model malformed JSON and silently
  * deletes whatever serialized last (which was the headlines). */

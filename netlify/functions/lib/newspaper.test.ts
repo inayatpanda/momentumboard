@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDataJson, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, type ComposedReport, type StoredNomination } from './newspaper'
+import { buildDataJson, fallbackIdeasFromBoard, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, type ComposedReport, type StoredNomination } from './newspaper'
 
 const sample: ComposedReport = {
   headline: 'Tech Leads a Cautious Tape Higher',
@@ -228,5 +228,19 @@ describe('deterministic board table in the paper', () => {
   it('no board → no section', () => {
     const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [] })
     expect(html).not.toContain('The Board — Engine Calls')
+  })
+})
+
+describe('fallbackIdeasFromBoard', () => {
+  it('synthesizes ideas from top board calls — numbers verbatim, picks never starve', () => {
+    const board = [
+      { id: '2026-07-02:IREN:short', sym: 'IREN', side: 'short' as const, entry: 38.82, stop: 46.16, target: 29.03, probability: 0.5, grade: 'C' as const, expectedMovePct: 8.8, instrument: null, paperOnly: true, note: 'weak, below the 50-day.', stage: 'weak' },
+      { id: '2026-07-02:NOK:short', sym: 'NOK', side: 'short' as const, entry: 12.07, stop: 13.42, target: 10.26, probability: 0.5, grade: 'C' as const, expectedMovePct: 5.1, instrument: null, paperOnly: true, note: 'weak.', stage: 'weak' },
+      { id: 'x', sym: 'ZZZ', side: 'long' as const, entry: 1, stop: 0.9, target: 1.2, probability: 0.6, grade: 'B' as const, expectedMovePct: 5, instrument: null, paperOnly: false },
+    ]
+    const ideas = fallbackIdeasFromBoard(board as never)
+    expect(ideas).toHaveLength(2) // top 2 only
+    expect(ideas[0]).toMatchObject({ ticker: 'IREN', side: 'short', playbook: 'S', entry: '38.82', invalidation: '46.16', target: '29.03', conviction: 'C', predictionId: '2026-07-02:IREN:short' })
+    expect(ideas[0].caseText).toContain('Paper-only')
   })
 })

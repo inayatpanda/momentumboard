@@ -304,6 +304,12 @@ export default async (req: Request) => {
       const constrained = constrainIdeasToBoard(composed.ideas, engineBoard!)
       composed.ideas = constrained.ideas
       if (constrained.rejected.length) console.log('COMPOSE: rejected off-board ideas:', constrained.rejected.join(', '))
+      if (!composed.ideas.length) {
+        // the LLM filed nothing usable — the desk sets the table from the board itself
+        const { fallbackIdeasFromBoard } = await import('./lib/newspaper')
+        composed.ideas = fallbackIdeasFromBoard(engineBoard!)
+        console.log('COMPOSE: ideas fallback from board:', composed.ideas.map(i => i.ticker).join(', '))
+      }
       if (constrained.overlays.length) {
         // overlays land in the ledger so the LLM's judgment gets graded too
         const preds = (await blobAppStore.read<import('../../shared/engine/types').Prediction[]>(`predictions:${dateISO}`)) ?? []
