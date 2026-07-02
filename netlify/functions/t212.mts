@@ -33,13 +33,17 @@ export default async (req: Request, _context: Context) => {
 
   const apiKey = process.env.T212_API_KEY
   if (!apiKey) return json(200, { ok: true, data: { unconfigured: true } })
+  // T212's current credentials are a pair; Basic auth is secret:apiKey
+  // (verified live 2026-07-02). Legacy single-key accounts still send it bare.
+  const secret = process.env.T212_SECRET_KEY
+  const authHeader = secret ? `Basic ${Buffer.from(`${secret}:${apiKey}`).toString('base64')}` : apiKey
 
   const hit = await getCached<unknown>('t212-portfolio')
   if (hit) return json(200, { ok: true, data: hit })
 
   try {
     const host = process.env.T212_HOST ?? 'https://live.trading212.com'
-    const res = await fetch(`${host}/api/v0/equity/portfolio`, { headers: { Authorization: apiKey } })
+    const res = await fetch(`${host}/api/v0/equity/portfolio`, { headers: { Authorization: authHeader } })
     if (!res.ok) return json(502, { ok: false, error: `t212-http-${res.status}` })
     const raw = (await res.json()) as { ticker: string; quantity: number; averagePrice: number; currentPrice: number; ppl: number }[]
     const positions: T212Position[] = raw.map(p => ({
