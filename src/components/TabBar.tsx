@@ -46,15 +46,13 @@ export function SubNav() {
   )
 }
 
-export function TabBar({ active, chartsReady = false, onNavigate }: { active: string; chartsReady?: boolean; onNavigate?: (tab: string) => void }) {
-  const ready = (key: string) => key !== 'charts' || chartsReady
+export function TabBar({ active, onNavigate }: { active: string; chartsReady?: boolean; onNavigate?: (tab: string) => void }) {
   return (
     <nav className="tabs" aria-label="Main">
       {TABS.map(t => (
         <button
           key={t.key}
           className={`tab ${t.sec ? 'sec' : ''} ${active === t.key ? 'active' : ''}`}
-          disabled={!ready(t.key)}
           onClick={() => onNavigate?.(t.key)}
           aria-current={active === t.key ? 'page' : undefined}
         >

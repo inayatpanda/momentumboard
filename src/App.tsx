@@ -47,7 +47,9 @@ export default function App() {
   const navigate = (tab: string) => {
     if (tab === 'watchlist') setView({ screen: 'watchlist' })
     if (tab === 'movers') setView({ screen: 'movers' })
-    if (tab === 'charts' && lastSymbol) setView({ screen: 'detail', symbol: lastSymbol })
+    // Charts continues where you left off; before anything's been opened it
+    // shows the market itself rather than sitting dead
+    if (tab === 'charts') setView({ screen: 'detail', symbol: lastSymbol ?? 'SPY' })
     if (tab === 'journal') setView({ screen: 'journal' })
     if (tab === 'research') setView({ screen: 'research' })
     if (tab === 'intel') setView({ screen: 'intel' })

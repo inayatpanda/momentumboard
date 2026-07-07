@@ -225,7 +225,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   }
 
   let graded = 0
-  const newlyGraded: { probability: number; outcome5?: PredOutcome }[] = []
+  const newlyGraded: { probability: number; outcome5?: PredOutcome; shadow: boolean }[] = []
   const allOutcomes: OutcomeLite[] = []
   for (const date of index) {
     const preds = (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
@@ -239,7 +239,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           pred.outcome5 = o
           updateCalibration(calibration, pred, o)
           w = updateIcStats(w, pred, o)
-          newlyGraded.push({ probability: pred.probability, outcome5: o })
+          newlyGraded.push({ probability: pred.probability, outcome5: o, shadow: !!pred.shadow })
           graded++
           changed = true
         }
@@ -309,12 +309,24 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       }
     }
   }
+  // LIFETIME counters: the by-grade/by-regime panes rebuild from the last 30
+  // dates, but "is this tool accurate?" is a months-scale question — these
+  // accumulate forever (live calls and shadows separately) and never reset.
+  const priorCard = await store.read<{ lifetime?: { live: { graded: number; hits: number; sumExcess: number }; shadow: { graded: number; hits: number; sumExcess: number }; since: string } }>('engine-scorecard')
+  const lifetime = priorCard?.lifetime ?? { live: { graded: 0, hits: 0, sumExcess: 0 }, shadow: { graded: 0, hits: 0, sumExcess: 0 }, since: today }
+  for (const g of newlyGraded) {
+    const side = g.shadow ? lifetime.shadow : lifetime.live
+    side.graded++
+    if (g.outcome5!.hit) side.hits++
+    side.sumExcess += g.outcome5!.excessPct
+  }
   await store.write('engine-scorecard', {
     byGrade,
     byRegime,
     overlays,
     brierTail: calibration.brier.slice(-30),
     totalGraded: Object.values(byGrade).reduce((s, g) => s + g.n, 0),
+    lifetime,
     updatedAt: nowSec,
   })
 

@@ -17,12 +17,16 @@ const STATUS_BADGE: Record<string, string> = { hit: 'good', miss: 'bad', stopped
 
 export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol: string) => void }) {
   const [rows, setRows] = useState<LedgerPrediction[] | null>(null)
+  const [lifetime, setLifetime] = useState<{ live: { graded: number; hits: number; sumExcess: number }; since: string } | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     getEngine()
-      .then(d => setRows(flattenLedger(d.ledger ?? [], 100)))
+      .then(d => {
+        setRows(flattenLedger(d.ledger ?? [], 100))
+        if (d.scorecard?.lifetime) setLifetime({ live: d.scorecard.lifetime.live, since: d.scorecard.lifetime.since })
+      })
       .catch(e => setError(String((e as Error)?.message ?? e)))
   }, [])
 
@@ -61,6 +65,17 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
           <span><strong>{summary.stopped}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>stopped</span></span>
           <span><strong>{summary.open}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>still open</span></span>
         </div>
+      )}
+
+      {lifetime && lifetime.live.graded > 0 && (
+        <p className="empty-line" style={{ fontSize: 12, marginBottom: 10 }}>
+          Since {new Date(lifetime.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} (all live calls, never resets):{' '}
+          <strong>{lifetime.live.graded}</strong> graded · <strong>{Math.round((lifetime.live.hits / lifetime.live.graded) * 100)}%</strong> hit ·{' '}
+          <strong className={lifetime.live.sumExcess >= 0 ? 'up-text' : 'down-text'}>
+            {(lifetime.live.sumExcess / lifetime.live.graded).toFixed(1)}%
+          </strong>{' '}
+          avg excess @5d
+        </p>
       )}
 
       {byGrade.some(b => b.graded > 0) && (

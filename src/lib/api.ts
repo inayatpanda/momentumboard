@@ -295,6 +295,7 @@ export interface EngineData {
     overlays: Record<string, { n: number; hits: number }>
     brierTail: { date: string; mean: number; n: number }[]
     totalGraded: number
+    lifetime?: { live: { graded: number; hits: number; sumExcess: number }; shadow: { graded: number; hits: number; sumExcess: number }; since: string }
   } | null
   weights: { base: Record<string, number>; current: Record<string, number>; history: { date: string; changes: Record<string, { from: number; to: number; ic: number }>; evidence: string }[] } | null
   calibration: { buckets: Record<string, { n: number; hits: number }>; brier: { date: string; mean: number; n: number }[]; seeded: boolean } | null
