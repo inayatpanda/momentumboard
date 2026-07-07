@@ -56,6 +56,10 @@ console.log('\nfetching candles (1y, 200ms spaced)...')
 const spyCandles = await fetchSafe('SPY')
 if (!spyCandles) throw new Error('SPY candles unavailable — cannot replay')
 await sleep(200)
+// real QQQ for the regime read — the live engine uses SPY+QQQ, so must the replay
+const qqqCandles = await fetchSafe('QQQ')
+if (!qqqCandles) console.log('QQQ unavailable — regime read falls back to SPY-only')
+await sleep(200)
 
 const sectorCandles = new Map<string, Candle[]>()
 const failures: string[] = []
@@ -168,7 +172,8 @@ for (const pd of predictionDates) {
   integrityChecks++
   if (spySlice[spySlice.length - 1].t >= D) { integrityViolations++; throw new Error(`point-in-time violation: SPY slice for ${pd.iso}`) }
   const spySliceCloses = spySlice.map(c => c.c)
-  const regime = regimeFromCandles(spySlice, spySlice)
+  const qqqSlice = qqqCandles ? qqqCandles.filter(c => c.t < D) : spySlice
+  const regime = regimeFromCandles(spySlice, qqqSlice.length >= 60 ? qqqSlice : spySlice)
   const month = Number(pd.iso.slice(5, 7))
 
   // sector rows computed ONCE per date, from sector-ETF candles truncated before D

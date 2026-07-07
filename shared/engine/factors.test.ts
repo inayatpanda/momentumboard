@@ -15,7 +15,13 @@ import type { SeasonalitySummary } from '../seasonality'
 describe('technicalFactor', () => {
   it('scores early-reversal high and boosts volume confirmation', () => {
     expect(technicalFactor({ stage: 'early-reversal', volumeConfirmed: true, rvol: 2.1 }).score).toBe(84) // 70 × 1.2
-    expect(technicalFactor({ stage: 'early-reversal', volumeConfirmed: false, rvol: 0.8 }).score).toBe(70)
+  })
+  it('damps an UNCONFIRMED early reversal — a turn with no volume behind it is a guess', () => {
+    const f = technicalFactor({ stage: 'early-reversal', volumeConfirmed: false, rvol: 0.8 })
+    expect(f.score).toBe(49) // 70 × 0.7
+    expect(f.detail).toContain('unconfirmed')
+    // other stages are NOT damped by missing volume
+    expect(technicalFactor({ stage: 'pullback', volumeConfirmed: false, rvol: null }).score).toBe(55)
   })
   it('scores exhausted deeply negative and knife as wait (0)', () => {
     expect(technicalFactor({ stage: 'exhausted', volumeConfirmed: false, rvol: null }).score).toBe(-70)

@@ -37,6 +37,39 @@ export function regimeFromCandles(spy: Candle[], qqq: Candle[]): RegimeColor {
   return 'amber'
 }
 
+/** Index SMA slope is a narrow lens: a green SPY carried by five megacaps over
+ * rotting breadth is not a green tape, and no SMA read survives a VIX spike.
+ * Refines the base regime with market breadth (share of a broad universe above
+ * its 50-SMA) and the VIX LEVEL (the world-tape vote uses only its daily
+ * change). Null inputs leave the base read untouched — no data, no opinion. */
+export function refineRegime(base: RegimeColor, breadthPct: number | null, vixLevel: number | null): RegimeColor {
+  let r = base
+  if (breadthPct != null) {
+    if (r === 'green' && breadthPct < 0.35) r = 'amber' // thin leadership: don't trust the green
+    if (r === 'red' && breadthPct > 0.65) r = 'amber' // broad participation under a red index read: repair underway
+  }
+  if (vixLevel != null) {
+    if (vixLevel >= 32) r = 'red' // panic pricing overrides everything
+    else if (vixLevel >= 25 && r === 'green') r = 'amber' // elevated fear caps a green read
+  }
+  return r
+}
+
+/** Breadth: the share of series whose last close sits above its 50-SMA.
+ * Needs a minimum sample to mean anything — below that, null. */
+export function breadthAbove50(seriesList: number[][], minSeries = 10): number | null {
+  let above = 0
+  let total = 0
+  for (const closes of seriesList) {
+    if (closes.length < 50) continue
+    const m50 = sma(closes, 50)[closes.length - 1]
+    if (m50 == null) continue
+    total++
+    if (closes[closes.length - 1] > m50) above++
+  }
+  return total >= minSeries ? above / total : null
+}
+
 export function hasBullishDivergence(closes: number[], rsiVals: (number | null)[], lookback = 40): boolean {
   const n = closes.length
   if (n < lookback) return false

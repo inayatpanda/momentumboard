@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-07-02T19:37:38.804Z",
+ "generatedAt": "2026-07-07T14:07:16.706Z",
  "symbols": 66,
  "weights": {
   "base": {
@@ -10,30 +10,32 @@
    "channels": 0.6,
    "insiders": 0.4,
    "news": 0.4,
-   "seasonality": 0.3
+   "seasonality": 0.3,
+   "smartMoney": 0.3
   },
   "current": {
-   "technical": 0.9974393382352941,
-   "momentum": 0.7991123952294799,
+   "technical": 0.9947470039946738,
+   "momentum": 0.7992795957327345,
    "sector": 0.6,
    "social": 0.5,
    "channels": 0.6,
    "insiders": 0.4,
    "news": 0.4,
-   "seasonality": 0.3
+   "seasonality": 0.3,
+   "smartMoney": 0.3
   },
   "ic": {
    "technical": {
-    "nAgree": 816,
-    "sumAgree": -139.30000000000004,
+    "nAgree": 751,
+    "sumAgree": -262.9999999999999,
     "nDisagree": 0,
     "sumDisagree": 0
    },
    "momentum": {
-    "nAgree": 742,
-    "sumAgree": -130.09999999999994,
-    "nDisagree": 73,
-    "sumDisagree": -7.400000000000007
+    "nAgree": 685,
+    "sumAgree": -240.29999999999998,
+    "nDisagree": 65,
+    "sumDisagree": -18.900000000000002
    },
    "sector": {
     "nAgree": 0,
@@ -70,17 +72,23 @@
     "sumAgree": 0,
     "nDisagree": 0,
     "sumDisagree": 0
+   },
+   "smartMoney": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
    }
   },
   "gradedSinceNudge": 0,
   "history": [
    {
-    "date": "2026-07-02",
+    "date": "2026-07-07",
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.997,
-      "ic": -0.02
+      "to": 0.995,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.8,
@@ -88,66 +96,63 @@
       "ic": -0.01
      }
     },
-    "evidence": "816 predictions graded since last nudge"
+    "evidence": "751 predictions graded since last nudge"
    }
   ]
  },
  "calibration": {
   "buckets": {
    "short:red:25-40": {
-    "n": 170,
-    "hits": 71
+    "n": 129,
+    "hits": 44
    },
    "short:green:25-40": {
-    "n": 132,
-    "hits": 58
-   },
-   "long:green:25-40": {
-    "n": 217,
-    "hits": 110
+    "n": 106,
+    "hits": 39
    },
    "long:amber:25-40": {
-    "n": 69,
-    "hits": 29
-   },
-   "short:amber:25-40": {
-    "n": 84,
+    "n": 112,
     "hits": 42
    },
+   "long:green:25-40": {
+    "n": 181,
+    "hits": 65
+   },
+   "short:amber:25-40": {
+    "n": 106,
+    "hits": 36
+   },
    "short:red:40-55": {
-    "n": 45,
-    "hits": 18
-   },
-   "long:red:25-40": {
-    "n": 12,
-    "hits": 6
-   },
-   "long:green:40-55": {
-    "n": 55,
-    "hits": 32
-   },
-   "short:red:55-70": {
-    "n": 12,
-    "hits": 5
+    "n": 28,
+    "hits": 9
    },
    "short:amber:40-55": {
-    "n": 13,
-    "hits": 3
+    "n": 24,
+    "hits": 9
+   },
+   "long:green:40-55": {
+    "n": 43,
+    "hits": 20
    },
    "long:green:55-70": {
-    "n": 3,
-    "hits": 0
-   },
-   "long:red:40-55": {
-    "n": 2,
+    "n": 1,
     "hits": 1
+   },
+   "long:red:25-40": {
+    "n": 8,
+    "hits": 4
+   },
+   "short:red:55-70": {
+    "n": 11,
+    "hits": 5
    },
    "long:amber:40-55": {
     "n": 2,
-    "hits": 2
+    "hits": 1
    }
   },
   "brier": [],
-  "seeded": true
+  "seeded": true,
+  "defVersion": 2
  }
 }

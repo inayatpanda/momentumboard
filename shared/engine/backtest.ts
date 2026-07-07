@@ -1,18 +1,30 @@
-import type { Candle } from '../types'
-import { atr } from '../indicators'
+import type { Candle, RegimeColor } from '../types'
+import { atr, sma } from '../indicators'
 import { swingCapacity } from '../indicators'
 import { technicalStage } from '../technicals'
-import { regimeFromCandles } from '../setups'
+import { refineRegime, regimeFromCandles } from '../setups'
 import { seasonalitySummary } from '../seasonality'
 import { momentumFactor, seasonalityFactor, technicalFactor } from './factors'
 import { composeCall, DEFAULT_WEIGHTS } from './composite'
-import { initWeights, maybeNudgeWeights, updateCalibration, updateIcStats, type CalibrationState, type WeightsState } from './calibration'
+import {
+  CALIB_DEF_VERSION,
+  HIT_EXCESS_MIN,
+  initWeights,
+  maybeNudgeWeights,
+  updateCalibration,
+  updateIcStats,
+  type CalibrationState,
+  type WeightsState,
+} from './calibration'
 import { round1, type FactorName, type FactorScore, type Prediction } from './types'
 
 // Pre-seeds the engine from candle history: only the factors computable from
 // bars alone (technical, momentum, seasonality) replay; the rest start at
 // neutral prior weight and learn live. Weekly sampling (step 5) decorrelates
 // overlapping windows. Deterministic by construction — no clocks, no RNG.
+// The replay regime matches the live engine's: SPY+QQQ slope, refined by
+// universe breadth and the VIX level (both optional — omitted, the base
+// SPY-slope read stands alone, as before).
 
 const STEP = 5
 const WARMUP = 80
@@ -30,11 +42,49 @@ const nullFactors = (): Record<FactorName, FactorScore> => ({
   smartMoney: { score: null, detail: '' },
 })
 
-export function seedFromHistory(bySym: Map<string, Candle[]>, spy: Candle[]): { weights: WeightsState; calibration: CalibrationState } {
+export function seedFromHistory(
+  bySym: Map<string, Candle[]>,
+  spy: Candle[],
+  qqq?: Candle[],
+  vix?: Candle[],
+): { weights: WeightsState; calibration: CalibrationState } {
   let weights = initWeights()
-  const calibration: CalibrationState = { buckets: {}, brier: [], seeded: true }
+  const calibration: CalibrationState = { buckets: {}, brier: [], seeded: true, defVersion: CALIB_DEF_VERSION }
   const spyIdxByT = new Map(spy.map((c, i) => [c.t, i]))
   const spyCloses = spy.map(c => c.c)
+
+  // point-in-time context, precomputed once per date rather than per (sym, date)
+  const qqqIdxByT = qqq ? new Map(qqq.map((c, i) => [c.t, i])) : null
+  const vixCloseByT = vix ? new Map(vix.map(c => [c.t, c.c])) : null
+  // breadth: per date, the share of the universe above its 50-SMA (each series'
+  // SMA uses only bars up to that date — no lookahead)
+  const breadthByT = new Map<number, { above: number; total: number }>()
+  for (const candles of bySym.values()) {
+    const closes = candles.map(c => c.c)
+    const s50 = sma(closes, 50)
+    for (let k = 49; k < candles.length; k++) {
+      const m = s50[k]
+      if (m == null) continue
+      const cell = breadthByT.get(candles[k].t) ?? { above: 0, total: 0 }
+      cell.total++
+      if (closes[k] > m) cell.above++
+      breadthByT.set(candles[k].t, cell)
+    }
+  }
+  const regimeCache = new Map<number, RegimeColor>()
+  const regimeAt = (j: number): RegimeColor => {
+    const hit = regimeCache.get(j)
+    if (hit) return hit
+    const t = spy[j].t
+    const spySlice = spy.slice(0, j + 1)
+    const jq = qqqIdxByT?.get(t)
+    const qqqSlice = qqq && jq != null ? qqq.slice(0, jq + 1) : spySlice
+    const cell = breadthByT.get(t)
+    const breadth = cell && cell.total >= 10 ? cell.above / cell.total : null
+    const r = refineRegime(regimeFromCandles(spySlice, qqqSlice), breadth, vixCloseByT?.get(t) ?? null)
+    regimeCache.set(j, r)
+    return r
+  }
 
   for (const [sym, candles] of [...bySym.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     const closes = candles.map(c => c.c)
@@ -54,12 +104,12 @@ export function seedFromHistory(bySym: Map<string, Candle[]>, spy: Candle[]): { 
         factors.seasonality = seasonalityFactor(seasonalitySummary(slice), month)
       }
 
-      const spySlice = spy.slice(0, j + 1)
+      const regime = regimeAt(j)
       const call = composeCall({
         sym,
         factors,
         weights: DEFAULT_WEIGHTS,
-        regime: regimeFromCandles(spySlice, spySlice),
+        regime,
         capacityPct: swingCapacity(sliceCloses),
         atr: atr(slice)[slice.length - 1],
         lastClose: closes[i],
@@ -88,9 +138,9 @@ export function seedFromHistory(bySym: Map<string, Candle[]>, spy: Candle[]): { 
       }
       const sign = call.side === 'short' ? -1 : 1
       const excessPct = round1(sign * (rawPct - spyPct))
-      const outcome = { excessPct, rawPct: round1(rawPct), spyPct: round1(spyPct), stopped, hit: !stopped && excessPct > 0 }
+      // hit rule mirrors gradePrediction(): a win must clear HIT_EXCESS_MIN
+      const outcome = { excessPct, rawPct: round1(rawPct), spyPct: round1(spyPct), stopped, hit: !stopped && excessPct >= HIT_EXCESS_MIN }
 
-      const regime = regimeFromCandles(spySlice, spySlice)
       updateCalibration(calibration, { side: call.side, regime, composite: call.composite }, outcome)
       weights = updateIcStats(weights, { side: call.side, factors: call.factors } as Prediction, outcome)
     }

@@ -3,7 +3,7 @@ import type { AppStore } from './store'
 import { validateConfig, type AppConfig } from '../../../shared/config'
 import { atr, swingCapacity } from '../../../shared/indicators'
 import { technicalStage } from '../../../shared/technicals'
-import { regimeFromCandles } from '../../../shared/setups'
+import { breadthAbove50, refineRegime, regimeFromCandles } from '../../../shared/setups'
 import { seasonalitySummary } from '../../../shared/seasonality'
 import {
   channelsFactor,
@@ -20,7 +20,9 @@ import {
 import { composeCall } from '../../../shared/engine/composite'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
 import {
+  baseHitRate,
   brierPoint,
+  CALIB_DEF_VERSION,
   gradeFor,
   gradePrediction,
   maybeNudgeWeights,
@@ -31,6 +33,7 @@ import {
   type CalibrationState,
   type WeightsState,
 } from '../../../shared/engine/calibration'
+import { pickDiverse } from '../../../shared/engine/select'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
 import { computeRung, initRisk, mapInstrument, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
@@ -185,7 +188,13 @@ async function loadState(store: AppStore) {
   // migrateWeights backfills factors added after a snapshot was stored/seeded
   // (seed.json predates smartMoney) so an old blob never silently zeroes them.
   const weights = migrateWeights((await store.read<WeightsState>('engine-weights')) ?? clone(seed.weights as unknown as WeightsState))
-  const calibration = (await store.read<CalibrationState>('engine-calibration')) ?? clone(seed.calibration as unknown as CalibrationState)
+  let calibration = (await store.read<CalibrationState>('engine-calibration')) ?? clone(seed.calibration as unknown as CalibrationState)
+  // the outcome definition changed → stored buckets counted a different thing
+  // and their hit rates aren't probabilities anymore. Swap in the reseeded
+  // calibration — but only when the committed seed itself is on the current
+  // definition; never regress live state to a stale seed.
+  const seedCal = seed.calibration as unknown as CalibrationState
+  if (calibration.defVersion !== CALIB_DEF_VERSION && seedCal.defVersion === CALIB_DEF_VERSION) calibration = clone(seedCal)
   const channelCred = (await store.read<ChannelCredState>('channel-credibility')) ?? {}
   return { weights, calibration, channelCred }
 }
@@ -337,7 +346,7 @@ export async function buildBoard(
 
   const [spy, qqq] = await Promise.all([deps.candles('SPY'), deps.candles('QQQ')])
   if (!spy) throw new Error('no SPY candles — engine cannot run')
-  const regime = qqq ? regimeFromCandles(spy, qqq) : ('unknown' as const)
+  const baseRegime = qqq ? regimeFromCandles(spy, qqq) : ('unknown' as const)
   const spyCloses = spy.map(c => c.c)
 
   // discovery inflows → roster candidates
@@ -395,6 +404,15 @@ export async function buildBoard(
     if (cap != null) sources.get(sym)!.capUsdM = cap
   })
 
+  // regime, refined: the SPY+QQQ slope read is checked against market breadth
+  // (share of today's candidate pool above its 50-SMA) and the VIX LEVEL —
+  // ^VIX candles come from Yahoo like every index symbol. Null inputs leave
+  // the base read untouched; 'unknown' (no QQQ) stays unknown.
+  const vixCandles = await deps.candles(VIX_SYMBOL.sym).catch(() => null)
+  const vixLevel = vixCandles?.length ? vixCandles[vixCandles.length - 1].c : null
+  const breadth = breadthAbove50([...candleMap.values()].map(cs => cs.map(c => c.c)))
+  const regime = baseRegime === 'unknown' ? baseRegime : refineRegime(baseRegime, breadth, vixLevel)
+
   const candidates: RosterCandidate[] = candidateSyms
     .filter(s => candleMap.has(s))
     .map(sym => {
@@ -416,6 +434,7 @@ export async function buildBoard(
 
   // shared context for factor computation
   const { weights, calibration, channelCred } = await loadState(store)
+  const engineBaseRate = baseHitRate(calibration).rate
   const risk = (await store.read<RiskState>('risk-state')) ?? initRisk(today)
   const rosterSyms = roster.map(e => e.sym)
   const [insiderCoverage, mediaTitles, earningsSet, fundMoves, worldReads] = await Promise.all([
@@ -523,7 +542,7 @@ export async function buildBoard(
     if (!call) continue
 
     const { p, provisional } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite))
-    const grade = gradeFor(p, provisional, call.capacityPct)
+    const grade = gradeFor(p, provisional, call.capacityPct, engineBaseRate)
     // grade null = calibration sees no edge in this bucket. The call stays off
     // the paper — but it MUST enter the ledger as a shadow, or buckets below
     // 50% can never earn their way back up (nothing would ever get graded).
@@ -568,7 +587,21 @@ export async function buildBoard(
       .filter(b => b.side === side && !!b.shadow === shadow && (!shadow || !outstandingShadowKeys.has(`${b.sym}:${b.side}`)))
       .sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))
       .slice(0, cap)
-  const live = [...pick('long', false, 12), ...pick('short', false, 12)].sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))
+  // live picks pass diversity gates: max 3 per sector per side, and no name
+  // moving in lockstep (60d return corr > 0.75) with one already picked —
+  // twelve correlated bets are one bet. Shadows keep the plain top-N (they
+  // exist to feed calibration, and their dedup is handled above).
+  const pickLive = (side: 'long' | 'short', cap: number) => {
+    const { picked, skipped } = pickDiverse(
+      board.filter(b => b.side === side && !b.shadow),
+      cap,
+      sym => symToSector.get(baseSym(sym)) ?? null,
+      sym => candleMap.get(sym)?.map(c => c.c) ?? null,
+    )
+    if (skipped.length) console.log(`BOARD: diversity gates (${side}):`, skipped.map(s => `${s.sym} — ${s.why}`).join('; '))
+    return picked
+  }
+  const live = [...pickLive('long', 12), ...pickLive('short', 12)].sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))
   const shadows = [...pick('long', true, 5), ...pick('short', true, 5)]
   const final = [...live, ...shadows]
 

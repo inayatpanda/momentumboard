@@ -19,9 +19,14 @@ const STAGE_SCORE: Record<Stage, number> = {
 
 export function technicalFactor(read: { stage: Stage; volumeConfirmed: boolean; rvol: number | null } | null): FactorScore {
   if (!read) return { score: null, detail: 'no chart data' }
-  const base = STAGE_SCORE[read.stage]
+  let base = STAGE_SCORE[read.stage]
+  // a turn with no volume behind it is a guess, not a reversal — damp it.
+  // Confirmed reversals keep the full score plus the ×1.2 volume boost below.
+  const dampedReversal = read.stage === 'early-reversal' && !read.volumeConfirmed
+  if (dampedReversal) base *= 0.7
   const score = clamp(read.volumeConfirmed ? base * 1.2 : base, -100, 100)
-  return { score: round1(score), detail: `${read.stage}${read.volumeConfirmed ? ` volume-confirmed (RVOL ${read.rvol})` : ''}` }
+  const suffix = read.volumeConfirmed ? ` volume-confirmed (RVOL ${read.rvol})` : dampedReversal ? ' unconfirmed turn (damped)' : ''
+  return { score: round1(score), detail: `${read.stage}${suffix}` }
 }
 
 export function momentumFactor(closes: number[] | null, spyCloses: number[] | null): FactorScore {

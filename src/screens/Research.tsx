@@ -50,7 +50,7 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
         <div style={{ position: 'relative' }}>
           <a className="link-card hero-card" href="/report">
             <IconNews /> Today's strategy report
-            <span>Fresh analysis every weekday morning. Sundays: the week ahead.</span>
+            <span>Fresh analysis every morning. Weekends: the week ahead.</span>
           </a>
           <button
             className="mini-btn ghost"

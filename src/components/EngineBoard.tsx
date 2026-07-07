@@ -54,10 +54,14 @@ export function EngineBoard() {
   }, [])
   const b = data?.board
   if (!b) return null
+  const todayLondon = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+  const weekend = [0, 6].includes(new Date().getDay())
+  const stale = b.date !== todayLondon
   return (
     <section className="digest-section">
       <h3 className="section-title">
         The Board — engine calls, {b.date} <span className={`badge ${b.regime === 'green' ? '' : b.regime === 'red' ? 'bad' : 'warn'}`}>{b.regime}</span>
+        {stale && <span className="badge warn" style={{ marginLeft: 6 }}>{weekend ? 'markets closed — last session' : `as of ${b.date}`}</span>}
       </h3>
       <p className="board-strip">
         <span>regime {b.regime}</span>
@@ -79,7 +83,9 @@ export function EngineBoard() {
         <Call key={p.id} p={p} />
       ))}
       <p className="empty-line" style={{ fontSize: 11 }}>
-        Grades are calibrated on the engine's own graded history (excess return vs SPY, stops honoured). Provisional = thin evidence bucket. This is analysis, not advice.
+        Grades are calibrated on the engine's own graded history: a hit must beat SPY by ≥1pp over the horizon, and stops are judged on daily closes — an
+        intraday wick through is survivable. A/B/C means the call's bucket beats the engine's own base rate, not a coin flip. Provisional = thin evidence
+        bucket. This is analysis, not advice.
       </p>
     </section>
   )

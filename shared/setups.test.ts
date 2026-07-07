@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { regimeFromCandles, hasBullishDivergence, detectSetups } from './setups'
+import { breadthAbove50, refineRegime, regimeFromCandles, hasBullishDivergence, detectSetups } from './setups'
 import type { Candle } from './types'
 
 // Builder: candles from closes; h/l hug close; volume overridable per-bar.
@@ -84,5 +84,45 @@ describe('detectSetups', () => {
     const closes = [...rising(40, 100, 0.3), 115, 119, 124, 130, 137]
     const setups = detectSetups(mk(closes), 1)
     expect(setups).toContain('overextended')
+  })
+})
+
+describe('refineRegime', () => {
+  it('null inputs leave the base read untouched', () => {
+    expect(refineRegime('green', null, null)).toBe('green')
+    expect(refineRegime('amber', null, null)).toBe('amber')
+    expect(refineRegime('red', null, null)).toBe('red')
+  })
+  it('thin breadth demotes green to amber; broad breadth lifts red to amber', () => {
+    expect(refineRegime('green', 0.3, null)).toBe('amber')
+    expect(refineRegime('green', 0.5, null)).toBe('green')
+    expect(refineRegime('red', 0.7, null)).toBe('amber')
+    expect(refineRegime('red', 0.5, null)).toBe('red')
+    expect(refineRegime('amber', 0.3, null)).toBe('amber') // breadth never demotes amber
+  })
+  it('VIX ≥32 forces red; VIX ≥25 caps green at amber; calm VIX changes nothing', () => {
+    expect(refineRegime('green', null, 33)).toBe('red')
+    expect(refineRegime('amber', null, 35)).toBe('red')
+    expect(refineRegime('green', null, 26)).toBe('amber')
+    expect(refineRegime('amber', null, 26)).toBe('amber')
+    expect(refineRegime('green', null, 18)).toBe('green')
+  })
+  it('VIX panic overrides a breadth upgrade', () => {
+    expect(refineRegime('red', 0.7, 33)).toBe('red') // breadth said amber, VIX says no
+  })
+})
+
+describe('breadthAbove50', () => {
+  const risingCloses = Array.from({ length: 60 }, (_, i) => 100 + i) // close > SMA50
+  const fallingCloses = Array.from({ length: 60 }, (_, i) => 160 - i) // close < SMA50
+  it('computes the share of series above their 50-SMA', () => {
+    const series = [...Array.from({ length: 7 }, () => risingCloses), ...Array.from({ length: 3 }, () => fallingCloses)]
+    expect(breadthAbove50(series)).toBeCloseTo(0.7, 5)
+  })
+  it('returns null below the minimum sample and skips short series', () => {
+    expect(breadthAbove50([risingCloses, fallingCloses])).toBeNull()
+    const short = Array.from({ length: 20 }, (_, i) => 100 + i)
+    const series = [...Array.from({ length: 10 }, () => risingCloses), short] // short one doesn't count
+    expect(breadthAbove50(series)).toBe(1)
   })
 })

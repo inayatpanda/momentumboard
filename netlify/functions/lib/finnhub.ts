@@ -5,12 +5,17 @@ export async function fetchFinnhubQuote(symbol: string, apiKey: string, fetchFn:
   const res = await fetchFn(url)
   if (!res.ok) throw new Error(`finnhub-http-${res.status}`)
   const j = (await res.json()) as { c: number; pc: number; t: number }
-  if (!j || typeof j.c !== 'number' || j.c === 0) throw new Error('finnhub-shape')
+  if (!j || typeof j.c !== 'number') throw new Error('finnhub-shape')
+  // Closed market (weekend/holiday) can come back as c=0 — fall back to the
+  // previous close so rows show Friday's price instead of a dash.
+  const live = j.c !== 0
+  const price = live ? j.c : j.pc
+  if (!price) throw new Error('finnhub-shape')
   return {
     symbol,
-    price: j.c,
+    price,
     prevClose: j.pc,
-    changePct: j.pc ? ((j.c - j.pc) / j.pc) * 100 : 0,
+    changePct: live && j.pc ? ((j.c - j.pc) / j.pc) * 100 : 0,
     currency: 'USD',
     todayVolume: null,
     asOf: j.t,

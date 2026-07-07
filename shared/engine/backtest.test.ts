@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { seedFromHistory } from './backtest'
+import { CALIB_DEF_VERSION } from './calibration'
 import type { Candle } from '../types'
 
 // Synthetic but market-shaped: trending closes with sinusoidal pullbacks give
@@ -25,14 +26,30 @@ describe('seedFromHistory', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b))
   })
 
-  it('produces non-trivial calibration and bounded weights, marked seeded', () => {
+  it('produces non-trivial calibration and bounded weights, marked seeded with the current outcome definition', () => {
     const { weights, calibration } = seedFromHistory(bySym(), spy)
     const totalN = Object.values(calibration.buckets).reduce((s, b) => s + b.n, 0)
     expect(totalN).toBeGreaterThanOrEqual(5)
     expect(calibration.seeded).toBe(true)
+    expect(calibration.defVersion).toBe(CALIB_DEF_VERSION)
+    // a single closing nudge can move a weight at most ±15% of itself
     for (const name of Object.keys(weights.base) as (keyof typeof weights.base)[]) {
       expect(weights.current[name]).toBeGreaterThanOrEqual(0.4 * weights.base[name])
       expect(weights.current[name]).toBeLessThanOrEqual(2 * weights.base[name])
     }
+  })
+
+  it('accepts real QQQ and VIX series and stays deterministic; a panic VIX shifts calibration buckets toward red', () => {
+    const qqq = mk(i => 400 + i * 0.08)
+    const calmVix = mk(() => 14)
+    const panicVix = mk(() => 40)
+    const a = seedFromHistory(bySym(), spy, qqq, panicVix)
+    const b = seedFromHistory(bySym(), spy, qqq, panicVix)
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b))
+    const calm = seedFromHistory(bySym(), spy, qqq, calmVix)
+    const calmKeys = Object.keys(calm.calibration.buckets)
+    const panicKeys = Object.keys(a.calibration.buckets)
+    expect(panicKeys.every(k => k.includes(':red:'))).toBe(true)
+    expect(JSON.stringify(calmKeys)).not.toBe(JSON.stringify(panicKeys))
   })
 })

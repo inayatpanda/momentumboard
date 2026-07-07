@@ -25,6 +25,12 @@ const universe = [...new Set([...Object.values(SECTOR_MEMBERS).flat(), ...SECTOR
 
 const spy = await fetchCandles2y('SPY')
 if (!spy) throw new Error('SPY candles unavailable — cannot seed')
+// QQQ and ^VIX give the replay the SAME regime read the live engine uses
+// (SPY+QQQ slope, breadth + VIX-level refinement). Fail-soft: null → SPY-only.
+const qqq = await fetchCandles2y('QQQ')
+const vix = await fetchCandles2y('^VIX')
+if (!qqq) console.warn('QQQ unavailable — regime replay falls back to SPY-only')
+if (!vix) console.warn('^VIX unavailable — no VIX-level refinement in replay')
 
 const bySym = new Map<string, Candle[]>()
 for (const sym of universe) {
@@ -34,7 +40,7 @@ for (const sym of universe) {
 }
 console.log(`fetched ${bySym.size}/${universe.length} symbols`)
 
-const { weights, calibration } = seedFromHistory(bySym, spy)
+const { weights, calibration } = seedFromHistory(bySym, spy, qqq ?? undefined, vix ?? undefined)
 const totalN = Object.values(calibration.buckets).reduce((s, b) => s + b.n, 0)
 console.log(`graded ${totalN} synthetic outcomes across ${Object.keys(calibration.buckets).length} buckets`)
 console.log('weights:', weights.current)

@@ -10,10 +10,21 @@ export type Band = '25-40' | '40-55' | '55-70' | '70+'
 
 export interface BucketStat { n: number; hits: number }
 
+/** A "hit" must clear this much excess vs SPY (pp over the horizon). Beating
+ * the benchmark by an epsilon is noise, not edge — probabilities built on
+ * epsilon-wins overstate what a reader can actually capture. */
+export const HIT_EXCESS_MIN = 1
+
+/** Bump when the OUTCOME DEFINITION changes (what counts as a hit). Buckets
+ * counted under an older definition aren't comparable — loadState discards
+ * them for the reseeded calibration when versions differ. */
+export const CALIB_DEF_VERSION = 2
+
 export interface CalibrationState {
   buckets: Record<string, BucketStat> // `${side}:${regime}:${band}`
   brier: { date: string; mean: number; n: number }[]
   seeded?: boolean
+  defVersion?: number
 }
 
 export function bandFor(absComposite: number): Band {
@@ -46,11 +57,28 @@ export function probabilityFor(
   return { p: laplace(pooled), n: pooled.n, provisional: pooled.n < MIN_BUCKET_N }
 }
 
-export function gradeFor(p: number, provisional: boolean, capacityPct: number): 'A' | 'B' | 'C' | null {
-  if (p >= 0.62 && !provisional && capacityPct >= 8) return 'A'
-  if (p >= 0.55) return 'B'
-  if (p >= 0.5) return 'C'
-  return null // the engine has no edge in this bucket — suppress, don't dress up
+/** Pooled hit rate across every bucket — the engine's own base rate under the
+ * CURRENT outcome definition. Grades measure edge over THIS, not over a coin
+ * flip: with hits defined as ≥1pp excess the base rate sits well under 0.5,
+ * and absolute 0.5-anchored thresholds would silently retire the board. */
+export function baseHitRate(state: CalibrationState): { rate: number; n: number } {
+  let n = 0
+  let hits = 0
+  for (const b of Object.values(state.buckets)) {
+    n += b.n
+    hits += b.hits
+  }
+  return { rate: n >= 50 ? laplace({ n, hits }) : 0.5, n }
+}
+
+/** A/B/C = the bucket beats the engine's base rate by ≥12pp / ≥5pp / at all.
+ * With the legacy epsilon-hit definition (base ≈ 0.5) these reduce to the old
+ * absolute thresholds 0.62 / 0.55 / 0.50. */
+export function gradeFor(p: number, provisional: boolean, capacityPct: number, baseRate = 0.5): 'A' | 'B' | 'C' | null {
+  if (p >= baseRate + 0.12 && !provisional && capacityPct >= 8) return 'A'
+  if (p >= baseRate + 0.05) return 'B'
+  if (p >= baseRate) return 'C'
+  return null // no edge over the engine's own base rate — suppress, don't dress up
 }
 
 /** Outcome vs what price actually did: excess return over SPY, side-adjusted;
@@ -90,7 +118,7 @@ export function gradePrediction(
   }
   const sign = pred.side === 'short' ? -1 : 1
   const excessPct = round1(sign * (rawPct - spyPct))
-  return { excessPct, rawPct: round1(rawPct), spyPct: round1(spyPct), stopped, hit: !stopped && excessPct > 0 }
+  return { excessPct, rawPct: round1(rawPct), spyPct: round1(spyPct), stopped, hit: !stopped && excessPct >= HIT_EXCESS_MIN }
 }
 
 export function updateCalibration(
@@ -163,20 +191,26 @@ export function updateIcStats(state: WeightsState, pred: Prediction, outcome: Pr
 const NUDGE_EVERY = 15 // graded predictions between weight adjustments
 const MIN_IC_N = 20
 const NUDGE_STEP = 0.15
+const PRUNE_MIN_N = 200 // evidence needed before a factor may decay below the floor
 
 /** Bounded, slow, evidenced: weights drift toward factors that kept being
- * right, never beyond [0.4×, 2×] of their base — no whipsawing, no runaway. */
+ * right, never beyond [0.4×, 2×] of their base — no whipsawing, no runaway.
+ * EXCEPT: once a factor has PRUNE_MIN_N graded observations, the 0.4× floor
+ * lifts — a signal that has kept being wrong over real evidence is allowed to
+ * decay all the way to zero. The floor protects young factors, not dead ones. */
 export function maybeNudgeWeights(state: WeightsState, dateISO: string): WeightsState {
   if (state.gradedSinceNudge < NUDGE_EVERY) return state
   const changes: Record<string, { from: number; to: number; ic: number }> = {}
   for (const name of FACTOR_NAMES) {
     const st = state.ic[name]
-    if (!st || st.nAgree + st.nDisagree < MIN_IC_N) continue
+    const icN = st ? st.nAgree + st.nDisagree : 0
+    if (!st || icN < MIN_IC_N) continue
     const meanAgree = st.nAgree ? st.sumAgree / st.nAgree : 0
     const meanDisagree = st.nDisagree ? st.sumDisagree / st.nDisagree : 0
     const ic = clamp((meanAgree - meanDisagree) / 10, -1, 1)
     const cur = state.current[name]
-    const next = clamp(cur * (1 + NUDGE_STEP * ic), 0.4 * state.base[name], 2 * state.base[name])
+    const floor = icN >= PRUNE_MIN_N ? 0 : 0.4 * state.base[name]
+    const next = clamp(cur * (1 + NUDGE_STEP * ic), floor, 2 * state.base[name])
     if (Math.abs(next - cur) > 1e-9) {
       changes[name] = { from: Math.round(cur * 1000) / 1000, to: Math.round(next * 1000) / 1000, ic: Math.round(ic * 100) / 100 }
       state.current[name] = next

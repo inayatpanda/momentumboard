@@ -8,6 +8,7 @@ import type { RuleItem } from '../lib/db'
 import { RegimeBanner } from '../components/RegimeBanner'
 import { TickerRow } from '../components/TickerRow'
 import { AddTickerForm } from '../components/AddTickerForm'
+import { TodaysCalls } from '../components/TodaysCalls'
 import { Toasts } from '../components/Toasts'
 import { IconGear, IconWarn } from '../components/icons'
 
@@ -139,6 +140,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
             ))}
           </div>
         )}
+        <TodaysCalls onOpen={onOpen} />
         <div className="card-grid">
           {sortedRows.map((row, i) => (
             <div key={row.symbol} onClick={() => onOpen(row.symbol)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpen(row.symbol)} style={{ cursor: 'pointer' }}>
@@ -161,7 +163,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
         <footer className="foot">
           {error ? <span className="stale"><IconWarn size={12} /> data stale: {error}</span> : lastUpdated ? `Updated ${new Date(lastUpdated).toLocaleTimeString()}` : 'Loading…'}
           <br />
-          Tap a ticker for charts, alerts and sizing. Data delayed up to ~2 min. This app informs. It does not predict.
+          Tap a ticker for charts, alerts and sizing. Data delayed up to ~2 min. Engine calls are calibrated analysis, not advice.
         </footer>
       </div>
       <Toasts toasts={toasts} />

@@ -3,7 +3,7 @@ import { buildBoard, gradeOutstanding, type EngineDeps } from './engine'
 import { memoryStore } from './store'
 import type { Candle } from '../../../shared/types'
 import type { Prediction } from '../../../shared/engine/types'
-import type { CalibrationState } from '../../../shared/engine/calibration'
+import { CALIB_DEF_VERSION, type CalibrationState } from '../../../shared/engine/calibration'
 import type { InsiderSummary } from './insiders'
 import type { FundMoves } from './edgar'
 
@@ -47,7 +47,7 @@ const riskOffReads = async () => [
 ]
 
 // calibration where this band has proven itself — so the call grades
-const calWith = (key: string): CalibrationState => ({ buckets: { [key]: { n: 20, hits: 14 } }, brier: [] })
+const calWith = (key: string): CalibrationState => ({ buckets: { [key]: { n: 20, hits: 14 } }, brier: [], defVersion: CALIB_DEF_VERSION })
 
 describe('buildBoard', () => {
   it('scores a rolled-over name as a graded short, writes every blob, paper-only at R0', async () => {
@@ -89,7 +89,7 @@ describe('buildBoard', () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
     // both bands covered so the 1.1 short nudge can shift NVDA's band without ungrading it
-    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 20, hits: 14 }, 'short:amber:40-55': { n: 20, hits: 14 } }, brier: [] })
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 20, hits: 14 }, 'short:amber:40-55': { n: 20, hits: 14 } }, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -157,7 +157,7 @@ describe('buildBoard', () => {
   it('one outstanding shadow per sym+side: a repeat shadow is skipped while the first is still ungraded', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [] }) // suppresses → shadow
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION }) // suppresses → shadow
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -176,7 +176,7 @@ describe('buildBoard', () => {
   it('...but once the first shadow has matured (graded), a fresh same-name shadow is allowed back in', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [] })
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -196,7 +196,7 @@ describe('buildBoard', () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
     // suppressing calibration: this band has PROVEN it loses → grade null → shadow
-    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [] })
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])

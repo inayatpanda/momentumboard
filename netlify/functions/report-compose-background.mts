@@ -321,7 +321,10 @@ export default async (req: Request) => {
         console.log('COMPOSE: overlays', constrained.overlays.map(o => `${o.predictionId}:${o.flag}`).join(' '))
       }
     } else {
-      composed.standfirst = `${composed.standfirst} — Engine offline this morning; qualitative edition.`
+      const day = new Date(nowSec * 1000).getUTCDay()
+      composed.standfirst = day === 0 || day === 6
+        ? `${composed.standfirst} — Weekend edition: markets closed, eyes on the week ahead.`
+        : `${composed.standfirst} — Engine offline this morning; qualitative edition.`
     }
 
     // ---- AI roster nominations → feed the NEXT morning's predict run ----

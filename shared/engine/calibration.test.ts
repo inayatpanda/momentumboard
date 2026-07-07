@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   bandFor,
+  baseHitRate,
   brierPoint,
   gradeFor,
   gradePrediction,
@@ -66,13 +67,29 @@ describe('probabilityFor', () => {
 })
 
 describe('gradeFor', () => {
-  it('A needs p≥.62, non-provisional AND capacity ≥8; provisional caps at B; <.50 suppressed', () => {
+  it('with the default 0.5 base: A needs p≥.62, non-provisional AND capacity ≥8; provisional caps at B; <.50 suppressed', () => {
     expect(gradeFor(0.65, false, 10)).toBe('A')
     expect(gradeFor(0.65, false, 7)).toBe('B') // capacity blocks A
     expect(gradeFor(0.65, true, 10)).toBe('B') // provisional caps
     expect(gradeFor(0.56, false, 10)).toBe('B')
     expect(gradeFor(0.52, false, 10)).toBe('C')
     expect(gradeFor(0.49, false, 10)).toBeNull()
+  })
+  it('grades measure edge over the engine base rate — a 0.47 bucket is a B when the base is 0.37', () => {
+    expect(gradeFor(0.47, false, 10, 0.37)).toBe('B')
+    expect(gradeFor(0.50, false, 10, 0.37)).toBe('A')
+    expect(gradeFor(0.38, false, 10, 0.37)).toBe('C')
+    expect(gradeFor(0.36, false, 10, 0.37)).toBeNull()
+  })
+})
+
+describe('baseHitRate', () => {
+  it('pools every bucket; defaults to 0.5 below 50 observations', () => {
+    const cal = emptyCal()
+    cal.buckets['long:green:25-40'] = { n: 100, hits: 30 }
+    cal.buckets['short:red:25-40'] = { n: 100, hits: 44 }
+    expect(baseHitRate(cal).rate).toBeCloseTo((74 + 2) / (200 + 4), 5)
+    expect(baseHitRate(emptyCal()).rate).toBe(0.5)
   })
 })
 
@@ -151,6 +168,14 @@ describe('gradePrediction', () => {
     const candles = mkCandles(100, 2, 4)
     expect(gradePrediction({ date: '2026-01-06', side: 'long', priceAtPrediction: 100, stop: 90 }, candles, spy, 5)).toBeNull()
   })
+  it('a marginal excess below HIT_EXCESS_MIN is not a hit — beating SPY by an epsilon is noise', () => {
+    const candles = mkCandles(100, 0.1) // ~+0.5% over 5 sessions vs flat SPY
+    const o = gradePrediction({ date: '2026-01-06', side: 'long', priceAtPrediction: 100, stop: 90 }, candles, spy, 5)!
+    expect(o.stopped).toBe(false)
+    expect(o.excessPct).toBeGreaterThan(0)
+    expect(o.excessPct).toBeLessThan(1)
+    expect(o.hit).toBe(false)
+  })
 })
 
 describe('weight learning', () => {
@@ -188,6 +213,27 @@ describe('weight learning', () => {
     w = updateIcStats(w, pred('long', { technical: 50 }), win)
     const cur = w.current.technical
     expect(maybeNudgeWeights(w, '2026-07-02').current.technical).toBe(cur)
+  })
+
+  it('the 0.4× floor holds while evidence is thin, then lifts at 200 observations — a persistently wrong factor decays toward zero', () => {
+    let w = initWeights()
+    const loss = { excessPct: -5, rawPct: -5, spyPct: 0, stopped: true, hit: false }
+    // young factor: 30 graded, always agreeing and losing → floor still protects it
+    for (let i = 0; i < 30; i++) w = updateIcStats(w, pred('long', { technical: 50 }), loss)
+    w = maybeNudgeWeights(w, '2026-07-01')
+    let rounds = 0
+    while (rounds++ < 8 && w.ic.technical.nAgree < 200) {
+      for (let i = 0; i < 30; i++) w = updateIcStats(w, pred('long', { technical: 50 }), loss)
+      w = maybeNudgeWeights(w, '2026-07-02')
+      if (w.ic.technical.nAgree < 200) expect(w.current.technical).toBeGreaterThanOrEqual(0.4 * w.base.technical)
+    }
+    // mature factor, still wrong: keep grading — the floor is gone, decay continues
+    for (let round = 0; round < 20; round++) {
+      for (let i = 0; i < 15; i++) w = updateIcStats(w, pred('long', { technical: 50 }), loss)
+      w = maybeNudgeWeights(w, '2026-07-03')
+    }
+    expect(w.ic.technical.nAgree).toBeGreaterThanOrEqual(200)
+    expect(w.current.technical).toBeLessThan(0.4 * w.base.technical) // pruned below the old floor
   })
 })
 
