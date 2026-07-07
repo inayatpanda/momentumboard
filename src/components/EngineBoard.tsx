@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData, type EnginePrediction } from '../lib/api'
+import { capBand } from '../lib/format'
 import { GradeChip } from './GradeChip'
 
 // THE BOARD: today's scored calls from the prediction engine. Numbers only —
@@ -16,7 +17,12 @@ function Call({ p }: { p: EnginePrediction }) {
           <GradeChip grade={p.grade} provisional={p.provisional} />{' '}
           {p.sym}
           <span style={{ color: p.side === 'long' ? 'var(--green, #37b26c)' : 'var(--red, #ff5d73)', fontSize: 11, marginLeft: 6 }}>{dir}</span>
-          {p.smallCap && <span className="badge warn" style={{ marginLeft: 6 }}>small cap</span>}
+          {(capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)) && (
+            <span className="badge warn" style={{ marginLeft: 6 }}>{capBand(p.capUsdM) ?? 'small cap'}</span>
+          )}
+          {(p.themes ?? []).slice(0, 2).map(t => (
+            <span key={t} className="badge" style={{ marginLeft: 4 }}>{t}</span>
+          ))}
           {p.earningsRisk && <span className="badge bad" style={{ marginLeft: 4 }}>earnings ≤10d</span>}
         </span>
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>
@@ -75,6 +81,12 @@ export function EngineBoard() {
           <>
             <span className="sep">·</span>
             <span>news {b.newsTone.label}</span>
+          </>
+        )}
+        {!!b.themes?.length && (
+          <>
+            <span className="sep">·</span>
+            <span>in the news: {b.themes.map(t => t.name.toLowerCase()).join(', ')}</span>
           </>
         )}
       </p>

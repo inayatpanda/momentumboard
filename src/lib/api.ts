@@ -199,6 +199,8 @@ export interface EnginePrediction {
   paperOnly: boolean
   factors: Record<string, { score: number | null; detail: string; weight: number }>
   overlay?: { flag: string; reason: string }
+  themes?: string[]
+  capUsdM?: number | null
 }
 
 // A prediction's realised outcome over one horizon: side-adjusted excess vs SPY,
@@ -265,6 +267,7 @@ export interface EngineData {
     board: EnginePrediction[]
     worldTape?: { tone: string; votes: { on: number; off: number }; detail: string }
     newsTone?: { score: number; label: string; hits: number }
+    themes?: { key: string; name: string; hits: number }[]
   } | null
   ledger?: LedgerDay[]
   newsToneHistory?: { date: string; score: number; label: string }[]

@@ -46,6 +46,8 @@ export interface Prediction extends GradedCall {
   date: string
   regime: RegimeColor | 'unknown'
   priceAtPrediction: number
+  themes?: string[] // theme tags (themes.ts) — identification, never a score
+  capUsdM?: number | null // market cap in $M when known — lets the UI band micro/small/mid/large
   shadow?: boolean // suppressed by calibration but logged anyway — the learning loop must eat even when the paper doesn't
   worldTape?: { tone: string; mult: number } // overnight world-tape nudge applied to this call's conviction (bounded ±10/−15%)
   overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string }

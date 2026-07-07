@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData } from '../lib/api'
+import { capBand } from '../lib/format'
 import { GradeChip } from './GradeChip'
 
 // TODAY'S CALLS: the engine board, front and centre on the watchlist. Each
@@ -44,6 +45,12 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
               <span style={{ color: p.side === 'long' ? 'var(--green)' : 'var(--red)', fontSize: 11, marginLeft: 6 }}>
                 {p.side === 'long' ? '▲ LONG' : '▼ SHORT'}
               </span>
+              {(capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)) && (
+                <span className="badge" style={{ marginLeft: 4 }}>{capBand(p.capUsdM) ?? 'small cap'}</span>
+              )}
+              {(p.themes ?? []).slice(0, 2).map(t => (
+                <span key={t} className="badge" style={{ marginLeft: 4 }}>{t}</span>
+              ))}
               {p.earningsRisk && <span className="badge bad" style={{ marginLeft: 4 }}>earnings ≤10d</span>}
             </span>
             <span style={{ color: 'var(--muted)', fontSize: 12, whiteSpace: 'nowrap' }}>{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>

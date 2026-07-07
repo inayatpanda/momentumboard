@@ -40,6 +40,7 @@ import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type Ro
 import type { T212Position } from './t212lib'
 import type { FactorName, FactorScore, PredOutcome, Prediction } from '../../../shared/engine/types'
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
+import { primaryThemeOf, themeCandidates, themeHeat, themesOf } from '../../../shared/engine/themes'
 import { SECTOR_MEMBERS, computeSectorRows } from './sectors'
 import type { SocialPulseRow } from './social'
 import type { InsiderSummary } from './insiders'
@@ -349,8 +350,10 @@ export async function buildBoard(
   const baseRegime = qqq ? regimeFromCandles(spy, qqq) : ('unknown' as const)
   const spyCloses = spy.map(c => c.c)
 
-  // discovery inflows → roster candidates
-  const [screens, social] = await Promise.all([deps.screens(), deps.social(watchSyms)])
+  // discovery inflows → roster candidates. Media titles come first: theme
+  // heat ("chips are in the news") decides which theme members join today's
+  // candidate pool, and the same titles later feed the news factor + tone.
+  const [screens, social, mediaTitles] = await Promise.all([deps.screens(), deps.social(watchSyms), deps.mediaTitles()])
   const sectorPairs = await mapLimit(Object.keys(SECTOR_MEMBERS), 6, async etf => [etf, await deps.candles(etf)] as const)
   const sectorRows = computeSectorRows(new Map(sectorPairs.filter((p): p is [string, Candle[]] => p[1] !== null)), spy)
   const topSectorMembers = sectorRows.slice(0, 2).flatMap(r => SECTOR_MEMBERS[r.sym] ?? [])
@@ -364,6 +367,9 @@ export async function buildBoard(
   for (const { row, source } of screens) addSource(row.sym, source, row.capUsdM)
   for (const s of social.slice(0, 12)) addSource(s.sym, 'social')
   for (const sym of topSectorMembers) addSource(sym, 'rotation')
+  // focus themes (energy/chips/data centres/robotics/drones): hottest-in-the-news
+  // first, every theme scanned a little even on quiet days. Same gates as everyone.
+  for (const { sym, theme } of themeCandidates(mediaTitles)) addSource(sym, `theme:${theme}`)
   for (const sym of watchSyms) addSource(sym, 'watchlist')
   // AI roster nominations: the paper's analyst nominated these for the engine to
   // EXAMINE — one more candidate source, never a call by fiat; it faces the same
@@ -437,9 +443,8 @@ export async function buildBoard(
   const engineBaseRate = baseHitRate(calibration).rate
   const risk = (await store.read<RiskState>('risk-state')) ?? initRisk(today)
   const rosterSyms = roster.map(e => e.sym)
-  const [insiderCoverage, mediaTitles, earningsSet, fundMoves, worldReads] = await Promise.all([
+  const [insiderCoverage, earningsSet, fundMoves, worldReads] = await Promise.all([
     deps.insiderCoverage(rosterSyms, watchSyms, today),
-    deps.mediaTitles(),
     deps.earningsSyms(),
     deps.smartMoney(),
     deps.worldReads(),
@@ -553,12 +558,15 @@ export async function buildBoard(
     const shadow = !grade || call.earningsRisk
 
     const instrument = shadow ? null : mapInstrument(call.side, call.sym, grade!, risk.rung, cfg.levMap ?? {})
+    const callThemes = themesOf(entry.sym)
     board.push({
       ...call,
       id: `${today}:${call.sym}:${call.side}`,
       date: today,
       regime,
       priceAtPrediction: call.entry,
+      themes: callThemes.length ? callThemes : undefined,
+      capUsdM: entry.capUsdM,
       shadow: shadow || undefined,
       probability: Math.round(p * 100) / 100,
       provisional,
@@ -587,15 +595,17 @@ export async function buildBoard(
       .filter(b => b.side === side && !!b.shadow === shadow && (!shadow || !outstandingShadowKeys.has(`${b.sym}:${b.side}`)))
       .sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))
       .slice(0, cap)
-  // live picks pass diversity gates: max 3 per sector per side, and no name
+  // live picks pass diversity gates: max 3 per group per side, and no name
   // moving in lockstep (60d return corr > 0.75) with one already picked —
-  // twelve correlated bets are one bet. Shadows keep the plain top-N (they
-  // exist to feed calibration, and their dedup is handled above).
+  // twelve correlated bets are one bet. Grouping: sector-ETF mapping where it
+  // exists (the S&P megacaps), theme otherwise — so five drone small caps the
+  // sector map has never heard of still count as ONE crowd. Shadows keep the
+  // plain top-N (they exist to feed calibration; their dedup is handled above).
   const pickLive = (side: 'long' | 'short', cap: number) => {
     const { picked, skipped } = pickDiverse(
       board.filter(b => b.side === side && !b.shadow),
       cap,
-      sym => symToSector.get(baseSym(sym)) ?? null,
+      sym => symToSector.get(baseSym(sym)) ?? primaryThemeOf(sym),
       sym => candleMap.get(sym)?.map(c => c.c) ?? null,
     )
     if (skipped.length) console.log(`BOARD: diversity gates (${side}):`, skipped.map(s => `${s.sym} — ${s.why}`).join('; '))
@@ -632,6 +642,8 @@ export async function buildBoard(
     board: live,
     worldTape: { tone: tone.tone, votes: tone.votes, detail: tone.detail },
     newsTone: globalNews,
+    // focus themes ranked by headline heat — identification for the UI, never a score
+    themes: themeHeat(mediaTitles).filter(t => t.hits > 0).slice(0, 3),
   })
 
   // ---- the engine's daily opinion on every REAL holding ----
