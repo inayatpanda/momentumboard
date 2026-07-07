@@ -99,6 +99,18 @@ export async function routeReport(
     if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
       await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, `📰 Morning report is ready → ${link}`).catch(() => {})
     }
+    // the same paper lands in the inbox — fail-soft, skipped when no key is set
+    try {
+      const { emailReadyHtml, sendReportEmail } = await import('./lib/email')
+      const dateLabel = new Date(at * 1000).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })
+      await sendReportEmail(
+        { RESEND_API_KEY: process.env.RESEND_API_KEY, REPORT_EMAIL_TO: process.env.REPORT_EMAIL_TO, REPORT_EMAIL_FROM: process.env.REPORT_EMAIL_FROM },
+        `The Street Signal — ${dateLabel}`,
+        emailReadyHtml(bodyText, `${link}?date=${dateKey}`),
+      )
+    } catch {
+      /* email is best-effort */
+    }
     try {
       const { sendPushAll } = await import('./lib/pushSend')
       await sendPushAll(store, { VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY }, { title: 'Morning report is ready', body: 'Tap to read today’s analysis', url: '/report' })

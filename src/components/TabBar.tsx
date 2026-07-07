@@ -18,6 +18,7 @@ const TABS = [
   { key: 'charts', label: 'Charts', icon: 'M4 20V10M10 20V4M16 20v-9M22 20H2', sec: false },
   { key: 'journal', label: 'Journal', icon: 'M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3V4zM9 9h6M9 13h4', sec: false },
   { key: 'research', label: 'Research', icon: 'M4 5h16v14H4zM4 10h16M9 15h6', sec: true },
+  { key: 'reports', label: 'Reports', icon: 'M3 6h18v12H3zM3 7l9 6 9-6', sec: true },
   { key: 'intel', label: 'Intel', icon: 'M12 2a7 7 0 017 7c0 3-2 5-3 6v3H8v-3c-1-1-3-3-3-6a7 7 0 017-7zM9 21h6', sec: true },
   { key: 'calendar', label: 'Calendar', icon: 'M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zM8 3v4m8-4v4M3 10h18M8 14h.5M12 14h.5M16 14h.5', sec: true },
 ] as const

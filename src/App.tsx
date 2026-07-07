@@ -7,6 +7,7 @@ import { Movers } from './screens/Movers'
 import { TickerDetail } from './screens/TickerDetail'
 import { Journal } from './screens/Journal'
 import { Research } from './screens/Research'
+import { Reports } from './screens/Reports'
 import { Ledger } from './screens/Ledger'
 import { Intel } from './screens/Intel'
 import { CalendarScreen } from './screens/CalendarScreen'
@@ -19,6 +20,7 @@ type View =
   | { screen: 'detail'; symbol: string }
   | { screen: 'journal' }
   | { screen: 'research' }
+  | { screen: 'reports' }
   | { screen: 'ledger' }
   | { screen: 'intel' }
   | { screen: 'calendar' }
@@ -52,6 +54,7 @@ export default function App() {
     if (tab === 'charts') setView({ screen: 'detail', symbol: lastSymbol ?? 'SPY' })
     if (tab === 'journal') setView({ screen: 'journal' })
     if (tab === 'research') setView({ screen: 'research' })
+    if (tab === 'reports') setView({ screen: 'reports' })
     if (tab === 'intel') setView({ screen: 'intel' })
     if (tab === 'calendar') setView({ screen: 'calendar' })
   }
@@ -77,6 +80,7 @@ export default function App() {
           {view.screen === 'detail' && <TickerDetail symbol={view.symbol} onBack={() => setView({ screen: 'watchlist' })} />}
           {view.screen === 'journal' && <Journal />}
           {view.screen === 'research' && <Research onOpenSettings={openSettings} onOpenLedger={() => setView({ screen: 'ledger' })} />}
+          {view.screen === 'reports' && <Reports onOpenSettings={openSettings} />}
           {view.screen === 'ledger' && <Ledger onBack={() => setView({ screen: 'research' })} onOpen={open} />}
           {view.screen === 'intel' && <Intel onOpenSettings={openSettings} />}
           {view.screen === 'calendar' && <CalendarScreen onOpenSettings={openSettings} />}

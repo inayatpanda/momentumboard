@@ -144,6 +144,8 @@ export interface MoverRow {
   stage: string | null
 }
 
+export const getReportList = () => apiGet<string[]>('/report?list')
+
 export const getMovers = () =>
   apiGet<{ gainers: MoverRow[]; losers: MoverRow[]; actives: MoverRow[]; at: number }>('/api/market?type=movers')
 
