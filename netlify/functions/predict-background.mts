@@ -31,6 +31,14 @@ export default async (req: Request) => {
     boardSize = built.board.length
     rosterSize = built.rosterSize
     holdingsCount = built.holdingsCount
+    // the £10k mock book trades the board it just built — fail-soft
+    try {
+      const { runPaperBook } = await import('./lib/paperBook')
+      const book = await runPaperBook(blobAppStore, deps, nowSec)
+      console.log('PAPER-BOOK:', book.month, '| equity', book.history[book.history.length - 1]?.equity, '| open', book.positions.length, '| closed', book.closed.length)
+    } catch (e) {
+      console.error('PAPER-BOOK failed:', e)
+    }
     console.log('PREDICT: graded', graded, '| board', boardSize, '| roster', rosterSize, '| holdings', holdingsCount, '| regime', built.regime)
   } catch (e) {
     console.error('PREDICT-FAILED:', e)

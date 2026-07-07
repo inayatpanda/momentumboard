@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getEngine, type LedgerPrediction } from '../lib/api'
+import { getEngine, type LedgerPrediction, type PaperBookData } from '../lib/api'
 import { flattenLedger, gradeBreakdown, statusOf, summariseLedger } from '../lib/ledgerStats'
 import { humanError } from '../lib/format'
 import { GradeChip } from '../components/GradeChip'
@@ -18,6 +18,8 @@ const STATUS_BADGE: Record<string, string> = { hit: 'good', miss: 'bad', stopped
 export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol: string) => void }) {
   const [rows, setRows] = useState<LedgerPrediction[] | null>(null)
   const [lifetime, setLifetime] = useState<{ live: { graded: number; hits: number; sumExcess: number }; since: string } | null>(null)
+  const [book, setBook] = useState<PaperBookData | null>(null)
+  const [months, setMonths] = useState<{ month: string; endGBP: number; returnPct: number; trades: number; wins: number }[]>([])
   const [filter, setFilter] = useState<Filter>('all')
   const [error, setError] = useState<string | null>(null)
 
@@ -26,6 +28,8 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
       .then(d => {
         setRows(flattenLedger(d.ledger ?? [], 100))
         if (d.scorecard?.lifetime) setLifetime({ live: d.scorecard.lifetime.live, since: d.scorecard.lifetime.since })
+        setBook(d.paperBook ?? null)
+        setMonths(d.paperMonths ?? [])
       })
       .catch(e => setError(String((e as Error)?.message ?? e)))
   }, [])
@@ -66,6 +70,53 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
           <span><strong>{summary.open}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>still open</span></span>
         </div>
       )}
+
+      {book && (() => {
+        const equity = book.history[book.history.length - 1]?.equity ?? book.startGBP
+        const retPct = Math.round(((equity - book.startGBP) / book.startGBP) * 1000) / 10
+        const weekAgo = book.history[Math.max(0, book.history.length - 6)]?.equity
+        const weekPct = weekAgo ? Math.round(((equity - weekAgo) / weekAgo) * 1000) / 10 : null
+        return (
+          <section className="digest-section" style={{ marginBottom: 12 }}>
+            <h3 className="section-title">The £10,000 book — {new Date(book.month + '-02').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h3>
+            <div className="stats-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, margin: '8px 0' }}>
+              <span><strong className="num">£{equity.toLocaleString('en-GB', { maximumFractionDigits: 0 })}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>equity</span></span>
+              <span><strong className={retPct >= 0 ? 'up-text' : 'down-text'}>{retPct >= 0 ? '+' : ''}{retPct}%</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>this month</span></span>
+              {weekPct != null && (
+                <span><strong className={weekPct >= 0 ? 'up-text' : 'down-text'}>{weekPct >= 0 ? '+' : ''}{weekPct}%</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>this week</span></span>
+              )}
+              <span><strong>{book.positions.length}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>open</span></span>
+              <span><strong>{book.closed.length}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>closed</span></span>
+            </div>
+            {book.positions.map(p => (
+              <div key={p.sym + p.side} className="perf-row" onClick={() => onOpen(p.sym)} role="button" tabIndex={0} style={{ cursor: 'pointer' }}>
+                <span><strong>{p.sym}</strong> <span className={p.side === 'long' ? 'up-text' : 'down-text'}>{p.side}</span> <span style={{ color: 'var(--faint)', fontSize: 11 }}>{p.grade} · in {p.entry} · £{Math.round(p.costGBP)}</span></span>
+                <span style={{ color: 'var(--muted)', fontSize: 12 }}>stop {p.stop} · tgt {p.target}</span>
+              </div>
+            ))}
+            {book.closed.slice(-5).reverse().map(t => (
+              <div key={t.sym + t.side + t.closedDate} className="perf-row" style={{ opacity: 0.75 }}>
+                <span><strong>{t.sym}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>{t.side} · {t.reason} · {t.closedDate.slice(5)}</span></span>
+                <span className={t.plGBP >= 0 ? 'up-text' : 'down-text'}>{t.plGBP >= 0 ? '+' : '−'}£{Math.abs(t.plGBP).toFixed(0)} ({t.plPct >= 0 ? '+' : ''}{t.plPct}%)</span>
+              </div>
+            ))}
+            {months.length > 0 && (
+              <>
+                {months.slice().reverse().map(m => (
+                  <div key={m.month} className="perf-row">
+                    <span>{new Date(m.month + '-02').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} <span style={{ color: 'var(--faint)', fontSize: 11 }}>×{m.trades} trades · {m.trades ? Math.round((m.wins / m.trades) * 100) : 0}% won</span></span>
+                    <span className={m.returnPct >= 0 ? 'up-text' : 'down-text'}>£{m.endGBP.toLocaleString('en-GB', { maximumFractionDigits: 0 })} ({m.returnPct >= 0 ? '+' : ''}{m.returnPct}%)</span>
+                  </div>
+                ))}
+              </>
+            )}
+            <p className="empty-line" style={{ fontSize: 11 }}>
+              A fresh mock £10,000 every month, traded mechanically on the engine's live calls: risk-ladder sizing, exits on daily closes at the published stop,
+              target or 10-session horizon; whatever remains closes at month-end. Finished months are banked above, permanently.
+            </p>
+          </section>
+        )
+      })()}
 
       {lifetime && lifetime.live.graded > 0 && (
         <p className="empty-line" style={{ fontSize: 12, marginBottom: 10 }}>

@@ -278,7 +278,38 @@ export interface HoldingRead {
   quantity: number
 }
 
+export interface PaperBookPosition {
+  sym: string
+  side: 'long' | 'short'
+  grade: string
+  openedDate: string
+  entry: number
+  stop: number
+  target: number
+  qty: number
+  costGBP: number
+}
+
+export interface PaperBookTrade extends PaperBookPosition {
+  closedDate: string
+  exit: number
+  plGBP: number
+  plPct: number
+  reason: 'stop' | 'target' | 'horizon' | 'month-end'
+}
+
+export interface PaperBookData {
+  month: string
+  startGBP: number
+  cash: number
+  positions: PaperBookPosition[]
+  closed: PaperBookTrade[]
+  history: { date: string; equity: number }[]
+}
+
 export interface EngineData {
+  paperBook?: PaperBookData | null
+  paperMonths?: { month: string; startGBP: number; endGBP: number; returnPct: number; trades: number; wins: number }[]
   board: {
     date: string
     generatedAt: number

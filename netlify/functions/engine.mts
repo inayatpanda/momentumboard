@@ -43,6 +43,11 @@ export default async (req: Request) => {
     blobAppStore.read<string[]>('predictions-index'),
   ])
 
+  const [paperBook, paperMonths] = await Promise.all([
+    blobAppStore.read('paper-book'),
+    blobAppStore.read('paper-months'),
+  ])
+
   // The LEDGER: the last 30 dates of predictions, SLIMMED — every id, level and
   // outcome the accountability pane needs, but NOT the heavy per-factor
   // breakdown (that stays behind the daily board's evidence toggle). Newest
@@ -87,6 +92,8 @@ export default async (req: Request) => {
     // news-tone history is surfaced as a bounded tail for the display-only trend.
     board,
     ledger,
+    paperBook: paperBook ?? null,
+    paperMonths: paperMonths ?? [],
     newsToneHistory: (newsToneHistory ?? []).slice(-30),
     holdingsReads: holdingsReads ?? null,
     scorecard,

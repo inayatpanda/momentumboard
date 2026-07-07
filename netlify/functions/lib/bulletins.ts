@@ -31,10 +31,11 @@ export async function composeBulletin(kind: BulletinKind, store: AppStore, env: 
   const deps = defaultDeps({ FINNHUB_API_KEY: env.FINNHUB_API_KEY })
   const { worldTone, newsTone, VIX_SYMBOL } = await import('../../../shared/engine/worldTape')
 
-  const [worldReads, titles, board, econ] = await Promise.all([
+  const [worldReads, titles, board, paperBook, econ] = await Promise.all([
     grab(() => deps.worldReads()),
     grab(() => fetchMediaTitles()),
     grab(() => store.read<{ date: string; regime: string; board: Prediction[] }>('engine-board')),
+    grab(() => store.read<{ month: string; startGBP: number; positions: unknown[]; closed: { plGBP: number }[]; history: { date: string; equity: number }[] }>('paper-book')),
     grab(async () => {
       const { parseEconFeed } = await import('./econCalendar')
       const res = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json')
@@ -78,6 +79,13 @@ export async function composeBulletin(kind: BulletinKind, store: AppStore, env: 
     news ? `Headlines lean ${news.label} (${news.hits} scored)` : null,
     board ? `Board (${board.date}, regime ${board.regime}): ${marked.map(m => `${m.sym} ${m.side}${m.movePct != null ? ` ${pct(m.movePct)} since entry` : ''}`).join('; ') || 'no live calls'}` : null,
     events.length ? `Calendar: ${events.map(e => `${e.title} (${e.country} ${e.impact})`).join('; ')}` : null,
+    paperBook && paperBook.history.length
+      ? (() => {
+          const eq = paperBook.history[paperBook.history.length - 1].equity
+          const ret = Math.round(((eq - paperBook.startGBP) / paperBook.startGBP) * 1000) / 10
+          return `The mock £10k book (${paperBook.month}): equity £${Math.round(eq)}, ${ret >= 0 ? '+' : ''}${ret}% this month, ${paperBook.positions.length} open, ${paperBook.closed.length} closed`
+        })()
+      : null,
   ].filter(Boolean) as string[]
 
   const ask =
@@ -184,6 +192,7 @@ ${news ? `<div style="color:#636e80;font-size:12px">Headlines lean ${esc(news.la
 ${proseHtml}
 ${tapeHtml}
 ${boardHtml}
+${paperBook && paperBook.history.length ? `<div style="margin-top:10px;color:#98a2b3;font-size:13px">The mock £10k book: <span style="${num}">£${Math.round(paperBook.history[paperBook.history.length - 1].equity)}</span> · ${paperBook.positions.length} open · ${paperBook.closed.length} closed this month</div>` : ''}
 ${moversHtml}
 ${calHtml}
 <div style="margin-top:26px;padding-top:14px;border-top:1px solid rgba(158,173,198,.2);color:#636e80;font-size:12px">
