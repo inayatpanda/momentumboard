@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getOutcomes, getReportList } from '../lib/api'
+import { getBulletins, getOutcomes, getReportList } from '../lib/api'
 import { humanError } from '../lib/format'
 import { IconGear, IconNews, IconTarget } from '../components/icons'
 import { SubNav } from '../components/TabBar'
@@ -13,12 +13,17 @@ export function Reports({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [outcomes, setOutcomes] = useState<Awaited<ReturnType<typeof getOutcomes>>>([])
   const [error, setError] = useState<string | null>(null)
 
+  const [bulletins, setBulletins] = useState<{ date: string; kind: 'premarket' | 'evening' }[]>([])
+
   useEffect(() => {
     getReportList().then(setDates).catch(e => setError(humanError(e)))
     getOutcomes().then(o => setOutcomes(o ?? [])).catch(() => {})
+    getBulletins().then(b => setBulletins(b ?? [])).catch(() => {})
   }, [])
 
   const byDate = new Map(outcomes.map(o => [o.date, o]))
+  const bulletinsByDate = new Map<string, ('premarket' | 'evening')[]>()
+  for (const b of bulletins) bulletinsByDate.set(b.date, [...(bulletinsByDate.get(b.date) ?? []), b.kind])
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
 
   return (
@@ -68,6 +73,23 @@ export function Reports({ onOpenSettings }: { onOpenSettings: () => void }) {
                             <em className={p.f5 >= 0 ? 'up-text' : 'down-text'} style={{ fontStyle: 'normal' }}> {p.f5 >= 0 ? '+' : ''}{p.f5.toFixed(1)}%</em>
                           )}
                         </span>
+                      ))}
+                    </span>
+                  )}
+                  {(bulletinsByDate.get(d) ?? []).length > 0 && (
+                    <span style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      {(bulletinsByDate.get(d) ?? []).map(k => (
+                        <a
+                          key={k}
+                          className="badge info"
+                          href={`/report?bulletin=${d}:${k}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ textDecoration: 'none' }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          {k === 'premarket' ? '🌅 pre-market' : '🌆 evening'}
+                        </a>
                       ))}
                     </span>
                   )}

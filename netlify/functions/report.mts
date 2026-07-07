@@ -35,6 +35,17 @@ export async function routeReport(
       const index = (await store.read<string[]>('report-index')) ?? []
       return json(200, { ok: true, data: index.slice().reverse() })
     }
+    if (url?.searchParams.get('bulletins') != null) {
+      const index = (await store.read<{ date: string; kind: string }[]>('bulletin-index')) ?? []
+      return json(200, { ok: true, data: index.slice().reverse() })
+    }
+    const wantedBulletin = url?.searchParams.get('bulletin') // "<date>:<kind>"
+    if (wantedBulletin) {
+      const [bDate, bKind] = wantedBulletin.split(':')
+      const day = (await store.read<{ kind: string; html: string }[]>(`bulletins:${bDate}`)) ?? []
+      const hit = day.find(b => b.kind === bKind)
+      return page(hit ? 200 : 404, hit?.html ?? PLACEHOLDER)
+    }
     if (wantedDate) {
       const archived = await store.read<StoredReport>(`report:${wantedDate}`)
       return page(archived ? 200 : 404, archived?.html ?? PLACEHOLDER)

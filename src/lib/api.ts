@@ -146,6 +146,8 @@ export interface MoverRow {
 
 export const getReportList = () => apiGet<string[]>('/report?list')
 
+export const getBulletins = () => apiGet<{ date: string; kind: 'premarket' | 'evening' }[]>('/report?bulletins')
+
 export const getMovers = () =>
   apiGet<{ gainers: MoverRow[]; losers: MoverRow[]; actives: MoverRow[]; at: number }>('/api/market?type=movers')
 
