@@ -51,7 +51,7 @@
   --gold-soft: rgba(208, 167, 94, 0.14);
   --nav-bg: rgba(12, 13, 17, 0.9);
   --top-fade: rgba(10, 11, 14, 0.96);
-  --shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+  --shadow: 0 14px 36px rgba(6, 10, 22, 0.55);
   --radius: 18px;
   --font-serif: 'Fraunces', Georgia, 'Iowan Old Style', 'Times New Roman', serif;
   --font-ui: 'Schibsted Grotesk', -apple-system, system-ui, sans-serif;
@@ -117,6 +117,37 @@ body::after {
 }
 
 button, input { font: inherit; }
+
+/* keyboard users get a real ring; mouse/touch users never see it */
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
+
+h1, h2, h3 { text-wrap: balance; }
+p { text-wrap: pretty; }
+
+/* every tappable row acknowledges the finger — taps must never feel dead */
+.perf-row { transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease; }
+.perf-row[role='button']:active, .link-card:active, .trend-chip:active { transform: scale(0.985); }
+.card-grid [role='button']:active .card { transform: scale(0.99); }
+
+/* skeleton shimmer — loading states shaped like the content, not a spinner */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
 
 /* ---------- app shell ---------- */
 .shell {
@@ -218,6 +249,13 @@ button, input { font: inherit; }
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: none; }
 }
+/* cascade the first screenful in; later cards render instantly on scroll */
+.card-grid > *:nth-child(1) .card { animation-delay: 0ms; }
+.card-grid > *:nth-child(2) .card { animation-delay: 35ms; }
+.card-grid > *:nth-child(3) .card { animation-delay: 70ms; }
+.card-grid > *:nth-child(4) .card { animation-delay: 105ms; }
+.card-grid > *:nth-child(5) .card { animation-delay: 140ms; }
+.card-grid > *:nth-child(6) .card { animation-delay: 175ms; }
 
 .card .row-top { display: flex; align-items: center; gap: 12px; }
 .card .sym { font-weight: 700; font-size: 16.5px; letter-spacing: 0.01em; }

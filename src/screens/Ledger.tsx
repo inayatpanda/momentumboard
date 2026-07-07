@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getEngine, type LedgerPrediction } from '../lib/api'
 import { flattenLedger, gradeBreakdown, statusOf, summariseLedger } from '../lib/ledgerStats'
+import { humanError } from '../lib/format'
 import { GradeChip } from '../components/GradeChip'
 import { IconBack } from '../components/icons'
 
@@ -100,9 +101,13 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
         ))}
       </div>
 
-      {error && <p className="empty-line">Ledger unavailable: {error}</p>}
+      {error && <p className="empty-line">Ledger unavailable — {humanError(error)}.</p>}
       {rows && visible.length === 0 && <p className="empty-line">Nothing here yet — the ledger fills as the engine makes and grades calls.</p>}
-      {!rows && !error && <p className="empty-line">Loading the ledger…</p>}
+      {!rows && !error && (
+        <div aria-hidden style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[0, 1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 36 }} />)}
+        </div>
+      )}
 
       {visible.length > 0 && (
         <div className="ledger-wrap">

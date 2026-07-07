@@ -18,3 +18,15 @@ export function capBand(capUsdM: number | null | undefined): string | null {
   if (capUsdM < 10_000) return 'mid cap'
   return 'large cap'
 }
+
+/** Raw fetch/parse exceptions must never reach the screen — "SyntaxError:
+ * Unexpected token '<'" is developer console text, not product copy. */
+export function humanError(raw: unknown): string {
+  const s = String((raw as Error)?.message ?? raw ?? '')
+  if (/unexpected token|not valid json|<!doctype|json\.parse/i.test(s)) return 'live data unavailable right now'
+  if (/failed to fetch|networkerror|load failed|network request/i.test(s)) return 'no connection — will retry'
+  if (/http-401|http-403|unauthori[sz]ed/i.test(s)) return 'licence check failed — re-enter your key in Settings'
+  if (/http-429/.test(s)) return 'rate-limited upstream — back shortly'
+  if (/http-5\d\d|502|503/.test(s)) return 'server hiccup — retrying shortly'
+  return s.length > 90 ? `${s.slice(0, 90)}…` : s || 'something went wrong'
+}

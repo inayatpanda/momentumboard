@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
 import { getEngine, getMovers, getTrending, type MoverRow } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
-import { capBand, fmtPct } from '../lib/format'
+import { capBand, fmtPct, humanError } from '../lib/format'
 import { IconGear } from '../components/icons'
 import { SubNav } from '../components/TabBar'
 
@@ -59,7 +59,7 @@ function MoverList({ title, rows, watch, onOpen, onAdd }: {
             )}
             <button
               className="mini-btn ghost"
-              style={{ fontSize: 12, padding: '1px 8px' }}
+              style={{ fontSize: 14, width: 30, height: 30, padding: 0, borderRadius: 999, lineHeight: 1 }}
               aria-label={watch.has(r.sym) ? `${r.sym} on watchlist` : `Add ${r.sym} to watchlist`}
               disabled={watch.has(r.sym)}
               onClick={e => {
@@ -122,8 +122,12 @@ export function Movers({ onOpen, onOpenSettings }: { onOpen: (symbol: string) =>
         <MoverList title="Top gainers" rows={movers?.gainers ?? []} watch={watch} onOpen={onOpen} onAdd={add} />
         <MoverList title="Top losers" rows={movers?.losers ?? []} watch={watch} onOpen={onOpen} onAdd={add} />
         <MoverList title="Most active" rows={movers?.actives ?? []} watch={watch} onOpen={onOpen} onAdd={add} />
-        {!movers && !error && <p className="empty-line">Loading the tape…</p>}
-        {error && <p className="empty-line">Movers unavailable: {error}</p>}
+        {!movers && !error && (
+          <div aria-hidden style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[0, 1, 2, 3, 4].map(i => <div key={i} className="skeleton" style={{ height: 40 }} />)}
+          </div>
+        )}
+        {error && <p className="empty-line">Movers unavailable — {humanError(error)}.</p>}
         {movers && !movers.gainers.length && !movers.losers.length && !movers.actives.length && (
           <p className="empty-line">The screeners came back empty — likely closed market or a rate-limit. Try again in a few minutes.</p>
         )}

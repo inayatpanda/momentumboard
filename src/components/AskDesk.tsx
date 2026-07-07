@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { askDesk } from '../lib/api'
+import { humanError } from '../lib/format'
 
 // ASK THE DESK: free-form questions about the open ticker, answered by the
 // LLM but grounded server-side in the chart evidence (stage, setups, RSI,
@@ -30,7 +31,7 @@ export function AskDesk({ symbol }: { symbol: string }) {
       setQa({ q: trimmed, answer: d.answer })
       setQ('')
     } catch (e) {
-      setError(String((e as Error)?.message ?? e))
+      setError(humanError(e))
     } finally {
       setBusy(false)
     }
@@ -68,7 +69,7 @@ export function AskDesk({ symbol }: { symbol: string }) {
         </div>
       )}
       {busy && <p className="ai-note">Reading the chart…</p>}
-      {error && <p className="ai-note">The desk couldn't answer: {error}</p>}
+      {error && <p className="ai-note">The desk couldn't answer — {humanError(error)}.</p>}
       {qa && (
         <>
           <p style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 4 }}>“{qa.q}”</p>

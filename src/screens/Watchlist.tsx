@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
 import { getToken, setToken, getRunlog } from '../lib/api'
 import { seedStarterWatchlist } from '../lib/starter'
+import { humanError } from '../lib/format'
 import { mirrorConfig } from '../lib/configMirror'
 import { useMarketData } from '../hooks/useMarketData'
 import { useAlerts } from '../hooks/useAlerts'
@@ -155,7 +156,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
           </div>
         )}
         <footer className="foot">
-          {error ? <span className="stale"><IconWarn size={12} /> data stale: {error}</span> : lastUpdated ? `Updated ${new Date(lastUpdated).toLocaleTimeString()}` : 'Loading…'}
+          {error ? <span className="stale"><IconWarn size={12} /> {humanError(error)}</span> : lastUpdated ? `Updated ${new Date(lastUpdated).toLocaleTimeString()}` : 'Loading…'}
           <br />
           Tap a ticker for charts, alerts and sizing. Data delayed up to ~2 min. Engine calls are calibrated analysis, not advice.
         </footer>
