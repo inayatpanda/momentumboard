@@ -4,10 +4,22 @@ import { getEngine, getMovers, getTrending, type MoverRow } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { capBand, fmtPct } from '../lib/format'
 import { IconGear } from '../components/icons'
+import { SubNav } from '../components/TabBar'
 
 // MOVERS: the market-wide tape — top gainers, top losers, most active — with
 // the themes shouting in today's headlines. Everything is tappable (chart +
-// engine read) and one tap from the watchlist.
+// engine read) and one tap from the watchlist. Each row carries the engine's
+// stage read: a −14% falling knife and a −14% name basing for a turn are
+// different trades.
+
+const STAGE_TONE: Record<string, string> = {
+  'early-reversal': 'good',
+  pullback: 'good',
+  weak: 'warn',
+  extended: 'warn',
+  exhausted: 'bad',
+  'falling-knife': 'bad',
+}
 
 function MoverList({ title, rows, watch, onOpen, onAdd }: {
   title: string
@@ -36,6 +48,9 @@ function MoverList({ title, rows, watch, onOpen, onAdd }: {
               <span style={{ color: 'var(--faint)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
             )}
             {capBand(r.capUsdM) && <span className="badge" style={{ flex: '0 0 auto' }}>{capBand(r.capUsdM)}</span>}
+            {r.stage && (
+              <span className={`badge ${STAGE_TONE[r.stage] ?? ''}`} style={{ flex: '0 0 auto' }}>{r.stage.replace('-', ' ')}</span>
+            )}
           </span>
           <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, flex: '0 0 auto' }}>
             {r.price != null && <span className="num" style={{ fontSize: 12.5 }}>{r.price >= 100 ? r.price.toFixed(0) : r.price.toFixed(2)}</span>}
@@ -88,6 +103,7 @@ export function Movers({ onOpen, onOpenSettings }: { onOpen: (symbol: string) =>
         <span className="brand">Movers</span>
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
+      <SubNav />
       <div className="content digest-cols">
         {themes.length > 0 && (
           <p className="board-strip">

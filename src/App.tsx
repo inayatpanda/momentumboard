@@ -10,7 +10,7 @@ import { Research } from './screens/Research'
 import { Intel } from './screens/Intel'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
-import { TabBar } from './components/TabBar'
+import { NavContext, TabBar } from './components/TabBar'
 
 type View =
   | { screen: 'watchlist' }
@@ -58,6 +58,7 @@ export default function App() {
   const screenKey = view.screen + (view.screen === 'detail' ? view.symbol : '')
 
   return (
+    <NavContext.Provider value={{ active, navigate }}>
     <div className="shell" key={syncTick}>
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
@@ -79,5 +80,6 @@ export default function App() {
       </AnimatePresence>
       <TabBar active={active} chartsReady={!!lastSymbol} onNavigate={navigate} />
     </div>
+    </NavContext.Provider>
   )
 }

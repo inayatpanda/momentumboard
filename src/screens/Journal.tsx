@@ -12,6 +12,7 @@ import { GradeChip } from '../components/GradeChip'
 import { Sparkline } from '../components/Sparkline'
 import { IconSwap, IconWarn, IconNews, IconSparkle } from '../components/icons'
 import { fmtPct } from '../lib/format'
+import { SubNav } from '../components/TabBar'
 
 const gbp = (v: number) => `${v < 0 ? '−' : ''}£${Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`
 // Neutral figures stay ink; only genuine gains/losses take market colour.
@@ -157,6 +158,7 @@ export function Journal() {
         <span className="brand">Journal</span>
         <span className="regime" style={{ marginLeft: 'auto' }}>£{capital.toLocaleString('en-GB')} capital</span>
       </header>
+      <SubNav />
       <div className="content">
         {warnings.map(w => (
           <div key={w.code + (w.symbol ?? '')} className="risk-banner"><IconWarn /> {w.message}</div>

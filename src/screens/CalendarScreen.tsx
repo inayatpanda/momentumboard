@@ -3,6 +3,7 @@ import { db, type NoteItem } from '../lib/db'
 import { getMonthMap, getDayLedger } from '../lib/api'
 import { IconGear, IconNews, IconTarget, stripEmoji } from '../components/icons'
 import type { Trade } from '../../shared/journal'
+import { SubNav } from '../components/TabBar'
 
 // The day ledger: everything the desk produced on any given date — the paper,
 // picks, alerts, event assessments, watched videos — merged with YOUR notes
@@ -58,6 +59,7 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
         <span className="brand">Calendar</span>
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
+      <SubNav />
       <div className="content">
         <div className="cal-head">
           <button className="mini-btn ghost" onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>

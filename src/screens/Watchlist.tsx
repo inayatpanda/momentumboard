@@ -9,6 +9,7 @@ import type { RuleItem } from '../lib/db'
 import { RegimeBanner } from '../components/RegimeBanner'
 import { TickerRow } from '../components/TickerRow'
 import { AddTickerForm } from '../components/AddTickerForm'
+import { SubNav } from '../components/TabBar'
 import { TodaysCalls } from '../components/TodaysCalls'
 import { Toasts } from '../components/Toasts'
 import { IconGear, IconWarn } from '../components/icons'
@@ -101,6 +102,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
         <RegimeBanner regime={regime} />
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
+      <SubNav />
       <div className="content">
         <AddTickerForm onAdd={add} disabled={symbols.length >= 30} categories={categories} />
         {categories.length > 0 && (

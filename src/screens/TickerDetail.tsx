@@ -13,6 +13,7 @@ import { engineLevelLines, stageMarkerSpec, type PriceLineSpec, type StageMarker
 import { PriceChart } from '../components/PriceChart'
 import { RsiChart } from '../components/RsiChart'
 import { EngineReadStrip, EngineFactors } from '../components/EngineRead'
+import { AskDesk } from '../components/AskDesk'
 import { PositionCalculator } from '../components/PositionCalculator'
 import { AlertEditor } from '../components/AlertEditor'
 import { Badge } from '../components/Badge'
@@ -165,6 +166,8 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
       <RsiChart candles={candles} />
 
       <EngineFactors call={engineCall} hasRead={!!engineRead} />
+
+      <AskDesk symbol={symbol} />
 
       <div className="detail-grid">
         <div>

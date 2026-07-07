@@ -3,6 +3,7 @@ import { db } from '../lib/db'
 import { getEcon, getCalendar, getConsensus, getInsiders, getSmartMoney, getVideoAnalyses, getFeed, getAlertHistory, getSocialPulse, getSectors } from '../lib/api'
 import { IconGear, IconCalendar, IconLandmark, IconFlame, IconPlay, stripEmoji } from '../components/icons'
 import { EngineBoard } from '../components/EngineBoard'
+import { SubNav } from '../components/TabBar'
 
 // Intel, in three streams the user asked for:
 //   Markets: macro, earnings, 13F, headlines, alerts
@@ -49,6 +50,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
         <span className="brand">Intel</span>
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
+      <SubNav />
       <div className="content digest-cols">
         <div className="subtabs" style={{ columnSpan: 'all' }}>
           {SUBTABS.map(t => (

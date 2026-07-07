@@ -59,6 +59,9 @@ export const getSocialPulse = () =>
 export const evaluateNote = (text: string, kind: string) =>
   apiGet<{ take: string }>(`/api/market?type=evaluate-note&text=${encodeURIComponent(text)}&kind=${kind}`).then(d => d.take)
 
+export const askDesk = (symbol: string, q: string) =>
+  apiGet<{ answer: string; at: number }>(`/api/market?type=ask&symbol=${encodeURIComponent(symbol)}&q=${encodeURIComponent(q)}`)
+
 export const getMonthMap = (month: string) =>
   apiGet<Record<string, { r?: boolean; p?: number; a?: number; e?: number }>>(`/api/config?view=month&month=${month}`)
 
@@ -138,6 +141,7 @@ export interface MoverRow {
   capUsdM: number | null
   changePct: number | null
   name: string | null
+  stage: string | null
 }
 
 export const getMovers = () =>

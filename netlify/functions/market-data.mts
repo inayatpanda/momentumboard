@@ -36,8 +36,29 @@ export async function routeRequest(
     const hit = await getCached<unknown>('movers')
     if (hit) return json(200, { ok: true, data: hit })
     const { fetchScreen } = await import('./lib/screener')
-    const [gainers, losers, actives] = await Promise.all([fetchScreen('day_gainers'), fetchScreen('day_losers'), fetchScreen('most_actives')])
-    const data = { gainers: gainers.slice(0, 12), losers: losers.slice(0, 12), actives: actives.slice(0, 12), at: Math.floor(Date.now() / 1000) }
+    const [gainersAll, losersAll, activesAll] = await Promise.all([fetchScreen('day_gainers'), fetchScreen('day_losers'), fetchScreen('most_actives')])
+    const [gainers, losers, actives] = [gainersAll.slice(0, 12), losersAll.slice(0, 12), activesAll.slice(0, 12)]
+    // the engine's stage read per name — a big loser that's a falling knife and
+    // one basing for a turn are different trades. Candle cache is shared with
+    // the engine, per-symbol fail-soft, and the whole payload caches 10 min.
+    const { cachedCandles } = await import('./lib/marketCache')
+    const { technicalStage } = await import('../../shared/technicals')
+    const uniq = [...new Set([...gainers, ...losers, ...actives].map(r => r.sym))]
+    const stages = new Map<string, string | null>()
+    for (let i = 0; i < uniq.length; i += 8) {
+      await Promise.all(
+        uniq.slice(i, i + 8).map(async sym => {
+          try {
+            const c = await cachedCandles(sym)
+            stages.set(sym, c && c.length >= 30 ? (technicalStage(sym, c)?.stage ?? null) : null)
+          } catch {
+            stages.set(sym, null)
+          }
+        }),
+      )
+    }
+    const withStage = (rows: typeof gainers) => rows.map(r => ({ ...r, stage: stages.get(r.sym) ?? null }))
+    const data = { gainers: withStage(gainers), losers: withStage(losers), actives: withStage(actives), at: Math.floor(Date.now() / 1000) }
     if (gainers.length || losers.length || actives.length) await setCached('movers', data, 600)
     return json(200, { ok: true, data })
   }
@@ -164,6 +185,67 @@ export async function routeRequest(
       const data = { scores: scoreSignals(log, candlesBySymbol), totalSignals: log.length }
       await setCached('signal-stats', data, 3600)
       return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'ask') {
+    // Ask the desk: a free-form question about ONE symbol, answered by the LLM
+    // but grounded in measured chart evidence computed right here — stage,
+    // setups, RSI/RVOL, returns, capacity, regime, the engine's live call and
+    // the latest headlines. The model narrates the numbers; it never invents them.
+    const symbol = url.searchParams.get('symbol')?.toUpperCase()
+    const q = url.searchParams.get('q')?.slice(0, 400)
+    if (!symbol || !q) return json(400, { ok: false, error: 'missing-params' })
+    try {
+      const llmEnv = await llmEnvForCaller()
+      if (!llmEnv) return json(200, { ok: true, data: { answer: 'Add your own AI key in Settings to ask the desk questions.', at: 0 } })
+      const { cachedQuote, cachedCandles } = await import('./lib/marketCache')
+      const { technicalStage } = await import('../../shared/technicals')
+      const { detectSetups, regimeFromCandles } = await import('../../shared/setups')
+      const { swingCapacity } = await import('../../shared/indicators')
+      const nowSec = Math.floor(Date.now() / 1000)
+      const [quote, candles, spy, qqq, news] = await Promise.all([
+        cachedQuote(symbol, env.FINNHUB_API_KEY ?? '').catch(() => null),
+        cachedCandles(symbol).catch(() => null),
+        cachedCandles('SPY').catch(() => null),
+        cachedCandles('QQQ').catch(() => null),
+        (deps.news ?? fetchSymbolNews)(symbol, env.FINNHUB_API_KEY ?? '', nowSec).catch(() => []),
+      ])
+      if (!candles || candles.length < 30) {
+        return json(200, { ok: true, data: { answer: `Not enough chart history on ${symbol} for a grounded answer — the desk doesn't guess without data.`, at: nowSec } })
+      }
+      const closes = candles.map(c => c.c)
+      const last = closes[closes.length - 1]
+      const ret = (days: number) => (closes.length > days ? Math.round(((last - closes[closes.length - 1 - days]) / closes[closes.length - 1 - days]) * 1000) / 10 : null)
+      const read = technicalStage(symbol, candles)
+      const setups = detectSetups(candles, read?.rvol ?? null)
+      const capacity = swingCapacity(closes)
+      const regime = spy && qqq ? regimeFromCandles(spy, qqq) : 'unknown'
+      const boardBlob = await blobAppStore
+        .read<{ date: string; board: { sym: string; side: string; grade: string; probability: number; entry: number; stop: number; target: number; note: string }[] }>('engine-board')
+        .catch(() => null)
+      const call = boardBlob?.board?.find(p => p.sym === symbol)
+      const evidence = [
+        `Price ${quote?.price ?? last}${quote ? ` (${quote.changePct.toFixed(1)}% today)` : ''}; 21d return ${ret(21) ?? '?'}%, 63d return ${ret(63) ?? '?'}%.`,
+        read ? `Chart read: ${read.note} (stage ${read.stage}, entry quality ${read.entryQuality}, RSI ${read.rsi ?? '?'}, RVOL ${read.rvol ?? '?'}).` : 'No confident chart read.',
+        `Active setups: ${setups.join(', ') || 'none'}. Typical 10-day swing capacity ±${capacity ?? '?'}%.`,
+        `Market regime: ${regime}.`,
+        call
+          ? `Engine board (${boardBlob!.date}): live ${call.side} call, grade ${call.grade}, p=${Math.round(call.probability * 100)}%, entry ${call.entry} / stop ${call.stop} / target ${call.target} — ${call.note}.`
+          : 'Engine board: no live call on this name today.',
+        news.length ? `Recent headlines: ${news.slice(0, 4).map(n => n.title).join(' | ')}.` : 'No notable recent headlines.',
+      ].join('\n- ')
+      const prompt = `You are the StreetSignal research desk — a seasoned, plain-spoken swing-trading analyst. A reader asks about ${symbol}: "${q}"
+
+Ground your answer ONLY in this measured evidence (do not invent numbers):
+- ${evidence}
+
+Answer in 3-6 direct sentences: address the question specifically, cite the relevant numbers above, name the level or event that would change your read, and be honest where the evidence is thin or the question isn't answerable from charts. End with one short note that this is analysis, not advice.`
+      const { callLlm } = await import('./lib/llm')
+      const { text } = await callLlm(prompt, { ...llmEnv, maxTokens: 900 })
+      return json(200, { ok: true, data: { answer: text.trim(), at: nowSec } })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
     }

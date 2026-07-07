@@ -297,10 +297,24 @@ button, input { font: inherit; }
   transition: color 0.15s ease, background 0.15s ease;
 }
 .tab svg { width: 21px; height: 21px; transition: transform 0.15s ease; }
-/* seven tabs must fit a 375px phone: tighten padding + type below 430px */
-@media (max-width: 430px) {
-  .tab { padding: 5px 3px; font-size: 9.5px; }
-  .tab svg { width: 19px; height: 19px; }
+
+/* ---------- SubNav: the reading tabs (mobile only) ----------
+   Seven tabs in one bottom bar shrink to slivers on a phone, so navigation
+   splits: market core stays in the bottom bar, and each screen mounts this
+   bar directly BELOW its header — the page reads header → Research/Intel/
+   Calendar → content. Its buttons reuse the bottom bar's .tab styling so the
+   two bars read as one system. Desktop hides it (the rail carries all 7). */
+.topnav {
+  display: flex;
+  justify-content: space-around;
+  padding: 2px 8px 6px;
+  background: var(--nav-bg);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.topnav .tab svg { width: 19px; height: 19px; }
+@media (max-width: 1023px) {
+  .tabs .tab.sec { display: none; } /* secondary tabs live in the SubNav bar on mobile */
 }
 .tab.active { color: var(--blue); background: var(--blue-soft); }
 .tab.active svg { transform: translateY(-1px); }
@@ -734,6 +748,7 @@ button, input { font: inherit; }
 
 /* ---------- desktop layout (installable desktop PWA) ---------- */
 @media (min-width: 1024px) {
+  .topnav { display: none; } /* the rail carries all seven tabs */
   .shell {
     max-width: none;
     margin: 0;
