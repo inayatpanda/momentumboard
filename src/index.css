@@ -179,7 +179,8 @@ p { text-wrap: pretty; }
   letter-spacing: -0.015em;
   font-variation-settings: 'opsz' 40;
 }
-.brand .tick { color: var(--blue); font-style: italic; }
+/* one nameplate, one ink — a masthead doesn't dress half its name differently */
+.brand .tick { color: inherit; font-style: normal; }
 
 .content { flex: 1; padding: 6px 18px 22px; }
 
