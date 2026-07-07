@@ -36,30 +36,26 @@ function MoverList({ title, rows, watch, onOpen, onAdd }: {
         <div
           key={r.sym}
           className="perf-row"
-          style={{ cursor: 'pointer', gap: 8 }}
+          style={{ cursor: 'pointer', flexDirection: 'column', alignItems: 'stretch', gap: 5 }}
           role="button"
           tabIndex={0}
           onClick={() => onOpen(r.sym)}
           onKeyDown={e => e.key === 'Enter' && onOpen(r.sym)}
         >
-          <span style={{ minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 700 }}>{r.sym}</span>
             {r.name && (
-              <span style={{ color: 'var(--faint)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              <span style={{ color: 'var(--faint)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: '1 1 auto', fontFamily: 'var(--font-ui)' }}>
+                {r.name}
+              </span>
             )}
-            {capBand(r.capUsdM) && <span className="badge" style={{ flex: '0 0 auto' }}>{capBand(r.capUsdM)}</span>}
-            {r.stage && (
-              <span className={`badge ${STAGE_TONE[r.stage] ?? ''}`} style={{ flex: '0 0 auto' }}>{r.stage.replace('-', ' ')}</span>
-            )}
-          </span>
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, flex: '0 0 auto' }}>
-            {r.price != null && <span className="num" style={{ fontSize: 12.5 }}>{r.price >= 100 ? r.price.toFixed(0) : r.price.toFixed(2)}</span>}
+            {r.price != null && <span className="num" style={{ fontSize: 12.5, flex: '0 0 auto', marginLeft: 'auto' }}>{r.price >= 100 ? r.price.toFixed(0) : r.price.toFixed(2)}</span>}
             {r.changePct != null && (
-              <span className={r.changePct >= 0 ? 'up-text' : 'down-text'} style={{ fontSize: 12.5, minWidth: 52, textAlign: 'right' }}>{fmtPct(r.changePct)}</span>
+              <span className={r.changePct >= 0 ? 'up-text' : 'down-text'} style={{ fontSize: 12.5, minWidth: 52, textAlign: 'right', flex: '0 0 auto' }}>{fmtPct(r.changePct)}</span>
             )}
             <button
               className="mini-btn ghost"
-              style={{ fontSize: 14, width: 30, height: 30, padding: 0, borderRadius: 999, lineHeight: 1 }}
+              style={{ fontSize: 14, width: 30, height: 30, padding: 0, borderRadius: 999, lineHeight: 1, flex: '0 0 auto' }}
               aria-label={watch.has(r.sym) ? `${r.sym} on watchlist` : `Add ${r.sym} to watchlist`}
               disabled={watch.has(r.sym)}
               onClick={e => {
@@ -70,6 +66,12 @@ function MoverList({ title, rows, watch, onOpen, onAdd }: {
               {watch.has(r.sym) ? '✓' : '+'}
             </button>
           </span>
+          {(capBand(r.capUsdM) || r.stage) && (
+            <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {capBand(r.capUsdM) && <span className="badge">{capBand(r.capUsdM)}</span>}
+              {r.stage && <span className={`badge ${STAGE_TONE[r.stage] ?? ''}`}>{r.stage.replace('-', ' ')}</span>}
+            </span>
+          )}
         </div>
       ))}
     </section>
