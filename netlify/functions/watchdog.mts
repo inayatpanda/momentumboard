@@ -24,8 +24,11 @@ async function runChecks(nowSec: number): Promise<{ name: string; ok: boolean; d
   const runlog = ((await blobAppStore.read<{ at: number; kind?: string }[]>('runlog').catch(() => null)) ?? [])
   const lastAlert = runlog.filter(r => !r.kind || r.kind === 'alert-check').slice(-1)[0] ?? runlog.slice(-1)[0]
   add('alert checker', !!lastAlert && nowSec - lastAlert.at < 1800, lastAlert ? `last ran ${Math.round((nowSec - lastAlert.at) / 60)}min ago` : 'no runs logged')
-  const predictedToday = runlog.some(r => r.kind === 'predict' && londonDate(r.at) === today)
-  add('predict run', !weekday || predictedToday, predictedToday ? 'ran today' : 'no run today')
+  // NOT the runlog (its read-modify-writes race with alert-check and lose
+  // entries) — the scorecard's updatedAt is written by every predict run.
+  const scorecard = await blobAppStore.read<{ updatedAt?: number }>('engine-scorecard').catch(() => null)
+  const predictedToday = !!scorecard?.updatedAt && londonDate(scorecard.updatedAt) === today
+  add('predict run', !weekday || predictedToday, scorecard?.updatedAt ? `scorecard updated ${londonDate(scorecard.updatedAt)}` : 'never')
 
   const { cachedCandles } = await import('./lib/marketCache')
   const spy = await cachedCandles('SPY').catch(() => null)
