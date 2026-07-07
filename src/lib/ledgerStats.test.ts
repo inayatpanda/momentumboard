@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { flattenLedger, statusOf, summariseLedger } from './ledgerStats'
+import { flattenLedger, gradeBreakdown, statusOf, summariseLedger } from './ledgerStats'
 import type { LedgerDay, LedgerPrediction } from './api'
 
 const pred = (over: Partial<LedgerPrediction>): LedgerPrediction =>
@@ -38,5 +38,29 @@ describe('flattenLedger + summariseLedger', () => {
     expect(s.stopped).toBe(1)
     expect(s.hitRate).toBeCloseTo(0.33, 2)
     expect(s.avgExcess5).toBeCloseTo(0.5, 1)
+  })
+})
+
+describe('gradeBreakdown', () => {
+  const rows = [
+    pred({ id: '1', grade: 'B', outcome5: out(4, true) }),
+    pred({ id: '2', grade: 'B', outcome5: out(-2, false) }),
+    pred({ id: '3', grade: 'C', outcome5: out(2, true) }),
+    pred({ id: '4', grade: 'C' }), // open — counted, not scored
+    pred({ id: '5', grade: 'C', shadow: true, outcome5: out(-6, false, true) }), // shadow bucket, NOT C
+  ]
+  it('splits by grade with shadows in their own bucket, scoring only graded rows', () => {
+    const b = gradeBreakdown(rows)
+    expect(b.map(x => x.key)).toEqual(['B', 'C', 'shadow'])
+    const B = b.find(x => x.key === 'B')!
+    expect(B).toMatchObject({ n: 2, graded: 2, hits: 1, hitRate: 0.5 })
+    expect(B.avgExcess5).toBeCloseTo(1, 1)
+    const C = b.find(x => x.key === 'C')!
+    expect(C).toMatchObject({ n: 2, graded: 1, hits: 1, hitRate: 1 })
+    const sh = b.find(x => x.key === 'shadow')!
+    expect(sh).toMatchObject({ n: 1, graded: 1, hits: 0, avgExcess5: -6 })
+  })
+  it('drops empty buckets', () => {
+    expect(gradeBreakdown([]).length).toBe(0)
   })
 })

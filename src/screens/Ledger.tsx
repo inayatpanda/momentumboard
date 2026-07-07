@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getEngine, type LedgerPrediction } from '../lib/api'
-import { flattenLedger, statusOf, summariseLedger } from '../lib/ledgerStats'
+import { flattenLedger, gradeBreakdown, statusOf, summariseLedger } from '../lib/ledgerStats'
 import { GradeChip } from '../components/GradeChip'
 import { IconBack } from '../components/icons'
 
@@ -34,6 +34,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
   }, [rows, filter])
 
   const summary = useMemo(() => summariseLedger(visible), [visible])
+  const byGrade = useMemo(() => (rows ? gradeBreakdown(rows) : []), [rows])
 
   return (
     <div className="detail">
@@ -59,6 +60,36 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
           <span><strong>{summary.stopped}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>stopped</span></span>
           <span><strong>{summary.open}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>still open</span></span>
         </div>
+      )}
+
+      {byGrade.some(b => b.graded > 0) && (
+        <section className="digest-section" style={{ marginBottom: 12 }}>
+          <h3 className="section-title">By grade — do the tiers separate?</h3>
+          {byGrade.map(b => (
+            <div key={b.key} className="perf-row">
+              <span>
+                {b.key === 'shadow' ? <span className="badge">shadow</span> : <GradeChip grade={b.key as 'A' | 'B' | 'C'} provisional={false} />}{' '}
+                <span style={{ color: 'var(--faint)', fontSize: 11 }}>×{b.n} · {b.graded} graded</span>
+              </span>
+              <span style={{ fontSize: 12.5 }}>
+                {b.graded > 0 ? (
+                  <>
+                    {Math.round((b.hitRate ?? 0) * 100)}% hit ·{' '}
+                    <span className={b.avgExcess5 != null && b.avgExcess5 >= 0 ? 'up-text' : 'down-text'}>
+                      {b.avgExcess5 != null ? `${b.avgExcess5 >= 0 ? '+' : ''}${b.avgExcess5}%` : '—'}
+                    </span>{' '}
+                    avg @5d
+                  </>
+                ) : (
+                  <span style={{ color: 'var(--faint)' }}>none graded yet</span>
+                )}
+              </span>
+            </div>
+          ))}
+          <p className="empty-line" style={{ fontSize: 11 }}>
+            Higher grades should earn higher hit rates and excess. If they don't over ~30+ graded calls per tier, the grading is decoration — and you'll see it here first.
+          </p>
+        </section>
       )}
 
       <div className="sort-chips">

@@ -33,6 +33,38 @@ export interface LedgerSummary {
   avgExcess5: number | null // mean excess vs SPY @5d across graded
 }
 
+export interface GradeBucket {
+  key: string // 'A' | 'B' | 'C' | 'shadow'
+  n: number
+  graded: number
+  hits: number
+  hitRate: number | null
+  avgExcess5: number | null
+}
+
+/** Per-grade breakdown: do the tiers actually separate? Shadows are their own
+ * bucket regardless of stored grade — they were suppressed calls, and mixing
+ * them into A/B/C would flatter or damn the wrong tier. */
+export function gradeBreakdown(rows: LedgerPrediction[]): GradeBucket[] {
+  const keys = ['A', 'B', 'C', 'shadow'] as const
+  return keys
+    .map(key => {
+      const bucket = rows.filter(r => (key === 'shadow' ? r.shadow : !r.shadow && r.grade === key))
+      const graded = bucket.filter(r => r.outcome5)
+      const hits = graded.filter(r => r.outcome5!.hit).length
+      const sum = graded.reduce((s, r) => s + r.outcome5!.excessPct, 0)
+      return {
+        key,
+        n: bucket.length,
+        graded: graded.length,
+        hits,
+        hitRate: graded.length ? Math.round((hits / graded.length) * 100) / 100 : null,
+        avgExcess5: graded.length ? Math.round((sum / graded.length) * 10) / 10 : null,
+      }
+    })
+    .filter(b => b.n > 0)
+}
+
 export function summariseLedger(rows: LedgerPrediction[]): LedgerSummary {
   const graded = rows.filter(r => r.outcome5)
   const hits = graded.filter(r => r.outcome5!.hit).length
