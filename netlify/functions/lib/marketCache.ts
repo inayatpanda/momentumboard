@@ -26,6 +26,15 @@ export async function cachedCandles(sym: string): Promise<Candle[] | null> {
     await setCached(key, data, 900)
     return data.candles
   } catch {
+    // Yahoo refused — fall back to Stooq EOD bars so the engine sees
+    // yesterday's close instead of nothing. Shorter TTL: retry Yahoo soon.
+    const { fetchStooqCandles } = await import('./stooq')
+    const candles = await fetchStooqCandles(sym)
+    if (candles) {
+      console.log('CANDLES: yahoo failed, stooq fallback served', sym)
+      await setCached(key, { candles }, 600)
+      return candles
+    }
     return null
   }
 }

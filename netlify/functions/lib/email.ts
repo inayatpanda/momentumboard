@@ -17,7 +17,13 @@ export function emailReadyHtml(reportHtml: string, browserUrl: string): string {
   return /<body[^>]*>/i.test(stripped) ? stripped.replace(/<body[^>]*>/i, m => `${m}${banner}`) : banner + stripped
 }
 
-export async function sendReportEmail(env: EmailEnv, subject: string, html: string, fetchFn: typeof fetch = fetch): Promise<boolean> {
+export async function sendReportEmail(
+  env: EmailEnv,
+  subject: string,
+  html: string,
+  fetchFn: typeof fetch = fetch,
+  attachments?: { filename: string; content: string }[], // content = base64
+): Promise<boolean> {
   if (!env.RESEND_API_KEY || !env.REPORT_EMAIL_TO) return false
   try {
     const res = await fetchFn('https://api.resend.com/emails', {
@@ -28,6 +34,7 @@ export async function sendReportEmail(env: EmailEnv, subject: string, html: stri
         to: [env.REPORT_EMAIL_TO],
         subject,
         html,
+        ...(attachments?.length ? { attachments } : {}),
       }),
     })
     return res.ok

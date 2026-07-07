@@ -17,7 +17,7 @@ import { NavContext, TabBar } from './components/TabBar'
 type View =
   | { screen: 'watchlist' }
   | { screen: 'movers' }
-  | { screen: 'detail'; symbol: string }
+  | { screen: 'detail'; symbol: string; from?: string }
   | { screen: 'journal' }
   | { screen: 'research' }
   | { screen: 'reports' }
@@ -43,7 +43,8 @@ export default function App() {
 
   const open = (symbol: string) => {
     setLastSymbol(symbol)
-    setView({ screen: 'detail', symbol })
+    // remember where the chart was opened from, so Back returns there
+    setView(v => ({ screen: 'detail', symbol, from: v.screen === 'detail' ? v.from : v.screen }))
   }
 
   const navigate = (tab: string) => {
@@ -51,7 +52,7 @@ export default function App() {
     if (tab === 'movers') setView({ screen: 'movers' })
     // Charts continues where you left off; before anything's been opened it
     // shows the market itself rather than sitting dead
-    if (tab === 'charts') setView({ screen: 'detail', symbol: lastSymbol ?? 'SPY' })
+    if (tab === 'charts') setView(v => ({ screen: 'detail', symbol: lastSymbol ?? 'SPY', from: v.screen === 'detail' ? v.from : v.screen }))
     if (tab === 'journal') setView({ screen: 'journal' })
     if (tab === 'research') setView({ screen: 'research' })
     if (tab === 'reports') setView({ screen: 'reports' })
@@ -77,7 +78,17 @@ export default function App() {
         >
           {view.screen === 'watchlist' && <Watchlist onOpen={open} onOpenSettings={openSettings} />}
           {view.screen === 'movers' && <Movers onOpen={open} onOpenSettings={openSettings} />}
-          {view.screen === 'detail' && <TickerDetail symbol={view.symbol} onBack={() => setView({ screen: 'watchlist' })} />}
+          {view.screen === 'detail' && (
+            <TickerDetail
+              symbol={view.symbol}
+              onBack={() => {
+                const f = view.from
+                if (f === 'ledger') setView({ screen: 'ledger' })
+                else if (f && f !== 'detail' && f !== 'settings') navigate(f)
+                else setView({ screen: 'watchlist' })
+              }}
+            />
+          )}
           {view.screen === 'journal' && <Journal />}
           {view.screen === 'research' && <Research onOpenSettings={openSettings} onOpenLedger={() => setView({ screen: 'ledger' })} />}
           {view.screen === 'reports' && <Reports onOpenSettings={openSettings} />}
