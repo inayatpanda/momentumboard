@@ -7,6 +7,7 @@ import { Movers } from './screens/Movers'
 import { TickerDetail } from './screens/TickerDetail'
 import { Journal } from './screens/Journal'
 import { Research } from './screens/Research'
+import { Ledger } from './screens/Ledger'
 import { Intel } from './screens/Intel'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
@@ -18,6 +19,7 @@ type View =
   | { screen: 'detail'; symbol: string }
   | { screen: 'journal' }
   | { screen: 'research' }
+  | { screen: 'ledger' }
   | { screen: 'intel' }
   | { screen: 'calendar' }
   | { screen: 'settings'; from: string }
@@ -53,7 +55,7 @@ export default function App() {
   }
 
   const openSettings = () => setView(v => ({ screen: 'settings', from: v.screen }))
-  const active = view.screen === 'detail' ? 'charts' : view.screen === 'settings' ? view.from : view.screen
+  const active = view.screen === 'detail' ? 'charts' : view.screen === 'settings' ? view.from : view.screen === 'ledger' ? 'research' : view.screen
   const reduced = useReducedMotion()
   const screenKey = view.screen + (view.screen === 'detail' ? view.symbol : '')
 
@@ -72,7 +74,8 @@ export default function App() {
           {view.screen === 'movers' && <Movers onOpen={open} onOpenSettings={openSettings} />}
           {view.screen === 'detail' && <TickerDetail symbol={view.symbol} onBack={() => setView({ screen: 'watchlist' })} />}
           {view.screen === 'journal' && <Journal />}
-          {view.screen === 'research' && <Research onOpenSettings={openSettings} />}
+          {view.screen === 'research' && <Research onOpenSettings={openSettings} onOpenLedger={() => setView({ screen: 'ledger' })} />}
+          {view.screen === 'ledger' && <Ledger onBack={() => setView({ screen: 'research' })} onOpen={open} />}
           {view.screen === 'intel' && <Intel onOpenSettings={openSettings} />}
           {view.screen === 'calendar' && <CalendarScreen onOpenSettings={openSettings} />}
           {view.screen === 'settings' && <SettingsScreen onBack={() => navigate(view.from === 'detail' ? 'watchlist' : view.from)} />}

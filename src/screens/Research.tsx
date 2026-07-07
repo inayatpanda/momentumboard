@@ -7,7 +7,7 @@ import { SubNav } from '../components/TabBar'
 // Research: everything the analyst produces and how it performs.
 // The accountability page: reports, picks, persistence, scorecard, track record.
 
-export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function Research({ onOpenSettings, onOpenLedger }: { onOpenSettings: () => void; onOpenLedger: () => void }) {
   const [ai, setAi] = useState<Awaited<ReturnType<typeof getAiRead>> | null>(null)
   const [picks, setPicks] = useState<Awaited<ReturnType<typeof getPicks>> | null>(null)
   const [pickStats, setPickStats] = useState<Awaited<ReturnType<typeof getPickStats>> | null>(null)
@@ -15,11 +15,13 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [events, setEvents] = useState<Awaited<ReturnType<typeof getEventDossiers>>>([])
 
   useEffect(() => {
+    // ?? [] on the list fetchers: an empty server blob comes back as data:null,
+    // and a null in list state crashes the whole screen on .length
     getAiRead().then(setAi).catch(() => {})
     getPicks().then(setPicks).catch(() => {})
     getPickStats().then(setPickStats).catch(() => {})
-    getOutcomes().then(setOutcomes).catch(() => {})
-    getEventDossiers().then(setEvents).catch(() => {})
+    getOutcomes().then(o => setOutcomes(o ?? [])).catch(() => {})
+    getEventDossiers().then(e => setEvents(e ?? [])).catch(() => {})
   }, [])
 
   return (
@@ -30,6 +32,10 @@ export function Research({ onOpenSettings }: { onOpenSettings: () => void }) {
       </header>
       <SubNav />
       <div className="content digest-cols">
+        <a className="link-card" onClick={e => { e.preventDefault(); onOpenLedger() }} href="#ledger" style={{ marginBottom: 12 }}>
+          <IconTarget /> Prediction ledger
+          <span>Every call the engine made — column by column, with what happened. Judge the tool.</span>
+        </a>
         <EnginePanel />
         {events.length > 0 && (
           <section className="digest-section">

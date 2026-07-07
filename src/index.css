@@ -322,6 +322,21 @@ button, input { font: inherit; }
 .tab:disabled { opacity: 0.45; cursor: default; }
 .tab .soon { font-size: 8.5px; color: var(--faint); letter-spacing: 0.06em; }
 
+/* ---------- prediction ledger table ---------- */
+/* Wide by nature — it scrolls inside its own container, never the page. */
+.ledger-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.ledger-table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 12px; }
+.ledger-table th {
+  text-align: left; font-weight: 600; color: var(--faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 8px 8px 6px; border-bottom: 1px solid var(--line); white-space: nowrap;
+  position: sticky; top: 0; background: var(--panel);
+}
+.ledger-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.ledger-table tr:last-child td { border-bottom: none; }
+.ledger-table .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; }
+.ledger-table tr.shadow-row td { opacity: 0.55; }
+.ledger-table tbody tr:hover td { background: var(--panel-2); }
+
 /* ---------- alert editor ---------- */
 .alert-editor {
   display: flex;
