@@ -132,6 +132,17 @@ export async function revokeLicence(key: string) {
 export const getEcon = () =>
   apiGet<{ events: { title: string; country: string; at: number; impact: string }[] }>('/api/market?type=econ').then(d => d.events)
 
+export interface MoverRow {
+  sym: string
+  price: number | null
+  capUsdM: number | null
+  changePct: number | null
+  name: string | null
+}
+
+export const getMovers = () =>
+  apiGet<{ gainers: MoverRow[]; losers: MoverRow[]; actives: MoverRow[]; at: number }>('/api/market?type=movers')
+
 export const getTrending = () =>
   apiGet<{ current: { at: number; watchlist: { sym: string; changePct: number; rvol: number | null; setups: string[] }[]; market: { sym: string; changePct: number | null }[] } | null; timeline: unknown[] }>('/api/config?view=trending')
 

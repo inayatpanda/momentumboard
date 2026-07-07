@@ -2,24 +2,28 @@
 // here fails soft: a dead screener returns [] and the roster lives off the
 // other sources that day.
 
-export type ScreenKind = 'day_gainers' | 'most_actives' | 'small_cap_gainers'
+export type ScreenKind = 'day_gainers' | 'day_losers' | 'most_actives' | 'small_cap_gainers'
 
 export interface ScreenRow {
   sym: string
   price: number | null
   capUsdM: number | null
+  changePct: number | null
+  name: string | null
 }
 
 export function parseScreen(json: unknown): ScreenRow[] {
   const quotes = (json as { finance?: { result?: { quotes?: unknown[] }[] } })?.finance?.result?.[0]?.quotes
   if (!Array.isArray(quotes)) return []
-  return (quotes as { symbol?: string; regularMarketPrice?: number; marketCap?: number }[])
+  return (quotes as { symbol?: string; regularMarketPrice?: number; marketCap?: number; regularMarketChangePercent?: number; shortName?: string }[])
     .filter(q => typeof q?.symbol === 'string' && /^[A-Z0-9.-]{1,10}$/i.test(q.symbol))
     .slice(0, 25)
     .map(q => ({
       sym: q.symbol!.toUpperCase(),
       price: typeof q.regularMarketPrice === 'number' ? q.regularMarketPrice : null,
       capUsdM: typeof q.marketCap === 'number' ? Math.round(q.marketCap / 1e6) : null,
+      changePct: typeof q.regularMarketChangePercent === 'number' ? Math.round(q.regularMarketChangePercent * 10) / 10 : null,
+      name: typeof q.shortName === 'string' ? q.shortName : null,
     }))
 }
 
@@ -45,7 +49,7 @@ export async function fetchTrending(fetchFn: typeof fetch = fetch): Promise<Scre
     return (json?.finance?.result?.[0]?.quotes ?? [])
       .filter(q => typeof q?.symbol === 'string' && /^[A-Z0-9.-]{1,10}$/i.test(q.symbol!))
       .slice(0, 20)
-      .map(q => ({ sym: q.symbol!.toUpperCase(), price: null, capUsdM: null }))
+      .map(q => ({ sym: q.symbol!.toUpperCase(), price: null, capUsdM: null, changePct: null, name: null }))
   } catch {
     return []
   }

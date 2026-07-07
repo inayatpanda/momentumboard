@@ -24,7 +24,7 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   candles5y: async () => null,
   capUsdM: async () => null,
   companyName: async () => null,
-  screens: async () => [{ row: { sym: 'NVDA', price: 162, capUsdM: 50_000 }, source: 'screener:gainers' }],
+  screens: async () => [{ row: { sym: 'NVDA', price: 162, capUsdM: 50_000, changePct: null, name: null }, source: 'screener:gainers' }],
   social: async () => [],
   insiderCoverage: async () => new Map(),
   smartMoney: async () => [],

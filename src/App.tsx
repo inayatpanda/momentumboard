@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { syncFromServer } from './lib/sync'
+import { seedStarterWatchlist } from './lib/starter'
 import { Watchlist } from './screens/Watchlist'
+import { Movers } from './screens/Movers'
 import { TickerDetail } from './screens/TickerDetail'
 import { Journal } from './screens/Journal'
 import { Research } from './screens/Research'
@@ -12,6 +14,7 @@ import { TabBar } from './components/TabBar'
 
 type View =
   | { screen: 'watchlist' }
+  | { screen: 'movers' }
   | { screen: 'detail'; symbol: string }
   | { screen: 'journal' }
   | { screen: 'research' }
@@ -24,9 +27,14 @@ export default function App() {
   const [lastSymbol, setLastSymbol] = useState<string | null>(null)
   const [syncTick, setSyncTick] = useState(0)
 
-  // phone ↔ desktop: pull server state on launch; screens remount when it lands
+  // phone ↔ desktop: pull server state on launch; screens remount when it lands.
+  // Starter seeding runs AFTER the pull, so an existing watchlist is never
+  // polluted — a truly first launch gets the classics instead of a blank page.
   useEffect(() => {
-    syncFromServer().then(changed => changed && setSyncTick(t => t + 1))
+    syncFromServer().then(async changed => {
+      const seeded = await seedStarterWatchlist().catch(() => false)
+      if (changed || seeded) setSyncTick(t => t + 1)
+    })
   }, [])
 
   const open = (symbol: string) => {
@@ -36,6 +44,7 @@ export default function App() {
 
   const navigate = (tab: string) => {
     if (tab === 'watchlist') setView({ screen: 'watchlist' })
+    if (tab === 'movers') setView({ screen: 'movers' })
     if (tab === 'charts' && lastSymbol) setView({ screen: 'detail', symbol: lastSymbol })
     if (tab === 'journal') setView({ screen: 'journal' })
     if (tab === 'research') setView({ screen: 'research' })
@@ -59,6 +68,7 @@ export default function App() {
           transition={{ duration: 0.16, ease: 'easeOut' }}
         >
           {view.screen === 'watchlist' && <Watchlist onOpen={open} onOpenSettings={openSettings} />}
+          {view.screen === 'movers' && <Movers onOpen={open} onOpenSettings={openSettings} />}
           {view.screen === 'detail' && <TickerDetail symbol={view.symbol} onBack={() => setView({ screen: 'watchlist' })} />}
           {view.screen === 'journal' && <Journal />}
           {view.screen === 'research' && <Research onOpenSettings={openSettings} />}

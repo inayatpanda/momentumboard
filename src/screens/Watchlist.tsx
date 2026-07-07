@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
-import { getToken, setToken, getRunlog, getTrending } from '../lib/api'
+import { getToken, setToken, getRunlog } from '../lib/api'
+import { seedStarterWatchlist } from '../lib/starter'
 import { mirrorConfig } from '../lib/configMirror'
 import { useMarketData } from '../hooks/useMarketData'
 import { useAlerts } from '../hooks/useAlerts'
@@ -19,7 +20,6 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
   const [hasToken, setHasToken] = useState(!!getToken())
   const [sortBy, setSortBy] = useState<'default' | 'change' | 'rvol' | 'setups'>('default')
   const [checkerStale, setCheckerStale] = useState(false)
-  const [trending, setTrending] = useState<Awaited<ReturnType<typeof getTrending>>['current']>(null)
   const symbols = items.map(i => i.symbol)
   const { rows, regime, lastUpdated, error } = useMarketData(symbols)
   const toasts = useAlerts(rows, regime, rules)
@@ -36,10 +36,6 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
         setCheckerStale(!!last && Date.now() / 1000 - last.at > 1200)
       })
       .catch(() => {})
-    const loadTrending = () => getTrending().then(t => setTrending(t.current)).catch(() => {})
-    loadTrending()
-    const ti = setInterval(loadTrending, 300_000)
-    return () => clearInterval(ti)
   }, [])
 
   const categories = [...new Set(items.map(i => i.category).filter((c): c is string => !!c))]
@@ -126,20 +122,6 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
           </div>
         )}
         {checkerStale && <div className="risk-banner"><IconWarn /> The background alert checker hasn't run in 20+ minutes — alerts may be delayed.</div>}
-        {trending && (trending.watchlist.length > 0 || trending.market.length > 0) && (
-          <div className="trend-strip" aria-label="Trending today">
-            {trending.watchlist.slice(0, 4).map(t => (
-              <span key={t.sym} className="trend-chip">
-                {t.sym} <em className={t.changePct >= 0 ? 'up-text' : 'down-text'}>{t.changePct >= 0 ? '+' : ''}{t.changePct.toFixed(1)}%</em>
-              </span>
-            ))}
-            {trending.market.filter(m => !trending.watchlist.some(w => w.sym === m.sym)).slice(0, 4).map(m => (
-              <span key={m.sym} className="trend-chip mkt">
-                {m.sym} {m.changePct != null && <em className={m.changePct >= 0 ? 'up-text' : 'down-text'}>{m.changePct >= 0 ? '+' : ''}{m.changePct.toFixed(1)}%</em>}
-              </span>
-            ))}
-          </div>
-        )}
         <TodaysCalls onOpen={onOpen} />
         <div className="card-grid">
           {sortedRows.map((row, i) => (
@@ -156,8 +138,18 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
           <div className="empty">
             <p>Your watchlist is empty.</p>
             <p>
-              Add US tickers plain (<code>AAPL</code>), LSE with suffix (<code>3LTS.L</code>), crypto with a dash (<code>BTC-USD</code>).
+              Add US tickers plain (<code>AAPL</code>), LSE with suffix (<code>3LTS.L</code>), crypto with a dash (<code>BTC-USD</code>) — or start with the classics:
             </p>
+            <button
+              className="mini-btn"
+              onClick={async () => {
+                await seedStarterWatchlist(true)
+                const list = await db.watchlist.toArray()
+                setItems(list.map(i => ({ symbol: i.symbol, category: i.category })))
+              }}
+            >
+              Load starter watchlist
+            </button>
           </div>
         )}
         <footer className="foot">

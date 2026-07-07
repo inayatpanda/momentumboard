@@ -6,7 +6,7 @@ const yahooJson = {
     result: [
       {
         quotes: [
-          { symbol: 'ABCD', regularMarketPrice: 12.5, marketCap: 1_500_000_000 },
+          { symbol: 'ABCD', regularMarketPrice: 12.5, marketCap: 1_500_000_000, regularMarketChangePercent: 4.26, shortName: 'ABCD Corp' },
           { symbol: 'bad symbol!!', regularMarketPrice: 1 },
           { symbol: 'NOCAP', regularMarketPrice: 3 },
         ],
@@ -18,8 +18,8 @@ const yahooJson = {
 describe('parseScreen', () => {
   it('extracts rows, converts cap to $M, filters junk symbols', () => {
     expect(parseScreen(yahooJson)).toEqual([
-      { sym: 'ABCD', price: 12.5, capUsdM: 1500 },
-      { sym: 'NOCAP', price: 3, capUsdM: null },
+      { sym: 'ABCD', price: 12.5, capUsdM: 1500, changePct: 4.3, name: 'ABCD Corp' },
+      { sym: 'NOCAP', price: 3, capUsdM: null, changePct: null, name: null },
     ])
   })
   it('garbage in → [] out', () => {
@@ -41,6 +41,6 @@ describe('fetchScreen', () => {
   it('parses a healthy response', async () => {
     const ok = vi.fn(async () => new Response(JSON.stringify(yahooJson)))
     const rows = await fetchScreen('most_actives', ok as unknown as typeof fetch)
-    expect(rows[0]).toEqual({ sym: 'ABCD', price: 12.5, capUsdM: 1500 })
+    expect(rows[0]).toEqual({ sym: 'ABCD', price: 12.5, capUsdM: 1500, changePct: 4.3, name: 'ABCD Corp' })
   })
 })

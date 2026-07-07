@@ -29,6 +29,19 @@ export async function routeRequest(
     return creds?.groqKey ? { GROQ_API_KEY: creds.groqKey, strict: true } : null
   }
 
+  if (type === 'movers') {
+    // market-wide movers for the Movers tab: gainers, losers, most active.
+    // Same Yahoo predefined screeners the engine's roster hunts with; 10-min
+    // cache keeps every licensee off Yahoo's rate limits.
+    const hit = await getCached<unknown>('movers')
+    if (hit) return json(200, { ok: true, data: hit })
+    const { fetchScreen } = await import('./lib/screener')
+    const [gainers, losers, actives] = await Promise.all([fetchScreen('day_gainers'), fetchScreen('day_losers'), fetchScreen('most_actives')])
+    const data = { gainers: gainers.slice(0, 12), losers: losers.slice(0, 12), actives: actives.slice(0, 12), at: Math.floor(Date.now() / 1000) }
+    if (gainers.length || losers.length || actives.length) await setCached('movers', data, 600)
+    return json(200, { ok: true, data })
+  }
+
   if (type === 'quote') {
     const symbols = (url.searchParams.get('symbols') ?? '').split(',').filter(Boolean).slice(0, 30)
     const quotes = await Promise.all(

@@ -6,6 +6,7 @@ const Icon = ({ d }: { d: string }) => (
 
 const TABS = [
   { key: 'watchlist', label: 'Watchlist', icon: 'M3 17l6-6 4 4 8-8M21 7v6h-6' },
+  { key: 'movers', label: 'Movers', icon: 'M13 2L4 14h6l-1 8 9-12h-6l1-8z' },
   { key: 'charts', label: 'Charts', icon: 'M4 20V10M10 20V4M16 20v-9M22 20H2' },
   { key: 'journal', label: 'Journal', icon: 'M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3V4zM9 9h6M9 13h4' },
   { key: 'research', label: 'Research', icon: 'M4 5h16v14H4zM4 10h16M9 15h6' },
