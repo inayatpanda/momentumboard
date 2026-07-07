@@ -91,7 +91,7 @@ export async function composeBulletin(kind: BulletinKind, store: AppStore, env: 
   const title = kind === 'premarket' ? 'Pre-market brief' : 'Evening wrap — and tomorrow'
   const subject = `The Street Signal — ${title.toLowerCase()}, ${new Date(nowSec * 1000).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })}`
   const bodyText = prose ?? `${title} (auto-summary — the desk's writer was unavailable):\n\n${dataLines.join('\n')}`
-  const text = `${kind === 'premarket' ? '🌅' : '🌆'} ${title} — ${date}\n\n${bodyText}\n\nFull app → https://thestreetsignal.netlify.app`
+  const text = `${title.toUpperCase()} — ${date}\n\n${bodyText}\n\nFull app → https://thestreetsignal.netlify.app`
 
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${subject}</title></head>
 <body style="margin:0;background:#0a0b0e;color:#eceff4;font-family:-apple-system,system-ui,sans-serif;line-height:1.6">

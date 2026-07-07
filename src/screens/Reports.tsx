@@ -88,7 +88,7 @@ export function Reports({ onOpenSettings }: { onOpenSettings: () => void }) {
                           style={{ textDecoration: 'none' }}
                           onClick={e => e.stopPropagation()}
                         >
-                          {k === 'premarket' ? '🌅 pre-market' : '🌆 evening'}
+                          {k === 'premarket' ? 'pre-market' : 'evening'}
                         </a>
                       ))}
                     </span>
