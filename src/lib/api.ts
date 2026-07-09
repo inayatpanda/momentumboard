@@ -244,6 +244,7 @@ export interface LedgerPrediction {
   provisional: boolean
   shadow: boolean
   composite: number
+  capUsdM?: number | null
   entry: number
   stop: number
   target: number

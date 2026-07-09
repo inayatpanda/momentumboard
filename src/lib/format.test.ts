@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fmtPrice, fmtPct } from './format'
+import { fmtPrice, fmtPct, capCohort } from './format'
 
 describe('fmtPrice', () => {
   it('renders pence for GBp', () => expect(fmtPrice(123.4, 'GBp')).toBe('123.4p'))
@@ -12,5 +12,14 @@ describe('fmtPct', () => {
   it('signs both directions', () => {
     expect(fmtPct(1.7349)).toBe('+1.73%')
     expect(fmtPct(-0.5)).toBe('−0.50%')
+  })
+})
+
+describe('capCohort', () => {
+  it('splits at $2000M and falls back to Unknown', () => {
+    expect(capCohort(1999)).toBe('Small-cap')
+    expect(capCohort(2000)).toBe('Large-cap')
+    expect(capCohort(null)).toBe('Unknown')
+    expect(capCohort(undefined)).toBe('Unknown')
   })
 })

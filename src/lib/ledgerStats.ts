@@ -1,4 +1,5 @@
 import type { LedgerDay, LedgerPrediction } from './api'
+import { capCohort } from './format'
 
 // The ledger table's row model + honest topline: flatten days newest-first,
 // and summarise ONLY what has actually been graded — open calls are counted,
@@ -50,6 +51,38 @@ export function gradeBreakdown(rows: LedgerPrediction[]): GradeBucket[] {
   return keys
     .map(key => {
       const bucket = rows.filter(r => (key === 'shadow' ? r.shadow : !r.shadow && r.grade === key))
+      const graded = bucket.filter(r => r.outcome5)
+      const hits = graded.filter(r => r.outcome5!.hit).length
+      const sum = graded.reduce((s, r) => s + r.outcome5!.excessPct, 0)
+      return {
+        key,
+        n: bucket.length,
+        graded: graded.length,
+        hits,
+        hitRate: graded.length ? Math.round((hits / graded.length) * 100) / 100 : null,
+        avgExcess5: graded.length ? Math.round((sum / graded.length) * 10) / 10 : null,
+      }
+    })
+    .filter(b => b.n > 0)
+}
+
+export interface CapClassBucket {
+  key: 'Large-cap' | 'Small-cap' | 'Unknown'
+  n: number
+  graded: number
+  hits: number
+  hitRate: number | null
+  avgExcess5: number | null
+}
+
+/** Per-cap-class breakdown: does the engine's edge hold up in large-caps, or
+ * is it a small-cap-only effect? Display-only sleeve split — calibration stays
+ * pooled across cohorts. */
+export function capClassBreakdown(rows: LedgerPrediction[]): CapClassBucket[] {
+  const keys = ['Large-cap', 'Small-cap', 'Unknown'] as const
+  return keys
+    .map(key => {
+      const bucket = rows.filter(r => capCohort(r.capUsdM) === key)
       const graded = bucket.filter(r => r.outcome5)
       const hits = graded.filter(r => r.outcome5!.hit).length
       const sum = graded.reduce((s, r) => s + r.outcome5!.excessPct, 0)

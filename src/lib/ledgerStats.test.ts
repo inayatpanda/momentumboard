@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { flattenLedger, gradeBreakdown, statusOf, summariseLedger } from './ledgerStats'
+import { capClassBreakdown, flattenLedger, gradeBreakdown, statusOf, summariseLedger } from './ledgerStats'
 import type { LedgerDay, LedgerPrediction } from './api'
 
 const pred = (over: Partial<LedgerPrediction>): LedgerPrediction =>
@@ -62,5 +62,29 @@ describe('gradeBreakdown', () => {
   })
   it('drops empty buckets', () => {
     expect(gradeBreakdown([]).length).toBe(0)
+  })
+})
+
+describe('capClassBreakdown', () => {
+  const rows = [
+    pred({ id: '1', capUsdM: 5000, outcome5: out(4, true) }), // large
+    pred({ id: '2', capUsdM: 2000, outcome5: out(-2, false) }), // large (boundary)
+    pred({ id: '3', capUsdM: 1999, outcome5: out(2, true) }), // small (boundary)
+    pred({ id: '4', capUsdM: 500 }), // small, open — counted, not scored
+    pred({ id: '5', capUsdM: null, outcome5: out(-6, false, true) }), // unknown
+  ]
+  it('splits by cap cohort, scoring only graded rows', () => {
+    const b = capClassBreakdown(rows)
+    expect(b.map(x => x.key)).toEqual(['Large-cap', 'Small-cap', 'Unknown'])
+    const large = b.find(x => x.key === 'Large-cap')!
+    expect(large).toMatchObject({ n: 2, graded: 2, hits: 1, hitRate: 0.5 })
+    expect(large.avgExcess5).toBeCloseTo(1, 1)
+    const small = b.find(x => x.key === 'Small-cap')!
+    expect(small).toMatchObject({ n: 2, graded: 1, hits: 1, hitRate: 1 })
+    const unknown = b.find(x => x.key === 'Unknown')!
+    expect(unknown).toMatchObject({ n: 1, graded: 1, hits: 0, avgExcess5: -6 })
+  })
+  it('drops empty cohorts', () => {
+    expect(capClassBreakdown([]).length).toBe(0)
   })
 })

@@ -68,6 +68,7 @@ export default async (req: Request) => {
           provisional: p.provisional,
           shadow: p.shadow ?? false,
           composite: p.composite,
+          capUsdM: p.capUsdM ?? null,
           entry: p.entry,
           stop: p.stop,
           target: p.target,

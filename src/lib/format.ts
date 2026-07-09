@@ -19,6 +19,13 @@ export function capBand(capUsdM: number | null | undefined): string | null {
   return 'large cap'
 }
 
+/** Large- vs small-cap cohort from $M — matches the engine's `smallCap` flag. */
+export function capCohort(capUsdM: number | null | undefined): 'Large-cap' | 'Small-cap' | 'Unknown' {
+  if (capUsdM == null) return 'Unknown'
+  if (capUsdM < 2000) return 'Small-cap'
+  return 'Large-cap'
+}
+
 /** Raw fetch/parse exceptions must never reach the screen — "SyntaxError:
  * Unexpected token '<'" is developer console text, not product copy. */
 export function humanError(raw: unknown): string {
