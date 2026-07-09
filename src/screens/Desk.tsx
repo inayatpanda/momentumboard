@@ -57,7 +57,7 @@ function CallRow({ p, focused, onFocus }: { p: EnginePrediction; focused: boolea
   )
 }
 
-export function Desk({ onStandard, onOpenSettings }: { onStandard: () => void; onOpenSettings: () => void }) {
+export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () => void; onOpenSettings: () => void; onQuant: () => void }) {
   const [data, setData] = useState<EngineData | null>(null)
   const [movers, setMovers] = useState<MoversResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -151,6 +151,7 @@ export function Desk({ onStandard, onOpenSettings }: { onStandard: () => void; o
         </span>
         <span className="desk-spacer" />
         <button className="mini-btn ghost" onClick={load}>Refresh</button>
+        <button className="mini-btn ghost" onClick={onQuant}>Quant</button>
         <button className="mini-btn ghost" onClick={onStandard}>Standard view</button>
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>

@@ -77,7 +77,7 @@ export const getDayLedger = (date: string) =>
   }>(`/api/config?view=day&date=${date}`)
 
 export const getEventDossiers = () =>
-  apiGet<{ kind: 'shock' | 'stretch'; sym: string; name: string; movePct?: number; zScore?: number; rsi?: number; dir: string; price: number; assessment: string; at: number }[]>('/api/config?view=events')
+  apiGet<{ kind: 'shock' | 'stretch'; sym: string; name: string; movePct?: number; zScore?: number; rsi?: number; dir: string; price: number; assessment: string; at: number; analogues?: { n: number; median5: number; p75_5: number; median20: number; maxExt5: number } | null }[]>('/api/config?view=events')
 
 export const getSeasonality = (symbol: string) =>
   apiGet<{

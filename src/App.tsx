@@ -13,12 +13,14 @@ import { Intel } from './screens/Intel'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { Desk } from './screens/Desk'
+import { Quant } from './screens/Quant'
 import { NavContext, TabBar } from './components/TabBar'
 import { useIsWide } from './hooks/useIsWide'
 
 type View =
   | { screen: 'watchlist' }
   | { screen: 'desk' }
+  | { screen: 'quant' }
   | { screen: 'movers' }
   | { screen: 'detail'; symbol: string; from?: string }
   | { screen: 'journal' }
@@ -43,7 +45,7 @@ export default function App() {
   // back to the phone/tablet layout — the Desk is never rendered in a space it
   // wasn't built for.
   useEffect(() => {
-    if (!isWide) setView(v => (v.screen === 'desk' ? { screen: 'watchlist' } : v))
+    if (!isWide) setView(v => (v.screen === 'desk' || v.screen === 'quant' ? { screen: 'watchlist' } : v))
   }, [isWide])
 
   // phone ↔ desktop: pull server state on launch; screens remount when it lands.
@@ -64,6 +66,7 @@ export default function App() {
 
   const navigate = (tab: string) => {
     if (tab === 'desk') setView({ screen: 'desk' })
+    if (tab === 'quant') setView({ screen: 'quant' })
     if (tab === 'watchlist') setView({ screen: 'watchlist' })
     if (tab === 'movers') setView({ screen: 'movers' })
     // Charts continues where you left off; before anything's been opened it
@@ -86,7 +89,20 @@ export default function App() {
   if (view.screen === 'desk') {
     return (
       <NavContext.Provider value={{ active, navigate }}>
-        <Desk key={syncTick} onStandard={() => setView({ screen: 'watchlist' })} onOpenSettings={openSettings} />
+        <Desk
+          key={syncTick}
+          onStandard={() => setView({ screen: 'watchlist' })}
+          onQuant={() => setView({ screen: 'quant' })}
+          onOpenSettings={openSettings}
+        />
+      </NavContext.Provider>
+    )
+  }
+
+  if (view.screen === 'quant') {
+    return (
+      <NavContext.Provider value={{ active, navigate }}>
+        <Quant key={syncTick} onBack={() => setView({ screen: 'desk' })} onOpenSettings={openSettings} />
       </NavContext.Provider>
     )
   }

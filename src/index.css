@@ -1166,3 +1166,84 @@ p { text-wrap: pretty; }
   cursor: pointer;
 }
 .desk-return:hover { border-color: var(--blue); color: var(--blue); }
+
+/* ---------- Quant (wide data-viz cockpit) ---------- */
+/* A full-bleed deck of five viz panels reusing the .desk shell + .card surface.
+   Fluid two-column grid from ~14" laptops, three columns on 27"-class screens,
+   one column when the viewport gets tight. Colours are all semantic vars, so
+   every tint and bar holds in both themes. */
+.quant-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding: 18px 22px 28px;
+  align-items: start;
+}
+.quant-grid > * { min-width: 0; }
+.quant-grid .card { margin-bottom: 0; }
+.quant-hero { grid-column: 1 / -1; }
+
+@media (min-width: 1680px) {
+  .quant-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .quant-hero { grid-column: 1 / -1; }
+}
+@media (max-width: 1200px) {
+  .quant-grid { grid-template-columns: 1fr; padding: 14px 16px 24px; gap: 14px; }
+}
+
+/* Panel 1 — next-day lean (hero) */
+.quant-hero-line {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: clamp(20px, 2.4vw, 30px);
+  letter-spacing: -0.01em;
+  margin: 4px 0 14px;
+}
+.quant-comps { display: grid; gap: 10px; max-width: 780px; }
+.quant-comp { display: grid; grid-template-columns: minmax(90px, 130px) minmax(0, 1fr) 56px; align-items: center; gap: 12px; }
+.quant-comp-label { font-size: 12px; color: var(--muted); }
+.quant-comp-val { font-size: 12.5px; text-align: right; }
+.quant-div { position: relative; height: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.quant-div-mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line); transform: translateX(-0.5px); }
+.quant-div-fill { position: absolute; top: 2px; bottom: 2px; border-radius: 4px; opacity: 0.85; }
+.quant-hero-note { font-size: 12px; margin: 14px 0 0; max-width: 780px; line-height: 1.5; }
+.quant-hero-analogue { font-size: 12px; margin: 6px 0 0; }
+
+/* Panel 2 — sector heatmap */
+.quant-heatmap { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.quant-cell { padding: 10px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.quant-cell-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.quant-cell-sym { font-weight: 700; font-size: 13.5px; letter-spacing: 0.01em; }
+.quant-cell-rs { font-size: 11.5px; color: var(--muted); }
+.quant-cell-name { font-size: 10.5px; color: var(--faint); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quant-cell-chg { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.quant-rotate { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.quant-rotate-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.quant-rotate-label { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; }
+
+/* Panel 3 — learning curves (factor trust bars) */
+.quant-factors { display: grid; gap: 8px; margin-top: 4px; }
+.quant-frow-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; }
+.quant-frow-label { color: var(--muted); }
+.quant-frow-val { color: var(--text); }
+.quant-fbar { position: relative; height: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; margin-top: 3px; }
+.quant-fbar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--blue); border-radius: 5px; opacity: 0.8; }
+.quant-fbar-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--faint); border-radius: 1px; }
+
+/* shared small caption under a viz */
+.quant-cap { font-size: 11px; margin: 6px 0 0; line-height: 1.45; }
+
+/* Panel 5 — smart-money flow */
+.quant-net { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; font-weight: 600; margin-top: 4px; }
+.quant-net-num { white-space: nowrap; }
+.quant-net-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 6px 0 12px; background: var(--panel); border: 1px solid var(--line); }
+.quant-net-seg { height: 100%; }
+.quant-funds { display: grid; gap: 12px; }
+.quant-fund { border-top: 1px solid var(--line); padding-top: 8px; }
+.quant-fund-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.quant-fund-name { font-weight: 700; font-size: 13px; }
+.quant-fund-date { font-size: 11px; color: var(--muted); }
+.quant-fund-flows { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+.quant-flow-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; align-content: start; }
+.quant-flow-list li { font-size: 12px; display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.quant-flow-pct { color: var(--green); font-size: 11px; }
