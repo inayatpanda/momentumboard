@@ -6,6 +6,7 @@ import { technicalStage } from '../../../shared/technicals'
 import { breadthAbove50, refineRegime, regimeFromCandles } from '../../../shared/setups'
 import { seasonalitySummary } from '../../../shared/seasonality'
 import {
+  catalystFactor,
   channelsFactor,
   insiderFactor,
   momentumFactor,
@@ -18,6 +19,8 @@ import {
   type SmartMoneyInput,
 } from '../../../shared/engine/factors'
 import { composeCall } from '../../../shared/engine/composite'
+import { gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
+import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
 import {
   baseHitRate,
@@ -63,6 +66,10 @@ export interface EngineDeps {
   insiderCoverage: (rosterSyms: string[], watchSyms: string[], dateISO: string) => Promise<Map<string, InsiderSummary | null>>
   smartMoney: () => Promise<FundMoves[]>
   mediaTitles: () => Promise<string[]>
+  // the day's market-moving news → tradable beneficiaries/victims (newsCatalysts.ts).
+  // LLM-backed; fail-soft to [] when no provider is configured, so the engine still
+  // runs deterministically without it. Called once per run with the media titles.
+  newsCatalysts: (titles: string[]) => Promise<NewsCatalyst[]>
   earningsSyms: () => Promise<Set<string>>
   // overnight world tape: latest daily % change for the Asia/Europe indices, US
   // futures and VIX (^VIX carried in the same list, split out in buildBoard).
@@ -148,6 +155,10 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
       return cachedFundMoves()
     },
     mediaTitles: () => fetchMediaTitles(),
+    // non-strict: callLlm/anyProviderAvailable merge the server's own process.env
+    // keys (GROQ/GEMINI/…), so this uses whatever provider the deployment has and
+    // returns [] when none is set — the board never depends on the LLM being up.
+    newsCatalysts: titles => extractNewsCatalysts(titles),
     // ^N225/^HSI/^GDAXI/^FTSE/ES=F/NQ=F/^VIX are index & futures symbols Finnhub's
     // free quote endpoint won't serve, and isYahooSymbol() routes them to Finnhub
     // (no '.'/'-' → treated as US). So derive the daily change from the last two
@@ -356,6 +367,7 @@ export async function buildBoard(
   const cfg = validateConfig(await store.read('config')) ?? { watchlist: [], rules: [], ytChannels: [], capital: 5000 }
   const watchSyms = cfg.watchlist.map(w => w.symbol)
   const favourites = cfg.favouriteChannels ?? ['Stocks with Josh']
+  const gates = gatesFor(cfg.riskAppetite) // 'aggressive' widens the dead zone / capacity floors (catalyst.ts)
 
   const [spy, qqq] = await Promise.all([deps.candles('SPY'), deps.candles('QQQ')])
   if (!spy) throw new Error('no SPY candles — engine cannot run')
@@ -382,6 +394,20 @@ export async function buildBoard(
   // focus themes (energy/chips/data centres/robotics/drones): hottest-in-the-news
   // first, every theme scanned a little even on quiet days. Same gates as everyone.
   for (const { sym, theme } of themeCandidates(mediaTitles)) addSource(sym, `theme:${theme}`)
+  // market-moving news → tradable names (newsCatalysts.ts). The LLM reads today's
+  // headlines and nominates the most liquid beneficiaries/victims of ANY big story
+  // (geopolitics, rates, oil, a major listing, M&A). They join the pool as one more
+  // GATED candidate source — never a call by fiat — and each carries a CatalystTag
+  // that (a) casts a strength-scaled catalyst-factor vote and (b) relaxes the
+  // trailing capacity gate, so a big liquid name in the news gets a fair look on
+  // the very day it breaks. Fail-soft: no LLM provider → [] → engine is unchanged.
+  const newsCats = await deps.newsCatalysts(mediaTitles).catch(() => [] as NewsCatalyst[])
+  const catalystBySym = new Map<string, CatalystTag>()
+  for (const nc of newsCats) {
+    const key = nc.sym.toUpperCase()
+    if (!catalystBySym.has(key)) catalystBySym.set(key, { kind: 'news', side: nc.side, reason: nc.reason, strength: nc.strength })
+    addSource(key, 'catalyst:news')
+  }
   for (const sym of watchSyms) addSource(sym, 'watchlist')
   // AI roster nominations: the paper's analyst nominated these for the engine to
   // EXAMINE — one more candidate source, never a call by fiat; it faces the same
@@ -511,6 +537,7 @@ export async function buildBoard(
     const closes = candles.map(c => c.c)
     const read = technicalStage(entry.sym, candles)
     if (!read) continue
+    const cat = catalystBySym.get(entry.sym.toUpperCase()) ?? null
 
     const factors: Record<FactorName, FactorScore> = {
       technical: technicalFactor(read),
@@ -528,6 +555,7 @@ export async function buildBoard(
       news: newsFactor(titleMatches(entry.sym)),
       seasonality: { score: null, detail: 'checked only for candidates' },
       smartMoney: smartMoneyFactor(smartMoneyBySym.get(entry.sym) ?? null),
+      catalyst: catalystFactor(cat),
     }
     const composeInput = {
       sym: entry.sym,
@@ -541,6 +569,8 @@ export async function buildBoard(
       stage: read.stage,
       earningsWithinHorizon: earningsSet.has(baseSym(entry.sym)),
       capUsdM: entry.capUsdM,
+      gates,
+      catalyst: cat,
     }
     let call = composeCall(composeInput)
     if (call) {
@@ -578,6 +608,7 @@ export async function buildBoard(
       regime,
       priceAtPrediction: call.entry,
       themes: callThemes.length ? callThemes : undefined,
+      catalyst: cat ? { kind: cat.kind, reason: cat.reason } : undefined,
       capUsdM: entry.capUsdM,
       shadow: shadow || undefined,
       probability: Math.round(p * 100) / 100,

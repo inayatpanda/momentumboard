@@ -1,6 +1,6 @@
 import type { RegimeColor } from '../types'
 
-export type FactorName = 'technical' | 'momentum' | 'sector' | 'social' | 'channels' | 'insiders' | 'news' | 'seasonality' | 'smartMoney'
+export type FactorName = 'technical' | 'momentum' | 'sector' | 'social' | 'channels' | 'insiders' | 'news' | 'seasonality' | 'smartMoney' | 'catalyst'
 
 export interface FactorScore {
   score: number | null // signed −100..+100 toward LONG; null = no data (weight renormalises away)
@@ -51,6 +51,7 @@ export interface Prediction extends GradedCall {
   shadow?: boolean // suppressed by calibration but logged anyway — the learning loop must eat even when the paper doesn't
   worldTape?: { tone: string; mult: number } // overnight world-tape nudge applied to this call's conviction (bounded ±10/−15%)
   overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string }
+  catalyst?: { kind: string; reason: string } // a market-moving news/event that put this name in play (catalyst.ts)
   outcome5?: PredOutcome
   outcome10?: PredOutcome
 }

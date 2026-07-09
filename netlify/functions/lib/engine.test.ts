@@ -29,6 +29,7 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   insiderCoverage: async () => new Map(),
   smartMoney: async () => [],
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
+  newsCatalysts: async () => [], // no LLM catalysts by default
   earningsSyms: async () => new Set<string>(),
   worldReads: async () => [], // quiet world by default → mixed tone → mult 1
   holdings: async () => null, // no T212 book by default

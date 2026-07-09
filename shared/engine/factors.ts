@@ -1,5 +1,6 @@
 import type { Stage } from '../technicals'
 import type { SeasonalitySummary } from '../seasonality'
+import type { CatalystTag } from './catalyst'
 import { clamp, round1, type FactorScore } from './types'
 
 // Every factor is pure and returns a SIGNED score toward long (−100..+100),
@@ -120,6 +121,19 @@ export function newsFactor(headlinesForSym: string[]): FactorScore {
   }
   const score = clamp(15 * net + 5 * Math.sign(net) * hits, -50, 50)
   return { score: round1(score), detail: `${headlinesForSym.length} headline(s), polarity ${net >= 0 ? '+' : ''}${net}` }
+}
+
+/** A market-moving catalyst's directional vote (catalyst.ts). null when there is
+ * no catalyst; also null when the catalyst has no clean side — an "in play" name
+ * earns the relaxed capacity gate in composeCall but no free conviction. When
+ * sided, the score is the side times a strength-scaled magnitude, capped ±90 so
+ * a single loud headline can never single-handedly max the composite. */
+export function catalystFactor(tag: CatalystTag | null | undefined): FactorScore {
+  if (!tag) return { score: null, detail: 'no catalyst' }
+  if (tag.side == null) return { score: null, detail: `in play: ${tag.reason}` }
+  const dir = tag.side === 'long' ? 1 : -1
+  const score = round1(dir * clamp(tag.strength * 0.9, 0, 90))
+  return { score, detail: `${tag.kind}: ${tag.reason} (strength ${Math.round(clamp(tag.strength, 0, 100))})` }
 }
 
 /** Seasonal edges are real but thin — capped at ±15 and honesty-gated by the

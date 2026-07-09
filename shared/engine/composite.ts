@@ -1,5 +1,6 @@
 import type { RegimeColor } from '../types'
 import type { Stage } from '../technicals'
+import { MODERATE_GATES, type CatalystTag, type Gates } from './catalyst'
 import { round1, round2, type EngineCall, type FactorName, type FactorScore } from './types'
 
 export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
@@ -12,6 +13,7 @@ export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
   news: 0.4,
   seasonality: 0.3,
   smartMoney: 0.3, // small on purpose: 13F is stale, so we EXPECT the IC loop to decay it
+  catalyst: 0.5, // a live news/event vote — seeded moderate, left to the IC loop to keep or decay
 }
 
 // Regime scales conviction, by side: longs shrink as the tape reddens,
@@ -35,6 +37,13 @@ export interface ComposeInput {
   // conviction only — the `regime` string above (the calibration bucket key) is
   // never derived from it. Default 1 = no nudge.
   worldMult?: number
+  // Risk-appetite gates (catalyst.ts). Default MODERATE. Aggressive lowers the
+  // dead zone and capacity floors so more ideas reach scoring — grading is untouched.
+  gates?: Gates
+  // A live market-moving catalyst on this name (catalyst.ts). When present the
+  // relaxed catalystCapacityFloor is used instead of the ordinary capacity floor,
+  // because swing-capacity is trailing and lags the day the news actually breaks.
+  catalyst?: CatalystTag | null
 }
 
 /** Weighted composite over the factors that HAVE data → a concrete call, or
@@ -57,8 +66,12 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   // worldMult is > 0 so the side never flips). The regime STRING stays untouched —
   // world tape can move a call across the dead zone but never into another bucket.
   const adj = raw * (side === 'long' ? LONG_REGIME_MULT[input.regime] : SHORT_REGIME_MULT[input.regime]) * (input.worldMult ?? 1)
-  if (Math.abs(adj) < 25) return null
-  if (input.capacityPct == null || input.capacityPct < 6) return null
+  const gates = input.gates ?? MODERATE_GATES
+  if (Math.abs(adj) < gates.deadZone) return null
+  // a live catalyst earns the lower floor — the name is in play TODAY even if its
+  // trailing swing-capacity hasn't caught up to the news yet.
+  const capacityFloor = input.catalyst ? gates.catalystCapacityFloor : gates.capacityFloor
+  if (input.capacityPct == null || input.capacityPct < capacityFloor) return null
   if (input.atr == null || input.lastClose == null) return null
   // side-aware entry gates: never chase a long, never short fresh strength, knives wait
   if (input.entryQuality === 'wait') return null

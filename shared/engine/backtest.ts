@@ -40,6 +40,7 @@ const nullFactors = (): Record<FactorName, FactorScore> => ({
   news: { score: null, detail: '' },
   seasonality: { score: null, detail: '' },
   smartMoney: { score: null, detail: '' },
+  catalyst: { score: null, detail: '' }, // news catalysts aren't replayable from bars — neutral in seeding, learned live
 })
 
 export function seedFromHistory(

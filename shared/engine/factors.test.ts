@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  catalystFactor,
   channelsFactor,
   insiderFactor,
   momentumFactor,
@@ -136,5 +137,23 @@ describe('seasonalityFactor', () => {
     expect(seasonalityFactor(summary(true, -1.2), 7).score).toBeCloseTo(-4.8, 1)
     expect(seasonalityFactor(summary(true, 2), 3).score).toBeNull() // no read for March
     expect(seasonalityFactor(null, 7).score).toBeNull()
+  })
+})
+
+describe('catalystFactor', () => {
+  it('no catalyst → null (renormalises away)', () => {
+    expect(catalystFactor(null).score).toBeNull()
+    expect(catalystFactor(undefined).score).toBeNull()
+  })
+  it('no clean side → null vote but flags "in play" (the gate relaxation keys off presence, not this)', () => {
+    const f = catalystFactor({ kind: 'news', side: null, reason: 'sector in focus', strength: 60 })
+    expect(f.score).toBeNull()
+    expect(f.detail).toContain('in play')
+  })
+  it('sided vote: long positive, short negative, strength-scaled and capped ±90', () => {
+    expect(catalystFactor({ kind: 'news', side: 'long', reason: 'oil spike', strength: 80 }).score).toBeCloseTo(72, 1) // 80×0.9
+    expect(catalystFactor({ kind: 'news', side: 'short', reason: 'sanctioned', strength: 50 }).score).toBeCloseTo(-45, 1)
+    expect(catalystFactor({ kind: 'event', side: 'long', reason: 'x', strength: 200 }).score).toBe(90) // clamped
+    expect(catalystFactor({ kind: 'news', side: 'long', reason: 'x', strength: 80 }).detail).toContain('news')
   })
 })

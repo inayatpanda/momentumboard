@@ -28,4 +28,10 @@ describe('validateConfig engine fields', () => {
     // explicit null: the user cleared the pin — a real "engine decides" instruction
     expect(validateConfig({ ...minimal, riskRungOverride: null })!.riskRungOverride).toBeNull()
   })
+  it('riskAppetite: accepts aggressive/moderate, ignores junk, absent stays undefined', () => {
+    expect(validateConfig({ ...minimal, riskAppetite: 'aggressive' })!.riskAppetite).toBe('aggressive')
+    expect(validateConfig({ ...minimal, riskAppetite: 'moderate' })!.riskAppetite).toBe('moderate')
+    expect(validateConfig({ ...minimal, riskAppetite: 'reckless' })!.riskAppetite).toBeUndefined()
+    expect(validateConfig(minimal)!.riskAppetite).toBeUndefined()
+  })
 })

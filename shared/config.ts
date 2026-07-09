@@ -18,6 +18,7 @@ export interface AppConfig {
   levMap?: LevMap // underlying → ISA-eligible leveraged/inverse ETP tickers
   riskRungOverride?: 0 | 1 | 2 | 3 | null // manual risk-ladder pin; null = engine decides
   favouriteChannels?: string[] // credibility prior 0.6 instead of 0.5
+  riskAppetite?: 'moderate' | 'aggressive' // engine gates: aggressive widens the funnel (catalyst.ts). Default moderate.
 }
 
 export function validateConfig(raw: unknown): AppConfig | null {
@@ -63,6 +64,7 @@ export function validateConfig(raw: unknown): AppConfig | null {
   const favouriteChannels = Array.isArray(c.favouriteChannels)
     ? c.favouriteChannels.filter(f => typeof f === 'string').slice(0, 10).map(f => f.slice(0, 40))
     : undefined
+  const riskAppetite = c.riskAppetite === 'aggressive' ? 'aggressive' : c.riskAppetite === 'moderate' ? 'moderate' : undefined
   return {
     watchlist: c.watchlist,
     rules: c.rules,
@@ -72,5 +74,6 @@ export function validateConfig(raw: unknown): AppConfig | null {
     levMap: Object.keys(levMap).length ? levMap : undefined,
     riskRungOverride,
     favouriteChannels,
+    riskAppetite,
   }
 }

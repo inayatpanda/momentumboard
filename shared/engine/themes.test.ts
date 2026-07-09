@@ -26,8 +26,15 @@ describe('themeHeat', () => {
   })
   it('quiet tape → all zeros, declaration order preserved (deterministic)', () => {
     const heat = themeHeat(['Fed holds rates steady'])
-    expect(heat.map(h => h.hits)).toEqual([0, 0, 0, 0, 0])
+    expect(heat.map(h => h.hits)).toEqual(THEMES.map(() => 0))
     expect(heat.map(h => h.key)).toEqual(THEMES.map(t => t.key))
+  })
+  it('defense theme: narrow keywords fire on contractor headlines, not bare geopolitics', () => {
+    expect(themesOf('LMT')).toEqual(['defense'])
+    expect(themeHeat(['Pentagon budget lifts defense contractor orders']).find(h => h.key === 'defense')!.hits).toBeGreaterThanOrEqual(2)
+    // deliberately does NOT fire on generic war/strike/country headlines — that
+    // routing is the news-catalyst extractor's job, not a blunt keyword.
+    expect(themeHeat(['Iran and US trade strikes as war fears grip markets']).find(h => h.key === 'defense')!.hits).toBe(0)
   })
 })
 

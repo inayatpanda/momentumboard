@@ -51,6 +51,16 @@ export const THEMES: ThemeDef[] = [
     members: ['AVAV', 'KTOS', 'RCAT', 'ONDS', 'UMAC', 'DPRO', 'ACHR', 'JOBY', 'EH'],
     keywords: ['drone', 'drones', 'uav', 'counter-drone', 'evtol', 'air taxi', 'unmanned'],
   },
+  {
+    // Deliberately narrow keywords: geopolitics headlines ("war", "strike", "Iran")
+    // are far too broad and false-fire — routing a specific escalation to the right
+    // primes is the news-catalyst extractor's job (newsCatalysts.ts). This theme
+    // exists only to give the sector the same standing coverage energy/chips have.
+    key: 'defense',
+    name: 'Defense & aerospace',
+    members: ['LMT', 'RTX', 'NOC', 'GD', 'LHX', 'HII', 'GE', 'BA', 'TDG', 'HWM', 'LDOS', 'AXON'],
+    keywords: ['defense contractor', 'defence contractor', 'defense stock', 'missile', 'fighter jet', 'warplane', 'pentagon budget', 'arms deal', 'military spending'],
+  },
 ]
 
 const memberIndex = (() => {

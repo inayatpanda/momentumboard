@@ -10,6 +10,24 @@ export interface EmailEnv {
   REPORT_EMAIL_FROM?: string
 }
 
+/** Parse REPORT_EMAIL_TO into a clean recipient list. Accepts a single address
+ * or a delimited list (commas / semicolons / whitespace / newlines). Trims,
+ * lowercases, keeps only plausible addresses, dedupes (first-seen order).
+ * Returns [] for empty/undefined so callers can treat "no recipients" as
+ * "email unconfigured". */
+export function parseRecipients(raw: string | undefined | null): string[] {
+  if (!raw) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const part of raw.split(/[,;\s]+/)) {
+    const addr = part.trim().toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr) || seen.has(addr)) continue
+    seen.add(addr)
+    out.push(addr)
+  }
+  return out
+}
+
 export function emailReadyHtml(reportHtml: string, browserUrl: string): string {
   const stripped = reportHtml.replace(/<script[\s\S]*?<\/script>/gi, '')
   const banner = `<div style="text-align:center;padding:10px 16px;font-family:-apple-system,system-ui,sans-serif;font-size:12px;color:#8b98a8;background:#0a0b0e">Reading in your mail app — <a href="${browserUrl}" style="color:#5aa9ff">open the full paper in your browser</a></div>`
@@ -24,14 +42,15 @@ export async function sendReportEmail(
   fetchFn: typeof fetch = fetch,
   attachments?: { filename: string; content: string }[], // content = base64
 ): Promise<boolean> {
-  if (!env.RESEND_API_KEY || !env.REPORT_EMAIL_TO) return false
+  const to = parseRecipients(env.REPORT_EMAIL_TO)
+  if (!env.RESEND_API_KEY || to.length === 0) return false
   try {
     const res = await fetchFn('https://api.resend.com/emails', {
       method: 'POST',
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         from: env.REPORT_EMAIL_FROM ?? 'The Street Signal <onboarding@resend.dev>',
-        to: [env.REPORT_EMAIL_TO],
+        to,
         subject,
         html,
         ...(attachments?.length ? { attachments } : {}),

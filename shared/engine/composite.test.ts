@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_WEIGHTS, composeCall, type ComposeInput } from './composite'
+import { AGGRESSIVE_GATES, MODERATE_GATES } from './catalyst'
+import { catalystFactor } from './factors'
 import type { FactorName, FactorScore } from './types'
 
 const nullFactors = (): Record<FactorName, FactorScore> => ({
@@ -12,6 +14,7 @@ const nullFactors = (): Record<FactorName, FactorScore> => ({
   news: { score: null, detail: '' },
   seasonality: { score: null, detail: '' },
   smartMoney: { score: null, detail: '' },
+  catalyst: { score: null, detail: '' },
 })
 
 const base = (over: Partial<ComposeInput> = {}): ComposeInput => ({
@@ -123,5 +126,49 @@ describe('composeCall', () => {
     const boosted = composeCall({ ...bear, worldMult: 1.1 })!
     expect(boosted.side).toBe('short')
     expect(Math.abs(boosted.composite)).toBeGreaterThan(Math.abs(plain.composite))
+  })
+
+  it('catalyst relaxes the capacity floor: a low-vol big name in the news gets a look', () => {
+    // capacity 4 fails the ordinary floor (6) but clears the catalyst floor (4).
+    const f = longFactors()
+    const noCat = base({ factors: f, capacityPct: 4 })
+    expect(composeCall(noCat)).toBeNull() // ordinary name, can't move → suppressed
+    const withCat = base({
+      factors: f,
+      capacityPct: 4,
+      catalyst: { kind: 'news', side: 'long', reason: 'oil spike', strength: 80 },
+    })
+    expect(composeCall(withCat)).not.toBeNull() // same chart, live catalyst → gets a look
+  })
+
+  it('catalyst is still gated: below the catalyst floor it is suppressed', () => {
+    expect(
+      composeCall(base({ factors: longFactors(), capacityPct: 2, catalyst: { kind: 'news', side: 'long', reason: 'x', strength: 90 } })),
+    ).toBeNull() // capacity 2 < catalystCapacityFloor 4
+  })
+
+  it('catalyst factor casts a directional vote that can carry a marginal name over the dead zone', () => {
+    // a quiet chart on its own makes no call; a strong long catalyst lifts it.
+    const quiet = { ...nullFactors(), technical: { score: 15, detail: 'trending' } }
+    expect(composeCall(base({ factors: quiet, stage: 'trending', entryQuality: 'neutral' }))).toBeNull() // 15 < 25
+    const withVote = { ...quiet, catalyst: catalystFactor({ kind: 'news', side: 'long', reason: 'beneficiary', strength: 80 }) }
+    const call = composeCall(base({ factors: withVote, stage: 'trending', entryQuality: 'neutral', catalyst: { kind: 'news', side: 'long', reason: 'beneficiary', strength: 80 } }))!
+    expect(call).not.toBeNull()
+    expect(call.side).toBe('long')
+  })
+
+  it('a short-side catalyst votes down and never flips a clearly-long name', () => {
+    const vote = catalystFactor({ kind: 'news', side: 'short', reason: 'sanctioned', strength: 70 })
+    expect(vote.score).toBeLessThan(0)
+    const bull = { ...longFactors(), catalyst: vote }
+    // catalyst drags conviction but the dominant technical keeps it long
+    expect(composeCall(base({ factors: bull, catalyst: { kind: 'news', side: 'short', reason: 'sanctioned', strength: 70 } }))!.side).toBe('long')
+  })
+
+  it('aggressive gates lower the dead zone and capacity floors vs moderate', () => {
+    const marginal = { ...nullFactors(), technical: { score: 22, detail: 'basing' } }
+    const b = { factors: marginal, stage: 'basing' as const, entryQuality: 'neutral' as const, capacityPct: 5 }
+    expect(composeCall(base({ ...b, gates: MODERATE_GATES }))).toBeNull() // 22 < 25 and cap 5 < 6
+    expect(composeCall(base({ ...b, gates: AGGRESSIVE_GATES }))).not.toBeNull() // 22 ≥ 20 and cap 5 ≥ 5
   })
 })

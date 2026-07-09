@@ -1,5 +1,29 @@
 import { describe, expect, it, vi } from 'vitest'
-import { emailReadyHtml, sendReportEmail } from './email'
+import { emailReadyHtml, parseRecipients, sendReportEmail } from './email'
+
+describe('parseRecipients', () => {
+  it('empty / undefined / null → []', () => {
+    expect(parseRecipients(undefined)).toEqual([])
+    expect(parseRecipients(null)).toEqual([])
+    expect(parseRecipients('')).toEqual([])
+    expect(parseRecipients('   ')).toEqual([])
+  })
+  it('a single address stays a one-element list, lowercased', () => {
+    expect(parseRecipients('A@B.com')).toEqual(['a@b.com'])
+  })
+  it('splits a comma list', () => {
+    expect(parseRecipients('a@x.com, b@y.com')).toEqual(['a@x.com', 'b@y.com'])
+  })
+  it('handles a semicolon + space + newline mix', () => {
+    expect(parseRecipients('a@x.com; b@y.com\nc@z.com')).toEqual(['a@x.com', 'b@y.com', 'c@z.com'])
+  })
+  it('filters out junk that is not an address', () => {
+    expect(parseRecipients('a@x.com, nope, @bad, b@no-tld, c@z.com')).toEqual(['a@x.com', 'c@z.com'])
+  })
+  it('dedupes, preserving first-seen order', () => {
+    expect(parseRecipients('a@x.com, A@X.com, b@y.com, a@x.com')).toEqual(['a@x.com', 'b@y.com'])
+  })
+})
 
 describe('sendReportEmail', () => {
   it('no key or recipient → skipped without a network call', async () => {
@@ -17,6 +41,18 @@ describe('sendReportEmail', () => {
     expect(body.subject).toBe('Morning')
     const thrower = vi.fn(async () => { throw new Error('net') })
     expect(await sendReportEmail({ RESEND_API_KEY: 'k', REPORT_EMAIL_TO: 'a@b.com' }, 's', 'x', thrower as unknown as typeof fetch)).toBe(false)
+  })
+  it('a multi-address env var yields a multi-element to list', async () => {
+    const ok = vi.fn(async () => new Response('{}', { status: 200 }))
+    const sent = await sendReportEmail({ RESEND_API_KEY: 'k', REPORT_EMAIL_TO: 'a@x.com, b@y.com' }, 's', 'x', ok as unknown as typeof fetch)
+    expect(sent).toBe(true)
+    const body = JSON.parse((ok.mock.calls[0] as unknown as [string, { body: string }])[1].body)
+    expect(body.to).toEqual(['a@x.com', 'b@y.com'])
+  })
+  it('a configured key but no valid recipient → skipped without a network call', async () => {
+    const fetchFn = vi.fn()
+    expect(await sendReportEmail({ RESEND_API_KEY: 'k', REPORT_EMAIL_TO: 'not-an-email' }, 's', 'x', fetchFn as unknown as typeof fetch)).toBe(false)
+    expect(fetchFn).not.toHaveBeenCalled()
   })
 })
 
