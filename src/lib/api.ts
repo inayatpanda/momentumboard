@@ -220,6 +220,7 @@ export interface EnginePrediction {
   overlay?: { flag: string; reason: string }
   themes?: string[]
   capUsdM?: number | null
+  catalyst?: { kind: string; reason: string }
 }
 
 // A prediction's realised outcome over one horizon: side-adjusted excess vs SPY,

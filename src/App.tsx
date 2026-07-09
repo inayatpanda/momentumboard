@@ -12,10 +12,13 @@ import { Ledger } from './screens/Ledger'
 import { Intel } from './screens/Intel'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
+import { Desk } from './screens/Desk'
 import { NavContext, TabBar } from './components/TabBar'
+import { useIsWide } from './hooks/useIsWide'
 
 type View =
   | { screen: 'watchlist' }
+  | { screen: 'desk' }
   | { screen: 'movers' }
   | { screen: 'detail'; symbol: string; from?: string }
   | { screen: 'journal' }
@@ -27,9 +30,21 @@ type View =
   | { screen: 'settings'; from: string }
 
 export default function App() {
-  const [view, setView] = useState<View>({ screen: 'watchlist' })
+  // wide screens open straight onto the Desk dashboard; phones/tablets get the
+  // classic tabbed layout. Read matchMedia in the initialiser so there's no flash.
+  const [view, setView] = useState<View>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(min-width: 1200px)').matches ? { screen: 'desk' } : { screen: 'watchlist' },
+  )
+  const isWide = useIsWide(1200)
   const [lastSymbol, setLastSymbol] = useState<string | null>(null)
   const [syncTick, setSyncTick] = useState(0)
+
+  // if the viewport drops below Desk width (window shrunk, device rotated), fall
+  // back to the phone/tablet layout — the Desk is never rendered in a space it
+  // wasn't built for.
+  useEffect(() => {
+    if (!isWide) setView(v => (v.screen === 'desk' ? { screen: 'watchlist' } : v))
+  }, [isWide])
 
   // phone ↔ desktop: pull server state on launch; screens remount when it lands.
   // Starter seeding runs AFTER the pull, so an existing watchlist is never
@@ -48,6 +63,7 @@ export default function App() {
   }
 
   const navigate = (tab: string) => {
+    if (tab === 'desk') setView({ screen: 'desk' })
     if (tab === 'watchlist') setView({ screen: 'watchlist' })
     if (tab === 'movers') setView({ screen: 'movers' })
     // Charts continues where you left off; before anything's been opened it
@@ -64,6 +80,16 @@ export default function App() {
   const active = view.screen === 'detail' ? 'charts' : view.screen === 'settings' ? view.from : view.screen === 'ledger' ? 'research' : view.screen
   const reduced = useReducedMotion()
   const screenKey = view.screen + (view.screen === 'detail' ? view.symbol : '')
+
+  // the Desk is full-bleed — it renders outside the 560px .shell and without the
+  // tab bar (it carries its own navigation and a "Standard view" escape hatch).
+  if (view.screen === 'desk') {
+    return (
+      <NavContext.Provider value={{ active, navigate }}>
+        <Desk key={syncTick} onStandard={() => setView({ screen: 'watchlist' })} onOpenSettings={openSettings} />
+      </NavContext.Provider>
+    )
+  }
 
   return (
     <NavContext.Provider value={{ active, navigate }}>
@@ -99,6 +125,11 @@ export default function App() {
         </motion.div>
       </AnimatePresence>
       <TabBar active={active} chartsReady={!!lastSymbol} onNavigate={navigate} />
+      {isWide && view.screen !== 'settings' && (
+        <button className="desk-return" onClick={() => setView({ screen: 'desk' })} title="Open the Desk dashboard">
+          ⊞ Desk
+        </button>
+      )}
     </div>
     </NavContext.Provider>
   )
