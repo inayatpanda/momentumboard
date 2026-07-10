@@ -8,7 +8,7 @@ import { blobAppStore } from './lib/store'
 
 const londonDate = (sec: number) => new Date(sec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
 
-async function runChecks(nowSec: number): Promise<{ name: string; ok: boolean; detail: string }[]> {
+async function runChecks(nowSec: number, report: { at: number } | null): Promise<{ name: string; ok: boolean; detail: string }[]> {
   const today = londonDate(nowSec)
   const day = new Date(nowSec * 1000).getUTCDay()
   const weekday = day >= 1 && day <= 5
@@ -18,7 +18,6 @@ async function runChecks(nowSec: number): Promise<{ name: string; ok: boolean; d
   const board = await blobAppStore.read<{ date: string; board: unknown[] }>('engine-board').catch(() => null)
   add('engine board', !weekday || board?.date === today, board ? `dated ${board.date}, ${board.board?.length ?? 0} live calls` : 'missing')
 
-  const report = await blobAppStore.read<{ at: number }>('morning-report').catch(() => null)
   add('morning paper', !!report && londonDate(report.at) === today, report ? `published ${londonDate(report.at)}` : 'missing')
 
   const runlog = ((await blobAppStore.read<{ at: number; kind?: string }[]>('runlog').catch(() => null)) ?? [])
@@ -44,6 +43,38 @@ async function runChecks(nowSec: number): Promise<{ name: string; ok: boolean; d
   return checks
 }
 
+const SITE = process.env.URL ?? 'https://thestreetsignal.netlify.app'
+
+// SELF-HEAL: the morning report is the one artifact readers actually see —
+// if report-kick's 05:20 UTC chain fell over upstream (predict-background
+// threw before it could chain to the composer, or the composer itself
+// failed), the paper just silently doesn't publish. Past the time it should
+// exist, on a weekday, with today's report missing or dated wrong: re-fire
+// the composer once. Guarded by a same-day marker so a still-broken composer
+// can't get re-kicked every 15 minutes for the rest of the morning.
+async function maybeRekick(nowSec: number, today: string, weekday: boolean, report: { at: number } | null): Promise<string> {
+  try {
+    // report-kick runs 05:20 UTC; give the predict → compose chain a little
+    // room before declaring the report missing/stale.
+    const pastKickTime = nowSec % 86_400 >= 6 * 3600
+    if (!weekday || !pastKickTime) return 'not due'
+    const fresh = !!report && londonDate(report.at) === today
+    if (fresh) return 'report fresh'
+
+    const marker = await blobAppStore.read<{ date: string }>('watchdog-rekick').catch(() => null)
+    if (marker?.date === today) return 'already re-kicked today'
+
+    await blobAppStore.write('watchdog-rekick', { date: today, at: nowSec }).catch(() => {})
+    await fetch(`${SITE}/.netlify/functions/report-compose-background`, {
+      method: 'POST',
+      headers: { 'x-app-token': process.env.APP_TOKEN ?? '' },
+    }).catch(() => {})
+    return 'RE-KICKED'
+  } catch {
+    return 'rekick check failed'
+  }
+}
+
 export default async (req: Request) => {
   const body = await req.text().catch(() => '')
   const scheduled = body.includes('next_run')
@@ -51,15 +82,21 @@ export default async (req: Request) => {
   if (!scheduled && !admin) return new Response('forbidden', { status: 401 })
 
   const nowSec = Math.floor(Date.now() / 1000)
-  const checks = await runChecks(nowSec)
+  const today = londonDate(nowSec)
+  const day = new Date(nowSec * 1000).getUTCDay()
+  const weekday = day >= 1 && day <= 5
+  const report = await blobAppStore.read<{ at: number }>('morning-report').catch(() => null)
+  const checks = await runChecks(nowSec, report)
   const failures = checks.filter(c => !c.ok)
+
+  const rekick = scheduled ? await maybeRekick(nowSec, today, weekday, report) : 'skipped (manual check)'
 
   if (scheduled && failures.length && process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
     const { sendTelegram } = await import('./lib/telegram')
-    const msg = `WATCHDOG — ${failures.length} problem(s) this morning:\n${failures.map(f => `✗ ${f.name}: ${f.detail}`).join('\n')}\n\nHealthy: ${checks.filter(c => c.ok).map(c => c.name).join(', ') || 'none'}`
+    const msg = `WATCHDOG — ${failures.length} problem(s) this morning:\n${failures.map(f => `✗ ${f.name}: ${f.detail}`).join('\n')}\n\nHealthy: ${checks.filter(c => c.ok).map(c => c.name).join(', ') || 'none'}\n\nMorning report re-kick: ${rekick}`
     await sendTelegram(process.env.TELEGRAM_BOT_TOKEN, process.env.TELEGRAM_CHAT_ID, msg).catch(() => {})
   }
-  return new Response(JSON.stringify({ ok: failures.length === 0, checks }, null, 1), { headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify({ ok: failures.length === 0, checks, rekick }, null, 1), { headers: { 'content-type': 'application/json' } })
 }
 
 // 07:15 UTC weekdays = after the 05:20 predict → compose chain has finished
