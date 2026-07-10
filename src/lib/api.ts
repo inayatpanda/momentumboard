@@ -12,7 +12,11 @@ export async function startTrial(): Promise<{ key: string }> {
   const res = await fetch('/api/licences', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ trial: true }) })
   const body = (await res.json().catch(() => null)) as { ok?: boolean; data?: { key: string }; error?: string } | null
   if (!res.ok || !body?.ok || !body.data?.key) {
-    throw new Error(body?.error === 'trial-limit' ? 'Free-access limit reached for now — licences are issued through the Helm.' : 'Could not start free access right now — try again shortly.')
+    throw new Error(
+      body?.error === 'trial-limit'
+        ? 'This network has used its free passes for the week — for a licence, reach out via the Helm.'
+        : 'Could not start free access right now — try again shortly.',
+    )
   }
   setToken(body.data.key)
   return { key: body.data.key }
