@@ -382,6 +382,25 @@ export async function buildBoard(
   const sectorRows = computeSectorRows(new Map(sectorPairs.filter((p): p is [string, Candle[]] => p[1] !== null)), spy)
   const topSectorMembers = sectorRows.slice(0, 2).flatMap(r => SECTOR_MEMBERS[r.sym] ?? [])
 
+  // Pundit stances, read EARLY so a high-credibility off-roster call can NOMINATE
+  // a name into the candidate pool below — not merely re-score one already on the
+  // roster. loadState (weights/calibration/channelCred) is hoisted here too so the
+  // per-channel credibility gate is available; the SAME stancesBySym + credOf are
+  // reused for the channels factor later, so there is one read and no regression.
+  // Fail-soft: missing extracts → empty map → no injection.
+  const { weights, calibration, channelCred } = await loadState(store)
+  const weekAgo = nowSec - 7 * 86_400
+  const extracts = ((await store.read<ExtractLike[]>('video-extracts')) ?? []).filter(e => e.at > weekAgo)
+  const stancesBySym = new Map<string, { channel: string; stance: 'bull' | 'bear' | 'neutral' }[]>()
+  for (const e of extracts) {
+    for (const t of e.tickers) {
+      const arr = stancesBySym.get(t.sym) ?? []
+      arr.push({ channel: e.channel, stance: t.stance })
+      stancesBySym.set(t.sym, arr)
+    }
+  }
+  const credOf = (ch: string) => credibilityOf(channelCred, ch, favourites)
+
   const sources = new Map<string, { source: string; capUsdM: number | null }>()
   const addSource = (sym: string, source: string, capUsdM: number | null = null) => {
     const key = sym.toUpperCase()
@@ -417,6 +436,22 @@ export async function buildBoard(
   const nomCutoff = nowSec - 7 * 86_400
   for (const n of nominations) {
     if (n && typeof n.sym === 'string' && typeof n.at === 'number' && n.at >= nomCutoff) addSource(n.sym, 'ai-nomination')
+  }
+  // Pundit → candidate: a tracked YouTube channel's non-neutral call can NOMINATE a
+  // name into the pool even when it is not already on the roster. It qualifies when
+  // a channel with EARNED credibility (credibilityOf ≥ 0.55) voices a side, OR when
+  // ≥2 channels agree on a side (crowd consensus stands in for single-name trust).
+  // Like every source this is a GATED candidate — it still faces the full capacity/
+  // liquidity/factor/calibration stack, never a call by fiat. Fail-soft: no extracts
+  // → stancesBySym empty → nothing injected.
+  for (const [sym, arr] of stancesBySym) {
+    const voiced = arr.filter(s => s.stance !== 'neutral')
+    if (!voiced.length) continue
+    const credible = voiced.some(s => credOf(s.channel) >= 0.55)
+    const bulls = voiced.filter(s => s.stance === 'bull').length
+    const bears = voiced.filter(s => s.stance === 'bear').length
+    const agree = bulls >= 2 || bears >= 2
+    if (credible || agree) addSource(sym, 'channel:consensus')
   }
 
   const currentRoster = (await store.read<RosterEntry[]>('engine-roster')) ?? []
@@ -476,8 +511,8 @@ export async function buildBoard(
   const rosterLog = ((await store.read<unknown[]>('engine-roster-log')) ?? []) as { date: string }[]
   await store.write('engine-roster-log', [...rosterLog.filter(l => l.date !== today), { date: today, joined, dropped }].slice(-60))
 
-  // shared context for factor computation
-  const { weights, calibration, channelCred } = await loadState(store)
+  // shared context for factor computation (weights/calibration/channelCred loaded
+  // above with the pundit stances, so a high-credibility call could nominate names)
   const engineBaseRate = baseHitRate(calibration).rate
   const risk = (await store.read<RiskState>('risk-state')) ?? initRisk(today)
   const rosterSyms = roster.map(e => e.sym)
@@ -506,17 +541,6 @@ export async function buildBoard(
     )
   }
   const socialBySym = new Map(social.map(s => [s.sym, s]))
-  const weekAgo = nowSec - 7 * 86_400
-  const extracts = ((await store.read<ExtractLike[]>('video-extracts')) ?? []).filter(e => e.at > weekAgo)
-  const stancesBySym = new Map<string, { channel: string; stance: 'bull' | 'bear' | 'neutral' }[]>()
-  for (const e of extracts) {
-    for (const t of e.tickers) {
-      const arr = stancesBySym.get(t.sym) ?? []
-      arr.push({ channel: e.channel, stance: t.stance })
-      stancesBySym.set(t.sym, arr)
-    }
-  }
-  const credOf = (ch: string) => credibilityOf(channelCred, ch, favourites)
   const sectorRankPct = (sym: string): number | null => {
     const etf = symToSector.get(baseSym(sym))
     if (!etf || sectorRows.length < 2) return null

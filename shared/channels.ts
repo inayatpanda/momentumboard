@@ -7,4 +7,6 @@ export const DEFAULT_CHANNELS: { id: string; name: string }[] = [
   { id: 'UChBVf9YnourrEDTsbbwJPRA', name: 'Everything Money' },
   { id: 'UCORi3Jj7kSHcdHdckrjhOsg', name: 'Tom Nash' },
   { id: 'UCwMoQEGc4IqkuGLhJUkLwYQ', name: 'Humbled Trader' },
+  // resolved 2026-07-10 from the channel page source (externalId, title "gareth holloway")
+  { id: 'UCOg_HWm16bs0WTYTg8yFOtA', name: 'Gareth Holloway' },
 ]

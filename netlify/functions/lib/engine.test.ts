@@ -242,6 +242,63 @@ describe('buildBoard', () => {
     expect(board.find(b => b.sym === 'GNOM')).toBeDefined() // gated + priced like any other candidate
   })
 
+  it('a high-credibility off-roster channel stance NOMINATES a symbol as a candidate (source channel:consensus); a lone low-cred stance does not', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    // PUND: one bear from 'Stocks with Josh' — the default favourite → credibilityOf
+    //   prior 0.6 ≥ 0.55, so a single call qualifies it as a candidate on its own.
+    // LOWC: one bear from a single non-favourite (cred 0.5 < 0.55) and no agreement →
+    //   below the gate → never sourced, never a candidate (even with qualifying candles).
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'PUND', stance: 'bear', levels: [] }], themes: [] },
+      { url: 'yt/2', channel: 'Nobody', at: NOW - 2 * 86_400, tickers: [{ sym: 'LOWC', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const d = deps({
+      screens: async () => [], // the channel stance is PUND's ONLY candidate source
+      social: async () => [],
+      newsCatalysts: async () => [],
+      candles: async sym => (sym === 'PUND' || sym === 'LOWC' ? shorty : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      mediaTitles: async () => ['[Bloomberg] PUND plunges as demand warnings mount'],
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const roster = (await store.read<{ sym: string; source: string }[]>('engine-roster'))!
+    const pund = roster.find(r => r.sym === 'PUND')
+    expect(pund).toBeDefined()
+    expect(pund!.source).toBe('channel:consensus') // credible single voice nominated it; attribution rides the entry
+    expect(board.find(b => b.sym === 'PUND')).toBeDefined() // gated + priced like any other candidate
+
+    expect(roster.find(r => r.sym === 'LOWC')).toBeUndefined() // below the credibility gate → never a candidate
+    expect(await d.candles('LOWC')).toBe(shorty) // LOWC HAD qualifying candles — excluded by the SOURCE gate, not by data
+  })
+
+  it('two lesser-known channels agreeing on a side also NOMINATE a candidate (the ≥2-agree branch)', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    // neither 'Guy A' nor 'Guy B' is a favourite → each cred 0.5 < 0.55, so no single
+    // voice clears the credibility gate; their agreement on a bear side is what nominates.
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Guy A', at: NOW - 2 * 86_400, tickers: [{ sym: 'DUO', stance: 'bear', levels: [] }], themes: [] },
+      { url: 'yt/2', channel: 'Guy B', at: NOW - 2 * 86_400, tickers: [{ sym: 'DUO', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const d = deps({
+      screens: async () => [], // the channel agreement is DUO's ONLY candidate source
+      social: async () => [],
+      newsCatalysts: async () => [],
+      candles: async sym => (sym === 'DUO' ? shorty : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      mediaTitles: async () => ['[Bloomberg] DUO plunges as demand warnings mount'],
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const roster = (await store.read<{ sym: string; source: string }[]>('engine-roster'))!
+    const duo = roster.find(r => r.sym === 'DUO')
+    expect(duo).toBeDefined()
+    expect(duo!.source).toBe('channel:consensus')
+    expect(board.find(b => b.sym === 'DUO')).toBeDefined() // gated + priced like any other candidate
+  })
+
   it('Fix A: a non-watchlist roster name with a cached cluster-buy gets a non-null insiders factor', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] }) // NVDA is roster-only, never on the watchlist
