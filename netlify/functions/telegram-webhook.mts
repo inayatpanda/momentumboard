@@ -1,6 +1,7 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 import { sendTelegram } from './lib/telegram'
+import { parseCallText, toExtract, type PunditExtract } from './lib/punditCalls'
 
 /** Two-way Telegram commands: /status /portfolio /mute [hours] /unmute /report.
  * Authenticated via Telegram's secret_token header, set at webhook registration. */
@@ -16,7 +17,8 @@ export async function routeTelegramWebhook(
   }
   const update = bodyText ? (JSON.parse(bodyText) as { message?: { chat?: { id: number }; text?: string } }) : null
   const chatId = String(update?.message?.chat?.id ?? '')
-  const text = (update?.message?.text ?? '').trim().toLowerCase()
+  const rawText = (update?.message?.text ?? '').trim() // ticker parsing needs the RAW case
+  const text = rawText.toLowerCase()
   // only answer the owner's chat
   if (!chatId || chatId !== env.TELEGRAM_CHAT_ID || !env.TELEGRAM_BOT_TOKEN) return new Response('ok')
 
@@ -47,8 +49,19 @@ export async function routeTelegramWebhook(
     await reply('🔔 Alerts resumed.')
   } else if (text.startsWith('/report')) {
     await reply(`📰 ${env.URL ?? 'https://thestreetsignal.netlify.app'}/report`)
+  } else if (text.startsWith('/call')) {
+    // log a pundit's forwarded stock call into the graded channel-stance store
+    const { name, tickers } = parseCallText(rawText) // RAW text — not the lowercased copy
+    if (name && tickers.length) {
+      const extracts = (await store.read<PunditExtract[]>('video-extracts')) ?? []
+      extracts.push(toExtract(name, tickers, nowSec, 'telegram-bridge'))
+      await store.write('video-extracts', extracts.slice(-400))
+      await reply(`logged: ${name} — ${tickers.map(t => `${t.sym} ${t.stance}`).join(', ')}`)
+    } else {
+      await reply('Usage: /call obi $TSLA long [$PLTR short] or /call obi <forwarded text>')
+    }
   } else if (text.startsWith('/')) {
-    await reply('Commands: /status /portfolio /mute [hours] /unmute /report')
+    await reply('Commands: /status /portfolio /mute [hours] /unmute /report /call')
   }
   return new Response('ok')
 }

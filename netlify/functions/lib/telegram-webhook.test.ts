@@ -31,4 +31,22 @@ describe('telegram webhook', () => {
     expect(text).toContain('AAPL £900')
     expect(text).toContain('win 60%')
   })
+  it('/call logs a pundit stance to video-extracts and confirms it (raw-cased tickers)', async () => {
+    const store = memoryStore()
+    const send = vi.fn(async (_bot: string, _chat: string, _text: string) => {})
+    // bare PLTR survives ONLY if the raw (not lowercased) text is parsed
+    await routeTelegramWebhook(auth, msg('/call obi $TSLA long PLTR short'), env, store, send as never)
+    const extracts = await store.read<{ channel: string; tickers: { sym: string; stance: string }[] }[]>('video-extracts')
+    expect(extracts).toHaveLength(1)
+    expect(extracts![0].channel).toBe('Grandmaster Obi')
+    expect(extracts![0].tickers.map(t => `${t.sym} ${t.stance}`)).toEqual(['TSLA bull', 'PLTR bear'])
+    expect(send.mock.calls[0][2]).toBe('logged: Grandmaster Obi — TSLA bull, PLTR bear')
+  })
+  it('/call with unparseable text replies usage help and writes nothing', async () => {
+    const store = memoryStore()
+    const send = vi.fn(async (_bot: string, _chat: string, _text: string) => {})
+    await routeTelegramWebhook(auth, msg('/call obi hello how are you'), env, store, send as never)
+    expect(await store.read('video-extracts')).toBeNull()
+    expect(send.mock.calls[0][2]).toContain('/call obi')
+  })
 })

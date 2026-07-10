@@ -9,4 +9,7 @@ export const DEFAULT_CHANNELS: { id: string; name: string }[] = [
   { id: 'UCwMoQEGc4IqkuGLhJUkLwYQ', name: 'Humbled Trader' },
   // resolved 2026-07-10 from the channel page source (externalId, title "gareth holloway")
   { id: 'UCOg_HWm16bs0WTYTg8yFOtA', name: 'Gareth Holloway' },
+  // resolved 2026-07-10 from the channel page source (canonical link + og:url,
+  // title "Grandmaster-OBI", @EARLYSEATOBI, 42.7k subs)
+  { id: 'UCddkjtql4LIVLct3tD4-3SQ', name: 'Grandmaster Obi' },
 ]

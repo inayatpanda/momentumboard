@@ -9,9 +9,16 @@ describe('DEFAULT_CHANNELS', () => {
     expect(gareth!.id).toBe('UCOg_HWm16bs0WTYTg8yFOtA')
   })
 
+  it('tracks Grandmaster Obi with a real resolved channel id', () => {
+    const obi = DEFAULT_CHANNELS.find(c => c.name === 'Grandmaster Obi')
+    expect(obi).toBeDefined()
+    // resolved from the channel page source (canonical link + og:url), not invented
+    expect(obi!.id).toBe('UCddkjtql4LIVLct3tD4-3SQ')
+  })
+
   it('list shape is intact: every entry is a { id, name } with a stable UC channel id', () => {
     expect(Array.isArray(DEFAULT_CHANNELS)).toBe(true)
-    expect(DEFAULT_CHANNELS.length).toBeGreaterThanOrEqual(7)
+    expect(DEFAULT_CHANNELS.length).toBeGreaterThanOrEqual(8)
     for (const c of DEFAULT_CHANNELS) {
       expect(typeof c.name).toBe('string')
       expect(c.name.length).toBeGreaterThan(0)

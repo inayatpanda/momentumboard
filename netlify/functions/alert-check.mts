@@ -235,6 +235,31 @@ export default async () => {
     errors.push(`trending: ${e}`)
   }
 
+  // pundit call bridge: auto-poll pundit Reddit accounts + tag feeds and append
+  // their fresh calls to the same `video-extracts` store the engine grades.
+  // Deduped by url so the 5-min cadence never double-logs a post.
+  try {
+    const { fetchRedditPunditPosts, fetchPunditTagFeed, DEFAULT_PUNDIT_REDDITS, DEFAULT_PUNDIT_FEEDS } = await import('./lib/punditCalls')
+    const sinceSec = nowSec - 26 * 3600
+    const fresh = [
+      ...(await fetchRedditPunditPosts(DEFAULT_PUNDIT_REDDITS, sinceSec)),
+      ...(await Promise.all(DEFAULT_PUNDIT_FEEDS.map(f => fetchPunditTagFeed(f.url, f.name, sinceSec)))).flat(),
+    ]
+    if (fresh.length) {
+      const extracts = (await store.read<{ url: string }[]>('video-extracts')) ?? []
+      const known = new Set(extracts.map(e => e.url))
+      const added: unknown[] = []
+      for (const e of fresh) {
+        if (known.has(e.url)) continue
+        known.add(e.url)
+        added.push(e)
+      }
+      if (added.length) await store.write('video-extracts', [...extracts, ...added].slice(-400))
+    }
+  } catch (e) {
+    errors.push(`pundit-bridge: ${e}`)
+  }
+
   const { digest, state: finalState } = flushBatch(afterEval, nowSec)
   if (digest) await deliver(digest)
 
