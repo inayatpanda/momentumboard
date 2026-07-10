@@ -22,6 +22,8 @@ vi.mock('../lib/api', () => ({
 }))
 vi.mock('../lib/configMirror', () => ({ mirrorConfig: vi.fn() }))
 vi.mock('../lib/push', () => ({ enablePush: vi.fn(), pushSupported: () => false }))
+// module-level window listener in the real module races across parallel jsdom envs
+vi.mock('../lib/installPrompt', () => ({ onInstallAvailable: (fn: (a: boolean) => void) => { fn(false); return () => {} }, promptInstall: vi.fn() }))
 
 import { SettingsScreen } from './SettingsScreen'
 

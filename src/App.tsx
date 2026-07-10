@@ -19,6 +19,7 @@ import { More } from './screens/More'
 import { NavContext, TabBar } from './components/TabBar'
 import { useIsWide } from './hooks/useIsWide'
 import { clearToken, getToken, validateAccess } from './lib/api'
+import { onInstallAvailable, promptInstall } from './lib/installPrompt'
 
 type View =
   | { screen: 'watchlist' }
@@ -53,6 +54,8 @@ export default function App() {
   const inBrowserTab = typeof window !== 'undefined' && !window.matchMedia('(display-mode: standalone)').matches
   const [siteView, setSiteView] = useState(false)
   const [browserNoteDismissed, setBrowserNoteDismissed] = useState(() => sessionStorage.getItem('mb-browser-note') === '1')
+  const [canInstall, setCanInstall] = useState(false)
+  useEffect(() => onInstallAvailable(setCanInstall), [])
 
   // boot check: a token the server rejects (revoked, or an expired trial) sends
   // the reader back to the landing page instead of a screen of failed requests.
@@ -78,6 +81,32 @@ export default function App() {
   useEffect(() => {
     if (!isWide) setView(v => (v.screen === 'desk' || v.screen === 'quant' ? { screen: 'watchlist' } : v))
   }, [isWide])
+
+  // Android back: an SPA with no history stack means the hardware back gesture
+  // closes the app (or falls back to the browser window). Keep ONE buffer entry
+  // armed: back from any screen → home (re-armed); back again from home → the
+  // root entry, which exits — standard Android app behaviour.
+  useEffect(() => {
+    if (!licensed) return
+    history.replaceState({ ss: 'root' }, '')
+    history.pushState({ ss: 'buffer' }, '')
+    const onPop = () => {
+      let consumed = false
+      setSiteView(false)
+      setView(v => {
+        const home: View = window.matchMedia('(min-width: 1200px)').matches ? { screen: 'desk' } : { screen: 'watchlist' }
+        if (v.screen === home.screen) return v // already home: let the next back exit
+        consumed = true
+        return home
+      })
+      // re-arm the buffer only when the back was used for in-app navigation
+      setTimeout(() => {
+        if (consumed) history.pushState({ ss: 'buffer' }, '')
+      }, 0)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [licensed])
 
   // phone ↔ desktop: pull server state on launch; screens remount when it lands.
   // Starter seeding runs AFTER the pull, so an existing watchlist is never
@@ -157,6 +186,15 @@ export default function App() {
       {inBrowserTab && !isWide && !browserNoteDismissed && (
         <div className="browser-note" role="note">
           <span>Browser view — the installed app has its own icon.</span>
+          {canInstall && (
+            <button
+              onClick={async () => {
+                if (await promptInstall()) setBrowserNoteDismissed(true)
+              }}
+            >
+              Install app
+            </button>
+          )}
           <button onClick={() => setSiteView(true)}>View website</button>
           <button
             aria-label="Dismiss"

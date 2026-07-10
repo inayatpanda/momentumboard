@@ -3,7 +3,8 @@ import { db, getCapital, getChannels } from '../lib/db'
 import { resolveChannel, getLicences, createLicence, revokeLicence, getLlmKeyStatus, putLlmKey, getT212KeyStatus, putT212Key, deleteT212Key, apiGet, putConfig, setToken } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { enablePush, pushSupported, type PushStatus } from '../lib/push'
-import { IconBack, IconBell, IconMoon, IconSparkle, IconSun, IconSwap } from '../components/icons'
+import { IconBack, IconBell, IconMoon, IconShare, IconSparkle, IconSun, IconSwap } from '../components/icons'
+import { onInstallAvailable, promptInstall } from '../lib/installPrompt'
 import type { AppConfig } from '../../shared/config'
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
@@ -89,6 +90,24 @@ function ByoAiKey({ isAdmin }: { isAdmin: boolean | null }) {
         </button>
       </div>
     </section>
+  )
+}
+
+function InstallRow() {
+  // shown only while the browser says the app is installable (Android Chrome);
+  // installed app / iOS Safari never see it
+  const [available, setAvailable] = useState(false)
+  useEffect(() => onInstallAvailable(setAvailable), [])
+  if (!available) return null
+  return (
+    <button className="menu-row" onClick={() => void promptInstall()}>
+      <span className="icon-tile green"><IconShare /></span>
+      <span className="set-main">
+        <span>Install the app</span>
+        <span className="sub">Adds StreetSignal to your home screen — full screen, no browser bars.</span>
+      </span>
+      <span className="chev">›</span>
+    </button>
   )
 }
 
@@ -513,6 +532,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
         <section className="menu-group">
           <div className="menu-title">App</div>
+          <InstallRow />
           <a className="menu-row" href="https://thestreetsignal.netlify.app" target="_blank" rel="noopener noreferrer">
             <span className="icon-tile"><IconGlobe /></span>
             <span className="set-main">

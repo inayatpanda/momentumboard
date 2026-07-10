@@ -85,11 +85,33 @@ export interface CongressAggregates {
   since: string
 }
 
+// One politician's buys-vs-SPY grade. Excess = their symbol's return since the
+// disclosed trade date minus SPY's over the same window; avgExcess/best are in
+// percent (1dp), hitRate is a 0..1 share. Only sells-are-noise buys are scored.
+export interface PoliticianScore {
+  politician: string
+  chamber: 'senate' | 'house'
+  gradedBuys: number
+  avgExcessPct: number
+  hitRate: number
+  bestCall: { symbol: string; excessPct: number }
+}
+
+/** Precomputed on the server clock as disclosures age; null until the first
+ * grades land (buys must be ≥5 days old). rows: ≥2-buy politicians, best first. */
+export interface CongressScorecard {
+  rows: PoliticianScore[]
+  gradedBuys: number
+  skipped: number
+  asOf: number
+}
+
 /** Congressional trades (most recent ~100 market-wide) plus the subset touching
  * the passed symbols. source === 'none' with no trades = every upstream is
- * dead/unkeyed — show the link-card fallback. */
+ * dead/unkeyed — show the link-card fallback. `scorecard` is null until the warm
+ * sweep has graded enough aged buys to mean anything. */
 export const getCongress = (symbols?: string[]) =>
-  apiGet<{ trades: CongressTrade[]; watchlistHits: CongressTrade[]; source: CongressSource; asOf: number; aggregates: CongressAggregates | null }>(
+  apiGet<{ trades: CongressTrade[]; watchlistHits: CongressTrade[]; source: CongressSource; asOf: number; aggregates: CongressAggregates | null; scorecard: CongressScorecard | null }>(
     `/api/market?type=congress${symbols?.length ? `&symbols=${symbols.join(',')}` : ''}`,
   )
 

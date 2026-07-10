@@ -200,9 +200,11 @@ export async function routeRequest(
       const watchlistHits = wanted.size ? blob.trades.filter(t => wanted.has(base(t.symbol))) : []
       // sector map: bulk resolution happens in the scheduled warm; each request may trickle a few more
       const sectors = await resolveCongressSectors(blobAppStore, history, s => cachedIndustry(s, env.FINNHUB_API_KEY ?? ''), 8)
-      return json(200, { ok: true, data: { trades: blob.trades.slice(0, 100), watchlistHits, source: blob.source, asOf: blob.asOf, aggregates: congressAggregates(history, sectors) } })
+      // the buys-vs-SPY scorecard is PRECOMPUTED by the warm sweep — read-only here (null until it first runs)
+      const scorecard = await blobAppStore.read<import('./lib/congress').CongressScorecard>('congress-scorecard').catch(() => null)
+      return json(200, { ok: true, data: { trades: blob.trades.slice(0, 100), watchlistHits, source: blob.source, asOf: blob.asOf, aggregates: congressAggregates(history, sectors), scorecard } })
     } catch {
-      return json(200, { ok: true, data: { trades: [], watchlistHits: [], source: 'none', asOf: Math.floor(Date.now() / 1000) } })
+      return json(200, { ok: true, data: { trades: [], watchlistHits: [], source: 'none', asOf: Math.floor(Date.now() / 1000), aggregates: null, scorecard: null } })
     }
   }
 

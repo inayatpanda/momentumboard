@@ -138,6 +138,139 @@ export async function resolveCongressSectors(
   if (resolvedNew) await store.write('congress-sectors', known)
   return known
 }
+
+// ---- the scorecard: do their disclosed BUYS beat the tape? ----
+// Grade-everything, in the app's spirit. Only buys are scored: disclosure lag
+// (up to 45 days after the trade) makes sell-timing unusable as a signal, so a
+// sell tells you nothing you can act on. A buy at least a work-week old is
+// measured from its FIRST tradeable close against SPY over the same window.
+
+/** A slim ascending price series: [isoDate 'YYYY-MM-DD', close] pairs. */
+type CloseSeries = [string, number][]
+
+export interface PoliticianScore {
+  politician: string
+  chamber: 'senate' | 'house'
+  gradedBuys: number
+  avgExcessPct: number // mean excess vs SPY over each buy's window, percent, 1dp
+  hitRate: number // share of this politician's graded buys with positive excess, 0..1
+  bestCall: { symbol: string; excessPct: number } // their single best buy, excess vs SPY (percent, 1dp)
+}
+
+export interface CongressScorecard {
+  rows: PoliticianScore[] // politicians with ≥2 graded buys, avgExcess desc, capped 10
+  gradedBuys: number // total buys graded across the whole history
+  skipped: number // buys dropped because their (or SPY's) chart couldn't be resolved
+  asOf: number // unix seconds
+}
+
+const SCORECARD_KEY = 'congress-scorecard'
+const CHART_BUDGET = 15 // fresh Yahoo fetches per warm run; cached series are free
+const MIN_BUY_AGE_MS = 5 * 86_400_000 // a buy must be ≥5 calendar days old to grade
+
+/** Latest close ON or AFTER `date` in an ascending series; null if the series
+ * never reaches that date (or is empty). */
+function closeOnOrAfter(series: CloseSeries, date: string): number | null {
+  for (const [d, c] of series) if (d >= date) return c
+  return null
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10
+
+/** PURE, IO-free scorer. Grades every BUY (sells ignored) that is ≥5 calendar
+ * days old against SPY, over [first close on/after the trade date → latest
+ * close]. `priceSeries` maps symbol → ascending [isoDate, close] pairs and MUST
+ * carry 'SPY'. A buy whose symbol chart — or SPY over its window — can't be
+ * resolved is skipped and counted (never grades to zero). Only politicians with
+ * ≥2 graded buys make `rows` (avgExcess desc, capped 10). `now` is injected for
+ * deterministic tests. Returns everything the blob needs except asOf. */
+export function scorePoliticians(
+  buys: CongressTrade[],
+  priceSeries: Record<string, CloseSeries>,
+  now: number = Date.now(),
+): { rows: PoliticianScore[]; gradedBuys: number; skipped: number } {
+  const spy = priceSeries.SPY
+  const spyExit = spy && spy.length ? spy[spy.length - 1][1] : null
+  const byPol = new Map<string, { chamber: 'senate' | 'house'; graded: { excess: number; symbol: string }[] }>()
+  let gradedBuys = 0
+  let skipped = 0
+
+  for (const t of buys) {
+    if (t.side !== 'buy') continue
+    const tradedMs = Date.parse(t.traded)
+    if (!Number.isFinite(tradedMs) || now - tradedMs < MIN_BUY_AGE_MS) continue // too young / undated — not eligible yet, not an error
+    const series = priceSeries[t.symbol]
+    const symEntry = series ? closeOnOrAfter(series, t.traded) : null
+    const symExit = series && series.length ? series[series.length - 1][1] : null
+    const spyEntry = spy ? closeOnOrAfter(spy, t.traded) : null
+    if (symEntry == null || symExit == null || spyEntry == null || spyExit == null || symEntry <= 0 || spyEntry <= 0) {
+      skipped++ // chart (theirs or the benchmark's) didn't reach the window — fail-soft, counted
+      continue
+    }
+    const excess = (symExit - symEntry) / symEntry - (spyExit - spyEntry) / spyEntry
+    gradedBuys++
+    const p = byPol.get(t.politician) ?? { chamber: t.chamber, graded: [] }
+    p.graded.push({ excess, symbol: t.symbol })
+    byPol.set(t.politician, p)
+  }
+
+  const rows: PoliticianScore[] = []
+  for (const [politician, { chamber, graded }] of byPol) {
+    if (graded.length < 2) continue // one call is luck, not a track record
+    const meanExcess = graded.reduce((s, g) => s + g.excess, 0) / graded.length
+    const hits = graded.filter(g => g.excess > 0).length
+    const best = graded.reduce((a, b) => (b.excess > a.excess ? b : a))
+    rows.push({
+      politician,
+      chamber,
+      gradedBuys: graded.length,
+      avgExcessPct: round1(meanExcess * 100),
+      hitRate: Math.round((hits / graded.length) * 100) / 100,
+      bestCall: { symbol: best.symbol, excessPct: round1(best.excess * 100) },
+    })
+  }
+  rows.sort((a, b) => b.avgExcessPct - a.avgExcessPct)
+  return { rows: rows.slice(0, 10), gradedBuys, skipped }
+}
+
+/** Resolve the price series the scorer needs (SPY + each eligible buy's symbol)
+ * under a fresh-fetch budget — cached series are free, only network hits count —
+ * then run the pure scorer and persist the blob. `fetchCloses(sym, allowFetch)`
+ * returns the slim series cache-first; `fetched` marks a network hit, and
+ * `allowFetch` is false once the budget is spent so a symbol can still come from
+ * cache but never triggers a new fetch. Belongs on the scheduled warm clock, not
+ * the request path. Fail-soft: a symbol that won't resolve just costs its buys. */
+export async function computeCongressScorecard(
+  store: HistoryStore,
+  history: CongressTrade[],
+  fetchCloses: (sym: string, allowFetch: boolean) => Promise<{ series: CloseSeries | null; fetched: boolean }>,
+): Promise<CongressScorecard> {
+  const now = Date.now()
+  const series: Record<string, CloseSeries> = {}
+  let fetched = 0
+  const resolve = async (sym: string) => {
+    if (series[sym]) return
+    const r = await fetchCloses(sym, fetched < CHART_BUDGET).catch(() => ({ series: null, fetched: false }))
+    if (r.fetched) fetched++
+    if (r.series?.length) series[sym] = r.series
+  }
+  // SPY first — it's the benchmark every buy is graded against.
+  await resolve('SPY')
+  // Distinct symbols of buys old enough to grade, most-recent first so the
+  // freshest names win the budget when there are more symbols than fetches.
+  const eligible = history
+    .filter(t => t.side === 'buy' && Number.isFinite(Date.parse(t.traded)) && now - Date.parse(t.traded) >= MIN_BUY_AGE_MS)
+    .sort((a, b) => b.traded.localeCompare(a.traded))
+  const symbols: string[] = []
+  for (const t of eligible) if (!symbols.includes(t.symbol)) symbols.push(t.symbol)
+  for (const sym of symbols) await resolve(sym)
+
+  const { rows, gradedBuys, skipped } = scorePoliticians(history, series, now)
+  const scorecard: CongressScorecard = { rows, gradedBuys, skipped, asOf: Math.floor(now / 1000) }
+  await store.write(SCORECARD_KEY, scorecard)
+  return scorecard
+}
+
 const STALE_DAYS = 180 // community datasets that stopped updating are treated as dead
 const FINNHUB_DOWN_KEY = 'congress:finnhub-unavailable' // premium-gate marker, 24h
 const SW_DOWN_KEY = 'congress:stockwatcher-unavailable' // dead-bucket marker, 24h

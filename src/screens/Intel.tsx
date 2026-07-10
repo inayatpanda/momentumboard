@@ -349,6 +349,31 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                       ))}
                     </>
                   )}
+                  <p className="eyebrow" style={{ margin: '14px 0 6px' }}>The scorecard — do their buys beat the tape?</p>
+                  {congress.scorecard && congress.scorecard.rows.length > 0 ? (
+                    <>
+                      {congress.scorecard.rows.map(r => (
+                        <div key={r.politician} className="perf-row intel-crow">
+                          <div className="intel-crow-main">
+                            <span className="intel-crow-pol">{r.politician}</span>
+                            <span className="intel-crow-sub">{r.chamber}</span>
+                          </div>
+                          <div className="intel-crow-trade">
+                            <span className="intel-crow-deal">
+                              <span className="intel-crow-sub">{r.gradedBuys} buys</span>{' '}
+                              <span className={r.avgExcessPct >= 0 ? 'up-text' : 'down-text'}>
+                                {r.avgExcessPct >= 0 ? '↗' : '↘'} {r.avgExcessPct >= 0 ? '+' : ''}{r.avgExcessPct}% vs SPY
+                              </span>
+                            </span>
+                            <span className="intel-crow-when">{Math.round(r.hitRate * 100)}% hit</span>
+                          </div>
+                        </div>
+                      ))}
+                      <p className="empty-line intel-fine">Buys graded against SPY from the disclosure date. Sells aren't scored — the lag makes them noise.</p>
+                    </>
+                  ) : (
+                    <p className="empty-line">The scorecard builds as disclosures age — first grades appear once buys are a week old.</p>
+                  )}
                   <p className="empty-line intel-fine">Filed under the STOCK Act. A cluster of same-side trades is positioning, not gospel.</p>
                   {congress.aggregates && (
                     <>

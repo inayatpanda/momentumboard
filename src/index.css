@@ -61,8 +61,11 @@
   --bar-fill: linear-gradient(90deg, #5aa9ff, #8b5cf6);
   --radius: 18px;
   --font-serif: 'Fraunces', Georgia, 'Iowan Old Style', 'Times New Roman', serif;
-  --font-ui: 'Schibsted Grotesk', -apple-system, system-ui, sans-serif;
-  --font-num: 'Spline Sans Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  /* Inter is the closest free face to Trading 212's brand sans (Averta);
+     one family for prose AND figures — money columns stay aligned via the
+     tabular-nums rules, not a separate mono face. */
+  --font-ui: 'Inter', -apple-system, system-ui, sans-serif;
+  --font-num: 'Inter', -apple-system, system-ui, sans-serif;
 }
 
 :root[data-theme='light'] {
