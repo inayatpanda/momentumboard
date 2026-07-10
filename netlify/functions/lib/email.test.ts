@@ -57,10 +57,13 @@ describe('sendReportEmail', () => {
 })
 
 describe('emailReadyHtml', () => {
-  it('strips scripts and injects the view-in-browser banner after <body>', () => {
+  it('strips scripts and injects open-in-browser bars top AND bottom', () => {
     const out = emailReadyHtml('<html><body class="x"><h1>Paper</h1><script>alert(1)</script></body></html>', 'https://x/report')
     expect(out).not.toContain('<script>')
-    expect(out).toContain('open the full paper')
-    expect(out.indexOf('open the full paper')).toBeLessThan(out.indexOf('<h1>'))
+    expect(out).toContain('Open the full paper in your browser')
+    expect(out.indexOf('Open the full paper')).toBeLessThan(out.indexOf('<h1>')) // top bar before content
+    expect(out).toContain('Sections collapsed or cut off by your mail app?')
+    expect(out.indexOf('Read the complete edition')).toBeGreaterThan(out.indexOf('<h1>')) // bottom bar after content
+    expect(out.match(/https:\/\/x\/report/g)!.length).toBeGreaterThanOrEqual(2) // both bars link out
   })
 })
