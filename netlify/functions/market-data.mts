@@ -131,7 +131,7 @@ export async function routeRequest(
       const nowSec = Math.floor(Date.now() / 1000)
       const [news, videos] = await Promise.all([
         fetchNews((cfg?.watchlist ?? []).map(w => w.symbol), env.FINNHUB_API_KEY ?? '', nowSec),
-        fetchVideos(cfg?.ytChannels ?? [], nowSec),
+        fetchVideos((await import('../../shared/channels')).withDefaults(cfg?.ytChannels), nowSec),
       ])
       const data = { news: news.slice(0, 20), videos: videos.slice(0, 12) }
       await setCached('digest-feed', data, 600)

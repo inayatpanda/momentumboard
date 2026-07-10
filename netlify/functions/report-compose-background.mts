@@ -85,7 +85,8 @@ export default async (req: Request) => {
 
     const channelVideos = await grab(async () => {
       const { fetchVideos } = await import('./lib/youtube')
-      return (await fetchVideos(cfg.ytChannels, nowSec)).slice(0, 10).map(v => ({ channel: v.channel, title: v.title }))
+      const { withDefaults } = await import('../../shared/channels')
+      return (await fetchVideos(withDefaults(cfg.ytChannels), nowSec)).slice(0, 10).map(v => ({ channel: v.channel, title: v.title }))
     })
 
     const mediaHeadlines = await grab(async () => {
@@ -367,6 +368,33 @@ export default async (req: Request) => {
       for (const b of extras.engineBoard) { const n = names.get(b.sym); if (n) b.name = n }
       console.log('COMPOSE: named', [...names.entries()].filter(([, n]) => n).length, 'of', nameSyms.length)
     } catch { /* names are best-effort — the paper publishes without them */ }
+
+    // ---- claims audit: gentle, headline-level only ----
+    // The numbers are computed; the PROSE is editorial — and editorial drifts
+    // (an "XLE fading" line once contradicted its own +3pp 5-day read). A cheap
+    // second pass checks ONLY the headline/standfirst/lead against the sector
+    // facts and tones down clear contradictions. Deliberately light-touch: keep
+    // the voice, change nothing defensible, fail-soft to the original prose.
+    try {
+      const factLines = (sectors ?? [])
+        .filter(s => s.rs21 != null)
+        .map(s => `${s.sym}: 1mo RS ${s.rs21! >= 0 ? '+' : ''}${s.rs21}pp, 5d RS ${s.rs5 != null ? `${s.rs5 >= 0 ? '+' : ''}${s.rs5}pp` : 'n/a'}, trend ${s.trend}`)
+      if (factLines.length) {
+        const auditPrompt = `You are the sub-editor fact-checking a market newspaper's front page against the desk's own data. FACTS (relative strength vs SPY):\n${factLines.join('\n')}\nRegime: ${regime}.\n\nDRAFT:\nHEADLINE: ${composed.headline}\nSTANDFIRST: ${composed.standfirst}\nLEAD: ${composed.lead}\n\nRewrite ONLY what clearly contradicts the facts (e.g. calling a sector "fading" when its 5-day RS is positive and trend is "in"). Keep the voice, keep everything defensible, do not soften for style. Return ONLY JSON: {"headline":"...","standfirst":"...","lead":"..."} — fields you did not change must be returned verbatim.`
+        const { text } = await callLlm(auditPrompt, { maxTokens: 900 })
+        const m = text.match(/\{[\s\S]*\}/)
+        if (m) {
+          const audited = JSON.parse(m[0]) as { headline?: string; standfirst?: string; lead?: string }
+          if (audited.headline && audited.standfirst && audited.lead) {
+            const changed = audited.headline !== composed.headline || audited.standfirst !== composed.standfirst || audited.lead !== composed.lead
+            composed.headline = audited.headline
+            composed.standfirst = audited.standfirst
+            composed.lead = audited.lead
+            console.log('COMPOSE: claims audit', changed ? 'amended the front page' : 'passed unchanged')
+          }
+        }
+      }
+    } catch { /* audit is best-effort — the original prose stands */ }
 
     // ---- publish through the same pipe the routine uses ----
     const html = buildNewspaperHtml(composed, dateLabel, extras)

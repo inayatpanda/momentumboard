@@ -30,3 +30,20 @@ describe('DEFAULT_CHANNELS', () => {
     expect(new Set(DEFAULT_CHANNELS.map(c => c.name)).size).toBe(DEFAULT_CHANNELS.length)
   })
 })
+
+describe('withDefaults', () => {
+  it('unions stored channels with code defaults, deduped by id; user-added channels survive', async () => {
+    const { withDefaults, DEFAULT_CHANNELS } = await import('./channels')
+    const stored = [
+      { id: 'UCNttUtm9vloDjo-a2jqkoNQ', name: 'Stocks with Josh' }, // default, already stored
+      { id: 'UCcustom00000000000000000', name: 'My Custom Channel' }, // user-added
+    ]
+    const merged = withDefaults(stored)
+    expect(merged.some(c => c.name === 'My Custom Channel')).toBe(true) // user channel kept
+    expect(merged.some(c => c.name === 'Grandmaster Obi')).toBe(true) // missing default joined
+    expect(merged.some(c => c.name === 'Gareth Holloway')).toBe(true)
+    expect(merged.filter(c => c.id === 'UCNttUtm9vloDjo-a2jqkoNQ')).toHaveLength(1) // no dupes
+    expect(merged).toHaveLength(stored.length + DEFAULT_CHANNELS.length - 1)
+    expect(withDefaults(undefined)).toHaveLength(DEFAULT_CHANNELS.length) // empty config = defaults
+  })
+})

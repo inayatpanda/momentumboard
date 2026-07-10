@@ -3,6 +3,7 @@ import { cachedQuote, cachedCandles } from './lib/marketCache'
 import { blobAppStore } from './lib/store'
 import { fetchNews } from './lib/news'
 import { fetchVideos } from './lib/youtube'
+import { withDefaults } from '../../shared/channels'
 import { sendTelegram } from './lib/telegram'
 import { evaluateAlerts, flushBatch, emptyAlertState, type AlertState, type TickerSnapshot, type StopWatch, type AlertEvent } from '../../shared/alerts'
 import type { AppConfig } from '../../shared/config'
@@ -64,7 +65,7 @@ export default async () => {
       errors.push(`news: ${e}`)
       return []
     }),
-    fetchVideos(cfg.ytChannels, nowSec).catch(e => {
+    fetchVideos(withDefaults(cfg.ytChannels), nowSec).catch(e => {
       errors.push(`videos: ${e}`)
       return []
     }),
