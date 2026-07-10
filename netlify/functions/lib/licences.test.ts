@@ -41,3 +41,51 @@ describe('licence lifecycle', () => {
     expect(userGet.data.watchlist[0].symbol).toBe('TSLA')
   })
 })
+
+describe('self-served trial', () => {
+  const ipHeaders = (ip: string) => new Headers({ 'x-nf-client-connection-ip': ip })
+
+  it('mints a 7-day trial with NO auth; the key authenticates at user level', async () => {
+    const store = memoryStore()
+    const res = await routeLicences('POST', ipHeaders('1.2.3.4'), JSON.stringify({ trial: true }), env, store)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.key.startsWith('mb_')).toBe(true)
+    expect(body.data.expiresAt).toBeGreaterThan(Date.now() / 1000 + 6 * 86_400)
+    const auth = await authenticate(new Headers({ 'x-app-token': body.data.key }), env, store)
+    expect(auth?.level).toBe('user')
+  })
+
+  it('expiry locks out server-side: an expired trial no longer authenticates and check=1 says 401', async () => {
+    const store = memoryStore()
+    const body = await (await routeLicences('POST', ipHeaders('1.2.3.4'), JSON.stringify({ trial: true }), env, store)).json()
+    // force-expire it in the blob, like a week passing
+    const lics = (await store.read('licences')) as { key: string; expiresAt?: number }[]
+    lics.find(l => l.key === body.data.key)!.expiresAt = Math.floor(Date.now() / 1000) - 60
+    await store.write('licences', lics)
+    expect(await authenticate(new Headers({ 'x-app-token': body.data.key }), env, store)).toBeNull()
+    const check = await routeLicences('GET', new Headers({ 'x-app-token': body.data.key }), null, env, store, true)
+    expect(check.status).toBe(401)
+  })
+
+  it('per-IP cap: a third trial from the same IP inside a week is refused', async () => {
+    const store = memoryStore()
+    for (let i = 0; i < 2; i++) {
+      expect((await routeLicences('POST', ipHeaders('9.9.9.9'), JSON.stringify({ trial: true }), env, store)).status).toBe(200)
+    }
+    expect((await routeLicences('POST', ipHeaders('9.9.9.9'), JSON.stringify({ trial: true }), env, store)).status).toBe(429)
+    // a different IP is unaffected
+    expect((await routeLicences('POST', ipHeaders('8.8.8.8'), JSON.stringify({ trial: true }), env, store)).status).toBe(200)
+  })
+
+  it('trials do not consume the Helm licence cap; check=1 confirms a valid admin token', async () => {
+    const store = memoryStore()
+    await routeLicences('POST', ipHeaders('1.1.1.1'), JSON.stringify({ trial: true }), env, store)
+    // admin can still mint a real licence (cap counts non-trial only)
+    const real = await (await routeLicences('POST', admin, JSON.stringify({ label: 'Dad' }), env, store)).json()
+    expect(real.ok).toBe(true)
+    const check = await routeLicences('GET', admin, null, env, store, true)
+    expect(check.status).toBe(200)
+    expect((await check.json()).data.level).toBe('admin')
+  })
+})

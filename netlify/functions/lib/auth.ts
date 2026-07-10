@@ -10,6 +10,8 @@ export interface Licence {
   label: string
   createdAt: number
   revoked?: boolean
+  expiresAt?: number // unix sec; absent = perpetual. Trials expire, Helm licences don't.
+  trial?: boolean // self-served 7-day reader pass (landing page), not a Helm-issued licence
 }
 
 export interface AuthResult {
@@ -17,7 +19,7 @@ export interface AuthResult {
   ns: string // storage namespace prefix: '' for admin, 'u:<id>:' for licensees
 }
 
-async function hash8(input: string): Promise<string> {
+export async function hash8(input: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
   return [...new Uint8Array(buf)].slice(0, 4).map(b => b.toString(16).padStart(2, '0')).join('')
 }
@@ -29,6 +31,7 @@ export async function authenticate(headers: Headers, env: { APP_TOKEN?: string }
   const licences = (await store.read<Licence[]>('licences')) ?? []
   const lic = licences.find(l => l.key === token && !l.revoked)
   if (!lic) return null
+  if (lic.expiresAt && lic.expiresAt < Math.floor(Date.now() / 1000)) return null // trial lapsed — server says no
   return { level: 'user', ns: `u:${await hash8(lic.key)}:` }
 }
 

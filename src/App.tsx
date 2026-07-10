@@ -14,8 +14,10 @@ import { CalendarScreen } from './screens/CalendarScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { Desk } from './screens/Desk'
 import { Quant } from './screens/Quant'
+import { Landing } from './screens/Landing'
 import { NavContext, TabBar } from './components/TabBar'
 import { useIsWide } from './hooks/useIsWide'
+import { clearToken, getToken, validateAccess } from './lib/api'
 
 type View =
   | { screen: 'watchlist' }
@@ -40,6 +42,22 @@ export default function App() {
   const isWide = useIsWide(1200)
   const [lastSymbol, setLastSymbol] = useState<string | null>(null)
   const [syncTick, setSyncTick] = useState(0)
+  // licence gate: no token → the public landing page. main.tsx consumes ?key=
+  // unlock links before React mounts, so licensed arrivals never see it.
+  const [licensed, setLicensed] = useState(() => !!getToken())
+
+  // boot check: a token the server rejects (revoked, or an expired trial) sends
+  // the reader back to the landing page instead of a screen of failed requests.
+  // Offline resolves valid — never lock a licensed reader out of cached data.
+  useEffect(() => {
+    if (!licensed) return
+    validateAccess().then(ok => {
+      if (!ok) {
+        clearToken()
+        setLicensed(false)
+      }
+    })
+  }, [licensed])
 
   // if the viewport drops below Desk width (window shrunk, device rotated), fall
   // back to the phone/tablet layout — the Desk is never rendered in a space it
@@ -83,6 +101,12 @@ export default function App() {
   const active = view.screen === 'detail' ? 'charts' : view.screen === 'settings' ? view.from : view.screen === 'ledger' ? 'research' : view.screen
   const reduced = useReducedMotion()
   const screenKey = view.screen + (view.screen === 'detail' ? view.symbol : '')
+
+  // the licence gate comes before everything — unlicensed visitors get the
+  // public marketing page, whatever the viewport.
+  if (!licensed) {
+    return <Landing onUnlocked={() => setLicensed(true)} />
+  }
 
   // the Desk is full-bleed — it renders outside the 560px .shell and without the
   // tab bar (it carries its own navigation and a "Standard view" escape hatch).

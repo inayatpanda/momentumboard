@@ -3,6 +3,33 @@ import type { AppConfig } from '../../shared/config'
 
 export const getToken = () => localStorage.getItem('mb-token')
 export const setToken = (t: string) => localStorage.setItem('mb-token', t)
+export const clearToken = () => localStorage.removeItem('mb-token')
+
+/** Self-served 7-day reader pass (landing page). Mints a real, expiring trial
+ * licence server-side, stores it as this device's token, and resolves with the
+ * key. Throws a human-readable error when the rate limit says no. */
+export async function startTrial(): Promise<{ key: string }> {
+  const res = await fetch('/api/licences', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ trial: true }) })
+  const body = (await res.json().catch(() => null)) as { ok?: boolean; data?: { key: string }; error?: string } | null
+  if (!res.ok || !body?.ok || !body.data?.key) {
+    throw new Error(body?.error === 'trial-limit' ? 'Free-access limit reached for now — licences are issued through the Helm.' : 'Could not start free access right now — try again shortly.')
+  }
+  setToken(body.data.key)
+  return { key: body.data.key }
+}
+
+/** Cheap boot-time token check: true = valid (admin or licensee), false = the
+ * server rejected it (revoked or an expired trial). Network failures resolve
+ * true — being offline must never lock a licensed reader out of cached data. */
+export async function validateAccess(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/licences?check=1', { headers: { 'x-app-token': getToken() ?? '' } })
+    if (res.status === 401) return false
+    return true
+  } catch {
+    return true
+  }
+}
 
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(path, { headers: { 'x-app-token': getToken() ?? '' } })
