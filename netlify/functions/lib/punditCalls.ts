@@ -28,7 +28,7 @@ export interface PunditExtract extends ExtractLike {
 // Telegram /call alias → exact channel name (verified against shared/channels.ts).
 export const ALIASES: Record<string, string> = {
   obi: 'Grandmaster Obi',
-  gareth: 'Gareth Holloway',
+  gareth: 'Gareth Soloway',
   josh: 'Stocks with Josh',
 }
 

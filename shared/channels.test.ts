@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_CHANNELS } from './channels'
 
 describe('DEFAULT_CHANNELS', () => {
-  it('tracks Gareth Holloway with a real resolved channel id', () => {
-    const gareth = DEFAULT_CHANNELS.find(c => c.name === 'Gareth Holloway')
+  it('tracks Gareth Soloway (and Verified Investing) with real resolved channel ids', () => {
+    const gareth = DEFAULT_CHANNELS.find(c => c.name === 'Gareth Soloway')
     expect(gareth).toBeDefined()
     // resolved from the channel page source (externalId), not invented
-    expect(gareth!.id).toBe('UCOg_HWm16bs0WTYTg8yFOtA')
+    expect(gareth!.id).toBe('UCwTu6kD2igaLMpxswtcdxlg')
+    expect(DEFAULT_CHANNELS.some(c => c.name === 'Verified Investing')).toBe(true)
   })
 
   it('tracks Grandmaster Obi with a real resolved channel id', () => {
@@ -41,7 +42,7 @@ describe('withDefaults', () => {
     const merged = withDefaults(stored)
     expect(merged.some(c => c.name === 'My Custom Channel')).toBe(true) // user channel kept
     expect(merged.some(c => c.name === 'Grandmaster Obi')).toBe(true) // missing default joined
-    expect(merged.some(c => c.name === 'Gareth Holloway')).toBe(true)
+    expect(merged.some(c => c.name === 'Gareth Soloway')).toBe(true)
     expect(merged.filter(c => c.id === 'UCNttUtm9vloDjo-a2jqkoNQ')).toHaveLength(1) // no dupes
     expect(merged).toHaveLength(stored.length + DEFAULT_CHANNELS.length - 1)
     expect(withDefaults(undefined)).toHaveLength(DEFAULT_CHANNELS.length) // empty config = defaults

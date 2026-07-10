@@ -7,8 +7,12 @@ export const DEFAULT_CHANNELS: { id: string; name: string }[] = [
   { id: 'UChBVf9YnourrEDTsbbwJPRA', name: 'Everything Money' },
   { id: 'UCORi3Jj7kSHcdHdckrjhOsg', name: 'Tom Nash' },
   { id: 'UCwMoQEGc4IqkuGLhJUkLwYQ', name: 'Humbled Trader' },
-  // resolved 2026-07-10 from the channel page source (externalId, title "gareth holloway")
-  { id: 'UCOg_HWm16bs0WTYTg8yFOtA', name: 'Gareth Holloway' },
+  // "Gareth Holloway" resolved to a dead ghost channel (RSS 404) — the intended
+  // channel is Gareth SOLOWAY (Verified Investing). Both his channels upload
+  // daily; each is credibility-scored separately. Resolved 2026-07-10 from
+  // YouTube search initial data + RSS title verification.
+  { id: 'UCwTu6kD2igaLMpxswtcdxlg', name: 'Gareth Soloway' },
+  { id: 'UCZ-J2m1AUSLnifUEKam5_dA', name: 'Verified Investing' },
   // resolved 2026-07-10 from the channel page source (canonical link + og:url,
   // title "Grandmaster-OBI", @EARLYSEATOBI, 42.7k subs)
   { id: 'UCddkjtql4LIVLct3tD4-3SQ', name: 'Grandmaster Obi' },

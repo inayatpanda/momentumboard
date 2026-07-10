@@ -59,8 +59,8 @@ describe('parseCallText — free-form forwarded text', () => {
 
 describe('parseCallText — aliases & junk', () => {
   it('maps every known alias to its exact channel name', () => {
-    expect(ALIASES).toEqual({ obi: 'Grandmaster Obi', gareth: 'Gareth Holloway', josh: 'Stocks with Josh' })
-    expect(parseCallText('/call gareth $AAPL buy').name).toBe('Gareth Holloway')
+    expect(ALIASES).toEqual({ obi: 'Grandmaster Obi', gareth: 'Gareth Soloway', josh: 'Stocks with Josh' })
+    expect(parseCallText('/call gareth $AAPL buy').name).toBe('Gareth Soloway')
     expect(parseCallText('/call josh $AAPL buy').name).toBe('Stocks with Josh')
   })
   it('unknown alias → name null', () => {
