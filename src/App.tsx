@@ -49,15 +49,20 @@ export default function App() {
   // boot check: a token the server rejects (revoked, or an expired trial) sends
   // the reader back to the landing page instead of a screen of failed requests.
   // Offline resolves valid — never lock a licensed reader out of cached data.
+  // MOUNT-ONLY on purpose: a trial minted seconds ago can 401 on a stale Blobs
+  // replica (eventual consistency); re-validating on the unlock transition
+  // silently bounced fresh trials back to the landing. By the next visit the
+  // write has long propagated, so the boot check still catches real expiry.
   useEffect(() => {
-    if (!licensed) return
+    if (!getToken()) return
     validateAccess().then(ok => {
       if (!ok) {
         clearToken()
         setLicensed(false)
       }
     })
-  }, [licensed])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // if the viewport drops below Desk width (window shrunk, device rotated), fall
   // back to the phone/tablet layout — the Desk is never rendered in a space it
