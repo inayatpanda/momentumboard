@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { resolveChannel, getLicences, createLicence, revokeLicence, getLlmKeyStatus, putLlmKey, apiGet, putConfig, setToken } from '../lib/api'
+import { resolveChannel, getLicences, createLicence, revokeLicence, getLlmKeyStatus, putLlmKey, getT212KeyStatus, putT212Key, deleteT212Key, apiGet, putConfig, setToken } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { enablePush, pushSupported, type PushStatus } from '../lib/push'
-import { IconBack, IconBell, IconMoon, IconSparkle, IconSun } from '../components/icons'
+import { IconBack, IconBell, IconMoon, IconSparkle, IconSun, IconSwap } from '../components/icons'
 import type { AppConfig } from '../../shared/config'
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
@@ -88,6 +88,81 @@ function ByoAiKey({ isAdmin }: { isAdmin: boolean | null }) {
           {saved ? 'Saved' : 'Save'}
         </button>
       </div>
+    </section>
+  )
+}
+
+function T212Connect() {
+  // BYO Trading 212 (read-only): each licence connects its own key pair, stored
+  // in its private namespace and validated live by the server before it lands.
+  // The owner's account key lives in Netlify env — shown here as 'server key'.
+  const [status, setStatus] = useState<{ connected: boolean; source: 'env' | 'own' | null } | null>(null)
+  const [apiKey, setApiKey] = useState('')
+  const [secret, setSecret] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const load = () => getT212KeyStatus().then(setStatus).catch(() => {})
+  useEffect(() => { load() }, [])
+  if (!status) return null
+  return (
+    <section className="menu-group">
+      <div className="menu-title">Trading 212</div>
+      <div className="menu-row set-static">
+        <span className="icon-tile"><IconSwap /></span>
+        <span className="set-main">
+          <span>{status.connected ? 'Connected' : 'Connect your Trading 212'}</span>
+          <span className="sub">
+            {status.source === 'env'
+              ? 'Using the server key. Your live holdings appear in the Journal.'
+              : status.connected
+                ? 'Your holdings appear in the Journal, with the engine’s read on each.'
+                : 'Read-only: in the T212 app go to Settings → API, create a key with the read scopes only, and paste the pair here. The app can see your portfolio, never trade it.'}
+          </span>
+        </span>
+        {status.source === 'own' && (
+          <button
+            className="remove"
+            aria-label="Disconnect Trading 212"
+            onClick={async () => {
+              await deleteT212Key().catch(() => {})
+              setStatus({ connected: false, source: null })
+            }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      {!status.connected && (
+        <>
+          <div className="set-inrow">
+            <input className="set-in" type="password" placeholder="API key" value={apiKey} onChange={e => setApiKey(e.target.value)} style={{ flex: 1 }} aria-label="Trading 212 API key" />
+          </div>
+          <div className="set-inrow">
+            <input className="set-in" type="password" placeholder="Secret" value={secret} onChange={e => setSecret(e.target.value)} style={{ flex: 1 }} aria-label="Trading 212 secret" />
+            <button
+              className="mini-btn"
+              disabled={busy || !apiKey.trim()}
+              onClick={async () => {
+                setBusy(true)
+                setError('')
+                try {
+                  await putT212Key(apiKey.trim(), secret.trim())
+                  setApiKey('')
+                  setSecret('')
+                  setStatus({ connected: true, source: 'own' })
+                } catch (e) {
+                  setError((e as Error).message === 'rejected' ? 'Trading 212 rejected that key — check the pair and its scopes.' : 'Could not save — try again.')
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              {busy ? 'Checking…' : 'Connect'}
+            </button>
+          </div>
+          {error && <p className="set-err" role="alert">{error}</p>}
+        </>
+      )}
     </section>
   )
 }
@@ -423,6 +498,8 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           </div>
           <p className="set-note">Channels feed the alert engine, the consensus tracker, and AI video watching.</p>
         </section>
+
+        <T212Connect />
 
         <ByoAiKey isAdmin={isAdmin} />
 

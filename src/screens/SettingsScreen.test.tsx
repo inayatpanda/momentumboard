@@ -14,6 +14,9 @@ vi.mock('../lib/api', () => ({
   revokeLicence: vi.fn(),
   getLlmKeyStatus: () => Promise.resolve({ hasKey: false }),
   putLlmKey: vi.fn(),
+  getT212KeyStatus: () => Promise.resolve({ connected: false, source: null }),
+  putT212Key: vi.fn(),
+  deleteT212Key: vi.fn(),
   apiGet: vi.fn(() => Promise.resolve(null)),
   putConfig: vi.fn(),
 }))

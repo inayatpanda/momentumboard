@@ -195,6 +195,27 @@ export async function putLlmKey(groqKey: string) {
   if (!res.ok) throw new Error('failed')
 }
 
+// BYO Trading 212: licensees connect their own read-only key pair; the owner's
+// stays in server env. The server validates against T212 before storing.
+export const getT212KeyStatus = () => apiGet<{ connected: boolean; source: 'env' | 'own' | null }>('/api/t212?view=key')
+
+export async function putT212Key(apiKey: string, secret: string) {
+  const res = await fetch('/api/t212', {
+    method: 'PUT',
+    headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
+    body: JSON.stringify({ apiKey, secret }),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error === 't212-rejected' ? 'rejected' : 'failed')
+  }
+}
+
+export async function deleteT212Key() {
+  const res = await fetch('/api/t212', { method: 'DELETE', headers: { 'x-app-token': getToken() ?? '' } })
+  if (!res.ok) throw new Error('failed')
+}
+
 export async function createLicence(label: string) {
   const res = await fetch('/api/licences', {
     method: 'POST',
