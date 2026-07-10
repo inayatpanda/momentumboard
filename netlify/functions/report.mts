@@ -116,12 +116,25 @@ export async function routeReport(
       const { emailReadyHtml, sendReportEmail } = await import('./lib/email')
       const cfg = await store.read<AppConfig>('config').catch(() => null)
       const dateLabel = new Date(at * 1000).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })
+      // A print-edition PDF rides along with the email, composed on-box from the
+      // finished HTML. FAIL-SOFT: a PDF error must never block or delay the send —
+      // on failure the email still goes, just without the attachment.
+      let attachments: { filename: string; content: string }[] | undefined
+      if (process.env.RESEND_API_KEY) {
+        try {
+          const { composeReportPdf } = await import('./lib/reportPdf')
+          const pdf = await composeReportPdf({ html: bodyText, dateLabel })
+          if (pdf?.length) attachments = [{ filename: `StreetSignal-${dateKey}.pdf`, content: Buffer.from(pdf).toString('base64') }]
+        } catch {
+          /* print edition is best-effort — send without it */
+        }
+      }
       await sendReportEmail(
         { RESEND_API_KEY: process.env.RESEND_API_KEY, REPORT_EMAIL_TO: process.env.REPORT_EMAIL_TO, REPORT_EMAIL_FROM: process.env.REPORT_EMAIL_FROM },
         `The Street Signal — ${dateLabel}`,
         emailReadyHtml(bodyText, `${link}?date=${dateKey}`),
         fetch,
-        undefined,
+        attachments,
         cfg?.reportRecipients,
       )
     } catch {
