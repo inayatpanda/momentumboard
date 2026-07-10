@@ -188,6 +188,15 @@ export interface CalendarRow {
   previous?: string
 }
 
+// One new-listing row for the paper's compact IPO table — the fields it typesets
+// (the raw calendar carries more; the paper needs only these).
+export interface IpoListingRow {
+  sym: string
+  name: string
+  date: string
+  status: string
+}
+
 export interface BoardRow {
   sym: string
   side: 'long' | 'short'
@@ -209,6 +218,7 @@ export interface PaperExtras {
   engineBoard?: BoardRow[] // typeset in code — the numbers never depend on the LLM
   rotationTables?: RotationTable[]
   socialBoard?: SocialRow[]
+  ipos?: { upcoming: IpoListingRow[]; recent: IpoListingRow[] } // new-listings tape (ipoCalendar.ts)
   calendar?: CalendarRow[]
   spyCloses?: number[] // ~3 months for the masthead chart
   sectorBars?: { name: string; rs21: number | null }[]
@@ -532,6 +542,15 @@ ${t.rows
     )
     .join('')
 
+  // new-listings tape: upcoming first, then recently-listed; capped at 8 rows.
+  const ipoRows = [
+    ...(x.ipos?.upcoming ?? []).map(r => ({ r, when: 'Upcoming' })),
+    ...(x.ipos?.recent ?? []).map(r => ({ r, when: 'Listed' })),
+  ]
+    .slice(0, 8)
+    .map(({ r, when }) => `<tr><td class="tk">${esc(r.sym)}</td><td>${esc(r.name)}</td><td class="num">${esc(r.date)}</td><td class="num">${esc(when)} · ${esc(r.status)}</td></tr>`)
+    .join('')
+
   const wisdom = pickWisdom(new Date().toISOString().slice(0, 10))
   const pull = r.ideas.find(i => i.strength === 'strong')?.caseText ?? r.standfirst
 
@@ -677,6 +696,11 @@ ${rotationBlocks ? wide('Inside the Rotation', rotationBlocks) : ''}
 ${
     socialRows
       ? wide('The Social Board', `<table><thead><tr><th>Ticker</th><th>Mkt cap</th><th>r/ rank</th><th>Mentions</th><th>24h surge</th><th>Platforms</th></tr></thead><tbody>${socialRows}</tbody></table>`)
+      : ''
+  }
+${
+    ipoRows
+      ? wide('New Listings — Fresh on the Tape', `<table><thead><tr><th>Ticker</th><th>Company</th><th>Date</th><th>Status</th></tr></thead><tbody>${ipoRows}</tbody></table>`)
       : ''
   }
 ${dept('Crypto Wire', paras(r.crypto))}

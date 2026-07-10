@@ -202,6 +202,22 @@ export default async (req: Request) => {
       )
     ).filter(Boolean)
 
+    // new-listings tape: fresh + imminent IPOs (fail-soft — a dead calendar just
+    // drops the section, same contract as every other extra)
+    const ipos = await (async () => {
+      try {
+        const { fetchIpoCalendar, upcomingListings, recentListings } = await import('./lib/ipoCalendar')
+        const today = new Date(nowSec * 1000).toISOString().slice(0, 10)
+        const from = new Date((nowSec - 90 * 86_400) * 1000).toISOString().slice(0, 10)
+        const to = new Date((nowSec + 7 * 86_400) * 1000).toISOString().slice(0, 10)
+        const rows = await fetchIpoCalendar(process.env.FINNHUB_API_KEY ?? '', from, to)
+        const slim = (r: { sym: string; name: string; date: string; status: string }) => ({ sym: r.sym, name: r.name, date: r.date, status: r.status })
+        return { upcoming: upcomingListings(rows, today).slice(0, 8).map(slim), recent: recentListings(rows, today).slice(0, 8).map(slim) }
+      } catch {
+        return undefined
+      }
+    })()
+
     const { getCached } = await import('./lib/cache')
     const socialBoard = await Promise.all(
       (social ?? []).slice(0, 10).map(async s => ({
@@ -216,6 +232,7 @@ export default async (req: Request) => {
     const extras = {
       rotationTables,
       socialBoard,
+      ipos,
       calendar: (econ ?? []).filter(e => e.at > nowSec && e.at < nowSec + 5 * 86_400).slice(0, 6),
       spyCloses: spy?.slice(-63).map(c => c.c),
       sectorBars: (sectors ?? []).map(s => ({ name: SECTORS.find(x => x.sym === s.sym)?.name ?? s.sym, rs21: s.rs21 })),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getEngine, getMovers, getCandles, type EngineData, type EnginePrediction } from '../lib/api'
+import { getEngine, getMovers, getCandles, getIpos, type EngineData, type EnginePrediction } from '../lib/api'
 import type { Candle } from '../../shared/types'
 import { capBand, fmtPct, humanError } from '../lib/format'
 import { capClassBreakdown, flattenLedger } from '../lib/ledgerStats'
@@ -18,8 +18,11 @@ import { IconGear } from '../components/icons'
 // re-lay of the existing engine board for screens with room to spare.
 
 type MoversResponse = Awaited<ReturnType<typeof getMovers>>
+type IposResponse = Awaited<ReturnType<typeof getIpos>>
 
 const RUNG_PCT = [1.0, 1.25, 1.5, 2.0]
+
+const listedDaysAgo = (dateISO: string): number => Math.max(0, Math.round((Date.now() - Date.parse(dateISO)) / 86_400_000))
 
 function CallRow({ p, focused, onFocus }: { p: EnginePrediction; focused: boolean; onFocus: (sym: string) => void }) {
   const dir = p.side === 'long' ? '▲' : '▼'
@@ -60,6 +63,7 @@ function CallRow({ p, focused, onFocus }: { p: EnginePrediction; focused: boolea
 export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () => void; onOpenSettings: () => void; onQuant: () => void }) {
   const [data, setData] = useState<EngineData | null>(null)
   const [movers, setMovers] = useState<MoversResponse | null>(null)
+  const [ipos, setIpos] = useState<IposResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState<string | null>(null)
@@ -68,10 +72,13 @@ export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () =
   const load = () => {
     setLoading(true)
     setError(null)
-    Promise.all([getEngine(), getMovers()])
-      .then(([engine, mv]) => {
+    // IPOs are the least critical rail card — a failing calendar must never take
+    // the whole desk down, so it is caught to null rather than joining the reject.
+    Promise.all([getEngine(), getMovers(), getIpos().catch(() => null)])
+      .then(([engine, mv, ip]) => {
         setData(engine)
         setMovers(mv)
+        setIpos(ip)
       })
       .catch(e => setError(humanError(e)))
       .finally(() => setLoading(false))
@@ -292,6 +299,45 @@ export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () =
             )}
             {(!movers || (movers.gainers.length === 0 && movers.losers.length === 0)) && (
               <p className="empty-line">No mover data right now.</p>
+            )}
+          </section>
+
+          <section className="card">
+            <h3 className="section-title">New listings</h3>
+            {ipos && ipos.upcoming.length > 0 && (
+              <>
+                <div className="empty-line" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '2px 0 4px' }}>Upcoming</div>
+                {ipos.upcoming.slice(0, 5).map(r => (
+                  <div key={`u-${r.sym}`} className="perf-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2 }}>
+                    <span style={{ fontWeight: 700 }}>
+                      {r.sym} <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>· {r.name}</span>
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.date} · {r.status}</span>
+                  </div>
+                ))}
+              </>
+            )}
+            {ipos && ipos.recent.length > 0 && (
+              <>
+                <div className="empty-line" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '10px 0 4px' }}>Recently listed</div>
+                {ipos.recent.slice(0, 5).map(r => (
+                  <div
+                    key={`r-${r.sym}`}
+                    className="perf-row"
+                    style={{ cursor: 'pointer' }}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setFocus(r.sym)}
+                    onKeyDown={e => e.key === 'Enter' && setFocus(r.sym)}
+                  >
+                    <span>{r.sym}</span>
+                    <span className="empty-line" style={{ fontSize: 12 }}>listed {listedDaysAgo(r.date)}d ago</span>
+                  </div>
+                ))}
+              </>
+            )}
+            {(!ipos || (ipos.upcoming.length === 0 && ipos.recent.length === 0)) && (
+              <p className="empty-line">No fresh listings.</p>
             )}
           </section>
         </aside>

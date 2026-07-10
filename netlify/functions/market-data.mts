@@ -420,6 +420,28 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
     }
   }
 
+  if (type === 'ipos') {
+    // the new-listings tape: names about to list (7 days ahead) and names that
+    // just priced (90 days back). One cached Finnhub call, split into the two
+    // windows the Desk rail + morning report show. Fail-soft to [].
+    const hit = await getCached<unknown>('ipos')
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { fetchIpoCalendar, upcomingListings, recentListings } = await import('./lib/ipoCalendar')
+      const now = new Date()
+      const iso = (d: Date) => d.toISOString().slice(0, 10)
+      const todayISO = iso(now)
+      const from = iso(new Date(now.getTime() - 90 * 86_400_000))
+      const to = iso(new Date(now.getTime() + 7 * 86_400_000))
+      const rows = await fetchIpoCalendar(env.FINNHUB_API_KEY ?? '', from, to)
+      const data = { upcoming: upcomingListings(rows, todayISO), recent: recentListings(rows, todayISO), at: Math.floor(Date.now() / 1000) }
+      await setCached('ipos', data, 21_600)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
   if (type === 'pick-stats') {
     const hit = await getCached<unknown>('pick-stats')
     if (hit) return json(200, { ok: true, data: hit })

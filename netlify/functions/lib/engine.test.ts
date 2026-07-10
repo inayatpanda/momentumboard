@@ -30,6 +30,7 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   smartMoney: async () => [],
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
   newsCatalysts: async () => [], // no LLM catalysts by default
+  recentIpos: async () => [], // no fresh listings by default
   earningsSyms: async () => new Set<string>(),
   worldReads: async () => [], // quiet world by default → mixed tone → mult 1
   holdings: async () => null, // no T212 book by default
@@ -297,6 +298,33 @@ describe('buildBoard', () => {
     expect(duo).toBeDefined()
     expect(duo!.source).toBe('channel:consensus')
     expect(board.find(b => b.sym === 'DUO')).toBeDefined() // gated + priced like any other candidate
+  })
+
+  it('a recently-listed name joins the candidate pool as a fresh-listing source (catalyst:ipo, side null → no free vote)', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    // FRESH just priced 40-odd days ago (enough candles to read); the IPO calendar
+    // is its ONLY candidate source — no screener, no social, no headline mentions it.
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      newsCatalysts: async () => [],
+      candles: async sym => (sym === 'FRESH' ? shorty : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      mediaTitles: async () => [], // no theme/news source may claim FRESH
+      recentIpos: async () => [{ sym: 'FRESH', date: '2026-05-20' }],
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const roster = (await store.read<{ sym: string; source: string }[]>('engine-roster'))!
+    const fresh = roster.find(r => r.sym === 'FRESH')
+    expect(fresh).toBeDefined()
+    expect(fresh!.source).toBe('catalyst:ipo') // the IPO calendar nominated it; attribution rides the roster entry
+
+    const call = board.find(b => b.sym === 'FRESH')!
+    expect(call).toBeDefined() // gated + priced like any other candidate
+    expect(call.catalyst).toEqual({ kind: 'ipo', reason: 'listed 2026-05-20' })
+    expect(call.factors.catalyst.score).toBeNull() // side null → the ipo tag casts NO directional vote
   })
 
   it('Fix A: a non-watchlist roster name with a cached cluster-buy gets a non-null insiders factor', async () => {

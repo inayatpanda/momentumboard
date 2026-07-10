@@ -70,6 +70,11 @@ export interface EngineDeps {
   // LLM-backed; fail-soft to [] when no provider is configured, so the engine still
   // runs deterministically without it. Called once per run with the media titles.
   newsCatalysts: (titles: string[]) => Promise<NewsCatalyst[]>
+  // recently-listed US names (Finnhub IPO calendar, cached ~6h). A post-IPO name
+  // the momentum scanner would never surface — it has no price history to screen
+  // on — joins the candidate pool as a GATED fresh-listing source. Fail-soft: no
+  // key / a Finnhub outage → [] → the engine is unchanged.
+  recentIpos: () => Promise<{ sym: string; date: string }[]>
   earningsSyms: () => Promise<Set<string>>
   // overnight world tape: latest daily % change for the Asia/Europe indices, US
   // futures and VIX (^VIX carried in the same list, split out in buildBoard).
@@ -159,6 +164,20 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
     // keys (GROQ/GEMINI/…), so this uses whatever provider the deployment has and
     // returns [] when none is set — the board never depends on the LLM being up.
     newsCatalysts: titles => extractNewsCatalysts(titles),
+    // fresh listings: pull the IPO calendar (90d back → 7d ahead, one cached
+    // fetch shared with the market-data endpoint) and keep the recently-priced
+    // names that now carry some price history. Fail-soft to [].
+    recentIpos: async () => {
+      const { fetchIpoCalendar, recentListings } = await import('./ipoCalendar')
+      const iso = (d: Date) => d.toISOString().slice(0, 10)
+      const now = new Date()
+      const rows = await fetchIpoCalendar(
+        env.FINNHUB_API_KEY ?? '',
+        iso(new Date(now.getTime() - 90 * 86_400_000)),
+        iso(new Date(now.getTime() + 7 * 86_400_000)),
+      )
+      return recentListings(rows, iso(now)).map(r => ({ sym: r.sym, date: r.date }))
+    },
     // ^N225/^HSI/^GDAXI/^FTSE/ES=F/NQ=F/^VIX are index & futures symbols Finnhub's
     // free quote endpoint won't serve, and isYahooSymbol() routes them to Finnhub
     // (no '.'/'-' → treated as US). So derive the daily change from the last two
@@ -426,6 +445,20 @@ export async function buildBoard(
     const key = nc.sym.toUpperCase()
     if (!catalystBySym.has(key)) catalystBySym.set(key, { kind: 'news', side: nc.side, reason: nc.reason, strength: nc.strength })
     addSource(key, 'catalyst:news')
+  }
+  // Fresh listings: a company that just debuted on a US exchange (SK Hynix, say)
+  // has no price history the momentum scanner could find it on. The IPO calendar
+  // nominates recently-priced names as one more GATED candidate source, each with
+  // an 'ipo' catalyst carrying side:null — the relaxed capacity gate, but NO free
+  // directional vote (catalystFactor casts nothing when side is null). Names
+  // younger than ~30 sessions still fail the 30-candle floor below, and that is
+  // correct: the engine will not call a name it cannot yet read. Fail-soft: no
+  // key → [] → the engine is unchanged.
+  const recentIpos = await deps.recentIpos().catch(() => [] as { sym: string; date: string }[])
+  for (const ipo of recentIpos) {
+    const key = ipo.sym.toUpperCase()
+    if (!catalystBySym.has(key)) catalystBySym.set(key, { kind: 'ipo', side: null, reason: `listed ${ipo.date}`, strength: 40 })
+    addSource(key, 'catalyst:ipo')
   }
   for (const sym of watchSyms) addSource(sym, 'watchlist')
   // AI roster nominations: the paper's analyst nominated these for the engine to
