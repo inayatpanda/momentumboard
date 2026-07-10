@@ -498,8 +498,27 @@ export interface EngineData {
     lifetime?: { live: { graded: number; hits: number; sumExcess: number }; shadow: { graded: number; hits: number; sumExcess: number }; since: string }
   } | null
   weights: { base: Record<string, number>; current: Record<string, number>; history: { date: string; changes: Record<string, { from: number; to: number; ic: number }>; evidence: string }[] } | null
+  // buckets are keyed EITHER `${cohort}:${side}:${regime}:${band}` (cohort =
+  // large|small, Phase 2) or the legacy cohortless `${side}:${regime}:${band}`
+  // (seed + unknown-cap grades). Consumers that split the key must parse from the
+  // END (band last) — see CalibrationPlot. Filter by the `${cohort}:` prefix to
+  // build a per-sleeve view.
   calibration: { buckets: Record<string, { n: number; hits: number }>; brier: { date: string; mean: number; n: number }[]; seeded: boolean } | null
-  riskState: { rung: number; sinceDate: string; gradedAtRung: number; history: { date: string; from: number; to: number; evidence: string }[] } | null
+  // top-level = the COMBINED rung (back-compat: every existing screen reads this);
+  // `cohorts` = the per-cap-class rungs added in Phase 2 (the data a two-pane desk
+  // view will read). Absent on a not-yet-migrated blob.
+  riskState:
+    | {
+        rung: number
+        sinceDate: string
+        gradedAtRung: number
+        history: { date: string; from: number; to: number; evidence: string }[]
+        cohorts?: {
+          large: { rung: number; sinceDate: string; gradedAtRung: number; history: { date: string; from: number; to: number; evidence: string }[] }
+          small: { rung: number; sinceDate: string; gradedAtRung: number; history: { date: string; from: number; to: number; evidence: string }[] }
+        }
+      }
+    | null
   roster: { entries: { sym: string; joined: string; source: string; capUsdM: number | null; lastCapacity: number | null }[]; changes: { date: string; joined: string[]; dropped: { sym: string; why: string }[] }[] } | null
   channelCred: Record<string, { graded: number; hits: number; avgExcess: number | null }>
 }

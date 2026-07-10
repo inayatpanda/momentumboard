@@ -1,5 +1,6 @@
 import type { Candle } from '../types'
 import { DEFAULT_WEIGHTS } from './composite'
+import { capCohortOf, type CapCohort, type CapCohortOrUnknown } from './capClass'
 import { clamp, round1, type FactorName, type PredOutcome, type Prediction } from './types'
 
 // The learning loop, all deterministic: outcomes fill calibration buckets
@@ -17,14 +18,50 @@ export const HIT_EXCESS_MIN = 1
 
 /** Bump when the OUTCOME DEFINITION changes (what counts as a hit). Buckets
  * counted under an older definition aren't comparable — loadState discards
- * them for the reseeded calibration when versions differ. */
+ * them for the reseeded calibration when versions differ.
+ *
+ * NOT bumped for Phase 2's cap-class cohorts: cohorts change the bucket KEY
+ * scheme (`${cohort}:${side}:${regime}:${band}` alongside the legacy
+ * `${side}:${regime}:${band}`), never what a hit IS. The legacy cohortless
+ * buckets (and the seed, which is cohortless) stay perfectly valid — they simply
+ * become the pooled/combined rung of the fallback ladder below. Reseeding here
+ * would throw away real graded evidence for no reason. */
 export const CALIB_DEF_VERSION = 2
 
 export interface CalibrationState {
-  buckets: Record<string, BucketStat> // `${side}:${regime}:${band}`
+  // Keys are EITHER cohort-tagged `${cohort}:${side}:${regime}:${band}` (cohort ∈
+  // large|small, written once a graded call's cap is known) OR legacy cohortless
+  // `${side}:${regime}:${band}` (the seed + everything graded before Phase 2, and
+  // still where unknown-cap grades land). probabilityFor's ladder reads both.
+  buckets: Record<string, BucketStat>
   brier: { date: string; mean: number; n: number }[]
   seeded?: boolean
   defVersion?: number
+}
+
+/** Sum the buckets matching a side+band: a specific cohort's tagged keys (4 parts)
+ * when `cohort` is 'large'/'small', or EVERY cohort AND the legacy cohortless keys
+ * (3 parts) when `cohort` is 'any' (the pooled rungs, which include the seed).
+ * `regime: null` matches any regime. */
+function poolBuckets(
+  state: CalibrationState,
+  side: 'long' | 'short',
+  band: Band,
+  cohort: CapCohort | 'any',
+  regime: string | null,
+): BucketStat {
+  const acc: BucketStat = { n: 0, hits: 0 }
+  for (const [key, b] of Object.entries(state.buckets)) {
+    const parts = key.split(':')
+    // legacy cohortless: [side, regime, band]; cohort-tagged: [cohort, side, regime, band]
+    const [kCohort, kSide, kRegime, kBand] = parts.length === 4 ? parts : [null, parts[0], parts[1], parts[2]]
+    if (kSide !== side || kBand !== band) continue
+    if (regime !== null && kRegime !== regime) continue
+    if (cohort !== 'any' && kCohort !== cohort) continue // a named cohort matches only its own tagged keys
+    acc.n += b.n
+    acc.hits += b.hits
+  }
+  return acc
 }
 
 export function bandFor(absComposite: number): Band {
@@ -37,24 +74,47 @@ export function bandFor(absComposite: number): Band {
 const MIN_BUCKET_N = 15
 const laplace = (b: BucketStat) => (b.hits + 2) / (b.n + 4)
 
+/** Calibrated probability with a cohort-aware fallback ladder — the cap-class
+ * analogue of the regime pooling this function has always done. Each rung is used
+ * only once it clears MIN_BUCKET_N; a young cohort (all cohort buckets empty for
+ * MONTHS after launch) simply falls through to the pooled/cohortless rungs, which
+ * INCLUDE the backtest seed — so pooling is the normal path, not the exception.
+ *
+ * The ladder, most-specific first:
+ *   1. this cohort, this regime      `${cohort}:${side}:${regime}:${band}`
+ *   2. this cohort, pooled regimes   `${cohort}:${side}:*:${band}`
+ *   3. all cohorts, this regime      (cohort-tagged + cohortless/seed) at `${regime}`
+ *   4. all cohorts, pooled regimes   (everything for side+band, incl. seed) — terminal
+ *   5. global base rate              (baseHitRate) when even rung 4 is empty
+ * Rungs 1–3 return non-provisional once they clear MIN_BUCKET_N; rung 4 returns
+ * whatever it has (provisional when thin); rung 5 anchors bands with no data at all
+ * (e.g. 70+ before any 70+ call has ever been graded). Unknown-cap calls skip rungs
+ * 1–2 (they were never guessed into a cohort) and start pooled at rung 3. */
 export function probabilityFor(
   state: CalibrationState,
   side: 'long' | 'short',
   regime: string,
   absComposite: number,
+  cohort: CapCohortOrUnknown = 'unknown',
 ): { p: number; n: number; provisional: boolean } {
   const band = bandFor(absComposite)
-  const own = state.buckets[`${side}:${regime}:${band}`]
-  if (own && own.n >= MIN_BUCKET_N) return { p: laplace(own), n: own.n, provisional: false }
-  // pool the band across regimes — regime-specific truth needs evidence first
-  const pooled: BucketStat = { n: 0, hits: 0 }
-  for (const [key, b] of Object.entries(state.buckets)) {
-    if (key.startsWith(`${side}:`) && key.endsWith(`:${band}`)) {
-      pooled.n += b.n
-      pooled.hits += b.hits
-    }
+
+  if (cohort !== 'unknown') {
+    const cohortRegime = poolBuckets(state, side, band, cohort, regime) // rung 1
+    if (cohortRegime.n >= MIN_BUCKET_N) return { p: laplace(cohortRegime), n: cohortRegime.n, provisional: false }
+    const cohortBand = poolBuckets(state, side, band, cohort, null) // rung 2
+    if (cohortBand.n >= MIN_BUCKET_N) return { p: laplace(cohortBand), n: cohortBand.n, provisional: false }
   }
-  return { p: laplace(pooled), n: pooled.n, provisional: pooled.n < MIN_BUCKET_N }
+
+  const allRegime = poolBuckets(state, side, band, 'any', regime) // rung 3
+  if (allRegime.n >= MIN_BUCKET_N) return { p: laplace(allRegime), n: allRegime.n, provisional: false }
+
+  const allBand = poolBuckets(state, side, band, 'any', null) // rung 4
+  if (allBand.n > 0) return { p: laplace(allBand), n: allBand.n, provisional: allBand.n < MIN_BUCKET_N }
+
+  // rung 5: nothing for this side+band anywhere → the engine's own base rate
+  // (baseHitRate is a hoisted declaration below)
+  return { p: baseHitRate(state).rate, n: 0, provisional: true }
 }
 
 /** Pooled hit rate across every bucket — the engine's own base rate under the
@@ -123,10 +183,16 @@ export function gradePrediction(
 
 export function updateCalibration(
   state: CalibrationState,
-  pred: { side: string; regime: string; composite: number },
+  pred: { side: string; regime: string; composite: number; capUsdM?: number | null },
   outcome: PredOutcome,
 ): CalibrationState {
-  const key = `${pred.side}:${pred.regime}:${bandFor(Math.abs(pred.composite))}`
+  // A known cap books into its cohort bucket `${cohort}:${side}:${regime}:${band}`;
+  // an unknown cap books into the LEGACY cohortless `${side}:${regime}:${band}` —
+  // never guessed into a cohort. Unknown grades thus keep feeding the pooled rungs
+  // (3–5) that every cohort falls back to, exactly like the seed does.
+  const cohort = capCohortOf(pred.capUsdM)
+  const tail = `${pred.side}:${pred.regime}:${bandFor(Math.abs(pred.composite))}`
+  const key = cohort === 'unknown' ? tail : `${cohort}:${tail}`
   const b = state.buckets[key] ?? { n: 0, hits: 0 }
   state.buckets[key] = { n: b.n + 1, hits: b.hits + (outcome.hit ? 1 : 0) }
   return state

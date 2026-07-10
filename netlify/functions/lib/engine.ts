@@ -38,7 +38,8 @@ import {
 } from '../../../shared/engine/calibration'
 import { pickDiverse } from '../../../shared/engine/select'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
-import { computeRung, initRisk, mapInstrument, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
+import { computeCohortRung, computeRung, cohortRungOf, initRisk, mapInstrument, migrateRisk, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
+import { capCohortOf, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
 import type { FactorName, FactorScore, PredOutcome, Prediction } from '../../../shared/engine/types'
@@ -256,8 +257,13 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   }
 
   let graded = 0
+  // per-cohort tally of NON-shadow calls graded THIS run — feeds each sleeve's
+  // graded-at-rung counter so it stays honest even while a young cohort pools.
+  const newByCohort: Record<CapCohortOrUnknown, number> = { large: 0, small: 0, unknown: 0 }
   const newlyGraded: { probability: number; outcome5?: PredOutcome; shadow: boolean }[] = []
-  const allOutcomes: OutcomeLite[] = []
+  // each non-shadow outcome carries its cohort so the risk ladder can split large
+  // vs small; unknown-cap calls stay in the combined stream but neither sleeve.
+  const allOutcomes: (OutcomeLite & { cohort: CapCohortOrUnknown })[] = []
   for (const date of index) {
     const preds = (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     let changed = false
@@ -268,10 +274,11 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
         const o = gradePrediction(pred, candles, spy, 5)
         if (o) {
           pred.outcome5 = o
-          updateCalibration(calibration, pred, o)
+          updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
           w = updateIcStats(w, pred, o)
           newlyGraded.push({ probability: pred.probability, outcome5: o, shadow: !!pred.shadow })
           graded++
+          if (!pred.shadow) newByCohort[capCohortOf(pred.capUsdM)]++
           changed = true
         }
       }
@@ -284,7 +291,8 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       }
       // shadows feed calibration/IC above but never the risk ladder — the rung
       // is earned on calls the reader could actually take
-      if (pred.outcome5 && !pred.shadow) allOutcomes.push({ hit: pred.outcome5.hit, stopped: pred.outcome5.stopped, leveraged: !!pred.instrument })
+      if (pred.outcome5 && !pred.shadow)
+        allOutcomes.push({ hit: pred.outcome5.hit, stopped: pred.outcome5.stopped, leveraged: !!pred.instrument, cohort: capCohortOf(pred.capUsdM) })
     }
     if (changed) await store.write(`predictions:${date}`, preds)
   }
@@ -300,8 +308,21 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     b.length >= 10
       ? b.slice(-5).reduce((s, x) => s + x.mean, 0) / 5 <= b.slice(-10, -5).reduce((s, x) => s + x.mean, 0) / 5
       : true
-  const risk = (await store.read<RiskState>('risk-state')) ?? initRisk(today)
-  const nextRisk = computeRung(risk, allOutcomes.slice(-60), graded, brierImproving, cfg?.riskRungOverride ?? null, today)
+  // Risk ladder: the COMBINED rung stays the full non-shadow stream (top-level,
+  // exactly as before — back-compat for every app screen reading riskState.rung),
+  // and each cap-class sleeve earns its own rung from its own outcomes, pooling to
+  // the combined rung while thin. migrateRisk seeds cohorts from a legacy blob.
+  const risk = migrateRisk((await store.read<RiskState>('risk-state')) ?? initRisk(today))
+  const override = cfg?.riskRungOverride ?? null
+  const combinedNext = computeRung(risk, allOutcomes.slice(-60), graded, brierImproving, override, today)
+  const cohortRecent = (c: CapCohortOrUnknown) => allOutcomes.filter(o => o.cohort === c).slice(-60)
+  const nextRisk: RiskState = {
+    ...combinedNext,
+    cohorts: {
+      large: computeCohortRung(risk.cohorts!.large, cohortRecent('large'), newByCohort.large, combinedNext, brierImproving, override, today),
+      small: computeCohortRung(risk.cohorts!.small, cohortRecent('small'), newByCohort.small, combinedNext, brierImproving, override, today),
+    },
+  }
 
   // channels: their calls get graded by the same yardstick as ours
   const extracts = ((await store.read<ExtractLike[]>('video-extracts')) ?? []).slice(-120)
@@ -548,7 +569,9 @@ export async function buildBoard(
   // shared context for factor computation (weights/calibration/channelCred loaded
   // above with the pundit stances, so a high-credibility call could nominate names)
   const engineBaseRate = baseHitRate(calibration).rate
-  const risk = (await store.read<RiskState>('risk-state')) ?? initRisk(today)
+  // per-cohort rungs (migrated from a legacy blob if needed) — each call below
+  // trades at its OWN sleeve's rung; unknown-cap names pool to the combined rung.
+  const risk = migrateRisk((await store.read<RiskState>('risk-state')) ?? initRisk(today))
   const rosterSyms = roster.map(e => e.sym)
   const [insiderCoverage, earningsSet, fundMoves, worldReads] = await Promise.all([
     deps.insiderCoverage(rosterSyms, watchSyms, today),
@@ -646,7 +669,11 @@ export async function buildBoard(
     }
     if (!call) continue
 
-    const { p, provisional } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite))
+    // cap-class cohort drives BOTH the calibration lookup (its own buckets first,
+    // then pooled) and the risk rung below. Unknown cap pools to the cohortless
+    // path and the combined rung — never guessed into a sleeve.
+    const cohort = capCohortOf(entry.capUsdM)
+    const { p, provisional } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort)
     const grade = gradeFor(p, provisional, call.capacityPct, engineBaseRate)
     // grade null = calibration sees no edge in this bucket. The call stays off
     // the paper — but it MUST enter the ledger as a shadow, or buckets below
@@ -657,7 +684,8 @@ export async function buildBoard(
     // any edge INTO prints — half-sizing a coin flip just pollutes the buckets.
     const shadow = !grade || call.earningsRisk
 
-    const instrument = shadow ? null : mapInstrument(call.side, call.sym, grade!, risk.rung, cfg.levMap ?? {})
+    const rung = cohortRungOf(risk, cohort)
+    const instrument = shadow ? null : mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {})
     const callThemes = themesOf(entry.sym)
     board.push({
       ...call,
@@ -672,8 +700,8 @@ export async function buildBoard(
       probability: Math.round(p * 100) / 100,
       provisional,
       grade: grade ?? 'C',
-      riskRung: risk.rung,
-      riskPct: shadow ? 0 : RUNG_RISK_PCT[risk.rung],
+      riskRung: rung,
+      riskPct: shadow ? 0 : RUNG_RISK_PCT[rung],
       instrument,
       paperOnly: call.side === 'short' && !instrument,
       worldTape: { tone: tone.tone, mult: worldMult(tone.tone, call.side) },

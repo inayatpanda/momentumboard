@@ -31,10 +31,17 @@ export function CalibrationPlot({ buckets, seeded }: { buckets: Record<string, B
   const dots = Object.entries(buckets)
     .filter(([, b]) => b.n >= 5)
     .map(([key, b]) => {
-      const [side, regime, band] = key.split(':')
+      // keys are EITHER cohortless `side:regime:band` OR cohort-tagged
+      // `cohort:side:regime:band` (Phase 2). Parse from the END so side/regime/band
+      // stay correct for both, and surface the cohort (if any) in the tooltip.
+      const parts = key.split(':')
+      const band = parts.at(-1)!
+      const regime = parts.at(-2)!
+      const side = parts.at(-3)!
+      const cohort = parts.length === 4 ? parts[0] : null
       const claimed = (b.hits + 2) / (b.n + 4)
       const realized = b.hits / b.n
-      return { key, side, regime, band, n: b.n, hits: b.hits, claimed, realized }
+      return { key, side, regime, band, cohort, n: b.n, hits: b.hits, claimed, realized }
     })
     .sort((a, b) => b.n - a.n) // big dots first, small ones drawn on top
 
@@ -111,7 +118,7 @@ export function CalibrationPlot({ buckets, seeded }: { buckets: Record<string, B
                 strokeWidth={1}
               >
                 <title>
-                  {d.side} · {d.regime} · band {d.band} — claimed {Math.round(d.claimed * 100)}%, realized {Math.round(d.realized * 100)}% ({d.hits}/{d.n})
+                  {d.cohort ? `${d.cohort} · ` : ''}{d.side} · {d.regime} · band {d.band} — claimed {Math.round(d.claimed * 100)}%, realized {Math.round(d.realized * 100)}% ({d.hits}/{d.n})
                 </title>
               </circle>
             ))}

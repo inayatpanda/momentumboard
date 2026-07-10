@@ -66,6 +66,92 @@ describe('probabilityFor', () => {
   })
 })
 
+describe('probabilityFor — cap-class fallback ladder', () => {
+  const hit = { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true }
+  const miss = { excessPct: -2, rawPct: -2, spyPct: 0, stopped: true, hit: false }
+
+  it('rung 1 — the cohort+regime bucket wins once it clears MIN_BUCKET_N', () => {
+    const cal = emptyCal()
+    cal.buckets['large:long:green:25-40'] = { n: 20, hits: 14 } // (14+2)/(20+4)=0.667
+    const r = probabilityFor(cal, 'long', 'green', 30, 'large')
+    expect(r.p).toBeCloseTo(16 / 24, 3)
+    expect(r.provisional).toBe(false)
+    expect(r.n).toBe(20)
+  })
+
+  it('rung 2 — a thin cohort+regime bucket pools across regimes within the cohort', () => {
+    const cal = emptyCal()
+    cal.buckets['large:long:green:25-40'] = { n: 10, hits: 6 } // thin < 15
+    cal.buckets['large:long:red:25-40'] = { n: 10, hits: 6 }
+    const r = probabilityFor(cal, 'long', 'green', 30, 'large') // pooled 20 → (12+2)/(20+4)
+    expect(r.p).toBeCloseTo(14 / 24, 3)
+    expect(r.provisional).toBe(false)
+  })
+
+  it('rung 3 — empty cohort buckets fall through to the cohortless/seed pool (the NORMAL early path)', () => {
+    const cal = emptyCal()
+    cal.buckets['long:green:25-40'] = { n: 100, hits: 40 } // legacy/seed, cohortless
+    // a large-cap call with NO cohort buckets yet uses the cohortless seed evidence
+    const r = probabilityFor(cal, 'long', 'green', 30, 'large')
+    expect(r.p).toBeCloseTo(42 / 104, 3)
+    expect(r.provisional).toBe(false)
+    // rung 3 pools ACROSS cohorts too: add a small-cap bucket, it joins the pool
+    cal.buckets['small:long:green:25-40'] = { n: 10, hits: 5 }
+    const r2 = probabilityFor(cal, 'long', 'green', 30, 'large')
+    expect(r2.p).toBeCloseTo(47 / 114, 3) // (40+5+2)/(100+10+4)
+  })
+
+  it('rung 4 — only a different regime has data → pooled across regimes, provisional when thin', () => {
+    const cal = emptyCal()
+    cal.buckets['long:red:25-40'] = { n: 8, hits: 4 } // cohortless, wrong regime, thin
+    const r = probabilityFor(cal, 'long', 'green', 30, 'large')
+    expect(r.p).toBeCloseTo(6 / 12, 3)
+    expect(r.provisional).toBe(true) // n=8 < 15
+    expect(r.n).toBe(8)
+  })
+
+  it('rung 5 — no bucket for this side+band anywhere → the engine base rate, provisional', () => {
+    const cal = emptyCal()
+    cal.buckets['long:green:25-40'] = { n: 100, hits: 30 }
+    cal.buckets['short:red:25-40'] = { n: 100, hits: 44 } // base rate (74+2)/(200+4)=0.3725
+    // a 70+ band call: nothing has ever been graded in 70+ → anchor to base rate
+    const r = probabilityFor(cal, 'long', 'green', 75, 'large')
+    expect(r.p).toBeCloseTo((74 + 2) / (200 + 4), 4)
+    expect(r.provisional).toBe(true)
+    expect(r.n).toBe(0)
+  })
+
+  it('a KNOWN cohort prefers its own bucket; an UNKNOWN cap skips rungs 1–2 and pools everything', () => {
+    const cal = emptyCal()
+    cal.buckets['large:long:green:25-40'] = { n: 20, hits: 20 } // large cohort: strong
+    cal.buckets['long:green:25-40'] = { n: 20, hits: 4 } // cohortless: weak
+    // large call reads its own bucket (0.917), NOT the weak cohortless one
+    expect(probabilityFor(cal, 'long', 'green', 30, 'large').p).toBeCloseTo(22 / 24, 3)
+    // unknown-cap call was never guessed into large → pools all (large+cohortless)
+    const u = probabilityFor(cal, 'long', 'green', 30, 'unknown')
+    expect(u.p).toBeCloseTo((24 + 2) / (40 + 4), 3) // (20+4)/(20+20) hits over n
+    expect(u.provisional).toBe(false)
+  })
+
+  it('the default cohort arg is unknown → behaves like the old regime-pool for legacy callers', () => {
+    const cal = emptyCal()
+    cal.buckets['long:green:25-40'] = { n: 20, hits: 14 }
+    // no cohort passed → unknown → rung 3 pools the cohortless bucket, same p as before
+    expect(probabilityFor(cal, 'long', 'green', 30).p).toBeCloseTo(16 / 24, 3)
+  })
+
+  it('updateCalibration books into the cohort bucket by cap; unknown cap → the legacy cohortless key', () => {
+    const cal = emptyCal()
+    updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, capUsdM: 50_000 }, hit) // large
+    updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, capUsdM: 500 }, miss) // small
+    updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, capUsdM: null }, hit) // unknown
+    updateCalibration(cal, { side: 'long', regime: 'green', composite: 30 }, hit) // no cap field → unknown
+    expect(cal.buckets['large:long:green:25-40']).toEqual({ n: 1, hits: 1 })
+    expect(cal.buckets['small:long:green:25-40']).toEqual({ n: 1, hits: 0 })
+    expect(cal.buckets['long:green:25-40']).toEqual({ n: 2, hits: 2 }) // both unknowns pooled here
+  })
+})
+
 describe('gradeFor', () => {
   it('with the default 0.5 base: A needs p≥.62, non-provisional AND capacity ≥8; provisional caps at B; <.50 suppressed', () => {
     expect(gradeFor(0.65, false, 10)).toBe('A')

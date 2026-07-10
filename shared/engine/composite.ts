@@ -1,6 +1,7 @@
 import type { RegimeColor } from '../types'
 import type { Stage } from '../technicals'
 import { MODERATE_GATES, type CatalystTag, type Gates } from './catalyst'
+import { SMALL_CAP_MAX_USD_M } from './capClass'
 import { round1, round2, type EngineCall, type FactorName, type FactorScore } from './types'
 
 export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
@@ -79,7 +80,7 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   if (side === 'short' && (input.stage === 'early-reversal' || input.stage === 'pullback')) return null
 
   const expectedMovePct = round1(Math.min(Math.abs(adj) / 100, 0.8) * input.capacityPct)
-  const smallCap = input.capUsdM != null && input.capUsdM < 2000
+  const smallCap = input.capUsdM != null && input.capUsdM < SMALL_CAP_MAX_USD_M
   const stopMult = smallCap ? 2 : 1.5 // small caps gap — give the stop room or it's noise
   const entry = input.lastClose
   const dir = side === 'long' ? 1 : -1

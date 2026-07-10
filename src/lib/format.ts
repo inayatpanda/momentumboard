@@ -1,3 +1,5 @@
+import { CAP_COHORT_LABEL, capCohortOf } from '../../shared/engine/capClass'
+
 export function fmtPrice(price: number, currency: string): string {
   if (currency === 'GBp') return `${price.toFixed(1)}p`
   const sym = currency === 'GBP' ? '£' : currency === 'USD' ? '$' : `${currency} `
@@ -19,11 +21,11 @@ export function capBand(capUsdM: number | null | undefined): string | null {
   return 'large cap'
 }
 
-/** Large- vs small-cap cohort from $M — matches the engine's `smallCap` flag. */
+/** Large- vs small-cap cohort label from $M — delegates to the shared cohort rule
+ * (shared/engine/capClass) so the display sleeves and the engine's learning
+ * cohorts use the SAME $2B boundary and can't drift apart. */
 export function capCohort(capUsdM: number | null | undefined): 'Large-cap' | 'Small-cap' | 'Unknown' {
-  if (capUsdM == null) return 'Unknown'
-  if (capUsdM < 2000) return 'Small-cap'
-  return 'Large-cap'
+  return CAP_COHORT_LABEL[capCohortOf(capUsdM)]
 }
 
 /** Raw fetch/parse exceptions must never reach the screen — "SyntaxError:

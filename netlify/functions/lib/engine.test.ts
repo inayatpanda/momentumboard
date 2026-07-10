@@ -5,6 +5,7 @@ import { memoryStore } from './store'
 import type { Candle } from '../../../shared/types'
 import type { Prediction } from '../../../shared/engine/types'
 import { CALIB_DEF_VERSION, type CalibrationState } from '../../../shared/engine/calibration'
+import type { RiskState } from '../../../shared/engine/riskLadder'
 import type { InsiderSummary } from './insiders'
 import type { FundMoves } from './edgar'
 
@@ -409,6 +410,33 @@ describe('buildBoard', () => {
     expect(call.factors.smartMoney.detail).toContain('Scion')
     expect(call.factors.smartMoney.detail).toContain('45d lag')
   })
+
+  it('per-cohort rung: a large-cap call trades at the LARGE sleeve’s rung, not the combined top-level', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    // combined/top-level parked at R0, but the LARGE sleeve already earned R1.
+    // NVDA's screener cap is 50_000 → large cohort, so it must trade at R1.
+    await store.write('risk-state', {
+      rung: 0,
+      sinceDate: '2026-01-01',
+      gradedAtRung: 0,
+      history: [],
+      cohorts: {
+        large: { rung: 1, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] },
+        small: { rung: 0, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] },
+      },
+    })
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const { board } = await buildBoard(store, deps(), NOW)
+    const call = board.find(b => b.sym === 'NVDA')!
+    expect(call.riskRung).toBe(1) // the large sleeve's rung — NOT the top-level R0
+    expect(call.riskPct).toBe(1.25) // RUNG_RISK_PCT[1]
+    expect(call.instrument).toEqual({ ticker: 'SNVD', leverage: 2 }) // R1 unlocks 2x for an A short
+    expect(call.paperOnly).toBe(false)
+  })
 })
 
 describe('gradeOutstanding', () => {
@@ -453,6 +481,49 @@ describe('gradeOutstanding', () => {
     expect(risk.gradedAtRung).toBe(1)
     const scorecard = (await store.read<{ byGrade: Record<string, { n: number }> }>('engine-scorecard'))!
     expect(scorecard.byGrade.A.n).toBe(1)
+  })
+
+  it('production migration: a legacy rung-0 risk-state + cohortless seeded calibration load and behave; a known-cap grade books into its cohort bucket', async () => {
+    const store = memoryStore()
+    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    const planted: Partial<Prediction> = {
+      id: `${date}:NVDA:short`,
+      date,
+      sym: 'NVDA',
+      side: 'short',
+      composite: -38.9,
+      regime: 'amber',
+      probability: 0.67,
+      provisional: false,
+      grade: 'A',
+      priceAtPrediction: shorty[239].c,
+      entry: shorty[239].c,
+      stop: shorty[239].c * 1.1,
+      target: shorty[239].c * 0.9,
+      instrument: null,
+      capUsdM: 50_000, // LARGE cohort — the grade must book into the large bucket
+      factors: { technical: { score: -30, detail: '', weight: 1 } } as never,
+    }
+    await store.write(`predictions:${date}`, [planted])
+    await store.write('predictions-index', [date])
+    // EXACTLY the shapes live in production today: a cohortless, seeded calibration
+    // blob and a rung-0 risk-state with no `cohorts`.
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 20, hits: 14 } }, brier: [], seeded: true, defVersion: CALIB_DEF_VERSION })
+    await store.write('risk-state', { rung: 0, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
+
+    const { graded } = await gradeOutstanding(store, deps(), NOW, null)
+    expect(graded).toBe(1)
+
+    const cal = (await store.read<CalibrationState>('engine-calibration'))!
+    expect(cal.buckets['large:short:amber:25-40']).toEqual({ n: 1, hits: 1 }) // NEW cohort bucket written
+    expect(cal.buckets['short:amber:25-40']).toEqual({ n: 20, hits: 14 }) // cohortless SEED preserved, never discarded
+    expect(cal.seeded).toBe(true)
+
+    const risk = (await store.read<RiskState>('risk-state'))!
+    expect(risk.cohorts).toBeDefined() // migrated in place
+    expect(risk.cohorts!.large.gradedAtRung).toBe(1) // the one large grade counted to its own sleeve
+    expect(risk.cohorts!.small.gradedAtRung).toBe(0) // small sleeve untouched
+    expect(risk.gradedAtRung).toBe(1) // combined counter still advances (back-compat)
   })
 })
 
