@@ -2,9 +2,12 @@ import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 import { sendTelegram } from './lib/telegram'
 import { parseCallText, toExtract, type PunditExtract } from './lib/punditCalls'
+import { generateLicenceKey, type Licence } from './lib/auth'
 
-/** Two-way Telegram commands: /status /portfolio /mute [hours] /unmute /report.
- * Authenticated via Telegram's secret_token header, set at webhook registration. */
+/** Two-way Telegram commands: /status /portfolio /mute [hours] /unmute /report
+ * /call /key /revoke. Authenticated via Telegram's secret_token header (set at
+ * webhook registration) AND pinned to the owner's chat id — which is what makes
+ * the licence-minting commands safe to expose here. */
 export async function routeTelegramWebhook(
   headers: Headers,
   bodyText: string | null,
@@ -60,8 +63,50 @@ export async function routeTelegramWebhook(
     } else {
       await reply('Usage: /call obi $TSLA long [$PLTR short] or /call obi <forwarded text>')
     }
+  } else if (text === '/key' || text.startsWith('/key ')) {
+    // mint a full (non-expiring) licence from the Helm chat: /key <label>
+    // (exact-prefix match so /keys falls through to the list command below)
+    const label = rawText.split(/\s+/).slice(1).join(' ').slice(0, 40)
+    if (!label) {
+      await reply('Usage: /key <label> — e.g. /key PK. Mints a lifetime licence and replies with its unlock link.')
+    } else {
+      const licences = (await store.read<Licence[]>('licences')) ?? []
+      if (licences.filter(l => !l.revoked && !l.trial).length >= 25) {
+        await reply('Licence cap reached (25 active) — /revoke one first.')
+      } else {
+        const lic: Licence = { key: generateLicenceKey(), label, createdAt: nowSec }
+        licences.push(lic)
+        await store.write('licences', licences)
+        await reply(`🔑 ${label} — one tap unlocks their device for life:\n${env.URL ?? 'https://thestreetsignal.netlify.app'}/?key=${lic.key}\n/revoke ${label} kills it later.`)
+      }
+    }
+  } else if (text.startsWith('/revoke')) {
+    const q = rawText.split(/\s+/).slice(1).join(' ').trim().toLowerCase()
+    if (!q) {
+      await reply('Usage: /revoke <label or key prefix>')
+    } else {
+      const licences = (await store.read<Licence[]>('licences')) ?? []
+      const matches = licences.filter(l => !l.revoked && (l.label.toLowerCase() === q || l.key.toLowerCase().startsWith(q)))
+      if (!matches.length) {
+        await reply(`No active licence matches "${q}". /keys lists them.`)
+      } else if (matches.length > 1) {
+        await reply(`Ambiguous — ${matches.length} active licences match: ${matches.map(m => m.label).join(', ')}. Revoke by key prefix instead.`)
+      } else {
+        matches[0].revoked = true
+        await store.write('licences', licences)
+        await reply(`🚫 Revoked "${matches[0].label}". Takes ~1 min to bite on their device.`)
+      }
+    }
+  } else if (text.startsWith('/keys')) {
+    const licences = (await store.read<Licence[]>('licences')) ?? []
+    const active = licences.filter(l => !l.revoked)
+    await reply(
+      active.length
+        ? active.map(l => `${l.trial ? '⏳' : '🔑'} ${l.label} · ${l.key.slice(0, 10)}…${l.expiresAt ? ` · expires ${new Date(l.expiresAt * 1000).toISOString().slice(0, 10)}` : ''}`).join('\n')
+        : 'No active licences.',
+    )
   } else if (text.startsWith('/')) {
-    await reply('Commands: /status /portfolio /mute [hours] /unmute /report /call')
+    await reply('Commands: /status /portfolio /mute [hours] /unmute /report /call /key <label> /keys /revoke <label>')
   }
   return new Response('ok')
 }
