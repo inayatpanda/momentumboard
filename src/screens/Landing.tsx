@@ -37,7 +37,7 @@ const FEATURES: Feature[] = [
   },
 ]
 
-export function Landing({ onUnlocked }: { onUnlocked: () => void }) {
+export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => void; licensed?: boolean }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -104,30 +104,40 @@ export function Landing({ onUnlocked }: { onUnlocked: () => void }) {
               automatically.
             </p>
 
-            <button className="landing-trial-btn" onClick={beginTrial} disabled={pending}>
-              {pending ? 'Setting up your access…' : 'Start free access — 7 days'}
-            </button>
-            <p className="landing-trial-note">
-              No card, no signup — a 7-day reader pass for this device. After that, licences are
-              issued privately through the Helm.
-            </p>
-            {error && <p className="landing-error" role="alert">{error}</p>}
+            {licensed ? (
+              <>
+                {/* the licensed reader browsing the public site — no gate, just the way back */}
+                <button className="landing-trial-btn" onClick={onUnlocked}>Open the app</button>
+                <p className="landing-trial-note">This device is already licensed — you were viewing the public site.</p>
+              </>
+            ) : (
+              <>
+                <button className="landing-trial-btn" onClick={beginTrial} disabled={pending}>
+                  {pending ? 'Setting up your access…' : 'Start free access — 7 days'}
+                </button>
+                <p className="landing-trial-note">
+                  No card, no signup — a 7-day reader pass for this device. After that, licences are
+                  issued privately through the Helm.
+                </p>
+                {error && <p className="landing-error" role="alert">{error}</p>}
 
-            <div className="landing-or">Already have a licence?</div>
-            <form
-              className="landing-key-form"
-              onSubmit={e => {
-                e.preventDefault()
-                const t = new FormData(e.currentTarget).get('t') as string
-                if (t && t.trim()) {
-                  setToken(t.trim())
-                  onUnlocked()
-                }
-              }}
-            >
-              <input name="t" type="password" placeholder="Licence key" autoComplete="off" />
-              <button>Unlock</button>
-            </form>
+                <div className="landing-or">Already have a licence?</div>
+                <form
+                  className="landing-key-form"
+                  onSubmit={e => {
+                    e.preventDefault()
+                    const t = new FormData(e.currentTarget).get('t') as string
+                    if (t && t.trim()) {
+                      setToken(t.trim())
+                      onUnlocked()
+                    }
+                  }}
+                >
+                  <input name="t" type="password" placeholder="Licence key" autoComplete="off" />
+                  <button>Unlock</button>
+                </form>
+              </>
+            )}
           </div>
         </section>
 

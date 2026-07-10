@@ -47,6 +47,12 @@ export default function App() {
   // licence gate: no token → the public landing page. main.tsx consumes ?key=
   // unlock links before React mounts, so licensed arrivals never see it.
   const [licensed, setLicensed] = useState(() => !!getToken())
+  // browser-tab vs installed-app disambiguation: same URL serves both, which
+  // confuses readers who typed the address. In a plain tab we say so and offer
+  // the public site; the installed app (standalone) never shows any of this.
+  const inBrowserTab = typeof window !== 'undefined' && !window.matchMedia('(display-mode: standalone)').matches
+  const [siteView, setSiteView] = useState(false)
+  const [browserNoteDismissed, setBrowserNoteDismissed] = useState(() => sessionStorage.getItem('mb-browser-note') === '1')
 
   // boot check: a token the server rejects (revoked, or an expired trial) sends
   // the reader back to the landing page instead of a screen of failed requests.
@@ -117,6 +123,11 @@ export default function App() {
     return <Landing onUnlocked={() => setLicensed(true)} />
   }
 
+  // a licensed reader who chose "View website" from the browser strip
+  if (siteView) {
+    return <Landing licensed onUnlocked={() => setSiteView(false)} />
+  }
+
   // the Desk is full-bleed — it renders outside the 560px .shell and without the
   // tab bar (it carries its own navigation and a "Standard view" escape hatch).
   if (view.screen === 'desk') {
@@ -143,6 +154,21 @@ export default function App() {
   return (
     <NavContext.Provider value={{ active, navigate }}>
     <div className="shell" key={syncTick}>
+      {inBrowserTab && !isWide && !browserNoteDismissed && (
+        <div className="browser-note" role="note">
+          <span>Browser view — the installed app has its own icon.</span>
+          <button onClick={() => setSiteView(true)}>View website</button>
+          <button
+            aria-label="Dismiss"
+            onClick={() => {
+              sessionStorage.setItem('mb-browser-note', '1')
+              setBrowserNoteDismissed(true)
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={screenKey}
