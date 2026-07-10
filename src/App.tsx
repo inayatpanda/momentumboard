@@ -97,6 +97,18 @@ export default function App() {
         const home: View = window.matchMedia('(min-width: 1200px)').matches ? { screen: 'desk' } : { screen: 'watchlist' }
         if (v.screen === home.screen) return v // already home: let the next back exit
         consumed = true
+        // retrace, don't teleport: a chart returns to whatever opened it, the
+        // reading sections return to their More menu, everything else goes home
+        if (v.screen === 'detail') {
+          const f = v.from
+          if (f === 'ledger') return { screen: 'ledger' }
+          if (f && f !== 'detail' && f !== 'settings' && f !== home.screen) return { screen: f } as View
+          return home
+        }
+        if (v.screen === 'settings') return v.from && v.from !== 'detail' && v.from !== home.screen ? ({ screen: v.from } as View) : home
+        if (v.screen === 'research' || v.screen === 'reports' || v.screen === 'intel' || v.screen === 'calendar' || v.screen === 'ledger') {
+          return { screen: 'more' }
+        }
         return home
       })
       // re-arm the buffer only when the back was used for in-app navigation
