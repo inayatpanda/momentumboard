@@ -6,6 +6,7 @@
 
 export interface Idea {
   ticker: string
+  name?: string // company display name, enriched post-compose from the cap cache (fail-soft)
   side: 'long' | 'short'
   playbook: 'R' | 'B' | 'A' | 'S'
   caseText: string
@@ -199,6 +200,7 @@ export interface IpoListingRow {
 
 export interface BoardRow {
   sym: string
+  name?: string // company display name, enriched post-compose (fail-soft)
   side: 'long' | 'short'
   grade: 'A' | 'B' | 'C'
   provisional: boolean
@@ -475,6 +477,35 @@ export function sectorBarsSvg(bars: { name: string; rs21: number | null }[], w =
   return `<svg width="100%" viewBox="0 0 ${w} ${rows.length * rowH + 4}" aria-label="Sector relative strength vs SPY, one month"><line x1="${mid}" y1="0" x2="${mid}" y2="${rows.length * rowH}" stroke="#d8d2c4"/>${items}</svg>`
 }
 
+/** Email-safe sector heatmap — Gmail STRIPS <svg>, so the sector read is typeset
+ * as an all-inline-styles <table>. Each cell tints green/red by rs21 sign and
+ * magnitude AND prints the sector name + numeric value, so the data never
+ * depends on colour alone (accessible + survives every mail client). One row up
+ * to six sectors, two balanced rows beyond that. */
+export function sectorHeatTable(bars: { name: string; rs21: number | null }[]): string {
+  const rows = bars.filter(b => b.rs21 != null)
+  if (!rows.length) return ''
+  const maxAbs = Math.max(...rows.map(b => Math.abs(b.rs21!)), 1)
+  const perRow = rows.length > 6 ? Math.ceil(rows.length / 2) : rows.length
+  const cell = (b: { name: string; rs21: number | null }) => {
+    const v = b.rs21!
+    const alpha = (0.1 + (Math.abs(v) / maxAbs) * 0.4).toFixed(3) // print-adjacent tints from the paper palette
+    const bg = v >= 0 ? `rgba(12,122,85,${alpha})` : `rgba(176,48,64,${alpha})`
+    const vColor = v >= 0 ? '#0c7a55' : '#b03040'
+    return `<td style="width:${(100 / perRow).toFixed(2)}%;padding:9px 6px;border:1px solid #e6e0d2;background:${bg};text-align:center;vertical-align:middle">` +
+      `<div style="font-size:11px;letter-spacing:.03em;color:#191713;line-height:1.25">${esc(b.name)}</div>` +
+      `<div style="font-variant-numeric:tabular-nums;font-weight:700;font-size:13px;color:${vColor}">${v >= 0 ? '+' : ''}${v}</div>` +
+      `</td>`
+  }
+  const trs: string[] = []
+  for (let i = 0; i < rows.length; i += perRow) {
+    const chunk = rows.slice(i, i + perRow)
+    while (chunk.length < perRow) chunk.push({ name: '', rs21: null }) // pad so column widths stay even
+    trs.push(`<tr>${chunk.map(c => (c.rs21 == null ? `<td style="width:${(100 / perRow).toFixed(2)}%;border:0"></td>` : cell(c))).join('')}</tr>`)
+  }
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed;margin:4px 0 6px" aria-label="Sector relative strength vs S&amp;P 500, one month (pp)"><tbody>${trs.join('')}</tbody></table>`
+}
+
 // ---------- the paper ----------
 
 // models sometimes hand back arrays where strings were asked for — coerce, never crash
@@ -498,21 +529,63 @@ const paras = (s: unknown) =>
     .join('')
 
 const REGIME_COLOR: Record<string, string> = { green: '#0c7a55', amber: '#8a6510', red: '#b03040' }
+const PLAYBOOK_LABEL: Record<string, string> = { R: 'Reversal', B: 'Breakout', A: 'Accumulate', S: 'Short' }
 const num = (v: number | null | undefined, dp = 1) => (v == null ? '·' : v.toFixed(dp))
 
 export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: PaperExtras = {}): string {
   const dept = (title: string, body: string) => (body ? `<section class="dept"><h2>${title}</h2>${body}</section>` : '')
   const wide = (title: string, body: string) => (body ? `<section class="dept wide"><h2>${title}</h2>${body}</section>` : '')
 
-  const ideasRows = r.ideas
-    .map(
-      i => `<tr${i.strength === 'strong' ? ' class="strong"' : ''}>
-<td class="tk">${esc(i.ticker)}${i.side === 'short' ? ' <span class="short">SHORT</span>' : ''}</td>
-<td>${esc(i.playbook)}</td>
-<td>${esc(i.caseText)}${i.expectedMove || i.streetCheck ? `<div class="reasons">${i.expectedMove ? `<strong>Potential:</strong> ${esc(i.expectedMove)} ` : ''}${i.chartRead ? `· <strong>Chart:</strong> ${esc(i.chartRead)} ` : ''}${i.streetCheck ? `· <strong>Street:</strong> ${esc(i.streetCheck)}` : ''}</div>` : ''}${i.strength === 'strong' && i.reasons?.length ? `<div class="reasons"><strong>I STRONGLY SUGGEST — </strong>${i.reasons.map((t, n) => `${n + 1}) ${esc(t)}`).join(' ')}</div>` : ''}</td>
-<td class="num">${esc(i.entry)}</td><td class="num">${esc(i.invalidation)}</td><td class="num">${esc(i.target)}</td><td class="num">${esc(i.conviction)}</td></tr>`,
-    )
-    .join('')
+  // Today's Ideas — a full-width STACKED block per idea (was a 7-column table
+  // that crushed the prose into a skinny column, making 1500px-tall rows).
+  // Email-safe: tables + inline styles only, no flex/grid (Gmail strips both).
+  const levelCell = (label: string, value: string, last = false) =>
+    `<td style="padding:5px 16px 5px 14px;${last ? '' : 'border-right:1px solid #e6e0d2;'}vertical-align:top">` +
+    `<div style="font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#6b6257;margin-bottom:1px">${label}</div>` +
+    `<div style="font-variant-numeric:tabular-nums;font-size:14.5px;font-weight:600;color:#191713;white-space:nowrap">${value}</div></td>`
+
+  const ideaBlock = (i: Idea) => {
+    const isShort = i.side === 'short'
+    const sideColor = isShort ? '#b03040' : '#0c7a55'
+    const sideMark = isShort ? '&#9660; SHORT' : '&#9650; LONG'
+    const play = PLAYBOOK_LABEL[i.playbook] ?? esc(i.playbook)
+    const header =
+      `<div style="line-height:1.5;margin-bottom:2px">` +
+      `<span style="font-weight:700;font-size:17px;letter-spacing:.02em;color:#191713">${esc(i.ticker)}</span>` +
+      (i.name ? `<span style="color:#6b6257;font-size:14px"> &middot; ${esc(i.name)}</span>` : '') +
+      `<span style="color:${sideColor};font-weight:700;font-size:12px;letter-spacing:.06em;margin-left:9px">${sideMark}</span>` +
+      `<span style="border:1px solid #d8d2c4;border-radius:3px;padding:1px 6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#6b6257;margin-left:9px">${play}</span>` +
+      `<span style="border:1px solid #191713;border-radius:3px;padding:1px 6px;font-size:10px;letter-spacing:.06em;color:#191713;margin-left:6px">Grade ${esc(i.conviction)}</span>` +
+      (i.strength === 'strong' ? `<span style="color:#8a6510;font-weight:700;font-size:11px;letter-spacing:.06em;margin-left:6px">&#9733; STRONG</span>` : '') +
+      `</div>`
+    const levels =
+      `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 11px;background:rgba(25,23,19,.03);border:1px solid #e6e0d2"><tbody><tr>` +
+      levelCell('Entry', esc(i.entry)) +
+      levelCell('Invalidation', esc(i.invalidation)) +
+      levelCell('Target', esc(i.target)) +
+      levelCell('Potential', i.expectedMove ? esc(i.expectedMove) : '&middot;', true) +
+      `</tr></tbody></table>`
+    const reasons =
+      i.reasons?.length
+        ? `<div class="reasons" style="margin-top:7px;font-size:13px;color:#3d382f;line-height:1.55">` +
+          (i.strength === 'strong' ? `<strong>I STRONGLY SUGGEST &mdash; </strong>` : `<strong>Why:</strong> `) +
+          i.reasons.map((t, n) => `${n + 1}) ${esc(t)}`).join(' ') +
+          `</div>`
+        : ''
+    const annot = [
+      i.chartRead ? `<strong>Chart:</strong> ${esc(i.chartRead)}` : '',
+      i.streetCheck ? `<strong>Street:</strong> ${esc(i.streetCheck)}` : '',
+    ]
+      .filter(Boolean)
+      .join(' &nbsp;&middot;&nbsp; ')
+    const body =
+      `<div style="max-width:68ch;font-size:14.5px;line-height:1.62;color:#191713">` +
+      `<p style="margin:0">${esc(i.caseText)}</p>${reasons}` +
+      (annot ? `<div style="margin-top:6px;font-size:12.5px;color:#6b6257">${annot}</div>` : '') +
+      `</div>`
+    return `<div class="idea"${i.strength === 'strong' ? ' data-strong="1"' : ''} style="padding:14px 0 16px;border-bottom:1px solid #d8d2c4">${header}${levels}${body}</div>`
+  }
+  const ideaBlocks = `<div class="ideas-wrap">${r.ideas.map(ideaBlock).join('')}</div>`
 
   const calendarRows = (x.calendar ?? [])
     .slice(0, 6)
@@ -590,13 +663,14 @@ body{margin:0;background:#f7f4ec;color:#191713;font:16px/1.65 Georgia,'Times New
 table{width:100%;border-collapse:collapse;font-size:14px;margin:4px 0 8px}
 th{font-size:11px;letter-spacing:.14em;text-transform:uppercase;text-align:left;border-bottom:1px solid #191713;padding:6px 8px}
 td{border-bottom:1px solid #d8d2c4;padding:7px 8px;vertical-align:middle}
-table.ideas{table-layout:fixed}
-table.ideas th:nth-child(1){width:9%}table.ideas th:nth-child(2){width:6%}table.ideas th:nth-child(3){width:43%}table.ideas th:nth-child(4),table.ideas th:nth-child(5),table.ideas th:nth-child(6){width:12%}table.ideas th:nth-child(7){width:6%}
-table.ideas td{white-space:normal}table.ideas td.num{white-space:normal;overflow-wrap:break-word}
+.ideas-wrap{margin:2px 0 6px}
+.idea:last-child{border-bottom:0!important}
+.idea[data-strong="1"]{background:rgba(12,122,85,.05);border-radius:4px;padding-left:12px!important;padding-right:12px!important}
+.heatcap{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b6257;margin-bottom:6px}
+.subtle{color:#6b6257;font-size:11.5px;font-weight:400}
 .tk{font-weight:700;white-space:nowrap}.short{color:#b03040;font-size:10.5px;letter-spacing:.08em}
 .num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .up{color:#0c7a55}.dn{color:#b03040}
-tr.strong td{background:rgba(12,122,85,.06)}
 .reasons{margin-top:6px;font-size:13px;color:#3d382f}
 .chip{font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #d8d2c4;border-radius:3px;padding:1px 5px;color:#6b6257}
 .chip.hi{color:#b03040;border-color:#b03040}
@@ -659,7 +733,10 @@ ${
 <div class="cols">
 ${wide(
     'Markets at a Glance',
-    `<div class="glance">${x.spyCloses?.length ? `<figure>${sparklineSvg(x.spyCloses, 300, 64, 'auto')}<figcaption>S&amp;P 500 · three months</figcaption></figure>` : ''}${x.sectorBars?.length ? `<figure style="flex:1;min-width:280px">${sectorBarsSvg(x.sectorBars)}<figcaption>Sector strength vs S&amp;P · one month (pp)</figcaption></figure>` : ''}</div>`,
+    // SPY sparkline is SVG (web-only; Gmail strips it — acceptable, price trend is
+    // colour to taste). The SECTOR read is the email-safe heatmap TABLE so the
+    // rotation data survives Gmail, where the old sector SVG vanished entirely.
+    `${x.spyCloses?.length ? `<figure style="margin:0 0 14px">${sparklineSvg(x.spyCloses, 300, 64, 'auto')}<figcaption>S&amp;P 500 · three months</figcaption></figure>` : ''}${x.sectorBars?.length ? `<div><div class="heatcap">Sector strength vs S&amp;P · one month (pp)</div>${sectorHeatTable(x.sectorBars)}</div>` : ''}`,
   )}
 ${
     x.engineBoard?.length
@@ -668,7 +745,7 @@ ${
           `<table><thead><tr><th>Ticker</th><th>Side</th><th>Grade</th><th>Prob.</th><th>Entry</th><th>Stop</th><th>Target</th><th>~Move</th><th>Route</th></tr></thead><tbody>${x.engineBoard
             .map(
               b =>
-                `<tr><td><b>${esc(b.sym)}</b></td><td>${b.side === 'long' ? 'LONG' : 'SHORT'}</td><td>${b.grade}${b.provisional ? '·prov' : ''}</td><td class="num">${Math.round(b.probability * 100)}%</td><td class="num">${b.entry}</td><td class="num">${b.stop}</td><td class="num">${b.target}</td><td class="num">~${b.expectedMovePct}%</td><td>${
+                `<tr><td><b>${esc(b.sym)}</b>${b.name ? `<br><span class="subtle">${esc(b.name)}</span>` : ''}</td><td>${b.side === 'long' ? 'LONG' : 'SHORT'}</td><td>${b.grade}${b.provisional ? '·prov' : ''}</td><td class="num">${Math.round(b.probability * 100)}%</td><td class="num">${b.entry}</td><td class="num">${b.stop}</td><td class="num">${b.target}</td><td class="num">~${b.expectedMovePct}%</td><td>${
                   b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
                 }${b.earningsRisk ? ' · earnings' : ''}</td></tr>`,
             )
@@ -680,13 +757,11 @@ ${dept('Portfolio Desk', paras(r.portfolioDesk))}
 ${dept('The Tape', paras(r.tape))}
 ${
     calendarRows
-      ? wide('On the Calendar — What to Expect', `<table><thead><tr><th>Event</th><th>Ccy</th><th>When</th><th>Forecast</th><th>Previous</th></tr></thead><tbody>${calendarRows}</tbody></table>`)
+      ? wide('On the Calendar — What to Expect', `<table><thead><tr><th>Event</th><th style="width:54px">Ccy</th><th style="width:130px">When</th><th style="width:92px">Forecast</th><th style="width:92px">Previous</th></tr></thead><tbody>${calendarRows}</tbody></table>`)
       : ''
   }
 ${
-    r.ideas.length
-      ? wide("Today's Ideas", `<table class="ideas"><thead><tr><th>Ticker</th><th>Play</th><th>The case</th><th>Entry</th><th>Invalidation</th><th>Target</th><th>Grade</th></tr></thead><tbody>${ideasRows}</tbody></table>`)
-      : ''
+    r.ideas.length ? wide("Today's Ideas", ideaBlocks) : ''
   }
 <div class="pull">&ldquo;${esc(pull)}&rdquo;</div>
 ${dept('The Short Desk', paras(r.shortDesk))}
@@ -700,7 +775,7 @@ ${
   }
 ${
     ipoRows
-      ? wide('New Listings — Fresh on the Tape', `<table><thead><tr><th>Ticker</th><th>Company</th><th>Date</th><th>Status</th></tr></thead><tbody>${ipoRows}</tbody></table>`)
+      ? wide('New Listings — Fresh on the Tape', `<table><thead><tr><th style="width:74px">Ticker</th><th>Company</th><th style="width:96px">Date</th><th style="width:150px">Status</th></tr></thead><tbody>${ipoRows}</tbody></table>`)
       : ''
   }
 ${dept('Crypto Wire', paras(r.crypto))}

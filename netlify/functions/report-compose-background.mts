@@ -2,7 +2,7 @@ import { blobAppStore } from './lib/store'
 import { authenticate } from './lib/auth'
 import { callLlm } from './lib/llm'
 import { composePrompt, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, validateNominations, mergeNominations, type StoredNomination } from './lib/newspaper'
-import { cachedQuote, cachedCandles } from './lib/marketCache'
+import { cachedQuote, cachedCandles, cachedCompanyName } from './lib/marketCache'
 import { regimeFromCandles } from '../../shared/setups'
 import type { AppConfig } from '../../shared/config'
 
@@ -239,6 +239,7 @@ export default async (req: Request) => {
       // the board typeset in code — grades and levels never depend on the LLM
       engineBoard: (engineBoard ?? []).map(b => ({
         sym: b.sym,
+        name: undefined as string | undefined, // enriched below from the cap cache
         side: b.side,
         grade: b.grade,
         provisional: b.provisional,
@@ -354,6 +355,18 @@ export default async (req: Request) => {
     const priorNoms = (await blobAppStore.read<StoredNomination[]>('ai-nominations')) ?? []
     await blobAppStore.write('ai-nominations', mergeNominations(priorNoms, freshNoms, dateISO, nowSec))
     console.log('COMPOSE: nominations', freshNoms.map(n => n.sym).join(',') || 'none')
+
+    // ---- company names: never show the reader a bare ticker ----
+    // Enrich the FINALISED ideas and the engine-board rows from the cap cache
+    // (read-only, no network call), in parallel and fail-soft — a miss just omits
+    // the name. LSE symbols like RR.L pass through the lookup unchanged.
+    try {
+      const nameSyms = [...new Set([...composed.ideas.map(i => i.ticker), ...extras.engineBoard.map(b => b.sym)])]
+      const names = new Map(await Promise.all(nameSyms.map(async sym => [sym, await cachedCompanyName(sym).catch(() => null)] as const)))
+      for (const i of composed.ideas) { const n = names.get(i.ticker); if (n) i.name = n }
+      for (const b of extras.engineBoard) { const n = names.get(b.sym); if (n) b.name = n }
+      console.log('COMPOSE: named', [...names.entries()].filter(([, n]) => n).length, 'of', nameSyms.length)
+    } catch { /* names are best-effort — the paper publishes without them */ }
 
     // ---- publish through the same pipe the routine uses ----
     const html = buildNewspaperHtml(composed, dateLabel, extras)

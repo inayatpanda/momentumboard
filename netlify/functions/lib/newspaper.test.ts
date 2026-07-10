@@ -8,7 +8,7 @@ const sample: ComposedReport = {
   portfolioDesk: 'Journal empty; nothing to review.',
   tape: 'SPY above both averages; regime green.',
   ideas: [
-    { ticker: 'NBIS', side: 'long', playbook: 'R', caseText: 'Base reclaim on volume', entry: '52.40', invalidation: '48.90', target: '61', conviction: 'B' },
+    { ticker: 'NBIS', name: 'Nebius Group', side: 'long', playbook: 'R', caseText: 'Base reclaim on volume', entry: '52.40', invalidation: '48.90', target: '61', conviction: 'B' },
     { ticker: 'XLE', side: 'short', playbook: 'S', caseText: 'Overextended vs 20-day', entry: '3CRS.L', invalidation: 'oil > 84', target: '-6%', conviction: 'C', strength: 'strong', reasons: ['RSI 81', 'analogues fade', 'rotation out'] },
   ],
   shortDesk: 'One clean fade (see table).',
@@ -44,6 +44,25 @@ describe('buildNewspaperHtml', () => {
     expect(html).toContain('I STRONGLY SUGGEST')
     expect(html).toContain('NBIS')
     expect(html).toContain('SHORT')
+  })
+  it('renders ideas as stacked blocks: company name, level labels, no legacy table header', () => {
+    expect(html).toContain('Nebius Group') // company name enriched onto the idea
+    expect(html).toContain('class="idea"') // stacked block, not a 7-column row
+    for (const label of ['Entry', 'Invalidation', 'Target', 'Potential']) expect(html).toContain(`>${label}</div>`)
+    expect(html).toContain('Reversal') // playbook badge label, not the bare letter 'R'
+    expect(html).toContain('Grade B') // conviction chip
+    expect(html).not.toContain('The case') // the old THE CASE / prose column header is gone
+    expect(html).not.toContain('class="ideas"') // the crushing fixed-layout table is gone
+  })
+  it('renders the sector heatmap as an email-safe tinted table with names + values (no svg dependency)', () => {
+    const withHeat = buildNewspaperHtml(sample, 'x', { sectorBars: [{ name: 'Technology', rs21: 3.2 }, { name: 'Energy', rs21: -1.5 }, { name: 'Utilities', rs21: null }] })
+    expect(withHeat).toContain('Technology')
+    expect(withHeat).toContain('+3.2') // value shown, never colour-alone
+    expect(withHeat).toContain('Energy')
+    expect(withHeat).toContain('-1.5')
+    expect(withHeat).toContain('rgba(12,122,85') // green tint for positive rs21
+    expect(withHeat).toContain('rgba(176,48,64') // red tint for negative rs21
+    expect(withHeat).not.toContain('Utilities') // null rs21 dropped, not rendered
   })
   it('escapes html in model output and omits empty departments', () => {
     expect(html).toContain('&lt;angle brackets&gt;')
