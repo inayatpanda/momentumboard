@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { resolveChannel, getLicences, createLicence, revokeLicence, getLlmKeyStatus, putLlmKey } from '../lib/api'
+import { resolveChannel, getLicences, createLicence, revokeLicence, getLlmKeyStatus, putLlmKey, apiGet, putConfig } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { enablePush, pushSupported, type PushStatus } from '../lib/push'
 import { IconBack, IconBell, IconSun, IconMoon } from '../components/icons'
+import type { AppConfig } from '../../shared/config'
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
 function ByoAiKey() {
   // Licensees run AI features on THEIR OWN key (free at console.groq.com);
@@ -109,6 +112,88 @@ function LicenceManager() {
         </div>
         <p className="empty-line" style={{ fontSize: 11 }}>
           Each licence unlocks the app with its OWN watchlist and data. Licensees get everything except your Telegram alerts and the personalised morning report. Revoking a key locks that user out instantly. Your key is the admin key; this panel exists only for you.
+        </p>
+      </div>
+    </>
+  )
+}
+
+function ReportRecipients() {
+  // Admin-managed extra recipients for the morning report + intraday bulletins,
+  // unioned server-side with the env REPORT_EMAIL_TO list. Lives in AppConfig
+  // (reportRecipients), so it round-trips through the same /api/config PUT the
+  // rest of AppConfig uses — read-modify-write against the freshest server copy
+  // rather than the phone's local mirror, since this field has no local table.
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [recipients, setRecipients] = useState<string[]>([])
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [invalid, setInvalid] = useState(false)
+
+  const load = () =>
+    getLicences()
+      .then(async () => {
+        setIsAdmin(true)
+        const cfg = await apiGet<AppConfig | null>('/api/config').catch(() => null)
+        setRecipients(cfg?.reportRecipients ?? [])
+      })
+      .catch(() => setIsAdmin(false))
+  useEffect(() => {
+    load()
+  }, [])
+
+  if (!isAdmin) return null // only the admin key sees this section
+
+  const persist = async (next: string[]) => {
+    setBusy(true)
+    try {
+      const current = (await apiGet<AppConfig | null>('/api/config').catch(() => null)) ?? { watchlist: [], rules: [], ytChannels: [], capital: 5000 }
+      await putConfig({ ...current, reportRecipients: next })
+      setRecipients(next)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const addRecipient = async () => {
+    const addr = email.trim().toLowerCase()
+    if (!EMAIL_RE.test(addr)) {
+      setInvalid(true)
+      return
+    }
+    setInvalid(false)
+    if (!recipients.includes(addr)) await persist([...recipients, addr])
+    setEmail('')
+  }
+
+  const removeRecipient = async (addr: string) => {
+    await persist(recipients.filter(r => r !== addr))
+  }
+
+  return (
+    <>
+      <h3 className="section-title">Report recipients (admin)</h3>
+      <div className="settings-grid">
+        {recipients.map(r => (
+          <div key={r} className="chan-row">
+            <span>{r}</span>
+            <button className="remove" onClick={() => removeRecipient(r)} disabled={busy} aria-label={`Remove ${r}`}>✕</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            type="email"
+            placeholder="name@example.com"
+            value={email}
+            onChange={e => { setEmail(e.target.value); setInvalid(false) }}
+            style={{ flex: 1 }}
+            aria-label="Add report recipient email"
+          />
+          <button className="mini-btn" disabled={busy} onClick={addRecipient}>{busy ? '…' : 'Add'}</button>
+        </div>
+        {invalid && <p className="empty-line" style={{ fontSize: 11, color: 'var(--red)' }}>Enter a valid email address.</p>}
+        <p className="empty-line" style={{ fontSize: 11 }}>
+          Extra addresses that get the morning report and intraday bulletins, added on top of the REPORT_EMAIL_TO env recipients.
         </p>
       </div>
     </>
@@ -246,6 +331,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
         <ByoAiKey />
         <LicenceManager />
+        <ReportRecipients />
 
         <footer className="foot">Journal backup and export live on the Journal tab.</footer>
       </div>

@@ -34,4 +34,17 @@ describe('validateConfig engine fields', () => {
     expect(validateConfig({ ...minimal, riskAppetite: 'reckless' })!.riskAppetite).toBeUndefined()
     expect(validateConfig(minimal)!.riskAppetite).toBeUndefined()
   })
+  it('reportRecipients: keeps valid addresses lowercased and deduped', () => {
+    const cfg = validateConfig({ ...minimal, reportRecipients: ['A@B.com', 'a@b.com', ' c@D.com ', 'c@d.com'] })!
+    expect(cfg.reportRecipients).toEqual(['a@b.com', 'c@d.com'])
+  })
+  it('reportRecipients: drops junk entries and non-string values', () => {
+    const cfg = validateConfig({ ...minimal, reportRecipients: ['nope', '@bad', 'no-tld@x', 'ok@x.com', 42, null] })!
+    expect(cfg.reportRecipients).toEqual(['ok@x.com'])
+  })
+  it('reportRecipients: absent stays undefined; caps at 50', () => {
+    expect(validateConfig(minimal)!.reportRecipients).toBeUndefined()
+    const many = Array.from({ length: 60 }, (_, i) => `u${i}@x.com`)
+    expect(validateConfig({ ...minimal, reportRecipients: many })!.reportRecipients).toHaveLength(50)
+  })
 })

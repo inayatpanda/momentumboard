@@ -19,6 +19,7 @@ export interface AppConfig {
   riskRungOverride?: 0 | 1 | 2 | 3 | null // manual risk-ladder pin; null = engine decides
   favouriteChannels?: string[] // credibility prior 0.6 instead of 0.5
   riskAppetite?: 'moderate' | 'aggressive' // engine gates: aggressive widens the funnel (catalyst.ts). Default moderate.
+  reportRecipients?: string[] // admin-managed extra morning-report recipients, unioned with env REPORT_EMAIL_TO
 }
 
 export function validateConfig(raw: unknown): AppConfig | null {
@@ -65,6 +66,21 @@ export function validateConfig(raw: unknown): AppConfig | null {
     ? c.favouriteChannels.filter(f => typeof f === 'string').slice(0, 10).map(f => f.slice(0, 40))
     : undefined
   const riskAppetite = c.riskAppetite === 'aggressive' ? 'aggressive' : c.riskAppetite === 'moderate' ? 'moderate' : undefined
+  const reportRecipients = Array.isArray(c.reportRecipients)
+    ? (() => {
+        const seen = new Set<string>()
+        const out: string[] = []
+        for (const r of c.reportRecipients as unknown[]) {
+          if (typeof r !== 'string') continue
+          const addr = r.trim().toLowerCase()
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr) || seen.has(addr)) continue
+          seen.add(addr)
+          out.push(addr)
+          if (out.length >= 50) break
+        }
+        return out
+      })()
+    : undefined
   return {
     watchlist: c.watchlist,
     rules: c.rules,
@@ -75,5 +91,6 @@ export function validateConfig(raw: unknown): AppConfig | null {
     riskRungOverride,
     favouriteChannels,
     riskAppetite,
+    reportRecipients,
   }
 }

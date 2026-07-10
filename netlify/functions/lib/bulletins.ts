@@ -1,5 +1,6 @@
 import type { AppStore } from './store'
 import type { Prediction } from '../../../shared/engine/types'
+import type { AppConfig } from '../../../shared/config'
 
 // THE BULLETINS: two intraday dispatches that bookend the morning paper.
 //   premarket (~45min before the US open): futures, VIX and the world tape →
@@ -222,10 +223,14 @@ export async function publishBulletin(kind: BulletinKind, store: AppStore): Prom
     await sendTelegram(process.env.TELEGRAM_BOT_TOKEN, process.env.TELEGRAM_CHAT_ID, b.text).catch(() => {})
   }
   const { sendReportEmail } = await import('./email')
+  const cfg = await store.read<AppConfig>('config').catch(() => null)
   await sendReportEmail(
     { RESEND_API_KEY: process.env.RESEND_API_KEY, REPORT_EMAIL_TO: process.env.REPORT_EMAIL_TO, REPORT_EMAIL_FROM: process.env.REPORT_EMAIL_FROM },
     b.subject,
     b.html,
+    fetch,
+    undefined,
+    cfg?.reportRecipients,
   ).catch(() => {})
 
   const runlog = (await store.read<unknown[]>('runlog')) ?? []

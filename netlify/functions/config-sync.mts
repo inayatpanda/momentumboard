@@ -162,6 +162,9 @@ export async function routeConfig(
       levMap: cfg.levMap ?? stored?.levMap,
       favouriteChannels: cfg.favouriteChannels ?? stored?.favouriteChannels,
       riskRungOverride: cfg.riskRungOverride === undefined ? (stored?.riskRungOverride ?? null) : cfg.riskRungOverride,
+      // engine-only fields the phone mirror never carries — preserve like the above
+      riskAppetite: cfg.riskAppetite ?? stored?.riskAppetite,
+      reportRecipients: cfg.reportRecipients ?? stored?.reportRecipients,
     }
     await store.write(`${ns}config`, merged)
     return json(200, { ok: true, data: merged })

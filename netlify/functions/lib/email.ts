@@ -41,8 +41,9 @@ export async function sendReportEmail(
   html: string,
   fetchFn: typeof fetch = fetch,
   attachments?: { filename: string; content: string }[], // content = base64
+  extraRecipients?: string[], // admin-managed recipients (config.reportRecipients), unioned with env.REPORT_EMAIL_TO
 ): Promise<boolean> {
-  const to = parseRecipients(env.REPORT_EMAIL_TO)
+  const to = [...new Set([...parseRecipients(env.REPORT_EMAIL_TO), ...parseRecipients(extraRecipients?.join(','))])]
   if (!env.RESEND_API_KEY || to.length === 0) return false
   try {
     const res = await fetchFn('https://api.resend.com/emails', {

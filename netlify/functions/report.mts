@@ -1,6 +1,7 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 import { sendTelegram } from './lib/telegram'
+import type { AppConfig } from '../../shared/config'
 
 const MAX_BYTES = 800_000
 
@@ -113,11 +114,15 @@ export async function routeReport(
     // the same paper lands in the inbox — fail-soft, skipped when no key is set
     try {
       const { emailReadyHtml, sendReportEmail } = await import('./lib/email')
+      const cfg = await store.read<AppConfig>('config').catch(() => null)
       const dateLabel = new Date(at * 1000).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })
       await sendReportEmail(
         { RESEND_API_KEY: process.env.RESEND_API_KEY, REPORT_EMAIL_TO: process.env.REPORT_EMAIL_TO, REPORT_EMAIL_FROM: process.env.REPORT_EMAIL_FROM },
         `The Street Signal — ${dateLabel}`,
         emailReadyHtml(bodyText, `${link}?date=${dateKey}`),
+        fetch,
+        undefined,
+        cfg?.reportRecipients,
       )
     } catch {
       /* email is best-effort */
