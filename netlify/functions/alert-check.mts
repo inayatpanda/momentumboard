@@ -7,6 +7,7 @@ import { withDefaults } from '../../shared/channels'
 import { sendTelegram } from './lib/telegram'
 import { evaluateAlerts, flushBatch, emptyAlertState, type AlertState, type TickerSnapshot, type StopWatch, type AlertEvent } from '../../shared/alerts'
 import type { AppConfig } from '../../shared/config'
+import type { Prediction } from '../../shared/engine/types'
 import { rsi } from '../../shared/indicators'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction, isMarketOpen } from '../../shared/rvol'
 import { detectSetups, regimeFromCandles } from '../../shared/setups'
@@ -208,6 +209,46 @@ export default async () => {
     }
   } catch (e) {
     errors.push(`econ: ${e}`)
+  }
+
+  // intraday level watch on OPEN ENGINE CALLS: the published stop/target is
+  // hard execution advice, so a touch pings immediately — the close-based
+  // grade still lands with the morning paper (openTrace owns that story).
+  // Once per (call, level), keys persisted in `call-cross-alerts` and pruned.
+  // Snapshot prices are reused; only calls off the watchlist cost extra
+  // cachedQuote lookups (60s cache), capped so the quote budget can't blow up.
+  try {
+    const { checkCallCrossings } = await import('../../shared/engine/callCross')
+    const index = ((await store.read<string[]>('predictions-index')) ?? []).slice(-10)
+    const open: Prediction[] = []
+    for (const date of index) {
+      for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
+        if (!p.shadow && !p.outcome5) open.push(p)
+      }
+    }
+    // only markets currently trading: outside hours the last trade is stale
+    // and would just re-report yesterday's session
+    const live = open.filter(p => isMarketOpen(exchangeFor(p.sym), nowSec))
+    const priceBySym = new Map(snapshots.filter((s): s is TickerSnapshot => s !== null && s.price != null).map(s => [s.symbol, s.price!]))
+    const missing = [...new Set(live.map(p => p.sym))].filter(s => !priceBySym.has(s)).slice(0, 60)
+    await Promise.all(
+      missing.map(async sym => {
+        const q = await cachedQuote(sym, finnhubKey)
+        if (q?.price != null) priceBySym.set(sym, q.price)
+      }),
+    )
+    const firedBefore = (await store.read<Record<string, number>>('call-cross-alerts')) ?? {}
+    const { alerts, fired } = checkCallCrossings(live, priceBySym, firedBefore, nowSec)
+    if (alerts.length) console.log('CALL-CROSS:', alerts.map(a => a.key).join('; '))
+    for (const a of alerts) {
+      await deliver(a.text)
+      const history = (await store.read<unknown[]>('alert-history')) ?? []
+      history.push({ text: a.text, tier: 'instant', at: nowSec })
+      await store.write('alert-history', history.slice(-200))
+    }
+    if (alerts.length || Object.keys(fired).length !== Object.keys(firedBefore).length) await store.write('call-cross-alerts', fired)
+  } catch (e) {
+    errors.push(`CALL-CROSS: ${e}`)
   }
 
   // intraday trending: watchlist movers + market-wide (Yahoo trending), snapshotted through the day
