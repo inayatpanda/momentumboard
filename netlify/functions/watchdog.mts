@@ -1,4 +1,5 @@
 import { blobAppStore } from './lib/store'
+import { isUsMarketHoliday } from '../../shared/usMarketHolidays'
 
 // THE WATCHDOG: fail-soft everywhere means fail-SILENT everywhere — this is
 // the one component whose job is to make noise. Runs weekday mornings after
@@ -12,11 +13,16 @@ async function runChecks(nowSec: number, report: { at: number } | null): Promise
   const today = londonDate(nowSec)
   const day = new Date(nowSec * 1000).getUTCDay()
   const weekday = day >= 1 && day <= 5
+  // London and NY are both still on the same calendar day at this hour (see
+  // report-kick), so `today` doubles as the NY date the holiday calendar needs.
+  // A holiday is a non-trading day exactly like a weekend: report-kick never
+  // ran predict-background, so the board/scorecard are EXPECTED to be stale.
+  const tradingDay = weekday && !isUsMarketHoliday(today)
   const checks: { name: string; ok: boolean; detail: string }[] = []
   const add = (name: string, ok: boolean, detail: string) => checks.push({ name, ok, detail })
 
   const board = await blobAppStore.read<{ date: string; board: unknown[] }>('engine-board').catch(() => null)
-  add('engine board', !weekday || board?.date === today, board ? `dated ${board.date}, ${board.board?.length ?? 0} live calls` : 'missing')
+  add('engine board', !tradingDay || board?.date === today, board ? `dated ${board.date}, ${board.board?.length ?? 0} live calls` : 'missing')
 
   add('morning paper', !!report && londonDate(report.at) === today, report ? `published ${londonDate(report.at)}` : 'missing')
 
@@ -27,7 +33,7 @@ async function runChecks(nowSec: number, report: { at: number } | null): Promise
   // entries) — the scorecard's updatedAt is written by every predict run.
   const scorecard = await blobAppStore.read<{ updatedAt?: number }>('engine-scorecard').catch(() => null)
   const predictedToday = !!scorecard?.updatedAt && londonDate(scorecard.updatedAt) === today
-  add('predict run', !weekday || predictedToday, scorecard?.updatedAt ? `scorecard updated ${londonDate(scorecard.updatedAt)}` : 'never')
+  add('predict run', !tradingDay || predictedToday, scorecard?.updatedAt ? `scorecard updated ${londonDate(scorecard.updatedAt)}` : 'never')
 
   const { cachedCandles } = await import('./lib/marketCache')
   const spy = await cachedCandles('SPY').catch(() => null)
@@ -38,7 +44,7 @@ async function runChecks(nowSec: number, report: { at: number } | null): Promise
   add('LLM configured', !!process.env.GROQ_API_KEY || !!process.env.GEMINI_API_KEY || !!process.env.ANTHROPIC_API_KEY, 'at least one provider key present')
 
   const book = await blobAppStore.read<{ month: string; history: { date: string }[] }>('paper-book').catch(() => null)
-  add('paper book', !weekday || (!!book && book.history[book.history.length - 1]?.date === today), book ? `last marked ${book.history[book.history.length - 1]?.date ?? 'never'}` : 'missing')
+  add('paper book', !tradingDay || (!!book && book.history[book.history.length - 1]?.date === today), book ? `last marked ${book.history[book.history.length - 1]?.date ?? 'never'}` : 'missing')
 
   return checks
 }

@@ -1,5 +1,6 @@
 import { blobAppStore } from './lib/store'
 import { publishBulletin } from './lib/bulletins'
+import { isUsMarketHoliday } from '../../shared/usMarketHolidays'
 
 // ~45 min before the US open. Cron is UTC: 12:45 UTC = 13:45 UK / 08:45 ET in
 // summer (BST/EDT); in winter the same cron lands 12:45 UK / 07:45 ET — still
@@ -11,6 +12,8 @@ export default async (req: Request) => {
   const scheduled = body.includes('next_run')
   const admin = req.headers.get('x-app-token') === process.env.APP_TOKEN
   if (!scheduled && !admin) return new Response('forbidden', { status: 401 })
+  // no US open to call on a market holiday — a "pre-market brief" would be noise
+  if (isUsMarketHoliday(new Date().toISOString().slice(0, 10))) return new Response('holiday-skip')
   await publishBulletin('premarket', blobAppStore).catch(e => console.error('BULLETIN-PREMARKET failed:', e))
   return new Response('ok')
 }
