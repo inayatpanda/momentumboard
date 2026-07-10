@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildBoard, gradeOutstanding, type EngineDeps } from './engine'
+import { buildBoard, gradeOutstanding, traceOpenIdeas, type EngineDeps } from './engine'
+import type { OpenTraceEntry } from '../../../shared/engine/openTrace'
 import { memoryStore } from './store'
 import type { Candle } from '../../../shared/types'
 import type { Prediction } from '../../../shared/engine/types'
@@ -452,5 +453,45 @@ describe('gradeOutstanding', () => {
     expect(risk.gradedAtRung).toBe(1)
     const scorecard = (await store.read<{ byGrade: Record<string, { n: number }> }>('engine-scorecard'))!
     expect(scorecard.byGrade.A.n).toBe(1)
+  })
+})
+
+describe('traceOpenIdeas', () => {
+  it('traces open live calls only — shadows and graded calls excluded — and reads re-qualification off today’s board', async () => {
+    const store = memoryStore()
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    // call planted 3 bars from the end of the bleed: entry 166, closes 166→164→162
+    const date = new Date(shorty[257].t * 1000).toISOString().slice(0, 10)
+    const base = (over: Partial<Prediction>): Partial<Prediction> => ({
+      id: `${date}:NVDA:long`,
+      date,
+      sym: 'NVDA',
+      side: 'long',
+      grade: 'B',
+      entry: shorty[257].c,
+      stop: shorty[257].c * 0.8,
+      target: shorty[257].c * 1.2,
+      ...over,
+    })
+    await store.write(`predictions:${date}`, [
+      base({}), // open live → traced
+      base({ id: `${date}:NVDA:short`, side: 'short', shadow: true }), // shadow → never traced
+      base({ id: `${date}:AAPL:long`, sym: 'AAPL', outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } }), // graded → done
+    ])
+    await store.write('predictions-index', [date])
+    await store.write('engine-board', { date: today, board: [{ sym: 'NVDA', side: 'long' }] })
+
+    const { traced } = await traceOpenIdeas(store, deps(), NOW)
+    expect(traced).toBe(1)
+
+    const blob = (await store.read<{ date: string; entries: OpenTraceEntry[] }>('open-trace'))!
+    expect(blob.date).toBe(today)
+    const e = blob.entries[0]
+    expect(e.sym).toBe('NVDA')
+    expect(e.status).toBe('in-play') // drifting down but inside the wide stop
+    expect(e.day).toBe(3)
+    expect(e.movePct).toBeLessThan(0)
+    expect(e.requalified).toBe(true)
+    expect(e.verdict).toBe('still-on') // re-qualified beats the drift
   })
 })

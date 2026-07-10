@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { getEngine, type LedgerPrediction, type PaperBookData } from '../lib/api'
+import { getEngine, type LedgerPrediction, type OpenTraceEntry, type PaperBookData } from '../lib/api'
 import { capClassBreakdown, flattenLedger, gradeBreakdown, statusOf, summariseLedger } from '../lib/ledgerStats'
 import { humanError } from '../lib/format'
 import { GradeChip } from '../components/GradeChip'
@@ -41,6 +41,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
   const [rows, setRows] = useState<LedgerPrediction[] | null>(null)
   const [lifetime, setLifetime] = useState<{ live: { graded: number; hits: number; sumExcess: number }; since: string } | null>(null)
   const [book, setBook] = useState<PaperBookData | null>(null)
+  const [trace, setTrace] = useState<OpenTraceEntry[] | null>(null)
   const [months, setMonths] = useState<{ month: string; endGBP: number; returnPct: number; trades: number; wins: number }[]>([])
   const [filter, setFilter] = useState<Filter>('all')
   const [error, setError] = useState<string | null>(null)
@@ -52,6 +53,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
         if (d.scorecard?.lifetime) setLifetime({ live: d.scorecard.lifetime.live, since: d.scorecard.lifetime.since })
         setBook(d.paperBook ?? null)
         setMonths(d.paperMonths ?? [])
+        setTrace(d.openTrace?.entries ?? null)
       })
       .catch(e => setError(String((e as Error)?.message ?? e)))
   }, [])
@@ -103,6 +105,55 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
             <span className="stat-sub">hit the stop</span>
           </div>
         </div>
+      )}
+
+      {trace && trace.length > 0 && (
+        <section className="digest-section" style={{ marginBottom: 12 }}>
+          <h3 className="section-title">The open book — where live calls stand</h3>
+          {trace.map(e => {
+            const crossed = e.status !== 'in-play'
+            const badge =
+              e.status === 'stopped'
+                ? { cls: 'bad', label: 'stopped' }
+                : e.status === 'target'
+                  ? { cls: 'good', label: 'target hit' }
+                  : e.verdict === 'still-on'
+                    ? { cls: 'good', label: e.side === 'long' ? 'still a buy' : 'still a short' }
+                    : e.verdict === 'weakening'
+                      ? { cls: 'bad', label: 'weakening' }
+                      : { cls: '', label: 'intact' }
+            return (
+              <div
+                key={e.id}
+                className={`perf-row led-clickable ${crossed ? 'led-dim' : ''}`}
+                onClick={() => onOpen(e.sym)}
+                role="button"
+                tabIndex={0}
+                title={e.note}
+              >
+                <span>
+                  <strong>{e.sym}</strong> <span className={e.side === 'long' ? 'up-text' : 'down-text'}>{e.side}</span>{' '}
+                  <span className="led-n">
+                    {e.grade} · day {e.day} · {e.stage ?? (crossed ? e.crossedDate?.slice(5) : '—')}
+                  </span>
+                </span>
+                <span className="led-meta">
+                  <span className={e.movePct >= 0 ? 'up-text' : 'down-text'}>
+                    {e.movePct >= 0 ? '+' : ''}
+                    {e.movePct}%
+                  </span>
+                  {!crossed && e.progressPct != null && <span className="led-n"> · {e.progressPct}% to tgt</span>}{' '}
+                  <span className={`badge ${badge.cls}`}>{badge.label}</span>
+                </span>
+              </div>
+            )
+          })}
+          <p className="empty-line led-fine">
+            Every live call, re-checked each morning until its 5-day grade lands: daily closes against the published stop and target, the move from
+            entry, and whether the engine would still take the trade — “still a buy” is only ever earned by re-qualifying on today's board. Tap the
+            badge's row for the chart; hover/hold for the reason. Display-only: the grading above never moves.
+          </p>
+        </section>
       )}
 
       {book && (() => {

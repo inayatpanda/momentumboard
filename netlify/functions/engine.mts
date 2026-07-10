@@ -19,7 +19,7 @@ export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
   if (!auth) return new Response(JSON.stringify({ ok: false, error: 'unauthorised' }), { status: 401 })
 
-  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory, holdingsReads, predIndex] = await Promise.all([
+  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory, holdingsReads, predIndex, openTrace] = await Promise.all([
     blobAppStore.read<{
       date: string
       generatedAt: number
@@ -41,6 +41,9 @@ export default async (req: Request) => {
     // round-trip, and it belongs with the rest of the engine aggregation)
     blobAppStore.read<{ sym: string; stage: string | null; entryQuality: string | null; note: string | null; capacityPct: number | null; pplPct: number | null; quantity: number }[]>('holdings-reads'),
     blobAppStore.read<string[]>('predictions-index'),
+    // the open book: yesterday's still-open calls walked against daily closes
+    // (traceOpenIdeas) — display-only, written by the same predict run as the board
+    blobAppStore.read<{ date: string; generatedAt: number; entries: import('../../shared/engine/openTrace').OpenTraceEntry[] }>('open-trace'),
   ])
 
   const [paperBook, paperMonths] = await Promise.all([
@@ -92,6 +95,7 @@ export default async (req: Request) => {
     // board carries worldTape + newsTone inline (written by buildBoard); the
     // news-tone history is surfaced as a bounded tail for the display-only trend.
     board,
+    openTrace: openTrace ?? null,
     ledger,
     paperBook: paperBook ?? null,
     paperMonths: paperMonths ?? [],

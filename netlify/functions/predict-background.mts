@@ -1,6 +1,6 @@
 import { blobAppStore } from './lib/store'
 import { authenticate } from './lib/auth'
-import { buildBoard, defaultDeps, gradeOutstanding } from './lib/engine'
+import { buildBoard, defaultDeps, gradeOutstanding, traceOpenIdeas } from './lib/engine'
 import { validateConfig } from '../../shared/config'
 
 // The engine's daily run, BEFORE the paper composes: grade what matured
@@ -38,6 +38,13 @@ export default async (req: Request) => {
       console.log('PAPER-BOOK:', book.month, '| equity', book.history[book.history.length - 1]?.equity, '| open', book.positions.length, '| closed', book.closed.length)
     } catch (e) {
       console.error('PAPER-BOOK failed:', e)
+    }
+    // the open book: trace yesterday's still-open calls against today's board — fail-soft
+    try {
+      const { traced } = await traceOpenIdeas(blobAppStore, deps, nowSec)
+      console.log('OPEN-TRACE:', traced, 'open calls re-checked')
+    } catch (e) {
+      console.error('OPEN-TRACE failed:', e)
     }
     console.log('PREDICT: graded', graded, '| board', boardSize, '| roster', rosterSize, '| holdings', holdingsCount, '| regime', built.regime)
   } catch (e) {

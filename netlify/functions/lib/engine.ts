@@ -44,6 +44,7 @@ import type { T212Position } from './t212lib'
 import type { FactorName, FactorScore, PredOutcome, Prediction } from '../../../shared/engine/types'
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { primaryThemeOf, themeCandidates, themeHeat, themesOf } from '../../../shared/engine/themes'
+import { traceOpenCall, type OpenTraceEntry } from '../../../shared/engine/openTrace'
 import { SECTOR_MEMBERS, computeSectorRows } from './sectors'
 import type { SocialPulseRow } from './social'
 import type { InsiderSummary } from './insiders'
@@ -774,4 +775,40 @@ export async function buildBoard(
   }
 
   return { board: live, rosterSize: roster.length, regime, holdingsCount }
+}
+
+// ---- the open book: every live call traced until its grade lands ----
+// Runs AFTER buildBoard so "re-qualified" can be read off today's fresh board.
+// Each not-yet-graded live call from a previous session is walked through the
+// daily closes (openTrace.ts) and stamped with an opinion. Writes only the
+// display blob — the prediction blobs and grading are never touched.
+export async function traceOpenIdeas(store: AppStore, deps: EngineDeps, nowSec: number): Promise<{ traced: number }> {
+  const today = londonDate(nowSec)
+  const index = ((await store.read<string[]>('predictions-index')) ?? []).slice(-10).filter(d => d < today)
+  const open: Prediction[] = []
+  for (const date of index) {
+    for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
+      if (!p.shadow && !p.outcome5) open.push(p)
+    }
+  }
+  const board = await store.read<{ date: string; board: Prediction[] }>('engine-board')
+  const todayLive = new Set((board?.date === today ? board.board : []).map(b => `${b.sym}:${b.side}`))
+  const syms = [...new Set(open.map(p => p.sym))].slice(0, 80)
+  const candleMap = new Map<string, Candle[] | null>()
+  await mapLimit(syms, 8, async sym => candleMap.set(sym, await deps.candles(sym).catch(() => null)))
+  const entries = open
+    .map(p => {
+      const candles = candleMap.get(p.sym)
+      return candles ? traceOpenCall(p, candles, todayLive) : null
+    })
+    .filter((e): e is OpenTraceEntry => e !== null)
+    // in-play first (still actionable), then newest call first
+    .sort(
+      (a, b) =>
+        (a.status === 'in-play' ? 0 : 1) - (b.status === 'in-play' ? 0 : 1) ||
+        b.callDate.localeCompare(a.callDate) ||
+        a.sym.localeCompare(b.sym),
+    )
+  await store.write('open-trace', { date: today, generatedAt: nowSec, entries })
+  return { traced: entries.length }
 }

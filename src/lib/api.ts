@@ -415,6 +415,31 @@ export interface HoldingRead {
   quantity: number
 }
 
+// One open (not-yet-graded) live call, re-checked each morning: the mechanical
+// walk since entry (stop/target on daily closes) plus the engine's opinion on
+// whether it would still take the trade. Display-only — grading never moves.
+export interface OpenTraceEntry {
+  id: string
+  sym: string
+  side: 'long' | 'short'
+  callDate: string
+  grade: 'A' | 'B' | 'C'
+  entry: number
+  stop: number
+  target: number
+  status: 'in-play' | 'stopped' | 'target'
+  crossedDate: string | null
+  last: number
+  movePct: number // side-adjusted, from the published entry level
+  progressPct: number | null // % of the entry→target span covered
+  day: number // entry session = day 1
+  gradesInSessions: number
+  stage: string | null
+  requalified: boolean // made today's live board again, same side
+  verdict: 'still-on' | 'intact' | 'weakening' | null // in-play only
+  note: string
+}
+
 export interface PaperBookPosition {
   sym: string
   side: 'long' | 'short'
@@ -457,6 +482,9 @@ export interface EngineData {
     themes?: { key: string; name: string; hits: number }[]
   } | null
   ledger?: LedgerDay[]
+  // the open book: every not-yet-graded live call, traced daily (null until the
+  // first predict run writes it). Powers the Ledger's "where they stand" pane.
+  openTrace?: { date: string; generatedAt: number; entries: OpenTraceEntry[] } | null
   newsToneHistory?: { date: string; score: number; label: string }[]
   // the engine's daily read-only opinion on every REAL T212 holding (null until the
   // first predict run writes it). Powers the Desk's read-only holdings-tracking pane.
