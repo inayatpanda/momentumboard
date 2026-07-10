@@ -100,6 +100,10 @@ export async function routeReport(
     const at = Math.floor(Date.now() / 1000)
     const report: StoredReport = { html: bodyText, at }
     const dateKey = new Date(at * 1000).toISOString().slice(0, 10)
+    // same-day re-publish? Gmail threads identical subjects and hides "repeated"
+    // sections behind ⋯ trims — a unique suffix keeps every edition whole.
+    const prior = await store.read<StoredReport>('morning-report').catch(() => null)
+    const republished = !!prior && new Date(prior.at * 1000).toISOString().slice(0, 10) === dateKey
     await store.write('morning-report', report)
     await store.write(`report:${dateKey}`, report) // daily archive
     const index = (await store.read<string[]>('report-index')) ?? []
@@ -131,7 +135,7 @@ export async function routeReport(
       }
       await sendReportEmail(
         { RESEND_API_KEY: process.env.RESEND_API_KEY, REPORT_EMAIL_TO: process.env.REPORT_EMAIL_TO, REPORT_EMAIL_FROM: process.env.REPORT_EMAIL_FROM },
-        `The Street Signal — ${dateLabel}`,
+        `The Street Signal — ${dateLabel}${republished ? ` · updated ${new Date(at * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}` : ''}`,
         emailReadyHtml(bodyText, `${link}?date=${dateKey}`),
         fetch,
         attachments,

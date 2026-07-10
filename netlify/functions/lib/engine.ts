@@ -132,7 +132,7 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
     },
     companyName: async sym => {
       const { cachedCompanyName } = await import('./marketCache')
-      return cachedCompanyName(sym)
+      return cachedCompanyName(sym, env.FINNHUB_API_KEY ?? '')
     },
     screens: async () => {
       const { fetchScreen, fetchTrending } = await import('./screener')

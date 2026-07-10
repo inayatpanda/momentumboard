@@ -742,10 +742,10 @@ ${
     x.engineBoard?.length
       ? wide(
           'The Board — Engine Calls',
-          `<table><thead><tr><th>Ticker</th><th>Side</th><th>Grade</th><th>Prob.</th><th>Entry</th><th>Stop</th><th>Target</th><th>~Move</th><th>Route</th></tr></thead><tbody>${x.engineBoard
+          `<table style="table-layout:fixed;width:100%;font-size:12.5px"><thead><tr><th>Ticker</th><th style="width:44px">Side</th><th style="width:48px">Grade</th><th style="width:44px">Prob.</th><th style="width:160px">Entry · Stop · Target</th><th style="width:92px">Route</th></tr></thead><tbody>${x.engineBoard
             .map(
               b =>
-                `<tr><td><b>${esc(b.sym)}</b>${b.name ? `<br><span class="subtle">${esc(b.name)}</span>` : ''}</td><td>${b.side === 'long' ? 'LONG' : 'SHORT'}</td><td>${b.grade}${b.provisional ? '·prov' : ''}</td><td class="num">${Math.round(b.probability * 100)}%</td><td class="num">${b.entry}</td><td class="num">${b.stop}</td><td class="num">${b.target}</td><td class="num">~${b.expectedMovePct}%</td><td>${
+                `<tr><td><b>${esc(b.sym)}</b>${b.name ? `<br><span class="subtle">${esc(b.name)}</span>` : ''}</td><td>${b.side === 'long' ? 'LONG' : 'SHORT'}</td><td>${b.grade}${b.provisional ? '·prov' : ''}</td><td class="num">${Math.round(b.probability * 100)}%</td><td class="num">${b.entry} · ${b.stop} · ${b.target}<br><span class="subtle">~${b.expectedMovePct}% expected</span></td><td>${
                   b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
                 }${b.earningsRisk ? ' · earnings' : ''}</td></tr>`,
             )

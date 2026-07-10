@@ -72,11 +72,30 @@ export async function cachedCapUsdM(sym: string, finnhubKey: string): Promise<nu
   }
 }
 
-/** Company display name from the same `cap:` cache profile2 already writes —
- * read-only, no dedicated network call (it rides along with cap lookups). Used
- * to match roster tickers against 13F issuer names; a cache miss just means that
- * name falls back to the alias map. */
-export async function cachedCompanyName(sym: string): Promise<string | null> {
-  const hit = await getCached<{ capUsdM: number | null; name?: string }>(`cap:${sym}`)
-  return hit?.name ?? null
+/** Company display name, fetch-on-miss. Resolution order: (1) the `cap:` cache
+ * profile2 already writes; (2) Yahoo-routed symbols (LSE .L, crypto -USD): the
+ * quote's own name — Yahoo carries shortName, Finnhub's quote doesn't; (3) US
+ * symbols with a key: cachedCapUsdM's profile2 fetch, which caches the name as
+ * a side effect. Resolved names merge back into `cap:` so every path warms the
+ * same cache. Null = genuinely unresolvable; callers render without it. */
+export async function cachedCompanyName(sym: string, finnhubKey = ''): Promise<string | null> {
+  const key = `cap:${sym}`
+  const hit = await getCached<{ capUsdM: number | null; name?: string }>(key)
+  if (hit?.name) return hit.name
+  try {
+    if (isYahooSymbol(sym)) {
+      const q = await cachedQuote(sym, finnhubKey)
+      if (q?.name) {
+        await setCached(key, { capUsdM: hit?.capUsdM ?? null, name: q.name }, 86_400)
+        return q.name
+      }
+      return null
+    }
+    if (!finnhubKey) return null
+    await cachedCapUsdM(sym, finnhubKey) // fetches profile2 and caches {capUsdM, name}
+    const after = await getCached<{ capUsdM: number | null; name?: string }>(key)
+    return after?.name ?? null
+  } catch {
+    return null
+  }
 }

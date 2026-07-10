@@ -362,7 +362,7 @@ export default async (req: Request) => {
     // the name. LSE symbols like RR.L pass through the lookup unchanged.
     try {
       const nameSyms = [...new Set([...composed.ideas.map(i => i.ticker), ...extras.engineBoard.map(b => b.sym)])]
-      const names = new Map(await Promise.all(nameSyms.map(async sym => [sym, await cachedCompanyName(sym).catch(() => null)] as const)))
+      const names = new Map(await Promise.all(nameSyms.map(async sym => [sym, await cachedCompanyName(sym, process.env.FINNHUB_API_KEY ?? '').catch(() => null)] as const)))
       for (const i of composed.ideas) { const n = names.get(i.ticker); if (n) i.name = n }
       for (const b of extras.engineBoard) { const n = names.get(b.sym); if (n) b.name = n }
       console.log('COMPOSE: named', [...names.entries()].filter(([, n]) => n).length, 'of', nameSyms.length)
