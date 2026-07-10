@@ -1,16 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { db } from '../lib/db'
 import { getEngine, getMovers, getTrending, type MoverRow } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
-import { capBand, fmtPct, humanError } from '../lib/format'
+import { fmtPct, humanError } from '../lib/format'
 import { IconGear } from '../components/icons'
-import { SubNav } from '../components/TabBar'
+import { symbolHue } from '../components/TickerRow'
 
-// MOVERS: the market-wide tape — top gainers, top losers, most active — with
-// the themes shouting in today's headlines. Everything is tappable (chart +
-// engine read) and one tap from the watchlist. Each row carries the engine's
-// stage read: a −14% falling knife and a −14% name basing for a turn are
-// different trades.
+// MOVERS: the market-wide tape — top gainers, top losers, most active — as
+// stacked T212-style rails (each carousel scrolls on its own), with the
+// themes shouting in today's headlines. Everything is tappable (chart +
+// engine read) and one tap from the watchlist. Each card carries the
+// engine's stage read: a −14% falling knife and a −14% name basing for a
+// turn are different trades.
 
 const STAGE_TONE: Record<string, string> = {
   'early-reversal': 'good',
@@ -21,7 +22,59 @@ const STAGE_TONE: Record<string, string> = {
   'falling-knife': 'bad',
 }
 
-function MoverList({ title, rows, watch, onOpen, onAdd }: {
+/** One snap-scrolling mover card. `onAdd` optional — the home-screen rail
+ * omits the + so the card stays a pure tap-to-open target. */
+export function MoverCard({ r, watched, onOpen, onAdd }: {
+  r: MoverRow
+  watched?: boolean
+  onOpen: (sym: string) => void
+  onAdd?: (sym: string) => void
+}) {
+  const up = (r.changePct ?? 0) >= 0
+  return (
+    <div
+      className="rail-card mover-card"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(r.sym)}
+      onKeyDown={e => e.key === 'Enter' && onOpen(r.sym)}
+    >
+      <span className="mover-card-top">
+        <span className="avatar-sq sm" style={{ '--h': symbolHue(r.sym) } as CSSProperties} aria-hidden="true">
+          {r.sym.slice(0, 2)}
+        </span>
+        <span className="mover-card-sym">{r.sym}</span>
+        {onAdd && (
+          <button
+            className="mover-add"
+            aria-label={watched ? `${r.sym} on watchlist` : `Add ${r.sym} to watchlist`}
+            disabled={watched}
+            onClick={e => {
+              e.stopPropagation()
+              onAdd(r.sym)
+            }}
+          >
+            {watched ? '✓' : '+'}
+          </button>
+        )}
+      </span>
+      {r.name && <span className="mover-card-name">{r.name}</span>}
+      {r.price != null && <span className="rc-price">{r.price >= 100 ? r.price.toFixed(0) : r.price.toFixed(2)}</span>}
+      {r.changePct != null && (
+        <span className={`rc-chg ${up ? 'up' : 'down'}`}>
+          {up ? '↗' : '↘'} {Math.abs(r.changePct).toFixed(2)}%
+        </span>
+      )}
+      {r.stage && (
+        <span className="mover-card-tags">
+          <span className={`badge ${STAGE_TONE[r.stage] ?? ''}`}>{r.stage.replace('-', ' ')}</span>
+        </span>
+      )}
+    </div>
+  )
+}
+
+function MoverRail({ title, rows, watch, onOpen, onAdd }: {
   title: string
   rows: MoverRow[]
   watch: Set<string>
@@ -30,50 +83,16 @@ function MoverList({ title, rows, watch, onOpen, onAdd }: {
 }) {
   if (!rows.length) return null
   return (
-    <section className="digest-section">
-      <h3 className="section-title">{title}</h3>
-      {rows.map(r => (
-        <div
-          key={r.sym}
-          className="perf-row"
-          style={{ cursor: 'pointer', flexDirection: 'column', alignItems: 'stretch', gap: 5 }}
-          role="button"
-          tabIndex={0}
-          onClick={() => onOpen(r.sym)}
-          onKeyDown={e => e.key === 'Enter' && onOpen(r.sym)}
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontWeight: 700 }}>{r.sym}</span>
-            {r.name && (
-              <span style={{ color: 'var(--faint)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: '1 1 auto', fontFamily: 'var(--font-ui)' }}>
-                {r.name}
-              </span>
-            )}
-            {r.price != null && <span className="num" style={{ fontSize: 12.5, flex: '0 0 auto', marginLeft: 'auto' }}>{r.price >= 100 ? r.price.toFixed(0) : r.price.toFixed(2)}</span>}
-            {r.changePct != null && (
-              <span className={r.changePct >= 0 ? 'up-text' : 'down-text'} style={{ fontSize: 12.5, minWidth: 52, textAlign: 'right', flex: '0 0 auto' }}>{fmtPct(r.changePct)}</span>
-            )}
-            <button
-              className="mini-btn ghost"
-              style={{ fontSize: 14, width: 30, height: 30, padding: 0, borderRadius: 999, lineHeight: 1, flex: '0 0 auto' }}
-              aria-label={watch.has(r.sym) ? `${r.sym} on watchlist` : `Add ${r.sym} to watchlist`}
-              disabled={watch.has(r.sym)}
-              onClick={e => {
-                e.stopPropagation()
-                onAdd(r.sym)
-              }}
-            >
-              {watch.has(r.sym) ? '✓' : '+'}
-            </button>
-          </span>
-          {(capBand(r.capUsdM) || r.stage) && (
-            <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              {capBand(r.capUsdM) && <span className="badge">{capBand(r.capUsdM)}</span>}
-              {r.stage && <span className={`badge ${STAGE_TONE[r.stage] ?? ''}`}>{r.stage.replace('-', ' ')}</span>}
-            </span>
-          )}
-        </div>
-      ))}
+    <section className="mover-rail">
+      <h3 className="section-title">
+        {title}
+        <span className="eyebrow">{Math.min(rows.length, 10)} names</span>
+      </h3>
+      <div className="rail" aria-label={title}>
+        {rows.slice(0, 10).map(r => (
+          <MoverCard key={r.sym} r={r} watched={watch.has(r.sym)} onOpen={onOpen} onAdd={onAdd} />
+        ))}
+      </div>
     </section>
   )
 }
@@ -105,28 +124,35 @@ export function Movers({ onOpen, onOpenSettings }: { onOpen: (symbol: string) =>
         <span className="brand">Movers</span>
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
-      <SubNav />
-      <div className="content digest-cols">
+      <div className="content">
         {themes.length > 0 && (
-          <p className="board-strip">
-            <span>in the news: {themes.map(t => t.name.toLowerCase()).join(' · ')}</span>
-          </p>
-        )}
-        {trending && trending.watchlist.length > 0 && (
-          <div className="trend-strip" aria-label="Trending in your watchlist">
-            {trending.watchlist.slice(0, 6).map(t => (
-              <span key={t.sym} className="trend-chip">
-                {t.sym} <em className={t.changePct >= 0 ? 'up-text' : 'down-text'}>{fmtPct(t.changePct)}</em>
-              </span>
-            ))}
+          <div className="mover-strip">
+            <span className="eyebrow">In the news</span>
+            <div className="trend-strip">
+              {themes.map(t => (
+                <span key={t.key} className="trend-chip mover-theme">{t.name.toLowerCase()}</span>
+              ))}
+            </div>
           </div>
         )}
-        <MoverList title="Top gainers" rows={movers?.gainers ?? []} watch={watch} onOpen={onOpen} onAdd={add} />
-        <MoverList title="Top losers" rows={movers?.losers ?? []} watch={watch} onOpen={onOpen} onAdd={add} />
-        <MoverList title="Most active" rows={movers?.actives ?? []} watch={watch} onOpen={onOpen} onAdd={add} />
+        {trending && trending.watchlist.length > 0 && (
+          <div className="mover-strip">
+            <span className="eyebrow">Trending in your watchlist</span>
+            <div className="trend-strip" aria-label="Trending in your watchlist">
+              {trending.watchlist.slice(0, 6).map(t => (
+                <span key={t.sym} className="trend-chip">
+                  {t.sym} <em className={t.changePct >= 0 ? 'up-text' : 'down-text'}>{fmtPct(t.changePct)}</em>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <MoverRail title="Top gainers" rows={movers?.gainers ?? []} watch={watch} onOpen={onOpen} onAdd={add} />
+        <MoverRail title="Top losers" rows={movers?.losers ?? []} watch={watch} onOpen={onOpen} onAdd={add} />
+        <MoverRail title="Most active" rows={movers?.actives ?? []} watch={watch} onOpen={onOpen} onAdd={add} />
         {!movers && !error && (
-          <div aria-hidden style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[0, 1, 2, 3, 4].map(i => <div key={i} className="skeleton" style={{ height: 40 }} />)}
+          <div className="rail" aria-hidden>
+            {[0, 1, 2, 3].map(i => <div key={i} className="skeleton" style={{ flex: '0 0 148px', height: 118 }} />)}
           </div>
         )}
         {error && <p className="empty-line">Movers unavailable — {humanError(error)}.</p>}
@@ -134,7 +160,7 @@ export function Movers({ onOpen, onOpenSettings }: { onOpen: (symbol: string) =>
           <p className="empty-line">The screeners came back empty — likely closed market or a rate-limit. Try again in a few minutes.</p>
         )}
         <footer className="foot">
-          US session movers from Yahoo screeners, cached ~10 min. Tap a row for the chart and engine read; + adds it to your watchlist.
+          US session movers from Yahoo screeners, cached ~10 min. Tap a card for the chart and engine read; + adds it to your watchlist.
         </footer>
       </div>
     </>

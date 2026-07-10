@@ -5,10 +5,12 @@ import { sma } from '../../shared/indicators'
 import { toCandleSeries, toVolumeSeries, toLineSeries } from '../lib/chartData'
 import type { ColorRole, PriceLineSpec, StageMarkerSpec } from '../lib/engineLevels'
 
+// Every colour is read from the theme tokens at mount (getComputedStyle), so the
+// chart holds in both themes and everywhere it's mounted (mobile detail, Desk, Quant).
 const MA_STYLES = [
-  { period: 20, color: '#5aa9ff' },
-  { period: 50, color: '#f5b83d' },
-  { period: 200, color: '#8b93a5' },
+  { period: 20, token: '--blue', fallback: '#62c1e5' },
+  { period: 50, token: '--amber', fallback: '#f2b843' },
+  { period: 200, token: '--muted', fallback: '#93a6ad' },
 ]
 
 export function PriceChart({
@@ -29,19 +31,24 @@ export function PriceChart({
     const themed = (v: string, fallback: string) => css.getPropertyValue(v).trim() || fallback
     const chart = createChart(ref.current, {
       height: 300,
-      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: themed('--muted', '#8b98a8'), fontSize: 11 },
-      grid: { vertLines: { color: themed('--line', 'rgba(148,168,190,0.06)') }, horzLines: { color: themed('--line', 'rgba(148,168,190,0.06)') } },
+      // transparent background: the card surface (gradient) shows through
+      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: themed('--muted', '#93a6ad'), fontSize: 11 },
+      // sparse, faint grid: horizontal hairlines only
+      grid: { vertLines: { visible: false }, horzLines: { color: themed('--line', 'rgba(148,186,200,0.10)') } },
       rightPriceScale: { borderVisible: false },
       // a few bars of right padding so a marker on the LAST bar (the stage read)
       // isn't clipped by the price axis
       timeScale: { borderVisible: false, timeVisible: false, rightOffset: marker ? 7 : 0 },
-      crosshair: { horzLine: { labelBackgroundColor: themed('--panel', '#11161d') }, vertLine: { labelBackgroundColor: themed('--panel', '#11161d') } },
+      crosshair: {
+        horzLine: { color: themed('--faint', '#5d6d74'), labelBackgroundColor: themed('--panel', '#12171a') },
+        vertLine: { color: themed('--faint', '#5d6d74'), labelBackgroundColor: themed('--panel', '#12171a') },
+      },
     })
     chartRef.current = chart
 
-    const up = themed('--green', '#22c98d')
-    const down = themed('--red', '#ff5d73')
-    const ink = themed('--muted', '#8b98a8')
+    const up = themed('--green', '#2bd396')
+    const down = themed('--red', '#ff5f76')
+    const ink = themed('--muted', '#93a6ad')
     const roleColor = (role: ColorRole) => (role === 'up' ? up : role === 'down' ? down : ink)
 
     const candleSeries = chart.addCandlestickSeries({
@@ -53,13 +60,16 @@ export function PriceChart({
     })
     candleSeries.setData(toCandleSeries(candles))
 
+    // volume: very muted — the soft accent tints, a whisper under the candles
+    const volUp = themed('--green-soft', 'rgba(43,211,150,0.13)')
+    const volDown = themed('--red-soft', 'rgba(255,95,118,0.13)')
     const volumeSeries = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false })
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false })
-    volumeSeries.setData(toVolumeSeries(candles))
+    volumeSeries.setData(toVolumeSeries(candles).map((d, i) => ({ ...d, color: candles[i].c >= candles[i].o ? volUp : volDown })))
 
     const closes = candles.map(c => c.c)
-    for (const { period, color } of MA_STYLES) {
-      const line = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+    for (const { period, token, fallback } of MA_STYLES) {
+      const line = chart.addLineSeries({ color: themed(token, fallback), lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
       line.setData(toLineSeries(candles, sma(closes, period)))
     }
 
@@ -88,9 +98,9 @@ export function PriceChart({
   return (
     <div className="chart-box">
       <div className="chart-legend">
-        <span style={{ color: '#5aa9ff' }}>MA20</span>
-        <span style={{ color: '#f5b83d' }}>MA50</span>
-        <span style={{ color: '#8b93a5' }}>MA200</span>
+        <span style={{ color: 'var(--blue)' }}>MA20</span>
+        <span style={{ color: 'var(--amber)' }}>MA50</span>
+        <span style={{ color: 'var(--muted)' }}>MA200</span>
       </div>
       <div ref={ref} />
     </div>

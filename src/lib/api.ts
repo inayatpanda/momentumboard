@@ -60,6 +60,45 @@ export const resolveChannel = (handle: string) =>
 export const getInsiders = (symbols: string[]) =>
   apiGet<{ insiders: { symbol: string; buyers: string[]; totalValueUsd: number; isCluster: boolean; latest: { name: string; shares: number; date: string }[] }[] }>(`/api/market?type=insiders&symbols=${symbols.join(',')}`).then(d => d.insiders)
 
+// One congressional (STOCK Act) trade disclosure, as reported. `party` is only
+// present when the source provides it (QuiverQuant: 'D' | 'R' | 'I').
+export interface CongressTrade {
+  politician: string
+  chamber: 'senate' | 'house'
+  party?: string
+  symbol: string
+  side: 'buy' | 'sell'
+  amountRange: string // as reported, e.g. "$15,001–$50,000"; may be '' when unreported
+  traded: string // ISO date of the trade
+  filed: string // ISO date of the disclosure
+}
+
+export type CongressSource = 'quiverquant' | 'fmp' | 'finnhub' | 'stock-watcher' | 'none'
+
+/** Congressional trades (most recent ~100 market-wide) plus the subset touching
+ * the passed symbols. source === 'none' with no trades = every upstream is
+ * dead/unkeyed — show the link-card fallback. */
+export const getCongress = (symbols?: string[]) =>
+  apiGet<{ trades: CongressTrade[]; watchlistHits: CongressTrade[]; source: CongressSource; asOf: number }>(
+    `/api/market?type=congress${symbols?.length ? `&symbols=${symbols.join(',')}` : ''}`,
+  )
+
+// One market-wide insider-buying cluster row: distinct open-market buyers over
+// ~90 days, aggregated from the engine's roster coverage. `names` is the first
+// few buyer names; `buyers` the full distinct count.
+export interface InsiderCluster {
+  symbol: string
+  buyers: number
+  totalValueUsd: number
+  lastDate: string // ISO date of the most recent buy seen
+  names: string[]
+}
+
+/** Top ~20 roster names by insider dollars bought. Empty list = the engine's
+ * rotation hasn't accumulated coverage yet (fine — render an empty state). */
+export const getInsiderClusters = () =>
+  apiGet<{ clusters: InsiderCluster[]; asOf: number }>('/api/market?type=insider-clusters')
+
 export const getSignalStats = () =>
   apiGet<{ scores: { setup: string; n: number; scored: number; win5: number | null; avg5: number | null; avg10: number | null }[]; totalSignals: number }>('/api/market?type=signal-stats')
 

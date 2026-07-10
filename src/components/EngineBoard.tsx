@@ -16,7 +16,7 @@ function Call({ p }: { p: EnginePrediction }) {
         <span style={{ fontWeight: 700 }}>
           <GradeChip grade={p.grade} provisional={p.provisional} />{' '}
           {p.sym}
-          <span style={{ color: p.side === 'long' ? 'var(--green, #37b26c)' : 'var(--red, #ff5d73)', fontSize: 11, marginLeft: 6 }}>{dir}</span>
+          <span className={p.side === 'long' ? 'up-text' : 'down-text'} style={{ fontSize: 11, marginLeft: 6, fontWeight: 700 }}>{dir}</span>
           {(capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)) && (
             <span className="badge warn" style={{ marginLeft: 6 }}>{capBand(p.capUsdM) ?? 'small cap'}</span>
           )}

@@ -77,15 +77,16 @@ export function EnginePanel() {
       {riskState && (
         <div className="ledger-block">
           <h3 className="section-title">Risk ladder — earned, not set</h3>
-          <div className="perf-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2 }}>
-            <span>
-              <b>R{riskState.rung}</b>
-              <span style={{ color: 'var(--muted)', fontSize: 12 }}> · {[1.0, 1.25, 1.5, 2.0][riskState.rung]}% per idea · {riskState.gradedAtRung} graded at this rung</span>
-            </span>
+          <div className="card" style={{ marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <span className="stat-val" style={{ color: 'var(--blue)' }}>R{riskState.rung}</span>
+              <span className="eyebrow">{[1.0, 1.25, 1.5, 2.0][riskState.rung]}% per idea</span>
+              <span style={{ color: 'var(--faint)', fontSize: 12, marginLeft: 'auto' }}>{riskState.gradedAtRung} graded at this rung</span>
+            </div>
             {lastRungChange && (
-              <span style={{ color: 'var(--faint)', fontSize: 11.5 }}>
+              <p style={{ color: 'var(--faint)', fontSize: 11.5, margin: '8px 0 0' }}>
                 last change {lastRungChange.date}: R{lastRungChange.from}→R{lastRungChange.to} — {lastRungChange.evidence}
-              </span>
+              </p>
             )}
           </div>
         </div>

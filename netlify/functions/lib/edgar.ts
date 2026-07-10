@@ -4,12 +4,22 @@ import type { SmartMoneyInput } from '../../../shared/engine/factors'
 
 const UA = { 'User-Agent': 'MomentumBoard research inayatc2002@gmail.com' }
 
+// CIKs verified against data.sec.gov/submissions on 2026-07-10 — every entry
+// below has current 13F-HR filings (latest 2026-05-15). A wrong CIK silently
+// poisons the smart-money factor, so verify before adding. Note Einhorn: the
+// old GREENLIGHT CAPITAL INC filer (0001079114) stopped filing Feb 2024; his
+// current filer entity is DME Capital Management, LP (0001489933).
 export const FUNDS = [
   { cik: '0001067983', name: 'Berkshire Hathaway' },
   { cik: '0001336528', name: 'Pershing Square' },
   { cik: '0001649339', name: 'Scion Asset Management' },
   { cik: '0001536411', name: 'Duquesne Family Office' },
   { cik: '0001061768', name: 'Baupost Group' },
+  { cik: '0001656456', name: 'Appaloosa (Tepper)' },
+  { cik: '0001040273', name: 'Third Point' },
+  { cik: '0001489933', name: 'Greenlight (Einhorn)' },
+  { cik: '0001167483', name: 'Tiger Global' },
+  { cik: '0001135730', name: 'Coatue Management' },
 ]
 
 export interface Holding {
@@ -111,7 +121,7 @@ export async function fetchAllFundMoves(fetchFn: typeof fetch = fetch): Promise<
  * no cache before — this is the one referenced by the engine dep. */
 export async function cachedFundMoves(fetchFn: typeof fetch = fetch): Promise<FundMoves[]> {
   const { getCached, setCached } = await import('./cache')
-  const KEY = 'edgar:fund-moves'
+  const KEY = 'edgar:fund-moves:v2' // v2: fund roster grew 5 → 10; bump skips the stale 12h blob
   const hit = await getCached<FundMoves[]>(KEY)
   if (hit) return hit
   const moves = await fetchAllFundMoves(fetchFn)

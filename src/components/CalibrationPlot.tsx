@@ -53,11 +53,11 @@ export function CalibrationPlot({ buckets, seeded }: { buckets: Record<string, B
             viewBox={`0 0 ${VBW} ${VBH}`}
             role="img"
             aria-label="Calibration scatter: claimed probability against realized hit rate"
-            style={{ width: '100%', maxWidth: 320, height: 'auto', display: 'block', color: 'var(--faint)', overflow: 'visible' }}
+            style={{ width: '100%', maxWidth: 380, height: 'auto', display: 'block', overflow: 'visible' }}
           >
             {/* plot frame — left and bottom axes as hairlines */}
-            <line x1={ML} y1={MT} x2={ML} y2={MT + SIZE} stroke="currentColor" strokeWidth={1} opacity={0.5} />
-            <line x1={ML} y1={MT + SIZE} x2={ML + SIZE} y2={MT + SIZE} stroke="currentColor" strokeWidth={1} opacity={0.5} />
+            <line x1={ML} y1={MT} x2={ML} y2={MT + SIZE} stroke="var(--line)" strokeWidth={1} />
+            <line x1={ML} y1={MT + SIZE} x2={ML + SIZE} y2={MT + SIZE} stroke="var(--line)" strokeWidth={1} />
 
             {/* the "honest" 45° diagonal: claimed == realized */}
             <line
@@ -65,43 +65,42 @@ export function CalibrationPlot({ buckets, seeded }: { buckets: Record<string, B
               y1={py(0)}
               x2={px(1)}
               y2={py(1)}
-              stroke="currentColor"
+              stroke="var(--faint)"
               strokeWidth={1}
               strokeDasharray="3 3"
-              opacity={0.6}
             />
 
             {/* ticks + labels at 0.3 / 0.5 / 0.7 on both axes */}
             {TICKS.map(t => (
               <g key={t} style={{ fontFamily: 'var(--font-num)' }}>
-                <line x1={px(t)} y1={MT + SIZE} x2={px(t)} y2={MT + SIZE + 3} stroke="currentColor" strokeWidth={1} opacity={0.5} />
-                <text x={px(t)} y={MT + SIZE + 14} textAnchor="middle" fontSize={9} fill="currentColor">
+                <line x1={px(t)} y1={MT + SIZE} x2={px(t)} y2={MT + SIZE + 3} stroke="var(--line)" strokeWidth={1} />
+                <text x={px(t)} y={MT + SIZE + 15} textAnchor="middle" fontSize={10} fill="var(--muted)">
                   {t.toFixed(1)}
                 </text>
-                <line x1={ML - 3} y1={py(t)} x2={ML} y2={py(t)} stroke="currentColor" strokeWidth={1} opacity={0.5} />
-                <text x={ML - 5} y={py(t) + 3} textAnchor="end" fontSize={9} fill="currentColor">
+                <line x1={ML - 3} y1={py(t)} x2={ML} y2={py(t)} stroke="var(--line)" strokeWidth={1} />
+                <text x={ML - 5} y={py(t) + 3.5} textAnchor="end" fontSize={10} fill="var(--muted)">
                   {t.toFixed(1)}
                 </text>
               </g>
             ))}
 
             {/* axis captions */}
-            <text x={ML + SIZE / 2} y={VBH - 1} textAnchor="middle" fontSize={8.5} fill="currentColor" letterSpacing="0.06em">
+            <text x={ML + SIZE / 2} y={VBH - 1} textAnchor="middle" fontSize={10} fill="var(--faint)" letterSpacing="0.06em">
               CLAIMED
             </text>
             <text
-              x={9}
+              x={10}
               y={MT + SIZE / 2}
               textAnchor="middle"
-              fontSize={8.5}
-              fill="currentColor"
+              fontSize={10}
+              fill="var(--faint)"
               letterSpacing="0.06em"
-              transform={`rotate(-90 9 ${MT + SIZE / 2})`}
+              transform={`rotate(-90 10 ${MT + SIZE / 2})`}
             >
               REALIZED
             </text>
 
-            {/* the buckets */}
+            {/* the buckets — long ink-green, short ink-red (market semantics) */}
             {dots.map(d => (
               <circle
                 key={d.key}

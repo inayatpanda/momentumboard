@@ -15,6 +15,7 @@ import { SettingsScreen } from './screens/SettingsScreen'
 import { Desk } from './screens/Desk'
 import { Quant } from './screens/Quant'
 import { Landing } from './screens/Landing'
+import { More } from './screens/More'
 import { NavContext, TabBar } from './components/TabBar'
 import { useIsWide } from './hooks/useIsWide'
 import { clearToken, getToken, validateAccess } from './lib/api'
@@ -31,6 +32,7 @@ type View =
   | { screen: 'ledger' }
   | { screen: 'intel' }
   | { screen: 'calendar' }
+  | { screen: 'more' }
   | { screen: 'settings'; from: string }
 
 export default function App() {
@@ -100,10 +102,12 @@ export default function App() {
     if (tab === 'reports') setView({ screen: 'reports' })
     if (tab === 'intel') setView({ screen: 'intel' })
     if (tab === 'calendar') setView({ screen: 'calendar' })
+    if (tab === 'more') setView({ screen: 'more' })
+    if (tab === 'ledger') setView({ screen: 'ledger' })
   }
 
   const openSettings = () => setView(v => ({ screen: 'settings', from: v.screen }))
-  const active = view.screen === 'detail' ? 'charts' : view.screen === 'settings' ? view.from : view.screen === 'ledger' ? 'research' : view.screen
+  const active = view.screen === 'detail' ? 'charts' : view.screen === 'settings' ? view.from : view.screen
   const reduced = useReducedMotion()
   const screenKey = view.screen + (view.screen === 'detail' ? view.symbol : '')
 
@@ -166,6 +170,7 @@ export default function App() {
           {view.screen === 'ledger' && <Ledger onBack={() => setView({ screen: 'research' })} onOpen={open} />}
           {view.screen === 'intel' && <Intel onOpenSettings={openSettings} />}
           {view.screen === 'calendar' && <CalendarScreen onOpenSettings={openSettings} />}
+          {view.screen === 'more' && <More onOpenSettings={openSettings} />}
           {view.screen === 'settings' && <SettingsScreen onBack={() => navigate(view.from === 'detail' ? 'watchlist' : view.from)} />}
         </motion.div>
       </AnimatePresence>

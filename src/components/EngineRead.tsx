@@ -41,9 +41,11 @@ export function EngineReadStrip({ read }: { read: TechnicalRead | null }) {
   if (!read) return null
   const tone = qualityColor(read.entryQuality)
   return (
-    <div className="engine-read">
+    // .engine-read-strip (not .engine-read — that class is the Journal/Desk
+    // position row and carries a conflicting flex layout): its own card surface.
+    <div className="engine-read-strip">
       <div className="engine-read-head">
-        <span className="engine-read-label">Engine read</span>
+        <span className="eyebrow">Engine read</span>
         <span className="engine-stage" style={{ color: tone }}>{STAGE_LABEL[read.stage] ?? read.stage}</span>
         <span className="engine-quality" style={{ color: tone }}>{QUALITY_LABEL[read.entryQuality] ?? read.entryQuality}</span>
         <span className={`engine-vol${read.volumeConfirmed ? ' is-confirmed' : ''}`}>

@@ -15,7 +15,7 @@ it('renders price, change, rvol and badges', () => {
   )
   expect(screen.getByText('3LTS.L')).toBeInTheDocument()
   expect(screen.getByText('$2.98')).toBeInTheDocument()
-  expect(screen.getByText('+37.56%')).toBeInTheDocument()
+  expect(screen.getByText(/↗\s*37\.56%/)).toBeInTheDocument()
   expect(screen.getByText('RVOL 2.3x')).toBeInTheDocument()
   expect(screen.getByText('Basing')).toBeInTheDocument()
   expect(screen.getByText('Reclaim')).toBeInTheDocument()

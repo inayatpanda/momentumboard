@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
-import { getToken, setToken, getRunlog } from '../lib/api'
+import { getToken, setToken, getRunlog, getMovers, type MoverRow } from '../lib/api'
 import { seedStarterWatchlist } from '../lib/starter'
 import { humanError } from '../lib/format'
 import { mirrorConfig } from '../lib/configMirror'
@@ -10,10 +10,10 @@ import type { RuleItem } from '../lib/db'
 import { RegimeBanner } from '../components/RegimeBanner'
 import { TickerRow } from '../components/TickerRow'
 import { AddTickerForm } from '../components/AddTickerForm'
-import { SubNav } from '../components/TabBar'
 import { TodaysCalls } from '../components/TodaysCalls'
 import { Toasts } from '../components/Toasts'
 import { IconGear, IconWarn } from '../components/icons'
+import { MoverCard } from './Movers'
 
 export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string) => void; onOpenSettings: () => void }) {
   const [items, setItems] = useState<{ symbol: string; category?: string }[]>([])
@@ -22,6 +22,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
   const [hasToken, setHasToken] = useState(!!getToken())
   const [sortBy, setSortBy] = useState<'default' | 'change' | 'rvol' | 'setups'>('default')
   const [checkerStale, setCheckerStale] = useState(false)
+  const [topMovers, setTopMovers] = useState<MoverRow[]>([])
   const symbols = items.map(i => i.symbol)
   const { rows, regime, lastUpdated, error } = useMarketData(symbols)
   const toasts = useAlerts(rows, regime, rules)
@@ -38,6 +39,9 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
         setCheckerStale(!!last && Date.now() / 1000 - last.at > 1200)
       })
       .catch(() => {})
+    getMovers()
+      .then(m => setTopMovers(m.gainers))
+      .catch(() => {}) // fail-soft: home renders fine without the rail
   }, [])
 
   const categories = [...new Set(items.map(i => i.category).filter((c): c is string => !!c))]
@@ -103,7 +107,6 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
         <RegimeBanner regime={regime} />
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
-      <SubNav />
       <div className="content">
         <AddTickerForm onAdd={add} disabled={symbols.length >= 30} categories={categories} />
         {categories.length > 0 && (
@@ -125,6 +128,16 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
           </div>
         )}
         {checkerStale && <div className="risk-banner"><IconWarn /> The background alert checker hasn't run in 20+ minutes — alerts may be delayed.</div>}
+        {topMovers.length > 0 && (
+          <section className="home-movers">
+            <h3 className="section-title">Top movers</h3>
+            <div className="rail" aria-label="Top movers">
+              {topMovers.slice(0, 8).map(r => (
+                <MoverCard key={r.sym} r={r} onOpen={onOpen} />
+              ))}
+            </div>
+          </section>
+        )}
         <TodaysCalls onOpen={onOpen} />
         <div className="card-grid">
           {sortedRows.map((row, i) => (

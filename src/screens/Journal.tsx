@@ -12,7 +12,6 @@ import { GradeChip } from '../components/GradeChip'
 import { Sparkline } from '../components/Sparkline'
 import { IconSwap, IconWarn, IconNews, IconSparkle } from '../components/icons'
 import { fmtPct } from '../lib/format'
-import { SubNav } from '../components/TabBar'
 
 const gbp = (v: number) => `${v < 0 ? '−' : ''}£${Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`
 // Neutral figures stay ink; only genuine gains/losses take market colour.
@@ -158,23 +157,35 @@ export function Journal() {
         <span className="brand">Journal</span>
         <span className="regime" style={{ marginLeft: 'auto' }}>£{capital.toLocaleString('en-GB')} capital</span>
       </header>
-      <SubNav />
       <div className="content">
         {warnings.map(w => (
           <div key={w.code + (w.symbol ?? '')} className="risk-banner"><IconWarn /> {w.message}</div>
         ))}
 
-        <div className="stats-row">
-          <div><strong className={pnlClass(stats.realizedPnl)}>{gbp(stats.realizedPnl)}</strong><span>realised P&L</span></div>
-          <div><strong>{stats.winRate == null ? '—' : `${Math.round(stats.winRate * 100)}%`}</strong><span>win rate ({stats.closedCount})</span></div>
-          <div><strong>{stats.avgWin == null ? '—' : gbp(stats.avgWin)}</strong><span>avg win</span></div>
-          <div><strong>{stats.avgLoss == null ? '—' : gbp(stats.avgLoss)}</strong><span>avg loss</span></div>
+        <div className="stat-grid">
+          <div className="card stat-card">
+            <span className="eyebrow">Realised P&L</span>
+            <strong className={`stat-val ${pnlClass(stats.realizedPnl)}`}>{gbp(stats.realizedPnl)}</strong>
+          </div>
+          <div className="card stat-card">
+            <span className="eyebrow">Win rate</span>
+            <strong className="stat-val">{stats.winRate == null ? '—' : `${Math.round(stats.winRate * 100)}%`}</strong>
+            <span className="stat-sub">{stats.closedCount} closed</span>
+          </div>
+          <div className="card stat-card">
+            <span className="eyebrow">Avg win</span>
+            <strong className={`stat-val ${stats.avgWin == null ? '' : pnlClass(stats.avgWin)}`}>{stats.avgWin == null ? '—' : gbp(stats.avgWin)}</strong>
+          </div>
+          <div className="card stat-card">
+            <span className="eyebrow">Avg loss</span>
+            <strong className={`stat-val ${stats.avgLoss == null ? '' : pnlClass(stats.avgLoss)}`}>{stats.avgLoss == null ? '—' : gbp(stats.avgLoss)}</strong>
+          </div>
         </div>
 
         {closed.length >= 2 && (
-          <div className="card" style={{ padding: '10px 14px' }}>
-            <span style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Equity curve — realised P&L</span>
-            <div style={{ marginTop: 4 }}>
+          <div className="card" style={{ padding: '12px 14px' }}>
+            <span className="eyebrow">Equity curve · realised P&L</span>
+            <div style={{ marginTop: 6 }}>
               <Sparkline
                 closes={[...closed].reverse().reduce<number[]>((acc, t) => [...acc, (acc[acc.length - 1] ?? 0) + tradePnl(t)!], [0])}
                 width={320}
@@ -282,7 +293,7 @@ export function Journal() {
                 {livePnl != null ? (
                   <>
                     <span className={`price ${pnlClass(livePnl)}`}>{gbp(livePnl)}</span>
-                    <span className={`pos-subpnl num ${pnlClass(livePnl)}`}>{fmtPct(livePct!)}</span>
+                    <span className={`chg-pill pos-pill ${livePnl >= 0 ? 'up' : 'down'}`}>{fmtPct(livePct!)}</span>
                   </>
                 ) : (
                   <span className="price">{gbp(t.positionValue)}</span>
@@ -335,7 +346,7 @@ export function Journal() {
           return (
             <div key={t.id} className="closed-row">
               <span>{t.symbol} <span className="badge info">{t.playbook}</span>{t.fromSuggestion && <IconNews size={11} />}</span>
-              <span className={pnlClass(pnl)}>
+              <span className={`chg-pill ${pnl >= 0 ? 'up' : 'down'}`}>
                 {gbp(pnl)} ({fmtPct((pnl / t.positionValue) * 100)})
               </span>
             </div>

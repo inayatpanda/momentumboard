@@ -25,44 +25,45 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
     <section className="digest-section" style={{ marginBottom: 14 }}>
       <h3 className="section-title">
         Today's calls
-        <span className={`badge ${b.regime === 'green' ? '' : b.regime === 'red' ? 'bad' : 'warn'}`} style={{ marginLeft: 6 }}>{b.regime}</span>
-        {stale && <span className="badge warn" style={{ marginLeft: 6 }}>{weekend ? 'markets closed — last session' : `as of ${b.date}`}</span>}
+        <span className={`badge ${b.regime === 'green' ? '' : b.regime === 'red' ? 'bad' : 'warn'}`}>{b.regime}</span>
+        {stale && <span className="badge warn">{weekend ? 'markets closed — last session' : `as of ${b.date}`}</span>}
       </h3>
       {calls.length === 0 && <p className="empty-line">No edge today — every candidate failed the gates. An honest empty board beats a forced call.</p>}
-      {calls.map(p => (
-        <div
-          key={p.id}
-          className="perf-row"
-          style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2, cursor: 'pointer' }}
-          role="button"
-          tabIndex={0}
-          onClick={() => onOpen(p.sym)}
-          onKeyDown={e => e.key === 'Enter' && onOpen(p.sym)}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-            <span style={{ fontWeight: 700 }}>
-              <GradeChip grade={p.grade} provisional={p.provisional} /> {p.sym}
-              <span style={{ color: p.side === 'long' ? 'var(--green)' : 'var(--red)', fontSize: 11, marginLeft: 6 }}>
-                {p.side === 'long' ? '▲ LONG' : '▼ SHORT'}
-              </span>
-              {(capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)) && (
-                <span className="badge" style={{ marginLeft: 4 }}>{capBand(p.capUsdM) ?? 'small cap'}</span>
-              )}
-              {(p.themes ?? []).slice(0, 2).map(t => (
-                <span key={t} className="badge" style={{ marginLeft: 4 }}>{t}</span>
-              ))}
-              {p.earningsRisk && <span className="badge bad" style={{ marginLeft: 4 }}>earnings ≤10d</span>}
+      {calls.map(p => {
+        const band = capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)
+        return (
+          <div
+            key={p.id}
+            className="perf-row calls-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => onOpen(p.sym)}
+            onKeyDown={e => e.key === 'Enter' && onOpen(p.sym)}
+          >
+            <span className="calls-top">
+              <GradeChip grade={p.grade} provisional={p.provisional} />
+              <span className="calls-sym">{p.sym}</span>
+              <span className={`chg-pill calls-side ${p.side === 'long' ? 'up' : 'down'}`}>{p.side === 'long' ? '▲ Long' : '▼ Short'}</span>
+              <span className="calls-odds">{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>
             </span>
-            <span style={{ color: 'var(--muted)', fontSize: 12, whiteSpace: 'nowrap' }}>{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>
+            {(band || (p.themes ?? []).length > 0 || p.earningsRisk) && (
+              <span className="calls-tags">
+                {band && <span className="badge">{band}</span>}
+                {(p.themes ?? []).slice(0, 2).map(t => (
+                  <span key={t} className="badge">{t}</span>
+                ))}
+                {p.earningsRisk && <span className="badge bad">earnings ≤10d</span>}
+              </span>
+            )}
+            <span className="calls-note">{p.note}</span>
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{p.note}</div>
-        </div>
-      ))}
+        )
+      })}
       {b.board.length > MAX_SHOWN && (
-        <p className="empty-line" style={{ fontSize: 11 }}>+{b.board.length - MAX_SHOWN} more on the full board — Intel → Markets.</p>
+        <p className="empty-line calls-foot">+{b.board.length - MAX_SHOWN} more on the full board — Intel → Markets.</p>
       )}
       {calls.length > 0 && (
-        <p className="empty-line" style={{ fontSize: 11 }}>Tap a call for the chart and full factor evidence. Calibrated analysis, not advice.</p>
+        <p className="empty-line calls-foot">Tap a call for the chart and full factor evidence. Calibrated analysis, not advice.</p>
       )}
     </section>
   )

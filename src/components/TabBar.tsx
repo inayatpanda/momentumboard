@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext } from 'react'
 
 const Icon = ({ d }: { d: string }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -6,12 +6,11 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 )
 
-// Mobile splits navigation in two so seven tabs never shrink to slivers:
-// the four market-core tabs stay in the thumb-reach bottom bar, and the
-// three reading tabs render as a SubNav strip that each screen mounts just
-// below its own header (so the order reads: header → Research/Intel/Calendar
-// → content). Desktop (≥1024px) hides the strip and shows all seven in the
-// left rail (.tab.sec is only hidden on mobile — see index.css).
+// Mobile: the four market-core tabs plus a T212-style "More" tab that opens
+// the menu screen holding the reading sections (Intel/Research/Reports/
+// Calendar), the Ledger and Settings. Desktop (≥1024px) hides More and shows
+// every section directly in the left rail (.tab.sec is only hidden on mobile,
+// .tab.more only on desktop — see index.css).
 const TABS = [
   { key: 'watchlist', label: 'Watchlist', icon: 'M3 17l6-6 4 4 8-8M21 7v6h-6', sec: false },
   { key: 'movers', label: 'Movers', icon: 'M13 2L4 14h6l-1 8 9-12h-6l1-8z', sec: false },
@@ -23,28 +22,17 @@ const TABS = [
   { key: 'calendar', label: 'Calendar', icon: 'M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zM8 3v4m8-4v4M3 10h18M8 14h.5M12 14h.5M16 14h.5', sec: true },
 ] as const
 
-// App provides { active, navigate }; SubNav consumes it from inside any screen.
+// every destination that lives behind the More menu highlights the More tab
+const MORE_KEYS = ['more', 'research', 'reports', 'intel', 'calendar', 'ledger']
+
+// App provides { active, navigate }; consumed by TabBar and the More screen.
 export const NavContext = createContext<{ active: string; navigate: (tab: string) => void }>({ active: '', navigate: () => {} })
 
-/** The reading tabs, rendered by each screen directly below its header —
- * same .tab visual language as the bottom bar, just pinned up top. */
+/** The old under-header reading strip. The reading sections moved behind the
+ * More tab; this stays exported only so screens compile until their own
+ * restyle removes the mount. Renders nothing. */
 export function SubNav() {
-  const { active, navigate } = useContext(NavContext)
-  return (
-    <nav className="topnav" aria-label="More">
-      {TABS.filter(t => t.sec).map(t => (
-        <button
-          key={t.key}
-          className={`tab ${active === t.key ? 'active' : ''}`}
-          onClick={() => navigate(t.key)}
-          aria-current={active === t.key ? 'page' : undefined}
-        >
-          <Icon d={t.icon} />
-          {t.label}
-        </button>
-      ))}
-    </nav>
-  )
+  return null
 }
 
 export function TabBar({ active, onNavigate }: { active: string; chartsReady?: boolean; onNavigate?: (tab: string) => void }) {
@@ -61,6 +49,14 @@ export function TabBar({ active, onNavigate }: { active: string; chartsReady?: b
           {t.label}
         </button>
       ))}
+      <button
+        className={`tab more ${MORE_KEYS.includes(active) ? 'active' : ''}`}
+        onClick={() => onNavigate?.('more')}
+        aria-current={MORE_KEYS.includes(active) ? 'page' : undefined}
+      >
+        <Icon d="M4 6h16M4 12h16M4 18h16" />
+        More
+      </button>
     </nav>
   )
 }

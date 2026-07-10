@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { getEngine, type LedgerPrediction, type PaperBookData } from '../lib/api'
 import { capClassBreakdown, flattenLedger, gradeBreakdown, statusOf, summariseLedger } from '../lib/ledgerStats'
 import { humanError } from '../lib/format'
@@ -14,6 +14,28 @@ import { IconBack } from '../components/icons'
 type Filter = 'all' | 'live' | 'shadow' | 'graded'
 
 const STATUS_BADGE: Record<string, string> = { hit: 'good', miss: 'bad', stopped: 'bad', open: '' }
+
+// one cohort's win-rate bar (by-grade / by-cap), OrthoPortfolio style: label,
+// count, a thin gradient track filled to the win rate, then the excess trail.
+function CohortBar({ label, n, graded, hitRate, avgExcess5 }: {
+  label: ReactNode; n: number; graded: number; hitRate: number | null; avgExcess5: number | null
+}) {
+  const win = graded > 0 && hitRate != null ? Math.round(hitRate * 100) : 0
+  return (
+    <div className="led-cohort">
+      <div className="led-cohort-top">
+        <span className="led-cohort-label">{label} <span className="led-n">×{n} · {graded} graded</span></span>
+        <span className="led-cohort-pct num">{graded > 0 ? `${win}%` : '—'}</span>
+      </div>
+      <div className="bar"><i style={{ width: `${win}%` }} /></div>
+      <div className="led-cohort-foot">
+        {graded > 0 ? (
+          <>win rate · <span className={avgExcess5 != null && avgExcess5 >= 0 ? 'up-text' : 'down-text'}>{avgExcess5 != null ? `${avgExcess5 >= 0 ? '+' : ''}${avgExcess5}%` : '—'}</span> avg excess @5d</>
+        ) : 'none graded yet'}
+      </div>
+    </div>
+  )
+}
 
 export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol: string) => void }) {
   const [rows, setRows] = useState<LedgerPrediction[] | null>(null)
@@ -57,18 +79,29 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
       </header>
 
       {rows && (
-        <div className="stats-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, margin: '10px 0' }}>
-          <span><strong>{summary.total}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>calls</span></span>
-          <span><strong>{summary.graded}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>graded</span></span>
-          <span><strong>{summary.hitRate != null ? `${Math.round(summary.hitRate * 100)}%` : '—'}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>hit rate</span></span>
-          <span>
-            <strong className={summary.avgExcess5 != null && summary.avgExcess5 >= 0 ? 'up-text' : 'down-text'}>
+        <div className="stat-grid">
+          <div className="card">
+            <span className="eyebrow">Hit rate</span>
+            <span className="stat-val">{summary.hitRate != null ? `${Math.round(summary.hitRate * 100)}%` : '—'}</span>
+            <span className="stat-sub">{summary.graded} graded</span>
+          </div>
+          <div className="card">
+            <span className="eyebrow">Avg excess @5d</span>
+            <span className={`stat-val ${summary.avgExcess5 != null ? (summary.avgExcess5 >= 0 ? 'up-text' : 'down-text') : ''}`}>
               {summary.avgExcess5 != null ? `${summary.avgExcess5 >= 0 ? '+' : ''}${summary.avgExcess5}%` : '—'}
-            </strong>{' '}
-            <span style={{ color: 'var(--faint)', fontSize: 11 }}>avg excess @5d</span>
-          </span>
-          <span><strong>{summary.stopped}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>stopped</span></span>
-          <span><strong>{summary.open}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>still open</span></span>
+            </span>
+            <span className="stat-sub">vs SPY, side-adjusted</span>
+          </div>
+          <div className="card">
+            <span className="eyebrow">Calls</span>
+            <span className="stat-val">{summary.total}</span>
+            <span className="stat-sub">{summary.open} still open</span>
+          </div>
+          <div className="card">
+            <span className="eyebrow">Stopped</span>
+            <span className="stat-val">{summary.stopped}</span>
+            <span className="stat-sub">hit the stop</span>
+          </div>
         </div>
       )}
 
@@ -80,38 +113,47 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
         return (
           <section className="digest-section" style={{ marginBottom: 12 }}>
             <h3 className="section-title">The £10,000 book — {new Date(book.month + '-02').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h3>
-            <div className="stats-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, margin: '8px 0' }}>
-              <span><strong className="num">£{equity.toLocaleString('en-GB', { maximumFractionDigits: 0 })}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>equity</span></span>
-              <span><strong className={retPct >= 0 ? 'up-text' : 'down-text'}>{retPct >= 0 ? '+' : ''}{retPct}%</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>this month</span></span>
-              {weekPct != null && (
-                <span><strong className={weekPct >= 0 ? 'up-text' : 'down-text'}>{weekPct >= 0 ? '+' : ''}{weekPct}%</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>this week</span></span>
-              )}
-              <span><strong>{book.positions.length}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>open</span></span>
-              <span><strong>{book.closed.length}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>closed</span></span>
+            <div className="stat-grid">
+              <div className="card">
+                <span className="eyebrow">Book value</span>
+                <span className="stat-val num">£{equity.toLocaleString('en-GB', { maximumFractionDigits: 0 })}</span>
+                <span className="stat-sub">of £{book.startGBP.toLocaleString('en-GB', { maximumFractionDigits: 0 })}</span>
+              </div>
+              <div className="card">
+                <span className="eyebrow">This month</span>
+                <span className={`stat-val ${retPct >= 0 ? 'up-text' : 'down-text'}`}>{retPct >= 0 ? '+' : ''}{retPct}%</span>
+                <span className="stat-sub">{weekPct != null ? `${weekPct >= 0 ? '+' : ''}${weekPct}% this week` : 'first week'}</span>
+              </div>
+              <div className="card">
+                <span className="eyebrow">Open</span>
+                <span className="stat-val">{book.positions.length}</span>
+                <span className="stat-sub">positions</span>
+              </div>
+              <div className="card">
+                <span className="eyebrow">Closed</span>
+                <span className="stat-val">{book.closed.length}</span>
+                <span className="stat-sub">this month</span>
+              </div>
             </div>
             {book.positions.map(p => (
-              <div key={p.sym + p.side} className="perf-row" onClick={() => onOpen(p.sym)} role="button" tabIndex={0} style={{ cursor: 'pointer' }}>
-                <span><strong>{p.sym}</strong> <span className={p.side === 'long' ? 'up-text' : 'down-text'}>{p.side}</span> <span style={{ color: 'var(--faint)', fontSize: 11 }}>{p.grade} · in {p.entry} · £{Math.round(p.costGBP)}</span></span>
-                <span style={{ color: 'var(--muted)', fontSize: 12 }}>stop {p.stop} · tgt {p.target}</span>
+              <div key={p.sym + p.side} className="perf-row led-clickable" onClick={() => onOpen(p.sym)} role="button" tabIndex={0}>
+                <span><strong>{p.sym}</strong> <span className={p.side === 'long' ? 'up-text' : 'down-text'}>{p.side}</span> <span className="led-n">{p.grade} · in {p.entry} · £{Math.round(p.costGBP)}</span></span>
+                <span className="led-meta">stop {p.stop} · tgt {p.target}</span>
               </div>
             ))}
             {book.closed.slice(-5).reverse().map(t => (
-              <div key={t.sym + t.side + t.closedDate} className="perf-row" style={{ opacity: 0.75 }}>
-                <span><strong>{t.sym}</strong> <span style={{ color: 'var(--faint)', fontSize: 11 }}>{t.side} · {t.reason} · {t.closedDate.slice(5)}</span></span>
+              <div key={t.sym + t.side + t.closedDate} className="perf-row led-dim">
+                <span><strong>{t.sym}</strong> <span className="led-n">{t.side} · {t.reason} · {t.closedDate.slice(5)}</span></span>
                 <span className={t.plGBP >= 0 ? 'up-text' : 'down-text'}>{t.plGBP >= 0 ? '+' : '−'}£{Math.abs(t.plGBP).toFixed(0)} ({t.plPct >= 0 ? '+' : ''}{t.plPct}%)</span>
               </div>
             ))}
-            {months.length > 0 && (
-              <>
-                {months.slice().reverse().map(m => (
-                  <div key={m.month} className="perf-row">
-                    <span>{new Date(m.month + '-02').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} <span style={{ color: 'var(--faint)', fontSize: 11 }}>×{m.trades} trades · {m.trades ? Math.round((m.wins / m.trades) * 100) : 0}% won</span></span>
-                    <span className={m.returnPct >= 0 ? 'up-text' : 'down-text'}>£{m.endGBP.toLocaleString('en-GB', { maximumFractionDigits: 0 })} ({m.returnPct >= 0 ? '+' : ''}{m.returnPct}%)</span>
-                  </div>
-                ))}
-              </>
-            )}
-            <p className="empty-line" style={{ fontSize: 11 }}>
+            {months.length > 0 && months.slice().reverse().map(m => (
+              <div key={m.month} className="perf-row">
+                <span>{new Date(m.month + '-02').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} <span className="led-n">×{m.trades} trades · {m.trades ? Math.round((m.wins / m.trades) * 100) : 0}% won</span></span>
+                <span className={m.returnPct >= 0 ? 'up-text' : 'down-text'}>£{m.endGBP.toLocaleString('en-GB', { maximumFractionDigits: 0 })} ({m.returnPct >= 0 ? '+' : ''}{m.returnPct}%)</span>
+              </div>
+            ))}
+            <p className="empty-line led-fine">
               A fresh mock £10,000 every month, traded mechanically on the engine's live calls: risk-ladder sizing, exits on daily closes at the published stop,
               target or 10-session horizon; whatever remains closes at month-end. Finished months are banked above, permanently.
             </p>
@@ -134,27 +176,16 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
         <section className="digest-section" style={{ marginBottom: 12 }}>
           <h3 className="section-title">By grade — do the tiers separate?</h3>
           {byGrade.map(b => (
-            <div key={b.key} className="perf-row">
-              <span>
-                {b.key === 'shadow' ? <span className="badge">shadow</span> : <GradeChip grade={b.key as 'A' | 'B' | 'C'} provisional={false} />}{' '}
-                <span style={{ color: 'var(--faint)', fontSize: 11 }}>×{b.n} · {b.graded} graded</span>
-              </span>
-              <span style={{ fontSize: 12.5 }}>
-                {b.graded > 0 ? (
-                  <>
-                    {Math.round((b.hitRate ?? 0) * 100)}% hit ·{' '}
-                    <span className={b.avgExcess5 != null && b.avgExcess5 >= 0 ? 'up-text' : 'down-text'}>
-                      {b.avgExcess5 != null ? `${b.avgExcess5 >= 0 ? '+' : ''}${b.avgExcess5}%` : '—'}
-                    </span>{' '}
-                    avg @5d
-                  </>
-                ) : (
-                  <span style={{ color: 'var(--faint)' }}>none graded yet</span>
-                )}
-              </span>
-            </div>
+            <CohortBar
+              key={b.key}
+              label={b.key === 'shadow' ? <span className="badge">shadow</span> : <GradeChip grade={b.key as 'A' | 'B' | 'C'} provisional={false} />}
+              n={b.n}
+              graded={b.graded}
+              hitRate={b.hitRate}
+              avgExcess5={b.avgExcess5}
+            />
           ))}
-          <p className="empty-line" style={{ fontSize: 11 }}>
+          <p className="empty-line led-fine">
             Higher grades should earn higher hit rates and excess. If they don't over ~30+ graded calls per tier, the grading is decoration — and you'll see it here first.
           </p>
         </section>
@@ -164,27 +195,16 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
         <section className="digest-section" style={{ marginBottom: 12 }}>
           <h3 className="section-title">By cap class — large vs small</h3>
           {byCapClass.map(b => (
-            <div key={b.key} className="perf-row">
-              <span>
-                <span className="badge">{b.key}</span>{' '}
-                <span style={{ color: 'var(--faint)', fontSize: 11 }}>×{b.n} · {b.graded} graded</span>
-              </span>
-              <span style={{ fontSize: 12.5 }}>
-                {b.graded > 0 ? (
-                  <>
-                    {Math.round((b.hitRate ?? 0) * 100)}% hit ·{' '}
-                    <span className={b.avgExcess5 != null && b.avgExcess5 >= 0 ? 'up-text' : 'down-text'}>
-                      {b.avgExcess5 != null ? `${b.avgExcess5 >= 0 ? '+' : ''}${b.avgExcess5}%` : '—'}
-                    </span>{' '}
-                    avg @5d
-                  </>
-                ) : (
-                  <span style={{ color: 'var(--faint)' }}>none graded yet</span>
-                )}
-              </span>
-            </div>
+            <CohortBar
+              key={b.key}
+              label={<span className="badge">{b.key}</span>}
+              n={b.n}
+              graded={b.graded}
+              hitRate={b.hitRate}
+              avgExcess5={b.avgExcess5}
+            />
           ))}
-          <p className="empty-line" style={{ fontSize: 11 }}>
+          <p className="empty-line led-fine">
             Large- vs small-cap ($2B split, matching the engine's own flag). Calibration stays pooled — this is a display-only lens on whether the edge holds up across cohorts.
           </p>
         </section>
@@ -208,7 +228,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
 
       {visible.length > 0 && (
         <div className="ledger-wrap">
-          <table className="ledger-table">
+          <table className="ledger-table led-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -230,15 +250,14 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
                 return (
                   <tr
                     key={p.id}
-                    className={p.shadow ? 'shadow-row' : ''}
+                    className={`led-clickable ${p.shadow ? 'shadow-row' : ''}`}
                     title={p.note}
                     onClick={() => onOpen(p.sym)}
-                    style={{ cursor: 'pointer' }}
                   >
                     <td>{p.date.slice(5)}</td>
                     <td style={{ fontWeight: 700 }}>{p.sym}</td>
                     <td className={p.side === 'long' ? 'up-text' : 'down-text'}>{p.side === 'long' ? '▲L' : '▼S'}</td>
-                    <td><GradeChip grade={p.grade} provisional={p.provisional} />{p.shadow ? <span style={{ color: 'var(--faint)', fontSize: 10 }}> sh</span> : ''}</td>
+                    <td><GradeChip grade={p.grade} provisional={p.provisional} />{p.shadow ? <span className="led-n"> sh</span> : ''}</td>
                     <td className="num">{Math.round(p.probability * 100)}</td>
                     <td className="num">{p.entry}</td>
                     <td className="num">{p.stop}</td>
@@ -258,7 +277,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
         </div>
       )}
 
-      <p className="empty-line" style={{ fontSize: 11 }}>
+      <p className="empty-line led-fine">
         Excess = the call's move minus SPY's, side-adjusted; a hit must clear +1pp with the stop (daily-close basis) never breached. Shadows (sh) were
         suppressed from the board but graded anyway — the learning loop eats everything. Scroll the table sideways; tap a row for the chart. Last 30
         trading days, up to 100 calls.

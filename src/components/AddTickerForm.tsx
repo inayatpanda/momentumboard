@@ -5,7 +5,7 @@ export function AddTickerForm({ onAdd, disabled, categories = [] }: { onAdd: (sy
   const [category, setCategory] = useState('')
   return (
     <form
-      className="addform"
+      className="addform add-pill"
       onSubmit={e => {
         e.preventDefault()
         const s = value.trim().toUpperCase()

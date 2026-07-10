@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Quote, SetupKind } from '../../shared/types'
-import { fmtPrice, fmtPct } from '../lib/format'
+import { fmtPrice } from '../lib/format'
 import { Badge } from './Badge'
 import { Sparkline } from './Sparkline'
 
@@ -12,6 +12,9 @@ export interface Row {
   spark?: number[]
   rsi?: number | null
 }
+
+/** Stable per-symbol hue for the letter-avatar tile (shared with Movers). */
+export const symbolHue = (symbol: string) => [...symbol].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 360
 
 export function TickerRow({ row, onRemove, index = 0 }: { row: Row; onRemove: () => void; index?: number }) {
   const { symbol, quote, rvol, setups, spark } = row
@@ -29,31 +32,40 @@ export function TickerRow({ row, onRemove, index = 0 }: { row: Row; onRemove: ()
     }
   }, [quote?.price])
   return (
-    <div className="card" style={{ animationDelay: `${Math.min(index * 45, 400)}ms` }}>
-      <div className="row-top">
-        <span className="sym">{symbol}</span>
-        {spark && spark.length > 1 && <Sparkline closes={spark} />}
-        <span className="prices">
-          <span className={`price ${flash ? `flash-${flash}` : ''}`}>{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
-          {quote && <span className={`chg ${up ? 'up' : 'down'}`}>{fmtPct(quote.changePct)}</span>}
-        </span>
-      </div>
-      <div className="row-bottom">
-        {rvol != null && <span className={`rvol ${rvol >= 2 ? 'hot' : ''}`}>RVOL {rvol.toFixed(1)}x</span>}
-        {setups.map(s => (
-          <Badge key={s} kind={s} />
-        ))}
-        <button
-          className="remove"
-          onClick={e => {
-            e.stopPropagation() // row tap navigates; ✕ must only remove
-            onRemove()
-          }}
-          aria-label={`Remove ${symbol}`}
-        >
-          ✕
-        </button>
-      </div>
+    <div className="card trow" style={{ animationDelay: `${Math.min(index * 45, 400)}ms` }}>
+      <span className="avatar-sq" style={{ '--h': symbolHue(symbol) } as CSSProperties} aria-hidden="true">
+        {symbol.slice(0, 2)}
+      </span>
+      <span className="trow-main">
+        <span className="trow-sym">{symbol}</span>
+        {(rvol != null || setups.length > 0) && (
+          <span className="trow-meta">
+            {rvol != null && <span className={`rvol ${rvol >= 2 ? 'hot' : ''}`}>RVOL {rvol.toFixed(1)}x</span>}
+            {setups.map(s => (
+              <Badge key={s} kind={s} />
+            ))}
+          </span>
+        )}
+      </span>
+      {spark && spark.length > 1 && <Sparkline closes={spark} />}
+      <span className="trow-prices">
+        <span className={`price ${flash ? `flash-${flash}` : ''}`}>{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
+        {quote && (
+          <span className={`trow-chg ${up ? 'up' : 'down'}`}>
+            {up ? '↗' : '↘'} {Math.abs(quote.changePct).toFixed(2)}%
+          </span>
+        )}
+      </span>
+      <button
+        className="remove trow-remove"
+        onClick={e => {
+          e.stopPropagation() // row tap navigates; ✕ must only remove
+          onRemove()
+        }}
+        aria-label={`Remove ${symbol}`}
+      >
+        ✕
+      </button>
     </div>
   )
 }

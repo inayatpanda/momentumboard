@@ -102,6 +102,50 @@ export interface InsiderCoverageOpts {
  *   - value = InsiderSummary → open-market buys found
  *   - value = null           → checked, no buys (factor scores 0)
  * A symbol absent from the map was never checked → factor stays null. */
+// One row of the Intel screen's market-wide cluster board, distilled from a
+// cached InsiderSummary. `buyers` is the count; `names` the first few of them.
+export interface InsiderClusterRow {
+  symbol: string
+  buyers: number
+  totalValueUsd: number
+  lastDate: string // most recent open-market buy date seen
+  names: string[]
+}
+
+/** Aggregate the engine's accumulated per-symbol coverage blobs into a
+ * market-wide cluster board. READS ONLY — never triggers Finnhub fetches, so
+ * symbols the rotation hasn't reached yet (or whose 24h blob expired) simply
+ * don't appear. Sorted by dollars, largest first. */
+export async function aggregateInsiderClusters(
+  rosterSyms: string[],
+  cacheGet: <T>(key: string) => Promise<T | null> = getCached,
+  limit = 20,
+): Promise<InsiderClusterRow[]> {
+  const rows: InsiderClusterRow[] = []
+  const syms = [...new Set(rosterSyms)]
+  for (let i = 0; i < syms.length; i += 25) {
+    await Promise.all(
+      syms.slice(i, i + 25).map(async sym => {
+        try {
+          const hit = await cacheGet<InsiderCacheEntry>(coverageKey(sym))
+          const s = hit?.summary
+          if (!s || !s.buyers.length) return // never checked, or checked-empty
+          rows.push({
+            symbol: s.symbol,
+            buyers: s.buyers.length,
+            totalValueUsd: Math.round(s.totalValueUsd),
+            lastDate: s.latest.map(l => l.date).sort().at(-1) ?? '',
+            names: s.buyers.slice(0, 6),
+          })
+        } catch {
+          /* one bad blob must not kill the board */
+        }
+      }),
+    )
+  }
+  return rows.sort((a, b) => b.totalValueUsd - a.totalValueUsd).slice(0, limit)
+}
+
 export async function collectInsiderCoverage(
   rosterSyms: string[],
   watchSyms: string[],

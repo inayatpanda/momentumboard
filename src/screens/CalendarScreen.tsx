@@ -3,7 +3,6 @@ import { db, type NoteItem } from '../lib/db'
 import { getMonthMap, getDayLedger } from '../lib/api'
 import { IconGear, IconNews, IconTarget, stripEmoji } from '../components/icons'
 import type { Trade } from '../../shared/journal'
-import { SubNav } from '../components/TabBar'
 
 // The day ledger: everything the desk produced on any given date — the paper,
 // picks, alerts, event assessments, watched videos — merged with YOUR notes
@@ -59,7 +58,6 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
         <span className="brand">Calendar</span>
         <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
       </header>
-      <SubNav />
       <div className="content">
         <div className="cal-head">
           <button className="mini-btn ghost" onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
@@ -115,7 +113,7 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
                       {p.strength === 'strong' && <IconTarget size={11} />} {p.ticker}
                       <span className={`badge ${p.side === 'long' ? 'good' : 'bad'}`} style={{ marginLeft: 6 }}>{p.side}</span>
                     </span>
-                    <span style={{ color: 'var(--muted)' }}>
+                    <span className="cal-meta">
                       {p.conviction ? `grade ${p.conviction}` : ''}{p.priceAtPick != null ? ` · at ${p.priceAtPick}` : ''}
                     </span>
                   </div>
@@ -129,7 +127,7 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
                 {trades.map(t => (
                   <div key={t.id} className="perf-row">
                     <span>{t.symbol} <span className="badge info">{t.exitPrice != null ? 'closed' : 'opened'}</span></span>
-                    <span style={{ color: 'var(--muted)' }}>{t.units} @ {t.entryPrice}{t.exitPrice != null ? ` → ${t.exitPrice}` : ''}</span>
+                    <span className="cal-meta">{t.units} @ {t.entryPrice}{t.exitPrice != null ? ` → ${t.exitPrice}` : ''}</span>
                   </div>
                 ))}
               </section>
@@ -139,9 +137,9 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
               <section className="digest-section">
                 <h3 className="section-title">Your notes</h3>
                 {notes.map(n => (
-                  <div key={n.id} className="card" style={{ marginBottom: 6 }}>
-                    <span style={{ fontSize: 13 }}><span className="badge info">{n.kind}</span> {n.text}</span>
-                    {n.aiTake && <p style={{ fontSize: 12, color: 'var(--muted)', margin: '6px 0 0' }}>{n.aiTake}</p>}
+                  <div key={n.id} className="card cal-note-card">
+                    <span className="cal-note-text"><span className="badge info">{n.kind}</span> {n.text}</span>
+                    {n.aiTake && <p className="cal-note-ai">{n.aiTake}</p>}
                   </div>
                 ))}
               </section>
@@ -151,9 +149,9 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
               <section className="digest-section">
                 <h3 className="section-title">Event assessments</h3>
                 {ledger.events.map(e => (
-                  <div key={e.name + e.at} className="card" style={{ marginBottom: 6 }}>
-                    <strong style={{ fontSize: 13 }}>{e.name} ({e.kind})</strong>
-                    <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '4px 0 0' }}>{e.assessment}…</p>
+                  <div key={e.name + e.at} className="card cal-event-card">
+                    <strong className="cal-event-name">{e.name} ({e.kind})</strong>
+                    <p className="cal-event-assess">{e.assessment}…</p>
                   </div>
                 ))}
               </section>
@@ -163,9 +161,9 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
               <section className="digest-section">
                 <h3 className="section-title">Alerts that day ({ledger.alerts.length})</h3>
                 {ledger.alerts.map((a, i) => (
-                  <div key={i} className="perf-row" style={{ fontSize: 12.5 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stripEmoji(a.text)}</span>
-                    <span style={{ color: 'var(--faint)', flex: '0 0 auto', marginLeft: 8 }}>
+                  <div key={i} className="perf-row cal-alert">
+                    <span className="cal-ellip">{stripEmoji(a.text)}</span>
+                    <span className="cal-when">
                       {new Date(a.at * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
@@ -176,9 +174,17 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
             {ledger.videos.length > 0 && (
               <section className="digest-section">
                 <h3 className="section-title">AI-watched that day</h3>
-                <ul className="news-list">
+                <ul className="news-rows">
                   {ledger.videos.map(v => (
-                    <li key={v.url}><a href={v.url} target="_blank" rel="noreferrer">{v.title ?? v.url}</a><span>{v.channel}</span></li>
+                    <li key={v.url}>
+                      <a className="news-row" href={v.url} target="_blank" rel="noreferrer">
+                        <span className="news-row-main">
+                          <span className="news-row-title">{v.title ?? v.url}</span>
+                          {v.channel && <span className="news-row-meta">{v.channel}</span>}
+                        </span>
+                        <span className="news-row-go" aria-hidden="true">↗</span>
+                      </a>
+                    </li>
                   ))}
                 </ul>
               </section>

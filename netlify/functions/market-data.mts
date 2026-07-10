@@ -12,7 +12,7 @@ const json = (status: number, body: unknown) =>
 export async function routeRequest(
   url: URL,
   headers: Headers,
-  env: { APP_TOKEN?: string; FINNHUB_API_KEY?: string },
+  env: { APP_TOKEN?: string; FINNHUB_API_KEY?: string; QUIVER_API_KEY?: string; FMP_API_KEY?: string },
   deps: { yahoo: typeof fetchYahooChart; finnhub: typeof fetchFinnhubQuote; news?: typeof fetchSymbolNews },
 ): Promise<Response> {
   const { authenticate } = await import('./lib/auth')
@@ -168,6 +168,52 @@ export async function routeRequest(
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'congress') {
+    // Congressional trades for the Intel screen. The upstream sweep (source
+    // ladder in lib/congress) is cached ONCE market-wide for a day; the
+    // watchlist filter is applied per-request on top of the cache. Fail-soft:
+    // a dead ladder yields { trades: [], source: 'none' }, never a 500.
+    const symbols = (url.searchParams.get('symbols') ?? '').split(',').filter(Boolean).map(s => s.toUpperCase()).slice(0, 30)
+    try {
+      type CongressBlob = { trades: import('./lib/congress').CongressTrade[]; source: string; asOf: number }
+      let blob = await getCached<CongressBlob>('congress:v1')
+      if (!blob) {
+        const { fetchCongressTrades } = await import('./lib/congress')
+        const { trades, source } = await fetchCongressTrades(env, symbols)
+        blob = { trades, source, asOf: Math.floor(Date.now() / 1000) }
+        // an empty sweep is re-tried hourly (so adding QUIVER_API_KEY lights up
+        // within the hour); a live one holds for the full day.
+        await setCached('congress:v1', blob, trades.length ? 86_400 : 3600)
+      }
+      const base = (s: string) => s.split('.')[0].split('-')[0].toUpperCase()
+      const wanted = new Set(symbols.map(base))
+      const watchlistHits = wanted.size ? blob.trades.filter(t => wanted.has(base(t.symbol))) : []
+      return json(200, { ok: true, data: { trades: blob.trades.slice(0, 100), watchlistHits, source: blob.source, asOf: blob.asOf } })
+    } catch {
+      return json(200, { ok: true, data: { trades: [], watchlistHits: [], source: 'none', asOf: Math.floor(Date.now() / 1000) } })
+    }
+  }
+
+  if (type === 'insider-clusters') {
+    // Market-wide insider-buying clusters, aggregated from the per-symbol
+    // coverage blobs the engine's daily rotation already collected
+    // (insiders:cov:*). Aggregation only — this endpoint NEVER hits Finnhub,
+    // so a cold engine simply means a shorter (or empty) list.
+    const hit = await getCached<unknown>('insider-clusters:v1')
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { aggregateInsiderClusters } = await import('./lib/insiders')
+      const roster = (await blobAppStore.read<{ sym: string }[]>('engine-roster')) ?? []
+      const cfg = await blobAppStore.read<{ watchlist?: { symbol: string }[] }>('config')
+      const syms = [...new Set([...roster.map(r => r.sym), ...(cfg?.watchlist ?? []).map(w => w.symbol)])]
+      const data = { clusters: await aggregateInsiderClusters(syms), asOf: Math.floor(Date.now() / 1000) }
+      await setCached('insider-clusters:v1', data, 21_600)
+      return json(200, { ok: true, data })
+    } catch {
+      return json(200, { ok: true, data: { clusters: [], asOf: Math.floor(Date.now() / 1000) } })
     }
   }
 
@@ -462,13 +508,13 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
   }
 
   if (type === 'smart-money') {
-    const hit = await getCached<unknown>('smart-money:v2') // v2: entity-decoded issuer names
+    const hit = await getCached<unknown>('smart-money:v3') // v3: roster grew to 10 funds (v2 = entity-decoded issuer names)
     if (hit) return json(200, { ok: true, data: hit })
     try {
       const { FUNDS, fetchFundMoves } = await import('./lib/edgar')
       const funds = (await Promise.all(FUNDS.map(f => fetchFundMoves(f.cik, f.name)))).filter(Boolean)
       const data = { funds, lagNote: '13F holdings are filed up to 45 days after quarter end — context, not timing.' }
-      await setCached('smart-money:v2', data, 86_400)
+      await setCached('smart-money:v3', data, 86_400)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
@@ -505,6 +551,6 @@ export default async (req: Request, _context: Context) =>
   routeRequest(
     new URL(req.url),
     req.headers,
-    { APP_TOKEN: process.env.APP_TOKEN, FINNHUB_API_KEY: process.env.FINNHUB_API_KEY },
+    { APP_TOKEN: process.env.APP_TOKEN, FINNHUB_API_KEY: process.env.FINNHUB_API_KEY, QUIVER_API_KEY: process.env.QUIVER_API_KEY, FMP_API_KEY: process.env.FMP_API_KEY },
     { yahoo: fetchYahooChart, finnhub: fetchFinnhubQuote },
   )

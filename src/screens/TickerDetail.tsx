@@ -13,7 +13,7 @@ import { engineLevelLines, stageMarkerSpec, type PriceLineSpec, type StageMarker
 import { PriceChart } from '../components/PriceChart'
 import { RsiChart } from '../components/RsiChart'
 import { EngineReadStrip, EngineFactors } from '../components/EngineRead'
-import { AskDesk } from '../components/AskDesk'
+import { AskDesk, ClampText } from '../components/AskDesk'
 import { PositionCalculator } from '../components/PositionCalculator'
 import { AlertEditor } from '../components/AlertEditor'
 import { Badge } from '../components/Badge'
@@ -21,6 +21,23 @@ import { IconBack, IconWarn } from '../components/icons'
 
 const RANGES = ['3mo', '6mo', '1y'] as const
 type Range = (typeof RANGES)[number]
+
+// Display-only helpers for the compact news rows: publisher host + relative age.
+const newsSource = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+const timeAgo = (sec: number) => {
+  const mins = Math.max(1, Math.round(Date.now() / 1000 / 60 - sec / 60))
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.round(hrs / 24)
+  return days < 7 ? `${days}d ago` : new Date(sec * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
 
 export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () => void }) {
   const [range, setRange] = useState<Range>('6mo')
@@ -120,23 +137,16 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
 
   return (
     <div className="detail">
-      <header className="detail-head">
+      <header className="detail-head detail-hero-head">
         <button className="back" onClick={onBack} aria-label="Back to watchlist"><IconBack /></button>
-        <div>
-          <h2>{symbol}</h2>
-          {quote && (
-            <span className="detail-price">
-              {fmtPrice(quote.price, quote.currency)}{' '}
-              <span className={quote.changePct >= 0 ? 'up-text' : 'down-text'}>{fmtPct(quote.changePct)}</span>
-            </span>
-          )}
-        </div>
-        <div className="range-pills">
-          {RANGES.map(r => (
-            <button key={r} className={r === range ? 'active' : ''} onClick={() => setRange(r)}>
-              {r.toUpperCase()}
-            </button>
-          ))}
+        <div className="t-hero detail-hero">
+          <span className="eyebrow">
+            {symbol} · {exchangeFor(symbol)}{quote ? ` · ${quote.currency}` : ''}
+          </span>
+          <div className="detail-hero-line">
+            <span className="val">{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
+            {quote && <span className={`chg-pill ${quote.changePct >= 0 ? 'up' : 'down'}`}>{fmtPct(quote.changePct)}</span>}
+          </div>
         </div>
       </header>
 
@@ -152,7 +162,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
       {brief && (
         <div className="ai-card" style={{ marginBottom: 10 }}>
           <h3>What's new · {symbol}</h3>
-          <p style={{ fontSize: 13.5 }}>{brief.brief}</p>
+          <ClampText text={brief.brief} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="ai-note">AI brief, refreshed every 6h. Not advice.</span>
             <button className="mini-btn ghost" onClick={shareBrief}>Share</button>
@@ -161,6 +171,14 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
       )}
 
       <EngineReadStrip read={engineRead} />
+
+      <div className="seg seg-ranges" role="group" aria-label="Chart range">
+        {RANGES.map(r => (
+          <button key={r} className={r === range ? 'active' : ''} onClick={() => setRange(r)}>
+            {r.toUpperCase()}
+          </button>
+        ))}
+      </div>
 
       <PriceChart candles={candles} priceLines={priceLines} marker={stageMarker} />
       <RsiChart candles={candles} />
@@ -227,11 +245,18 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
       {news.length > 0 && (
         <section>
           <h3 className="section-title">Recent news</h3>
-          <ul className="news-list">
+          <ul className="news-rows">
             {news.slice(0, 8).map(n => (
               <li key={n.url}>
-                <a href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
-                {n.publishedSec > 0 && <span>{new Date(n.publishedSec * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>}
+                <a className="news-row" href={n.url} target="_blank" rel="noreferrer">
+                  <span className="news-row-main">
+                    <span className="news-row-title">{n.title}</span>
+                    <span className="news-row-meta">
+                      {[newsSource(n.url), n.publishedSec > 0 ? timeAgo(n.publishedSec) : null].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <span className="news-row-go" aria-hidden="true">↗</span>
+                </a>
               </li>
             ))}
           </ul>

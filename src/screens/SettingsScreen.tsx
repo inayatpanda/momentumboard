@@ -1,120 +1,210 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { db, getCapital, getChannels } from '../lib/db'
-import { resolveChannel, getLicences, createLicence, revokeLicence, getLlmKeyStatus, putLlmKey, apiGet, putConfig } from '../lib/api'
+import { resolveChannel, getLicences, createLicence, revokeLicence, getLlmKeyStatus, putLlmKey, apiGet, putConfig, setToken } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { enablePush, pushSupported, type PushStatus } from '../lib/push'
-import { IconBack, IconBell, IconSun, IconMoon } from '../components/icons'
+import { IconBack, IconBell, IconMoon, IconSparkle, IconSun } from '../components/icons'
 import type { AppConfig } from '../../shared/config'
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
-function ByoAiKey() {
+type Licence = Awaited<ReturnType<typeof getLicences>>[number]
+
+/* Local one-off icons (same Lucide-stroke language as components/icons). */
+const Svg = ({ d }: { d: string }) => (
+  <svg viewBox="0 0 24 24" width={17} height={17} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d={d} />
+  </svg>
+)
+const IconKey = () => <Svg d="M21 2l-9.4 9.4M15.5 7.5l3 3M11.6 11.6a5 5 0 11-7.07 7.07 5 5 0 017.07-7.07z" />
+const IconGlobe = () => <Svg d="M12 3a9 9 0 100 18 9 9 0 000-18zM3 12h18M12 3c2.5 2.4 3.9 5.5 3.9 9s-1.4 6.6-3.9 9c-2.5-2.4-3.9-5.5-3.9-9S9.5 5.4 12 3z" />
+
+const hueOf = (s: string) => {
+  let h = 0
+  for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360
+  return h
+}
+
+/** ONE admin probe for the whole screen (the old ByoAiKey / LicenceManager /
+ * ReportRecipients each probed getLicences() separately = 3 calls).
+ * isAdmin: null = probe in flight (all gated sections hidden, matching the old
+ * initial states), true = server accepted the stored token as admin,
+ * false = normal licence / no token. */
+function useIsAdmin() {
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
+  const [licences, setLicences] = useState<Licence[]>([])
+  const reload = useCallback(
+    () =>
+      getLicences()
+        .then(l => {
+          setLicences(l)
+          setIsAdmin(true)
+        })
+        .catch(() => setIsAdmin(false)),
+    [],
+  )
+  useEffect(() => {
+    reload()
+  }, [reload])
+  return { isAdmin, licences, reload }
+}
+
+function ByoAiKey({ isAdmin }: { isAdmin: boolean | null }) {
   // Licensees run AI features on THEIR OWN key (free at console.groq.com);
   // the owner's key lives in server env and is never used for licensees.
-  const [isAdmin, setIsAdmin] = useState(true) // assume admin until probe says otherwise → section hidden for the owner
   const [hasKey, setHasKey] = useState(false)
   const [key, setKey] = useState('')
   const [saved, setSaved] = useState(false)
   useEffect(() => {
-    getLicences().then(() => setIsAdmin(true)).catch(() => setIsAdmin(false))
     getLlmKeyStatus().then(s => setHasKey(s.hasKey)).catch(() => {})
   }, [])
-  if (isAdmin) return null
+  if (isAdmin !== false) return null // inverse gate: only NON-admin devices see this
   return (
-    <>
-      <h3 className="section-title">Your AI key</h3>
-      <div className="settings-grid">
-        <p className="empty-line" style={{ fontSize: 12 }}>
-          AI briefs and note feedback run on your own free Groq key (console.groq.com). {hasKey ? 'A key is saved for this licence.' : 'No key saved yet — AI features are off until you add one.'}
-        </p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input type="password" placeholder="gsk_..." value={key} onChange={e => setKey(e.target.value)} style={{ flex: 1 }} aria-label="Groq API key" />
-          <button
-            className="mini-btn"
-            onClick={async () => {
-              try {
-                await putLlmKey(key.trim())
-                setHasKey(!!key.trim())
-                setKey('')
-                setSaved(true)
-                setTimeout(() => setSaved(false), 2500)
-              } catch { /* leave input for retry */ }
-            }}
-          >
-            {saved ? 'Saved' : 'Save'}
-          </button>
-        </div>
+    <section className="menu-group">
+      <div className="menu-title">AI</div>
+      <div className="menu-row set-static">
+        <span className="icon-tile gold"><IconSparkle /></span>
+        <span className="set-main">
+          <span>Your AI key</span>
+          <span className="sub">
+            AI briefs and note feedback run on your own free Groq key (console.groq.com). {hasKey ? 'A key is saved for this licence.' : 'No key saved yet — AI features are off until you add one.'}
+          </span>
+        </span>
       </div>
-    </>
+      <div className="set-inrow">
+        <input className="set-in" type="password" placeholder="gsk_..." value={key} onChange={e => setKey(e.target.value)} style={{ flex: 1 }} aria-label="Groq API key" />
+        <button
+          className="mini-btn"
+          onClick={async () => {
+            try {
+              await putLlmKey(key.trim())
+              setHasKey(!!key.trim())
+              setKey('')
+              setSaved(true)
+              setTimeout(() => setSaved(false), 2500)
+            } catch { /* leave input for retry */ }
+          }}
+        >
+          {saved ? 'Saved' : 'Save'}
+        </button>
+      </div>
+    </section>
   )
 }
 
-function LicenceManager() {
-  const [licences, setLicences] = useState<Awaited<ReturnType<typeof getLicences>> | null>(null)
-  const [isAdmin, setIsAdmin] = useState(false)
+/** Non-admin escape hatch: validate a candidate admin key WITHOUT touching the
+ * stored licence token — only a server-accepted key replaces it. */
+function AdminUnlock() {
+  const [open, setOpen] = useState(false)
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const submit = async () => {
+    const candidate = key.trim()
+    if (!candidate || busy) return
+    setBusy(true)
+    setErr(null)
+    try {
+      // Direct fetch with the CANDIDATE key — the stored token stays untouched
+      // unless the server says this one is the admin key.
+      const res = await fetch('/api/licences', { headers: { 'x-app-token': candidate } })
+      if (res.ok) {
+        setToken(candidate)
+        location.reload()
+      } else {
+        setErr("That isn't the admin key")
+      }
+    } catch {
+      setErr('Network error — try again')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="menu-group">
+      <div className="menu-title">Admin</div>
+      <button className="menu-row" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <span className="icon-tile amber"><IconKey /></span>
+        <span className="set-main">
+          <span>Unlock admin</span>
+          <span className="sub">Unlocking replaces this device's licence key with the admin key.</span>
+        </span>
+        <span className="chev">{open ? '▾' : '›'}</span>
+      </button>
+      {open && (
+        <div className="set-unlock">
+          <input
+            className="set-in"
+            type="password"
+            placeholder="Admin key"
+            value={key}
+            onChange={e => { setKey(e.target.value); setErr(null) }}
+            onKeyDown={e => { if (e.key === 'Enter') submit() }}
+            aria-label="Admin key"
+          />
+          {err && <p className="set-err" role="alert">{err}</p>}
+          <button className="btn-primary" disabled={busy || !key.trim()} onClick={submit}>
+            {busy ? 'Checking…' : 'Unlock'}
+          </button>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function LicenceManager({ licences, reload }: { licences: Licence[]; reload: () => Promise<void> }) {
   const [label, setLabel] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const load = () =>
-    getLicences()
-      .then(l => {
-        setLicences(l)
-        setIsAdmin(true)
-      })
-      .catch(() => setIsAdmin(false))
-  useEffect(() => {
-    load()
-  }, [])
-
-  if (!isAdmin) return null // only the admin key sees this section
-
   return (
-    <>
-      <h3 className="section-title">Licences (admin)</h3>
-      <div className="settings-grid">
-        {(licences ?? []).filter(l => !l.revoked).map(l => (
-          <div key={l.key} className="chan-row">
-            <span>
-              {l.label} <span style={{ color: 'var(--faint)', fontSize: 11, fontFamily: 'var(--font-num)' }}>{l.key.slice(0, 10)}…</span>
-            </span>
-            <span style={{ display: 'flex', gap: 6 }}>
-              <button
-                className="mini-btn ghost"
-                onClick={() => {
-                  navigator.clipboard?.writeText(l.unlockLink)
-                  if (navigator.share) navigator.share({ title: 'StreetSignal access', url: l.unlockLink }).catch(() => {})
-                }}
-              >
-                Share link
-              </button>
-              <button className="remove" onClick={async () => { await revokeLicence(l.key); load() }} aria-label={`Revoke ${l.label}`}>✕</button>
-            </span>
-          </div>
-        ))}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input placeholder="New licence label (e.g. Dad's phone)" value={label} onChange={e => setLabel(e.target.value)} style={{ flex: 1 }} aria-label="Licence label" />
-          <button
-            className="mini-btn"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true)
-              try {
-                await createLicence(label)
-                setLabel('')
-                load()
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            {busy ? '…' : 'Generate'}
-          </button>
+    <section className="menu-group">
+      <div className="menu-title">Licences</div>
+      {licences.filter(l => !l.revoked).map(l => (
+        <div key={l.key} className="menu-row set-static">
+          <span className="icon-tile"><IconKey /></span>
+          <span className="set-main">
+            <span>{l.label}</span>
+            <span className="sub num">{l.key.slice(0, 10)}… · {new Date(l.createdAt).toLocaleDateString()}</span>
+          </span>
+          <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button
+              className="mini-btn ghost"
+              onClick={() => {
+                navigator.clipboard?.writeText(l.unlockLink)
+                if (navigator.share) navigator.share({ title: 'StreetSignal access', url: l.unlockLink }).catch(() => {})
+              }}
+            >
+              Copy link
+            </button>
+            <button className="remove" onClick={async () => { await revokeLicence(l.key); reload() }} aria-label={`Revoke ${l.label}`}>✕</button>
+          </span>
         </div>
-        <p className="empty-line" style={{ fontSize: 11 }}>
-          Each licence unlocks the app with its OWN watchlist and data. Licensees get everything except your Telegram alerts and the personalised morning report. Revoking a key locks that user out instantly. Your key is the admin key; this panel exists only for you.
-        </p>
+      ))}
+      <div className="set-inrow">
+        <input className="set-in" placeholder="New licence label (e.g. Dad's phone)" value={label} onChange={e => setLabel(e.target.value)} style={{ flex: 1 }} aria-label="Licence label" />
+        <button
+          className="mini-btn"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true)
+            try {
+              await createLicence(label)
+              setLabel('')
+              reload()
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          {busy ? '…' : 'Generate'}
+        </button>
       </div>
-    </>
+      <p className="set-note">
+        Each licence unlocks the app with its OWN watchlist and data. Licensees get everything except your Telegram alerts and the personalised morning report. Revoking a key locks that user out instantly. Your key is the admin key; this panel exists only for you.
+      </p>
+    </section>
   )
 }
 
@@ -124,25 +214,17 @@ function ReportRecipients() {
   // (reportRecipients), so it round-trips through the same /api/config PUT the
   // rest of AppConfig uses — read-modify-write against the freshest server copy
   // rather than the phone's local mirror, since this field has no local table.
-  const [isAdmin, setIsAdmin] = useState(false)
+  // Rendered only when the shared admin probe has already succeeded.
   const [recipients, setRecipients] = useState<string[]>([])
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [invalid, setInvalid] = useState(false)
 
-  const load = () =>
-    getLicences()
-      .then(async () => {
-        setIsAdmin(true)
-        const cfg = await apiGet<AppConfig | null>('/api/config').catch(() => null)
-        setRecipients(cfg?.reportRecipients ?? [])
-      })
-      .catch(() => setIsAdmin(false))
   useEffect(() => {
-    load()
+    apiGet<AppConfig | null>('/api/config')
+      .then(cfg => setRecipients(cfg?.reportRecipients ?? []))
+      .catch(() => {})
   }, [])
-
-  if (!isAdmin) return null // only the admin key sees this section
 
   const persist = async (next: string[]) => {
     setBusy(true)
@@ -171,41 +253,41 @@ function ReportRecipients() {
   }
 
   return (
-    <>
-      <h3 className="section-title">Report recipients (admin)</h3>
-      <div className="settings-grid">
-        {recipients.map(r => (
-          <div key={r} className="chan-row">
-            <span>{r}</span>
-            <button className="remove" onClick={() => removeRecipient(r)} disabled={busy} aria-label={`Remove ${r}`}>✕</button>
-          </div>
-        ))}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            type="email"
-            placeholder="name@example.com"
-            value={email}
-            onChange={e => { setEmail(e.target.value); setInvalid(false) }}
-            style={{ flex: 1 }}
-            aria-label="Add report recipient email"
-          />
-          <button className="mini-btn" disabled={busy} onClick={addRecipient}>{busy ? '…' : 'Add'}</button>
+    <section className="menu-group">
+      <div className="menu-title">Briefing recipients</div>
+      {recipients.map(r => (
+        <div key={r} className="menu-row set-static">
+          <span className="avatar-dot set-ava" style={{ '--h': hueOf(r) } as CSSProperties}>{r[0]?.toUpperCase()}</span>
+          <span className="set-main"><span>{r}</span></span>
+          <button className="remove" onClick={() => removeRecipient(r)} disabled={busy} aria-label={`Remove ${r}`}>✕</button>
         </div>
-        {invalid && <p className="empty-line" style={{ fontSize: 11, color: 'var(--red)' }}>Enter a valid email address.</p>}
-        <p className="empty-line" style={{ fontSize: 11 }}>
-          Extra addresses that get the morning report and intraday bulletins, added on top of the REPORT_EMAIL_TO env recipients.
-        </p>
+      ))}
+      <div className="set-inrow">
+        <input
+          className="set-in"
+          type="email"
+          placeholder="name@example.com"
+          value={email}
+          onChange={e => { setEmail(e.target.value); setInvalid(false) }}
+          style={{ flex: 1 }}
+          aria-label="Add report recipient email"
+        />
+        <button className="mini-btn" disabled={busy} onClick={addRecipient}>{busy ? '…' : 'Add'}</button>
       </div>
-    </>
+      {invalid && <p className="set-err" role="alert">Enter a valid email address.</p>}
+      <p className="set-note">
+        Extra addresses that get the morning report and intraday bulletins, added on top of the REPORT_EMAIL_TO env recipients.
+      </p>
+    </section>
   )
 }
 
-function NotificationSettings() {
+function NotificationRow() {
   const [status, setStatus] = useState<PushStatus | 'idle' | 'working'>(
     typeof Notification !== 'undefined' && Notification.permission === 'granted' && pushSupported() ? 'granted' : 'idle',
   )
   const label =
-    status === 'granted' ? '✓ App notifications ON for this device'
+    status === 'granted' ? 'App notifications ON for this device'
     : status === 'working' ? 'Enabling…'
     : status === 'denied' ? 'Blocked. Allow notifications in browser settings'
     : status === 'needs-install' ? 'Install to Home Screen first (Share → Add to Home Screen), then tap again'
@@ -213,41 +295,53 @@ function NotificationSettings() {
     : status === 'error' ? 'Failed. Try again'
     : 'Enable app notifications on this device'
   return (
-    <div>
+    <section className="menu-group">
+      <div className="menu-title">Notifications</div>
       <button
-        className="mini-btn"
+        className="menu-row"
         disabled={status === 'granted' || status === 'working'}
         onClick={async () => {
           setStatus('working')
           setStatus(await enablePush())
         }}
       >
-        <IconBell /> {label}
+        <span className="icon-tile"><IconBell /></span>
+        <span className="set-main">
+          <span>{label}</span>
+          <span className="sub">Alerts arrive as native notifications on every enabled device. Telegram stays on as the reliable backup; /mute silences both.</span>
+        </span>
+        {status === 'granted' ? <span className="sub">On</span> : <span className="chev">›</span>}
       </button>
-      <p className="empty-line" style={{ fontSize: 11, marginTop: 4 }}>
-        Alerts arrive as native notifications on every enabled device. Telegram stays on as the reliable backup; /mute silences both.
-      </p>
-    </div>
+    </section>
   )
 }
 
-function ThemeSettings() {
+function AppearanceGroup() {
   const [pref, setPref] = useState(localStorage.getItem('mb-theme') ?? 'auto')
   const apply = (p: string) => {
     localStorage.setItem('mb-theme', p)
     setPref(p)
     const dark = p === 'dark' || (p === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0a0e12' : '#f6f7f9')
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0a0d0f' : '#f6f4ef')
   }
+  const resolvedDark =
+    pref === 'dark' || (pref === 'auto' && typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches)
   return (
-    <div className="subtabs" style={{ marginBottom: 4 }}>
-      {(['auto', 'light', 'dark'] as const).map(p => (
-        <button key={p} className={pref === p ? 'active' : ''} onClick={() => apply(p)}>
-          {p === 'auto' ? 'Auto' : p === 'light' ? <><IconSun /> Light</> : <><IconMoon /> Dark</>}
-        </button>
-      ))}
-    </div>
+    <section className="menu-group">
+      <div className="menu-title">Appearance</div>
+      <div className="menu-row set-static">
+        <span className={`icon-tile ${resolvedDark ? '' : 'amber'}`.trim()}>{resolvedDark ? <IconMoon /> : <IconSun />}</span>
+        <span className="set-main"><span>Theme</span></span>
+        <div className="seg" role="group" aria-label="Theme">
+          {(['auto', 'light', 'dark'] as const).map(p => (
+            <button key={p} className={pref === p ? 'active' : ''} onClick={() => apply(p)}>
+              {p === 'auto' ? 'Auto' : p === 'light' ? 'Light' : 'Dark'}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -256,6 +350,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [channels, setChannels] = useState<{ id: string; name: string }[]>([])
   const [newHandle, setNewHandle] = useState('')
   const [resolving, setResolving] = useState(false)
+  const { isAdmin, licences, reload } = useIsAdmin()
 
   useEffect(() => {
     getCapital().then(c => setCapital(String(c)))
@@ -301,37 +396,55 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         <span className="brand">Settings</span>
       </header>
       <div className="content">
-        <h3 className="section-title">Appearance</h3>
-        <ThemeSettings />
+        <AppearanceGroup />
 
-        <h3 className="section-title">Notifications</h3>
-        <NotificationSettings />
+        <NotificationRow />
 
-        <h3 className="section-title">Capital</h3>
-        <div className="settings-grid">
-          <label className="tf-full">Capital (£). Drives sizing, risk banners, and the reports.
-            <input inputMode="decimal" value={capital} onChange={e => setCapital(e.target.value)} onBlur={saveCapital} aria-label="Capital setting" />
-          </label>
-        </div>
-
-        <h3 className="section-title">Followed channels</h3>
-        <div className="settings-grid">
+        <section className="menu-group">
+          <div className="menu-title">Trading</div>
+          <div className="menu-row set-static">
+            <span className="icon-tile green set-glyph" aria-hidden="true">£</span>
+            <span className="set-main">
+              <span>Capital</span>
+              <span className="sub">Drives sizing, risk banners, and the reports.</span>
+            </span>
+            <input className="set-in set-cap num" inputMode="decimal" value={capital} onChange={e => setCapital(e.target.value)} onBlur={saveCapital} aria-label="Capital setting" />
+          </div>
           {channels.map(c => (
-            <div key={c.id} className="chan-row">
-              <span>{c.name}</span>
+            <div key={c.id} className="menu-row set-static">
+              <span className="avatar-dot set-ava" style={{ '--h': hueOf(c.id) } as CSSProperties}>{c.name[0]?.toUpperCase()}</span>
+              <span className="set-main"><span>{c.name}</span></span>
               <button className="remove" onClick={() => removeChannel(c.id)} aria-label={`Remove ${c.name}`}>✕</button>
             </div>
           ))}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input placeholder="Add channel by @handle" value={newHandle} onChange={e => setNewHandle(e.target.value)} style={{ flex: 1 }} aria-label="Add channel handle" />
+          <div className="set-inrow">
+            <input className="set-in" placeholder="Add channel by @handle" value={newHandle} onChange={e => setNewHandle(e.target.value)} style={{ flex: 1 }} aria-label="Add channel handle" />
             <button className="mini-btn" onClick={addChannel} disabled={resolving}>{resolving ? '…' : 'Add'}</button>
           </div>
-          <p className="empty-line" style={{ fontSize: 11 }}>Channels feed the alert engine, the consensus tracker, and AI video watching.</p>
-        </div>
+          <p className="set-note">Channels feed the alert engine, the consensus tracker, and AI video watching.</p>
+        </section>
 
-        <ByoAiKey />
-        <LicenceManager />
-        <ReportRecipients />
+        <ByoAiKey isAdmin={isAdmin} />
+
+        {isAdmin === false && <AdminUnlock />}
+        {isAdmin === true && (
+          <>
+            <LicenceManager licences={licences} reload={reload} />
+            <ReportRecipients />
+          </>
+        )}
+
+        <section className="menu-group">
+          <div className="menu-title">App</div>
+          <a className="menu-row" href="https://thestreetsignal.netlify.app" target="_blank" rel="noopener noreferrer">
+            <span className="icon-tile"><IconGlobe /></span>
+            <span className="set-main">
+              <span>Open website in browser</span>
+              <span className="sub">Opens the site outside the installed app</span>
+            </span>
+            <span className="chev">↗</span>
+          </a>
+        </section>
 
         <footer className="foot">Journal backup and export live on the Journal tab.</footer>
       </div>

@@ -9,6 +9,25 @@ import { humanError } from '../lib/format'
 
 const SUGGESTIONS = ['Good entry here?', 'Why is it moving?', 'Where would a stop go?']
 
+// ClampText — long AI prose folds to ~6 lines behind a Read more/Less toggle.
+// A cheap length heuristic (no layout measurement) decides whether to clamp;
+// short answers render as a plain paragraph with no toggle. Shared by the
+// desk answers here and the AI brief on the ticker detail screen.
+export function ClampText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const long = text.length > 360 || (text.match(/\n/g)?.length ?? 0) >= 6
+  return (
+    <>
+      <p className={long && !expanded ? 'clamped' : undefined}>{text}</p>
+      {long && (
+        <button type="button" className="clamp-toggle" aria-expanded={expanded} onClick={() => setExpanded(e => !e)}>
+          {expanded ? 'Less' : 'Read more'}
+        </button>
+      )}
+    </>
+  )
+}
+
 export function AskDesk({ symbol }: { symbol: string }) {
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
@@ -73,7 +92,7 @@ export function AskDesk({ symbol }: { symbol: string }) {
       {qa && (
         <>
           <p style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 4 }}>“{qa.q}”</p>
-          <p style={{ fontSize: 13.5, whiteSpace: 'pre-wrap' }}>{qa.answer}</p>
+          <ClampText text={qa.answer} />
           <span className="ai-note">Grounded in this chart's measured read — stage, setups, returns, regime, engine call, headlines. Analysis, not advice.</span>
         </>
       )}

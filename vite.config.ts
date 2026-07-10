@@ -13,12 +13,16 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png}'] },
       manifest: {
+        id: '/',
         name: 'StreetSignal',
         short_name: 'StreetSignal',
         description: 'Watchlist, setups and alerts for swing trading. Informs; does not predict.',
-        theme_color: '#0b0e14',
-        background_color: '#0b0e14',
+        theme_color: '#0a0d0f',
+        background_color: '#0a0d0f',
         display: 'standalone',
+        // reuse the already-open app window instead of stacking new ones when
+        // an in-scope link is captured by the installed app
+        launch_handler: { client_mode: 'navigate-existing' },
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
