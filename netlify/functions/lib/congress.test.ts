@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fetchCongressTrades, type CongressTrade } from './congress'
+import { accumulateCongressHistory, congressAggregates, fetchCongressTrades, type CongressTrade } from './congress'
 import { aggregateInsiderClusters, type InsiderSummary } from './insiders'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -217,5 +217,49 @@ describe('aggregateInsiderClusters', () => {
     const rows = await aggregateInsiderClusters(Object.keys(seed).map(k => k.split(':')[2]), cacheGet)
     expect(rows).toHaveLength(20)
     expect(rows[0].symbol).toBe('S29')
+  })
+})
+
+describe('congress history + aggregates', () => {
+  const mkStore = (seed: Record<string, unknown> = {}) => {
+    const blobs = new Map<string, unknown>(Object.entries(seed))
+    return {
+      blobs,
+      read: async <T,>(k: string) => (blobs.get(k) as T) ?? null,
+      write: async (k: string, v: unknown) => void blobs.set(k, v),
+    }
+  }
+  const trade = (politician: string, symbol: string, side: 'buy' | 'sell', traded: string): CongressTrade => ({
+    politician, symbol, side, traded, chamber: 'house', amountRange: '', filed: traded,
+  })
+
+  it('accumulates sweeps with dedupe and a 90-day window', async () => {
+    const store = mkStore()
+    const t1 = trade('A', 'NVDA', 'buy', today)
+    const old = trade('B', 'OLD', 'sell', '2020-01-01') // far outside the window
+    await accumulateCongressHistory(store, [t1, old])
+    await accumulateCongressHistory(store, [t1, trade('C', 'T', 'buy', today)]) // t1 again → deduped
+    const hist = (await store.read<CongressTrade[]>('congress-history'))!
+    expect(hist).toHaveLength(2)
+    expect(hist.some(t => t.symbol === 'OLD')).toBe(false)
+  })
+
+  it('an empty sweep never wipes prior history', async () => {
+    const store = mkStore({ 'congress-history': [trade('A', 'NVDA', 'buy', today)] })
+    const merged = await accumulateCongressHistory(store, [])
+    expect(merged).toHaveLength(1)
+    expect((await store.read<CongressTrade[]>('congress-history'))!).toHaveLength(1)
+  })
+
+  it('aggregates need ≥30 records, then rank tickers and politicians', () => {
+    expect(congressAggregates([trade('A', 'NVDA', 'buy', today)])).toBeNull()
+    const hist: CongressTrade[] = []
+    for (let i = 0; i < 20; i++) hist.push(trade(`P${i % 4}`, 'NVDA', i % 3 ? 'buy' : 'sell', today))
+    for (let i = 0; i < 15; i++) hist.push(trade(`P${i % 5}`, 'AAPL', 'buy', today))
+    const agg = congressAggregates(hist)!
+    expect(agg.topTickers[0].symbol).toBe('NVDA')
+    expect(agg.topTickers[0].buys + agg.topTickers[0].sells).toBe(20)
+    expect(agg.topPoliticians[0].trades).toBeGreaterThanOrEqual(agg.topPoliticians[1].trades)
+    expect(agg.historyCount).toBe(35)
   })
 })

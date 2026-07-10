@@ -179,7 +179,9 @@ export async function routeRequest(
     const symbols = (url.searchParams.get('symbols') ?? '').split(',').filter(Boolean).map(s => s.toUpperCase()).slice(0, 30)
     try {
       type CongressBlob = { trades: import('./lib/congress').CongressTrade[]; source: string; asOf: number }
+      const { accumulateCongressHistory, congressAggregates } = await import('./lib/congress')
       let blob = await getCached<CongressBlob>('congress:v1')
+      let history: import('./lib/congress').CongressTrade[]
       if (!blob) {
         const { fetchCongressTrades } = await import('./lib/congress')
         const { trades, source } = await fetchCongressTrades(env, symbols)
@@ -187,11 +189,15 @@ export async function routeRequest(
         // an empty sweep is re-tried hourly (so adding QUIVER_API_KEY lights up
         // within the hour); a live one holds for the full day.
         await setCached('congress:v1', blob, trades.length ? 86_400 : 3600)
+        // fold the fresh sweep into the rolling 90d history (one write per sweep, not per request)
+        history = await accumulateCongressHistory(blobAppStore, blob.trades)
+      } else {
+        history = (await blobAppStore.read<import('./lib/congress').CongressTrade[]>('congress-history')) ?? []
       }
       const base = (s: string) => s.split('.')[0].split('-')[0].toUpperCase()
       const wanted = new Set(symbols.map(base))
       const watchlistHits = wanted.size ? blob.trades.filter(t => wanted.has(base(t.symbol))) : []
-      return json(200, { ok: true, data: { trades: blob.trades.slice(0, 100), watchlistHits, source: blob.source, asOf: blob.asOf } })
+      return json(200, { ok: true, data: { trades: blob.trades.slice(0, 100), watchlistHits, source: blob.source, asOf: blob.asOf, aggregates: congressAggregates(history) } })
     } catch {
       return json(200, { ok: true, data: { trades: [], watchlistHits: [], source: 'none', asOf: Math.floor(Date.now() / 1000) } })
     }

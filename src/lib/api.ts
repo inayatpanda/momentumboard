@@ -75,11 +75,20 @@ export interface CongressTrade {
 
 export type CongressSource = 'quiverquant' | 'fmp' | 'finnhub' | 'stock-watcher' | 'none'
 
+/** Roll-ups over the server's rolling 90-day disclosure history; null until
+ * enough sweeps have accumulated (~a week of collection). */
+export interface CongressAggregates {
+  topTickers: { symbol: string; buys: number; sells: number }[]
+  topPoliticians: { politician: string; chamber: 'senate' | 'house'; trades: number; lastTraded: string }[]
+  historyCount: number
+  since: string
+}
+
 /** Congressional trades (most recent ~100 market-wide) plus the subset touching
  * the passed symbols. source === 'none' with no trades = every upstream is
  * dead/unkeyed — show the link-card fallback. */
 export const getCongress = (symbols?: string[]) =>
-  apiGet<{ trades: CongressTrade[]; watchlistHits: CongressTrade[]; source: CongressSource; asOf: number }>(
+  apiGet<{ trades: CongressTrade[]; watchlistHits: CongressTrade[]; source: CongressSource; asOf: number; aggregates: CongressAggregates | null }>(
     `/api/market?type=congress${symbols?.length ? `&symbols=${symbols.join(',')}` : ''}`,
   )
 

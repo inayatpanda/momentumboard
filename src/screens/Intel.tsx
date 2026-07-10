@@ -325,6 +325,38 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                     </>
                   )}
                   <p className="empty-line intel-fine">Filed under the STOCK Act. A cluster of same-side trades is positioning, not gospel.</p>
+                  {congress.aggregates && (
+                    <>
+                      <p className="eyebrow" style={{ margin: '14px 0 6px' }}>Most traded by Congress — {congress.aggregates.historyCount} disclosures since {congress.aggregates.since}</p>
+                      {congress.aggregates.topTickers.slice(0, 8).map(t => (
+                        <div key={t.symbol} className="perf-row intel-crow">
+                          <div className="intel-crow-main">
+                            <span className="intel-crow-pol">{t.symbol}</span>
+                          </div>
+                          <div className="intel-crow-trade">
+                            <span className="intel-crow-deal">
+                              {t.buys > 0 && <span className="up-text">↗ {t.buys} buy{t.buys === 1 ? '' : 's'}</span>}
+                              {t.buys > 0 && t.sells > 0 && ' · '}
+                              {t.sells > 0 && <span className="down-text">↘ {t.sells} sell{t.sells === 1 ? '' : 's'}</span>}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      <p className="eyebrow" style={{ margin: '14px 0 6px' }}>Most active politicians</p>
+                      {congress.aggregates.topPoliticians.slice(0, 5).map(p => (
+                        <div key={p.politician} className="perf-row intel-crow">
+                          <div className="intel-crow-main">
+                            <span className="intel-crow-pol">{p.politician}</span>
+                            <span className="intel-crow-sub">{p.chamber}</span>
+                          </div>
+                          <div className="intel-crow-trade">
+                            <span className="intel-crow-deal">{p.trades} trades</span>
+                            <span className="intel-crow-when">last {p.lastTraded}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )}
                   <a className="link-card" href="https://unusualwhales.com/politics" target="_blank" rel="noreferrer">
                     <IconLandmark /> Go deeper on the web
                     <span>Unusual Whales' free tracker — most-held names, active traders, politician portfolio returns.</span>

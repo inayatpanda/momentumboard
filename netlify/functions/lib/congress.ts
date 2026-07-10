@@ -37,6 +37,68 @@ export interface CongressOpts {
 
 const FETCH_TIMEOUT_MS = 5000 // no upstream may hold the response hostage
 const MAX_TRADES = 500 // most recent N kept; plenty for a screen + watchlist filter
+
+// ---- rolling history + aggregates (the Unusual-Whales-style roll-ups) ----
+// Each successful sweep is merged into a persistent 90-day store, so over
+// weeks the app can compute its OWN "most traded by Congress" / "most active
+// politicians" from first-party disclosure data — no scraping anyone.
+
+const HISTORY_KEY = 'congress-history'
+const HISTORY_CAP = 4000
+const WINDOW_DAYS = 90
+
+interface HistoryStore {
+  read: <T>(key: string) => Promise<T | null>
+  write: (key: string, value: unknown) => Promise<void>
+}
+
+/** Merge a sweep into the rolling history (deduped, windowed, capped). Returns the merged window. */
+export async function accumulateCongressHistory(store: HistoryStore, trades: CongressTrade[]): Promise<CongressTrade[]> {
+  const prior = (await store.read<CongressTrade[]>(HISTORY_KEY)) ?? []
+  if (!trades.length) return prior
+  const key = (t: CongressTrade) => `${t.politician}|${t.symbol}|${t.side}|${t.traded}`
+  const seen = new Map(prior.map(t => [key(t), t]))
+  for (const t of trades) seen.set(key(t), t)
+  const cutoff = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10)
+  const merged = [...seen.values()].filter(t => t.traded >= cutoff).sort(byTradedDesc).slice(0, HISTORY_CAP)
+  await store.write(HISTORY_KEY, merged)
+  return merged
+}
+
+export interface CongressAggregates {
+  topTickers: { symbol: string; buys: number; sells: number }[]
+  topPoliticians: { politician: string; chamber: 'senate' | 'house'; trades: number; lastTraded: string }[]
+  historyCount: number
+  since: string // oldest traded date in the window
+}
+
+/** Roll-ups over the history window; null until enough records accumulate to mean anything. */
+export function congressAggregates(history: CongressTrade[]): CongressAggregates | null {
+  if (history.length < 30) return null
+  const bySym = new Map<string, { buys: number; sells: number }>()
+  const byPol = new Map<string, { chamber: 'senate' | 'house'; trades: number; lastTraded: string }>()
+  for (const t of history) {
+    const s = bySym.get(t.symbol) ?? { buys: 0, sells: 0 }
+    s[t.side === 'buy' ? 'buys' : 'sells']++
+    bySym.set(t.symbol, s)
+    const p = byPol.get(t.politician) ?? { chamber: t.chamber, trades: 0, lastTraded: t.traded }
+    p.trades++
+    if (t.traded > p.lastTraded) p.lastTraded = t.traded
+    byPol.set(t.politician, p)
+  }
+  return {
+    topTickers: [...bySym]
+      .map(([symbol, v]) => ({ symbol, ...v }))
+      .sort((a, b) => b.buys + b.sells - (a.buys + a.sells))
+      .slice(0, 12),
+    topPoliticians: [...byPol]
+      .map(([politician, v]) => ({ politician, ...v }))
+      .sort((a, b) => b.trades - a.trades)
+      .slice(0, 8),
+    historyCount: history.length,
+    since: history[history.length - 1]?.traded ?? '',
+  }
+}
 const STALE_DAYS = 180 // community datasets that stopped updating are treated as dead
 const FINNHUB_DOWN_KEY = 'congress:finnhub-unavailable' // premium-gate marker, 24h
 const SW_DOWN_KEY = 'congress:stockwatcher-unavailable' // dead-bucket marker, 24h
