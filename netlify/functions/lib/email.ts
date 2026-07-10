@@ -30,9 +30,19 @@ export function parseRecipients(raw: string | undefined | null): string[] {
 
 export function emailReadyHtml(reportHtml: string, browserUrl: string): string {
   const stripped = reportHtml.replace(/<script[\s\S]*?<\/script>/gi, '')
-  const banner = `<div style="text-align:center;padding:10px 16px;font-family:-apple-system,system-ui,sans-serif;font-size:12px;color:#8b98a8;background:#0a0b0e">Reading in your mail app — <a href="${browserUrl}" style="color:#5aa9ff">open the full paper in your browser</a></div>`
-  // inject the banner right after <body>, else prepend
-  return /<body[^>]*>/i.test(stripped) ? stripped.replace(/<body[^>]*>/i, m => `${m}${banner}`) : banner + stripped
+  // Mail clients trim, clip and strip (Gmail's ⋯ is its own chrome — no email can
+  // restyle it). The honest counter: an unmissable bar top AND bottom that opens
+  // the full edition in the browser, where nothing is ever hidden.
+  const bar = (label: string) =>
+    `<div style="text-align:center;padding:8px 16px 14px;font-family:-apple-system,system-ui,sans-serif;background:#0a0b0e">` +
+    `<a href="${browserUrl}" style="display:inline-block;padding:10px 22px;border:1px solid #5aa9ff;border-radius:8px;color:#5aa9ff;font-size:13px;font-weight:600;text-decoration:none">${label}</a>` +
+    `</div>`
+  const top = bar('Open the full paper in your browser →')
+  const bottom =
+    `<div style="text-align:center;padding:14px 16px 4px;font-family:-apple-system,system-ui,sans-serif;font-size:12px;color:#8b98a8;background:#0a0b0e">Sections collapsed or cut off by your mail app?</div>` +
+    bar('Read the complete edition →')
+  const withTop = /<body[^>]*>/i.test(stripped) ? stripped.replace(/<body[^>]*>/i, m => `${m}${top}`) : top + stripped
+  return /<\/body>/i.test(withTop) ? withTop.replace(/<\/body>/i, `${bottom}</body>`) : withTop + bottom
 }
 
 export async function sendReportEmail(
