@@ -39,9 +39,9 @@
   --panel: #12171a;
   --panel-2: #182025;
   --line: rgba(148, 186, 200, 0.10);
-  --text: #edf3f5;
-  --muted: #93a6ad;
-  --faint: #5d6d74;
+  --text: #f0f5f7;
+  --muted: #aabfc7; /* secondary ink — must stay clearly readable on --bg/--panel (user: "grey on black") */
+  --faint: #7f929b; /* meta/eyebrows — AA-ish on the dark surfaces, never body copy */
   --green: #2bd396;
   --green-soft: rgba(43, 211, 150, 0.13);
   --on-accent: #06171d;      /* dark ink for text on a solid (icy-cyan) accent */
