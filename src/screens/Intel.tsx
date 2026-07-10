@@ -296,9 +296,9 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                       <p>Ask the admin to add <code>FMP_API_KEY</code> in Netlify — trades appear within the hour.</p>
                     </div>
                   </div>
-                  <a className="link-card" href="https://www.quiverquant.com/congresstrading/" target="_blank" rel="noreferrer">
+                  <a className="link-card" href="https://unusualwhales.com/politics" target="_blank" rel="noreferrer">
                     <IconLandmark /> Browse congress trades on the web
-                    <span>QuiverQuant's public tracker — the morning report already checks this daily.</span>
+                    <span>Unusual Whales' public tracker — most-held names, active traders, politician portfolios.</span>
                   </a>
                 </>
               ) : (
@@ -325,6 +325,10 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                     </>
                   )}
                   <p className="empty-line intel-fine">Filed under the STOCK Act. A cluster of same-side trades is positioning, not gospel.</p>
+                  <a className="link-card" href="https://unusualwhales.com/politics" target="_blank" rel="noreferrer">
+                    <IconLandmark /> Go deeper on the web
+                    <span>Unusual Whales' free tracker — most-held names, active traders, politician portfolio returns.</span>
+                  </a>
                 </>
               )}
             </section>
