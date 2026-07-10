@@ -1709,6 +1709,10 @@ a.menu-row { text-decoration: none; }
 .rail-card .rc-chg.up { color: var(--green); }
 .rail-card .rc-chg.down { color: var(--red); }
 
+/* congress disclosure carousel cards (Intel) */
+.rail-card.congress-card { min-width: 150px; max-width: 200px; gap: 4px; }
+.congress-card .congress-card-pol { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
 /* =====================================================================
    WATCHLIST / MOVERS / REPORTS screens
    ===================================================================== */

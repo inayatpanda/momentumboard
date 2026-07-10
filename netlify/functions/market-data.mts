@@ -179,7 +179,8 @@ export async function routeRequest(
     const symbols = (url.searchParams.get('symbols') ?? '').split(',').filter(Boolean).map(s => s.toUpperCase()).slice(0, 30)
     try {
       type CongressBlob = { trades: import('./lib/congress').CongressTrade[]; source: string; asOf: number }
-      const { accumulateCongressHistory, congressAggregates } = await import('./lib/congress')
+      const { accumulateCongressHistory, congressAggregates, resolveCongressSectors } = await import('./lib/congress')
+      const { cachedIndustry } = await import('./lib/marketCache')
       let blob = await getCached<CongressBlob>('congress:v1')
       let history: import('./lib/congress').CongressTrade[]
       if (!blob) {
@@ -197,7 +198,9 @@ export async function routeRequest(
       const base = (s: string) => s.split('.')[0].split('-')[0].toUpperCase()
       const wanted = new Set(symbols.map(base))
       const watchlistHits = wanted.size ? blob.trades.filter(t => wanted.has(base(t.symbol))) : []
-      return json(200, { ok: true, data: { trades: blob.trades.slice(0, 100), watchlistHits, source: blob.source, asOf: blob.asOf, aggregates: congressAggregates(history) } })
+      // sector map: bulk resolution happens in the scheduled warm; each request may trickle a few more
+      const sectors = await resolveCongressSectors(blobAppStore, history, s => cachedIndustry(s, env.FINNHUB_API_KEY ?? ''), 8)
+      return json(200, { ok: true, data: { trades: blob.trades.slice(0, 100), watchlistHits, source: blob.source, asOf: blob.asOf, aggregates: congressAggregates(history, sectors) } })
     } catch {
       return json(200, { ok: true, data: { trades: [], watchlistHits: [], source: 'none', asOf: Math.floor(Date.now() / 1000) } })
     }

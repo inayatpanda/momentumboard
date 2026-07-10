@@ -95,7 +95,6 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [sectors, setSectors] = useState<Awaited<ReturnType<typeof getSectors>> | null>(null)
   const [congress, setCongress] = useState<Awaited<ReturnType<typeof getCongress>> | null>(null)
   const [clusters, setClusters] = useState<Awaited<ReturnType<typeof getInsiderClusters>> | null>(null)
-  const [congMore, setCongMore] = useState(false)
 
   useEffect(() => {
     db.watchlist.toArray().then(items => {
@@ -313,15 +312,41 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                   )}
                   {congress.trades.length > 0 && (
                     <>
-                      <p className="eyebrow" style={{ margin: '12px 0 6px' }}>Recent — market-wide</p>
-                      {congress.trades.slice(0, congMore ? 60 : 15).map((t, i) => (
-                        <TradeRow key={`mkt-${t.politician}-${t.symbol}-${t.traded}-${i}`} t={t} rowKey={`mkt-${t.politician}-${t.symbol}-${t.traded}-${i}`} />
+                      <p className="eyebrow" style={{ margin: '12px 0 6px' }}>
+                        Recent — market-wide · swept {relDate(new Date(congress.asOf * 1000).toISOString().slice(0, 10))} · newest filing {relDate(congress.trades[0].filed)}
+                      </p>
+                      {/* swipeable — each disclosure is a card; the rail cycles through them */}
+                      <div className="rail">
+                        {congress.trades.slice(0, 40).map((t, i) => (
+                          <div key={`mkt-${t.politician}-${t.symbol}-${t.traded}-${i}`} className="rail-card congress-card">
+                            <span className="intel-crow-sub congress-card-pol">{t.politician} · {t.chamber}</span>
+                            <b className="intel-crow-sym">{t.symbol}</b>
+                            <span className={`rc-chg ${t.side === 'buy' ? 'up' : 'down'}`}>
+                              {t.side === 'buy' ? '↗' : '↘'} {t.amountRange || t.side}
+                            </span>
+                            <span className="intel-crow-when">{relDate(t.traded)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {congress.aggregates && congress.aggregates.sectorBreakdown.length > 0 && (
+                    <>
+                      <p className="eyebrow" style={{ margin: '12px 0 6px' }}>Where the money went — by sector</p>
+                      {congress.aggregates.sectorBreakdown.slice(0, 6).map(s => (
+                        <div key={s.sector} className="perf-row intel-crow">
+                          <div className="intel-crow-main">
+                            <span className="intel-crow-pol">{s.sector}</span>
+                          </div>
+                          <div className="intel-crow-trade">
+                            <span className="intel-crow-deal">
+                              {s.buys > 0 && <span className="up-text">↗ {s.buys}</span>}
+                              {s.buys > 0 && s.sells > 0 && ' · '}
+                              {s.sells > 0 && <span className="down-text">↘ {s.sells}</span>}
+                            </span>
+                          </div>
+                        </div>
                       ))}
-                      {congress.trades.length > 15 && (
-                        <button className="mini-btn ghost intel-more" onClick={() => setCongMore(m => !m)}>
-                          {congMore ? 'show less' : `show ${Math.min(congress.trades.length, 60) - 15} more`}
-                        </button>
-                      )}
                     </>
                   )}
                   <p className="empty-line intel-fine">Filed under the STOCK Act. A cluster of same-side trades is positioning, not gospel.</p>

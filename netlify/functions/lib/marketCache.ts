@@ -59,14 +59,33 @@ export async function cachedCandles5y(sym: string): Promise<Candle[] | null> {
  * paths share one cache. */
 export async function cachedCapUsdM(sym: string, finnhubKey: string): Promise<number | null> {
   const key = `cap:${sym}`
-  const hit = await getCached<{ capUsdM: number | null; name?: string }>(key)
+  const hit = await getCached<{ capUsdM: number | null; name?: string; industry?: string }>(key)
   if (hit) return hit.capUsdM
   try {
     const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${sym}&token=${finnhubKey}`)
-    const j = (await res.json()) as { marketCapitalization?: number; name?: string }
-    const cap = { capUsdM: j.marketCapitalization ?? null, name: j.name }
+    const j = (await res.json()) as { marketCapitalization?: number; name?: string; finnhubIndustry?: string }
+    const cap = { capUsdM: j.marketCapitalization ?? null, name: j.name, industry: j.finnhubIndustry }
     await setCached(key, cap, 86_400)
     return cap.capUsdM
+  } catch {
+    return null
+  }
+}
+
+/** Finnhub industry classification (e.g. "Semiconductors"), sharing the `cap:`
+ * cache blob. Older cached entries lack `industry` — one profile2 re-fetch
+ * upgrades them in place. Null = unresolvable (Yahoo-routed, no key, unknown). */
+export async function cachedIndustry(sym: string, finnhubKey: string): Promise<string | null> {
+  const key = `cap:${sym}`
+  const hit = await getCached<{ capUsdM: number | null; name?: string; industry?: string }>(key)
+  if (hit?.industry) return hit.industry
+  if (!finnhubKey || isYahooSymbol(sym)) return null
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${sym}&token=${finnhubKey}`)
+    const j = (await res.json()) as { marketCapitalization?: number; name?: string; finnhubIndustry?: string }
+    if (!j.finnhubIndustry) return null
+    await setCached(key, { capUsdM: j.marketCapitalization ?? hit?.capUsdM ?? null, name: j.name ?? hit?.name, industry: j.finnhubIndustry }, 86_400)
+    return j.finnhubIndustry
   } catch {
     return null
   }

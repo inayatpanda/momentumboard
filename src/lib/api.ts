@@ -80,6 +80,7 @@ export type CongressSource = 'quiverquant' | 'fmp' | 'finnhub' | 'stock-watcher'
 export interface CongressAggregates {
   topTickers: { symbol: string; buys: number; sells: number }[]
   topPoliticians: { politician: string; chamber: 'senate' | 'house'; trades: number; lastTraded: string }[]
+  sectorBreakdown: { sector: string; buys: number; sells: number }[]
   historyCount: number
   since: string
 }

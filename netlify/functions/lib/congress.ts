@@ -68,13 +68,24 @@ export async function accumulateCongressHistory(store: HistoryStore, trades: Con
 export interface CongressAggregates {
   topTickers: { symbol: string; buys: number; sells: number }[]
   topPoliticians: { politician: string; chamber: 'senate' | 'house'; trades: number; lastTraded: string }[]
+  sectorBreakdown: { sector: string; buys: number; sells: number }[] // present when a sector map was supplied
   historyCount: number
   since: string // oldest traded date in the window
 }
 
-/** Roll-ups over the history window; null until enough records accumulate to mean anything. */
-export function congressAggregates(history: CongressTrade[]): CongressAggregates | null {
+/** Roll-ups over the history window; null until enough records accumulate to
+ * mean anything. `sectors` maps symbol → industry (resolved and cached by the
+ * warm sweep); unmapped symbols fall into no bucket rather than a junk one. */
+export function congressAggregates(history: CongressTrade[], sectors: Record<string, string> = {}): CongressAggregates | null {
   if (history.length < 30) return null
+  const bySector = new Map<string, { buys: number; sells: number }>()
+  for (const t of history) {
+    const sector = sectors[t.symbol]
+    if (!sector) continue
+    const s = bySector.get(sector) ?? { buys: 0, sells: 0 }
+    s[t.side === 'buy' ? 'buys' : 'sells']++
+    bySector.set(sector, s)
+  }
   const bySym = new Map<string, { buys: number; sells: number }>()
   const byPol = new Map<string, { chamber: 'senate' | 'house'; trades: number; lastTraded: string }>()
   for (const t of history) {
@@ -95,9 +106,37 @@ export function congressAggregates(history: CongressTrade[]): CongressAggregates
       .map(([politician, v]) => ({ politician, ...v }))
       .sort((a, b) => b.trades - a.trades)
       .slice(0, 8),
+    sectorBreakdown: [...bySector]
+      .map(([sector, v]) => ({ sector, ...v }))
+      .sort((a, b) => b.buys + b.sells - (a.buys + a.sells))
+      .slice(0, 8),
     historyCount: history.length,
     since: history[history.length - 1]?.traded ?? '',
   }
+}
+
+/** Resolve symbol → industry for the history's tickers via the shared cap:
+ * cache, fetching at most `budget` unresolved profiles per call — bulk work
+ * happens in the scheduled warm, request-path calls just trickle. The merged
+ * map is persisted so every resolution sticks. */
+export async function resolveCongressSectors(
+  store: HistoryStore,
+  history: CongressTrade[],
+  lookup: (sym: string) => Promise<string | null>,
+  budget = 8,
+): Promise<Record<string, string>> {
+  const known = (await store.read<Record<string, string>>('congress-sectors')) ?? {}
+  const unknown = [...new Set(history.map(t => t.symbol))].filter(s => !known[s])
+  let resolvedNew = false
+  for (const sym of unknown.slice(0, budget)) {
+    const industry = await lookup(sym).catch(() => null)
+    if (industry) {
+      known[sym] = industry
+      resolvedNew = true
+    }
+  }
+  if (resolvedNew) await store.write('congress-sectors', known)
+  return known
 }
 const STALE_DAYS = 180 // community datasets that stopped updating are treated as dead
 const FINNHUB_DOWN_KEY = 'congress:finnhub-unavailable' // premium-gate marker, 24h
