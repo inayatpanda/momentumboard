@@ -22,6 +22,9 @@ function createWindow() {
       nodeIntegration: false,
     },
   })
+  // marks desktop boots apart from browser visits in the access telemetry
+  // (licences.mts check route splits on this token)
+  win.webContents.setUserAgent(`${win.webContents.getUserAgent()} StreetSignalDesktop/${app.getVersion()}`)
   win.loadURL(APP_URL)
 
   // anything off-origin (news links, unusualwhales, report PDFs) opens in the

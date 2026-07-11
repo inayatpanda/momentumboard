@@ -233,7 +233,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'Can I install it like an app?',
-    a: 'Yes — StreetSignal is a progressive web app. Use the Install button on this site (or "Add to Home Screen"), and it runs full-screen with push notifications. The website and the app are separate surfaces: the site is public, the app is where your licence lives.',
+    a: 'Yes, everywhere. Mac and Windows have real installers — free from the front page ("Take it with you"). On Android, open this site and tap Install app; on iPhone, Safari → Share → Add to Home Screen. Downloads are free; your licence or reader pass unlocks the app itself, once per device.',
   },
   {
     q: 'What happens when a call goes wrong?',

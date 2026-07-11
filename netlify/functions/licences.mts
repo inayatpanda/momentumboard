@@ -28,6 +28,29 @@ export async function routeLicences(
   // instead of a screen full of failed requests.
   if (method === 'GET' && check) {
     const who = await authenticate(headers, env, store)
+    // access telemetry (fail-soft, never blocks the check): every valid boot
+    // books into `access-stats` — per day, split web vs the desktop shell
+    // (its UA carries StreetSignalDesktop), plus per-licence-label counters so
+    // the Helm can see WHO is actually reading, not just how many.
+    if (who) {
+      try {
+        const day = new Date(nowSec * 1000).toISOString().slice(0, 10)
+        const desktop = (headers.get('user-agent') ?? '').includes('StreetSignalDesktop')
+        const token = headers.get('x-app-token') ?? ''
+        const label = who.level === 'admin' ? 'admin' : ((await store.read<Licence[]>('licences')) ?? []).find(l => l.key === token)?.label ?? 'unknown'
+        const stats = (await store.read<{ byDay: Record<string, { web: number; desktop: number }>; byLicence: Record<string, { boots: number; lastAt: number }> }>('access-stats')) ?? { byDay: {}, byLicence: {} }
+        const d = (stats.byDay[day] ??= { web: 0, desktop: 0 })
+        d[desktop ? 'desktop' : 'web']++
+        const l = (stats.byLicence[label] ??= { boots: 0, lastAt: 0 })
+        l.boots++
+        l.lastAt = nowSec
+        const days = Object.keys(stats.byDay).sort()
+        for (const old of days.slice(0, Math.max(0, days.length - 90))) delete stats.byDay[old]
+        await store.write('access-stats', stats)
+      } catch {
+        /* telemetry must never break the gate */
+      }
+    }
     return who ? json(200, { ok: true, data: { level: who.level } }) : json(401, { ok: false, error: 'invalid-or-expired' })
   }
 

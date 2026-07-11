@@ -102,7 +102,30 @@ export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => vo
           </div>
         </section>
 
-        {/* 4 — Honesty strip */}
+        {/* 4 — Get the app: free downloads; the licence gate lives INSIDE the
+            app, so an open download is still a gated reader on first launch */}
+        <section className="landing-section">
+          <div className="section-title landing-rule">Take it with you</div>
+          <div className="site-downloads">
+            <a className="dl-btn" href="/download/mac">
+              <b>Mac app</b>
+              <span>universal · Apple&nbsp;Silicon + Intel</span>
+            </a>
+            <a className="dl-btn" href="/download/win">
+              <b>Windows app</b>
+              <span>one-click installer</span>
+            </a>
+            <div className="dl-btn dl-note">
+              <b>Phone</b>
+              <span>open this site → Install app (Android) or Share → Add to Home Screen (iPhone)</span>
+            </div>
+          </div>
+          <p className="landing-honesty" style={{ marginTop: 10 }}>
+            Free to download — a licence or reader pass unlocks the app itself, once, on each device.
+          </p>
+        </section>
+
+        {/* 5 — Honesty strip */}
         <p className="landing-honesty">
           Calibrated analysis, not advice. The ledger shows everything — including what went wrong.
         </p>

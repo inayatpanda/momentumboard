@@ -55,6 +55,15 @@ export async function routeExport(
   const latest = history[history.length - 1] ?? null
   const scorecard = await store.read<unknown>('pick-stats')
 
+  // Reach: desktop downloads (download.mts) + app boots (licences.mts check
+  // route, web vs desktop-shell split, per-licence-label) + the licence book
+  // itself — keys withheld, labels only. How many have it, who actually reads.
+  const downloads = (await store.read<unknown>('download-stats')) ?? null
+  const access = (await store.read<unknown>('access-stats')) ?? null
+  const licenceBook = ((await store.read<{ label: string; createdAt: number; revoked?: boolean; trial?: boolean; expiresAt?: number }[]>('licences')) ?? []).map(
+    l => ({ label: l.label, createdAt: l.createdAt, revoked: !!l.revoked, trial: !!l.trial, expiresAt: l.expiresAt ?? null }),
+  )
+
   // cheap summary for the dashboard card — no heavy HTML
   const summary = {
     app: 'thestreetsignal', // Helm app-id — matches the site name; onboard this in The Helm
@@ -64,6 +73,7 @@ export async function routeExport(
       ? { date: latest.date, headline: latest.headline, standfirst: latest.standfirst, regime: latest.regime, ideas: latest.ideas }
       : null,
     scorecard: scorecard ?? null,
+    reach: { downloads, access, licences: licenceBook },
     updatedAt: now,
   }
 

@@ -66,6 +66,11 @@
   to = "/.netlify/functions/t212"
   status = 200
 
+[[redirects]]
+  from = "/download/*"
+  to = "/.netlify/functions/download?platform=:splat"
+  status = 200
+
 # SPA catch-all: the public site's sub-pages (/engine, /paper, /ledger, /faq)
 # are client-routed. MUST STAY LAST — Netlify redirects match top-down, and
 # static files are still served directly (no force) before this rule.
