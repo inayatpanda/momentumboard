@@ -23,7 +23,7 @@ describe('report endpoint', () => {
     const tg = vi.fn(async () => {})
     const put = await routeReport('PUT', auth, '<html><body>Morning brief</body></html>', env, store, tg)
     expect(put.status).toBe(200)
-    expect(tg).toHaveBeenCalledWith('bot', '42', expect.stringContaining('https://site/report'))
+    expect(tg).toHaveBeenCalledWith('bot', '42', expect.stringContaining('https://thestreetsignal.rqai.co.uk/report'))
     const get = await routeReport('GET', new Headers(), null, env, store)
     expect(await get.text()).toContain('Morning brief')
   })

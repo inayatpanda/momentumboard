@@ -1,5 +1,6 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
+import { CANONICAL_SITE } from './lib/site'
 
 // The Helm integration (Option A): one stable, read-only contract The Helm's
 // pull-agent hits on a schedule to archive every edition, pick, event, the
@@ -57,8 +58,8 @@ export async function routeExport(
   // cheap summary for the dashboard card — no heavy HTML
   const summary = {
     app: 'thestreetsignal', // Helm app-id — matches the site name; onboard this in The Helm
-    site: 'https://thestreetsignal.netlify.app',
-    reportUrl: 'https://thestreetsignal.netlify.app/report',
+    site: CANONICAL_SITE,
+    reportUrl: `${CANONICAL_SITE}/report`,
     latestEdition: latest
       ? { date: latest.date, headline: latest.headline, standfirst: latest.standfirst, regime: latest.regime, ideas: latest.ideas }
       : null,

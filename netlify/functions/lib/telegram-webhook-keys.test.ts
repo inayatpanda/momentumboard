@@ -33,7 +33,7 @@ describe('Helm licence commands', () => {
     expect(lics[0]).toMatchObject({ label: 'PK' })
     expect(lics[0].expiresAt).toBeUndefined()
     expect(lics[0].trial).toBeUndefined()
-    expect(sent[0]).toContain(`https://x.test/?key=${lics[0].key}`)
+    expect(sent[0]).toContain(`https://thestreetsignal.rqai.co.uk/?key=${lics[0].key}`)
   })
 
   it('/key without a label shows usage and mints nothing', async () => {

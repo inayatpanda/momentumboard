@@ -1,6 +1,7 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 import { authenticate, generateLicenceKey, hash8, type Licence } from './lib/auth'
+import { CANONICAL_SITE } from './lib/site'
 
 // Licence management: admin list/generate/revoke, plus two PUBLIC routes —
 // a rate-limited 7-day trial mint (the landing page's "free access") and a
@@ -60,7 +61,7 @@ export async function routeLicences(
   const licences = (await store.read<Licence[]>('licences')) ?? []
 
   if (method === 'GET') {
-    return json(200, { ok: true, data: licences.map(l => ({ ...l, unlockLink: `${env.URL ?? 'https://thestreetsignal.netlify.app'}/?key=${l.key}` })) })
+    return json(200, { ok: true, data: licences.map(l => ({ ...l, unlockLink: `${CANONICAL_SITE}/?key=${l.key}` })) })
   }
 
   if (method === 'POST') {
@@ -70,7 +71,7 @@ export async function routeLicences(
     const lic: Licence = { key: generateLicenceKey(), label: label.slice(0, 40), createdAt: Math.floor(Date.now() / 1000) }
     licences.push(lic)
     await store.write('licences', licences)
-    return json(200, { ok: true, data: { ...lic, unlockLink: `${env.URL ?? 'https://thestreetsignal.netlify.app'}/?key=${lic.key}` } })
+    return json(200, { ok: true, data: { ...lic, unlockLink: `${CANONICAL_SITE}/?key=${lic.key}` } })
   }
 
   if (method === 'DELETE') {

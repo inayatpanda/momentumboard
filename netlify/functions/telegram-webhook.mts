@@ -3,6 +3,7 @@ import { blobAppStore, type AppStore } from './lib/store'
 import { sendTelegram } from './lib/telegram'
 import { parseCallText, toExtract, type PunditExtract } from './lib/punditCalls'
 import { generateLicenceKey, type Licence } from './lib/auth'
+import { CANONICAL_SITE } from './lib/site'
 
 /** Two-way Telegram commands: /status /portfolio /mute [hours] /unmute /report
  * /call /key /revoke. Authenticated via Telegram's secret_token header (set at
@@ -51,7 +52,7 @@ export async function routeTelegramWebhook(
     await store.write('mute-until', 0)
     await reply('🔔 Alerts resumed.')
   } else if (text.startsWith('/report')) {
-    await reply(`📰 ${env.URL ?? 'https://thestreetsignal.netlify.app'}/report`)
+    await reply(`📰 ${CANONICAL_SITE}/report`)
   } else if (text.startsWith('/call')) {
     // log a pundit's forwarded stock call into the graded channel-stance store
     const { name, tickers } = parseCallText(rawText) // RAW text — not the lowercased copy
@@ -77,7 +78,7 @@ export async function routeTelegramWebhook(
         const lic: Licence = { key: generateLicenceKey(), label, createdAt: nowSec }
         licences.push(lic)
         await store.write('licences', licences)
-        await reply(`🔑 ${label} — one tap unlocks their device for life:\n${env.URL ?? 'https://thestreetsignal.netlify.app'}/?key=${lic.key}\n/revoke ${label} kills it later.`)
+        await reply(`🔑 ${label} — one tap unlocks their device for life:\n${CANONICAL_SITE}/?key=${lic.key}\n/revoke ${label} kills it later.`)
       }
     }
   } else if (text.startsWith('/revoke')) {

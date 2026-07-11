@@ -15,7 +15,7 @@ export default async () => {
   const day = now.getUTCDay()
   const isoDate = now.toISOString().slice(0, 10)
   const fn = day === 0 || day === 6 || isUsMarketHoliday(isoDate) ? 'report-compose-background' : 'predict-background'
-  await fetch(`${process.env.URL ?? 'https://thestreetsignal.netlify.app'}/.netlify/functions/${fn}`, {
+  await fetch(`${process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'}/.netlify/functions/${fn}`, {
     method: 'POST',
     headers: { 'x-app-token': process.env.APP_TOKEN ?? '' },
   }).catch(() => {})

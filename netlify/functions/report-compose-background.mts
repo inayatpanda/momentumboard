@@ -12,7 +12,7 @@ import type { AppConfig } from '../../shared/config'
 // Runs as a background function (15-min budget); kicked by report-kick on
 // weekday mornings or manually by the admin.
 
-const SITE = process.env.URL ?? 'https://thestreetsignal.netlify.app'
+const SITE = process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'
 
 export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)

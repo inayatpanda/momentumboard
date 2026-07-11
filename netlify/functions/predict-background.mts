@@ -7,7 +7,7 @@ import { validateConfig } from '../../shared/config'
 // (that's the learning), curate the roster, score the board. Whatever happens,
 // the composer is kicked afterwards — a dead engine must never kill the paper.
 
-const SITE = process.env.URL ?? 'https://thestreetsignal.netlify.app'
+const SITE = process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'
 
 export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)

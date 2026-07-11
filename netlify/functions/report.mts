@@ -1,6 +1,7 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 import { sendTelegram } from './lib/telegram'
+import { CANONICAL_SITE } from './lib/site'
 import type { AppConfig } from '../../shared/config'
 
 const MAX_BYTES = 800_000
@@ -111,7 +112,7 @@ export async function routeReport(
       index.push(dateKey)
       await store.write('report-index', index.slice(-90))
     }
-    const link = `${env.URL ?? 'https://thestreetsignal.netlify.app'}/report`
+    const link = `${CANONICAL_SITE}/report`
     if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
       await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, `📰 Morning report is ready → ${link}`).catch(() => {})
     }

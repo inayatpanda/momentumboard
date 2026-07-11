@@ -1,3 +1,5 @@
+import { CANONICAL_SITE } from './site'
+
 // THE STREET SIGNAL — the guaranteed morning newspaper. The LLM writes the
 // journalism (strict JSON); THIS code owns the layout, tables and charts, so
 // depth and design never depend on a model following instructions. Composed on
@@ -638,8 +640,8 @@ ${t.rows
 <meta property="og:title" content="${esc(r.headline)}"/>
 <meta property="og:description" content="${esc(r.standfirst)}"/>
 <meta property="og:type" content="article"/>
-<meta property="og:url" content="https://thestreetsignal.netlify.app/report"/>
-<meta property="og:image" content="https://thestreetsignal.netlify.app/icon-512.png"/>
+<meta property="og:url" content="${CANONICAL_SITE}/report"/>
+<meta property="og:image" content="${CANONICAL_SITE}/icon-512.png"/>
 <meta name="twitter:card" content="summary"/>
 <style>
 :root{color-scheme:light}

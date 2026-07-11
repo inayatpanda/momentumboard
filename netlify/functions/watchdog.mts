@@ -49,7 +49,7 @@ async function runChecks(nowSec: number, report: { at: number } | null): Promise
   return checks
 }
 
-const SITE = process.env.URL ?? 'https://thestreetsignal.netlify.app'
+const SITE = process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'
 
 // SELF-HEAL: the morning report is the one artifact readers actually see —
 // if report-kick's 05:20 UTC chain fell over upstream (predict-background
