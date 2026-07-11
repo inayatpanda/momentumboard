@@ -4,7 +4,10 @@ const mem = new Map<string, Entry>()
 async function blobStore() {
   try {
     const { getStore } = await import('@netlify/blobs')
-    return getStore('cache')
+    // same dual-home rule as lib/store.ts: env creds -> GitHub Actions runner
+    return process.env.NETLIFY_SITE_ID && process.env.NETLIFY_AUTH_TOKEN
+      ? getStore({ name: 'cache', siteID: process.env.NETLIFY_SITE_ID, token: process.env.NETLIFY_AUTH_TOKEN })
+      : getStore('cache')
   } catch {
     return null
   }

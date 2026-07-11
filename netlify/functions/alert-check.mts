@@ -135,12 +135,21 @@ export default async () => {
   const worthWatching = newVideos
     .filter(v => v.channel === 'Stocks with Josh' || symbols.some(s => v.title.toUpperCase().includes(s.split('.')[0].split('-')[0])))
     .slice(0, 2)
+  // Work items for the GitHub Actions queue worker (scripts/bg/drain-queue.mts,
+  // every 15 min) — the long jobs left Netlify when the plan dropped background
+  // functions. Same store, so enqueue here is one blob write; the worker calls
+  // the very same handler modules the HTTP kick used to reach.
+  const enqueueWork = async (kind: 'video' | 'dossier' | 'compose', body: unknown) => {
+    try {
+      const q = (await store.read<unknown[]>('work-queue')) ?? []
+      q.push({ id: crypto.randomUUID(), kind, body, at: nowSec, attempts: 0 })
+      await store.write('work-queue', q.slice(-100))
+    } catch {
+      errors.push(`${kind}-enqueue`)
+    }
+  }
   const dispatch = (v: { url: string; title: string; channel: string }, mode: 'watch' | 'extract') =>
-    fetch(`${process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'}/.netlify/functions/video-analyze-background`, {
-      method: 'POST',
-      headers: { 'x-app-token': process.env.APP_TOKEN ?? '', 'content-type': 'application/json' },
-      body: JSON.stringify({ url: v.url, title: v.title, channel: v.channel, mode }),
-    }).catch(() => errors.push(`video-${mode}-dispatch`))
+    enqueueWork('video', { url: v.url, title: v.title, channel: v.channel, mode })
   // depth tier: Gemini fully watches the few videos that earn it (202 returns instantly)
   for (const v of worthWatching) await dispatch(v, 'watch')
   // breadth tier: EVERY new video gets transcript+extraction for the consensus maths
@@ -201,11 +210,7 @@ export default async () => {
         if (afterEval.seenItems.includes(key)) return
         afterEval.seenItems.push(key)
         await deliver(ping)
-        await fetch(`${process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'}/.netlify/functions/event-dossier-background`, {
-          method: 'POST',
-          headers: { 'x-app-token': process.env.APP_TOKEN ?? '', 'content-type': 'application/json' },
-          body: JSON.stringify(evt),
-        }).catch(() => errors.push('dossier-dispatch'))
+        await enqueueWork('dossier', evt)
       }
       if (shock) await fire(shock, `shock:${asset.sym}:${today}`, `⚡ ${asset.name} ${shock.movePct > 0 ? '+' : ''}${shock.movePct}% today — building the event assessment now`)
       else if (stretch) await fire(stretch, `stretch:${asset.sym}:${isoWeek}`, `🎈 ${asset.name} stretched to ${stretch.zScore}σ (RSI ${stretch.rsi}) — reversion assessment incoming`)

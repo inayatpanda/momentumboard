@@ -66,11 +66,16 @@ export default async (req: Request) => {
       const runlog = (await blobAppStore.read<unknown[]>('runlog')) ?? []
       runlog.push({ at: nowSec, kind: 'predict', ok: !failure && boardSize >= 0, error: failure?.slice(0, 160), graded, boardSize, rosterSize, holdingsCount })
       await blobAppStore.write('runlog', runlog.slice(-200))
-      // chain to the composer regardless — it degrades to legacy mode without a fresh board
-      await fetch(`${SITE}/.netlify/functions/report-compose-background`, {
-        method: 'POST',
-        headers: { 'x-app-token': process.env.APP_TOKEN ?? '' },
-      }).catch(() => {})
+      // chain to the composer regardless — it degrades to legacy mode without a
+      // fresh board. The Actions orchestrator (scripts/bg/daily-run.mts) sets
+      // SKIP_COMPOSE_CHAIN and runs the composer in-process instead: background
+      // functions don't exist on the free plan, so this HTTP hop would 404 there.
+      if (!process.env.SKIP_COMPOSE_CHAIN) {
+        await fetch(`${SITE}/.netlify/functions/report-compose-background`, {
+          method: 'POST',
+          headers: { 'x-app-token': process.env.APP_TOKEN ?? '' },
+        }).catch(() => {})
+      }
     } finally {
       await releaseLease(blobAppStore, leaseKey, lease)
     }

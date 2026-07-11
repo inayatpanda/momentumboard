@@ -1,10 +1,20 @@
 // Durable JSON store on Netlify Blobs (store 'app'), in-memory fallback for tests.
+// Runs in TWO homes: inside Netlify functions (ambient context) and inside
+// GitHub Actions runners (the heavy scheduled jobs moved there when the plan
+// dropped background functions) — the runner supplies NETLIFY_SITE_ID +
+// NETLIFY_AUTH_TOKEN and reads/writes the very same store over the Blobs API.
 const mem = new Map<string, unknown>()
+
+const remoteCreds = () =>
+  process.env.NETLIFY_SITE_ID && process.env.NETLIFY_AUTH_TOKEN
+    ? { siteID: process.env.NETLIFY_SITE_ID, token: process.env.NETLIFY_AUTH_TOKEN }
+    : null
 
 async function blobStore() {
   try {
     const { getStore } = await import('@netlify/blobs')
-    return getStore('app')
+    const remote = remoteCreds()
+    return remote ? getStore({ name: 'app', ...remote }) : getStore('app')
   } catch {
     return null
   }
@@ -56,7 +66,8 @@ export const blobAppStore: AppStore = {
   async readStrong<T>(key: string): Promise<T | null> {
     try {
       const { getStore } = await import('@netlify/blobs')
-      const store = getStore({ name: 'app', consistency: 'strong' })
+      const remote = remoteCreds()
+      const store = getStore({ name: 'app', consistency: 'strong', ...(remote ?? {}) })
       return ((await store.get(key, { type: 'json' })) as T | null) ?? null
     } catch {
       return blobAppStore.read<T>(key)

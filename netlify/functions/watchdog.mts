@@ -49,7 +49,6 @@ async function runChecks(nowSec: number, report: { at: number } | null): Promise
   return checks
 }
 
-const SITE = process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'
 
 // SELF-HEAL: the morning report is the one artifact readers actually see —
 // if report-kick's 05:20 UTC chain fell over upstream (predict-background
@@ -71,11 +70,12 @@ async function maybeRekick(nowSec: number, today: string, weekday: boolean, repo
     if (marker?.date === today) return 'already re-kicked today'
 
     await blobAppStore.write('watchdog-rekick', { date: today, at: nowSec }).catch(() => {})
-    await fetch(`${SITE}/.netlify/functions/report-compose-background`, {
-      method: 'POST',
-      headers: { 'x-app-token': process.env.APP_TOKEN ?? '' },
-    }).catch(() => {})
-    return 'RE-KICKED'
+    // enqueue for the Actions worker (≤15 min pickup) — the composer no longer
+    // runs on Netlify, so the old HTTP re-kick would just 404
+    const q = (await blobAppStore.read<unknown[]>('work-queue').catch(() => null)) ?? []
+    q.push({ id: crypto.randomUUID(), kind: 'compose', body: null, at: nowSec, attempts: 0 })
+    await blobAppStore.write('work-queue', q.slice(-100)).catch(() => {})
+    return 'RE-KICKED (queued for the Actions worker)'
   } catch {
     return 'rekick check failed'
   }
