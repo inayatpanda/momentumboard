@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { setToken, startTrial } from '../lib/api'
 import { humanError } from '../lib/format'
+import { SiteNav } from './SitePages'
 
 // LANDING: the public face of the paper — everything a visitor without a licence
 // key sees. It borrows the app's own broadsheet identity (serif masthead, gold
@@ -65,6 +66,7 @@ export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => vo
           <p className="landing-tagline">
             A daily engine-built market paper — calls, calibration, and an honest ledger.
           </p>
+          <SiteNav active="home" />
         </header>
 
         {/* 2 — Hero */}
@@ -128,7 +130,7 @@ export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => vo
                 </button>
                 <p className="landing-trial-note">
                   No card, no signup — a 7-day reader pass for this device. After that, licences are
-                  issued privately through the Helm.
+                  issued personally by the publisher: ask whoever shared StreetSignal with you.
                 </p>
                 {error && <p className="landing-error" role="alert">{error}</p>}
 

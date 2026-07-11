@@ -14,7 +14,7 @@ export async function startTrial(): Promise<{ key: string }> {
   if (!res.ok || !body?.ok || !body.data?.key) {
     throw new Error(
       body?.error === 'trial-limit'
-        ? 'This network has used its free passes for the week — for a licence, reach out via the Helm.'
+        ? 'This network has used its free passes for the week. For a licence key, ask whoever shared StreetSignal with you — or try again next week.'
         : 'Could not start free access right now — try again shortly.',
     )
   }

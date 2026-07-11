@@ -15,6 +15,7 @@ import { SettingsScreen } from './screens/SettingsScreen'
 import { Desk } from './screens/Desk'
 import { Quant } from './screens/Quant'
 import { Landing } from './screens/Landing'
+import { EnginePage, FaqPage, LedgerPage, PaperPage, siteRouteFor } from './screens/SitePages'
 import { More } from './screens/More'
 import { NavContext, TabBar } from './components/TabBar'
 import { useIsWide } from './hooks/useIsWide'
@@ -160,7 +161,14 @@ export default function App() {
 
   // The public URL stays the public website even on a licensed device. A clear
   // Open app action moves to `/app/`; licence links do this automatically.
+  // Sub-pages (/engine, /paper, /ledger, /faq) are real URLs — the netlify.toml
+  // catch-all serves index.html and the path picks the page here.
   if (surface === 'site') {
+    const page = siteRouteFor(location.pathname)
+    if (page === 'engine') return <EnginePage />
+    if (page === 'paper') return <PaperPage />
+    if (page === 'ledger') return <LedgerPage />
+    if (page === 'faq') return <FaqPage />
     return <Landing licensed={licensed} onUnlocked={enterApp} />
   }
 
