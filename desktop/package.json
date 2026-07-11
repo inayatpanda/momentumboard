@@ -1,7 +1,7 @@
 {
   "name": "streetsignal-desktop",
   "productName": "StreetSignal",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "The Street Signal — a daily engine-built market paper, on the desktop",
   "author": "The Street Signal <reports@thestreetsignal.rqai.co.uk>",

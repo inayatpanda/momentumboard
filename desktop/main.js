@@ -25,7 +25,15 @@ function createWindow() {
   // marks desktop boots apart from browser visits in the access telemetry
   // (licences.mts check route splits on this token)
   win.webContents.setUserAgent(`${win.webContents.getUserAgent()} StreetSignalDesktop/${app.getVersion()}`)
-  win.loadURL(APP_URL)
+  // The PWA's service worker registers in this partition and then serves its
+  // PRECACHED page on every launch — the shell was permanently one deploy
+  // behind (2026-07-11: the app opened onto the previous build). This is an
+  // online-only window; clear SW + cache before load so every launch fetches
+  // the live site. localStorage (the licence) is deliberately untouched.
+  win.webContents.session
+    .clearStorageData({ storages: ['serviceworkers', 'cachestorage'] })
+    .catch(() => {})
+    .then(() => win.loadURL(APP_URL))
 
   // anything off-origin (news links, unusualwhales, report PDFs) opens in the
   // system browser — the shell stays the app, never becomes a browser
