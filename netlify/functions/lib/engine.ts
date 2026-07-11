@@ -274,8 +274,13 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // vs small; unknown-cap calls stay in the combined stream but neither sleeve.
   const allOutcomes: (OutcomeLite & { cohort: CapCohortOrUnknown })[] = []
   const stillPending: string[] = []
+  // Reuse the records graded in this invocation when building the scorecard.
+  // Netlify Blobs can briefly return the pre-write version after a write, which
+  // otherwise makes a successful grading run publish an empty scorecard.
+  const predictionsByDate = new Map<string, Prediction[]>()
   for (const date of index) {
     const preds = (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
+    predictionsByDate.set(date, preds)
     let changed = false
     for (const pred of preds) {
       const candles = await getCandles(pred.sym)
@@ -353,7 +358,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   const byRegime: Record<string, { n: number; hits: number }> = {}
   const overlays: Record<string, { n: number; hits: number }> = {}
   for (const date of fullIndex.slice(-30)) {
-    const preds = (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
+    const preds = predictionsByDate.get(date) ?? (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     for (const p of preds) {
       if (!p.outcome5) continue
       const g = (byGrade[p.shadow ? 'shadow' : p.grade] ??= { n: 0, hits: 0, sumExcess: 0 })

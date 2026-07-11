@@ -12,7 +12,9 @@ import type { ChannelCredState } from '../../shared/engine/channelCred'
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify({ ok: status === 200, data }), {
     status,
-    headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=120' },
+    // This payload contains the authenticated ledger and portfolio reads. It
+    // must never sit in a shared CDN cache, and run diagnostics need to be live.
+    headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' },
   })
 
 export default async (req: Request) => {
