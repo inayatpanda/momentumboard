@@ -136,6 +136,9 @@ export default async (req: Request) => {
         riskPct: p.riskPct,
         instrument: p.instrument,
         paperOnly: p.paperOnly,
+        watchOnly: p.watchOnly,
+        setup: p.setup,
+        evidence: p.evidence?.detail,
         factorDetails: Object.fromEntries(Object.entries(p.factors).filter(([, f]) => f.score != null).map(([k, f]) => [k, `${f.score} — ${f.detail}`])),
       }))
     })
@@ -250,6 +253,7 @@ export default async (req: Request) => {
         target: b.target,
         expectedMovePct: b.expectedMovePct,
         paperOnly: b.paperOnly,
+        watchOnly: b.watchOnly,
         earningsRisk: b.earningsRisk,
         instrument: b.instrument,
       })),

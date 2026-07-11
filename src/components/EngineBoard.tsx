@@ -17,6 +17,7 @@ function Call({ p }: { p: EnginePrediction }) {
           <GradeChip grade={p.grade} provisional={p.provisional} />{' '}
           {p.sym}
           <span className={p.side === 'long' ? 'up-text' : 'down-text'} style={{ fontSize: 11, marginLeft: 6, fontWeight: 700 }}>{dir}</span>
+          {p.setup && <span className="badge" style={{ marginLeft: 6 }}>{p.setup}</span>}
           {(capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)) && (
             <span className="badge warn" style={{ marginLeft: 6 }}>{capBand(p.capUsdM) ?? 'small cap'}</span>
           )}
@@ -29,7 +30,7 @@ function Call({ p }: { p: EnginePrediction }) {
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--muted)' }}>
         <span>in {p.entry} · stop {p.stop} · tgt {p.target}</span>
-        <span>risk {p.riskPct}%{p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}</span>
+        <span>{p.watchOnly ? 'watch — no size' : `risk ${p.riskPct}%${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}</span>
       </div>
       <button className="mini-btn ghost" style={{ alignSelf: 'flex-start', fontSize: 11, padding: '1px 6px' }} onClick={() => setOpen(o => !o)}>
         {open ? 'hide evidence' : 'evidence'}
@@ -37,6 +38,7 @@ function Call({ p }: { p: EnginePrediction }) {
       {open && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
           <div style={{ marginBottom: 3 }}>{p.note}</div>
+          {p.evidence && <div style={{ marginBottom: 3, color: 'var(--faint)' }}>{p.evidence.detail}{p.evidence.contract ? '' : ' — below the evidence bar'}</div>}
           {Object.entries(p.factors)
             .filter(([, f]) => f.score != null)
             .sort((a, b) => Math.abs(b[1].weight * (b[1].score ?? 0)) - Math.abs(a[1].weight * (a[1].score ?? 0)))
@@ -91,13 +93,29 @@ export function EngineBoard() {
         )}
       </p>
       {b.board.length === 0 && <p className="empty-line">No edge today — every candidate failed the gates. An honest empty board beats a forced call.</p>}
-      {b.board.map(p => (
-        <Call key={p.id} p={p} />
-      ))}
+      {(() => {
+        const trades = b.board.filter(p => !p.watchOnly)
+        const watch = b.board.filter(p => p.watchOnly)
+        return (
+          <>
+            {trades.length > 0 && <h4 className="section-title" style={{ fontSize: 12, marginTop: 6 }}>Today's trades</h4>}
+            {trades.map(p => (
+              <Call key={p.id} p={p} />
+            ))}
+            {trades.length === 0 && b.board.length > 0 && (
+              <p className="empty-line">No qualified trades today — nothing earned an A/B grade on full evidence. The watch list is what the engine is tracking.</p>
+            )}
+            {watch.length > 0 && <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Watch — not qualified{trades.length === 0 ? '' : ' (grade C / thin evidence)'}</h4>}
+            {watch.map(p => (
+              <Call key={p.id} p={p} />
+            ))}
+          </>
+        )
+      })()}
       <p className="empty-line" style={{ fontSize: 11 }}>
         Grades are calibrated on the engine's own graded history: a hit must beat SPY by ≥1pp over the horizon, and stops are judged on daily closes — an
         intraday wick through is survivable. A/B/C means the call's bucket beats the engine's own base rate, not a coin flip. Provisional = thin evidence
-        bucket. This is analysis, not advice.
+        bucket. Only A/B calls on full evidence carry size — watch rows are observations. This is analysis, not advice.
       </p>
     </section>
   )

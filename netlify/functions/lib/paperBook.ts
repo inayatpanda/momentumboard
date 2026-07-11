@@ -156,9 +156,10 @@ export async function runPaperBook(store: AppStore, deps: { candles: (sym: strin
 
   manageOpenPositions(book, candlesBySym, todayISO)
 
-  // open today's live calls the book doesn't already hold
+  // open today's ACTIONABLE calls the book doesn't already hold — watch-only
+  // entries (grade C / low evidence) are observations and never take capital
   const boardBlob = await store.read<{ date: string; board: Prediction[] }>('engine-board').catch(() => null)
-  const live = (boardBlob?.board ?? []).filter(b => !b.shadow)
+  const live = (boardBlob?.board ?? []).filter(b => !b.shadow && !b.watchOnly)
   for (const call of live) {
     if (book.positions.length >= MAX_OPEN) break
     if (book.positions.some(p => p.sym === call.sym && p.side === call.side)) continue

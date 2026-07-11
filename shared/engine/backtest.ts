@@ -118,6 +118,8 @@ export function seedFromHistory(
         stage: read.stage,
         earningsWithinHorizon: false,
         capUsdM: null,
+        volumeConfirmed: read.volumeConfirmed,
+        breadthKnown: (breadthByT.get(candles[i].t)?.total ?? 0) >= 10,
       })
       if (!call) continue
 
@@ -142,7 +144,7 @@ export function seedFromHistory(
       // hit rule mirrors gradePrediction(): a win must clear HIT_EXCESS_MIN
       const outcome = { excessPct, rawPct: round1(rawPct), spyPct: round1(spyPct), stopped, hit: !stopped && excessPct >= HIT_EXCESS_MIN }
 
-      updateCalibration(calibration, { side: call.side, regime, composite: call.composite, provenance: 'seed' }, outcome)
+      updateCalibration(calibration, { side: call.side, regime, composite: call.composite, setup: call.setup, provenance: 'seed' }, outcome)
       weights = updateIcStats(weights, { side: call.side, factors: call.factors } as Prediction, outcome)
     }
   }

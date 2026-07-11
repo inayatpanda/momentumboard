@@ -12,7 +12,7 @@ import { writeFileSync } from 'node:fs'
 import { fetchYahooChart } from '../netlify/functions/lib/yahoo'
 import { SECTORS, SECTOR_MEMBERS, computeSectorRows, type SectorRow } from '../netlify/functions/lib/sectors'
 import { technicalFactor, momentumFactor, sectorFactor, seasonalityFactor } from '../shared/engine/factors'
-import { composeCall, LONG_REGIME_MULT, SHORT_REGIME_MULT } from '../shared/engine/composite'
+import { composeCall, CONTEXT_MAX_PTS, FACTOR_FAMILY, LONG_REGIME_MULT, SHORT_REGIME_MULT } from '../shared/engine/composite'
 import { probabilityFor, gradeFor, gradePrediction, type CalibrationState } from '../shared/engine/calibration'
 import type { FactorName, FactorScore, PredOutcome } from '../shared/engine/types'
 import { technicalStage } from '../shared/technicals'
@@ -105,19 +105,26 @@ console.log(`\nprediction dates (${predictionDates.length}): ${predictionDates.m
 // regime-adjustment math so we can report "nearest miss" composites for
 // no-call symbols (never used to gate an actual call — composeCall does that). ----
 function rawAdj(factors: Record<FactorName, FactorScore>, weights: Record<FactorName, number>, regime: RegimeColor | 'unknown'): number | null {
-  let num = 0
-  let den = 0
+  let coreNum = 0
+  let coreDen = 0
+  let ctxNum = 0
   for (const name of Object.keys(factors) as FactorName[]) {
     const f = factors[name]
     if (f.score == null) continue
     const w = weights[name] ?? 0
-    num += w * f.score
-    den += w
+    if (FACTOR_FAMILY[name] === 'core') {
+      coreNum += w * f.score
+      coreDen += w
+    } else {
+      ctxNum += w * f.score
+    }
   }
-  if (!den) return null
-  const raw = num / den
+  if (!coreDen) return null
+  const raw = coreNum / coreDen
   const side: 'long' | 'short' = raw >= 0 ? 'long' : 'short'
-  return raw * (side === 'long' ? LONG_REGIME_MULT[regime] : SHORT_REGIME_MULT[regime])
+  const coreAdj = raw * (side === 'long' ? LONG_REGIME_MULT[regime] : SHORT_REGIME_MULT[regime])
+  const ctxPts = Math.min(CONTEXT_MAX_PTS, Math.max(-CONTEXT_MAX_PTS, ctxNum / coreDen))
+  return coreAdj + ctxPts
 }
 
 // ---- engine day-one state: the committed seed, exactly as the live engine

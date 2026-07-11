@@ -223,7 +223,8 @@ export default async () => {
     const open: Prediction[] = []
     for (const date of index) {
       for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
-        if (!p.shadow && !p.outcome5) open.push(p)
+        // watch-only calls carry levels for reference, not execution — no pings
+        if (!p.shadow && !p.watchOnly && !p.outcome5) open.push(p)
       }
     }
     // only markets currently trading: outside hours the last trade is stale

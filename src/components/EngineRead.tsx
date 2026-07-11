@@ -76,12 +76,15 @@ export function EngineFactors({ call, hasRead }: { call: EnginePrediction | null
           <GradeChip grade={call.grade} provisional={call.provisional} />{' '}
           <b>{call.sym}</b>
           <span className="engine-factor-dir" style={{ color: dirColor }}>{call.side === 'long' ? '▲ long' : '▼ short'}</span>
+          {call.watchOnly && <span className="badge warn">watch</span>}
+          {call.setup && <span className="badge">{call.setup}</span>}
         </span>
         <span className="engine-factor-prob num">{Math.round(call.probability * 100)}% · ~{call.expectedMovePct}%</span>
       </div>
       <div className="engine-factor-meta num">
         <span>composite {call.composite}</span>
         <span>capacity {call.capacityPct}%</span>
+        {call.evidence && <span>{call.evidence.detail}</span>}
       </div>
       {rows.map(([name, f]) => (
         <div key={name} className="engine-factor-row">

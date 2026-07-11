@@ -351,6 +351,11 @@ export interface EnginePrediction {
   riskPct: number
   instrument: { ticker: string; leverage: number } | null
   paperOnly: boolean
+  // grade C / thin evidence: published and graded, but an observation — no
+  // size, no instrument. Only A/B contract-passing calls are trades.
+  watchOnly?: boolean
+  setup?: 'continuation' | 'reversal' | 'fade' | null
+  evidence?: { coverage: number; famAgree: number; contract: boolean; contextPts: number; detail: string }
   factors: Record<string, { score: number | null; detail: string; weight: number }>
   overlay?: { flag: string; reason: string }
   themes?: string[]

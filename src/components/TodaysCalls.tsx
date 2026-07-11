@@ -20,7 +20,9 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
   const todayLondon = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
   const weekend = [0, 6].includes(new Date().getDay())
   const stale = b.date !== todayLondon
-  const calls = b.board.slice(0, MAX_SHOWN)
+  // trades lead; watch-only fills what's left of the shown slots
+  const trades = b.board.filter(p => !p.watchOnly)
+  const calls = [...trades, ...b.board.filter(p => p.watchOnly)].slice(0, MAX_SHOWN)
   return (
     <section className="digest-section" style={{ marginBottom: 14 }}>
       <h3 className="section-title">
@@ -29,6 +31,9 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
         {stale && <span className="badge warn">{weekend ? 'markets closed — last session' : `as of ${b.date}`}</span>}
       </h3>
       {calls.length === 0 && <p className="empty-line">No edge today — every candidate failed the gates. An honest empty board beats a forced call.</p>}
+      {calls.length > 0 && trades.length === 0 && (
+        <p className="empty-line">No qualified trades today — these are watch-only until they earn an A/B grade on full evidence.</p>
+      )}
       {calls.map(p => {
         const band = capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)
         return (
@@ -44,6 +49,7 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
               <GradeChip grade={p.grade} provisional={p.provisional} />
               <span className="calls-sym">{p.sym}</span>
               <span className={`chg-pill calls-side ${p.side === 'long' ? 'up' : 'down'}`}>{p.side === 'long' ? '▲ Long' : '▼ Short'}</span>
+              {p.watchOnly && <span className="badge warn">watch</span>}
               <span className="calls-odds">{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>
             </span>
             {(band || (p.themes ?? []).length > 0 || p.earningsRisk) && (

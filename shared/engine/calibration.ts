@@ -29,8 +29,10 @@ export const HIT_EXCESS_MIN = 1
 export const CALIB_DEF_VERSION = 2
 /** Bump when factor semantics, composition, or bucket interpretation changes.
  * Unlike CALIB_DEF_VERSION this does not redefine a hit; it identifies which
- * scoring model emitted a prediction. */
-export const ENGINE_MODEL_VERSION = 1
+ * scoring model emitted a prediction.
+ * v2: two-layer composite — core (price-derived) factors set direction and
+ * eligibility, context factors capped at CONTEXT_MAX_PTS (composite.ts). */
+export const ENGINE_MODEL_VERSION = 2
 
 export interface CalibrationState {
   // Keys are EITHER cohort-tagged `${cohort}:${side}:${regime}:${band}` (cohort ∈
@@ -38,6 +40,12 @@ export interface CalibrationState {
   // `${side}:${regime}:${band}` (the seed + everything graded before Phase 2, and
   // still where unknown-cap grades land). probabilityFor's ladder reads both.
   buckets: Record<string, BucketStat>
+  // Per-setup-family outcome stats, keyed `${setup}:${side}:${band}` (regime
+  // deliberately pooled — three setups × the full key space would starve every
+  // cell). ACCRUAL ONLY for now: probabilityFor does not read these until the
+  // families have real sample sizes — a specialist model must earn its
+  // existence from logged evidence, exactly like a new factor.
+  setupBuckets?: Record<string, BucketStat>
   brier: { date: string; mean: number; n: number }[]
   seeded?: boolean
   defVersion?: number
@@ -56,6 +64,7 @@ const addEvidence = (a: BucketStat, hit: boolean) => ({ n: a.n + 1, hits: a.hits
  * tracked exactly as live or shadow. */
 export function migrateCalibration(state: CalibrationState): CalibrationState {
   state.modelVersion ??= ENGINE_MODEL_VERSION
+  state.setupBuckets ??= {}
   if (!state.evidence) {
     const total = Object.values(state.buckets).reduce((a, b) => ({ n: a.n + b.n, hits: a.hits + b.hits }), { n: 0, hits: 0 })
     state.evidence = {
@@ -175,7 +184,7 @@ export function gradePrediction(
   pred: { date: string; side: 'long' | 'short'; priceAtPrediction: number; stop: number },
   candles: Candle[],
   spyCandles: Candle[],
-  horizon: 5 | 10,
+  horizon: 5 | 10 | 21,
 ): PredOutcome | null {
   const dayEpoch = Date.parse(pred.date) / 1000
   const entryIdx = candles.findIndex(c => c.t >= dayEpoch)
@@ -211,7 +220,7 @@ export function gradePrediction(
 
 export function updateCalibration(
   state: CalibrationState,
-  pred: { side: string; regime: string; composite: number; capUsdM?: number | null; shadow?: boolean; provenance?: 'seed' | 'live' | 'shadow' },
+  pred: { side: string; regime: string; composite: number; capUsdM?: number | null; shadow?: boolean; setup?: string | null; provenance?: 'seed' | 'live' | 'shadow' },
   outcome: PredOutcome,
 ): CalibrationState {
   migrateCalibration(state)
@@ -220,10 +229,19 @@ export function updateCalibration(
   // never guessed into a cohort. Unknown grades thus keep feeding the pooled rungs
   // (3–5) that every cohort falls back to, exactly like the seed does.
   const cohort = capCohortOf(pred.capUsdM)
-  const tail = `${pred.side}:${pred.regime}:${bandFor(Math.abs(pred.composite))}`
+  const band = bandFor(Math.abs(pred.composite))
+  const tail = `${pred.side}:${pred.regime}:${band}`
   const key = cohort === 'unknown' ? tail : `${cohort}:${tail}`
   const b = state.buckets[key] ?? { n: 0, hits: 0 }
   state.buckets[key] = { n: b.n + 1, hits: b.hits + (outcome.hit ? 1 : 0) }
+  // setup-family stats accrue in parallel (never read by probabilityFor yet —
+  // see the CalibrationState comment). Calls without a setup stamp simply
+  // don't book here; the main buckets above remain the source of truth.
+  if (pred.setup) {
+    const sk = `${pred.setup}:${pred.side}:${band}`
+    const sb = state.setupBuckets![sk] ?? { n: 0, hits: 0 }
+    state.setupBuckets![sk] = { n: sb.n + 1, hits: sb.hits + (outcome.hit ? 1 : 0) }
+  }
   const source = pred.provenance ?? (pred.shadow ? 'shadow' : 'live')
   state.evidence![source] = addEvidence(state.evidence![source], outcome.hit)
   return state

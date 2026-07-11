@@ -57,7 +57,7 @@ describe('buildBoard', () => {
   it('scores a rolled-over name as a graded short, writes every blob, paper-only at R0', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -72,6 +72,11 @@ describe('buildBoard', () => {
     expect(call.grade).toBe('A') // p=(14+2)/(20+4)=0.667, capacity ≥8
     expect(call.probability).toBeCloseTo(0.67, 2)
     expect(call.provisional).toBe(false)
+    expect(call.watchOnly).toBeUndefined() // A + contract passed → a trade, not an observation
+    expect(call.setup).toBe('continuation') // shorting confirmed weakness = downtrend continuation
+    expect(call.evidence.contract).toBe(true)
+    expect(call.evidence.famAgree).toBeGreaterThanOrEqual(2)
+    expect(Math.abs(call.evidence.contextPts)).toBeLessThanOrEqual(12) // channels/news colour is capped
     expect(call.stop).toBeGreaterThan(call.entry)
     expect(call.target).toBeLessThan(call.entry)
     expect(call.paperOnly).toBe(true) // R0 + no levMap → not executable, still scored
@@ -93,7 +98,7 @@ describe('buildBoard', () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
     // both bands covered so the 1.1 short nudge can shift NVDA's band without ungrading it
-    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 20, hits: 14 }, 'short:amber:40-55': { n: 20, hits: 14 } }, brier: [], defVersion: CALIB_DEF_VERSION })
+    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 20, hits: 14 }, 'short:amber:70+': { n: 20, hits: 14 } }, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -120,7 +125,7 @@ describe('buildBoard', () => {
   it('maps an instrument once the rung and levMap allow it', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
-    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('risk-state', { rung: 1, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -141,7 +146,7 @@ describe('buildBoard', () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
     // calibration that would otherwise grade this an A live call
-    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -161,7 +166,7 @@ describe('buildBoard', () => {
   it('one outstanding shadow per sym+side: a repeat shadow is skipped while the first is still ungraded', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION }) // suppresses → shadow
+    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION }) // suppresses → shadow
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -180,7 +185,7 @@ describe('buildBoard', () => {
   it('...but once the first shadow has matured (graded), a fresh same-name shadow is allowed back in', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION })
+    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -200,7 +205,7 @@ describe('buildBoard', () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
     // suppressing calibration: this band has PROVEN it loses → grade null → shadow
-    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION })
+    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -214,6 +219,27 @@ describe('buildBoard', () => {
     expect(shadow.instrument).toBeNull()
     const publicBoard = (await store.read<{ board: Prediction[] }>('engine-board'))!
     expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
+  })
+
+  it('grade C publishes as WATCH-ONLY: on the board with riskPct 0, no instrument — an observation, not a trade', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
+    // bucket edges past the base rate but under B: laplace (11+2)/(20+4)=0.54 → C
+    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION })
+    await store.write('risk-state', { rung: 1, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const { board } = await buildBoard(store, deps(), NOW)
+    const call = board.find(b => b.sym === 'NVDA')!
+    expect(call).toBeDefined() // still published — the day is never blank just because nothing qualified
+    expect(call.grade).toBe('C')
+    expect(call.watchOnly).toBe(true)
+    expect(call.riskPct).toBe(0) // no size for a watch idea
+    expect(call.instrument).toBeNull() // even though rung+levMap would have unlocked SNVD
+    expect(call.shadow).toBeUndefined() // visible and graded, unlike a shadow
+    const publicBoard = (await store.read<{ board: Prediction[] }>('engine-board'))!
+    expect(publicBoard.board.find(p => p.sym === 'NVDA')?.watchOnly).toBe(true)
   })
 
   it('an AI nomination joins the roster as a scored candidate (source ai-nomination); an expired one is ignored', async () => {
@@ -332,7 +358,7 @@ describe('buildBoard', () => {
   it('Fix A: a non-watchlist roster name with a cached cluster-buy gets a non-null insiders factor', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] }) // NVDA is roster-only, never on the watchlist
-    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     const cluster: InsiderSummary = { symbol: 'NVDA', buyers: ['CEO', 'CFO'], totalBought: 9000, totalValueUsd: 900_000, isCluster: true, latest: [] }
     const coverage = new Map<string, InsiderSummary | null>([['NVDA', cluster]])
     const { board } = await buildBoard(store, deps({ insiderCoverage: async () => coverage }), NOW)
@@ -345,7 +371,7 @@ describe('buildBoard', () => {
   it('T212 holdings: writes holdings + holdings-reads blobs, a held mover earns a roster slot (source holding), an unreadable name reads null', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     const d = deps({
       screens: async () => [], // HELD's ONLY candidate source is the holdings pool
       social: async () => [],
@@ -385,7 +411,7 @@ describe('buildBoard', () => {
   it('T212 holdings fail-soft: a null book leaves the holdings blobs untouched', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     const { holdingsCount } = await buildBoard(store, deps({ holdings: async () => null }), NOW)
     expect(holdingsCount).toBe(0)
     expect(await store.read('holdings')).toBeNull()
@@ -395,7 +421,7 @@ describe('buildBoard', () => {
   it('Fix B: a smartMoney 13F match surfaces in the prediction factor breakdown', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     const moves: FundMoves[] = [
       { fund: 'Scion Asset Management', filedAt: '2026-05-15', newPositions: [{ issuer: 'NVIDIA CORP', shares: 100, value: 100 }], increased: [], exited: [] },
     ]
@@ -414,7 +440,7 @@ describe('buildBoard', () => {
   it('per-cohort rung: a large-cap call trades at the LARGE sleeve’s rung, not the combined top-level', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
-    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     // combined/top-level parked at R0, but the LARGE sleeve already earned R1.
     // NVDA's screener cap is 50_000 → large cohort, so it must trade at R1.
     await store.write('risk-state', {
@@ -441,7 +467,7 @@ describe('buildBoard', () => {
   it('always evaluates holdings/watchlist ahead of a saturated discovery budget', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [{ symbol: 'NVDA' }], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     const noisyScreens = Array.from({ length: 110 }, (_, i) => ({
       row: { sym: `ZZ${String(i).padStart(3, '0')}`, price: 10, capUsdM: 5_000, changePct: 1, name: null },
       source: 'screener:gainers',
@@ -467,8 +493,11 @@ describe('gradeOutstanding', () => {
     await store.write('predictions-index', [date, ...fillers])
 
     expect((await gradeOutstanding(store, deps(), NOW, null)).graded).toBe(1)
-    expect(await store.read('predictions-pending')).toEqual([])
+    // 5d and 10d graded; the date legitimately stays pending until the 21d
+    // (month-scale) outcome can mature — the fixture has only 19 bars after entry
+    expect(await store.read('predictions-pending')).toEqual([date])
     expect((await store.read<Prediction[]>(`predictions:${date}`))![0].outcome10).toBeDefined()
+    expect((await store.read<Prediction[]>(`predictions:${date}`))![0].outcome21).toBeUndefined()
   })
 
   it('keeps temporarily unreadable predictions pending instead of silently dropping them', async () => {
@@ -502,26 +531,41 @@ describe('gradeOutstanding', () => {
       instrument: null,
       factors: { technical: { score: -30, detail: '', weight: 1 } } as never,
     }
-    await store.write(`predictions:${date}`, [planted])
+    // a WATCH-ONLY companion call on the same tape: graded and calibrated like
+    // any published call, but it must never feed the risk ladder's counters
+    const watchPlanted: Partial<Prediction> = {
+      ...planted,
+      id: `${date}:XLK:short`,
+      sym: 'XLK',
+      grade: 'C',
+      watchOnly: true,
+      riskPct: 0,
+      setup: 'continuation',
+    }
+    await store.write(`predictions:${date}`, [planted, watchPlanted])
     await store.write('predictions-index', [date])
     await store.write('engine-calibration', calWith('short:amber:25-40'))
 
     const { graded } = await gradeOutstanding(store, deps(), NOW, null)
-    expect(graded).toBe(1)
+    expect(graded).toBe(2) // both graded — the learning loop eats everything published
 
     const preds = (await store.read<Prediction[]>(`predictions:${date}`))!
     expect(preds[0].outcome5).toBeDefined()
     expect(preds[0].outcome5!.hit).toBe(true) // falling knife kept falling, stop never touched
     expect(preds[0].outcome10).toBeDefined()
+    expect(preds[1].outcome5).toBeDefined() // the watch call is graded too
 
     const cal = (await store.read<CalibrationState>('engine-calibration'))!
-    expect(cal.buckets['short:amber:25-40']).toEqual({ n: 21, hits: 15 })
+    expect(cal.buckets['short:amber:25-40']).toEqual({ n: 22, hits: 16 }) // both outcomes booked
+    expect(cal.setupBuckets!['continuation:short:25-40']).toEqual({ n: 1, hits: 1 }) // setup stats accrue
     expect(cal.brier).toHaveLength(1)
 
     const risk = (await store.read<{ gradedAtRung: number }>('risk-state'))!
-    expect(risk.gradedAtRung).toBe(1)
-    const scorecard = (await store.read<{ byGrade: Record<string, { n: number }> }>('engine-scorecard'))!
+    expect(risk.gradedAtRung).toBe(1) // ONLY the actionable call counts toward the rung
+    const scorecard = (await store.read<{ byGrade: Record<string, { n: number }>; bySetup: Record<string, { n: number }> }>('engine-scorecard'))!
     expect(scorecard.byGrade.A.n).toBe(1)
+    expect(scorecard.byGrade.C.n).toBe(1)
+    expect(scorecard.bySetup.continuation.n).toBe(1)
   })
 
   it('production migration: a legacy rung-0 risk-state + cohortless seeded calibration load and behave; a known-cap grade books into its cohort bucket', async () => {
@@ -588,6 +632,7 @@ describe('traceOpenIdeas', () => {
     await store.write(`predictions:${date}`, [
       base({}), // open live → traced
       base({ id: `${date}:NVDA:short`, side: 'short', shadow: true }), // shadow → never traced
+      base({ id: `${date}:WCHY:long`, sym: 'WCHY', watchOnly: true }), // watch-only → not a position, never traced
       base({ id: `${date}:AAPL:long`, sym: 'AAPL', outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } }), // graded → done
     ])
     await store.write('predictions-index', [date])

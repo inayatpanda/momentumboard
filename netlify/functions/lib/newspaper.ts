@@ -36,6 +36,7 @@ export interface BoardIdeaSlim {
   expectedMovePct: number
   instrument: { ticker: string; leverage: number } | null
   paperOnly: boolean
+  watchOnly?: boolean // observation, not a trade — may never become an idea
 }
 
 /** The journalist writes the case; the engine wrote the numbers. Ideas not on
@@ -50,8 +51,9 @@ export function constrainIdeasToBoard(
   const rejected: string[] = []
   for (const idea of ideas) {
     const b = board.find(x => x.sym === idea.ticker?.toUpperCase() && x.side === idea.side)
-    if (!b) {
-      rejected.push(`${idea.ticker} ${idea.side}`)
+    if (!b || b.watchOnly) {
+      // not on the board, or on it as watch-only: either way not a tradeable idea
+      rejected.push(`${idea.ticker} ${idea.side}${b?.watchOnly ? ' (watch-only)' : ''}`)
       continue
     }
     const overlay =
@@ -210,6 +212,7 @@ export interface BoardRow {
   target: number
   expectedMovePct: number
   paperOnly: boolean
+  watchOnly?: boolean // grade C / low evidence: printed as an observation
   earningsRisk: boolean
   instrument: { ticker: string; leverage: number } | null
 }
@@ -230,7 +233,7 @@ export interface PaperExtras {
  * the table itself: top board calls become ideas verbatim — numbers from the
  * engine, one-line case from its own note. Picks capture must never starve. */
 export function fallbackIdeasFromBoard(board: (BoardIdeaSlim & { note?: string; stage?: string | null })[], max = 2): Idea[] {
-  return board.slice(0, max).map(b => ({
+  return board.filter(b => !b.watchOnly).slice(0, max).map(b => ({
     ticker: b.sym,
     side: b.side,
     playbook: (b.side === 'short' ? 'S' : 'B') as Idea['playbook'],
@@ -384,6 +387,7 @@ export const SECTIONS: SectionSpec[] = [
     brief: `1-3 long ideas MAX and the short desk (0-2 fades), plus shortDesk prose.
 IF engineBoard IS PRESENT in the data (the quant engine's scored calls, each with probability/grade/entry/stop/target): you are the JOURNALIST, not the analyst. HARD RULES:
 - Select ideas ONLY from engineBoard entries — ticker and side copied exactly; you may NOT introduce any other ticker as an idea.
+- Entries with watchOnly:true are OBSERVATIONS (grade C or thin evidence), never ideas — you may mention them as "the engine is watching X" colour, but they get no entry/size framing.
 - Copy entry, invalidation (the stop), target and conviction (the grade) VERBATIM from the board entry. You write the caseText, chartRead (from its stage/note), streetCheck (channels by name, then Reddit/Stocktwits), and 2-4 numbered reasons from the factor details.
 - You get ONE qualitative power per idea: an optional overlay {"flag":"boost|caution|veto","reason":"<grounded in a REAL headline or event in the data>"}. veto = the idea is dropped from the paper (say why in shortDesk if a short, lead if a long). Use it sparingly — every overlay is logged and graded against what price then did.
 - paperOnly:true board shorts are analysis, not executable — present them as "fade/avoid" and say the ETP route is locked until the risk ladder earns it. Board entries with an instrument: name the ETP ticker and its leverage, warn on daily-rebalance decay, max hold 10 sessions.
@@ -745,11 +749,11 @@ ${
           `<table style="table-layout:fixed;width:100%;font-size:12.5px"><thead><tr><th>Ticker</th><th style="width:44px">Side</th><th style="width:48px">Grade</th><th style="width:44px">Prob.</th><th style="width:160px">Entry · Stop · Target</th><th style="width:92px">Route</th></tr></thead><tbody>${x.engineBoard
             .map(
               b =>
-                `<tr><td><b>${esc(b.sym)}</b>${b.name ? `<br><span class="subtle">${esc(b.name)}</span>` : ''}</td><td>${b.side === 'long' ? 'LONG' : 'SHORT'}</td><td>${b.grade}${b.provisional ? '·prov' : ''}</td><td class="num">${Math.round(b.probability * 100)}%</td><td class="num">${b.entry} · ${b.stop} · ${b.target}<br><span class="subtle">~${b.expectedMovePct}% expected</span></td><td>${
-                  b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
+                `<tr><td><b>${esc(b.sym)}</b>${b.name ? `<br><span class="subtle">${esc(b.name)}</span>` : ''}</td><td>${b.side === 'long' ? 'LONG' : 'SHORT'}</td><td>${b.grade}${b.provisional ? '·prov' : ''}${b.watchOnly ? '·watch' : ''}</td><td class="num">${Math.round(b.probability * 100)}%</td><td class="num">${b.entry} · ${b.stop} · ${b.target}<br><span class="subtle">~${b.expectedMovePct}% expected</span></td><td>${
+                  b.watchOnly ? 'watch' : b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
                 }${b.earningsRisk ? ' · earnings' : ''}</td></tr>`,
             )
-            .join('')}</tbody></table><p class="foot">Calibrated on the engine's own graded history, excess vs S&amp;P. Paper-only calls are analysis — the risk ladder has not unlocked their route yet.</p>`,
+            .join('')}</tbody></table><p class="foot">Calibrated on the engine's own graded history, excess vs S&amp;P. Watch rows are observations — grade C or thin evidence, no size until they earn A/B. Paper-only calls are analysis — the risk ladder has not unlocked their route yet.</p>`,
         )
       : ''
   }

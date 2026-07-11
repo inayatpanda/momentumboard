@@ -50,8 +50,9 @@ export async function composeBulletin(kind: BulletinKind, store: AppStore, env: 
   const tone = worldReads ? worldTone(worldReads.filter(r => r.sym !== VIX_SYMBOL.sym), vix?.changePct ?? null) : null
   const news = titles?.length ? newsTone(titles) : null
 
-  // the board's live calls, marked to the current tape (evening) or listed (premarket)
-  const live = (board?.board ?? []).filter(b => !b.shadow).slice(0, 12)
+  // the board's actionable calls, marked to the current tape (evening) or
+  // listed (premarket) — watch-only entries stay off the bulletin
+  const live = (board?.board ?? []).filter(b => !b.shadow && !b.watchOnly).slice(0, 12)
   const marked = await Promise.all(
     live.map(async p => {
       const { cachedQuote } = await import('./marketCache')
