@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { routeDownload, type DownloadStats } from './download.mts'
-import { memoryStore } from './lib/store'
+import { routeDownload, type DownloadStats } from '../download.mts'
+import { memoryStore } from './store'
 
 const h = (ip = '1.2.3.4') => new Headers({ 'x-nf-client-connection-ip': ip })
 const NOW = Date.parse('2026-07-11T12:00:00Z') / 1000
