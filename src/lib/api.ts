@@ -470,6 +470,19 @@ export interface PaperBookData {
 }
 
 export interface EngineData {
+  runStatus?: {
+    startedAt: number
+    updatedAt: number
+    phase: string
+    completedAt?: number
+    failedAt?: number
+    error?: string
+    graded?: number
+    boardSize?: number
+    rosterSize?: number
+    holdingsCount?: number
+    regime?: string
+  } | null
   paperBook?: PaperBookData | null
   paperMonths?: { month: string; startGBP: number; endGBP: number; returnPct: number; trades: number; wins: number }[]
   board: {
@@ -503,7 +516,13 @@ export interface EngineData {
   // (seed + unknown-cap grades). Consumers that split the key must parse from the
   // END (band last) — see CalibrationPlot. Filter by the `${cohort}:` prefix to
   // build a per-sleeve view.
-  calibration: { buckets: Record<string, { n: number; hits: number }>; brier: { date: string; mean: number; n: number }[]; seeded: boolean } | null
+  calibration: {
+    buckets: Record<string, { n: number; hits: number }>
+    brier: { date: string; mean: number; n: number }[]
+    seeded: boolean
+    modelVersion?: number | null
+    evidence?: { seed: { n: number; hits: number }; live: { n: number; hits: number }; shadow: { n: number; hits: number } } | null
+  } | null
   // top-level = the COMBINED rung (back-compat: every existing screen reads this);
   // `cohorts` = the per-cap-class rungs added in Phase 2 (the data a two-pane desk
   // view will read). Absent on a not-yet-migrated blob.

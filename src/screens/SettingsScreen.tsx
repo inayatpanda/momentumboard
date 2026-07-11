@@ -533,7 +533,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         <section className="menu-group">
           <div className="menu-title">App</div>
           <InstallRow />
-          <a className="menu-row" href="https://thestreetsignal.netlify.app" target="_blank" rel="noopener noreferrer">
+          <a className="menu-row" href="/" target="_blank" rel="noopener noreferrer">
             <span className="icon-tile"><IconGlobe /></span>
             <span className="set-main">
               <span>Open website in browser</span>

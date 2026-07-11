@@ -11,7 +11,10 @@ const key = params.get('key')
 if (key) {
   localStorage.setItem('mb-token', key.trim())
   params.delete('key')
-  history.replaceState(null, '', location.pathname + (params.size ? `?${params}` : ''))
+  // Welcome links are app-intent links. Ordinary visits to `/` remain the
+  // website, while a valid key lands directly in the dedicated app surface.
+  const path = location.pathname.startsWith('/app') ? location.pathname : '/app/'
+  history.replaceState(null, '', path + (params.size ? `?${params}` : ''))
 }
 navigator.storage?.persist?.().catch(() => {})
 

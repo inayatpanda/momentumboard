@@ -19,7 +19,7 @@ export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
   if (!auth) return new Response(JSON.stringify({ ok: false, error: 'unauthorised' }), { status: 401 })
 
-  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory, holdingsReads, predIndex, openTrace] = await Promise.all([
+  const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory, holdingsReads, predIndex, openTrace, runStatus] = await Promise.all([
     blobAppStore.read<{
       date: string
       generatedAt: number
@@ -44,6 +44,7 @@ export default async (req: Request) => {
     // the open book: yesterday's still-open calls walked against daily closes
     // (traceOpenIdeas) — display-only, written by the same predict run as the board
     blobAppStore.read<{ date: string; generatedAt: number; entries: import('../../shared/engine/openTrace').OpenTraceEntry[] }>('open-trace'),
+    blobAppStore.read<{ startedAt: number; updatedAt: number; phase: string; completedAt?: number; failedAt?: number; error?: string; graded?: number; boardSize?: number; rosterSize?: number; holdingsCount?: number; regime?: string }>('engine-run-status'),
   ])
 
   const [paperBook, paperMonths] = await Promise.all([
@@ -96,6 +97,7 @@ export default async (req: Request) => {
     // news-tone history is surfaced as a bounded tail for the display-only trend.
     board,
     openTrace: openTrace ?? null,
+    runStatus: runStatus ?? null,
     ledger,
     paperBook: paperBook ?? null,
     paperMonths: paperMonths ?? [],

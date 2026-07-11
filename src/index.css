@@ -1899,31 +1899,6 @@ a.menu-row { text-decoration: none; }
   line-height: 1;
 }
 
-/* ---------- browser-tab strip — never rendered in the installed app ---------- */
-.browser-note {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 10px 20px 0;
-  padding: 10px 14px;
-  background: var(--blue-soft);
-  border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line));
-  border-radius: 12px;
-  font-size: 12.5px;
-  color: var(--muted);
-}
-.browser-note span { flex: 1; min-width: 0; }
-.browser-note button {
-  background: none;
-  border: 0;
-  color: var(--blue);
-  font-size: 12.5px;
-  font-weight: 700;
-  padding: 2px 4px;
-  white-space: nowrap;
-}
-.browser-note button[aria-label='Dismiss'] { color: var(--faint); font-weight: 400; }
-
 /* =====================================================================
    READING-SCREENS RESTYLE — Intel / Ledger / Research / Calendar
    Namespaced .intel-* / .heat-* / .led-* / .rsc-* / .cal-*.
@@ -2095,6 +2070,53 @@ a.menu-row { text-decoration: none; }
   line-height: 1.55;
   margin: 0;
   max-width: 56ch;
+}
+.landing-hero-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 24px;
+}
+.landing-hero-primary {
+  min-height: 48px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--blue);
+  color: var(--on-accent);
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--blue) 24%, transparent);
+  transition: transform 0.12s ease, opacity 0.15s ease;
+}
+.landing-hero-primary:active:not(:disabled) { transform: scale(0.985); }
+.landing-hero-primary:disabled { opacity: 0.6; }
+.landing-hero-secondary {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration-color: var(--line);
+  text-underline-offset: 4px;
+}
+.landing-hero-secondary:hover { color: var(--text); }
+.landing-proof {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, max-content));
+  gap: 10px 24px;
+  margin-top: 24px;
+  color: var(--faint);
+  font-size: 12px;
+}
+.landing-proof span { display: flex; flex-direction: column; }
+.landing-proof b { color: var(--text); font-size: 13px; font-weight: 700; }
+
+@media (max-width: 560px) {
+  .tabs .tab { flex: 1; min-width: 0; padding-left: 3px; padding-right: 3px; }
+  .landing-hero-actions { align-items: stretch; }
+  .landing-hero-primary { width: 100%; }
+  .landing-hero-secondary { width: 100%; text-align: center; padding: 6px; }
+  .landing-proof { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 }
 
 /* 3 — Feature grid: the app's .card surface, one per feature */

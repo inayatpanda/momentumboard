@@ -74,6 +74,17 @@ export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => vo
             The engine composes a morning edition, makes calibrated calls, and grades itself in
             public — every call lands in a ledger, hit or miss.
           </p>
+          <div className="landing-hero-actions">
+            <button className="landing-hero-primary" onClick={licensed ? onUnlocked : beginTrial} disabled={pending}>
+              {licensed ? 'Open the app' : pending ? 'Setting up your access…' : 'Start free — 7 days'}
+            </button>
+            <a className="landing-hero-secondary" href="#access">I already have access</a>
+          </div>
+          <div className="landing-proof" aria-label="How StreetSignal is measured">
+            <span><b>5 &amp; 10 session</b> grading</span>
+            <span><b>SPY-relative</b> outcomes</span>
+            <span><b>Every miss</b> stays visible</span>
+          </div>
         </section>
 
         {/* 3 — Feature grid */}
@@ -95,7 +106,7 @@ export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => vo
         </p>
 
         {/* 5 — Unlock (the gate) */}
-        <section className="landing-unlock">
+        <section className="landing-unlock" id="access">
           <div className="landing-gate-card">
             <h2>Reader access</h2>
             <p>

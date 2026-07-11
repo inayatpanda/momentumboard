@@ -42,6 +42,7 @@ export function More({ onOpenSettings }: { onOpenSettings: () => void }) {
       <div className="content">
         <div className="menu-group">
           <div className="menu-title">Markets</div>
+          <Row icon="M13 2L4 14h6l-1 8 9-12h-6l1-8z" tint="green" label="Movers" sub="Gainers, active names and fresh momentum" onTap={() => navigate('movers')} />
           <Row icon="M12 2a7 7 0 017 7c0 3-2 5-3 6v3H8v-3c-1-1-3-3-3-6a7 7 0 017-7zM9 21h6" label="Intel" sub="Macro, sectors, congress & insiders, social" onTap={() => navigate('intel')} />
           <Row icon="M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zM8 3v4m8-4v4M3 10h18" tint="amber" label="Calendar" sub="Earnings, IPOs and your day-by-day ledger" onTap={() => navigate('calendar')} />
         </div>

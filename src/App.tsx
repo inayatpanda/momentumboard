@@ -19,7 +19,6 @@ import { More } from './screens/More'
 import { NavContext, TabBar } from './components/TabBar'
 import { useIsWide } from './hooks/useIsWide'
 import { clearToken, getToken, validateAccess } from './lib/api'
-import { onInstallAvailable, promptInstall } from './lib/installPrompt'
 
 type View =
   | { screen: 'watchlist' }
@@ -37,6 +36,10 @@ type View =
   | { screen: 'settings'; from: string }
 
 export default function App() {
+  // `/` is always the public website; `/app/` is the product/PWA. Keeping the
+  // surfaces on separate paths stops an installed PWA claiming a normal visit
+  // to the website and makes the reader's intent explicit.
+  const [surface, setSurface] = useState<'site' | 'app'>(() => (location.pathname.startsWith('/app') ? 'app' : 'site'))
   // wide screens open straight onto the Desk dashboard; phones/tablets get the
   // classic tabbed layout. Read matchMedia in the initialiser so there's no flash.
   const [view, setView] = useState<View>(() =>
@@ -48,14 +51,11 @@ export default function App() {
   // licence gate: no token → the public landing page. main.tsx consumes ?key=
   // unlock links before React mounts, so licensed arrivals never see it.
   const [licensed, setLicensed] = useState(() => !!getToken())
-  // browser-tab vs installed-app disambiguation: same URL serves both, which
-  // confuses readers who typed the address. In a plain tab we say so and offer
-  // the public site; the installed app (standalone) never shows any of this.
-  const inBrowserTab = typeof window !== 'undefined' && !window.matchMedia('(display-mode: standalone)').matches
-  const [siteView, setSiteView] = useState(false)
-  const [browserNoteDismissed, setBrowserNoteDismissed] = useState(() => sessionStorage.getItem('mb-browser-note') === '1')
-  const [canInstall, setCanInstall] = useState(false)
-  useEffect(() => onInstallAvailable(setCanInstall), [])
+  const enterApp = () => {
+    history.replaceState(null, '', '/app/')
+    setSurface('app')
+    setLicensed(true)
+  }
 
   // boot check: a token the server rejects (revoked, or an expired trial) sends
   // the reader back to the landing page instead of a screen of failed requests.
@@ -87,12 +87,11 @@ export default function App() {
   // armed: back from any screen → home (re-armed); back again from home → the
   // root entry, which exits — standard Android app behaviour.
   useEffect(() => {
-    if (!licensed) return
+    if (!licensed || surface !== 'app') return
     history.replaceState({ ss: 'root' }, '')
     history.pushState({ ss: 'buffer' }, '')
     const onPop = () => {
       let consumed = false
-      setSiteView(false)
       setView(v => {
         const home: View = window.matchMedia('(min-width: 1200px)').matches ? { screen: 'desk' } : { screen: 'watchlist' }
         if (v.screen === home.screen) return v // already home: let the next back exit
@@ -118,17 +117,18 @@ export default function App() {
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
-  }, [licensed])
+  }, [licensed, surface])
 
   // phone ↔ desktop: pull server state on launch; screens remount when it lands.
   // Starter seeding runs AFTER the pull, so an existing watchlist is never
   // polluted — a truly first launch gets the classics instead of a blank page.
   useEffect(() => {
+    if (!licensed || surface !== 'app') return
     syncFromServer().then(async changed => {
       const seeded = await seedStarterWatchlist().catch(() => false)
       if (changed || seeded) setSyncTick(t => t + 1)
     })
-  }, [])
+  }, [licensed, surface])
 
   const open = (symbol: string) => {
     setLastSymbol(symbol)
@@ -158,15 +158,14 @@ export default function App() {
   const reduced = useReducedMotion()
   const screenKey = view.screen + (view.screen === 'detail' ? view.symbol : '')
 
-  // the licence gate comes before everything — unlicensed visitors get the
-  // public marketing page, whatever the viewport.
-  if (!licensed) {
-    return <Landing onUnlocked={() => setLicensed(true)} />
+  // The public URL stays the public website even on a licensed device. A clear
+  // Open app action moves to `/app/`; licence links do this automatically.
+  if (surface === 'site') {
+    return <Landing licensed={licensed} onUnlocked={enterApp} />
   }
 
-  // a licensed reader who chose "View website" from the browser strip
-  if (siteView) {
-    return <Landing licensed onUnlocked={() => setSiteView(false)} />
+  if (!licensed) {
+    return <Landing onUnlocked={enterApp} />
   }
 
   // the Desk is full-bleed — it renders outside the 560px .shell and without the
@@ -195,30 +194,6 @@ export default function App() {
   return (
     <NavContext.Provider value={{ active, navigate }}>
     <div className="shell" key={syncTick}>
-      {inBrowserTab && !isWide && !browserNoteDismissed && (
-        <div className="browser-note" role="note">
-          <span>Browser view — the installed app has its own icon.</span>
-          {canInstall && (
-            <button
-              onClick={async () => {
-                if (await promptInstall()) setBrowserNoteDismissed(true)
-              }}
-            >
-              Install app
-            </button>
-          )}
-          <button onClick={() => setSiteView(true)}>View website</button>
-          <button
-            aria-label="Dismiss"
-            onClick={() => {
-              sessionStorage.setItem('mb-browser-note', '1')
-              setBrowserNoteDismissed(true)
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={screenKey}

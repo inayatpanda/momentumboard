@@ -21,14 +21,14 @@ self.addEventListener('push', event => {
       body: data.body ?? '',
       icon: '/icon-192.png',
       badge: '/icon-192.png',
-      data: { url: data.url ?? '/' },
+      data: { url: data.url ?? '/app/' },
     }),
   )
 })
 
 self.addEventListener('notificationclick', event => {
   event.notification.close()
-  const url = (event.notification.data as { url?: string })?.url ?? '/'
+  const url = (event.notification.data as { url?: string })?.url ?? '/app/'
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
       const open = clients.find(c => 'focus' in c)

@@ -17,6 +17,9 @@ export default async (req: Request) => {
   const leaseKey = 'lease:predict-background'
   const lease = await acquireLease(blobAppStore, leaseKey, nowSec, 15 * 60)
   if (!lease) return new Response('engine-run-already-in-progress', { status: 409 })
+  const writeStatus = (phase: string, detail?: Record<string, unknown>) =>
+    blobAppStore.write('engine-run-status', { startedAt: nowSec, updatedAt: Math.floor(Date.now() / 1000), phase, ...detail }).catch(() => {})
+  await writeStatus('starting')
   const deps = defaultDeps({
     FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
     T212_API_KEY: process.env.T212_API_KEY,
@@ -27,9 +30,11 @@ export default async (req: Request) => {
   let boardSize = -1
   let rosterSize = -1
   let holdingsCount = -1
+  let failure: string | null = null
   try {
     const cfg = validateConfig(await blobAppStore.read('config'))
     graded = (await gradeOutstanding(blobAppStore, deps, nowSec, cfg)).graded
+    await writeStatus('building-board', { graded })
     const built = await buildBoard(blobAppStore, deps, nowSec)
     boardSize = built.board.length
     rosterSize = built.rosterSize
@@ -37,6 +42,7 @@ export default async (req: Request) => {
     // the £10k mock book trades the board it just built — fail-soft
     try {
       const { runPaperBook } = await import('./lib/paperBook')
+      await writeStatus('paper-book', { graded, boardSize, rosterSize })
       const book = await runPaperBook(blobAppStore, deps, nowSec)
       console.log('PAPER-BOOK:', book.month, '| equity', book.history[book.history.length - 1]?.equity, '| open', book.positions.length, '| closed', book.closed.length)
     } catch (e) {
@@ -50,12 +56,15 @@ export default async (req: Request) => {
       console.error('OPEN-TRACE failed:', e)
     }
     console.log('PREDICT: graded', graded, '| board', boardSize, '| roster', rosterSize, '| holdings', holdingsCount, '| regime', built.regime)
+    await writeStatus('completed', { completedAt: Math.floor(Date.now() / 1000), graded, boardSize, rosterSize, holdingsCount, regime: built.regime })
   } catch (e) {
+    failure = e instanceof Error ? e.message : String(e)
     console.error('PREDICT-FAILED:', e)
+    await writeStatus('failed', { failedAt: Math.floor(Date.now() / 1000), error: failure.slice(0, 240), graded, boardSize, rosterSize, holdingsCount })
   } finally {
     try {
       const runlog = (await blobAppStore.read<unknown[]>('runlog')) ?? []
-      runlog.push({ at: nowSec, kind: 'predict', graded, boardSize, rosterSize, holdingsCount })
+      runlog.push({ at: nowSec, kind: 'predict', ok: !failure && boardSize >= 0, error: failure?.slice(0, 160), graded, boardSize, rosterSize, holdingsCount })
       await blobAppStore.write('runlog', runlog.slice(-200))
       // chain to the composer regardless — it degrades to legacy mode without a fresh board
       await fetch(`${SITE}/.netlify/functions/report-compose-background`, {

@@ -7,6 +7,11 @@
   node_bundler = "esbuild"
 
 [[redirects]]
+  from = "/app/*"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
   from = "/api/market"
   to = "/.netlify/functions/market-data"
   status = 200

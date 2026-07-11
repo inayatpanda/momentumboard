@@ -118,7 +118,7 @@ FIRST CHECK — the one thing to look at first tomorrow morning, and why.`
 
   // telegram: prose + the board marked to market
   const boardLines = marked.map(m => `${m.sym} ${m.side.toUpperCase()} ${m.grade} · in ${m.entry}${m.now != null ? ` → ${m.now}` : ''}${m.movePct != null ? ` (${pct(m.movePct)})` : ''} · stop ${m.stop} · tgt ${m.target}`)
-  const text = `${title.toUpperCase()} — ${date}\n\n${bodyText}${boardLines.length ? `\n\nTHE BOARD\n${boardLines.join('\n')}` : ''}\n\nFull app → https://thestreetsignal.netlify.app`
+  const text = `${title.toUpperCase()} — ${date}\n\n${bodyText}${boardLines.length ? `\n\nTHE BOARD\n${boardLines.join('\n')}` : ''}\n\nFull app → https://thestreetsignal.rqai.co.uk/app/`
 
   // ---- the email/archive page: a structured mini-edition, not a note ----
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -197,7 +197,7 @@ ${paperBook && paperBook.history.length ? `<div style="margin-top:10px;color:#98
 ${moversHtml}
 ${calHtml}
 <div style="margin-top:26px;padding-top:14px;border-top:1px solid rgba(158,173,198,.2);color:#636e80;font-size:12px">
-<a href="https://thestreetsignal.netlify.app" style="color:#5aa9ff">Open the app</a> · <a href="https://thestreetsignal.netlify.app/report" style="color:#5aa9ff">this morning's paper</a> · analysis, not advice
+<a href="https://thestreetsignal.rqai.co.uk/app/" style="color:#5aa9ff">Open the app</a> · <a href="https://thestreetsignal.rqai.co.uk/report" style="color:#5aa9ff">this morning's paper</a> · analysis, not advice
 </div></div></body></html>`
 
   return { kind, date, at: nowSec, subject, text, html }

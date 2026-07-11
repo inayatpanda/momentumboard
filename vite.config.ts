@@ -14,14 +14,16 @@ export default defineConfig({
       injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png}'] },
       manifest: {
         id: '/',
+        start_url: '/app/',
+        scope: '/app/',
         name: 'StreetSignal',
         short_name: 'StreetSignal',
         description: 'Watchlist, setups and alerts for swing trading. Informs; does not predict.',
         theme_color: '#0a0d0f',
         background_color: '#0a0d0f',
         display: 'standalone',
-        // reuse the already-open app window instead of stacking new ones when
-        // an in-scope link is captured by the installed app
+        // Only `/app/` is in scope: typing the root domain remains a website
+        // visit even when StreetSignal is installed on the device.
         launch_handler: { client_mode: 'navigate-existing' },
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
