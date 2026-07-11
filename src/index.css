@@ -38,10 +38,10 @@
   --bg-glow: radial-gradient(120% 70% at 50% -10%, rgba(94, 200, 220, 0.07) 0%, rgba(10, 13, 15, 0) 60%);
   --panel: #12171a;
   --panel-2: #182025;
-  --line: rgba(148, 186, 200, 0.10);
-  --text: #f0f5f7;
-  --muted: #aabfc7; /* secondary ink — must stay clearly readable on --bg/--panel (user: "grey on black") */
-  --faint: #7f929b; /* meta/eyebrows — AA-ish on the dark surfaces, never body copy */
+  --line: rgba(148, 186, 200, 0.17);
+  --text: #ffffff;
+  --muted: #c9dae2; /* secondary ink — must stay clearly readable on --bg/--panel (user asked twice: brighter) */
+  --faint: #9fb4be; /* meta/eyebrows — brighter third pass 2026-07-11, still subordinate to --muted */
   --green: #2bd396;
   --green-soft: rgba(43, 211, 150, 0.13);
   --on-accent: #06171d;      /* dark ink for text on a solid (icy-cyan) accent */
@@ -112,7 +112,7 @@ body {
   background-repeat: no-repeat;
   color: var(--text);
   font-family: var(--font-ui);
-  font-size: 15.5px;
+  font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -539,7 +539,7 @@ p { text-wrap: pretty; }
   margin: 0 0 10px;
 }
 .engine-read-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
-.engine-read-label { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.engine-read-label { font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
 .engine-stage { font-weight: 700; font-size: 14px; }
 .engine-quality { font-size: 11px; letter-spacing: 0.02em; text-transform: uppercase; }
 .engine-vol { margin-left: auto; font-family: var(--font-num); font-size: 11.5px; color: var(--faint); }
@@ -600,7 +600,7 @@ p { text-wrap: pretty; }
 .calc h3 { margin: 0 0 10px; font-size: 14px; }
 .calc-sub { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
 .calc-inputs { display: flex; gap: 10px; }
-.calc-inputs label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.calc-inputs label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .calc-inputs input {
   background: var(--panel-2);
   border: 1px solid transparent;
@@ -749,7 +749,7 @@ p { text-wrap: pretty; }
 
 .trade-form { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
 .tf-row { display: flex; gap: 8px; margin-bottom: 8px; }
-.tf-row label, .tf-full { flex: 1; display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.tf-row label, .tf-full { flex: 1; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .tf-full { display: flex; margin-bottom: 8px; }
 .trade-form input:not([type='checkbox']), .trade-form select {
   background: var(--panel-2); border: 1px solid transparent; border-radius: 12px;
@@ -1359,7 +1359,7 @@ p { text-wrap: pretty; }
   font-variant-numeric: tabular-nums;
 }
 .ledger-h { display: inline-flex; align-items: baseline; gap: 6px; }
-.ledger-h-label { color: var(--faint); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.ledger-h-label { color: var(--faint); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
 .ledger-pending { color: var(--faint); font-style: italic; }
 .ledger-stopped { align-self: center; }
 
