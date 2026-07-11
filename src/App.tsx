@@ -15,6 +15,7 @@ import { SettingsScreen } from './screens/SettingsScreen'
 import { Desk } from './screens/Desk'
 import { Quant } from './screens/Quant'
 import { Landing } from './screens/Landing'
+import { AppGate } from './screens/AppGate'
 import { EnginePage, FaqPage, LedgerPage, PaperPage, siteRouteFor } from './screens/SitePages'
 import { More } from './screens/More'
 import { NavContext, TabBar } from './components/TabBar'
@@ -177,8 +178,11 @@ export default function App() {
     return <Landing licensed={licensed} onUnlocked={enterApp} />
   }
 
+  // an unlicensed device AT /app/ gets the app's own front door — never the
+  // marketing website (that lives on the site surface above; the two are
+  // different things, especially inside the desktop shell)
   if (!licensed) {
-    return <Landing onUnlocked={enterApp} />
+    return <AppGate onUnlocked={enterApp} />
   }
 
   // the Desk is full-bleed — it renders outside the 560px .shell and without the

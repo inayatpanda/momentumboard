@@ -2389,3 +2389,87 @@ a.dl-btn:hover { border-color: var(--gold); transform: translateY(-1px); }
 .dl-btn b { font-size: 15px; }
 .dl-btn span { font-size: 12px; color: var(--muted); line-height: 1.45; }
 .dl-btn.dl-note { cursor: default; }
+
+/* 9 — App gate (AppGate.tsx): the app's own front door for unlicensed
+   devices at /app/. Uses the app theme variables, NOT the landing's
+   broadsheet styling — the app and the website are different surfaces. */
+.app-gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.app-gate-card {
+  width: min(380px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 30px 26px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  background-image: var(--card-grad, none);
+  text-align: center;
+}
+.app-gate-name {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 30px;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--text);
+}
+.app-gate-name span { color: var(--gold); }
+.app-gate-sub { margin: 0 0 6px; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+.app-gate-form { display: flex; gap: 8px; }
+.app-gate-form input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-family: var(--font-num);
+  font-size: 14px;
+  outline: none;
+}
+.app-gate-form input:focus { border-color: var(--blue); }
+.app-gate-form input::placeholder { font-family: var(--font-ui); color: var(--faint); }
+.app-gate-unlock {
+  border: none;
+  border-radius: 12px;
+  padding: 0 20px;
+  background: var(--blue);
+  color: #06121a;
+  font-weight: 700;
+  cursor: pointer;
+}
+.app-gate-unlock:disabled { opacity: 0.45; cursor: default; }
+.app-gate-error { margin: 0; color: var(--red); font-size: 12.5px; }
+.app-gate-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+.app-gate-or::before, .app-gate-or::after { content: ''; flex: 1; border-top: 1px solid var(--line); }
+.app-gate-trial {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 11px 16px;
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.app-gate-trial:hover:not(:disabled) { border-color: var(--blue); }
+.app-gate-trial:disabled { opacity: 0.6; cursor: default; }
+.app-gate-site { color: var(--faint); font-size: 12px; text-decoration: none; margin-top: 2px; }
+.app-gate-site:hover { color: var(--muted); }
