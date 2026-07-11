@@ -77,11 +77,34 @@ export default async () => {
   const seeding = state.seenItems.length === 0 && state.lastBatchAt === 0 && Object.keys(state.lastSetups).length === 0
 
   const regime = spy && qqq ? regimeFromCandles(spy, qqq) : null
-  const { events, state: afterEval } = evaluateAlerts(
+  const { events, state: afterEval, freshNews } = evaluateAlerts(
     { rules: cfg.rules, watchlist: symbols },
     { tickers: snapshots.filter((s): s is TickerSnapshot => s !== null), regime, news, videos, nowSec, positions },
     state,
   )
+
+  // News desk: EVERY fresh headline is analysed and stored for the app; only
+  // what the triage scores as genuinely important comes back to the reader —
+  // top few as instant pings, the notable middle into the batched digest, the
+  // rest desk-only. Raw feed → Telegram is over (the 2026-07-11 flood).
+  if (freshNews.length) {
+    try {
+      const { triageNews, NEWS_PING_MIN, NEWS_DIGEST_MIN, NEWS_PING_CAP } = await import('./lib/newsTriage')
+      const triaged = await triageNews(freshNews, nowSec)
+      const desk = (await store.read<unknown[]>('news-desk')) ?? []
+      await store.write('news-desk', [...desk, ...triaged].slice(-300))
+      const ranked = [...triaged].sort((a, b) => b.score - a.score)
+      let seq = 9000
+      for (const t of ranked.filter(x => x.score >= NEWS_PING_MIN).slice(0, NEWS_PING_CAP)) {
+        events.push({ id: `${nowSec}-news-${seq++}`, tier: 'instant', text: `📰 ${t.title}${t.syms.length ? ` [${t.syms.join(', ')}]` : ''} — ${t.why} ${t.url}`, symbol: t.syms[0], at: nowSec })
+      }
+      for (const t of ranked.filter(x => x.score >= NEWS_DIGEST_MIN && x.score < NEWS_PING_MIN).slice(0, 12)) {
+        afterEval.queue.push({ id: `${nowSec}-news-${seq++}`, tier: 'batched', text: `📰 ${t.title}${t.syms.length ? ` [${t.syms.join(', ')}]` : ''}`, symbol: t.syms[0], at: nowSec })
+      }
+    } catch (e) {
+      errors.push(`news-triage: ${e}`)
+    }
+  }
 
   // Signal outcome log — the raw material for long-horizon learning.
   // Context (regime, rvol) is recorded so lessons can be conditioned on it;

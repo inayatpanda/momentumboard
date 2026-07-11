@@ -540,7 +540,18 @@ const num = (v: number | null | undefined, dp = 1) => (v == null ? '·' : v.toFi
 
 export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: PaperExtras = {}): string {
   const dept = (title: string, body: string) => (body ? `<section class="dept"><h2>${title}</h2>${body}</section>` : '')
-  const wide = (title: string, body: string) => (body ? `<section class="dept wide"><h2>${title}</h2>${body}</section>` : '')
+  // Each wide section carries an id anchor and an EMAIL-ONLY escape hatch: mail
+  // apps cannot scroll inside a message and JavaScript is stripped, so a real
+  // per-table slider is impossible there — the honest equivalent is a per-table
+  // link that opens THIS section, full-size and scrollable, in the browser
+  // edition. `.email-only` is display:none in the paper's own CSS; the
+  // email-fit pass (lib/email.ts) flips it visible on outgoing mail only.
+  const slugify = (t: string) => t.toLowerCase().replace(/&[a-z]+;/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+  const wide = (title: string, body: string) => {
+    if (!body) return ''
+    const id = slugify(title)
+    return `<section class="dept wide" id="${id}"><h2>${title}</h2><a class="email-only" href="${CANONICAL_SITE}/report#${id}">Open this section full-size ↗</a>${body}</section>`
+  }
 
   // Today's Ideas — a full-width STACKED block per idea (was a 7-column table
   // that crushed the prose into a skinny column, making 1500px-tall rows).
@@ -607,7 +618,14 @@ export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: Pape
 <table><thead><tr><th>Stock</th><th>Price</th><th>1 week</th><th>Trend (3mo)</th></tr></thead><tbody>
 ${t.rows
   .map(
-    row => `<tr><td class="tk">${esc(row.sym)}</td><td class="num">${row.price == null ? '·' : row.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</td><td class="num ${row.wkPct != null && row.wkPct >= 0 ? 'up' : 'dn'}">${row.wkPct == null ? '·' : `${row.wkPct >= 0 ? '+' : ''}${num(row.wkPct)}%`}</td><td>${row.closes?.length ? sparklineSvg(row.closes, 110, 24, 'auto') : ''}</td></tr>`,
+    row => {
+      // text twin beside the sparkline: Gmail strips <svg>, so without it the
+      // trend column arrives EMPTY in the inbox — the signed 3-month move is
+      // the same read in characters (and harmless extra context in the browser)
+      const tr3 = row.closes && row.closes.length >= 2 && row.closes[0] ? ((row.closes[row.closes.length - 1] - row.closes[0]) / row.closes[0]) * 100 : null
+      const tr3Txt = tr3 == null ? '' : `<span class="num ${tr3 >= 0 ? 'up' : 'dn'}" style="margin-left:6px;font-size:11px">${tr3 >= 0 ? '+' : ''}${num(tr3)}%</span>`
+      return `<tr><td class="tk">${esc(row.sym)}</td><td class="num">${row.price == null ? '·' : row.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</td><td class="num ${row.wkPct != null && row.wkPct >= 0 ? 'up' : 'dn'}">${row.wkPct == null ? '·' : `${row.wkPct >= 0 ? '+' : ''}${num(row.wkPct)}%`}</td><td>${row.closes?.length ? sparklineSvg(row.closes, 110, 24, 'auto') : ''}${tr3Txt}</td></tr>`
+    },
   )
   .join('')}
 </tbody></table>`,
@@ -700,6 +718,7 @@ footer{margin-top:34px;border-top:2px solid #191713;padding-top:12px;font-size:1
 .glance{gap:14px}
 }
 body{overflow-x:hidden}
+.email-only{display:none}
 @media print{body{background:#fff}.sheet{max-width:none;padding:0}}
 </style></head>
 <body><div class="sheet">
@@ -742,7 +761,7 @@ ${wide(
     // SPY sparkline is SVG (web-only; Gmail strips it — acceptable, price trend is
     // colour to taste). The SECTOR read is the email-safe heatmap TABLE so the
     // rotation data survives Gmail, where the old sector SVG vanished entirely.
-    `${x.spyCloses?.length ? `<figure style="margin:0 0 14px">${sparklineSvg(x.spyCloses, 300, 64, 'auto')}<figcaption>S&amp;P 500 · three months</figcaption></figure>` : ''}${x.sectorBars?.length ? `<div><div class="heatcap">Sector strength vs S&amp;P · one month (pp)</div>${sectorHeatTable(x.sectorBars)}</div>` : ''}`,
+    `${x.spyCloses?.length ? `<figure style="margin:0 0 14px">${sparklineSvg(x.spyCloses, 300, 64, 'auto')}<figcaption>S&amp;P 500 · three months${x.spyCloses.length >= 2 && x.spyCloses[0] ? ` · ${x.spyCloses[x.spyCloses.length - 1] >= x.spyCloses[0] ? '+' : ''}${num(((x.spyCloses[x.spyCloses.length - 1] - x.spyCloses[0]) / x.spyCloses[0]) * 100)}%` : ''}</figcaption></figure>` : ''}${x.sectorBars?.length ? `<div><div class="heatcap">Sector strength vs S&amp;P · one month (pp)</div>${sectorHeatTable(x.sectorBars)}</div>` : ''}`,
   )}
 ${
     x.engineBoard?.length

@@ -13,6 +13,11 @@ async function blobStore() {
 export interface AppStore {
   read<T>(key: string): Promise<T | null>
   write(key: string, value: unknown): Promise<void>
+  // Strong-consistency read — slower, so reach for it only where a stale miss
+  // has a real cost (licence checks: a just-minted key 401ing bounces a brand
+  // new reader off their unlock link). Absent on test stores → callers fall
+  // back to read().
+  readStrong?<T>(key: string): Promise<T | null>
 }
 
 interface LeaseRecord {
@@ -47,6 +52,15 @@ export const blobAppStore: AppStore = {
     const store = await blobStore()
     if (store) await store.setJSON(key, value)
     else mem.set(key, value)
+  },
+  async readStrong<T>(key: string): Promise<T | null> {
+    try {
+      const { getStore } = await import('@netlify/blobs')
+      const store = getStore({ name: 'app', consistency: 'strong' })
+      return ((await store.get(key, { type: 'json' })) as T | null) ?? null
+    } catch {
+      return blobAppStore.read<T>(key)
+    }
   },
 }
 

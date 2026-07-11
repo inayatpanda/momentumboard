@@ -69,6 +69,11 @@ export default function App() {
     if (!getToken()) return
     validateAccess().then(ok => {
       if (!ok) {
+        // a key claimed minutes ago can 401 off a stale Blobs replica even
+        // with the server's strong-read retry — never burn a fresh unlock on
+        // one bad answer; real expiry/revocation still catches the next boot
+        const claimedAt = Number(localStorage.getItem('mb-token-at') ?? 0)
+        if (Date.now() - claimedAt < 15 * 60_000) return
         clearToken()
         setLicensed(false)
       }

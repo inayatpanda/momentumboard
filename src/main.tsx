@@ -10,6 +10,9 @@ const params = new URLSearchParams(location.search)
 const key = params.get('key')
 if (key) {
   localStorage.setItem('mb-token', key.trim())
+  // when this key was claimed — the boot check gives fresh unlocks a grace
+  // window instead of burning the token on one stale-replica 401 (App.tsx)
+  localStorage.setItem('mb-token-at', String(Date.now()))
   params.delete('key')
   // Welcome links are app-intent links. Ordinary visits to `/` remain the
   // website, while a valid key lands directly in the dedicated app surface.

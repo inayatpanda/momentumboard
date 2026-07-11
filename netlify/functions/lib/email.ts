@@ -41,6 +41,7 @@ table{width:100%!important;max-width:100%!important;table-layout:fixed!important
 td,th{white-space:normal!important;word-break:break-word!important;overflow-wrap:anywhere!important}
 .dept table{display:table!important;overflow-x:visible!important;font-size:11.5px!important}
 img,svg{max-width:100%!important;height:auto!important}
+.email-only{display:inline-block!important;margin:0 0 10px;padding:7px 14px;border:1px solid #b9b2a2;border-radius:8px;font-size:12px;font-weight:600;color:#1a5cad;text-decoration:none}
 </style>`
 
 export function emailFitHtml(html: string): string {

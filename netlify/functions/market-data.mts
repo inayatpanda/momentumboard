@@ -228,6 +228,18 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'news-desk') {
+    // The triaged news desk (lib/newsTriage.ts via alert-check): every fresh
+    // headline analysed and importance-scored. Read-only — alert-check owns
+    // the writes; newest first, importance carried per item for the UI.
+    try {
+      const desk = ((await blobAppStore.read<import('./lib/newsTriage').TriagedNews[]>('news-desk')) ?? []).slice(-120).reverse()
+      return json(200, { ok: true, data: { items: desk } })
+    } catch {
+      return json(200, { ok: true, data: { items: [] } })
+    }
+  }
+
   if (type === 'signal-stats') {
     const hit = await getCached<unknown>('signal-stats')
     if (hit) return json(200, { ok: true, data: hit })

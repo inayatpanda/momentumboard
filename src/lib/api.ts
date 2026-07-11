@@ -131,6 +131,11 @@ export interface InsiderCluster {
 export const getInsiderClusters = () =>
   apiGet<{ clusters: InsiderCluster[]; asOf: number }>('/api/market?type=insider-clusters')
 
+// The triaged news desk: every fresh headline analysed and importance-scored
+// (0-100) by the news editor (LLM, heuristic fallback). Newest first.
+export interface NewsDeskItem { title: string; url: string; syms: string[]; score: number; why: string; at: number }
+export const getNewsDesk = () => apiGet<{ items: NewsDeskItem[] }>('/api/market?type=news-desk').then(d => d.items)
+
 export const getSignalStats = () =>
   apiGet<{ scores: { setup: string; n: number; scored: number; win5: number | null; avg5: number | null; avg10: number | null }[]; totalSignals: number }>('/api/market?type=signal-stats')
 

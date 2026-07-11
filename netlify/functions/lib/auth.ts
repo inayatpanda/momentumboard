@@ -28,8 +28,17 @@ export async function authenticate(headers: Headers, env: { APP_TOKEN?: string }
   const token = headers.get('x-app-token')
   if (!token) return null
   if (env.APP_TOKEN && token === env.APP_TOKEN) return { level: 'admin', ns: '' }
-  const licences = (await store.read<Licence[]>('licences')) ?? []
-  const lic = licences.find(l => l.key === token && !l.revoked)
+  let licences = (await store.read<Licence[]>('licences')) ?? []
+  let lic = licences.find(l => l.key === token && !l.revoked)
+  // MISS → one strong-consistency retry. Blob reads are eventual, so a key
+  // minted moments ago can be absent from an edge replica — that stale 401
+  // bounced brand-new readers straight off their unlock links (live-repro
+  // 2026-07-11: a 2-minute-old licence 401'd, then validated fine). A miss is
+  // rare, so the slower strong read costs nothing on the happy path.
+  if (!lic && store.readStrong) {
+    licences = (await store.readStrong<Licence[]>('licences')) ?? []
+    lic = licences.find(l => l.key === token && !l.revoked)
+  }
   if (!lic) return null
   if (lic.expiresAt && lic.expiresAt < Math.floor(Date.now() / 1000)) return null // trial lapsed — server says no
   return { level: 'user', ns: `u:${await hash8(lic.key)}:` }

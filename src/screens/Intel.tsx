@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
 import {
   getEcon, getCalendar, getConsensus, getInsiders, getSmartMoney, getVideoAnalyses, getFeed,
-  getAlertHistory, getSocialPulse, getSectors, getCongress, getInsiderClusters,
-  type CongressTrade, type InsiderCluster,
+  getAlertHistory, getSocialPulse, getSectors, getCongress, getInsiderClusters, getNewsDesk,
+  type CongressTrade, type InsiderCluster, type NewsDeskItem,
 } from '../lib/api'
 import { IconGear, IconCalendar, IconLandmark, IconFlame, IconPlay, stripEmoji } from '../components/icons'
 import { EngineBoard } from '../components/EngineBoard'
@@ -95,6 +95,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [sectors, setSectors] = useState<Awaited<ReturnType<typeof getSectors>> | null>(null)
   const [congress, setCongress] = useState<Awaited<ReturnType<typeof getCongress>> | null>(null)
   const [clusters, setClusters] = useState<Awaited<ReturnType<typeof getInsiderClusters>> | null>(null)
+  const [desk, setDesk] = useState<NewsDeskItem[]>([])
 
   useEffect(() => {
     db.watchlist.toArray().then(items => {
@@ -114,6 +115,7 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
     getSocialPulse().then(setPulse).catch(() => {})
     getSectors().then(setSectors).catch(() => {})
     getInsiderClusters().then(setClusters).catch(() => {})
+    getNewsDesk().then(setDesk).catch(() => {})
   }, [])
 
   const congEmpty = congress != null && congress.source === 'none' && congress.trades.length === 0
@@ -186,22 +188,43 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
             )}
 
             <section className="digest-section">
-              <h3 className="section-title">Headlines</h3>
-              <ul className="news-rows">
-                {feed.news.slice(0, 8).map(n => (
-                  <li key={n.url}>
-                    <a className="news-row" href={n.url} target="_blank" rel="noreferrer">
-                      <span className="news-row-main">
-                        <span className="news-row-title">{n.title}</span>
-                        {(n.symbols.length > 0 || newsSource(n.url)) && (
-                          <span className="news-row-meta">{[newsSource(n.url), n.symbols.join(', ')].filter(Boolean).join(' · ')}</span>
-                        )}
-                      </span>
-                      <span className="news-row-go" aria-hidden="true">↗</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              <h3 className="section-title">{desk.length ? 'News desk — important first' : 'Headlines'}</h3>
+              {desk.length > 0 ? (
+                <ul className="news-rows">
+                  {[...desk].sort((a, b) => b.score - a.score || b.at - a.at).slice(0, 12).map(n => (
+                    <li key={n.url}>
+                      <a className="news-row" href={n.url} target="_blank" rel="noreferrer">
+                        <span className="news-row-main">
+                          <span className="news-row-title">
+                            {n.score >= 75 && <span className="badge bad" style={{ marginRight: 6 }}>big</span>}
+                            {n.score >= 55 && n.score < 75 && <span className="badge warn" style={{ marginRight: 6 }}>notable</span>}
+                            {n.title}
+                          </span>
+                          <span className="news-row-meta">{[n.why, newsSource(n.url), n.syms.join(', '), relDate(new Date(n.at * 1000).toISOString())].filter(Boolean).join(' · ')}</span>
+                        </span>
+                        <span className="news-row-go" aria-hidden="true">↗</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <ul className="news-rows">
+                  {feed.news.slice(0, 8).map(n => (
+                    <li key={n.url}>
+                      <a className="news-row" href={n.url} target="_blank" rel="noreferrer">
+                        <span className="news-row-main">
+                          <span className="news-row-title">{n.title}</span>
+                          {(n.symbols.length > 0 || newsSource(n.url)) && (
+                            <span className="news-row-meta">{[newsSource(n.url), n.symbols.join(', ')].filter(Boolean).join(' · ')}</span>
+                          )}
+                        </span>
+                        <span className="news-row-go" aria-hidden="true">↗</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {desk.length > 0 && <p className="empty-line intel-fine">Every headline is analysed; only the big ones ping your phone. The rest live here.</p>}
             </section>
 
             {history.length > 0 && (

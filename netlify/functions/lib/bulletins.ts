@@ -124,7 +124,6 @@ FIRST CHECK — the one thing to look at first tomorrow morning, and why.`
   // ---- the email/archive page: a structured mini-edition, not a note ----
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
   const up = (x: number | null) => (x == null ? '#98a2b3' : x >= 0 ? '#2bd396' : '#ff5f76')
-  const th = 'text-align:left;color:#636e80;font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:6px 8px;border-bottom:1px solid rgba(158,173,198,.2)'
   const td = 'padding:6px 8px;border-bottom:1px solid rgba(158,173,198,.12);font-size:13px'
   const num = 'font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums'
   const section = (t: string, inner: string) =>
@@ -137,26 +136,22 @@ FIRST CHECK — the one thing to look at first tomorrow morning, and why.`
     ? section('The tape' + (tone ? ` · ${esc(tone.tone)}` : ''), `<table style="width:100%;border-collapse:collapse">${tapeRows}</table>`)
     : ''
 
+  // Stacked two-line rows, not a grid: eight columns can never fit a phone
+  // inbox, and mail apps have no inner scrolling (Gmail strips overflow — a
+  // sideways swipe just turns the page to the next email). Line one is the
+  // call and its mark-to-market; line two carries the levels.
   const boardRows = marked
     .map(
       m => `<tr>
-<td style="${td};font-weight:700">${esc(m.sym)}</td>
-<td style="${td};color:${m.side === 'long' ? '#2bd396' : '#ff5f76'}">${m.side}</td>
-<td style="${td}">${esc(m.grade)}</td>
-<td style="${td};${num};text-align:right">${m.entry}</td>
-<td style="${td};${num};text-align:right">${m.now ?? '·'}</td>
-<td style="${td};${num};text-align:right;color:${up(m.movePct)}">${m.movePct != null ? pct(m.movePct) : '·'}</td>
-<td style="${td};${num};text-align:right">${m.stop}</td>
-<td style="${td};${num};text-align:right">${m.target}</td></tr>`,
+<td style="padding:8px 8px 0;font-size:13.5px"><b>${esc(m.sym)}</b> <span style="color:${m.side === 'long' ? '#2bd396' : '#ff5f76'}">${m.side}</span> <span style="color:#98a2b3">· ${esc(m.grade)}</span></td>
+<td style="padding:8px 8px 0;${num};text-align:right;color:${up(m.movePct)}">${m.movePct != null ? pct(m.movePct) : '·'}</td></tr>
+<tr><td colspan="2" style="padding:2px 8px 8px;border-bottom:1px solid rgba(158,173,198,.12);${num};font-size:12px;color:#98a2b3">in ${m.entry}${m.now != null ? ` → ${m.now}` : ''} · stop ${m.stop} · tgt ${m.target}</td></tr>`,
     )
     .join('')
   const boardHtml = marked.length
     ? section(
         `The board · ${board?.date ?? ''} · regime ${board?.regime ?? '?'}`,
-        // table-layout:fixed + % widths, NO min-width: a hard px floor forces
-        // the whole email to pan sideways in mail apps (Gmail strips overflow,
-        // so the wrapping div can't save it — swipes turn the page instead)
-        `<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr><th style="${th};width:14%">Sym</th><th style="${th};width:9%">Side</th><th style="${th};width:7%">Gr</th><th style="${th};text-align:right;width:15%">Entry</th><th style="${th};text-align:right;width:14%">Now</th><th style="${th};text-align:right;width:12%">Move</th><th style="${th};text-align:right;width:14%">Stop</th><th style="${th};text-align:right;width:15%">Target</th></tr>${boardRows}</table>`,
+        `<table style="width:100%;border-collapse:collapse">${boardRows}</table>`,
       )
     : ''
 

@@ -96,7 +96,11 @@ const SETUP_LABEL: Record<SetupKind, string> = {
 }
 
 const REARM_PCT = 0.005
-const SEEN_CAP = 500
+// Must comfortably exceed one day's news+video volume across the whole
+// watchlist: when items fall off this list while still in the feed window,
+// they come back as "new" every run — that recycling is what produced the
+// thousand-message Telegram flood of 2026-07-11.
+const SEEN_CAP = 2000
 
 const mentions = (title: string, watchlist: string[]): string[] => {
   const upper = title.toUpperCase()
@@ -106,7 +110,11 @@ const mentions = (title: string, watchlist: string[]): string[] => {
   })
 }
 
-export function evaluateAlerts(cfg: AlertsConfig, input: AlertsInput, prev: AlertState): { events: AlertEvent[]; state: AlertState } {
+export function evaluateAlerts(
+  cfg: AlertsConfig,
+  input: AlertsInput,
+  prev: AlertState,
+): { events: AlertEvent[]; state: AlertState; freshNews: (NewsItem & { syms: string[] })[] } {
   const state: AlertState = {
     ...prev,
     ruleArmed: { ...prev.ruleArmed },
@@ -193,12 +201,17 @@ export function evaluateAlerts(cfg: AlertsConfig, input: AlertsInput, prev: Aler
   }
   if (input.regime) state.lastRegime = input.regime
 
-  // news + videos, deduped by url
+  // news is COLLECTED here, never alerted: raw headlines used to ping
+  // instantly per watchlist mention — a firehose, not a signal. Fresh items
+  // (deduped by url against seenItems) are returned for the caller to triage:
+  // everything analysed lands in the app's news desk, and only what the
+  // triage scores as genuinely important comes back as a ping (alert-check).
+  const freshNews: (NewsItem & { syms: string[] })[] = []
   for (const n of input.news) {
     if (state.seenItems.includes(n.url)) continue
     state.seenItems.push(n.url)
     const syms = n.symbols.length ? n.symbols : mentions(n.title, cfg.watchlist)
-    emit(syms.length ? 'instant' : 'batched', `📰 ${n.title}${syms.length ? ` [${syms.join(', ')}]` : ''} ${n.url}`, syms[0])
+    freshNews.push({ ...n, syms })
   }
   for (const v of input.videos) {
     if (state.seenItems.includes(v.url)) continue
@@ -208,7 +221,7 @@ export function evaluateAlerts(cfg: AlertsConfig, input: AlertsInput, prev: Aler
   }
   if (state.seenItems.length > SEEN_CAP) state.seenItems = state.seenItems.slice(-SEEN_CAP)
 
-  return { events, state }
+  return { events, state, freshNews }
 }
 
 // ---- batching ----

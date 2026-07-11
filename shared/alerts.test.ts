@@ -130,15 +130,17 @@ describe('regime, news, videos', () => {
     expect(out.events[0].tier).toBe('instant')
   })
 
-  it('news naming a watchlist ticker is instant, general news batched, urls deduped', () => {
+  it('news NEVER alerts directly — fresh items are returned for triage, urls deduped', () => {
     const news = [
       { title: 'NVDA smashes earnings', url: 'https://x/1', symbols: ['NVDA'] },
       { title: 'Markets open mixed', url: 'https://x/2', symbols: [] },
     ]
     let out = evaluateAlerts(cfg(), input({ news }), emptyAlertState())
-    expect(out.events.map(e => e.tier).sort()).toEqual(['batched', 'instant'])
+    expect(out.events).toHaveLength(0) // the raw feed no longer pings — that was the firehose
+    expect(out.freshNews.map(n => n.url)).toEqual(['https://x/1', 'https://x/2'])
+    expect(out.freshNews[0].syms).toEqual(['NVDA']) // symbol attribution rides along for the triage
     out = evaluateAlerts(cfg(), input({ news }), out.state)
-    expect(out.events).toHaveLength(0) // seen
+    expect(out.freshNews).toHaveLength(0) // seen — never re-triaged, never re-pinged
   })
 
   it('videos mentioning a watchlist ticker are instant, others batched', () => {
