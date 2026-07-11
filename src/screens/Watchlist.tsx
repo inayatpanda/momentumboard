@@ -10,7 +10,6 @@ import type { RuleItem } from '../lib/db'
 import { RegimeBanner } from '../components/RegimeBanner'
 import { TickerRow } from '../components/TickerRow'
 import { AddTickerForm } from '../components/AddTickerForm'
-import { TodaysCalls } from '../components/TodaysCalls'
 import { Toasts } from '../components/Toasts'
 import { IconGear, IconWarn } from '../components/icons'
 import { MoverCard } from './Movers'
@@ -109,6 +108,20 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
       </header>
       <div className="content">
         <AddTickerForm onAdd={add} disabled={symbols.length >= 30} categories={categories} />
+        {checkerStale && <div className="risk-banner"><IconWarn /> The background alert checker hasn't run in 20+ minutes — alerts may be delayed.</div>}
+        {topMovers.length > 0 && (
+          <section className="home-movers">
+            <h3 className="section-title">Top movers</h3>
+            <div className="rail" aria-label="Top movers">
+              {topMovers.slice(0, 8).map(r => (
+                <MoverCard key={r.sym} r={r} onOpen={onOpen} />
+              ))}
+            </div>
+          </section>
+        )}
+        {/* the engine board lives on ONE page — Signals; it was repeated here.
+            Chips sit DIRECTLY above the grid they filter: with two market-wide
+            sections wedged between, a tap looked like it did nothing. */}
         {categories.length > 0 && (
           <div className="sort-chips">
             {['All', ...categories].map(c => (
@@ -127,18 +140,11 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
             ))}
           </div>
         )}
-        {checkerStale && <div className="risk-banner"><IconWarn /> The background alert checker hasn't run in 20+ minutes — alerts may be delayed.</div>}
-        {topMovers.length > 0 && (
-          <section className="home-movers">
-            <h3 className="section-title">Top movers</h3>
-            <div className="rail" aria-label="Top movers">
-              {topMovers.slice(0, 8).map(r => (
-                <MoverCard key={r.sym} r={r} onOpen={onOpen} />
-              ))}
-            </div>
-          </section>
+        {categoryFilter !== 'All' && (
+          <p className="empty-line" style={{ margin: '2px 0 8px' }}>
+            {sortedRows.length} of {rows.length} — {categoryFilter} · <button className="mini-btn ghost" style={{ fontSize: 11, padding: '0 6px' }} onClick={() => setCategoryFilter('All')}>show all</button>
+          </p>
         )}
-        <TodaysCalls onOpen={onOpen} />
         <div className="card-grid">
           {sortedRows.map((row, i) => (
             <div key={row.symbol} onClick={() => onOpen(row.symbol)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpen(row.symbol)} style={{ cursor: 'pointer' }}>
