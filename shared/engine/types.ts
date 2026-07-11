@@ -44,6 +44,7 @@ export interface PredOutcome {
 export interface Prediction extends GradedCall {
   id: string // `${date}:${sym}:${side}`
   date: string
+  modelVersion?: number // scoring/calibration epoch used to create this prediction
   regime: RegimeColor | 'unknown'
   priceAtPrediction: number
   themes?: string[] // theme tags (themes.ts) — identification, never a score

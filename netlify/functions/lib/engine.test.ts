@@ -437,9 +437,50 @@ describe('buildBoard', () => {
     expect(call.instrument).toEqual({ ticker: 'SNVD', leverage: 2 }) // R1 unlocks 2x for an A short
     expect(call.paperOnly).toBe(false)
   })
+
+  it('always evaluates holdings/watchlist ahead of a saturated discovery budget', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [{ symbol: 'NVDA' }], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    const noisyScreens = Array.from({ length: 110 }, (_, i) => ({
+      row: { sym: `ZZ${String(i).padStart(3, '0')}`, price: 10, capUsdM: 5_000, changePct: 1, name: null },
+      source: 'screener:gainers',
+    }))
+    const { board } = await buildBoard(store, deps({ screens: async () => noisyScreens }), NOW)
+    expect(board.some(p => p.sym === 'NVDA')).toBe(true)
+  })
 })
 
 describe('gradeOutstanding', () => {
+  it('migrates the bounded index into a durable pending queue so old calls cannot age out ungraded', async () => {
+    const store = memoryStore()
+    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    const planted = {
+      id: `${date}:NVDA:short`, date, sym: 'NVDA', side: 'short', composite: -38.9,
+      regime: 'amber', probability: 0.67, provisional: false, grade: 'A',
+      priceAtPrediction: shorty[239].c, entry: shorty[239].c,
+      stop: shorty[239].c * 1.1, target: shorty[239].c * 0.9,
+      instrument: null, factors: { technical: { score: -30, detail: '', weight: 1 } },
+    } as unknown as Prediction
+    await store.write(`predictions:${date}`, [planted])
+    const fillers = Array.from({ length: 30 }, (_, i) => `2026-03-${String(i + 1).padStart(2, '0')}`)
+    await store.write('predictions-index', [date, ...fillers])
+
+    expect((await gradeOutstanding(store, deps(), NOW, null)).graded).toBe(1)
+    expect(await store.read('predictions-pending')).toEqual([])
+    expect((await store.read<Prediction[]>(`predictions:${date}`))![0].outcome10).toBeDefined()
+  })
+
+  it('keeps temporarily unreadable predictions pending instead of silently dropping them', async () => {
+    const store = memoryStore()
+    const date = '2026-01-01'
+    await store.write(`predictions:${date}`, [{ id: `${date}:BAD:long`, date, sym: 'BAD', side: 'long' }])
+    await store.write('predictions-index', [date])
+
+    expect((await gradeOutstanding(store, deps(), NOW, null)).graded).toBe(0)
+    expect(await store.read('predictions-pending')).toEqual([date])
+  })
+
   it('grades a matured prediction, updates calibration, risk and scorecard', async () => {
     const store = memoryStore()
     // prediction planted at bar 240 (2026-01-28); 19 bars of history follow

@@ -27,6 +27,10 @@ export const HIT_EXCESS_MIN = 1
  * become the pooled/combined rung of the fallback ladder below. Reseeding here
  * would throw away real graded evidence for no reason. */
 export const CALIB_DEF_VERSION = 2
+/** Bump when factor semantics, composition, or bucket interpretation changes.
+ * Unlike CALIB_DEF_VERSION this does not redefine a hit; it identifies which
+ * scoring model emitted a prediction. */
+export const ENGINE_MODEL_VERSION = 1
 
 export interface CalibrationState {
   // Keys are EITHER cohort-tagged `${cohort}:${side}:${regime}:${band}` (cohort ∈
@@ -37,6 +41,30 @@ export interface CalibrationState {
   brier: { date: string; mean: number; n: number }[]
   seeded?: boolean
   defVersion?: number
+  modelVersion?: number
+  evidence?: {
+    seed: BucketStat
+    live: BucketStat
+    shadow: BucketStat
+  }
+}
+
+const addEvidence = (a: BucketStat, hit: boolean) => ({ n: a.n + 1, hits: a.hits + (hit ? 1 : 0) })
+
+/** Backfill provenance for legacy calibration blobs. Existing seeded state is
+ * conservatively labelled seed/prior; all newly graded observations are then
+ * tracked exactly as live or shadow. */
+export function migrateCalibration(state: CalibrationState): CalibrationState {
+  state.modelVersion ??= ENGINE_MODEL_VERSION
+  if (!state.evidence) {
+    const total = Object.values(state.buckets).reduce((a, b) => ({ n: a.n + b.n, hits: a.hits + b.hits }), { n: 0, hits: 0 })
+    state.evidence = {
+      seed: state.seeded ? total : { n: 0, hits: 0 },
+      live: state.seeded ? { n: 0, hits: 0 } : total,
+      shadow: { n: 0, hits: 0 },
+    }
+  }
+  return state
 }
 
 /** Sum the buckets matching a side+band: a specific cohort's tagged keys (4 parts)
@@ -183,9 +211,10 @@ export function gradePrediction(
 
 export function updateCalibration(
   state: CalibrationState,
-  pred: { side: string; regime: string; composite: number; capUsdM?: number | null },
+  pred: { side: string; regime: string; composite: number; capUsdM?: number | null; shadow?: boolean; provenance?: 'seed' | 'live' | 'shadow' },
   outcome: PredOutcome,
 ): CalibrationState {
+  migrateCalibration(state)
   // A known cap books into its cohort bucket `${cohort}:${side}:${regime}:${band}`;
   // an unknown cap books into the LEGACY cohortless `${side}:${regime}:${band}` —
   // never guessed into a cohort. Unknown grades thus keep feeding the pooled rungs
@@ -195,6 +224,8 @@ export function updateCalibration(
   const key = cohort === 'unknown' ? tail : `${cohort}:${tail}`
   const b = state.buckets[key] ?? { n: 0, hits: 0 }
   state.buckets[key] = { n: b.n + 1, hits: b.hits + (outcome.hit ? 1 : 0) }
+  const source = pred.provenance ?? (pred.shadow ? 'shadow' : 'live')
+  state.evidence![source] = addEvidence(state.evidence![source], outcome.hit)
   return state
 }
 

@@ -1,4 +1,4 @@
-import { blobAppStore } from './lib/store'
+import { acquireLease, blobAppStore, releaseLease } from './lib/store'
 import { authenticate } from './lib/auth'
 import { buildBoard, defaultDeps, gradeOutstanding, traceOpenIdeas } from './lib/engine'
 import { validateConfig } from '../../shared/config'
@@ -14,6 +14,9 @@ export default async (req: Request) => {
   if (auth?.level !== 'admin') return new Response('admin-only', { status: 401 })
 
   const nowSec = Math.floor(Date.now() / 1000)
+  const leaseKey = 'lease:predict-background'
+  const lease = await acquireLease(blobAppStore, leaseKey, nowSec, 15 * 60)
+  if (!lease) return new Response('engine-run-already-in-progress', { status: 409 })
   const deps = defaultDeps({
     FINNHUB_API_KEY: process.env.FINNHUB_API_KEY,
     T212_API_KEY: process.env.T212_API_KEY,
@@ -50,14 +53,18 @@ export default async (req: Request) => {
   } catch (e) {
     console.error('PREDICT-FAILED:', e)
   } finally {
-    const runlog = (await blobAppStore.read<unknown[]>('runlog')) ?? []
-    runlog.push({ at: nowSec, kind: 'predict', graded, boardSize, rosterSize, holdingsCount })
-    await blobAppStore.write('runlog', runlog.slice(-200))
-    // chain to the composer regardless — it degrades to legacy mode without a fresh board
-    await fetch(`${SITE}/.netlify/functions/report-compose-background`, {
-      method: 'POST',
-      headers: { 'x-app-token': process.env.APP_TOKEN ?? '' },
-    }).catch(() => {})
+    try {
+      const runlog = (await blobAppStore.read<unknown[]>('runlog')) ?? []
+      runlog.push({ at: nowSec, kind: 'predict', graded, boardSize, rosterSize, holdingsCount })
+      await blobAppStore.write('runlog', runlog.slice(-200))
+      // chain to the composer regardless — it degrades to legacy mode without a fresh board
+      await fetch(`${SITE}/.netlify/functions/report-compose-background`, {
+        method: 'POST',
+        headers: { 'x-app-token': process.env.APP_TOKEN ?? '' },
+      }).catch(() => {})
+    } finally {
+      await releaseLease(blobAppStore, leaseKey, lease)
+    }
   }
   return new Response(boardSize >= 0 ? 'ok' : 'engine-failed-composer-kicked', { status: boardSize >= 0 ? 200 : 502 })
 }

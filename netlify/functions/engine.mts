@@ -103,7 +103,7 @@ export default async (req: Request) => {
     holdingsReads: holdingsReads ?? null,
     scorecard,
     weights: weights ? { base: weights.base, current: weights.current, history: weights.history.slice(-10) } : null,
-    calibration: calibration ? { buckets: calibration.buckets, brier: calibration.brier.slice(-30), seeded: calibration.seeded ?? false } : null,
+    calibration: calibration ? { buckets: calibration.buckets, brier: calibration.brier.slice(-30), seeded: calibration.seeded ?? false, modelVersion: calibration.modelVersion ?? null, evidence: calibration.evidence ?? null } : null,
     riskState,
     roster: roster ? { entries: roster, changes: (rosterLog ?? []).slice(-7) } : null,
     channelCred: Object.fromEntries(

@@ -28,6 +28,8 @@ import {
   CALIB_DEF_VERSION,
   gradeFor,
   gradePrediction,
+  ENGINE_MODEL_VERSION,
+  migrateCalibration,
   maybeNudgeWeights,
   migrateWeights,
   probabilityFor,
@@ -228,6 +230,7 @@ async function loadState(store: AppStore) {
   // definition; never regress live state to a stale seed.
   const seedCal = seed.calibration as unknown as CalibrationState
   if (calibration.defVersion !== CALIB_DEF_VERSION && seedCal.defVersion === CALIB_DEF_VERSION) calibration = clone(seedCal)
+  calibration = migrateCalibration(calibration)
   const channelCred = (await store.read<ChannelCredState>('channel-credibility')) ?? {}
   return { weights, calibration, channelCred }
 }
@@ -249,7 +252,13 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   const { weights, calibration, channelCred } = await loadState(store)
   let w = weights
 
-  const index = ((await store.read<string[]>('predictions-index')) ?? []).slice(-30)
+  const fullIndex = (await store.read<string[]>('predictions-index')) ?? []
+  // `predictions-pending` is durable work, not a display window. On first run
+  // after migration scan the bounded index once; afterwards only unresolved
+  // dates are revisited, even when they are older than 30 dates.
+  const storedPending = await store.read<string[]>('predictions-pending')
+  const pendingDates = storedPending ?? fullIndex
+  const index = [...new Set([...fullIndex.slice(-30), ...pendingDates])].sort()
   const candleCache = new Map<string, Candle[] | null>([['SPY', spy]])
   const getCandles = async (sym: string) => {
     if (!candleCache.has(sym)) candleCache.set(sym, await deps.candles(sym))
@@ -264,6 +273,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // each non-shadow outcome carries its cohort so the risk ladder can split large
   // vs small; unknown-cap calls stay in the combined stream but neither sleeve.
   const allOutcomes: (OutcomeLite & { cohort: CapCohortOrUnknown })[] = []
+  const stillPending: string[] = []
   for (const date of index) {
     const preds = (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     let changed = false
@@ -295,7 +305,9 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
         allOutcomes.push({ hit: pred.outcome5.hit, stopped: pred.outcome5.stopped, leveraged: !!pred.instrument, cohort: capCohortOf(pred.capUsdM) })
     }
     if (changed) await store.write(`predictions:${date}`, preds)
+    if (preds.some(p => !p.outcome5 || !p.outcome10)) stillPending.push(date)
   }
+  await store.write('predictions-pending', stillPending.slice(-250))
 
   if (newlyGraded.length) {
     const mean = brierPoint(newlyGraded)
@@ -340,7 +352,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   const byGrade: Record<string, { n: number; hits: number; sumExcess: number }> = {}
   const byRegime: Record<string, { n: number; hits: number }> = {}
   const overlays: Record<string, { n: number; hits: number }> = {}
-  for (const date of index) {
+  for (const date of fullIndex.slice(-30)) {
     const preds = (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     for (const p of preds) {
       if (!p.outcome5) continue
@@ -524,7 +536,25 @@ export async function buildBoard(
     for (const p of holdings.slice(0, ROSTER_MAX)) addSource(p.symbol, 'holding')
   }
 
-  const candidateSyms = [...sources.keys()].slice(0, 110)
+  // The evaluation budget is explicit: real holdings/watchlist first, then the
+  // established roster, live catalysts and earned channel nominations, then
+  // discovery feeds. Insertion order must never decide what the engine sees.
+  const watchSet = new Set(watchSyms.map(s => s.toUpperCase()))
+  const holdingSet = new Set((holdings ?? []).map(p => p.symbol.toUpperCase()))
+  const rosterSet = new Set(currentRoster.map(e => e.sym.toUpperCase()))
+  const candidatePriority = (sym: string): number => {
+    if (holdingSet.has(sym)) return 0
+    if (watchSet.has(sym)) return 1
+    if (rosterSet.has(sym)) return 2
+    if (catalystBySym.has(sym)) return 3
+    if (sources.get(sym)?.source.startsWith('channel:')) return 4
+    if (sources.get(sym)?.source.startsWith('theme:') || sources.get(sym)?.source === 'rotation') return 5
+    if (sources.get(sym)?.source === 'social') return 6
+    return 7
+  }
+  const candidateSyms = [...sources.keys()]
+    .sort((a, b) => candidatePriority(a) - candidatePriority(b) || a.localeCompare(b))
+    .slice(0, 110)
   const candleMap = new Map<string, Candle[]>()
   await mapLimit(candidateSyms, 8, async sym => {
     const c = await deps.candles(sym)
@@ -691,6 +721,7 @@ export async function buildBoard(
       ...call,
       id: `${today}:${call.sym}:${call.side}`,
       date: today,
+      modelVersion: ENGINE_MODEL_VERSION,
       regime,
       priceAtPrediction: call.entry,
       themes: callThemes.length ? callThemes : undefined,
@@ -756,6 +787,8 @@ export async function buildBoard(
   await store.write(`predictions:${today}`, final)
   const index = (await store.read<string[]>('predictions-index')) ?? []
   if (!index.includes(today)) await store.write('predictions-index', [...index, today].slice(-250))
+  const pending = (await store.read<string[]>('predictions-pending')) ?? []
+  if (final.length && !pending.includes(today)) await store.write('predictions-pending', [...pending, today].slice(-250))
   // Global news tone: DISPLAY / LOG ONLY, explicitly NOT a factor. It rides the
   // board blob and accumulates its own bounded history — factor status must be
   // EARNED from that logged history before it may ever enter a composite/multiplier.

@@ -7,6 +7,7 @@ import {
   gradePrediction,
   initWeights,
   maybeNudgeWeights,
+  migrateCalibration,
   migrateWeights,
   probabilityFor,
   updateCalibration,
@@ -354,6 +355,16 @@ describe('migrateWeights', () => {
 })
 
 describe('updateCalibration + brier', () => {
+  it('migrates legacy evidence and tracks future live/shadow/seed provenance separately', () => {
+    const cal = migrateCalibration({ buckets: { 'long:green:25-40': { n: 10, hits: 4 } }, brier: [], seeded: true })
+    expect(cal.evidence).toEqual({ seed: { n: 10, hits: 4 }, live: { n: 0, hits: 0 }, shadow: { n: 0, hits: 0 } })
+    const hit = { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true }
+    updateCalibration(cal, { side: 'long', regime: 'green', composite: 30 }, hit)
+    updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, shadow: true }, { ...hit, hit: false })
+    updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, provenance: 'seed' }, hit)
+    expect(cal.evidence).toEqual({ seed: { n: 11, hits: 5 }, live: { n: 1, hits: 1 }, shadow: { n: 1, hits: 0 } })
+  })
+
   it('books hits into the right bucket', () => {
     let cal = emptyCal()
     cal = updateCalibration(cal, { side: 'long', regime: 'green', composite: 30 }, { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true })

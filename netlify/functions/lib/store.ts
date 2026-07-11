@@ -15,6 +15,28 @@ export interface AppStore {
   write(key: string, value: unknown): Promise<void>
 }
 
+interface LeaseRecord {
+  token: string
+  expiresAt: number
+}
+
+/** Best-effort distributed lease over the blob store. The write-then-verify
+ * handshake means that when two functions race, only the token left in the
+ * store proceeds. Leases expire so a crashed invocation cannot wedge the job. */
+export async function acquireLease(store: AppStore, key: string, nowSec: number, ttlSec: number): Promise<string | null> {
+  const current = await store.read<LeaseRecord>(key)
+  if (current && current.expiresAt > nowSec) return null
+  const token = crypto.randomUUID()
+  await store.write(key, { token, expiresAt: nowSec + ttlSec } satisfies LeaseRecord)
+  const verified = await store.read<LeaseRecord>(key)
+  return verified?.token === token ? token : null
+}
+
+export async function releaseLease(store: AppStore, key: string, token: string): Promise<void> {
+  const current = await store.read<LeaseRecord>(key)
+  if (current?.token === token) await store.write(key, { token: '', expiresAt: 0 } satisfies LeaseRecord)
+}
+
 export const blobAppStore: AppStore = {
   async read<T>(key: string): Promise<T | null> {
     const store = await blobStore()
