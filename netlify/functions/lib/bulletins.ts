@@ -153,7 +153,10 @@ FIRST CHECK — the one thing to look at first tomorrow morning, and why.`
   const boardHtml = marked.length
     ? section(
         `The board · ${board?.date ?? ''} · regime ${board?.regime ?? '?'}`,
-        `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:520px"><tr><th style="${th}">Sym</th><th style="${th}">Side</th><th style="${th}">Gr</th><th style="${th};text-align:right">Entry</th><th style="${th};text-align:right">Now</th><th style="${th};text-align:right">Move</th><th style="${th};text-align:right">Stop</th><th style="${th};text-align:right">Target</th></tr>${boardRows}</table></div>`,
+        // table-layout:fixed + % widths, NO min-width: a hard px floor forces
+        // the whole email to pan sideways in mail apps (Gmail strips overflow,
+        // so the wrapping div can't save it — swipes turn the page instead)
+        `<table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr><th style="${th};width:14%">Sym</th><th style="${th};width:9%">Side</th><th style="${th};width:7%">Gr</th><th style="${th};text-align:right;width:15%">Entry</th><th style="${th};text-align:right;width:14%">Now</th><th style="${th};text-align:right;width:12%">Move</th><th style="${th};text-align:right;width:14%">Stop</th><th style="${th};text-align:right;width:15%">Target</th></tr>${boardRows}</table>`,
       )
     : ''
 

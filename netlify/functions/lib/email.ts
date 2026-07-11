@@ -28,6 +28,28 @@ export function parseRecipients(raw: string | undefined | null): string[] {
   return out
 }
 
+/** Mail apps cannot scroll content INSIDE a message — Gmail strips `overflow`
+ * outright — so any element wider than the viewport makes the WHOLE email pan,
+ * and a sideways swipe on a wide table flips to the next conversation instead
+ * of sliding the table. The emailed copy must therefore simply FIT: fixed
+ * table layout, wrapping cells, capped media, no hard min-widths. The browser
+ * edition keeps its slide-to-see-more; this runs only on outgoing mail
+ * (applied inside sendReportEmail, so every sender gets it). */
+const EMAIL_FIT_CSS = `<style data-email-fit>
+html,body{min-width:0!important;max-width:100%!important}
+table{width:100%!important;max-width:100%!important;table-layout:fixed!important;display:table!important}
+td,th{white-space:normal!important;word-break:break-word!important;overflow-wrap:anywhere!important}
+.dept table{display:table!important;overflow-x:visible!important;font-size:11.5px!important}
+img,svg{max-width:100%!important;height:auto!important}
+</style>`
+
+export function emailFitHtml(html: string): string {
+  // neutralise inline hard min-widths; the lookbehind spares media queries
+  // like @media(min-width:760px), which must keep their breakpoints
+  const noMinWidths = html.replace(/(?<!\()min-width:\s*\d+(?:px|em|rem)/gi, 'min-width:0')
+  return /<\/head>/i.test(noMinWidths) ? noMinWidths.replace(/<\/head>/i, `${EMAIL_FIT_CSS}</head>`) : EMAIL_FIT_CSS + noMinWidths
+}
+
 export function emailReadyHtml(reportHtml: string, browserUrl: string): string {
   const stripped = reportHtml.replace(/<script[\s\S]*?<\/script>/gi, '')
   // Mail clients trim, clip and strip (Gmail's ⋯ is its own chrome — no email can
@@ -63,7 +85,7 @@ export async function sendReportEmail(
         from: env.REPORT_EMAIL_FROM ?? 'The Street Signal <onboarding@resend.dev>',
         to,
         subject,
-        html,
+        html: emailFitHtml(html),
         ...(attachments?.length ? { attachments } : {}),
       }),
     })
