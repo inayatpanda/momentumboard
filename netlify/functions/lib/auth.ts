@@ -48,3 +48,26 @@ export function generateLicenceKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(18))
   return 'mb_' + [...bytes].map(b => b.toString(16).padStart(2, '0')).join('')
 }
+
+/** Freshest possible licence list — strong read when the store offers one. */
+export async function readLicencesFresh(store: AppStore): Promise<Licence[]> {
+  return (store.readStrong ? await store.readStrong<Licence[]>('licences') : null) ?? (await store.read<Licence[]>('licences')) ?? []
+}
+
+/** Add a licence with a verify-after-write loop. Plain read-modify-write LOST
+ * half of ten rapid sequential mints on 2026-07-11 — each POST read a stale
+ * replica missing the previous POST's key and overwrote it. Strong reads plus
+ * a read-back retry make sequential mints safe; true simultaneous mints remain
+ * theoretically racy but no longer silently so (callers get false back). */
+export async function addLicenceVerified(store: AppStore, lic: Licence): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const list = await readLicencesFresh(store)
+    if (!list.some(l => l.key === lic.key)) {
+      list.push(lic)
+      await store.write('licences', list)
+    }
+    const back = await readLicencesFresh(store)
+    if (back.some(l => l.key === lic.key)) return true
+  }
+  return false
+}

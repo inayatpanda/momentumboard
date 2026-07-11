@@ -2,7 +2,7 @@ import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 import { sendTelegram } from './lib/telegram'
 import { parseCallText, toExtract, type PunditExtract } from './lib/punditCalls'
-import { generateLicenceKey, type Licence } from './lib/auth'
+import { addLicenceVerified, generateLicenceKey, readLicencesFresh, type Licence } from './lib/auth'
 import { CANONICAL_SITE } from './lib/site'
 
 /** Two-way Telegram commands: /status /portfolio /mute [hours] /unmute /report
@@ -71,14 +71,17 @@ export async function routeTelegramWebhook(
     if (!label) {
       await reply('Usage: /key <label> — e.g. /key PK. Mints a lifetime licence and replies with its unlock link.')
     } else {
-      const licences = (await store.read<Licence[]>('licences')) ?? []
+      const licences = await readLicencesFresh(store)
       if (licences.filter(l => !l.revoked && !l.trial).length >= 25) {
         await reply('Licence cap reached (25 active) — /revoke one first.')
       } else {
         const lic: Licence = { key: generateLicenceKey(), label, createdAt: nowSec }
-        licences.push(lic)
-        await store.write('licences', licences)
-        await reply(`🔑 ${label} — one tap unlocks their device for life:\n${CANONICAL_SITE}/?key=${lic.key}\n/revoke ${label} kills it later.`)
+        // verified add — plain read-push-write lost keys to stale replicas (2026-07-11)
+        if (await addLicenceVerified(store, lic)) {
+          await reply(`🔑 ${label} — one tap unlocks their device for life:\n${CANONICAL_SITE}/?key=${lic.key}\n/revoke ${label} kills it later.`)
+        } else {
+          await reply(`⚠️ Mint for "${label}" did not persist — try again.`)
+        }
       }
     }
   } else if (text.startsWith('/revoke')) {
@@ -86,7 +89,7 @@ export async function routeTelegramWebhook(
     if (!q) {
       await reply('Usage: /revoke <label or key prefix>')
     } else {
-      const licences = (await store.read<Licence[]>('licences')) ?? []
+      const licences = await readLicencesFresh(store)
       const matches = licences.filter(l => !l.revoked && (l.label.toLowerCase() === q || l.key.toLowerCase().startsWith(q)))
       if (!matches.length) {
         await reply(`No active licence matches "${q}". /keys lists them.`)
@@ -99,7 +102,7 @@ export async function routeTelegramWebhook(
       }
     }
   } else if (text.startsWith('/keys')) {
-    const licences = (await store.read<Licence[]>('licences')) ?? []
+    const licences = await readLicencesFresh(store)
     const active = licences.filter(l => !l.revoked)
     await reply(
       active.length

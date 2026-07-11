@@ -1,6 +1,6 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
-import { authenticate, generateLicenceKey, hash8, type Licence } from './lib/auth'
+import { addLicenceVerified, authenticate, generateLicenceKey, hash8, readLicencesFresh, type Licence } from './lib/auth'
 import { CANONICAL_SITE } from './lib/site'
 
 // Licence management: admin list/generate/revoke, plus two PUBLIC routes —
@@ -69,10 +69,8 @@ export async function routeLicences(
       const issues = ((await store.read<{ ipHash: string; at: number }[]>('trial-issues')) ?? []).filter(i => nowSec - i.at < 7 * 86_400)
       if (issues.filter(i => i.ipHash === ipHash).length >= TRIAL_PER_IP_WEEK) return json(429, { ok: false, error: 'trial-limit' })
       if (issues.filter(i => nowSec - i.at < 86_400).length >= TRIAL_GLOBAL_PER_DAY) return json(429, { ok: false, error: 'trial-limit' })
-      const trialLicences = (await store.read<Licence[]>('licences')) ?? []
       const lic: Licence = { key: generateLicenceKey(), label: `trial-${ipHash}`, createdAt: nowSec, expiresAt: nowSec + TRIAL_DAYS * 86_400, trial: true }
-      trialLicences.push(lic)
-      await store.write('licences', trialLicences)
+      if (!(await addLicenceVerified(store, lic))) return json(500, { ok: false, error: 'mint-failed' })
       await store.write('trial-issues', [...issues, { ipHash, at: nowSec }])
       return json(200, { ok: true, data: { key: lic.key, expiresAt: lic.expiresAt } })
     }
@@ -81,7 +79,7 @@ export async function routeLicences(
   const auth = await authenticate(headers, env, store)
   if (auth?.level !== 'admin') return json(401, { ok: false, error: 'admin-only' })
 
-  const licences = (await store.read<Licence[]>('licences')) ?? []
+  const licences = await readLicencesFresh(store)
 
   if (method === 'GET') {
     return json(200, { ok: true, data: licences.map(l => ({ ...l, unlockLink: `${CANONICAL_SITE}/?key=${l.key}` })) })
@@ -92,17 +90,17 @@ export async function routeLicences(
     // the cap protects the Helm-issued seats — self-served trials don't count against it
     if (licences.filter(l => !l.revoked && !l.trial).length >= 25) return json(400, { ok: false, error: 'licence-cap' })
     const lic: Licence = { key: generateLicenceKey(), label: label.slice(0, 40), createdAt: Math.floor(Date.now() / 1000) }
-    licences.push(lic)
-    await store.write('licences', licences)
+    if (!(await addLicenceVerified(store, lic))) return json(500, { ok: false, error: 'mint-failed' })
     return json(200, { ok: true, data: { ...lic, unlockLink: `${CANONICAL_SITE}/?key=${lic.key}` } })
   }
 
   if (method === 'DELETE') {
     const key = bodyText ? (JSON.parse(bodyText) as { key?: string }).key : null
-    const lic = licences.find(l => l.key === key)
+    const freshList = await readLicencesFresh(store)
+    const lic = freshList.find(l => l.key === key)
     if (!lic) return json(404, { ok: false, error: 'not-found' })
     lic.revoked = true
-    await store.write('licences', licences)
+    await store.write('licences', freshList)
     return json(200, { ok: true })
   }
 
