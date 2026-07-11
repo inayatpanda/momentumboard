@@ -54,6 +54,10 @@ const runItem = async (item: WorkItem): Promise<boolean> => {
 }
 
 const run = async () => {
+  // fail loudly without creds — otherwise the mem-fallback store reads an
+  // empty queue and the run reports success while doing nothing at all
+  const missing = ['NETLIFY_SITE_ID', 'NETLIFY_AUTH_TOKEN', 'APP_TOKEN'].filter(n => !process.env[n])
+  if (missing.length) throw new Error(`missing env: ${missing.join(', ')}`)
   const nowSec = Math.floor(Date.now() / 1000)
   const lease = await acquireLease(blobAppStore, 'lease:queue-worker', nowSec, 12 * 60)
   if (!lease) {
