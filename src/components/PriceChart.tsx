@@ -17,10 +17,12 @@ export function PriceChart({
   candles,
   priceLines = [],
   marker,
+  height = 300,
 }: {
   candles: Candle[]
   priceLines?: PriceLineSpec[]
   marker?: StageMarkerSpec
+  height?: number
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi>()
@@ -30,7 +32,7 @@ export function PriceChart({
     const css = getComputedStyle(document.documentElement)
     const themed = (v: string, fallback: string) => css.getPropertyValue(v).trim() || fallback
     const chart = createChart(ref.current, {
-      height: 300,
+      height,
       // transparent background: the card surface (gradient) shows through
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: themed('--muted', '#93a6ad'), fontSize: 11 },
       // sparse, faint grid: horizontal hairlines only
@@ -93,7 +95,7 @@ export function PriceChart({
       chart.remove()
       chartRef.current = undefined
     }
-  }, [candles, priceLines, marker])
+  }, [candles, priceLines, marker, height])
 
   return (
     <div className="chart-box">

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { db } from '../lib/db'
-import { getToken, setToken, getRunlog, getMovers, type MoverRow } from '../lib/api'
+import { getToken, setToken, getRunlog, getMovers, getQuotes, type MoverRow } from '../lib/api'
+import { CATEGORY_UNIVERSE, categoryChips } from '../lib/universe'
+import type { Quote } from '../../shared/types'
 import { seedStarterWatchlist } from '../lib/starter'
 import { humanError } from '../lib/format'
 import { mirrorConfig } from '../lib/configMirror'
@@ -22,6 +24,7 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
   const [sortBy, setSortBy] = useState<'default' | 'change' | 'rvol' | 'setups'>('default')
   const [checkerStale, setCheckerStale] = useState(false)
   const [topMovers, setTopMovers] = useState<MoverRow[]>([])
+  const [universeQuotes, setUniverseQuotes] = useState<(Quote | null)[]>([])
   const symbols = items.map(i => i.symbol)
   const { rows, regime, lastUpdated, error } = useMarketData(symbols)
   const toasts = useAlerts(rows, regime, rules)
@@ -43,8 +46,22 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
       .catch(() => {}) // fail-soft: home renders fine without the rail
   }, [])
 
-  const categories = [...new Set(items.map(i => i.category).filter((c): c is string => !!c))]
+  const categories = categoryChips([...new Set(items.map(i => i.category).filter((c): c is string => !!c))])
   const visibleSymbols = categoryFilter === 'All' ? symbols : items.filter(i => i.category === categoryFilter).map(i => i.symbol)
+  // the rest of the sector behind the chip, big caps and small caps separately
+  const uni = categoryFilter === 'All' ? null : CATEGORY_UNIVERSE[categoryFilter] ?? null
+  const uniBig = uni ? uni.big.filter(u => !symbols.includes(u)) : []
+  const uniSmall = uni ? uni.small.filter(u => !symbols.includes(u)) : []
+  const universeExtras = [...uniBig, ...uniSmall]
+  useEffect(() => {
+    setUniverseQuotes([])
+    if (!universeExtras.length) return
+    let alive = true
+    getQuotes(universeExtras).then(q => alive && setUniverseQuotes(q)).catch(() => {})
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryFilter, items.length])
+  const quoteBySym = new Map(universeExtras.map((sym, i) => [sym, universeQuotes[i] ?? null]))
   const sortedRows = rows
     .filter(r => visibleSymbols.includes(r.symbol))
     .sort((a, b) => {
@@ -122,15 +139,13 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
         {/* the engine board lives on ONE page — Signals; it was repeated here.
             Chips sit DIRECTLY above the grid they filter: with two market-wide
             sections wedged between, a tap looked like it did nothing. */}
-        {categories.length > 0 && (
-          <div className="sort-chips">
-            {['All', ...categories].map(c => (
-              <button key={c} className={categoryFilter === c ? 'active' : ''} onClick={() => setCategoryFilter(c)}>
-                {c}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="sort-chips">
+          {['All', ...categories].map(c => (
+            <button key={c} className={categoryFilter === c ? 'active' : ''} onClick={() => setCategoryFilter(c)}>
+              {c}
+            </button>
+          ))}
+        </div>
         {rows.length > 1 && (
           <div className="sort-chips">
             {(['default', 'change', 'rvol', 'setups'] as const).map(k => (
@@ -156,7 +171,57 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
             </div>
           ))}
         </div>
-        {rows.length === 0 && (
+        {universeExtras.length > 0 && (
+          <section className="digest-section" style={{ marginTop: 10 }}>
+            <h3 className="section-title">More in {categoryFilter}</h3>
+            {([['Large caps', uniBig], ['Small caps', uniSmall]] as const).map(([title, list]) =>
+              list.length ? (
+                <div key={title}>
+                  <div className="empty-line" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '6px 0 4px' }}>{title}</div>
+                  {list.map(sym => {
+                    const q = quoteBySym.get(sym)
+                    return (
+                      <div
+                        key={sym}
+                        className="perf-row"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onOpen(sym)}
+                        onKeyDown={e => e.key === 'Enter' && onOpen(sym)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <span style={{ fontWeight: 700 }}>
+                          {sym}
+                          {q?.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{q.name.slice(0, 26)}</span>}
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          {q && (
+                            <span className={q.changePct >= 0 ? 'up-text' : 'down-text'} style={{ fontFamily: 'var(--font-num)' }}>
+                              {q.price} · {q.changePct >= 0 ? '↗ +' : '↘ '}{q.changePct.toFixed(2)}%
+                            </span>
+                          )}
+                          <button
+                            className="mini-btn ghost"
+                            style={{ fontSize: 11, padding: '1px 8px' }}
+                            disabled={items.length >= 30}
+                            onClick={e => {
+                              e.stopPropagation()
+                              add(sym, categoryFilter)
+                            }}
+                          >
+                            + Add
+                          </button>
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null,
+            )}
+            <p className="empty-line intel-fine">The whole sector, live — big and small caps; Add pins one to your own list (30 max).</p>
+          </section>
+        )}
+        {rows.length === 0 && categoryFilter === 'All' && (
           <div className="empty">
             <p>Your watchlist is empty.</p>
             <p>

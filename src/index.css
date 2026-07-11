@@ -2473,3 +2473,31 @@ a.dl-btn:hover { border-color: var(--gold); transform: translateY(-1px); }
 .app-gate-trial:disabled { opacity: 0.6; cursor: default; }
 .app-gate-site { color: var(--faint); font-size: 12px; text-decoration: none; margin-top: 2px; }
 .app-gate-site:hover { color: var(--muted); }
+
+/* 10 — Desk chart wall (Desk.tsx): every board call charted; patterns badged */
+.chart-wall-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.chart-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.chart-card { cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+.chart-card:hover { border-color: rgba(98, 193, 229, 0.35); }
+.chart-card.is-expanded { grid-column: 1 / -1; cursor: default; }
+.chart-card-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.chart-card-id { display: flex; align-items: center; gap: 6px; font-size: 15px; }
+.chart-card-odds { color: var(--muted); font-size: 12.5px; white-space: nowrap; font-family: var(--font-num); }
+.chart-card-levels {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--font-num);
+}
+.chart-card-cat { display: flex; align-items: baseline; gap: 6px; font-size: 11.5px; color: var(--muted); font-style: italic; }
+.pat-badges { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.badge.pat-bull { color: var(--green); border-color: var(--green-soft); background: var(--green-soft); }
+.badge.pat-bear { color: var(--red); border-color: var(--red-soft); background: var(--red-soft); }

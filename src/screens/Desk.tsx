@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getEngine, getMovers, getCandles, getIpos, type EngineData, type EnginePrediction } from '../lib/api'
 import type { Candle } from '../../shared/types'
+import { detectPatterns, type PatternHit } from '../../shared/patterns'
 import { capBand, fmtPct, humanError } from '../lib/format'
 import { capClassBreakdown, flattenLedger } from '../lib/ledgerStats'
 import { engineLevelLines } from '../lib/engineLevels'
@@ -24,39 +25,87 @@ const RUNG_PCT = [1.0, 1.25, 1.5, 2.0]
 
 const listedDaysAgo = (dateISO: string): number => Math.max(0, Math.round((Date.now() - Date.parse(dateISO)) / 86_400_000))
 
-function CallRow({ p, focused, onFocus }: { p: EnginePrediction; focused: boolean; onFocus: (sym: string) => void }) {
-  const dir = p.side === 'long' ? '▲' : '▼'
+// module-level candle cache: a Refresh re-render must not refetch every chart
+const candleCache = new Map<string, Candle[]>()
+
+function PatternBadges({ patterns }: { patterns: PatternHit[] }) {
+  if (!patterns.length) return null
+  return (
+    <span className="pat-badges">
+      {patterns.map(p => (
+        <span key={p.kind} className={`badge ${p.direction === 'bullish' ? 'pat-bull' : 'pat-bear'}`} title={`${p.label} — ${p.status} · level ${p.level}`}>
+          {p.label} {p.status === 'confirmed' ? '✓' : '…'}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/** One call, one chart. The Desk is a chart wall now — every board name shows
+ * its candles, MAs, engine levels and any classical pattern the detector sees,
+ * instead of one giant chart for a single focused row. Click to expand. */
+function ChartCard({ p, expanded, onToggle }: { p: EnginePrediction; expanded: boolean; onToggle: (sym: string) => void }) {
+  const [candles, setCandles] = useState<Candle[]>(candleCache.get(p.sym) ?? [])
+  const [patterns, setPatterns] = useState<PatternHit[]>([])
+  useEffect(() => {
+    let alive = true
+    const cached = candleCache.get(p.sym)
+    if (cached) {
+      setCandles(cached)
+      setPatterns(detectPatterns(cached))
+      return
+    }
+    getCandles(p.sym)
+      .then(d => {
+        if (!alive) return
+        candleCache.set(p.sym, d.candles)
+        setCandles(d.candles)
+        setPatterns(detectPatterns(d.candles))
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [p.sym])
   const dirColor = p.side === 'long' ? 'var(--green)' : 'var(--red)'
   return (
-    <div
-      className={`perf-row${focused ? ' is-focus' : ''}`}
-      style={{ flexDirection: 'column', alignItems: 'stretch', gap: 3 }}
+    <section
+      className={`card chart-card${expanded ? ' is-expanded' : ''}`}
       role="button"
       tabIndex={0}
-      onClick={() => onFocus(p.sym)}
-      onKeyDown={e => e.key === 'Enter' && onFocus(p.sym)}
+      onClick={() => onToggle(p.sym)}
+      onKeyDown={e => e.key === 'Enter' && onToggle(p.sym)}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-        <span style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div className="chart-card-top">
+        <span className="chart-card-id">
           <GradeChip grade={p.grade} provisional={p.provisional} />
-          {p.sym}
-          <span style={{ color: dirColor }}>{dir}</span>
+          <b>{p.sym}</b>
+          <span style={{ color: dirColor }}>{p.side === 'long' ? '▲' : '▼'}</span>
+          {p.watchOnly && <span className="badge warn">watch</span>}
+          {p.setup && <span className="badge">{p.setup}</span>}
           <span className="badge">{capBand(p.capUsdM) ?? 'small cap'}</span>
         </span>
-        <span style={{ color: 'var(--muted)', fontSize: 12, whiteSpace: 'nowrap' }}>
+        <span className="chart-card-odds">
           {Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%
         </span>
       </div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-num)' }}>
+      <div className="chart-card-levels">
         in {p.entry} · stop {p.stop} · tgt {p.target}
+        <PatternBadges patterns={patterns} />
       </div>
+      {candles.length ? (
+        <PriceChart candles={candles} priceLines={engineLevelLines(p)} height={expanded ? 340 : 190} />
+      ) : (
+        <p className="empty-line">loading chart…</p>
+      )}
+      {expanded && candles.length > 0 && <RsiChart candles={candles} />}
       {p.catalyst && (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 11.5 }}>
+        <div className="chart-card-cat">
           <span className="badge gold">{p.catalyst.kind}</span>
-          <span style={{ fontStyle: 'italic', color: 'var(--muted)' }}>{p.catalyst.reason}</span>
+          <span>{p.catalyst.reason}</span>
         </div>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -66,8 +115,7 @@ export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () =
   const [ipos, setIpos] = useState<IposResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [focus, setFocus] = useState<string | null>(null)
-  const [focusCandles, setFocusCandles] = useState<Candle[]>([])
+  const [focus, setFocus] = useState<string | null>(null) // expanded chart card
 
   const load = () => {
     setLoading(true)
@@ -91,30 +139,6 @@ export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () =
   const large = board.filter(p => !p.smallCap)
   const small = board.filter(p => p.smallCap)
 
-  // default the focused chart once data has loaded and nothing is picked yet —
-  // never again after that, so a background Refresh doesn't yank focus away.
-  useEffect(() => {
-    if (focus || !data) return
-    setFocus(large[0]?.sym ?? small[0]?.sym ?? 'SPY')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, focus])
-
-  useEffect(() => {
-    if (!focus) return
-    let alive = true
-    getCandles(focus)
-      .then(d => {
-        if (alive) setFocusCandles(d.candles)
-      })
-      .catch(() => {
-        if (alive) setFocusCandles([])
-      })
-    return () => {
-      alive = false
-    }
-  }, [focus])
-
-  const focusedCall = board.find(p => p.sym === focus) ?? null
   const cohorts = capClassBreakdown(flattenLedger(data?.ledger ?? []))
   const catalysts = board.filter(p => p.catalyst)
 
@@ -165,52 +189,18 @@ export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () =
 
       <div className="desk-body">
         <main className="desk-main">
-          <div className="desk-sleeves">
-            <section className="card desk-sleeve">
-              <h3 className="section-title">
-                Large-cap · catalyst &amp; news <span className="badge">{large.length}</span>
-              </h3>
-              {large.length === 0 && <p className="empty-line">No large-cap calls on the board today.</p>}
-              {large.map(p => (
-                <CallRow key={p.id} p={p} focused={p.sym === focus} onFocus={setFocus} />
-              ))}
-            </section>
-            <section className="card desk-sleeve">
-              <h3 className="section-title">
-                Small-cap · momentum <span className="badge">{small.length}</span>
-              </h3>
-              {small.length === 0 && <p className="empty-line">No small-cap calls on the board today.</p>}
-              {small.map(p => (
-                <CallRow key={p.id} p={p} focused={p.sym === focus} onFocus={setFocus} />
-              ))}
-            </section>
-          </div>
-
-          <section className="card desk-chart">
-            <h3 className="section-title">
-              {focus ?? 'select a call'}
-              {focusedCall && (
-                <>
-                  {' '}
-                  <GradeChip grade={focusedCall.grade} provisional={focusedCall.provisional} />
-                  <span style={{ color: focusedCall.side === 'long' ? 'var(--green)' : 'var(--red)' }}>
-                    {focusedCall.side === 'long' ? '▲' : '▼'}
-                  </span>
-                  <span className="empty-line">
-                    ~{focusedCall.expectedMovePct}% · {focusedCall.entry}/{focusedCall.stop}/{focusedCall.target}
-                  </span>
-                </>
-              )}
+          <section className="chart-wall-head">
+            <h3 className="section-title" style={{ margin: 0 }}>
+              The board — every call, charted <span className="badge">{large.length} large</span> <span className="badge">{small.length} small</span>
             </h3>
-            {focusCandles.length === 0 ? (
-              <p className="empty-line">Select a call to chart it.</p>
-            ) : (
-              <>
-                <PriceChart candles={focusCandles} priceLines={focusedCall ? engineLevelLines(focusedCall) : []} />
-                <RsiChart candles={focusCandles} />
-              </>
-            )}
+            <span className="empty-line">MA20/50/200 · engine levels · classical patterns flagged when the shape is really there · click a card to expand</span>
           </section>
+          {board.length === 0 && <p className="empty-line">No calls on the board today — an honest empty wall beats a forced one.</p>}
+          <div className="chart-wall">
+            {[...large, ...small].map(p => (
+              <ChartCard key={p.id} p={p} expanded={focus === p.sym} onToggle={sym => setFocus(f => (f === sym ? null : sym))} />
+            ))}
+          </div>
         </main>
 
         <aside className="desk-rail">
