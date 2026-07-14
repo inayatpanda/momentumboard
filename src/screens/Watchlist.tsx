@@ -172,49 +172,23 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
           ))}
         </div>
         {universeExtras.length > 0 && (
-          <section className="digest-section" style={{ marginTop: 10 }}>
+          <section style={{ marginTop: 12 }}>
             <h3 className="section-title">More in {categoryFilter}</h3>
             {([['Large caps', uniBig], ['Small caps', uniSmall]] as const).map(([title, list]) =>
               list.length ? (
                 <div key={title}>
-                  <div className="empty-line" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '6px 0 4px' }}>{title}</div>
-                  {list.map(sym => {
-                    const q = quoteBySym.get(sym)
-                    return (
-                      <div
-                        key={sym}
-                        className="perf-row"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => onOpen(sym)}
-                        onKeyDown={e => e.key === 'Enter' && onOpen(sym)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <span style={{ fontWeight: 700 }}>
-                          {sym}
-                          {q?.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{q.name.slice(0, 26)}</span>}
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          {q && (
-                            <span className={q.changePct >= 0 ? 'up-text' : 'down-text'} style={{ fontFamily: 'var(--font-num)' }}>
-                              {q.price} · {q.changePct >= 0 ? '↗ +' : '↘ '}{q.changePct.toFixed(2)}%
-                            </span>
-                          )}
-                          <button
-                            className="mini-btn ghost"
-                            style={{ fontSize: 11, padding: '1px 8px' }}
-                            disabled={items.length >= 30}
-                            onClick={e => {
-                              e.stopPropagation()
-                              add(sym, categoryFilter)
-                            }}
-                          >
-                            + Add
-                          </button>
-                        </span>
+                  <div className="empty-line" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '8px 0 6px' }}>{title}</div>
+                  <div className="card-grid">
+                    {list.map((sym, i) => (
+                      <div key={sym} onClick={() => onOpen(sym)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpen(sym)} style={{ cursor: 'pointer' }}>
+                        <TickerRow
+                          row={{ symbol: sym, quote: quoteBySym.get(sym) ?? null, rvol: null, setups: [] }}
+                          index={i}
+                          action={{ label: '+ Add', disabled: items.length >= 30, onClick: () => add(sym, categoryFilter) }}
+                        />
                       </div>
-                    )
-                  })}
+                    ))}
+                  </div>
                 </div>
               ) : null,
             )}

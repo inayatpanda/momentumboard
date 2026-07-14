@@ -16,7 +16,18 @@ export interface Row {
 /** Stable per-symbol hue for the letter-avatar tile (shared with Movers). */
 export const symbolHue = (symbol: string) => [...symbol].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 360
 
-export function TickerRow({ row, onRemove, index = 0 }: { row: Row; onRemove: () => void; index?: number }) {
+export function TickerRow({
+  row,
+  onRemove,
+  index = 0,
+  action,
+}: {
+  row: Row
+  onRemove?: () => void
+  index?: number
+  // replaces the ✕ with a labelled action (the universe browser's "+ Add")
+  action?: { label: string; onClick: () => void; disabled?: boolean }
+}) {
   const { symbol, quote, rvol, setups, spark } = row
   const up = (quote?.changePct ?? 0) >= 0
   const prevPrice = useRef(quote?.price)
@@ -56,16 +67,29 @@ export function TickerRow({ row, onRemove, index = 0 }: { row: Row; onRemove: ()
           </span>
         )}
       </span>
-      <button
-        className="remove trow-remove"
-        onClick={e => {
-          e.stopPropagation() // row tap navigates; ✕ must only remove
-          onRemove()
-        }}
-        aria-label={`Remove ${symbol}`}
-      >
-        ✕
-      </button>
+      {action ? (
+        <button
+          className="mini-btn ghost trow-action"
+          disabled={action.disabled}
+          onClick={e => {
+            e.stopPropagation()
+            action.onClick()
+          }}
+        >
+          {action.label}
+        </button>
+      ) : (
+        <button
+          className="remove trow-remove"
+          onClick={e => {
+            e.stopPropagation() // row tap navigates; ✕ must only remove
+            onRemove?.()
+          }}
+          aria-label={`Remove ${symbol}`}
+        >
+          ✕
+        </button>
+      )}
     </div>
   )
 }

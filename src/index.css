@@ -2501,3 +2501,6 @@ a.dl-btn:hover { border-color: var(--gold); transform: translateY(-1px); }
 .pat-badges { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .badge.pat-bull { color: var(--green); border-color: var(--green-soft); background: var(--green-soft); }
 .badge.pat-bear { color: var(--red); border-color: var(--red-soft); background: var(--red-soft); }
+
+/* universe browser rows reuse .trow — the Add action replaces the ✕ */
+.trow-action { white-space: nowrap; font-size: 11.5px; padding: 3px 10px; }
