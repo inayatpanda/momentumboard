@@ -42,6 +42,14 @@ async function runChecks(nowSec: number, report: { at: number } | null): Promise
 
   add('email delivery configured', !!process.env.RESEND_API_KEY && !!process.env.REPORT_EMAIL_TO, process.env.RESEND_API_KEY ? `to ${process.env.REPORT_EMAIL_TO}` : 'RESEND_API_KEY missing')
   add('LLM configured', !!process.env.GROQ_API_KEY || !!process.env.GEMINI_API_KEY || !!process.env.ANTHROPIC_API_KEY, 'at least one provider key present')
+  // Groq is the primary; it decommissions Llama models aggressively. Probe the
+  // pinned model once a day so a retirement pages HERE (fix = set GROQ_MODEL to
+  // the replacement) instead of silently failing the paper over to slower
+  // Gemini. Only a genuine model-gone verdict fails the check; transient blips
+  // don't. If the paper already fell back, the alert says so.
+  const { probeGroqModel } = await import('./lib/llm')
+  const groq = await probeGroqModel().catch(() => ({ status: 'transient' as const, model: '?', detail: 'probe crashed' }))
+  add('groq primary model', groq.status !== 'retired', groq.status === 'retired' ? `RETIRED — ${groq.detail}. Set GROQ_MODEL to a live model (e.g. meta-llama/llama-4-scout-17b-16e-instruct).` : groq.detail)
 
   const book = await blobAppStore.read<{ month: string; history: { date: string }[] }>('paper-book').catch(() => null)
   add('paper book', !tradingDay || (!!book && book.history[book.history.length - 1]?.date === today), book ? `last marked ${book.history[book.history.length - 1]?.date ?? 'never'}` : 'missing')
