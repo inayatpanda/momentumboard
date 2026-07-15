@@ -44,7 +44,7 @@ function PatternBadges({ patterns }: { patterns: PatternHit[] }) {
 /** One call, one chart. The Desk is a chart wall now — every board name shows
  * its candles, MAs, engine levels and any classical pattern the detector sees,
  * instead of one giant chart for a single focused row. Click to expand. */
-function ChartCard({ p, expanded, onToggle }: { p: EnginePrediction; expanded: boolean; onToggle: (sym: string) => void }) {
+function ChartCard({ p, expanded, onToggle, onOpen }: { p: EnginePrediction; expanded: boolean; onToggle: (sym: string) => void; onOpen?: (sym: string) => void }) {
   const [candles, setCandles] = useState<Candle[]>(candleCache.get(p.sym) ?? [])
   const [patterns, setPatterns] = useState<PatternHit[]>([])
   useEffect(() => {
@@ -79,7 +79,14 @@ function ChartCard({ p, expanded, onToggle }: { p: EnginePrediction; expanded: b
       <div className="chart-card-top">
         <span className="chart-card-id">
           <GradeChip grade={p.grade} provisional={p.provisional} />
-          <b>{p.sym}</b>
+          {/* the ticker itself is a door to the full stock page; the card body still toggles expand */}
+          <b
+            className={onOpen ? 'sym-link' : undefined}
+            onClick={onOpen ? e => { e.stopPropagation(); onOpen(p.sym) } : undefined}
+            title={onOpen ? `Open ${p.sym}` : undefined}
+          >
+            {p.sym}
+          </b>
           {p.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{p.name}</span>}
           <span style={{ color: dirColor }}>{p.side === 'long' ? '▲' : '▼'}</span>
           {p.watchOnly && <span className="badge warn">watch</span>}
@@ -95,7 +102,9 @@ function ChartCard({ p, expanded, onToggle }: { p: EnginePrediction; expanded: b
         <PatternBadges patterns={patterns} />
       </div>
       {candles.length ? (
-        <PriceChart candles={candles} priceLines={engineLevelLines(p)} height={expanded ? 340 : 190} />
+        // pan/zoom only once you've chosen the card — collapsed cards are
+        // pictures, so wheeling down the wall scrolls the page, not a chart
+        <PriceChart candles={candles} priceLines={engineLevelLines(p)} height={expanded ? 340 : 190} interactive={expanded} />
       ) : (
         <p className="empty-line">loading chart…</p>
       )}
@@ -110,21 +119,26 @@ function ChartCard({ p, expanded, onToggle }: { p: EnginePrediction; expanded: b
   )
 }
 
-export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () => void; onOpenSettings: () => void; onQuant: () => void }) {
-  const [data, setData] = useState<EngineData | null>(null)
-  const [movers, setMovers] = useState<MoversResponse | null>(null)
-  const [ipos, setIpos] = useState<IposResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+// the whole deck survives unmounting (Desk ↔ Standard round trips) — coming
+// back paints the last state instantly while load() refreshes it behind
+let deskMemo: { data: EngineData; movers: MoversResponse | null; ipos: IposResponse | null } | null = null
+
+export function Desk({ onStandard, onOpenSettings, onQuant, onOpen }: { onStandard: () => void; onOpenSettings: () => void; onQuant: () => void; onOpen?: (sym: string) => void }) {
+  const [data, setData] = useState<EngineData | null>(deskMemo?.data ?? null)
+  const [movers, setMovers] = useState<MoversResponse | null>(deskMemo?.movers ?? null)
+  const [ipos, setIpos] = useState<IposResponse | null>(deskMemo?.ipos ?? null)
+  const [loading, setLoading] = useState(!deskMemo)
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState<string | null>(null) // expanded chart card
 
   const load = () => {
-    setLoading(true)
+    setLoading(!deskMemo) // a warm deck refreshes silently, no loading flash
     setError(null)
     // IPOs are the least critical rail card — a failing calendar must never take
     // the whole desk down, so it is caught to null rather than joining the reject.
     Promise.all([getEngine(), getMovers(), getIpos().catch(() => null)])
       .then(([engine, mv, ip]) => {
+        deskMemo = { data: engine, movers: mv, ipos: ip }
         setData(engine)
         setMovers(mv)
         setIpos(ip)
@@ -199,7 +213,7 @@ export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () =
           {board.length === 0 && <p className="empty-line">No calls on the board today — an honest empty wall beats a forced one.</p>}
           <div className="chart-wall">
             {[...large, ...small].map(p => (
-              <ChartCard key={p.id} p={p} expanded={focus === p.sym} onToggle={sym => setFocus(f => (f === sym ? null : sym))} />
+              <ChartCard key={p.id} p={p} expanded={focus === p.sym} onToggle={sym => setFocus(f => (f === sym ? null : sym))} onOpen={onOpen} />
             ))}
           </div>
         </main>
@@ -254,14 +268,16 @@ export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () =
               <>
                 <div className="empty-line" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '2px 0 4px' }}>Gainers</div>
                 {movers.gainers.slice(0, 5).map(m => (
+                  // movers are rarely board names — focusing a chart wall card
+                  // that doesn't exist did nothing; open the real stock page
                   <div
                     key={`g-${m.sym}`}
                     className="perf-row"
                     style={{ cursor: 'pointer' }}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setFocus(m.sym)}
-                    onKeyDown={e => e.key === 'Enter' && setFocus(m.sym)}
+                    onClick={() => (onOpen ?? setFocus)(m.sym)}
+                    onKeyDown={e => e.key === 'Enter' && (onOpen ?? setFocus)(m.sym)}
                   >
                     <span>{m.sym}</span>
                     <span className={(m.changePct ?? 0) >= 0 ? 'up-text' : 'down-text'}>{m.changePct != null ? fmtPct(m.changePct) : '—'}</span>
@@ -279,8 +295,8 @@ export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () =
                     style={{ cursor: 'pointer' }}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setFocus(m.sym)}
-                    onKeyDown={e => e.key === 'Enter' && setFocus(m.sym)}
+                    onClick={() => (onOpen ?? setFocus)(m.sym)}
+                    onKeyDown={e => e.key === 'Enter' && (onOpen ?? setFocus)(m.sym)}
                   >
                     <span>{m.sym}</span>
                     <span className={(m.changePct ?? 0) >= 0 ? 'up-text' : 'down-text'}>{m.changePct != null ? fmtPct(m.changePct) : '—'}</span>
@@ -318,8 +334,8 @@ export function Desk({ onStandard, onOpenSettings, onQuant }: { onStandard: () =
                     style={{ cursor: 'pointer' }}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setFocus(r.sym)}
-                    onKeyDown={e => e.key === 'Enter' && setFocus(r.sym)}
+                    onClick={() => (onOpen ?? setFocus)(r.sym)}
+                    onKeyDown={e => e.key === 'Enter' && (onOpen ?? setFocus)(r.sym)}
                   >
                     <span>{r.sym}</span>
                     <span className="empty-line" style={{ fontSize: 12 }}>listed {listedDaysAgo(r.date)}d ago</span>

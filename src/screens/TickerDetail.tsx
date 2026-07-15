@@ -39,10 +39,15 @@ const timeAgo = (sec: number) => {
   return days < 7 ? `${days}d ago` : new Date(sec * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
+// last-seen chart data survives the component unmounting (nav away and back,
+// Desk ↔ Standard switches) — the reopened chart paints instantly from here
+// while the effect refreshes it silently. Session-lifetime, ~a few KB per view.
+const chartMemo = new Map<string, { candles: Candle[]; quote: Quote | null }>()
+
 export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () => void }) {
   const [range, setRange] = useState<Range>('6mo')
-  const [candles, setCandles] = useState<Candle[]>([])
-  const [quote, setQuote] = useState<Quote | null>(null)
+  const [candles, setCandles] = useState<Candle[]>(() => chartMemo.get(`${symbol}:6mo`)?.candles ?? [])
+  const [quote, setQuote] = useState<Quote | null>(() => chartMemo.get(`${symbol}:6mo`)?.quote ?? null)
   const [news, setNews] = useState<{ title: string; url: string; publishedSec: number }[]>([])
   const [rules, setRules] = useState<RuleItem[]>([])
   const [capital, setCapital] = useState(5000)
@@ -56,14 +61,22 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
 
   useEffect(() => {
     let alive = true
+    // paint whatever we last saw for this symbol/range immediately…
+    const memo = chartMemo.get(`${symbol}:${range}`)
+    if (memo) {
+      setCandles(memo.candles)
+      setQuote(memo.quote)
+    }
+    // …then refresh it from the server
     getCandles(symbol, range)
       .then(d => {
+        chartMemo.set(`${symbol}:${range}`, { candles: d.candles, quote: d.quote })
         if (!alive) return
         setCandles(d.candles)
         setQuote(d.quote)
         setError(null)
       })
-      .catch(e => alive && setError(String(e)))
+      .catch(e => alive && !memo && setError(String(e)))
     return () => {
       alive = false
     }
@@ -180,7 +193,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
         ))}
       </div>
 
-      <PriceChart candles={candles} priceLines={priceLines} marker={stageMarker} />
+      <PriceChart candles={candles} priceLines={priceLines} marker={stageMarker} interactive />
       <RsiChart candles={candles} />
 
       <EngineFactors call={engineCall} hasRead={!!engineRead} />

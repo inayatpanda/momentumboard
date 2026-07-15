@@ -101,16 +101,36 @@ export async function routeTelegramWebhook(
         await reply(`🚫 Revoked "${matches[0].label}". Takes ~1 min to bite on their device.`)
       }
     }
+  } else if (text.startsWith('/house')) {
+    // flip a licence's house flag: the owner's own devices get the server's AI
+    // keys (Ask the desk etc.) without holding the admin token; plain licensees
+    // keep bringing their own key. Toggle, so /house <label> twice undoes it.
+    const q = rawText.split(/\s+/).slice(1).join(' ').trim().toLowerCase()
+    if (!q) {
+      await reply('Usage: /house <label or key prefix> — toggles server-key AI access for that licence (your own devices).')
+    } else {
+      const licences = await readLicencesFresh(store)
+      const matches = licences.filter(l => !l.revoked && (l.label.toLowerCase() === q || l.key.toLowerCase().startsWith(q)))
+      if (!matches.length) {
+        await reply(`No active licence matches "${q}". /keys lists them.`)
+      } else if (matches.length > 1) {
+        await reply(`Ambiguous — ${matches.length} active licences match: ${matches.map(m => m.label).join(', ')}. Use a key prefix.`)
+      } else {
+        matches[0].house = !matches[0].house
+        await store.write('licences', licences)
+        await reply(matches[0].house ? `🏠 "${matches[0].label}" is now a house licence — AI features use the server's keys.` : `👤 "${matches[0].label}" is a plain licence again — AI needs their own key.`)
+      }
+    }
   } else if (text.startsWith('/keys')) {
     const licences = await readLicencesFresh(store)
     const active = licences.filter(l => !l.revoked)
     await reply(
       active.length
-        ? active.map(l => `${l.trial ? '⏳' : '🔑'} ${l.label} · ${l.key.slice(0, 10)}…${l.expiresAt ? ` · expires ${new Date(l.expiresAt * 1000).toISOString().slice(0, 10)}` : ''}`).join('\n')
+        ? active.map(l => `${l.trial ? '⏳' : l.house ? '🏠' : '🔑'} ${l.label} · ${l.key.slice(0, 10)}…${l.expiresAt ? ` · expires ${new Date(l.expiresAt * 1000).toISOString().slice(0, 10)}` : ''}`).join('\n')
         : 'No active licences.',
     )
   } else if (text.startsWith('/')) {
-    await reply('Commands: /status /portfolio /mute [hours] /unmute /report /call /key <label> /keys /revoke <label>')
+    await reply('Commands: /status /portfolio /mute [hours] /unmute /report /call /key <label> /keys /revoke <label> /house <label>')
   }
   return new Response('ok')
 }

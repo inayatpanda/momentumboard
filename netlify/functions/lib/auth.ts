@@ -12,11 +12,13 @@ export interface Licence {
   revoked?: boolean
   expiresAt?: number // unix sec; absent = perpetual. Trials expire, Helm licences don't.
   trial?: boolean // self-served 7-day reader pass (landing page), not a Helm-issued licence
+  house?: boolean // the owner's own device: AI features ride the server's keys (a plain licensee brings their own)
 }
 
 export interface AuthResult {
   level: 'admin' | 'user'
   ns: string // storage namespace prefix: '' for admin, 'u:<id>:' for licensees
+  house?: boolean // carried from the licence — grants server-key LLM access without admin powers
 }
 
 export async function hash8(input: string): Promise<string> {
@@ -41,7 +43,7 @@ export async function authenticate(headers: Headers, env: { APP_TOKEN?: string }
   }
   if (!lic) return null
   if (lic.expiresAt && lic.expiresAt < Math.floor(Date.now() / 1000)) return null // trial lapsed — server says no
-  return { level: 'user', ns: `u:${await hash8(lic.key)}:` }
+  return { level: 'user', ns: `u:${await hash8(lic.key)}:`, house: lic.house || undefined }
 }
 
 export function generateLicenceKey(): string {

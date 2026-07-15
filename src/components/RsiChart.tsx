@@ -23,6 +23,9 @@ export function RsiChart({ candles }: { candles: Candle[] }) {
         horzLine: { color: themed('--faint', '#5d6d74'), labelBackgroundColor: themed('--panel', '#12171a') },
         vertLine: { color: themed('--faint', '#5d6d74'), labelBackgroundColor: themed('--panel', '#12171a') },
       },
+      // an indicator strip is read, not driven — wheel/drag belong to the page
+      handleScroll: false,
+      handleScale: false,
     })
     const line = chart.addAreaSeries({
       lineColor: themed('--blue', '#62c1e5'),

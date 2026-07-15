@@ -12,6 +12,10 @@ const Icon = ({ d }: { d: string }) => (
 // every section directly in the left rail (.tab.sec is only hidden on mobile,
 // .tab.more only on desktop — see index.css).
 const TABS = [
+  // the Desk row exists only where the Desk itself can render (≥1200px, see
+  // .tab.desk-tab in index.css) — it keeps the rail present INSIDE the Desk,
+  // so entering it no longer strands you away from every other tab
+  { key: 'desk', label: 'Desk', icon: 'M3 3h8v8H3zM13 3h8v5h-8zM13 12h8v9h-8zM3 15h8v6H3z', sec: true },
   { key: 'watchlist', label: 'Watchlist', icon: 'M3 17l6-6 4 4 8-8M21 7v6h-6', sec: false },
   // The engine board is the product's daily answer, so it belongs in primary
   // mobile navigation instead of being buried two levels under More → Intel.
@@ -47,7 +51,7 @@ export function TabBar({ active, onNavigate }: { active: string; chartsReady?: b
       {TABS.map(t => (
         <button
           key={t.key}
-          className={`tab ${t.sec ? 'sec' : ''} ${active === t.key ? 'active' : ''}`}
+          className={`tab ${t.sec ? 'sec' : ''} ${t.key === 'desk' ? 'desk-tab' : ''} ${active === t.key ? 'active' : ''}`}
           onClick={() => onNavigate?.(t.key)}
           aria-current={active === t.key ? 'page' : undefined}
         >

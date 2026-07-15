@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { createChart, ColorType, type IChartApi, type UTCTimestamp } from 'lightweight-charts'
+import { createChart, ColorType, CrosshairMode, type IChartApi, type UTCTimestamp } from 'lightweight-charts'
 import type { Candle } from '../../shared/types'
 import { sma } from '../../shared/indicators'
 import { toCandleSeries, toVolumeSeries, toLineSeries } from '../lib/chartData'
@@ -18,11 +18,17 @@ export function PriceChart({
   priceLines = [],
   marker,
   height = 300,
+  interactive = false,
 }: {
   candles: Candle[]
   priceLines?: PriceLineSpec[]
   marker?: StageMarkerSpec
   height?: number
+  // false (cards, walls): the chart is a PICTURE — wheel/drag pass through so
+  // the page scrolls; no crosshair. true (the dedicated chart page): full
+  // pan/zoom/crosshair. Scrolling stays intentional: zooming is something you
+  // chose a chart page to do, never something a card hijacks mid-scroll.
+  interactive?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi>()
@@ -41,10 +47,14 @@ export function PriceChart({
       // a few bars of right padding so a marker on the LAST bar (the stage read)
       // isn't clipped by the price axis
       timeScale: { borderVisible: false, timeVisible: false, rightOffset: marker ? 7 : 0 },
-      crosshair: {
-        horzLine: { color: themed('--faint', '#5d6d74'), labelBackgroundColor: themed('--panel', '#12171a') },
-        vertLine: { color: themed('--faint', '#5d6d74'), labelBackgroundColor: themed('--panel', '#12171a') },
-      },
+      crosshair: interactive
+        ? {
+            horzLine: { color: themed('--faint', '#5d6d74'), labelBackgroundColor: themed('--panel', '#12171a') },
+            vertLine: { color: themed('--faint', '#5d6d74'), labelBackgroundColor: themed('--panel', '#12171a') },
+          }
+        : { mode: CrosshairMode.Hidden },
+      handleScroll: interactive,
+      handleScale: interactive,
     })
     chartRef.current = chart
 
@@ -75,11 +85,14 @@ export function PriceChart({
       line.setData(toLineSeries(candles, sma(closes, period)))
     }
 
-    // Engine annotations: live-call entry/stop/target as horizontal price lines,
-    // and the client-side stage read as a marker on the most recent bar. Both are
-    // wiped automatically when the chart is torn down on symbol/range change.
+    // Engine annotations: entry/stop/target as coloured dashes. NO titled axis
+    // pills — with a call's levels inevitably close together, "engine stop /
+    // engine entry / engine target" tiles stacked into an unreadable pile on
+    // every card (and buried the price axis). The colour IS the meaning, the
+    // legend chips under the chart carry the words, and only the axis shows
+    // the bare numbers.
     for (const pl of priceLines) {
-      candleSeries.createPriceLine({ price: pl.price, color: roleColor(pl.role), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: pl.title })
+      candleSeries.createPriceLine({ price: pl.price, color: roleColor(pl.role), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' })
     }
     if (marker) {
       candleSeries.setMarkers([
@@ -95,7 +108,7 @@ export function PriceChart({
       chart.remove()
       chartRef.current = undefined
     }
-  }, [candles, priceLines, marker, height])
+  }, [candles, priceLines, marker, height, interactive])
 
   return (
     <div className="chart-box">
@@ -103,6 +116,11 @@ export function PriceChart({
         <span style={{ color: 'var(--blue)' }}>MA20</span>
         <span style={{ color: 'var(--amber)' }}>MA50</span>
         <span style={{ color: 'var(--muted)' }}>MA200</span>
+        {priceLines.map(pl => (
+          <span key={pl.title} className="lvl-chip" style={{ color: pl.role === 'up' ? 'var(--green)' : pl.role === 'down' ? 'var(--red)' : 'var(--muted)' }}>
+            {pl.title.replace('engine ', '')} {pl.price}
+          </span>
+        ))}
       </div>
       <div ref={ref} />
     </div>

@@ -28,6 +28,18 @@ describe('licence lifecycle', () => {
     expect(await authenticate(new Headers({ 'x-app-token': key }), env, store)).toBeNull()
   })
 
+  it('a house licence carries the flag through authenticate; plain ones do not', async () => {
+    const store = memoryStore()
+    const created = await (await routeLicences('POST', admin, JSON.stringify({ label: 'mac' }), env, store)).json()
+    const key = created.data.key as string
+    expect((await authenticate(new Headers({ 'x-app-token': key }), env, store))?.house).toBeUndefined()
+    // flip the flag the way the Helm /house command does
+    const lics = (await store.read<{ key: string; house?: boolean }[]>('licences'))!
+    lics.find(l => l.key === key)!.house = true
+    await store.write('licences', lics)
+    expect((await authenticate(new Headers({ 'x-app-token': key }), env, store))?.house).toBe(true)
+  })
+
   it('licensee config is isolated from admin config', async () => {
     const store = memoryStore()
     const created = await (await routeLicences('POST', admin, JSON.stringify({ label: 'U1' }), env, store)).json()

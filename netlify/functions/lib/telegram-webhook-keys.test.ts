@@ -86,4 +86,22 @@ describe('Helm licence commands', () => {
     expect(blobs.get('licences')).toBeUndefined()
     expect(sent).toHaveLength(0)
   })
+
+  it('/house toggles the house flag on exactly one licence', async () => {
+    const seed: Licence[] = [
+      { key: 'mb_aaaa1', label: 'inayat-mac-m5', createdAt: 1 },
+      { key: 'mb_bbbb2', label: 'PK', createdAt: 1 },
+    ]
+    const { blobs, sent, fire } = harness({ licences: seed })
+    await fire('/house inayat-mac-m5')
+    expect((blobs.get('licences') as Licence[]).find(l => l.label === 'inayat-mac-m5')?.house).toBe(true)
+    expect((blobs.get('licences') as Licence[]).find(l => l.label === 'PK')?.house).toBeUndefined()
+    expect(sent[0]).toContain('house licence')
+    // toggle back off
+    await fire('/house inayat-mac-m5')
+    expect((blobs.get('licences') as Licence[]).find(l => l.label === 'inayat-mac-m5')?.house).toBe(false)
+    // no match → helpful reply, nothing mutated
+    await fire('/house ghost')
+    expect(sent[2]).toContain('No active licence')
+  })
 })

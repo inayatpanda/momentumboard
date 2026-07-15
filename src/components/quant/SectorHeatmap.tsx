@@ -22,7 +22,7 @@ function fmtSigned(p: number): string {
   return `${p >= 0 ? '+' : '−'}${Math.abs(p).toFixed(2)}%`
 }
 
-export function SectorHeatmap({ sectors, quotes }: { sectors: Sectors | null; quotes: Quotes }) {
+export function SectorHeatmap({ sectors, quotes, onOpen }: { sectors: Sectors | null; quotes: Quotes; onOpen?: (sym: string) => void }) {
   const rows = sectors?.rows ?? []
   const paired = rows
     .map((row, i) => ({ row, quote: quotes[i] ?? null }))
@@ -43,7 +43,16 @@ export function SectorHeatmap({ sectors, quotes }: { sectors: Sectors | null; qu
               const rs = row.rs21
               const chg = quote?.changePct
               return (
-                <div key={row.sym} className="quant-cell" style={{ background: tint(rs) }}>
+                // a cell is also a door to the ETF's own chart page
+                <div
+                  key={row.sym}
+                  className="quant-cell"
+                  style={{ background: tint(rs), cursor: onOpen ? 'pointer' : undefined }}
+                  role={onOpen ? 'button' : undefined}
+                  tabIndex={onOpen ? 0 : undefined}
+                  onClick={onOpen ? () => onOpen(row.sym) : undefined}
+                  onKeyDown={onOpen ? e => e.key === 'Enter' && onOpen(row.sym) : undefined}
+                >
                   <div className="quant-cell-top">
                     <span className="quant-cell-sym">{row.sym}</span>
                     <span className="quant-cell-rs num">{rs == null ? '—' : `rs ${rs.toFixed(1)}`}</span>

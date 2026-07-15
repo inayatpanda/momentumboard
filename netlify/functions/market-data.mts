@@ -23,7 +23,10 @@ export async function routeRequest(
 
   // Admin AI calls use the server's keys; licensees use their own stored key or none.
   const llmEnvForCaller = async (): Promise<{ [k: string]: unknown } | null> => {
-    if (auth.level === 'admin')
+    // house licences are the owner's own devices — they ride the server's keys
+    // like the admin token does. Ordinary licensees still bring their own key
+    // (Helm: /house <label> flips a licence either way).
+    if (auth.level === 'admin' || auth.house)
       return { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL, GROQ_API_KEY: process.env.GROQ_API_KEY }
     const creds = await blobAppStore.read<{ groqKey?: string }>(`${auth.ns}llm`)
     return creds?.groqKey ? { GROQ_API_KEY: creds.groqKey, strict: true } : null

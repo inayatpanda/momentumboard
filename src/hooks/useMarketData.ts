@@ -10,13 +10,23 @@ import type { Row } from '../components/TickerRow'
 const QUOTE_MS = 120_000
 const CANDLE_MS = 900_000
 
+// MODULE-level caches, not refs: as refs they died with every unmount, so any
+// trip away from the Watchlist (Desk, a chart, Settings) refetched every
+// candle and rebuilt the rows from blank — the "everything reloads" feel.
+// Candles respect the same 15-min TTL across mounts; the last computed rows
+// repaint instantly while the fresh quote pass runs behind.
+const candleStore = new Map<string, Candle[]>()
+const candleFetchedAt = new Map<string, number>()
+const lastRows = new Map<string, { rows: Row[]; regime: RegimeColor | null; lastUpdated: number | null }>()
+
 export function useMarketData(symbols: string[]) {
-  const [rows, setRows] = useState<Row[]>([])
-  const [regime, setRegime] = useState<RegimeColor | null>(null)
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null)
+  const memo = lastRows.get(symbols.join(','))
+  const [rows, setRows] = useState<Row[]>(memo?.rows ?? [])
+  const [regime, setRegime] = useState<RegimeColor | null>(memo?.regime ?? null)
+  const [lastUpdated, setLastUpdated] = useState<number | null>(memo?.lastUpdated ?? null)
   const [error, setError] = useState<string | null>(null)
-  const candlesRef = useRef(new Map<string, Candle[]>())
-  const fetchedAtRef = useRef(new Map<string, number>())
+  const candlesRef = useRef(candleStore)
+  const fetchedAtRef = useRef(candleFetchedAt)
 
   useEffect(() => {
     let alive = true
@@ -48,28 +58,31 @@ export function useMarketData(symbols: string[]) {
         const quotes = await getQuotes(symbols)
         if (!alive) return
         const now = Math.floor(Date.now() / 1000)
-        setRows(
-          symbols.map((symbol, i) => {
-            const quote: Quote | null = quotes[i]
-            const candles = candlesRef.current.get(symbol)
-            let rvol: number | null = null
-            let setups: SetupKind[] = []
-            let spark: number[] | undefined
-            let rsiVal: number | null = null
-            if (candles && candles.length > 25) {
-              const avg = avgDailyVolume(candles)
-              const todayVol = quote?.todayVolume ?? candles[candles.length - 1].v
-              if (avg) rvol = relativeVolume(todayVol, avg, sessionElapsedFraction(exchangeFor(symbol), now))
-              setups = detectSetups(candles, rvol)
-              spark = candles.slice(-30).map(c => c.c)
-              const r = rsi(candles.map(c => c.c))
-              rsiVal = r[r.length - 1]
-            }
-            return { symbol, quote, rvol, setups, spark, rsi: rsiVal }
-          }),
-        )
-        setLastUpdated(Date.now())
+        const nextRows = symbols.map((symbol, i) => {
+          const quote: Quote | null = quotes[i]
+          const candles = candlesRef.current.get(symbol)
+          let rvol: number | null = null
+          let setups: SetupKind[] = []
+          let spark: number[] | undefined
+          let rsiVal: number | null = null
+          if (candles && candles.length > 25) {
+            const avg = avgDailyVolume(candles)
+            const todayVol = quote?.todayVolume ?? candles[candles.length - 1].v
+            if (avg) rvol = relativeVolume(todayVol, avg, sessionElapsedFraction(exchangeFor(symbol), now))
+            setups = detectSetups(candles, rvol)
+            spark = candles.slice(-30).map(c => c.c)
+            const r = rsi(candles.map(c => c.c))
+            rsiVal = r[r.length - 1]
+          }
+          return { symbol, quote, rvol, setups, spark, rsi: rsiVal }
+        })
+        setRows(nextRows)
+        const at = Date.now()
+        setLastUpdated(at)
         setError(null)
+        const spyC = candlesRef.current.get('SPY')
+        const qqqC = candlesRef.current.get('QQQ')
+        lastRows.set(symbols.join(','), { rows: nextRows, regime: spyC && qqqC ? regimeFromCandles(spyC, qqqC) : null, lastUpdated: at })
       } catch (e) {
         setError(String(e))
       }

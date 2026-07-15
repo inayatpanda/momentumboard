@@ -30,7 +30,7 @@ type Seasonality = Awaited<ReturnType<typeof getSeasonality>>
 type SmartMoney = Awaited<ReturnType<typeof getSmartMoney>>
 type Dossiers = Awaited<ReturnType<typeof getEventDossiers>>
 
-export function Quant({ onBack, onOpenSettings }: { onBack: () => void; onOpenSettings: () => void }) {
+export function Quant({ onBack, onOpenSettings, onOpen }: { onBack: () => void; onOpenSettings: () => void; onOpen?: (sym: string) => void }) {
   const [engine, setEngine] = useState<EngineData | null>(null)
   const [sectors, setSectors] = useState<Sectors | null>(null)
   const [quotes, setQuotes] = useState<Quotes>([])
@@ -114,7 +114,7 @@ export function Quant({ onBack, onOpenSettings }: { onBack: () => void; onOpenSe
           analogue={analogueDossier?.analogues ?? null}
           analogueSym={analogueDossier?.sym}
         />
-        <SectorHeatmap sectors={sectors} quotes={quotes} />
+        <SectorHeatmap sectors={sectors} quotes={quotes} onOpen={onOpen} />
         <LearningPanel calibration={engine?.calibration ?? null} weights={engine?.weights ?? null} />
         <SeasonalityPanel data={season} />
         <SmartMoneyPanel data={smart} />

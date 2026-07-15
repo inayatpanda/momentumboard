@@ -573,8 +573,16 @@ p { text-wrap: pretty; }
   top: 8px; left: 12px;
   z-index: 3;
   display: flex; gap: 10px;
+  flex-wrap: wrap;
   font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
 }
+/* engine levels as legend chips — the words live here, the chart draws only
+   coloured dashes (titled axis pills stacked into an unreadable pile when a
+   call's levels sat close together) */
+.chart-legend .lvl-chip { font-variant-numeric: tabular-nums; }
+/* a ticker that opens the full stock page */
+.sym-link { cursor: pointer; }
+.sym-link:hover { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
 
 /* newspaper section rule: label, then a hairline running to the margin */
 .section-title {
@@ -1146,6 +1154,9 @@ p { text-wrap: pretty; }
   .topbar .gear { margin-left: auto; }
   .content, .detail { padding-left: 24px; padding-right: 24px; }
 
+  /* the Desk keeps the rail: its full-bleed layout pads for the fixed rail */
+  .desk { padding-left: 216px; }
+
   /* bottom tab bar → left navigation rail */
   .tabs {
     top: 0; bottom: 0; right: auto; left: 0;
@@ -1451,25 +1462,10 @@ p { text-wrap: pretty; }
 }
 
 /* return-to-Desk affordance, shown on wide screens while in the classic layout */
-.desk-return {
-  position: fixed;
-  top: 16px;
-  right: 18px;
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  cursor: pointer;
+/* the Desk rail row only where the Desk itself can render (App gates it ≥1200) */
+@media (max-width: 1199.98px) {
+  .tab.desk-tab { display: none; }
 }
-.desk-return:hover { border-color: var(--blue); color: var(--blue); }
 
 /* ---------- Quant (wide data-viz cockpit) ---------- */
 /* A full-bleed deck of five viz panels reusing the .desk shell + .card surface.

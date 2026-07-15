@@ -148,7 +148,11 @@ export default function App() {
   }
 
   const navigate = (tab: string) => {
-    if (tab === 'desk') setView({ screen: 'desk' })
+    // choosing the Desk from the rail is choosing it as the wide-screen home
+    if (tab === 'desk') {
+      localStorage.setItem('mb-home', 'desk')
+      setView({ screen: 'desk' })
+    }
     if (tab === 'quant') setView({ screen: 'quant' })
     if (tab === 'watchlist') setView({ screen: 'watchlist' })
     if (tab === 'movers') setView({ screen: 'movers' })
@@ -193,11 +197,13 @@ export default function App() {
     return <AppGate onUnlocked={enterApp} />
   }
 
-  // the Desk is full-bleed — it renders outside the 560px .shell and without the
-  // tab bar (it carries its own navigation and a "Standard view" escape hatch).
+  // the Desk is full-bleed content-wise, but it KEEPS the navigation rail —
+  // losing every other tab on entering the Desk made the app feel like two
+  // apps. The rail is fixed-position, so the .desk container pads for it ≥1024.
   if (view.screen === 'desk') {
     return (
       <NavContext.Provider value={{ active, navigate }}>
+        <TabBar active="desk" onNavigate={navigate} />
         <Desk
           key={syncTick}
           onStandard={() => {
@@ -206,6 +212,7 @@ export default function App() {
           }}
           onQuant={() => setView({ screen: 'quant' })}
           onOpenSettings={openSettings}
+          onOpen={open}
         />
       </NavContext.Provider>
     )
@@ -214,7 +221,8 @@ export default function App() {
   if (view.screen === 'quant') {
     return (
       <NavContext.Provider value={{ active, navigate }}>
-        <Quant key={syncTick} onBack={() => setView({ screen: 'desk' })} onOpenSettings={openSettings} />
+        <TabBar active="desk" onNavigate={navigate} />
+        <Quant key={syncTick} onBack={() => setView({ screen: 'desk' })} onOpenSettings={openSettings} onOpen={open} />
       </NavContext.Provider>
     )
   }
@@ -254,18 +262,6 @@ export default function App() {
         </motion.div>
       </AnimatePresence>
       <TabBar active={active} chartsReady={!!lastSymbol} onNavigate={navigate} />
-      {isWide && view.screen !== 'settings' && (
-        <button
-          className="desk-return"
-          onClick={() => {
-            localStorage.setItem('mb-home', 'desk')
-            setView({ screen: 'desk' })
-          }}
-          title="Open the Desk dashboard"
-        >
-          ⊞ Desk
-        </button>
-      )}
     </div>
     </NavContext.Provider>
   )
