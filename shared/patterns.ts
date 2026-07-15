@@ -19,8 +19,12 @@ export type PatternKind =
   | 'inv-head-shoulders'
   | 'double-top'
   | 'double-bottom'
+  | 'triple-top'
+  | 'triple-bottom'
   | 'asc-triangle'
   | 'desc-triangle'
+  | 'sym-triangle'
+  | 'range-break'
 
 export interface PatternHit {
   kind: PatternKind
@@ -178,8 +182,47 @@ export function detectPatterns(candles: Candle[]): PatternHit[] {
     }
   }
 
-  // ---- double top / bottom: two similar extremes, no H&S already booked there
-  if (!hits.some(x => x.kind === 'head-shoulders') && h.length >= 2) {
+  // ---- triple top / bottom: three near-EQUAL extremes (H&S claims the
+  // head-dominant shapes first; without this check they'd mislabel as doubles)
+  if (!hits.some(x => x.kind === 'head-shoulders') && h.length >= 3) {
+    const [a, b, c] = h.slice(-3)
+    const troughs = l.filter(p => p.idx > a.idx && p.idx < c.idx)
+    if (troughs.length >= 2 && near(a.price, b.price, tol) && near(b.price, c.price, tol) && near(a.price, c.price, tol) && trendedInto(a, 'up')) {
+      const neckline = Math.min(...troughs.map(t => t.price))
+      const beyond = trailingBeyond(x => x < neckline)
+      if (beyond <= CONFIRM_FRESH_BARS) {
+        hits.push({
+          kind: 'triple-top',
+          label: 'Triple top',
+          direction: 'bearish',
+          status: beyond > 0 ? 'confirmed' : 'forming',
+          level: Math.round(neckline * 100) / 100,
+          pivots: [a, b, c].map(p => p.idx + offset),
+        })
+      }
+    }
+  }
+  if (!hits.some(x => x.kind === 'inv-head-shoulders') && l.length >= 3) {
+    const [a, b, c] = l.slice(-3)
+    const peaks = h.filter(p => p.idx > a.idx && p.idx < c.idx)
+    if (peaks.length >= 2 && near(a.price, b.price, tol) && near(b.price, c.price, tol) && near(a.price, c.price, tol) && trendedInto(a, 'down')) {
+      const neckline = Math.max(...peaks.map(t => t.price))
+      const beyond = trailingBeyond(x => x > neckline)
+      if (beyond <= CONFIRM_FRESH_BARS) {
+        hits.push({
+          kind: 'triple-bottom',
+          label: 'Triple bottom',
+          direction: 'bullish',
+          status: beyond > 0 ? 'confirmed' : 'forming',
+          level: Math.round(neckline * 100) / 100,
+          pivots: [a, b, c].map(p => p.idx + offset),
+        })
+      }
+    }
+  }
+
+  // ---- double top / bottom: two similar extremes, no H&S/triple already booked there
+  if (!hits.some(x => x.kind === 'head-shoulders' || x.kind === 'triple-top') && h.length >= 2) {
     const [a, b] = h.slice(-2)
     const between = l.filter(p => p.idx > a.idx && p.idx < b.idx)
     if (between.length >= 1 && near(a.price, b.price, tol) && trendedInto(a, 'up')) {
@@ -197,7 +240,7 @@ export function detectPatterns(candles: Candle[]): PatternHit[] {
       }
     }
   }
-  if (!hits.some(x => x.kind === 'inv-head-shoulders') && l.length >= 2) {
+  if (!hits.some(x => x.kind === 'inv-head-shoulders' || x.kind === 'triple-bottom') && l.length >= 2) {
     const [a, b] = l.slice(-2)
     const between = h.filter(p => p.idx > a.idx && p.idx < b.idx)
     if (between.length >= 1 && near(a.price, b.price, tol) && trendedInto(a, 'down')) {
@@ -247,6 +290,56 @@ export function detectPatterns(candles: Candle[]): PatternHit[] {
           direction: 'bearish',
           status: beyond > 0 ? 'confirmed' : 'forming',
           level: Math.round(floor * 100) / 100,
+          pivots: [h1, l1, h2, l2].map(p => p.idx + offset).sort((a, b) => a - b),
+        })
+      }
+    } else if (flatTop && flatBottom) {
+      // rectangle/range: direction exists only once a side BREAKS, so this is
+      // confirmed-only — flagging a still-boxed range "bullish" would be a guess
+      const cap = Math.max(h1.price, h2.price)
+      const floor = Math.min(l1.price, l2.price)
+      const upBeyond = trailingBeyond(c => c > cap)
+      const dnBeyond = trailingBeyond(c => c < floor)
+      if (upBeyond > 0 && upBeyond <= CONFIRM_FRESH_BARS) {
+        hits.push({
+          kind: 'range-break',
+          label: 'Range break',
+          direction: 'bullish',
+          status: 'confirmed',
+          level: Math.round(cap * 100) / 100,
+          pivots: [h1, l1, h2, l2].map(p => p.idx + offset).sort((a, b) => a - b),
+        })
+      } else if (dnBeyond > 0 && dnBeyond <= CONFIRM_FRESH_BARS) {
+        hits.push({
+          kind: 'range-break',
+          label: 'Range break',
+          direction: 'bearish',
+          status: 'confirmed',
+          level: Math.round(floor * 100) / 100,
+          pivots: [h1, l1, h2, l2].map(p => p.idx + offset).sort((a, b) => a - b),
+        })
+      }
+    } else if (fallingHighs && risingLows) {
+      // symmetrical triangle: same rule — the coil earns a badge only on the
+      // break, in the break's direction. Trigger = the most recent opposing pivot.
+      const upBeyond = trailingBeyond(c => c > h2.price)
+      const dnBeyond = trailingBeyond(c => c < l2.price)
+      if (upBeyond > 0 && upBeyond <= CONFIRM_FRESH_BARS) {
+        hits.push({
+          kind: 'sym-triangle',
+          label: 'Symmetrical triangle',
+          direction: 'bullish',
+          status: 'confirmed',
+          level: Math.round(h2.price * 100) / 100,
+          pivots: [h1, l1, h2, l2].map(p => p.idx + offset).sort((a, b) => a - b),
+        })
+      } else if (dnBeyond > 0 && dnBeyond <= CONFIRM_FRESH_BARS) {
+        hits.push({
+          kind: 'sym-triangle',
+          label: 'Symmetrical triangle',
+          direction: 'bearish',
+          status: 'confirmed',
+          level: Math.round(l2.price * 100) / 100,
           pivots: [h1, l1, h2, l2].map(p => p.idx + offset).sort((a, b) => a - b),
         })
       }

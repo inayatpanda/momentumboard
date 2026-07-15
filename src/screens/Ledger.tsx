@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { getEngine, type LedgerPrediction, type OpenTraceEntry, type PaperBookData } from '../lib/api'
 import { capClassBreakdown, flattenLedger, gradeBreakdown, statusOf, summariseLedger } from '../lib/ledgerStats'
-import { humanError } from '../lib/format'
+import { fmtPct, humanError } from '../lib/format'
 import { GradeChip } from '../components/GradeChip'
 import { IconBack } from '../components/icons'
 
@@ -43,6 +43,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
   const [book, setBook] = useState<PaperBookData | null>(null)
   const [trace, setTrace] = useState<OpenTraceEntry[] | null>(null)
   const [months, setMonths] = useState<{ month: string; endGBP: number; returnPct: number; trades: number; wins: number }[]>([])
+  const [patternScore, setPatternScore] = useState<NonNullable<Awaited<ReturnType<typeof getEngine>>['patternScore']>>([])
   const [filter, setFilter] = useState<Filter>('all')
   const [error, setError] = useState<string | null>(null)
 
@@ -54,6 +55,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
         setBook(d.paperBook ?? null)
         setMonths(d.paperMonths ?? [])
         setTrace(d.openTrace?.entries ?? null)
+        setPatternScore(d.patternScore ?? [])
       })
       .catch(e => setError(String((e as Error)?.message ?? e)))
   }, [])
@@ -258,6 +260,34 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
           ))}
           <p className="empty-line led-fine">
             Large- vs small-cap ($2B split, matching the engine's own flag). Calibration stays pooled — this is a display-only lens on whether the edge holds up across cohorts.
+          </p>
+        </section>
+      )}
+
+      {patternScore.length > 0 && (
+        <section className="digest-section" style={{ marginBottom: 12 }}>
+          <h3 className="section-title">Pattern scorecard — do the shapes pay?</h3>
+          {patternScore.map(p => (
+            <div key={`${p.kind}:${p.status}`} className="perf-row">
+              <span>
+                <span className="badge">{p.kind.replace(/-/g, ' ')}</span>{' '}
+                <span className={`badge ${p.status === 'confirmed' ? 'good' : ''}`}>{p.status}</span> <span className="led-n">×{p.n}</span>
+              </span>
+              <span className="led-n">
+                {p.graded5 === 0 ? (
+                  'none graded yet'
+                ) : (
+                  <>
+                    {Math.round((p.hitRate5 ?? 0) * 100)}% hit ·{' '}
+                    <span className={(p.avgExcess5 ?? 0) >= 0 ? 'up-text' : 'down-text'}>{fmtPct(p.avgExcess5 ?? 0)}</span> @5d · {p.graded5} graded
+                  </>
+                )}
+              </span>
+            </div>
+          ))}
+          <p className="empty-line led-fine">
+            Every chart-wall badge, logged from first sight and graded like a call (beat SPY by ≥1pp in the pattern's direction). The badges stay
+            display-only colour unless — and until — these numbers prove they deserve more.
           </p>
         </section>
       )}

@@ -867,6 +867,28 @@ export async function buildBoard(
     themes: themeHeat(mediaTitles).filter(t => t.hits > 0).slice(0, 3),
   })
 
+  // ---- pattern scorecard sweep ----
+  // Every candidate with candles gets pattern-scanned (pure CPU — the candles
+  // are already in candleMap), sightings logged once and graded at +5/+10
+  // sessions vs SPY, exactly like calls. Patterns remain display-only; this
+  // ledger exists so "do the shapes pay?" gets a measured answer before the
+  // badges are ever trusted with anything. Fail-soft: a scorecard hiccup must
+  // never touch the board.
+  try {
+    const { detectPatterns } = await import('../../../shared/patterns')
+    const { recordSightings, gradeSightings } = await import('../../../shared/engine/patternScore')
+    const prevSightings = (await store.read<import('../../../shared/engine/patternScore').PatternSighting[]>('pattern-sightings')) ?? []
+    const todaysHits = [...candleMap.entries()]
+      .filter(([sym, cs]) => sym !== 'SPY' && sym !== 'QQQ' && cs.length >= 30)
+      .map(([sym, cs]) => ({ date: today, sym, price: cs[cs.length - 1].c, hits: detectPatterns(cs) }))
+      .filter(t => t.hits.length > 0)
+    const gradedSightings = gradeSightings(recordSightings(prevSightings, todaysHits), candleMap, spy ?? [])
+    await store.write('pattern-sightings', gradedSightings)
+    if (todaysHits.length) console.log('PATTERNS:', todaysHits.map(t => `${t.sym} ${t.hits.map(h => `${h.kind}:${h.status}`).join('+')}`).join(' · '))
+  } catch (e) {
+    console.log('PATTERNS: scorecard sweep failed —', String(e).slice(0, 160))
+  }
+
   // ---- the engine's daily opinion on every REAL holding ----
   // For each held name (cap 80): where is it in its move (technicalStage) and can
   // it travel (swingCapacity)? Candles are reused from candleMap when the name was

@@ -510,6 +510,19 @@ export interface EngineData {
   // the open book: every not-yet-graded live call, traced daily (null until the
   // first predict run writes it). Powers the Ledger's "where they stand" pane.
   openTrace?: { date: string; generatedAt: number; entries: OpenTraceEntry[] } | null
+  // the pattern scorecard: chart-wall badges logged and graded like calls —
+  // the measured answer to "do the shapes pay?" (empty until sightings accrue)
+  patternScore?: {
+    kind: string
+    status: 'forming' | 'confirmed'
+    n: number
+    graded5: number
+    hitRate5: number | null
+    avgExcess5: number | null
+    graded10: number
+    hitRate10: number | null
+    avgExcess10: number | null
+  }[]
   newsToneHistory?: { date: string; score: number; label: string }[]
   // the engine's daily read-only opinion on every REAL T212 holding (null until the
   // first predict run writes it). Powers the Desk's read-only holdings-tracking pane.
