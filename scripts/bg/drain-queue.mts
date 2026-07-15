@@ -30,7 +30,9 @@ const runItem = async (item: WorkItem): Promise<boolean> => {
     if (item.kind === 'video') {
       const { default: handler } = await import('../../netlify/functions/video-analyze-background.mts')
       const res = await handler(adminReq(item.body))
-      console.log(`video ${((item.body as { title?: string })?.title ?? '').slice(0, 60)}: ${res.status}`)
+      // the body text ('extracted:gemini-video', 'no-transcript-no-video-read',
+      // 'gemini-extract-capped'…) is the only trace of WHY — always print it
+      console.log(`video ${((item.body as { title?: string })?.title ?? '').slice(0, 60)}: ${res.status} ${await res.text().catch(() => '')}`)
       return res.status < 400
     }
     if (item.kind === 'dossier') {

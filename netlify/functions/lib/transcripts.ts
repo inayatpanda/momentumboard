@@ -32,6 +32,11 @@ export function parseTimedText(xml: string): string {
     .trim()
 }
 
+const log = (why: string): null => {
+  console.log(`TRANSCRIPT: ${why}`)
+  return null
+}
+
 /** Free tier: the InnerTube ANDROID player endpoint hands out caption URLs that
  * work without a proof-of-origin token (the watch-page route returns empty
  * bodies since YouTube's 2024 POT enforcement — verified). Best-effort: if
@@ -46,16 +51,18 @@ export async function fetchTranscriptFree(videoUrl: string, fetchFn: typeof fetc
       headers: { 'content-type': 'application/json', 'user-agent': ANDROID_UA },
       body: JSON.stringify({ context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30, hl: 'en' } }, videoId: id }),
     })
-    if (!res.ok) return null
+    // each failure mode logs one line — from the queue worker these land in the
+    // Actions log, the only place a silent-null chain can ever be diagnosed
+    if (!res.ok) return log(`innertube ${res.status}`)
     const j = (await res.json()) as { captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: { baseUrl: string; languageCode?: string; kind?: string }[] } } }
     const track = pickTrack(j.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [])
-    if (!track) return null
+    if (!track) return log('no caption tracks (blocked IP or captions not generated yet)')
     const cap = await fetchFn(track.baseUrl, { headers: { 'user-agent': ANDROID_UA } })
-    if (!cap.ok) return null
+    if (!cap.ok) return log(`timedtext ${cap.status}`)
     const text = parseTimedText(await cap.text())
-    return text.length > 100 ? text : null // too short = blocked/empty artefact
-  } catch {
-    return null
+    return text.length > 100 ? text : log(`caption body too short (${text.length} chars)`)
+  } catch (e) {
+    return log(`threw: ${String(e).slice(0, 120)}`)
   }
 }
 

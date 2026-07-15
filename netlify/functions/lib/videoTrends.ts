@@ -8,6 +8,7 @@ export interface VideoExtract {
   at: number
   tickers: { sym: string; stance: 'bull' | 'bear' | 'neutral'; levels: number[] }[]
   themes: string[]
+  via?: 'transcript' | 'gemini-video' // how the facts were read; absent on rows older than the fallback
 }
 
 export interface TickerConsensus {
@@ -81,6 +82,13 @@ const EXTRACT_PROMPT = (title: string, channel: string, transcript: string) => `
 {"tickers":[{"sym":"TSLA","stance":"bull|bear|neutral","levels":[180.5]}],"themes":["ai-capex","rate-cuts"]}
 Rules: tickers = actual stock/crypto symbols discussed with a view (not passing mentions); stance = the creator's stated view; levels = specific prices they cite for that ticker; themes = up to 3 kebab-case investment themes. Video: "${title}" by ${channel}. Transcript (may be truncated):\n${transcript.slice(0, 24_000)}`
 
+/** The transcript-less variant: Gemini watches the video itself (fileData URI),
+ * so the rules also cover levels DRAWN on charts, which transcripts never carry.
+ * Same JSON contract — parseExtract handles both. */
+const EXTRACT_PROMPT_VIDEO = (title: string, channel: string) => `Watch this stock-market video and extract facts. Respond with ONLY valid JSON, no prose:
+{"tickers":[{"sym":"TSLA","stance":"bull|bear|neutral","levels":[180.5]}],"themes":["ai-capex","rate-cuts"]}
+Rules: tickers = actual stock/crypto symbols discussed with a view (not passing mentions); stance = the creator's stated view; levels = specific prices they say OR draw on charts for that ticker; themes = up to 3 kebab-case investment themes. If the video is not about markets, return {"tickers":[],"themes":[]}. Video: "${title}" by ${channel}.`
+
 export function parseExtract(raw: string, meta: { url: string; title: string; channel: string; at: number }): VideoExtract | null {
   try {
     const json = raw.match(/\{[\s\S]*\}/)?.[0]
@@ -103,4 +111,4 @@ export function parseExtract(raw: string, meta: { url: string; title: string; ch
   }
 }
 
-export { EXTRACT_PROMPT }
+export { EXTRACT_PROMPT, EXTRACT_PROMPT_VIDEO }
