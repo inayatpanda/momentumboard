@@ -173,16 +173,25 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
             {smartMoney && smartMoney.funds.length > 0 && (
               <section className="digest-section">
                 <h3 className="section-title">Smart money: latest 13F moves</h3>
-                {smartMoney.funds.map(f => (
-                  <div key={f.fund} className="perf-row intel-row-col">
-                    <span>{f.fund} <span className="intel-crow-sub">filed {f.filedAt}</span></span>
-                    <span className="intel-crow-sub">
-                      {f.newPositions.length > 0 && <>NEW: {f.newPositions.map(h => h.issuer).join(', ')} </>}
-                      {f.increased.length > 0 && <>· ADDED: {f.increased.map(h => `${h.issuer} +${h.pctChange}%`).join(', ')} </>}
-                      {f.exited.length > 0 && <>· EXITED: {f.exited.map(h => h.issuer).join(', ')}</>}
-                    </span>
-                  </div>
-                ))}
+                {smartMoney.funds.map(f => {
+                  // a fund whose latest 13F is over ~two quarters old has STOPPED
+                  // filing (Scion after Burry deregistered) — say so instead of
+                  // letting an old date sit there looking like a data bug
+                  const stale = Date.now() - Date.parse(f.filedAt) > 200 * 86_400_000
+                  return (
+                    <div key={f.fund} className="perf-row intel-row-col" style={stale ? { opacity: 0.6 } : undefined}>
+                      <span>
+                        {f.fund} <span className="intel-crow-sub">filed {f.filedAt}</span>
+                        {stale && <span className="badge warn" style={{ marginLeft: 6 }}>no longer filing</span>}
+                      </span>
+                      <span className="intel-crow-sub">
+                        {f.newPositions.length > 0 && <>NEW: {f.newPositions.map(h => h.issuer).join(', ')} </>}
+                        {f.increased.length > 0 && <>· ADDED: {f.increased.map(h => `${h.issuer} +${h.pctChange}%`).join(', ')} </>}
+                        {f.exited.length > 0 && <>· EXITED: {f.exited.map(h => h.issuer).join(', ')}</>}
+                      </span>
+                    </div>
+                  )
+                })}
                 <p className="empty-line intel-fine">{smartMoney.lagNote}</p>
               </section>
             )}

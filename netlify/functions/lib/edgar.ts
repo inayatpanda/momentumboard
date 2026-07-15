@@ -4,11 +4,15 @@ import type { SmartMoneyInput } from '../../../shared/engine/factors'
 
 const UA = { 'User-Agent': 'MomentumBoard research inayatc2002@gmail.com' }
 
-// CIKs verified against data.sec.gov/submissions on 2026-07-10 — every entry
-// below has current 13F-HR filings (latest 2026-05-15). A wrong CIK silently
-// poisons the smart-money factor, so verify before adding. Note Einhorn: the
-// old GREENLIGHT CAPITAL INC filer (0001079114) stopped filing Feb 2024; his
-// current filer entity is DME Capital Management, LP (0001489933).
+// CIKs verified against data.sec.gov/submissions on 2026-07-10, roster growth
+// re-verified 2026-07-15 — every entry below has current 13F-HR filings
+// (latest 2026-05-15) EXCEPT Scion: Burry deregistered the adviser and last
+// filed 2025-11-03; kept deliberately (his last book is still read), the UI
+// marks the row stale. A wrong CIK silently poisons the smart-money factor, so
+// verify before adding. Note Einhorn: the old GREENLIGHT CAPITAL INC filer
+// (0001079114) stopped filing Feb 2024; his current filer entity is DME
+// Capital Management, LP (0001489933). Point72/Citadel/RenTech are excluded on
+// purpose — thousand-position pod books are diff noise, not conviction.
 export const FUNDS = [
   { cik: '0001067983', name: 'Berkshire Hathaway' },
   { cik: '0001336528', name: 'Pershing Square' },
@@ -20,6 +24,11 @@ export const FUNDS = [
   { cik: '0001489933', name: 'Greenlight (Einhorn)' },
   { cik: '0001167483', name: 'Tiger Global' },
   { cik: '0001135730', name: 'Coatue Management' },
+  { cik: '0001350694', name: 'Bridgewater (Dalio)' },
+  { cik: '0000921669', name: 'Icahn (Carl Icahn)' },
+  { cik: '0001029160', name: 'Soros Fund Management' },
+  { cik: '0001791786', name: 'Elliott Management' },
+  { cik: '0001569205', name: 'Fundsmith (Terry Smith)' },
 ]
 
 export interface Holding {
@@ -53,23 +62,42 @@ export function parseInfoTable(xml: string): Holding[] {
   return [...byIssuer.values()]
 }
 
+/** Quarters spell the same issuer differently ("CHEVRON CORP" one filing,
+ * "CHEVRON CORP NEW" the next) — a raw-string diff turned every respelling
+ * into a phantom NEW + EXITED pair (Berkshire "bought Chevron, sold Chevron
+ * Corp New"). Diff on the normalised issuer instead; share classes that
+ * normalise together merge, keeping the current filing's display name. */
+function byNormIssuer(hs: Holding[]): Map<string, Holding> {
+  const out = new Map<string, Holding>()
+  for (const h of hs) {
+    const k = normIssuer(h.issuer)
+    if (!k) continue
+    const cur = out.get(k)
+    if (cur) {
+      cur.shares += h.shares
+      cur.value += h.value
+    } else out.set(k, { ...h })
+  }
+  return out
+}
+
 export function diff13F(fund: string, filedAt: string, current: Holding[], prior: Holding[]): FundMoves {
-  const prevBy = new Map(prior.map(h => [h.issuer, h]))
-  const curBy = new Map(current.map(h => [h.issuer, h]))
+  const prevBy = byNormIssuer(prior)
+  const curBy = byNormIssuer(current)
   const top = <T extends Holding>(xs: T[]) => xs.sort((a, b) => b.value - a.value).slice(0, 5)
   return {
     fund,
     filedAt,
-    newPositions: top(current.filter(h => !prevBy.has(h.issuer))),
+    newPositions: top([...curBy.entries()].filter(([k]) => !prevBy.has(k)).map(([, h]) => h)),
     increased: top(
-      current
-        .filter(h => {
-          const p = prevBy.get(h.issuer)
+      [...curBy.entries()]
+        .filter(([k, h]) => {
+          const p = prevBy.get(k)
           return p && p.shares > 0 && h.shares > p.shares * 1.2
         })
-        .map(h => ({ ...h, pctChange: Math.round(((h.shares - prevBy.get(h.issuer)!.shares) / prevBy.get(h.issuer)!.shares) * 100) })),
+        .map(([k, h]) => ({ ...h, pctChange: Math.round(((h.shares - prevBy.get(k)!.shares) / prevBy.get(k)!.shares) * 100) })),
     ),
-    exited: top(prior.filter(h => !curBy.has(h.issuer))),
+    exited: top([...prevBy.entries()].filter(([k]) => !curBy.has(k)).map(([, h]) => h)),
   }
 }
 
@@ -113,7 +141,9 @@ export async function fetchAllFundMoves(fetchFn: typeof fetch = fetch): Promise<
     const m = await fetchFundMoves(f.cik, f.name, fetchFn) // sequential — SEC asks for gentle, single-threaded access
     if (m) out.push(m)
   }
-  return out
+  // freshest filings first: a fund that stopped filing (Scion after Burry
+  // deregistered) sinks to the bottom instead of sitting mid-list looking broken
+  return out.sort((a, b) => b.filedAt.localeCompare(a.filedAt))
 }
 
 /** 13F moves change only on filing (~quarterly), so a 12h cache keeps the daily
@@ -121,7 +151,7 @@ export async function fetchAllFundMoves(fetchFn: typeof fetch = fetch): Promise<
  * no cache before — this is the one referenced by the engine dep. */
 export async function cachedFundMoves(fetchFn: typeof fetch = fetch): Promise<FundMoves[]> {
   const { getCached, setCached } = await import('./cache')
-  const KEY = 'edgar:fund-moves:v2' // v2: fund roster grew 5 → 10; bump skips the stale 12h blob
+  const KEY = 'edgar:fund-moves:v3' // v3: roster 10 → 15 (Bridgewater/Icahn/Soros/Elliott/Fundsmith) + norm-issuer diffs; bump skips the stale 12h blob
   const hit = await getCached<FundMoves[]>(KEY)
   if (hit) return hit
   const moves = await fetchAllFundMoves(fetchFn)

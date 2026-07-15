@@ -45,10 +45,13 @@ export function SmartMoneyPanel({ data }: { data: SmartMoney | null }) {
                 ...(f.newPositions ?? []).map(x => ({ issuer: x.issuer, pct: null as number | null, kind: 'new' as const })),
               ].slice(0, CAP)
               const out = (f.exited ?? []).slice(0, CAP)
+              // over ~two quarters without a filing = the fund stopped filing
+              // (deregistered) — dim it and say so, don't look broken
+              const stale = Date.now() - Date.parse(f.filedAt) > 200 * 86_400_000
               return (
-                <div key={`${f.fund}-${i}`} className="quant-fund">
+                <div key={`${f.fund}-${i}`} className="quant-fund" style={stale ? { opacity: 0.6 } : undefined}>
                   <div className="quant-fund-head">
-                    <span className="quant-fund-name">{f.fund}</span>
+                    <span className="quant-fund-name">{f.fund}{stale && <span className="badge warn" style={{ marginLeft: 6 }}>no longer filing</span>}</span>
                     <span className="quant-fund-date num">{f.filedAt}</span>
                   </div>
                   <div className="quant-fund-flows">

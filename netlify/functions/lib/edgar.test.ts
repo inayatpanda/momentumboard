@@ -32,6 +32,35 @@ describe('diff13F', () => {
     expect(m.increased[0]).toMatchObject({ issuer: 'APPLE INC', pctChange: 50 })
     expect(m.exited.map(h => h.issuer)).toEqual(['CHEVRON'])
   })
+
+  it('a quarter-to-quarter respelling is NOT a new+exited pair', () => {
+    // the live Berkshire bug: "CHEVRON CORP" one filing, "CHEVRON CORP NEW"
+    // the next read as "bought Chevron, sold Chevron Corp New"
+    const m = diff13F(
+      'Test Fund',
+      '2026-05-15',
+      [{ issuer: 'CHEVRON CORPORATION', shares: 500, value: 50 }],
+      [{ issuer: 'CHEVRON CORP NEW', shares: 500, value: 50 }],
+    )
+    expect(m.newPositions).toEqual([])
+    expect(m.exited).toEqual([])
+    expect(m.increased).toEqual([]) // same share count — not an add either
+  })
+
+  it('share classes that normalise together merge instead of double-counting', () => {
+    const m = diff13F(
+      'Test Fund',
+      '2026-05-15',
+      [
+        { issuer: 'ALPHABET INC CL A', shares: 100, value: 10 },
+        { issuer: 'ALPHABET INC CL C', shares: 200, value: 20 },
+      ],
+      [{ issuer: 'ALPHABET INC CL A', shares: 100, value: 10 }],
+    )
+    // 300 total vs 100 prior = a 200% increase on the merged line
+    expect(m.increased[0]).toMatchObject({ pctChange: 200 })
+    expect(m.newPositions).toEqual([])
+  })
 })
 
 describe('matchesIssuer (conservative: a miss is fine, a wrong match is not)', () => {
