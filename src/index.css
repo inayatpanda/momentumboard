@@ -1192,6 +1192,15 @@ p { text-wrap: pretty; }
   .tab.active svg { width: 22px; height: 22px; padding: 0; background: none; border-radius: 0; transform: none; }
   .tab:not(:disabled):hover { background: var(--panel-2); }
 
+  /* ---- collapsible rail: icons-only at 68px, visible-by-default ---- */
+  .rail-collapse { display: flex; margin-top: auto; color: var(--faint); }
+  :root[data-rail='collapsed'] .tabs { width: 68px; padding-left: 8px; padding-right: 8px; }
+  :root[data-rail='collapsed'] .tabs::before { content: 'S'; left: 0; right: 0; text-align: center; }
+  :root[data-rail='collapsed'] .tab { justify-content: center; gap: 0; padding: 11px 0; }
+  :root[data-rail='collapsed'] .tab .tab-label { display: none; }
+  :root[data-rail='collapsed'] .shell { padding-left: 68px; }
+  :root[data-rail='collapsed'] .desk { padding-left: 68px; }
+
   /* denser, multi-column content */
   .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .card { margin-bottom: 0; height: 100%; transition: border-color 0.15s ease, transform 0.15s ease; }
@@ -1466,6 +1475,24 @@ p { text-wrap: pretty; }
 @media (max-width: 1199.98px) {
   .tab.desk-tab { display: none; }
 }
+
+/* prominent view-switch buttons on the Desk/Quant header — the old ghost
+   text buttons vanished into the toolbar */
+.desk-switch {
+  padding: 8px 18px;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--blue);
+  background: var(--blue-soft);
+  border: 1px solid var(--blue);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.desk-switch:hover { background: var(--blue); color: #06121a; }
+
+/* rail collapse toggle exists only where the rail does (≥1024, see below) */
+.rail-collapse { display: none; }
 
 /* ---------- Quant (wide data-viz cockpit) ---------- */
 /* A full-bleed deck of five viz panels reusing the .desk shell + .card surface.

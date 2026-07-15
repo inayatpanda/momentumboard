@@ -10,7 +10,6 @@ import {
   type EngineData,
 } from '../lib/api'
 import { humanError } from '../lib/format'
-import { IconGear } from '../components/icons'
 import { LeanPanel } from '../components/quant/LeanPanel'
 import { SectorHeatmap } from '../components/quant/SectorHeatmap'
 import { LearningPanel } from '../components/quant/LearningPanel'
@@ -30,7 +29,7 @@ type Seasonality = Awaited<ReturnType<typeof getSeasonality>>
 type SmartMoney = Awaited<ReturnType<typeof getSmartMoney>>
 type Dossiers = Awaited<ReturnType<typeof getEventDossiers>>
 
-export function Quant({ onBack, onOpenSettings, onOpen }: { onBack: () => void; onOpenSettings: () => void; onOpen?: (sym: string) => void }) {
+export function Quant({ onBack, onOpen }: { onBack: () => void; onOpen?: (sym: string) => void }) {
   const [engine, setEngine] = useState<EngineData | null>(null)
   const [sectors, setSectors] = useState<Sectors | null>(null)
   const [quotes, setQuotes] = useState<Quotes>([])
@@ -101,9 +100,10 @@ export function Quant({ onBack, onOpenSettings, onOpen }: { onBack: () => void; 
           The Street Signal <span>Quant</span>
         </span>
         <span className="desk-spacer" />
-        <button className="mini-btn ghost" onClick={load}>Refresh</button>
-        <button className="mini-btn ghost" onClick={onBack}>Desk</button>
-        <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
+        <button className="mini-btn ghost" onClick={load} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
+        <button className="desk-switch" onClick={onBack}>Desk</button>
       </header>
 
       <div className="quant-grid">

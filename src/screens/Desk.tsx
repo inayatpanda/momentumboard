@@ -9,7 +9,6 @@ import { PriceChart } from '../components/PriceChart'
 import { RsiChart } from '../components/RsiChart'
 import { RegimeBanner } from '../components/RegimeBanner'
 import { GradeChip } from '../components/GradeChip'
-import { IconGear } from '../components/icons'
 
 // THE DESK: a wide command-deck for laptop/monitor screens, built entirely out
 // of data the phone app already fetches (getEngine + getMovers). Two call
@@ -123,16 +122,20 @@ function ChartCard({ p, expanded, onToggle, onOpen }: { p: EnginePrediction; exp
 // back paints the last state instantly while load() refreshes it behind
 let deskMemo: { data: EngineData; movers: MoversResponse | null; ipos: IposResponse | null } | null = null
 
-export function Desk({ onStandard, onOpenSettings, onQuant, onOpen }: { onStandard: () => void; onOpenSettings: () => void; onQuant: () => void; onOpen?: (sym: string) => void }) {
+export function Desk({ onStandard, onQuant, onOpen }: { onStandard: () => void; onQuant: () => void; onOpen?: (sym: string) => void }) {
   const [data, setData] = useState<EngineData | null>(deskMemo?.data ?? null)
   const [movers, setMovers] = useState<MoversResponse | null>(deskMemo?.movers ?? null)
   const [ipos, setIpos] = useState<IposResponse | null>(deskMemo?.ipos ?? null)
   const [loading, setLoading] = useState(!deskMemo)
+  // separate from `loading`: a warm deck refreshes without blanking, but the
+  // Refresh button must still visibly DO something ("does nothing" report)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [focus, setFocus] = useState<string | null>(null) // expanded chart card
 
   const load = () => {
     setLoading(!deskMemo) // a warm deck refreshes silently, no loading flash
+    setRefreshing(true)
     setError(null)
     // IPOs are the least critical rail card — a failing calendar must never take
     // the whole desk down, so it is caught to null rather than joining the reject.
@@ -144,7 +147,10 @@ export function Desk({ onStandard, onOpenSettings, onQuant, onOpen }: { onStanda
         setIpos(ip)
       })
       .catch(e => setError(humanError(e)))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+        setRefreshing(false)
+      })
   }
 
   useEffect(load, [])
@@ -196,10 +202,13 @@ export function Desk({ onStandard, onOpenSettings, onQuant, onOpen }: { onStanda
           {updated && `updated ${updated}`}
         </span>
         <span className="desk-spacer" />
-        <button className="mini-btn ghost" onClick={load}>Refresh</button>
-        <button className="mini-btn ghost" onClick={onQuant}>Quant</button>
-        <button className="mini-btn ghost" onClick={onStandard}>Standard view</button>
-        <button className="gear" onClick={onOpenSettings} aria-label="Settings"><IconGear /></button>
+        {/* settings lives on the rail now — the header gear duplicated it and
+            its spoked icon read as a sun/theme toggle */}
+        <button className="mini-btn ghost" onClick={load} disabled={refreshing}>
+          {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
+        <button className="desk-switch" onClick={onQuant}>Quant</button>
+        <button className="desk-switch" onClick={onStandard}>Standard view</button>
       </header>
 
       <div className="desk-body">

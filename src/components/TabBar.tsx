@@ -1,4 +1,4 @@
-import { createContext } from 'react'
+import { createContext, useEffect, useState } from 'react'
 
 const Icon = ({ d }: { d: string }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -29,7 +29,8 @@ const TABS = [
   // desktop-only rail rows: with More hidden ≥1024px these two had NO desktop
   // entrance at all — the track record and every setting were phone-only
   { key: 'ledger', label: 'Ledger', icon: 'M4 4h16v16H4zM8 8h8M8 12h8M8 16h5', sec: true },
-  { key: 'settings', label: 'Settings', icon: 'M12 9a3 3 0 100 6 3 3 0 000-6zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9L16.9 7.1M7.1 16.9l-2.2 2.2', sec: true },
+  // toothed cog, not spokes — spokes read as a sun/theme toggle
+  { key: 'settings', label: 'Settings', icon: 'M12 9a3 3 0 100 6 3 3 0 000-6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z', sec: true },
 ] as const
 
 // every destination that lives behind the More menu highlights the More tab
@@ -46,6 +47,19 @@ export function SubNav() {
 }
 
 export function TabBar({ active, onNavigate }: { active: string; chartsReady?: boolean; onNavigate?: (tab: string) => void }) {
+  // Desktop rail collapse: icons-only at 68px, remembered across launches.
+  // The flag rides the ROOT element (data-rail) because the padded layouts
+  // (.shell, .desk) live outside this component; mobile ignores it entirely
+  // (every rule is scoped inside the ≥1024px block).
+  const [collapsed, setCollapsed] = useState(() => typeof localStorage !== 'undefined' && localStorage.getItem('mb-rail') === 'collapsed')
+  useEffect(() => {
+    document.documentElement.dataset.rail = collapsed ? 'collapsed' : 'open'
+  }, [collapsed])
+  const toggleRail = () => {
+    const next = !collapsed
+    localStorage.setItem('mb-rail', next ? 'collapsed' : 'open')
+    setCollapsed(next)
+  }
   return (
     <nav className="tabs" aria-label="Main">
       {TABS.map(t => (
@@ -54,9 +68,10 @@ export function TabBar({ active, onNavigate }: { active: string; chartsReady?: b
           className={`tab ${t.sec ? 'sec' : ''} ${t.key === 'desk' ? 'desk-tab' : ''} ${active === t.key ? 'active' : ''}`}
           onClick={() => onNavigate?.(t.key)}
           aria-current={active === t.key ? 'page' : undefined}
+          title={collapsed ? t.label : undefined}
         >
           <Icon d={t.icon} />
-          {t.label}
+          <span className="tab-label">{t.label}</span>
         </button>
       ))}
       <button
@@ -65,7 +80,11 @@ export function TabBar({ active, onNavigate }: { active: string; chartsReady?: b
         aria-current={MORE_KEYS.includes(active) ? 'page' : undefined}
       >
         <Icon d="M4 6h16M4 12h16M4 18h16" />
-        More
+        <span className="tab-label">More</span>
+      </button>
+      <button className="tab rail-collapse" onClick={toggleRail} title={collapsed ? 'Expand navigation' : 'Collapse navigation'} aria-expanded={!collapsed}>
+        <Icon d={collapsed ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'} />
+        <span className="tab-label">Collapse</span>
       </button>
     </nav>
   )

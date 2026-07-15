@@ -211,7 +211,6 @@ export default function App() {
             setView({ screen: 'watchlist' })
           }}
           onQuant={() => setView({ screen: 'quant' })}
-          onOpenSettings={openSettings}
           onOpen={open}
         />
       </NavContext.Provider>
@@ -222,7 +221,7 @@ export default function App() {
     return (
       <NavContext.Provider value={{ active, navigate }}>
         <TabBar active="desk" onNavigate={navigate} />
-        <Quant key={syncTick} onBack={() => setView({ screen: 'desk' })} onOpenSettings={openSettings} onOpen={open} />
+        <Quant key={syncTick} onBack={() => setView({ screen: 'desk' })} onOpen={open} />
       </NavContext.Provider>
     )
   }
