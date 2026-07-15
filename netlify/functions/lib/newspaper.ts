@@ -428,11 +428,18 @@ const PERSONA = (dateLabel: string) => `You are a seasoned, decisive Wall Street
 NUMERIC DISCIPLINE: use ONLY numbers present in the data; never invent a price, level or statistic; no price for a ticker → qualitative levels only. Round every percentage to ONE decimal place in prose — never print long raw decimals.
 CONTINUITY: previousEditions in the data show what the reader was already told. Never re-introduce a covered theme as new — reference and build ("the healthcare rotation we flagged is now day 3 and CONFIRMED: rs5 still leads rs21" / "yesterday's call is fading — one-day event"). Repeated picks: say it is a repeat and what changed.
 REVERSAL-FIRST (the reader's core edge — obey it): candidateReads gives each name's STAGE and entryQuality from real chart+volume analysis. STRONGLY PREFER entryQuality "early" (early-reversal or healthy pullback near support — turning up with room to run). A name that has already climbed and reads "extended" or "exhausted" (high RSI, stretched above the 20-day, pinned at range highs) is a CHASE, not a buy — do NOT make it a long however strong its momentum or rotation; skip it, wait for a pullback (name the level), or treat it as a SHORT/fade via an inverse ETP. "falling-knife" = wait. Volume must confirm — call out light-volume (unconfirmed) moves.
-NAMES: full company name once at first mention of any ticker.`
+NAMES: full company name once at first mention of any ticker.
+ONE PAPER: each ticker gets ONE full pitch, in its home section (ideas/shortDesk for board calls). Every other section that touches the same name references it in half a sentence at most — never restates its case, levels or reasons.`
 
-export function sectionPrompt(spec: SectionSpec, data: string, dateLabel: string): string {
+export function sectionPrompt(spec: SectionSpec, data: string, dateLabel: string, alreadyCovered?: string[]): string {
+  // Sections written after the ideas desk get the covered list — parallel
+  // writers can't see each other, so without this the Signal/small-cap/channel
+  // sections re-pitched the very names Today's Ideas had just cased in full.
+  const dedup = alreadyCovered?.length
+    ? `\nALREADY FULLY PITCHED TODAY (Today's Ideas / Short Desk): ${alreadyCovered.join(', ')}. Do NOT re-pitch, re-describe or re-argue these in your section. If your section must touch one (the Signal picks it; a channel covered it), add ONLY what your section uniquely knows and point at the rest ("case in Today's Ideas"). Prefer names the paper has not already covered.\n`
+    : ''
   return `${PERSONA(dateLabel)}
-
+${dedup}
 YOUR SECTION — write ONLY these fields: ${spec.fields.join(', ')}.
 ${spec.brief}
 
@@ -608,7 +615,10 @@ export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: Pape
     .slice(0, 6)
     .map(e => {
       const when = new Date(e.at * 1000).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })
-      return `<tr><td>${esc(e.title)} <span class="chip ${e.impact === 'High' ? 'hi' : ''}">${esc(e.impact)}</span></td><td class="num">${esc(e.country)}</td><td class="num">${when} UK</td><td class="num">${esc(e.forecast ?? '·')}</td><td class="num">${esc(e.previous ?? '·')}</td></tr>`
+      // Ccy folded into the event cell and forecast/previous merged: five columns
+      // of fixed hints (368px) starved the Event column into vertical letters on
+      // phones — three columns leave it the honest majority of the row.
+      return `<tr><td>${esc(e.title)} <span class="chip ${e.impact === 'High' ? 'hi' : ''}">${esc(e.impact)}</span> <span class="subtle">${esc(e.country)}</span></td><td class="num">${when} UK</td><td class="num">${esc(e.forecast ?? '·')} / ${esc(e.previous ?? '·')}</td></tr>`
     })
     .join('')
 
@@ -645,11 +655,18 @@ ${t.rows
     ...(x.ipos?.recent ?? []).map(r => ({ r, when: 'Listed' })),
   ]
     .slice(0, 8)
-    .map(({ r, when }) => `<tr><td class="tk">${esc(r.sym)}</td><td>${esc(r.name)}</td><td class="num">${esc(r.date)}</td><td class="num">${esc(when)} · ${esc(r.status)}</td></tr>`)
+    // ticker + company share one cell: a separate ticker column plus 246px of
+    // date/status hints left the Company column ~nothing on a phone
+    .map(({ r, when }) => `<tr><td><b>${esc(r.sym)}</b>${r.name ? ` <span class="subtle">${esc(r.name)}</span>` : ''}</td><td class="num">${esc(r.date)}</td><td class="num">${esc(when)} · ${esc(r.status)}</td></tr>`)
     .join('')
 
   const wisdom = pickWisdom(new Date().toISOString().slice(0, 10))
-  const pull = r.ideas.find(i => i.strength === 'strong')?.caseText ?? r.standfirst
+  // The pull-quote used to reprint a strong idea's caseText VERBATIM right
+  // under the idea block that just made the case — the pitch's third
+  // appearance on one page. The Long View (or the standfirst) gives the paper
+  // a voice line that appears nowhere else.
+  const editorialSentence = (r.editorial ?? '').split(/(?<=[.!?])\s+/).find(s => s.length > 60 && s.length < 220)
+  const pull = editorialSentence ?? r.standfirst
 
   return `<!doctype html>
 <html lang="en"><head>
@@ -692,6 +709,7 @@ td{border-bottom:1px solid #d8d2c4;padding:7px 8px;vertical-align:middle}
 .idea[data-strong="1"]{background:rgba(12,122,85,.05);border-radius:4px;padding-left:12px!important;padding-right:12px!important}
 .heatcap{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b6257;margin-bottom:6px}
 .subtle{color:#6b6257;font-size:11.5px;font-weight:400}
+.foot{font-size:11.5px;color:#6b6257;margin:6px 0 0}
 .tk{font-weight:700;white-space:nowrap}.short{color:#b03040;font-size:10.5px;letter-spacing:.08em}
 .num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .up{color:#0c7a55}.dn{color:#b03040}
@@ -767,14 +785,27 @@ ${
     x.engineBoard?.length
       ? wide(
           'The Board — Engine Calls',
-          `<table style="table-layout:fixed;width:100%;font-size:12.5px"><thead><tr><th>Ticker</th><th style="width:44px">Side</th><th style="width:48px">Grade</th><th style="width:44px">Prob.</th><th style="width:160px">Entry · Stop · Target</th><th style="width:92px">Route</th></tr></thead><tbody>${x.engineBoard
-            .map(
-              b =>
-                `<tr><td><b>${esc(b.sym)}</b>${b.name ? `<br><span class="subtle">${esc(b.name)}</span>` : ''}</td><td>${b.side === 'long' ? 'LONG' : 'SHORT'}</td><td>${b.grade}${b.provisional ? '·prov' : ''}${b.watchOnly ? '·watch' : ''}</td><td class="num">${Math.round(b.probability * 100)}%</td><td class="num">${b.entry} · ${b.stop} · ${b.target}<br><span class="subtle">~${b.expectedMovePct}% expected</span></td><td>${
-                  b.watchOnly ? 'watch' : b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
-                }${b.earningsRisk ? ' · earnings' : ''}</td></tr>`,
-            )
-            .join('')}</tbody></table><p class="foot">Calibrated on the engine's own graded history, excess vs S&amp;P. Watch rows are observations — grade C or thin evidence, no size until they earn A/B. Paper-only calls are analysis — the risk ladder has not unlocked their route yet.</p>`,
+          // Stacked two-line blocks, NOT a table: the old 6-column fixed table
+          // reserved 388px for its number columns, so on a 360-400px phone the
+          // ticker+company cell got nothing and the name wrapped letter by
+          // letter (same failure the Ideas table had before 484ab6b). Blocks
+          // have no widths to fight over and are Gmail-safe like ideaBlock.
+          `${x.engineBoard
+            .map(b => {
+              const isShort = b.side === 'short'
+              const route = b.watchOnly ? 'watch — no size' : b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
+              return (
+                `<div style="padding:7px 0;border-bottom:1px solid #e6e0d2">` +
+                `<div style="line-height:1.45"><span style="font-weight:700;font-size:14.5px">${esc(b.sym)}</span>` +
+                (b.name ? `<span style="color:#6b6257;font-size:12.5px"> &middot; ${esc(b.name)}</span>` : '') +
+                ` <span style="color:${isShort ? '#b03040' : '#0c7a55'};font-weight:700;font-size:11px;letter-spacing:.06em">${isShort ? '&#9660; SHORT' : '&#9650; LONG'}</span>` +
+                ` <span style="border:1px solid #d8d2c4;border-radius:3px;padding:0 5px;font-size:10px;letter-spacing:.06em;color:#6b6257">${b.grade}${b.provisional ? '&middot;prov' : ''}${b.watchOnly ? '&middot;watch' : ''}</span>` +
+                `<span style="float:right;font-variant-numeric:tabular-nums;font-size:13px">${Math.round(b.probability * 100)}%</span></div>` +
+                `<div style="clear:both;font-variant-numeric:tabular-nums;font-size:12.5px;color:#6b6257">in ${b.entry} &middot; stop ${b.stop} &middot; tgt ${b.target} &middot; ~${b.expectedMovePct}% &middot; ${route}${b.earningsRisk ? ' &middot; earnings' : ''}</div>` +
+                `</div>`
+              )
+            })
+            .join('')}<p class="foot">Calibrated on the engine's own graded history, excess vs S&amp;P. Watch rows are observations — grade C or thin evidence, no size until they earn A/B. Paper-only calls are analysis — the risk ladder has not unlocked their route yet.</p>`,
         )
       : ''
   }
@@ -782,7 +813,7 @@ ${dept('Portfolio Desk', paras(r.portfolioDesk))}
 ${dept('The Tape', paras(r.tape))}
 ${
     calendarRows
-      ? wide('On the Calendar — What to Expect', `<table><thead><tr><th>Event</th><th style="width:54px">Ccy</th><th style="width:130px">When</th><th style="width:92px">Forecast</th><th style="width:92px">Previous</th></tr></thead><tbody>${calendarRows}</tbody></table>`)
+      ? wide('On the Calendar — What to Expect', `<table><thead><tr><th>Event</th><th style="width:104px">When</th><th style="width:104px">Fcst / Prev</th></tr></thead><tbody>${calendarRows}</tbody></table>`)
       : ''
   }
 ${
@@ -800,7 +831,7 @@ ${
   }
 ${
     ipoRows
-      ? wide('New Listings — Fresh on the Tape', `<table><thead><tr><th style="width:74px">Ticker</th><th>Company</th><th style="width:96px">Date</th><th style="width:150px">Status</th></tr></thead><tbody>${ipoRows}</tbody></table>`)
+      ? wide('New Listings — Fresh on the Tape', `<table><thead><tr><th>Company</th><th style="width:90px">Date</th><th style="width:130px">Status</th></tr></thead><tbody>${ipoRows}</tbody></table>`)
       : ''
   }
 ${dept('Crypto Wire', paras(r.crypto))}

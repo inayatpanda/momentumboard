@@ -295,20 +295,34 @@ export default async (req: Request) => {
     // ---- compose: six small sections in parallel (Groq-sized), per-section
     // Gemini retry, single-shot Gemini as plan C. Small outputs rarely truncate.
     const { SECTIONS, sectionPrompt, extractJson, mergeSections } = await import('./lib/newspaper')
-    const writeSection = async (spec: (typeof SECTIONS)[0]) => {
+    const writeSection = async (spec: (typeof SECTIONS)[0], covered?: string[]) => {
       try {
-        const first = await callLlm(sectionPrompt(spec, data, dateLabel), { maxTokens: 1600 })
+        const first = await callLlm(sectionPrompt(spec, data, dateLabel, covered), { maxTokens: 1600 })
         const parsed = extractJson<Record<string, unknown>>(first.text)
         if (parsed) return { parsed, provider: first.provider }
       } catch { /* fall through to gemini retry */ }
       try {
-        const retry = await callLlm(`${sectionPrompt(spec, data, dateLabel)}\nIMPORTANT: return ONLY valid JSON.`, { maxTokens: 1600, LLM_PROVIDER: 'gemini' })
+        const retry = await callLlm(`${sectionPrompt(spec, data, dateLabel, covered)}\nIMPORTANT: return ONLY valid JSON.`, { maxTokens: 1600, LLM_PROVIDER: 'gemini' })
         return { parsed: extractJson<Record<string, unknown>>(retry.text), provider: retry.provider }
       } catch {
         return { parsed: null, provider: 'none' }
       }
     }
-    const sectionResults = await Promise.all(SECTIONS.map(writeSection))
+    // Two waves: the ideas desk writes first, then every section that could
+    // re-pitch its names (signal/discovery/voice) writes knowing what is
+    // already fully cased. Fully parallel writers CANNOT avoid duplicating
+    // each other — the reader met the same pick in four sections.
+    const WAVE1 = new Set(['lead', 'desk', 'ideas', 'rotation'])
+    const wave1Specs = SECTIONS.filter(s => WAVE1.has(s.key))
+    const wave2Specs = SECTIONS.filter(s => !WAVE1.has(s.key))
+    const wave1Results = await Promise.all(wave1Specs.map(s => writeSection(s)))
+    const ideasParsed = wave1Results[wave1Specs.findIndex(s => s.key === 'ideas')]?.parsed as { ideas?: { ticker?: unknown }[] } | null
+    const covered = [...new Set((ideasParsed?.ideas ?? []).map(i => String(i.ticker ?? '').toUpperCase()).filter(Boolean))]
+    const wave2Results = await Promise.all(wave2Specs.map(s => writeSection(s, covered)))
+    const sectionResults = SECTIONS.map(spec => {
+      const i1 = wave1Specs.indexOf(spec)
+      return i1 >= 0 ? wave1Results[i1] : wave2Results[wave2Specs.indexOf(spec)]
+    })
     let provider = sectionResults.map(r => r.provider).join(',')
     let composed = mergeSections(sectionResults.map(r => r.parsed))
     console.log('COMPOSE: sections', sectionResults.map((r, i) => `${SECTIONS[i].key}:${r.parsed ? r.provider : 'FAIL'}`).join(' '))
@@ -402,10 +416,27 @@ export default async (req: Request) => {
 
     // ---- publish through the same pipe the routine uses ----
     const html = buildNewspaperHtml(composed, dateLabel, extras)
+    // The print-edition PDF is now TYPESET from this structured payload (heat map,
+    // SPY sparkline, ruled tables, per-idea strips) instead of re-parsed from the
+    // HTML — the old regex path dropped every <svg> and, since the board became
+    // stacked <div>s, the board too. We ship the composed report plus the same
+    // deterministic extras the HTML uses; rotationTables shed their per-row closes
+    // (dead weight for the print table). Envelope rides the text/html branch, so
+    // report.mts unwraps { html, print } fail-soft and legacy raw-HTML still works.
+    const print = {
+      report: composed,
+      engineBoard: extras.engineBoard,
+      sectorBars: extras.sectorBars,
+      spyCloses: extras.spyCloses,
+      calendar: extras.calendar,
+      ipos: extras.ipos,
+      socialBoard: extras.socialBoard,
+      rotationTables: (extras.rotationTables ?? []).map(t => ({ sector: t.sector, etf: t.etf, rows: t.rows.map(r => ({ sym: r.sym, price: r.price, wkPct: r.wkPct })) })),
+    }
     const putHtml = await fetch(`${SITE}/report`, {
       method: 'PUT',
       headers: { 'x-report-token': process.env.REPORT_TOKEN ?? '', 'content-type': 'text/html' },
-      body: html,
+      body: JSON.stringify({ html, print }),
     })
     const picksBody = {
       date: dateISO,

@@ -98,8 +98,26 @@ export async function routeReport(
     }
 
     if (!bodyText || !bodyText.includes('<') || bodyText.length > MAX_BYTES) return json(400, { ok: false, error: 'invalid-html' })
+    // The compose pipe now wraps the paper in a JSON envelope { html, print } so
+    // the PDF can be TYPESET from structured data (heat map, charts, ruled tables)
+    // instead of re-parsed from the HTML. Raw-HTML bodies (older callers, tests)
+    // still work — unwrap fail-soft, and only when the body actually parses as an
+    // envelope carrying an html string.
+    let html = bodyText
+    let print: import('./lib/reportPdf').ReportPrintData | undefined
+    if (bodyText.trimStart().startsWith('{')) {
+      try {
+        const env = JSON.parse(bodyText) as { html?: unknown; print?: unknown }
+        if (env && typeof env.html === 'string') {
+          html = env.html
+          print = (env.print ?? undefined) as import('./lib/reportPdf').ReportPrintData | undefined
+        }
+      } catch {
+        /* not an envelope — bodyText is the HTML itself */
+      }
+    }
     const at = Math.floor(Date.now() / 1000)
-    const report: StoredReport = { html: bodyText, at }
+    const report: StoredReport = { html, at }
     const dateKey = new Date(at * 1000).toISOString().slice(0, 10)
     // same-day re-publish? Gmail threads identical subjects and hides "repeated"
     // sections behind ⋯ trims — a unique suffix keeps every edition whole.
@@ -128,7 +146,7 @@ export async function routeReport(
       if (process.env.RESEND_API_KEY) {
         try {
           const { composeReportPdf } = await import('./lib/reportPdf')
-          const pdf = await composeReportPdf({ html: bodyText, dateLabel })
+          const pdf = await composeReportPdf({ html, dateLabel, print })
           if (pdf?.length) attachments = [{ filename: `StreetSignal-${dateKey}.pdf`, content: Buffer.from(pdf).toString('base64') }]
         } catch {
           /* print edition is best-effort — send without it */
@@ -137,7 +155,7 @@ export async function routeReport(
       await sendReportEmail(
         { RESEND_API_KEY: process.env.RESEND_API_KEY, REPORT_EMAIL_TO: process.env.REPORT_EMAIL_TO, REPORT_EMAIL_FROM: process.env.REPORT_EMAIL_FROM },
         `The Street Signal — ${dateLabel}${republished ? ` · updated ${new Date(at * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}` : ''}`,
-        emailReadyHtml(bodyText, `${link}?date=${dateKey}`),
+        emailReadyHtml(html, `${link}?date=${dateKey}`),
         fetch,
         attachments,
         cfg?.reportRecipients,
