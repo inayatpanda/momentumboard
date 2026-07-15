@@ -136,7 +136,7 @@ export async function routeReport(
     }
     // the same paper lands in the inbox — fail-soft, skipped when no key is set
     try {
-      const { emailReadyHtml, sendReportEmail } = await import('./lib/email')
+      const { emailReadyHtml, sendReportEmail, recipientsForEdition } = await import('./lib/email')
       const cfg = await store.read<AppConfig>('config').catch(() => null)
       const dateLabel = new Date(at * 1000).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })
       // A print-edition PDF rides along with the email, composed on-box from the
@@ -158,7 +158,7 @@ export async function routeReport(
         emailReadyHtml(html, `${link}?date=${dateKey}`),
         fetch,
         attachments,
-        cfg?.reportRecipients,
+        recipientsForEdition('morning', cfg?.reportRecipients),
       )
     } catch {
       /* email is best-effort */

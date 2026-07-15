@@ -26,15 +26,17 @@ const TABS = [
   { key: 'research', label: 'Research', icon: 'M4 5h16v14H4zM4 10h16M9 15h6', sec: true },
   { key: 'reports', label: 'Reports', icon: 'M3 6h18v12H3zM3 7l9 6 9-6', sec: true },
   { key: 'calendar', label: 'Calendar', icon: 'M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zM8 3v4m8-4v4M3 10h18M8 14h.5M12 14h.5M16 14h.5', sec: true },
-  // desktop-only rail rows: with More hidden ≥1024px these two had NO desktop
+  // desktop-only rail rows: with More hidden ≥1024px these had NO desktop
   // entrance at all — the track record and every setting were phone-only
   { key: 'ledger', label: 'Ledger', icon: 'M4 4h16v16H4zM8 8h8M8 12h8M8 16h5', sec: true },
+  // the reader's own T212 book (per-licence key) — private reading, never print
+  { key: 'positions', label: 'Positions', icon: 'M3 12h4l2-7 4 14 2-7h6', sec: true },
   // toothed cog, not spokes — spokes read as a sun/theme toggle
   { key: 'settings', label: 'Settings', icon: 'M12 9a3 3 0 100 6 3 3 0 000-6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z', sec: true },
 ] as const
 
 // every destination that lives behind the More menu highlights the More tab
-const MORE_KEYS = ['more', 'movers', 'research', 'reports', 'calendar', 'ledger', 'settings']
+const MORE_KEYS = ['more', 'movers', 'research', 'reports', 'calendar', 'ledger', 'positions', 'settings']
 
 // App provides { active, navigate }; consumed by TabBar and the More screen.
 export const NavContext = createContext<{ active: string; navigate: (tab: string) => void }>({ active: '', navigate: () => {} })

@@ -19,7 +19,16 @@ export interface AppConfig {
   riskRungOverride?: 0 | 1 | 2 | 3 | null // manual risk-ladder pin; null = engine decides
   favouriteChannels?: string[] // credibility prior 0.6 instead of 0.5
   riskAppetite?: 'moderate' | 'aggressive' // engine gates: aggressive widens the funnel (catalyst.ts). Default moderate.
-  reportRecipients?: string[] // admin-managed extra morning-report recipients, unioned with env REPORT_EMAIL_TO
+  reportRecipients?: ReportRecipient[] // admin-managed extra recipients, per-edition, unioned with env REPORT_EMAIL_TO
+}
+
+// The three daily sends a recipient can be subscribed to individually.
+export type ReportEdition = 'morning' | 'premarket' | 'evening'
+export const REPORT_EDITIONS: ReportEdition[] = ['morning', 'premarket', 'evening']
+
+export interface ReportRecipient {
+  email: string
+  editions: ReportEdition[] // empty = paused (kept on the list, sent nothing)
 }
 
 export function validateConfig(raw: unknown): AppConfig | null {
@@ -66,16 +75,23 @@ export function validateConfig(raw: unknown): AppConfig | null {
     ? c.favouriteChannels.filter(f => typeof f === 'string').slice(0, 10).map(f => f.slice(0, 40))
     : undefined
   const riskAppetite = c.riskAppetite === 'aggressive' ? 'aggressive' : c.riskAppetite === 'moderate' ? 'moderate' : undefined
+  // accepts BOTH shapes: legacy bare strings (pre-editions lists — they were
+  // receiving every send, so they migrate to all three) and the current
+  // {email, editions} objects. Normalised to objects on the way through.
   const reportRecipients = Array.isArray(c.reportRecipients)
     ? (() => {
         const seen = new Set<string>()
-        const out: string[] = []
+        const out: ReportRecipient[] = []
         for (const r of c.reportRecipients as unknown[]) {
-          if (typeof r !== 'string') continue
-          const addr = r.trim().toLowerCase()
+          const raw = typeof r === 'string' ? { email: r, editions: undefined } : r && typeof r === 'object' ? (r as { email?: unknown; editions?: unknown }) : null
+          if (!raw || typeof raw.email !== 'string') continue
+          const addr = raw.email.trim().toLowerCase()
           if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr) || seen.has(addr)) continue
           seen.add(addr)
-          out.push(addr)
+          const editions = Array.isArray(raw.editions)
+            ? (raw.editions.filter(e => REPORT_EDITIONS.includes(e as ReportEdition)) as ReportEdition[])
+            : [...REPORT_EDITIONS] // legacy/absent = everything, matching prior behaviour
+          out.push({ email: addr, editions })
           if (out.length >= 50) break
         }
         return out

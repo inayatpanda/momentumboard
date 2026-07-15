@@ -221,7 +221,7 @@ export async function publishBulletin(kind: BulletinKind, store: AppStore): Prom
   if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
     await sendTelegram(process.env.TELEGRAM_BOT_TOKEN, process.env.TELEGRAM_CHAT_ID, b.text).catch(() => {})
   }
-  const { sendReportEmail } = await import('./email')
+  const { sendReportEmail, recipientsForEdition } = await import('./email')
   const cfg = await store.read<AppConfig>('config').catch(() => null)
   await sendReportEmail(
     { RESEND_API_KEY: process.env.RESEND_API_KEY, REPORT_EMAIL_TO: process.env.REPORT_EMAIL_TO, REPORT_EMAIL_FROM: process.env.REPORT_EMAIL_FROM },
@@ -229,7 +229,9 @@ export async function publishBulletin(kind: BulletinKind, store: AppStore): Prom
     b.html,
     fetch,
     undefined,
-    cfg?.reportRecipients,
+    // each bulletin is its own edition — recipients pick which of the three
+    // daily sends (morning paper / pre-market / evening) they receive
+    recipientsForEdition(kind, cfg?.reportRecipients),
   ).catch(() => {})
 
   const runlog = (await store.read<unknown[]>('runlog')) ?? []

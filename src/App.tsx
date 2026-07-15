@@ -14,6 +14,7 @@ import { CalendarScreen } from './screens/CalendarScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { Desk } from './screens/Desk'
 import { Quant } from './screens/Quant'
+import { Positions } from './screens/Positions'
 import { Landing } from './screens/Landing'
 import { AppGate } from './screens/AppGate'
 import { EnginePage, FaqPage, LedgerPage, PaperPage, siteRouteFor } from './screens/SitePages'
@@ -32,6 +33,7 @@ type View =
   | { screen: 'research' }
   | { screen: 'reports' }
   | { screen: 'ledger' }
+  | { screen: 'positions' }
   | { screen: 'intel' }
   | { screen: 'calendar' }
   | { screen: 'more' }
@@ -116,7 +118,7 @@ export default function App() {
           return home
         }
         if (v.screen === 'settings') return v.from && v.from !== 'detail' && v.from !== home.screen ? ({ screen: v.from } as View) : home
-        if (v.screen === 'research' || v.screen === 'reports' || v.screen === 'intel' || v.screen === 'calendar' || v.screen === 'ledger') {
+        if (v.screen === 'research' || v.screen === 'reports' || v.screen === 'intel' || v.screen === 'calendar' || v.screen === 'ledger' || v.screen === 'positions') {
           return { screen: 'more' }
         }
         return home
@@ -166,6 +168,7 @@ export default function App() {
     if (tab === 'calendar') setView({ screen: 'calendar' })
     if (tab === 'more') setView({ screen: 'more' })
     if (tab === 'ledger') setView({ screen: 'ledger' })
+    if (tab === 'positions') setView({ screen: 'positions' })
     // the desktop rail's Settings row (mobile reaches Settings through More)
     if (tab === 'settings') setView(v => ({ screen: 'settings', from: v.screen === 'settings' ? v.from : v.screen }))
   }
@@ -254,6 +257,7 @@ export default function App() {
           {view.screen === 'research' && <Research onOpenSettings={openSettings} onOpenLedger={() => setView({ screen: 'ledger' })} />}
           {view.screen === 'reports' && <Reports onOpenSettings={openSettings} />}
           {view.screen === 'ledger' && <Ledger onBack={() => setView({ screen: 'research' })} onOpen={open} />}
+          {view.screen === 'positions' && <Positions onOpen={open} onOpenSettings={openSettings} />}
           {view.screen === 'intel' && <Intel onOpenSettings={openSettings} />}
           {view.screen === 'calendar' && <CalendarScreen onOpenSettings={openSettings} />}
           {view.screen === 'more' && <More onOpenSettings={openSettings} />}

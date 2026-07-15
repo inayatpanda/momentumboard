@@ -5,7 +5,7 @@ import { mirrorConfig } from '../lib/configMirror'
 import { enablePush, pushSupported, type PushStatus } from '../lib/push'
 import { IconBack, IconBell, IconMoon, IconShare, IconSparkle, IconSun, IconSwap } from '../components/icons'
 import { onInstallAvailable, promptInstall } from '../lib/installPrompt'
-import type { AppConfig } from '../../shared/config'
+import type { AppConfig, ReportEdition, ReportRecipient } from '../../shared/config'
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
@@ -302,14 +302,16 @@ function LicenceManager({ licences, reload }: { licences: Licence[]; reload: () 
   )
 }
 
+const EDITION_LABEL: Record<ReportEdition, string> = { morning: 'Morning paper', premarket: 'Pre-market', evening: 'Evening' }
+
 function ReportRecipients() {
-  // Admin-managed extra recipients for the morning report + intraday bulletins,
-  // unioned server-side with the env REPORT_EMAIL_TO list. Lives in AppConfig
-  // (reportRecipients), so it round-trips through the same /api/config PUT the
-  // rest of AppConfig uses — read-modify-write against the freshest server copy
-  // rather than the phone's local mirror, since this field has no local table.
+  // Admin-managed extra recipients, per-edition: each address picks which of
+  // the three daily sends (morning paper / pre-market / evening) it receives.
+  // Lives in AppConfig (reportRecipients) and round-trips through the same
+  // /api/config PUT — read-modify-write against the freshest server copy.
+  // validateConfig migrates legacy bare-string lists to all-three on read.
   // Rendered only when the shared admin probe has already succeeded.
-  const [recipients, setRecipients] = useState<string[]>([])
+  const [recipients, setRecipients] = useState<ReportRecipient[]>([])
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [invalid, setInvalid] = useState(false)
@@ -320,7 +322,7 @@ function ReportRecipients() {
       .catch(() => {})
   }, [])
 
-  const persist = async (next: string[]) => {
+  const persist = async (next: ReportRecipient[]) => {
     setBusy(true)
     try {
       const current = (await apiGet<AppConfig | null>('/api/config').catch(() => null)) ?? { watchlist: [], rules: [], ytChannels: [], capital: 5000 }
@@ -338,22 +340,46 @@ function ReportRecipients() {
       return
     }
     setInvalid(false)
-    if (!recipients.includes(addr)) await persist([...recipients, addr])
+    // new recipients start with just the morning paper — the flagship send;
+    // the intraday bulletins are one tap each
+    if (!recipients.some(r => r.email === addr)) await persist([...recipients, { email: addr, editions: ['morning'] }])
     setEmail('')
   }
 
   const removeRecipient = async (addr: string) => {
-    await persist(recipients.filter(r => r !== addr))
+    await persist(recipients.filter(r => r.email !== addr))
+  }
+
+  const toggleEdition = async (addr: string, ed: ReportEdition) => {
+    await persist(
+      recipients.map(r =>
+        r.email === addr ? { ...r, editions: r.editions.includes(ed) ? r.editions.filter(e => e !== ed) : [...r.editions, ed] } : r,
+      ),
+    )
   }
 
   return (
     <section className="menu-group">
       <div className="menu-title">Briefing recipients</div>
       {recipients.map(r => (
-        <div key={r} className="menu-row set-static">
-          <span className="avatar-dot set-ava" style={{ '--h': hueOf(r) } as CSSProperties}>{r[0]?.toUpperCase()}</span>
-          <span className="set-main"><span>{r}</span></span>
-          <button className="remove" onClick={() => removeRecipient(r)} disabled={busy} aria-label={`Remove ${r}`}>✕</button>
+        <div key={r.email} className="menu-row set-static" style={{ flexWrap: 'wrap', rowGap: 6 }}>
+          <span className="avatar-dot set-ava" style={{ '--h': hueOf(r.email) } as CSSProperties}>{r.email[0]?.toUpperCase()}</span>
+          <span className="set-main"><span>{r.email}</span></span>
+          <button className="remove" onClick={() => removeRecipient(r.email)} disabled={busy} aria-label={`Remove ${r.email}`}>✕</button>
+          <span style={{ flexBasis: '100%', display: 'flex', gap: 6, paddingLeft: 44 }}>
+            {(Object.keys(EDITION_LABEL) as ReportEdition[]).map(ed => (
+              <button
+                key={ed}
+                className={`badge ${r.editions.includes(ed) ? 'info' : ''}`}
+                style={{ cursor: 'pointer', background: r.editions.includes(ed) ? undefined : 'transparent' }}
+                onClick={() => toggleEdition(r.email, ed)}
+                disabled={busy}
+                aria-pressed={r.editions.includes(ed)}
+              >
+                {EDITION_LABEL[ed]}
+              </button>
+            ))}
+          </span>
         </div>
       ))}
       <div className="set-inrow">
@@ -370,7 +396,8 @@ function ReportRecipients() {
       </div>
       {invalid && <p className="set-err" role="alert">Enter a valid email address.</p>}
       <p className="set-note">
-        Extra addresses that get the morning report and intraday bulletins, added on top of the REPORT_EMAIL_TO env recipients.
+        Each address picks which of the three daily sends it receives — morning paper, pre-market brief, evening report. Added on top of the
+        REPORT_EMAIL_TO env recipients (who always get everything).
       </p>
     </section>
   )

@@ -43,8 +43,11 @@ export default async (req: Request) => {
 
     const grab = async <T,>(fn: () => Promise<T>): Promise<T | null> => fn().catch(() => null)
 
-    const [portfolio, sectors, consensus, social, insiders, econ, dossiers, picksHistory, pickStats] = await Promise.all([
-      grab(() => blobAppStore.read('portfolio')),
+    // NOTE: the reader's journal ('portfolio' blob) and T212 book deliberately
+    // do NOT feed the paper any more — the report now goes to other people,
+    // and the publisher's personal positions are nobody's business (2026-07-15).
+    // Their in-app home is the Positions screen and the Desk holdings pane.
+    const [sectors, consensus, social, insiders, econ, dossiers, picksHistory, pickStats] = await Promise.all([
       grab(async () => {
         // computed fresh so the paper's charts and tables never depend on cache warmth
         const { SECTORS, computeSectorRows } = await import('./lib/sectors')
@@ -94,21 +97,6 @@ export default async (req: Request) => {
       // signal. Feed list (incl. Barron's + Bloomberg) shared with the engine.
       const { fetchMediaTitles } = await import('./lib/engine')
       return (await fetchMediaTitles()).slice(0, 18)
-    })
-
-    // the reader's REAL Trading 212 book, so portfolioDesk reviews actual holdings
-    // (not a wish-list). Slim: a count, the real unrealised P/L, and the 8 biggest
-    // movers with the engine's stage read. Written by the daily predict run.
-    const t212Holdings = await grab(async () => {
-      const reads = (await blobAppStore.read<{ sym: string; stage: string | null; note: string | null; pplPct: number | null; quantity: number }[]>('holdings-reads')) ?? []
-      if (!reads.length) return null
-      const book = await blobAppStore.read<{ positions: { averagePrice: number; currentPrice: number; quantity: number }[] }>('holdings')
-      const totalPpl = Math.round((book?.positions ?? []).reduce((s, p) => s + (p.currentPrice - p.averagePrice) * p.quantity, 0))
-      const top = [...reads]
-        .sort((a, b) => Math.abs(b.pplPct ?? 0) - Math.abs(a.pplPct ?? 0))
-        .slice(0, 8)
-        .map(r => ({ sym: r.sym, pplPct: r.pplPct, stage: r.stage, note: (r.note ?? '').slice(0, 90) }))
-      return { count: reads.length, totalPpl, top }
     })
 
     // the engine's scored board: fresh = composed today (London). Stale or
@@ -269,10 +257,8 @@ export default async (req: Request) => {
         engineBoard, // null = engine offline; ideas then fall back to candidateReads rules
         mediaHeadlines,
         headlines: news,
-        t212Holdings, // real broker book: count, unrealised P/L, top movers + engine stage
         econCalendarThisWeek: econ,
         watchlistQuotes: quotes,
-        portfolio,
         sectorRotation: sectors,
         channelConsensus: consensus,
         previousEditions: await blobAppStore.read('composed-history'),
@@ -286,9 +272,9 @@ export default async (req: Request) => {
         userNotes: cfg.notes ?? [],
         recentEventAssessments: dossiers,
       },
-      // drop order: least critical first — the engine board, headlines and the
-      // broker book must survive; colour and history give way
-      ['recentEventAssessments', 'userNotes', 'pickPersistence', 'insiderBuying', 'recentChannelVideos', 'socialPulse', 'rotationLeaders', 'candidateReads', 'ownScorecard', 'previousEditions', 'channelConsensus', 'sectorRotation', 'portfolio', 'watchlistQuotes'],
+      // drop order: least critical first — the engine board and headlines must
+      // survive; colour and history give way
+      ['recentEventAssessments', 'userNotes', 'pickPersistence', 'insiderBuying', 'recentChannelVideos', 'socialPulse', 'rotationLeaders', 'candidateReads', 'ownScorecard', 'previousEditions', 'channelConsensus', 'sectorRotation', 'watchlistQuotes'],
     )
 
     console.log('COMPOSE: gathered ok, data bytes', data.length, dropped.length ? `| dropped to fit: ${dropped.join(',')}` : '')

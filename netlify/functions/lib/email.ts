@@ -68,6 +68,20 @@ export function emailReadyHtml(reportHtml: string, browserUrl: string): string {
   return /<\/body>/i.test(withTop) ? withTop.replace(/<\/body>/i, `${bottom}</body>`) : withTop + bottom
 }
 
+/** Which admin-managed recipients get THIS edition. Legacy bare-string lists
+ * (pre-editions) meant "everything", so they pass every edition. The env
+ * REPORT_EMAIL_TO owner address is unioned separately in sendReportEmail and
+ * always receives every send. */
+export function recipientsForEdition(
+  edition: 'morning' | 'premarket' | 'evening',
+  list: ({ email: string; editions?: string[] } | string)[] | undefined,
+): string[] {
+  return (list ?? [])
+    .map(r => (typeof r === 'string' ? { email: r, editions: undefined } : r))
+    .filter(r => !r.editions || r.editions.includes(edition))
+    .map(r => r.email)
+}
+
 export async function sendReportEmail(
   env: EmailEnv,
   subject: string,

@@ -51,6 +51,7 @@ export function More({ onOpenSettings }: { onOpenSettings: () => void }) {
           <Row icon="M4 5h16v14H4zM4 10h16M9 15h6" tint="gold" label="Research" sub="Engine accountability and AI reads" onTap={() => navigate('research')} />
           <Row icon="M3 6h18v12H3zM3 7l9 6 9-6" tint="gold" label="Reports" sub="Every morning edition, archived" onTap={() => navigate('reports')} />
           <Row icon="M9 7h6m-6 4h6m-6 4h4M6 3h12a1 1 0 011 1v17l-3-2-3 2-4-2-3 2V4a1 1 0 011-1z" tint="green" label="Track record" sub="The prediction ledger, graded" onTap={() => navigate('ledger')} />
+          <Row icon="M3 12h4l2-7 4 14 2-7h6" tint="green" label="My positions" sub="Your Trading 212 book — private to your licence" onTap={() => navigate('positions')} />
         </div>
         <div className="menu-group">
           <div className="menu-title">App</div>

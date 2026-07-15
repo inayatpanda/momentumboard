@@ -40,7 +40,8 @@ describe('buildNewspaperHtml', () => {
     expect(html).toContain('THE STREET SIGNAL')
     expect(html).toContain('Regime: <b>GREEN</b>')
     expect(html).toContain('og:title" content="Tech Leads a Cautious Tape Higher"')
-    expect(html).toContain('Portfolio Desk')
+    // the publisher's personal book left the paper 2026-07-15 — its section must NOT render even when old composed JSON still carries the field
+    expect(html).not.toContain('Portfolio Desk')
     expect(html).toContain('I STRONGLY SUGGEST')
     expect(html).toContain('NBIS')
     expect(html).toContain('SHORT')

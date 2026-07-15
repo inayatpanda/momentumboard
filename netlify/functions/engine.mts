@@ -111,7 +111,10 @@ export default async (req: Request) => {
     paperBook: paperBook ?? null,
     paperMonths: paperMonths ?? [],
     newsToneHistory: (newsToneHistory ?? []).slice(-30),
-    holdingsReads: holdingsReads ?? null,
+    // the owner's REAL broker book is not shared reading: plain licensees get
+    // null (they have their own per-ns Positions page); admin + house devices
+    // — the owner's own — keep the Desk holdings pane
+    holdingsReads: auth.level === 'admin' || auth.house ? (holdingsReads ?? null) : null,
     scorecard,
     weights: weights ? { base: weights.base, current: weights.current, history: weights.history.slice(-10) } : null,
     calibration: calibration ? { buckets: calibration.buckets, brier: calibration.brier.slice(-30), seeded: calibration.seeded ?? false, modelVersion: calibration.modelVersion ?? null, evidence: calibration.evidence ?? null } : null,

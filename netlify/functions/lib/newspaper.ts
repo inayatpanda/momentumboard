@@ -140,7 +140,7 @@ export interface ComposedReport {
   headline: string
   standfirst: string
   lead: string // 3-4 paragraphs, \n\n separated
-  portfolioDesk: string
+  portfolioDesk?: string // retired 2026-07-15 — the publisher's personal book left the paper; kept optional so archived editions still parse
   tape: string
   ideas: Idea[]
   shortDesk: string
@@ -311,7 +311,7 @@ NUMERIC DISCIPLINE (hard rules):
 - Use ONLY numbers present in the data below. NEVER invent a price, level or statistic.
 - No current price provided for a ticker → entry/invalidation/target must be QUALITATIVE ("reclaim of the 20-day on volume").
 - Crypto/index levels only if present in the data.
-- If userNotes is empty, OMIT readersNotes. If portfolio is null/empty, portfolioDesk is one honest line.
+- If userNotes is empty, OMIT readersNotes.
 
 CONTINUITY (you write this paper EVERY day — the reader read yesterday's):
 - previousEditions in the data show what you already told him. NEVER re-explain or re-introduce a theme covered in the last editions as if it were new.
@@ -331,7 +331,7 @@ TODAY'S DATA (computed by your own systems — ground everything in it):
 ${data}
 
 Respond with ONLY a JSON object, no markdown fences, exactly this shape:
-{"headline":"...","standfirst":"...","lead":"<3-4 paragraphs \\n\\n separated>","portfolioDesk":"...","tape":"<incl. 48h event previews with forecast vs previous>","ideas":[{"ticker":"XYZ","side":"long","playbook":"R","caseText":"...","entry":"...","invalidation":"...","target":"...","conviction":"A","strength":"strong","reasons":["..."]}],"shortDesk":"...","smallCap":"<omit if none>","rotation":"...","crypto":"...","channels":"...","readersNotes":"<omit if no notes>","editorial":"<The Long View: 2-3 paragraphs>","honestClose":"...","regime":"green|amber|red","fedStance":"hawkish|neutral|dovish","macroNotes":["..."]}`
+{"headline":"...","standfirst":"...","lead":"<3-4 paragraphs \\n\\n separated>","tape":"<incl. 48h event previews with forecast vs previous>","ideas":[{"ticker":"XYZ","side":"long","playbook":"R","caseText":"...","entry":"...","invalidation":"...","target":"...","conviction":"A","strength":"strong","reasons":["..."]}],"shortDesk":"...","smallCap":"<omit if none>","rotation":"...","crypto":"...","channels":"...","readersNotes":"<omit if no notes>","editorial":"<The Long View: 2-3 paragraphs>","honestClose":"...","regime":"green|amber|red","fedStance":"hawkish|neutral|dovish","macroNotes":["..."]}`
 }
 
 export function extractJson<T>(raw: string): T | null {
@@ -379,9 +379,11 @@ export const SECTIONS: SectionSpec[] = [
   },
   {
     key: 'desk',
-    fields: ['portfolioDesk', 'tape'],
-    brief: 'portfolioDesk: review of the actual positions (hold/tighten/exit/scale-in/rotate with reasons; one honest line if the journal is empty). tape: the macro brief, and it MUST preview the next 48h of high-impact events from econCalendarThisWeek using their forecast vs previous numbers and say how to position around each.',
-    shape: '{"portfolioDesk":"...","tape":"..."}',
+    // portfolioDesk retired 2026-07-15: the paper now reaches outside readers,
+    // and the publisher's personal T212 book is nobody's business but theirs
+    fields: ['tape'],
+    brief: 'tape: the macro brief, and it MUST preview the next 48h of high-impact events from econCalendarThisWeek using their forecast vs previous numbers and say how to position around each.',
+    shape: '{"tape":"..."}',
   },
   {
     key: 'ideas',
@@ -809,7 +811,6 @@ ${
         )
       : ''
   }
-${dept('Portfolio Desk', paras(r.portfolioDesk))}
 ${dept('The Tape', paras(r.tape))}
 ${
     calendarRows

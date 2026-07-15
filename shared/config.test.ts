@@ -34,13 +34,22 @@ describe('validateConfig engine fields', () => {
     expect(validateConfig({ ...minimal, riskAppetite: 'reckless' })!.riskAppetite).toBeUndefined()
     expect(validateConfig(minimal)!.riskAppetite).toBeUndefined()
   })
-  it('reportRecipients: keeps valid addresses lowercased and deduped', () => {
+  it('reportRecipients: keeps valid addresses lowercased/deduped — legacy strings migrate to all three editions', () => {
     const cfg = validateConfig({ ...minimal, reportRecipients: ['A@B.com', 'a@b.com', ' c@D.com ', 'c@d.com'] })!
-    expect(cfg.reportRecipients).toEqual(['a@b.com', 'c@d.com'])
+    expect(cfg.reportRecipients).toEqual([
+      { email: 'a@b.com', editions: ['morning', 'premarket', 'evening'] },
+      { email: 'c@d.com', editions: ['morning', 'premarket', 'evening'] },
+    ])
   })
-  it('reportRecipients: drops junk entries and non-string values', () => {
-    const cfg = validateConfig({ ...minimal, reportRecipients: ['nope', '@bad', 'no-tld@x', 'ok@x.com', 42, null] })!
-    expect(cfg.reportRecipients).toEqual(['ok@x.com'])
+  it('reportRecipients: object entries keep only valid editions; junk drops', () => {
+    const cfg = validateConfig({
+      ...minimal,
+      reportRecipients: ['nope', '@bad', 'no-tld@x', { email: 'ok@x.com', editions: ['morning', 'lunchtime'] }, { email: 'paused@x.com', editions: [] }, 42, null],
+    })!
+    expect(cfg.reportRecipients).toEqual([
+      { email: 'ok@x.com', editions: ['morning'] },
+      { email: 'paused@x.com', editions: [] }, // paused: on the list, sent nothing
+    ])
   })
   it('reportRecipients: absent stays undefined; caps at 50', () => {
     expect(validateConfig(minimal)!.reportRecipients).toBeUndefined()

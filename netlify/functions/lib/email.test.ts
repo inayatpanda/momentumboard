@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { emailFitHtml, emailReadyHtml, parseRecipients, sendReportEmail } from './email'
+import { emailFitHtml, emailReadyHtml, parseRecipients, recipientsForEdition, sendReportEmail } from './email'
 
 describe('parseRecipients', () => {
   it('empty / undefined / null → []', () => {
@@ -94,5 +94,18 @@ describe('emailFitHtml — nothing in an email may be wider than the phone', () 
     const body = JSON.parse((ok.mock.calls[0] as unknown as [string, { body: string }])[1].body)
     expect(body.html).toContain('data-email-fit')
     expect(body.html).not.toContain('min-width:520px')
+  })
+
+  it('recipientsForEdition routes each of the three daily sends to its subscribers', () => {
+    const list = [
+      { email: 'morning-only@x.com', editions: ['morning'] },
+      { email: 'everything@x.com', editions: ['morning', 'premarket', 'evening'] },
+      { email: 'paused@x.com', editions: [] },
+      'legacy@x.com', // pre-editions entry: got every send, keeps getting every send
+    ]
+    expect(recipientsForEdition('morning', list)).toEqual(['morning-only@x.com', 'everything@x.com', 'legacy@x.com'])
+    expect(recipientsForEdition('premarket', list)).toEqual(['everything@x.com', 'legacy@x.com'])
+    expect(recipientsForEdition('evening', list)).toEqual(['everything@x.com', 'legacy@x.com'])
+    expect(recipientsForEdition('morning', undefined)).toEqual([])
   })
 })
