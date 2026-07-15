@@ -17,6 +17,7 @@ export type TraceVerdict = 'still-on' | 'intact' | 'weakening'
 export interface OpenTraceEntry {
   id: string
   sym: string
+  name?: string // company display name carried from the prediction row
   side: 'long' | 'short'
   callDate: string
   grade: 'A' | 'B' | 'C'
@@ -72,7 +73,7 @@ const isoDay = (tSec: number) => new Date(tSec * 1000).toISOString().slice(0, 10
  * includes the entry session itself, matching gradePrediction. Returns null
  * when the candles don't reach the call date (nothing to walk). */
 export function traceOpenCall(
-  pred: { id: string; sym: string; side: 'long' | 'short'; date: string; grade: 'A' | 'B' | 'C'; entry: number; stop: number; target: number },
+  pred: { id: string; sym: string; name?: string; side: 'long' | 'short'; date: string; grade: 'A' | 'B' | 'C'; entry: number; stop: number; target: number },
   candles: Candle[],
   todayLiveKeys: Set<string>,
 ): OpenTraceEntry | null {
@@ -113,6 +114,7 @@ export function traceOpenCall(
   return {
     id: pred.id,
     sym: pred.sym,
+    name: pred.name,
     side: pred.side,
     callDate: pred.date,
     grade: pred.grade,

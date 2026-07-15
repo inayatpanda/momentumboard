@@ -48,6 +48,7 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
             <span className="calls-top">
               <GradeChip grade={p.grade} provisional={p.provisional} />
               <span className="calls-sym">{p.sym}</span>
+              {p.name && <span className="calls-name">{p.name}</span>}
               <span className={`chg-pill calls-side ${p.side === 'long' ? 'up' : 'down'}`}>{p.side === 'long' ? '▲ Long' : '▼ Short'}</span>
               {p.watchOnly && <span className="badge warn">watch</span>}
               <span className="calls-odds">{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>

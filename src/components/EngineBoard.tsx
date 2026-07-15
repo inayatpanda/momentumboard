@@ -13,21 +13,26 @@ function Call({ p }: { p: EnginePrediction }) {
   return (
     <div className="perf-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 3 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-        <span style={{ fontWeight: 700 }}>
+        <span style={{ fontWeight: 700, minWidth: 0 }}>
           <GradeChip grade={p.grade} provisional={p.provisional} />{' '}
           {p.sym}
           <span className={p.side === 'long' ? 'up-text' : 'down-text'} style={{ fontSize: 11, marginLeft: 6, fontWeight: 700 }}>{dir}</span>
-          {p.setup && <span className="badge" style={{ marginLeft: 6 }}>{p.setup}</span>}
+          {p.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{p.name}</span>}
+        </span>
+        <span style={{ color: 'var(--muted)', fontSize: 12, flexShrink: 0 }}>{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>
+      </div>
+      {(p.setup || p.smallCap || p.capUsdM != null || (p.themes ?? []).length > 0 || p.earningsRisk) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {p.setup && <span className="badge">{p.setup}</span>}
           {(capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)) && (
-            <span className="badge warn" style={{ marginLeft: 6 }}>{capBand(p.capUsdM) ?? 'small cap'}</span>
+            <span className="badge warn">{capBand(p.capUsdM) ?? 'small cap'}</span>
           )}
           {(p.themes ?? []).slice(0, 2).map(t => (
-            <span key={t} className="badge" style={{ marginLeft: 4 }}>{t}</span>
+            <span key={t} className="badge">{t}</span>
           ))}
-          {p.earningsRisk && <span className="badge bad" style={{ marginLeft: 4 }}>earnings ≤10d</span>}
-        </span>
-        <span style={{ color: 'var(--muted)', fontSize: 12 }}>{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>
-      </div>
+          {p.earningsRisk && <span className="badge bad">earnings ≤10d</span>}
+        </div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--muted)' }}>
         <span>in {p.entry} · stop {p.stop} · tgt {p.target}</span>
         <span>{p.watchOnly ? 'watch — no size' : `risk ${p.riskPct}%${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}</span>

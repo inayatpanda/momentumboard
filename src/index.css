@@ -291,6 +291,8 @@ p { text-wrap: pretty; }
   border-radius: 999px;
   border: 1px solid var(--line);
   color: var(--muted);
+  white-space: nowrap; /* a pill wraps as a unit, never mid-word ("SMALL / CAP") */
+  display: inline-block;
 }
 .badge.good { color: var(--green); border-color: rgba(34, 201, 141, 0.5); background: var(--green-soft); }
 .badge.warn { color: var(--amber); border-color: rgba(245, 184, 61, 0.5); background: var(--amber-soft); }
@@ -1136,8 +1138,12 @@ p { text-wrap: pretty; }
     padding-bottom: 24px;
   }
   .topbar, .content, .detail { max-width: 1060px; margin-left: auto; margin-right: auto; width: 100%; }
-  .topbar { padding: 20px 24px 12px; }
-  .topbar .brand { visibility: hidden; } /* the rail already shows the brand */
+  /* the rail already shows the brand; with it gone the sticky blur band was an
+     empty smear with one theme button floating mid-air where the brand's
+     hidden box ended. Desktop: no band, no sticky, controls docked right. */
+  .topbar { padding: 20px 24px 12px; position: static; background: none; backdrop-filter: none; }
+  .topbar .brand { display: none; }
+  .topbar .gear { margin-left: auto; }
   .content, .detail { padding-left: 24px; padding-right: 24px; }
 
   /* bottom tab bar → left navigation rail */
@@ -1787,6 +1793,7 @@ a.menu-row { text-decoration: none; }
 }
 .calls-row .calls-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .calls-row .calls-sym { font-weight: 700; font-size: 15.5px; letter-spacing: 0.01em; }
+.calls-row .calls-name { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
 .calls-row .chg-pill.calls-side { font-size: 11px; font-weight: 700; padding: 3px 9px; letter-spacing: 0.02em; }
 .calls-row .calls-odds { margin-left: auto; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .calls-row .calls-tags { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }

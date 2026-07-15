@@ -43,10 +43,14 @@ export default function App() {
   // to the website and makes the reader's intent explicit.
   const [surface, setSurface] = useState<'site' | 'app'>(() => (location.pathname.startsWith('/app') ? 'app' : 'site'))
   // wide screens open straight onto the Desk dashboard; phones/tablets get the
-  // classic tabbed layout. Read matchMedia in the initialiser so there's no flash.
-  const [view, setView] = useState<View>(() =>
-    typeof window !== 'undefined' && window.matchMedia('(min-width: 1200px)').matches ? { screen: 'desk' } : { screen: 'watchlist' },
-  )
+  // classic tabbed layout. Read matchMedia in the initialiser so there's no
+  // flash. `mb-home` remembers a reader who chose Standard view — before it,
+  // every desktop launch forced the Desk back on them.
+  const homeView = (): View =>
+    typeof window !== 'undefined' && window.matchMedia('(min-width: 1200px)').matches && localStorage.getItem('mb-home') !== 'standard'
+      ? { screen: 'desk' }
+      : { screen: 'watchlist' }
+  const [view, setView] = useState<View>(homeView)
   const isWide = useIsWide(1200)
   const [lastSymbol, setLastSymbol] = useState<string | null>(null)
   const [syncTick, setSyncTick] = useState(0)
@@ -100,7 +104,7 @@ export default function App() {
     const onPop = () => {
       let consumed = false
       setView(v => {
-        const home: View = window.matchMedia('(min-width: 1200px)').matches ? { screen: 'desk' } : { screen: 'watchlist' }
+        const home: View = homeView()
         if (v.screen === home.screen) return v // already home: let the next back exit
         consumed = true
         // retrace, don't teleport: a chart returns to whatever opened it, the
@@ -158,10 +162,14 @@ export default function App() {
     if (tab === 'calendar') setView({ screen: 'calendar' })
     if (tab === 'more') setView({ screen: 'more' })
     if (tab === 'ledger') setView({ screen: 'ledger' })
+    // the desktop rail's Settings row (mobile reaches Settings through More)
+    if (tab === 'settings') setView(v => ({ screen: 'settings', from: v.screen === 'settings' ? v.from : v.screen }))
   }
 
   const openSettings = () => setView(v => ({ screen: 'settings', from: v.screen }))
-  const active = view.screen === 'detail' ? 'charts' : view.screen === 'settings' ? view.from : view.screen
+  // settings is its own key: the desktop rail has a Settings row to light up,
+  // and on mobile it sits behind More (MORE_KEYS covers the More highlight)
+  const active = view.screen === 'detail' ? 'charts' : view.screen
   const reduced = useReducedMotion()
   const screenKey = view.screen + (view.screen === 'detail' ? view.symbol : '')
 
@@ -192,7 +200,10 @@ export default function App() {
       <NavContext.Provider value={{ active, navigate }}>
         <Desk
           key={syncTick}
-          onStandard={() => setView({ screen: 'watchlist' })}
+          onStandard={() => {
+            localStorage.setItem('mb-home', 'standard')
+            setView({ screen: 'watchlist' })
+          }}
           onQuant={() => setView({ screen: 'quant' })}
           onOpenSettings={openSettings}
         />
@@ -244,7 +255,14 @@ export default function App() {
       </AnimatePresence>
       <TabBar active={active} chartsReady={!!lastSymbol} onNavigate={navigate} />
       {isWide && view.screen !== 'settings' && (
-        <button className="desk-return" onClick={() => setView({ screen: 'desk' })} title="Open the Desk dashboard">
+        <button
+          className="desk-return"
+          onClick={() => {
+            localStorage.setItem('mb-home', 'desk')
+            setView({ screen: 'desk' })
+          }}
+          title="Open the Desk dashboard"
+        >
           ⊞ Desk
         </button>
       )}

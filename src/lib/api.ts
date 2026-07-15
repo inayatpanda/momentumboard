@@ -338,6 +338,7 @@ export async function putConfig(cfg: AppConfig): Promise<void> {
 export interface EnginePrediction {
   id: string
   sym: string
+  name?: string // company display name stamped by the engine at publication
   side: 'long' | 'short'
   composite: number
   probability: number
@@ -431,6 +432,7 @@ export interface HoldingRead {
 export interface OpenTraceEntry {
   id: string
   sym: string
+  name?: string
   side: 'long' | 'short'
   callDate: string
   grade: 'A' | 'B' | 'C'

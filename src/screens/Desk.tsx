@@ -80,6 +80,7 @@ function ChartCard({ p, expanded, onToggle }: { p: EnginePrediction; expanded: b
         <span className="chart-card-id">
           <GradeChip grade={p.grade} provisional={p.provisional} />
           <b>{p.sym}</b>
+          {p.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{p.name}</span>}
           <span style={{ color: dirColor }}>{p.side === 'long' ? '▲' : '▼'}</span>
           {p.watchOnly && <span className="badge warn">watch</span>}
           {p.setup && <span className="badge">{p.setup}</span>}

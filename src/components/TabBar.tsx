@@ -22,10 +22,14 @@ const TABS = [
   { key: 'research', label: 'Research', icon: 'M4 5h16v14H4zM4 10h16M9 15h6', sec: true },
   { key: 'reports', label: 'Reports', icon: 'M3 6h18v12H3zM3 7l9 6 9-6', sec: true },
   { key: 'calendar', label: 'Calendar', icon: 'M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zM8 3v4m8-4v4M3 10h18M8 14h.5M12 14h.5M16 14h.5', sec: true },
+  // desktop-only rail rows: with More hidden ≥1024px these two had NO desktop
+  // entrance at all — the track record and every setting were phone-only
+  { key: 'ledger', label: 'Ledger', icon: 'M4 4h16v16H4zM8 8h8M8 12h8M8 16h5', sec: true },
+  { key: 'settings', label: 'Settings', icon: 'M12 9a3 3 0 100 6 3 3 0 000-6zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9L16.9 7.1M7.1 16.9l-2.2 2.2', sec: true },
 ] as const
 
 // every destination that lives behind the More menu highlights the More tab
-const MORE_KEYS = ['more', 'movers', 'research', 'reports', 'calendar', 'ledger']
+const MORE_KEYS = ['more', 'movers', 'research', 'reports', 'calendar', 'ledger', 'settings']
 
 // App provides { active, navigate }; consumed by TabBar and the More screen.
 export const NavContext = createContext<{ active: string; navigate: (tab: string) => void }>({ active: '', navigate: () => {} })

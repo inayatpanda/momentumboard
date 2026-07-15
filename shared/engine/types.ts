@@ -66,6 +66,7 @@ export interface PredOutcome {
 export interface Prediction extends GradedCall {
   id: string // `${date}:${sym}:${side}`
   date: string
+  name?: string // company display name stamped at publication — presentation only, every surface reads it instead of re-looking it up
   modelVersion?: number // scoring/calibration epoch used to create this prediction
   regime: RegimeColor | 'unknown'
   priceAtPrediction: number

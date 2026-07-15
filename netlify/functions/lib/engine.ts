@@ -40,7 +40,7 @@ import {
 } from '../../../shared/engine/calibration'
 import { pickDiverse } from '../../../shared/engine/select'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
-import { computeCohortRung, computeRung, cohortRungOf, initRisk, mapInstrument, migrateRisk, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
+import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
 import { capCohortOf, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
@@ -485,6 +485,10 @@ export async function buildBoard(
   const sources = new Map<string, { source: string; capUsdM: number | null }>()
   const addSource = (sym: string, source: string, capUsdM: number | null = null) => {
     const key = sym.toUpperCase()
+    // leveraged/inverse ETPs are ROUTES, never underlyings — a held 3CON.L
+    // (bought as the route of an earlier short) must not circle back in as a
+    // fresh candidate through the holdings/watchlist doors (see isRouteEtp)
+    if (isRouteEtp(key, cfg.levMap ?? {})) return
     if (!sources.has(key)) sources.set(key, { source, capUsdM })
     else if (capUsdM != null && sources.get(key)!.capUsdM == null) sources.get(key)!.capUsdM = capUsdM
   }
@@ -549,7 +553,9 @@ export async function buildBoard(
     if (credible || agree) addSource(sym, 'channel:consensus')
   }
 
-  const currentRoster = (await store.read<RosterEntry[]>('engine-roster')) ?? []
+  // ETPs that slipped in before the route guard existed get purged here — the
+  // filtered roster is what updateRoster writes back, so they stay gone
+  const currentRoster = ((await store.read<RosterEntry[]>('engine-roster')) ?? []).filter(e => !isRouteEtp(e.sym, cfg.levMap ?? {}))
   for (const e of currentRoster) addSource(e.sym, e.source, e.capUsdM) // members get re-examined daily
 
   // The reader's REAL Trading 212 book. Fetched fail-soft (a broker outage never
@@ -818,6 +824,15 @@ export async function buildBoard(
   const live = [...trades, ...watch].sort((a, b) => (a.watchOnly ? 1 : 0) - (b.watchOnly ? 1 : 0) || Math.abs(b.composite) - Math.abs(a.composite))
   const shadows = [...pickShadow('long', 5), ...pickShadow('short', 5)]
   const final = [...live, ...shadows]
+
+  // Company names ride the published rows so the board, ledger, open book and
+  // paper all print "SOC — Sable Offshore" without their own enrichment pass.
+  // cachedCompanyName reads the cap: blob the capUsdM lookups already warmed,
+  // so this is near-free; a miss just leaves the row ticker-only.
+  await mapLimit(final, 8, async p => {
+    const name = await deps.companyName(p.sym).catch(() => null)
+    if (name) p.name = name
+  })
 
   // reruns preserve overlays and outcomes already earned today
   const existing = (await store.read<Prediction[]>(`predictions:${today}`)) ?? []

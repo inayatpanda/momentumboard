@@ -132,7 +132,8 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
                 title={e.note}
               >
                 <span>
-                  <strong>{e.sym}</strong> <span className={e.side === 'long' ? 'up-text' : 'down-text'}>{e.side}</span>{' '}
+                  <strong>{e.sym}</strong>
+                  {e.name && <span className="led-n"> {e.name}</span>} <span className={e.side === 'long' ? 'up-text' : 'down-text'}>{e.side}</span>{' '}
                   <span className="led-n">
                     {e.grade} · day {e.day} · {e.stage ?? (crossed ? e.crossedDate?.slice(5) : '—')}
                   </span>

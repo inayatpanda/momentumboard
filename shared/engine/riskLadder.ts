@@ -143,6 +143,22 @@ export function cohortRungOf(state: RiskState, cohort: CapCohortOrUnknown): numb
 
 export type LevMap = Record<string, { long2x?: string; long3x?: string; short2x?: string; short3x?: string }>
 
+/** Route instruments (leveraged/inverse ETPs) are what mapInstrument RETURNS —
+ * they must never enter the candidate pool as underlyings. A held 3CON.L
+ * (bought as the route of an earlier call) circling back in as a "candidate"
+ * hands the calibration a daily-rebalance decay curve that reads like a free
+ * permanent short. Covers every ticker on the levMap route side plus the
+ * digit-prefixed LSE ETP naming convention (3CON.L, 2TSL.L…) that no ordinary
+ * equity ticker shares. */
+export function isRouteEtp(sym: string, levMap: LevMap): boolean {
+  const s = sym.toUpperCase()
+  if (/^\d/.test(s)) return true
+  for (const m of Object.values(levMap)) {
+    if ([m.long2x, m.long3x, m.short2x, m.short3x].some(t => t?.toUpperCase() === s)) return true
+  }
+  return false
+}
+
 export function leverageAllowed(rung: number, grade: 'A' | 'B' | 'C'): 0 | 2 | 3 {
   if (rung >= 3 && grade === 'A') return 3
   if (rung >= 2 && (grade === 'A' || grade === 'B')) return 2

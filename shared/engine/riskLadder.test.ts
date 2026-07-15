@@ -4,6 +4,7 @@ import {
   computeCohortRung,
   computeRung,
   initRisk,
+  isRouteEtp,
   leverageAllowed,
   mapInstrument,
   migrateRisk,
@@ -173,5 +174,15 @@ describe('leverage gating', () => {
 
   it('risk per idea follows the rung', () => {
     expect(RUNG_RISK_PCT).toEqual([1.0, 1.25, 1.5, 2.0])
+  })
+
+  it('isRouteEtp flags levMap route tickers and digit-prefixed LSE ETPs, never ordinary equities', () => {
+    const levMap = { NVDA: { short3x: '3SNV.L', long2x: 'LNVD.L' } }
+    expect(isRouteEtp('3SNV.L', levMap)).toBe(true) // a configured route
+    expect(isRouteEtp('lnvd.l', levMap)).toBe(true) // case-insensitive
+    expect(isRouteEtp('3CON.L', {})).toBe(true) // digit prefix — LSE ETP naming, even unconfigured
+    expect(isRouteEtp('NVDA', levMap)).toBe(false) // the underlying itself is fine
+    expect(isRouteEtp('SOC', {})).toBe(false)
+    expect(isRouteEtp('RR.L', {})).toBe(false) // ordinary LSE equity
   })
 })
