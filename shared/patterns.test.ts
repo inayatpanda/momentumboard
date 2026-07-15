@@ -86,6 +86,32 @@ describe('detectPatterns', () => {
     expect(detectPatterns(mk([100, ...path]))).toEqual([])
   })
 
+  it('three bumps in a DOWNTREND are not a head & shoulders — a top needs an uptrend to top', () => {
+    // the live NNE case: months of decline, then shoulder/head/shoulder-shaped
+    // noise on the way down. No prior rise into the left shoulder → no badge.
+    const path = [
+      ...leg(200, 130, 30), // the downtrend the "pattern" sits in
+      ...leg(130, 145, 6), ...leg(145, 128, 6), // "left shoulder"
+      ...leg(128, 152, 6), ...leg(152, 127, 6), // "head"
+      ...leg(127, 144, 6), ...leg(144, 126, 6), // "right shoulder"
+    ]
+    const hits = detectPatterns(mk([200, ...path]))
+    expect(hits.find(x => x.kind === 'head-shoulders')).toBeUndefined()
+    expect(hits.find(x => x.kind === 'double-top')).toBeUndefined()
+  })
+
+  it('a break that happened long ago is a SPENT move — no stale confirmed badge', () => {
+    // clean double top, neckline breaks, then price keeps falling for ~25 bars:
+    // by now the pattern already paid; flagging it "confirmed" is noise
+    const path = [
+      ...leg(100, 125, 10), ...leg(125, 105, 10), ...leg(105, 125.5, 10),
+      ...leg(125.5, 104, 8), // the break
+      ...leg(104, 82, 25), // the long-spent aftermath
+    ]
+    const hits = detectPatterns(mk([100, ...path]))
+    expect(hits.find(x => x.kind === 'double-top')).toBeUndefined()
+  })
+
   it('too little history → empty', () => {
     expect(detectPatterns(mk(leg(100, 110, 10)))).toEqual([])
   })
