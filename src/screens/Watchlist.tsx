@@ -199,7 +199,8 @@ export function Watchlist({ onOpen, onOpenSettings }: { onOpen: (symbol: string)
           <div className="empty">
             <p>Your watchlist is empty.</p>
             <p>
-              Add US tickers plain (<code>AAPL</code>), LSE with suffix (<code>3LTS.L</code>), crypto with a dash (<code>BTC-USD</code>) — or start with the classics:
+              Type a ticker in the <strong>Add bar at the top</strong> — US plain (<code>AAPL</code>), LSE with suffix (<code>3LTS.L</code>), crypto with a
+              dash (<code>BTC-USD</code>) — or browse a sector chip above and tap <strong>+&nbsp;Add</strong> on any name. Or start with the classics:
             </p>
             <button
               className="mini-btn"
