@@ -748,12 +748,21 @@ export async function buildBoard(
     // flip has no place on the live board, but its outcome is kept (earningsRisk
     // stays on the record) so the ledger can later show whether the engine has
     // any edge INTO prints — half-sizing a coin flip just pollutes the buckets.
-    const shadow = !grade || call.earningsRisk
-    // Only A/B calls that pass the core-data contract are trades. Grade C is a
-    // watchlist observation (riskPct 0), and so is any call standing on thin
-    // evidence — "barely passed the gate" must read differently from a
-    // genuinely strong setup. Watch calls still publish and get graded.
-    const watchOnly = !shadow && (grade === 'C' || !call.evidence.contract)
+    // A graded-null call that nonetheless clears the FULL evidence contract is a
+    // real, well-evidenced setup the calibration simply rates below its own base
+    // rate — classically a strong LONG in a mixed/amber tape, where the seed says
+    // that side underperforms. Hiding it as a shadow produced the "big names
+    // moved, the board showed nothing" experience (2026-07-15, user). Surface it
+    // as WATCH (no size) instead of burying it: the reader sees the engine IS
+    // tracking META/AVGO, with an honest "below our base rate — tape-dependent"
+    // read. Still shadow: a coin-flip into an earnings print, or a null grade on
+    // thin evidence (contract failed) — those genuinely don't belong on the board.
+    const belowBase = !grade && call.evidence.contract && !call.earningsRisk
+    const shadow = call.earningsRisk || (!grade && !call.evidence.contract)
+    // Only A/B calls that pass the core-data contract are trades. Grade C, thin
+    // evidence, or a below-base setup are watchlist observations (riskPct 0) —
+    // "barely passed the gate" reads differently from a genuinely strong setup.
+    const watchOnly = !shadow && (grade == null || grade === 'C' || !call.evidence.contract)
 
     const rung = cohortRungOf(risk, cohort)
     const instrument = shadow || watchOnly ? null : mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {})
@@ -770,6 +779,7 @@ export async function buildBoard(
       capUsdM: entry.capUsdM,
       shadow: shadow || undefined,
       watchOnly: watchOnly || undefined,
+      belowBase: belowBase || undefined,
       probability: Math.round(p * 100) / 100,
       provisional,
       grade: grade ?? 'C',

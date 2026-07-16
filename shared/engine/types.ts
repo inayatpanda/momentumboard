@@ -53,6 +53,10 @@ export interface GradedCall extends EngineCall {
   // failed. The board shows it as an observation — no size, no instrument, no
   // paper-book entry, no stop alerts. Only A/B contract-passing calls act.
   watchOnly?: boolean
+  // A watch row that is fully-evidenced but priced BELOW the engine's base rate
+  // (e.g. a strong long in a mixed tape the seed rates poorly). Shown so the
+  // reader sees the setup; the honest reason it carries no size.
+  belowBase?: boolean
 }
 
 export interface PredOutcome {

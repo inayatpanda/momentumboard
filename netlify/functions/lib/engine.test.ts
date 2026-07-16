@@ -166,7 +166,7 @@ describe('buildBoard', () => {
   it('one outstanding shadow per sym+side: a repeat shadow is skipped while the first is still ungraded', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION }) // suppresses → shadow
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -175,7 +175,8 @@ describe('buildBoard', () => {
     await store.write('predictions-index', [priorDate])
     await store.write(`predictions:${priorDate}`, [{ id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: true }])
 
-    const { board } = await buildBoard(store, deps(), NOW)
+    // an earnings print forces shadow — the dedup path under test
+    const { board } = await buildBoard(store, deps({ earningsSyms: async () => new Set(['NVDA']) }), NOW)
     expect(board.find(b => b.sym === 'NVDA')).toBeUndefined()
     const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
     const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
@@ -185,7 +186,7 @@ describe('buildBoard', () => {
   it('...but once the first shadow has matured (graded), a fresh same-name shadow is allowed back in', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION })
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -195,30 +196,36 @@ describe('buildBoard', () => {
       { id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: true, outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
     ])
 
-    await buildBoard(store, deps(), NOW)
+    await buildBoard(store, deps({ earningsSyms: async () => new Set(['NVDA']) }), NOW)
     const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
     const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
     expect(ledger.find(p => p.sym === 'NVDA' && p.shadow)).toBeDefined() // prior slot freed → fresh shadow allowed
   })
 
-  it('suppressed calls become shadow ledger entries — the learning loop eats even when the paper does not', async () => {
+  it('below-base but fully-evidenced calls surface as TRACKED watch rows — seen, unsized, still graded', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
-    // suppressing calibration: this band has PROVEN it loses → grade null → shadow
+    // this band has PROVEN it loses → grade null. The old behaviour buried the
+    // call as an invisible shadow; the reader then watched "big names move with
+    // an empty board" (live complaint 2026-07-15). Fully-evidenced null-grades
+    // now publish as watch with the belowBase flag — no size, honest copy.
     await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
     const { board } = await buildBoard(store, deps(), NOW)
-    expect(board.find(b => b.sym === 'NVDA')).toBeUndefined() // not on the public board
+    const call = board.find(b => b.sym === 'NVDA')!
+    expect(call).toBeDefined() // ON the public board now
+    expect(call.watchOnly).toBe(true)
+    expect(call.belowBase).toBe(true)
+    expect(call.shadow).toBeUndefined()
+    expect(call.riskPct).toBe(0)
+    expect(call.instrument).toBeNull()
     const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
     const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
-    const shadow = ledger.find(p => p.sym === 'NVDA')!
-    expect(shadow.shadow).toBe(true)
-    expect(shadow.riskPct).toBe(0)
-    expect(shadow.instrument).toBeNull()
+    expect(ledger.find(p => p.sym === 'NVDA')).toBeDefined() // the learning loop still eats it
     const publicBoard = (await store.read<{ board: Prediction[] }>('engine-board'))!
-    expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
+    expect(publicBoard.board.find(p => p.sym === 'NVDA')?.belowBase).toBe(true)
   })
 
   it('grade C publishes as WATCH-ONLY: on the board with riskPct 0, no instrument — an observation, not a trade', async () => {

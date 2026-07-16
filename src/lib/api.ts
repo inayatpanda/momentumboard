@@ -360,6 +360,7 @@ export interface EnginePrediction {
   // grade C / thin evidence: published and graded, but an observation — no
   // size, no instrument. Only A/B contract-passing calls are trades.
   watchOnly?: boolean
+  belowBase?: boolean // fully-evidenced watch row rated below the engine's base rate — shown, no size
   setup?: 'continuation' | 'reversal' | 'fade' | null
   evidence?: { coverage: number; famAgree: number; contract: boolean; contextPts: number; detail: string }
   factors: Record<string, { score: number | null; detail: string; weight: number }>

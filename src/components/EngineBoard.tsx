@@ -14,7 +14,8 @@ function Call({ p }: { p: EnginePrediction }) {
     <div className="perf-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 3 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
         <span style={{ fontWeight: 700, minWidth: 0 }}>
-          <GradeChip grade={p.grade} provisional={p.provisional} />{' '}
+          {/* below-base rows have no honest letter grade (they're beneath C's bar) — a plain "tracking" chip instead of a misleading C */}
+          {p.belowBase ? <span className="badge">tracking</span> : <GradeChip grade={p.grade} provisional={p.provisional} />}{' '}
           {p.sym}
           <span className={p.side === 'long' ? 'up-text' : 'down-text'} style={{ fontSize: 11, marginLeft: 6, fontWeight: 700 }}>{dir}</span>
           {p.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{p.name}</span>}
@@ -37,6 +38,11 @@ function Call({ p }: { p: EnginePrediction }) {
         <span>in {p.entry} · stop {p.stop} · tgt {p.target}</span>
         <span>{p.watchOnly ? 'watch — no size' : `risk ${p.riskPct}%${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}</span>
       </div>
+      {p.belowBase && (
+        <div style={{ fontSize: 11, color: 'var(--faint)' }}>
+          Valid {p.side} setup — but calibration rates this side below its base rate in a {p.side === 'long' ? 'mixed/soft' : 'firm'} tape, so it's tracked, not sized.
+        </div>
+      )}
       <button className="mini-btn ghost" style={{ alignSelf: 'flex-start', fontSize: 11, padding: '1px 6px' }} onClick={() => setOpen(o => !o)}>
         {open ? 'hide evidence' : 'evidence'}
       </button>
@@ -110,7 +116,7 @@ export function EngineBoard() {
             {trades.length === 0 && b.board.length > 0 && (
               <p className="empty-line">No qualified trades today — nothing earned an A/B grade on full evidence. The watch list is what the engine is tracking.</p>
             )}
-            {watch.length > 0 && <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Watch — not qualified{trades.length === 0 ? '' : ' (grade C / thin evidence)'}</h4>}
+            {watch.length > 0 && <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Watch — tracked, no size{trades.length === 0 ? '' : ' (grade C, thin evidence, or below base rate)'}</h4>}
             {watch.map(p => (
               <Call key={p.id} p={p} />
             ))}
