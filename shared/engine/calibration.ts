@@ -18,15 +18,22 @@ export const HIT_EXCESS_MIN = 1
 
 /** Bump when the OUTCOME DEFINITION changes (what counts as a hit). Buckets
  * counted under an older definition aren't comparable — loadState discards
- * them for the reseeded calibration when versions differ.
+ * them for the reseeded calibration when versions differ (it swaps in the
+ * committed seed, which carries the current defVersion).
  *
  * NOT bumped for Phase 2's cap-class cohorts: cohorts change the bucket KEY
  * scheme (`${cohort}:${side}:${regime}:${band}` alongside the legacy
  * `${side}:${regime}:${band}`), never what a hit IS. The legacy cohortless
  * buckets (and the seed, which is cohortless) stay perfectly valid — they simply
  * become the pooled/combined rung of the fallback ladder below. Reseeding here
- * would throw away real graded evidence for no reason. */
-export const CALIB_DEF_VERSION = 2
+ * would throw away real graded evidence for no reason.
+ *
+ * v3: calibrated horizon 5→10 sessions (reader holds 1-2wk+); seed regenerated
+ * at 10d 2026-07-16. A hit is now the 10-session excess-vs-SPY, not the 5-session
+ * one, so every pre-v3 live bucket is discarded on load and rebuilt from the 10d
+ * seed. Grading still stores outcome5/10/21 — the ledger keeps all three lenses;
+ * only what CALIBRATION learns moved to 10d. */
+export const CALIB_DEF_VERSION = 3
 /** Bump when factor semantics, composition, or bucket interpretation changes.
  * Unlike CALIB_DEF_VERSION this does not redefine a hit; it identifies which
  * scoring model emitted a prediction.
@@ -337,9 +344,12 @@ export function maybeNudgeWeights(state: WeightsState, dateISO: string): Weights
   return state
 }
 
-export function brierPoint(preds: { probability: number; outcome5?: PredOutcome }[]): number | null {
-  const graded = preds.filter(p => p.outcome5)
+// The emitted probability is calibrated on the 10-session outcome (CALIB_DEF_VERSION
+// v3), so Brier — realized vs predicted — must score against outcome10, or it would
+// grade the probability against a horizon it never predicted.
+export function brierPoint(preds: { probability: number; outcome10?: PredOutcome }[]): number | null {
+  const graded = preds.filter(p => p.outcome10)
   if (!graded.length) return null
-  const sum = graded.reduce((s, p) => s + (p.probability - (p.outcome5!.hit ? 1 : 0)) ** 2, 0)
+  const sum = graded.reduce((s, p) => s + (p.probability - (p.outcome10!.hit ? 1 : 0)) ** 2, 0)
   return sum / graded.length
 }

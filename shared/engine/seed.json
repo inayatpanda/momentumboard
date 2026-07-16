@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-07-07T14:07:16.706Z",
+ "generatedAt": "2026-07-16T05:00:33.321Z",
  "symbols": 66,
  "weights": {
   "base": {
@@ -11,31 +11,33 @@
    "insiders": 0.4,
    "news": 0.4,
    "seasonality": 0.3,
-   "smartMoney": 0.3
+   "smartMoney": 0.3,
+   "catalyst": 0.5
   },
   "current": {
-   "technical": 0.9947470039946738,
-   "momentum": 0.7992795957327345,
+   "technical": 0.9931246786632391,
+   "momentum": 0.7958659339516339,
    "sector": 0.6,
    "social": 0.5,
    "channels": 0.6,
    "insiders": 0.4,
    "news": 0.4,
    "seasonality": 0.3,
-   "smartMoney": 0.3
+   "smartMoney": 0.3,
+   "catalyst": 0.5
   },
   "ic": {
    "technical": {
-    "nAgree": 751,
-    "sumAgree": -262.9999999999999,
+    "nAgree": 778,
+    "sumAgree": -356.59999999999985,
     "nDisagree": 0,
     "sumDisagree": 0
    },
    "momentum": {
-    "nAgree": 685,
-    "sumAgree": -240.29999999999998,
-    "nDisagree": 65,
-    "sumDisagree": -18.900000000000002
+    "nAgree": 695,
+    "sumAgree": -344.0999999999997,
+    "nDisagree": 83,
+    "sumDisagree": -12.500000000000002
    },
    "sector": {
     "nAgree": 0,
@@ -78,81 +80,136 @@
     "sumAgree": 0,
     "nDisagree": 0,
     "sumDisagree": 0
+   },
+   "catalyst": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
    }
   },
   "gradedSinceNudge": 0,
   "history": [
    {
-    "date": "2026-07-07",
+    "date": "2026-07-15",
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.04
+      "to": 0.993,
+      "ic": -0.05
      },
      "momentum": {
       "from": 0.8,
-      "to": 0.799,
-      "ic": -0.01
+      "to": 0.796,
+      "ic": -0.03
      }
     },
-    "evidence": "751 predictions graded since last nudge"
+    "evidence": "778 predictions graded since last nudge"
    }
   ]
  },
  "calibration": {
   "buckets": {
    "short:red:25-40": {
-    "n": 129,
-    "hits": 44
+    "n": 147,
+    "hits": 48
    },
    "short:green:25-40": {
-    "n": 106,
-    "hits": 39
-   },
-   "long:amber:25-40": {
-    "n": 112,
-    "hits": 42
+    "n": 116,
+    "hits": 47
    },
    "long:green:25-40": {
-    "n": 181,
-    "hits": 65
+    "n": 195,
+    "hits": 76
+   },
+   "long:amber:25-40": {
+    "n": 88,
+    "hits": 38
    },
    "short:amber:25-40": {
-    "n": 106,
-    "hits": 36
+    "n": 108,
+    "hits": 33
    },
    "short:red:40-55": {
-    "n": 28,
-    "hits": 9
-   },
-   "short:amber:40-55": {
-    "n": 24,
-    "hits": 9
+    "n": 31,
+    "hits": 7
    },
    "long:green:40-55": {
-    "n": 43,
+    "n": 46,
     "hits": 20
    },
-   "long:green:55-70": {
-    "n": 1,
-    "hits": 1
+   "short:amber:40-55": {
+    "n": 19,
+    "hits": 4
    },
    "long:red:25-40": {
+    "n": 18,
+    "hits": 7
+   },
+   "short:red:55-70": {
     "n": 8,
     "hits": 4
    },
-   "short:red:55-70": {
-    "n": 11,
-    "hits": 5
-   },
-   "long:amber:40-55": {
+   "long:green:55-70": {
     "n": 2,
     "hits": 1
    }
   },
   "brier": [],
   "seeded": true,
-  "defVersion": 2
+  "defVersion": 3,
+  "modelVersion": 2,
+  "setupBuckets": {
+   "continuation:short:25-40": {
+    "n": 362,
+    "hits": 122
+   },
+   "continuation:long:25-40": {
+    "n": 140,
+    "hits": 61
+   },
+   "reversal:long:25-40": {
+    "n": 161,
+    "hits": 60
+   },
+   "continuation:short:40-55": {
+    "n": 50,
+    "hits": 11
+   },
+   "reversal:long:40-55": {
+    "n": 12,
+    "hits": 5
+   },
+   "continuation:long:40-55": {
+    "n": 34,
+    "hits": 15
+   },
+   "fade:short:25-40": {
+    "n": 9,
+    "hits": 6
+   },
+   "continuation:short:55-70": {
+    "n": 8,
+    "hits": 4
+   },
+   "reversal:long:55-70": {
+    "n": 2,
+    "hits": 1
+   }
+  },
+  "evidence": {
+   "seed": {
+    "n": 778,
+    "hits": 285
+   },
+   "live": {
+    "n": 0,
+    "hits": 0
+   },
+   "shadow": {
+    "n": 0,
+    "hits": 0
+   }
+  }
  }
 }

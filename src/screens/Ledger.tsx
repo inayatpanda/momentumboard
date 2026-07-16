@@ -17,8 +17,8 @@ const STATUS_BADGE: Record<string, string> = { hit: 'good', miss: 'bad', stopped
 
 // one cohort's win-rate bar (by-grade / by-cap), OrthoPortfolio style: label,
 // count, a thin gradient track filled to the win rate, then the excess trail.
-function CohortBar({ label, n, graded, hitRate, avgExcess5 }: {
-  label: ReactNode; n: number; graded: number; hitRate: number | null; avgExcess5: number | null
+function CohortBar({ label, n, graded, hitRate, avgExcess10 }: {
+  label: ReactNode; n: number; graded: number; hitRate: number | null; avgExcess10: number | null
 }) {
   const win = graded > 0 && hitRate != null ? Math.round(hitRate * 100) : 0
   return (
@@ -30,7 +30,7 @@ function CohortBar({ label, n, graded, hitRate, avgExcess5 }: {
       <div className="bar"><i style={{ width: `${win}%` }} /></div>
       <div className="led-cohort-foot">
         {graded > 0 ? (
-          <>win rate · <span className={avgExcess5 != null && avgExcess5 >= 0 ? 'up-text' : 'down-text'}>{avgExcess5 != null ? `${avgExcess5 >= 0 ? '+' : ''}${avgExcess5}%` : '—'}</span> avg excess @5d</>
+          <>win rate · <span className={avgExcess10 != null && avgExcess10 >= 0 ? 'up-text' : 'down-text'}>{avgExcess10 != null ? `${avgExcess10 >= 0 ? '+' : ''}${avgExcess10}%` : '—'}</span> avg excess @10d</>
         ) : 'none graded yet'}
       </div>
     </div>
@@ -64,7 +64,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
     if (!rows) return []
     if (filter === 'live') return rows.filter(r => !r.shadow)
     if (filter === 'shadow') return rows.filter(r => r.shadow)
-    if (filter === 'graded') return rows.filter(r => r.outcome5)
+    if (filter === 'graded') return rows.filter(r => r.outcome10)
     return rows
   }, [rows, filter])
 
@@ -90,9 +90,9 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
             <span className="stat-sub">{summary.graded} graded</span>
           </div>
           <div className="card">
-            <span className="eyebrow">Avg excess @5d</span>
-            <span className={`stat-val ${summary.avgExcess5 != null ? (summary.avgExcess5 >= 0 ? 'up-text' : 'down-text') : ''}`}>
-              {summary.avgExcess5 != null ? `${summary.avgExcess5 >= 0 ? '+' : ''}${summary.avgExcess5}%` : '—'}
+            <span className="eyebrow">Avg excess @10d</span>
+            <span className={`stat-val ${summary.avgExcess10 != null ? (summary.avgExcess10 >= 0 ? 'up-text' : 'down-text') : ''}`}>
+              {summary.avgExcess10 != null ? `${summary.avgExcess10 >= 0 ? '+' : ''}${summary.avgExcess10}%` : '—'}
             </span>
             <span className="stat-sub">vs SPY, side-adjusted</span>
           </div>
@@ -152,7 +152,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
             )
           })}
           <p className="empty-line led-fine">
-            Every live call, re-checked each morning until its 5-day grade lands: daily closes against the published stop and target, the move from
+            Every live call, re-checked each morning until its 10-session grade lands: daily closes against the published stop and target, the move from
             entry, and whether the engine would still take the trade — “still a buy” is only ever earned by re-qualifying on today's board. Tap the
             badge's row for the chart; hover/hold for the reason. Display-only: the grading above never moves.
           </p>
@@ -222,7 +222,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
           <strong className={lifetime.live.sumExcess >= 0 ? 'up-text' : 'down-text'}>
             {(lifetime.live.sumExcess / lifetime.live.graded).toFixed(1)}%
           </strong>{' '}
-          avg excess @5d
+          avg excess @10d
         </p>
       )}
 
@@ -236,7 +236,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
               n={b.n}
               graded={b.graded}
               hitRate={b.hitRate}
-              avgExcess5={b.avgExcess5}
+              avgExcess10={b.avgExcess10}
             />
           ))}
           <p className="empty-line led-fine">
@@ -255,7 +255,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
               n={b.n}
               graded={b.graded}
               hitRate={b.hitRate}
-              avgExcess5={b.avgExcess5}
+              avgExcess10={b.avgExcess10}
             />
           ))}
           <p className="empty-line led-fine">

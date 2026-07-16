@@ -76,8 +76,8 @@ export interface Prediction extends GradedCall {
   regime: RegimeColor | 'unknown'
   priceAtPrediction: number
   themes?: string[] // theme tags (themes.ts) — identification, never a score
-  // which clock the row runs on: 'week' = the 5-session calibrated call; 'developing'
-  // = a watch whose SHAPE is a 2-4 week build (horizon.ts). Presentation-only taxonomy.
+  // which clock the row runs on: 'week' = the calibrated call (graded at 10 sessions);
+  // 'developing' = a watch whose SHAPE is a 2-4 week build (horizon.ts). Presentation-only taxonomy.
   horizon?: Horizon
   capUsdM?: number | null // market cap in $M when known — lets the UI band micro/small/mid/large
   shadow?: boolean // suppressed by calibration but logged anyway — the learning loop must eat even when the paper doesn't

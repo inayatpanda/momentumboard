@@ -9,7 +9,7 @@ import { round1 } from './types'
 //   • the VERDICT — opinion, in-play calls only: would the engine still take
 //     this trade today?
 // DISPLAY-ONLY by contract: nothing here ever touches the prediction blobs or
-// the 5/10-day grading yardstick — the trace narrates, it never re-writes.
+// the grading yardstick — the trace narrates, it never re-writes.
 
 export type TraceStatus = 'in-play' | 'stopped' | 'target'
 export type TraceVerdict = 'still-on' | 'intact' | 'weakening'
@@ -30,16 +30,17 @@ export interface OpenTraceEntry {
   movePct: number // side-adjusted move from the published entry level
   progressPct: number | null // % of the entry→target distance covered (signed)
   day: number // sessions since the call, entry session = day 1
-  gradesInSessions: number // sessions until the 5-day grade can land
+  gradesInSessions: number // sessions until the 10-session (calibrated) grade can land
   stage: Stage | null
   requalified: boolean // made today's live board again, same side
   verdict: TraceVerdict | null // in-play only; crossed calls speak for themselves
   note: string
 }
 
-// A call is graded 5 sessions after its entry session (calibration.ts), so an
-// open call lives through days 1..5 of this clock before the ledger takes over.
-const GRADE_HORIZON = 5
+// A call is graded 10 sessions after its entry session (the calibrated horizon,
+// CALIB_DEF_VERSION v3), so an open call lives through days 1..10 of this clock
+// before the ledger takes over.
+const GRADE_HORIZON = 10
 
 // Stages that contradict the side: holding a long into these means the setup
 // that earned the call is gone; a short fighting a turn-up is the mirror.

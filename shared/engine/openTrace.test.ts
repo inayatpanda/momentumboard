@@ -42,7 +42,7 @@ describe('traceOpenCall — the walk', () => {
     expect(e.movePct).toBe(3)
     expect(e.progressPct).toBe(30) // 3 of the 10-point entry→target span
     expect(e.day).toBe(2) // entry session + one more close
-    expect(e.gradesInSessions).toBe(4)
+    expect(e.gradesInSessions).toBe(9) // 10-session calibrated grade, minus the 1 session already elapsed past entry
     expect(e.verdict).toBe('intact') // <30 candles → no stage read, moving with the call
   })
 

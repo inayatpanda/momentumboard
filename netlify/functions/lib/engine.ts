@@ -288,7 +288,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // per-cohort tally of NON-shadow calls graded THIS run — feeds each sleeve's
   // graded-at-rung counter so it stays honest even while a young cohort pools.
   const newByCohort: Record<CapCohortOrUnknown, number> = { large: 0, small: 0, unknown: 0 }
-  const newlyGraded: { probability: number; outcome5?: PredOutcome; shadow: boolean }[] = []
+  const newlyGraded: { probability: number; outcome10?: PredOutcome; shadow: boolean }[] = []
   // each non-shadow outcome carries its cohort so the risk ladder can split large
   // vs small; unknown-cap calls stay in the combined stream but neither sleeve.
   const allOutcomes: (OutcomeLite & { cohort: CapCohortOrUnknown })[] = []
@@ -304,15 +304,12 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     for (const pred of preds) {
       const candles = await getCandles(pred.sym)
       if (!candles) continue
+      // grading stores all three lenses (5/10/21d); only the 10-session outcome
+      // — the CALIBRATED horizon (reader holds 1-2wk+) — feeds the learning loop.
       if (!pred.outcome5) {
         const o = gradePrediction(pred, candles, spy, 5)
         if (o) {
           pred.outcome5 = o
-          updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
-          w = updateIcStats(w, pred, o)
-          newlyGraded.push({ probability: pred.probability, outcome5: o, shadow: !!pred.shadow })
-          graded++
-          if (!pred.shadow && !pred.watchOnly) newByCohort[capCohortOf(pred.capUsdM)]++
           changed = true
         }
       }
@@ -320,6 +317,13 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
         const o = gradePrediction(pred, candles, spy, 10)
         if (o) {
           pred.outcome10 = o
+          // THE calibrated grade: calibration buckets, factor-IC weights, the
+          // Brier trail and the risk-ladder counters all learn here, at 10d.
+          updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
+          w = updateIcStats(w, pred, o)
+          newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow })
+          graded++
+          if (!pred.shadow && !pred.watchOnly) newByCohort[capCohortOf(pred.capUsdM)]++
           changed = true
         }
       }
@@ -333,9 +337,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
         }
       }
       // shadows and watch-only calls feed calibration/IC above but never the
-      // risk ladder — the rung is earned on calls the reader could actually take
-      if (pred.outcome5 && !pred.shadow && !pred.watchOnly)
-        allOutcomes.push({ hit: pred.outcome5.hit, stopped: pred.outcome5.stopped, leveraged: !!pred.instrument, cohort: capCohortOf(pred.capUsdM) })
+      // risk ladder — the rung is earned on calls the reader could actually take,
+      // on the same 10d outcome the ladder learns from (the calibrated horizon)
+      if (pred.outcome10 && !pred.shadow && !pred.watchOnly)
+        allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: !!pred.instrument, cohort: capCohortOf(pred.capUsdM) })
     }
     if (changed) await store.write(`predictions:${date}`, preds)
     if (preds.some(p => !p.outcome5 || !p.outcome10 || !p.outcome21)) stillPending.push(date)
@@ -385,7 +390,9 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     nowSec,
   )
 
-  // scorecard: the rolled-up honesty pane
+  // scorecard: the rolled-up honesty pane. Aggregates the 10d outcome — the
+  // calibrated horizon the grades are earned on — so the pane measures the same
+  // thing the engine learned from (the per-row ledger still shows 5d + 10d).
   const byGrade: Record<string, { n: number; hits: number; sumExcess: number }> = {}
   const byRegime: Record<string, { n: number; hits: number }> = {}
   const bySetup: Record<string, { n: number; hits: number; sumExcess: number }> = {}
@@ -393,29 +400,29 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   for (const date of fullIndex.slice(-30)) {
     const preds = predictionsByDate.get(date) ?? (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     for (const p of preds) {
-      if (!p.outcome5) continue
+      if (!p.outcome10) continue
       const g = (byGrade[p.shadow ? 'shadow' : p.grade] ??= { n: 0, hits: 0, sumExcess: 0 })
       g.n++
-      if (p.outcome5.hit) g.hits++
-      g.sumExcess += p.outcome5.excessPct
+      if (p.outcome10.hit) g.hits++
+      g.sumExcess += p.outcome10.excessPct
       if (p.setup) {
         // per-setup honesty (shadows included — the panes ask "does this SHAPE
         // of call work?", and shadows are exactly the shapes being auditioned)
         const s = (bySetup[p.setup] ??= { n: 0, hits: 0, sumExcess: 0 })
         s.n++
-        if (p.outcome5.hit) s.hits++
-        s.sumExcess += p.outcome5.excessPct
+        if (p.outcome10.hit) s.hits++
+        s.sumExcess += p.outcome10.excessPct
       }
       if (!p.shadow) {
         const r = (byRegime[p.regime] ??= { n: 0, hits: 0 })
         r.n++
-        if (p.outcome5.hit) r.hits++
+        if (p.outcome10.hit) r.hits++
       }
       if (p.overlay) {
         const o = (overlays[p.overlay.flag] ??= { n: 0, hits: 0 })
         o.n++
         // a veto "hits" when it dodged a loser; boost/caution graded straight
-        if (p.overlay.flag === 'veto' ? !p.outcome5.hit : p.outcome5.hit) o.hits++
+        if (p.overlay.flag === 'veto' ? !p.outcome10.hit : p.outcome10.hit) o.hits++
       }
     }
   }
@@ -427,8 +434,8 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   for (const g of newlyGraded) {
     const side = g.shadow ? lifetime.shadow : lifetime.live
     side.graded++
-    if (g.outcome5!.hit) side.hits++
-    side.sumExcess += g.outcome5!.excessPct
+    if (g.outcome10!.hit) side.hits++
+    side.sumExcess += g.outcome10!.excessPct
   }
   await store.write('engine-scorecard', {
     byGrade,
@@ -814,14 +821,16 @@ export async function buildBoard(
   }
 
   // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side
-  // already has an ungraded (no outcome5) prediction on a recent prior date —
-  // three correlated CEG shorts in three weeks teach nothing while starving the
-  // tiny shadow budget of fresh names. Live (non-shadow) calls are never deduped.
+  // still has a shadow that hasn't reached its calibrated grade (no outcome10) on
+  // a recent prior date — three correlated CEG shorts teach nothing while starving
+  // the tiny shadow budget of fresh names. Gated on outcome10 (not outcome5) so a
+  // slot frees only once its evidence has actually fed the learning loop, at 10d.
+  // Live (non-shadow) calls are never deduped.
   const priorDates = ((await store.read<string[]>('predictions-index')) ?? []).filter(d => d !== today).slice(-10)
   const outstandingShadowKeys = new Set<string>()
   for (const date of priorDates) {
     for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
-      if (!p.outcome5) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
+      if (!p.outcome10) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
     }
   }
   const pickShadow = (side: 'long' | 'short', cap: number) =>
@@ -1009,8 +1018,10 @@ export async function traceOpenIdeas(store: AppStore, deps: EngineDeps, nowSec: 
   const open: Prediction[] = []
   for (const date of index) {
     for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
-      // watch-only calls aren't positions — the open book traces trades
-      if (!p.shadow && !p.watchOnly && !p.outcome5) open.push(p)
+      // watch-only calls aren't positions — the open book traces trades. Open
+      // until the CALIBRATED (10d) grade lands, matching openTrace's GRADE_HORIZON
+      // so "grades in N sessions" stays truthful (a call no longer vanishes at 5d).
+      if (!p.shadow && !p.watchOnly && !p.outcome10) open.push(p)
     }
   }
   const board = await store.read<{ date: string; board: Prediction[] }>('engine-board')

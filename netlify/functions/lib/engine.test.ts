@@ -172,7 +172,7 @@ describe('buildBoard', () => {
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
-    // a prior-date NVDA:short shadow still ungraded (no outcome5) → it holds the one slot
+    // a prior-date NVDA:short shadow still ungraded (no outcome10) → it holds the one slot
     const priorDate = '2026-05-01'
     await store.write('predictions-index', [priorDate])
     await store.write(`predictions:${priorDate}`, [{ id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: true }])
@@ -195,7 +195,7 @@ describe('buildBoard', () => {
     const priorDate = '2026-05-01'
     await store.write('predictions-index', [priorDate])
     await store.write(`predictions:${priorDate}`, [
-      { id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: true, outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
+      { id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: true, outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true }, outcome10: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
     ])
 
     await buildBoard(store, deps({ earningsSyms: async () => new Set(['NVDA']) }), NOW)
@@ -665,7 +665,7 @@ describe('traceOpenIdeas', () => {
       base({}), // open live → traced
       base({ id: `${date}:NVDA:short`, side: 'short', shadow: true }), // shadow → never traced
       base({ id: `${date}:WCHY:long`, sym: 'WCHY', watchOnly: true }), // watch-only → not a position, never traced
-      base({ id: `${date}:AAPL:long`, sym: 'AAPL', outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } }), // graded → done
+      base({ id: `${date}:AAPL:long`, sym: 'AAPL', outcome10: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } }), // graded (10d) → done
     ])
     await store.write('predictions-index', [date])
     await store.write('engine-board', { date: today, board: [{ sym: 'NVDA', side: 'long' }] })

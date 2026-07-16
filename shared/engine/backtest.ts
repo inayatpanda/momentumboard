@@ -20,15 +20,19 @@ import { round1, type FactorName, type FactorScore, type Prediction } from './ty
 
 // Pre-seeds the engine from candle history: only the factors computable from
 // bars alone (technical, momentum, seasonality) replay; the rest start at
-// neutral prior weight and learn live. Weekly sampling (step 5) decorrelates
-// overlapping windows. Deterministic by construction — no clocks, no RNG.
+// neutral prior weight and learn live. Weekly sampling (step 5) keeps the seed
+// sample count up; at the 10-session horizon adjacent windows now overlap ~1wk,
+// which mildly correlates neighbouring outcomes but is fine for a PRIOR (live
+// grading is non-overlapping). Deterministic by construction — no clocks, no RNG.
 // The replay regime matches the live engine's: SPY+QQQ slope, refined by
 // universe breadth and the VIX level (both optional — omitted, the base
 // SPY-slope read stands alone, as before).
 
 const STEP = 5
 const WARMUP = 80
-const HORIZON = 5
+// the CALIBRATED horizon — reader holds 1-2wk+, so a hit is the 10-session
+// excess vs SPY (matches gradePrediction's 10d lens + CALIB_DEF_VERSION v3)
+const HORIZON = 10
 
 const nullFactors = (): Record<FactorName, FactorScore> => ({
   technical: { score: null, detail: '' },

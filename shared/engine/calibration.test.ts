@@ -373,8 +373,8 @@ describe('updateCalibration + brier', () => {
   })
   it('brierPoint averages (p − hit)²', () => {
     const preds = [
-      { probability: 0.7, outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
-      { probability: 0.7, outcome5: { excessPct: -1, rawPct: -1, spyPct: 0, stopped: false, hit: false } },
+      { probability: 0.7, outcome10: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
+      { probability: 0.7, outcome10: { excessPct: -1, rawPct: -1, spyPct: 0, stopped: false, hit: false } },
     ]
     expect(brierPoint(preds)).toBeCloseTo((0.09 + 0.49) / 2, 5)
     expect(brierPoint([{ probability: 0.5 }])).toBeNull()

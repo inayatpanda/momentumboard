@@ -2,9 +2,10 @@ import type { Candle } from '../types'
 import { round1 } from './types'
 
 // Every YouTube stance is a mini-prediction, graded like the engine's own:
-// excess vs SPY at +5 sessions. Channels earn (or bleed) credibility, which
-// is what the channels factor weighs their next call by. Trust, but verify —
-// favourites start at 0.6 instead of 0.5; ~20 graded calls dominate either way.
+// excess vs SPY at +10 sessions (the calibrated horizon — reader holds 1-2wk+).
+// Channels earn (or bleed) credibility, which is what the channels factor weighs
+// their next call by. Trust, but verify — favourites start at 0.6 instead of 0.5;
+// ~20 graded calls dominate either way.
 
 export interface ChannelCredEntry {
   graded: number
@@ -32,7 +33,7 @@ export function credibilityOf(state: ChannelCredState, channel: string, favourit
 }
 
 const DAY = 86_400
-const MIN_AGE = 7 * DAY // ≥5 trading sessions must have passed
+const MIN_AGE = 14 * DAY // ≥10 trading sessions must have passed (calibrated horizon)
 const MAX_AGE = 60 * DAY
 
 export function gradeChannelStances(
@@ -56,16 +57,16 @@ export function gradeChannelStances(
       const candles = candlesBySym.get(t.sym)
       if (!candles) continue
       const entryIdx = candles.findIndex(c => c.t > ex.at) // first session after the video
-      if (entryIdx === -1 || entryIdx + 5 >= candles.length) continue
+      if (entryIdx === -1 || entryIdx + 10 >= candles.length) continue
       const spyIdx = spyCandles.findIndex(c => c.t > ex.at)
-      if (spyIdx === -1 || spyIdx + 5 >= spyCandles.length) continue
+      if (spyIdx === -1 || spyIdx + 10 >= spyCandles.length) continue
       // grading measures the capturable move from the first tradeable print: base
       // at the OPEN of the first session after the video, not its close (a viewer
       // acts at the next session's open, not at a close they couldn't have filled)
       const base = candles[entryIdx].o
-      const rawPct = ((candles[entryIdx + 5].c - base) / base) * 100
+      const rawPct = ((candles[entryIdx + 10].c - base) / base) * 100
       const spyBase = spyCandles[spyIdx].o
-      const spyPct = ((spyCandles[spyIdx + 5].c - spyBase) / spyBase) * 100
+      const spyPct = ((spyCandles[spyIdx + 10].c - spyBase) / spyBase) * 100
       const sign = t.stance === 'bear' ? -1 : 1
       const excess = round1(sign * (rawPct - spyPct))
       const hit = excess > 0

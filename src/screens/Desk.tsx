@@ -243,7 +243,7 @@ export function Desk({ onStandard, onQuant, onOpen }: { onStandard: () => void; 
                   ) : (
                     <>
                       {Math.round(c.hitRate * 100)}% hit ·{' '}
-                      <span className={(c.avgExcess5 ?? 0) >= 0 ? 'up-text' : 'down-text'}>{fmtPct(c.avgExcess5 ?? 0)}</span> @5d
+                      <span className={(c.avgExcess10 ?? 0) >= 0 ? 'up-text' : 'down-text'}>{fmtPct(c.avgExcess10 ?? 0)}</span> @10d
                     </>
                   )}
                 </span>

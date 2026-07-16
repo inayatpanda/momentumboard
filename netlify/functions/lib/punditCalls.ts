@@ -2,7 +2,7 @@
 // (the Telegram /call command) or an auto-polled pundit post/RSS item into the
 // SAME per-channel stance records the engine already grades. Anything appended
 // to the `video-extracts` blob with a `channel` the engine knows (e.g.
-// 'Grandmaster Obi') is tracked, graded vs SPY at +5 sessions and injected as a
+// 'Grandmaster Obi') is tracked, graded vs SPY at +10 sessions and injected as a
 // `channel:consensus` candidate — so this file only has to shape records.
 
 import type { ExtractLike } from '../../../shared/engine/channelCred'

@@ -35,23 +35,23 @@ describe('gradeChannelStances', () => {
 
   it('grades a matured bull call against a rising tape as a hit', () => {
     const candles = new Map([['TSLA', mkCandles(100, 2)]])
-    const { state, graded } = gradeChannelStances([extract(NOW - 10 * DAY, 'bull')], candles, spy, {}, NOW)
+    const { state, graded } = gradeChannelStances([extract(NOW - 20 * DAY, 'bull')], candles, spy, {}, NOW)
     expect(graded).toBe(1)
     expect(state['Stocks with Josh'].hits).toBe(1)
   })
 
   it('bear stance flips the sign', () => {
     const candles = new Map([['TSLA', mkCandles(100, -2)]])
-    const { state } = gradeChannelStances([extract(NOW - 10 * DAY, 'bear')], candles, spy, {}, NOW)
+    const { state } = gradeChannelStances([extract(NOW - 20 * DAY, 'bear')], candles, spy, {}, NOW)
     expect(state['Stocks with Josh'].hits).toBe(1)
   })
 
   it('dedupes on rerun, skips neutral and too-fresh videos', () => {
     const candles = new Map([['TSLA', mkCandles(100, 2)]])
-    const first = gradeChannelStances([extract(NOW - 10 * DAY, 'bull')], candles, spy, {}, NOW)
-    const rerun = gradeChannelStances([extract(NOW - 10 * DAY, 'bull')], candles, spy, first.state, NOW)
+    const first = gradeChannelStances([extract(NOW - 20 * DAY, 'bull')], candles, spy, {}, NOW)
+    const rerun = gradeChannelStances([extract(NOW - 20 * DAY, 'bull')], candles, spy, first.state, NOW)
     expect(rerun.graded).toBe(0)
-    expect(gradeChannelStances([extract(NOW - 10 * DAY, 'neutral')], candles, spy, {}, NOW).graded).toBe(0)
+    expect(gradeChannelStances([extract(NOW - 20 * DAY, 'neutral')], candles, spy, {}, NOW).graded).toBe(0)
     expect(gradeChannelStances([extract(NOW - 2 * DAY, 'bull')], candles, spy, {}, NOW).graded).toBe(0)
   })
 })
