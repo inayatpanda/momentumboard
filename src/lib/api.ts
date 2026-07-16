@@ -361,6 +361,9 @@ export interface EnginePrediction {
   // size, no instrument. Only A/B contract-passing calls are trades.
   watchOnly?: boolean
   belowBase?: boolean // fully-evidenced watch row rated below the engine's base rate — shown, no size
+  // 'week' = a this-week trade/observation; 'developing' = a watch row whose shape is a
+  // 2-4 week build (basing/pullback, below-base, or a thin-evidence reversal). Stamped by the engine.
+  horizon?: 'week' | 'developing'
   setup?: 'continuation' | 'reversal' | 'fade' | null
   evidence?: { coverage: number; famAgree: number; contract: boolean; contextPts: number; detail: string }
   factors: Record<string, { score: number | null; detail: string; weight: number }>
@@ -482,6 +485,22 @@ export interface PaperBookData {
   history: { date: string; equity: number }[]
 }
 
+// One dated earnings binary the engine already tracks, with the SHAPE going into
+// the print. This is explicitly NOT a call — the engine refuses to bet a print
+// (earningsRisk still shadows those trades). The radar exists so a 26%-overnight
+// surprise is never a name the reader had never heard of.
+export interface EventRadarEntry {
+  sym: string
+  name?: string | null
+  date: string // ISO print date (Finnhub earnings calendar)
+  hour?: string // 'bmo' | 'amc' | 'dmh' when known
+  daysToPrint: number
+  stage: string | null // technicalStage read going into the print
+  entryQuality: string | null
+  rs21: number | null // 21-day return minus SPY's, in pp
+  note: string | null // one-line technical read
+}
+
 export interface EngineData {
   runStatus?: {
     startedAt: number
@@ -511,6 +530,10 @@ export interface EngineData {
   // the open book: every not-yet-graded live call, traced daily (null until the
   // first predict run writes it). Powers the Ledger's "where they stand" pane.
   openTrace?: { date: string; generatedAt: number; entries: OpenTraceEntry[] } | null
+  // event radar: roster/candidate names reporting earnings in the next fortnight,
+  // with the shape going in. Never a call — the engine won't bet a print (null
+  // until the first predict run writes it).
+  eventRadar?: { date: string; generatedAt: number; entries: EventRadarEntry[] } | null
   // the pattern scorecard: chart-wall badges logged and graded like calls —
   // the measured answer to "do the shapes pay?" (empty until sightings accrue)
   patternScore?: {

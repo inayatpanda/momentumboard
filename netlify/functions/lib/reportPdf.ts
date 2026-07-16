@@ -21,6 +21,7 @@ export interface ReportPrintData {
   spyCloses?: number[]
   calendar?: PaperExtras['calendar']
   ipos?: PaperExtras['ipos']
+  eventRadar?: PaperExtras['eventRadar'] // earnings binaries ahead — the shape going in, never a call
   socialBoard?: PaperExtras['socialBoard']
   // rotation rows arrive slimmed — the per-row sparkline closes are dropped at
   // the payload boundary (bulky), so the print table shows price + 1-week move.
@@ -725,6 +726,28 @@ function drawIpos(c: Cursor, ipos: NonNullable<PaperExtras['ipos']>, fonts: Font
   drawGridTable(c, cols, rows, fonts)
 }
 
+function drawEventRadar(c: Cursor, radar: NonNullable<ReportPrintData['eventRadar']>, fonts: Fonts): void {
+  // ticker + company merged into one wide Company cell (no fixed width) so a long
+  // name grows the column rather than crushing it — the New Listings pattern.
+  const cols: GCol[] = [
+    { header: 'Company', w: CONTENT_W * 0.34 },
+    { header: 'Prints', w: CONTENT_W * 0.2, align: 'r' },
+    { header: 'The shape going in', w: CONTENT_W * 0.46 },
+  ]
+  const rows: GCell[][] = radar.slice(0, 12).map(e => {
+    const rs = e.rs21 == null ? '' : `RS ${e.rs21 >= 0 ? '+' : ''}${e.rs21}pp`
+    const shape = [e.stage ?? '', rs, e.note ?? ''].filter(Boolean).join(' - ')
+    return [
+      { text: `${e.sym || ''}${e.name ? `  ${e.name}` : ''}`, bold: true },
+      { text: `${e.date || ''}  ${e.daysToPrint}d`, align: 'r' },
+      { text: shape, color: e.rs21 != null && e.rs21 < 0 ? RED : INK },
+    ]
+  })
+  drawGridTable(c, cols, rows, fonts)
+  c.gap(2)
+  drawFootline(c, "The engine never bets an earnings print - this is the shape going in, so a big overnight surprise is never a name you'd never heard of.", fonts)
+}
+
 function drawRotation(c: Cursor, tables: NonNullable<ReportPrintData['rotationTables']>, fonts: Fonts): void {
   for (const t of tables) {
     c.gap(6)
@@ -865,6 +888,11 @@ function drawPrintEdition(c: Cursor, fonts: Fonts, p: ReportPrintData): void {
   if (p.ipos && ((p.ipos.upcoming?.length ?? 0) + (p.ipos.recent?.length ?? 0)) > 0) {
     sectionHeader(c, 'New Listings — Fresh on the Tape', fonts)
     drawIpos(c, p.ipos, fonts)
+  }
+
+  if (p.eventRadar?.length) {
+    sectionHeader(c, 'Event Radar — Prints Ahead', fonts)
+    drawEventRadar(c, p.eventRadar, fonts)
   }
 
   proseSection('Crypto Wire', R.crypto)

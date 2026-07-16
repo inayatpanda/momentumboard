@@ -34,6 +34,8 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   newsCatalysts: async () => [], // no LLM catalysts by default
   recentIpos: async () => [], // no fresh listings by default
   earningsSyms: async () => new Set<string>(),
+  earningsCalendar: async () => [], // no earnings prints ahead by default
+
   worldReads: async () => [], // quiet world by default → mixed tone → mult 1
   holdings: async () => null, // no T212 book by default
   ...over,
@@ -481,6 +483,29 @@ describe('buildBoard', () => {
     }))
     const { board } = await buildBoard(store, deps({ screens: async () => noisyScreens }), NOW)
     expect(board.some(p => p.sym === 'NVDA')).toBe(true)
+  })
+
+  it('event radar: an earnings-calendar name on the roster lands in the event-radar blob with daysToPrint and its shape', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const printDate = new Date(Date.parse(today) + 3 * 86_400_000).toISOString().slice(0, 10)
+    // NVDA is the default screener candidate (has candles); OFFPOOL has no candles →
+    // it reports too, but the engine never heard of it, so the radar must skip it.
+    const d = deps({ earningsCalendar: async () => [{ sym: 'NVDA', date: printDate, hour: 'amc' }, { sym: 'OFFPOOL', date: printDate }] })
+    await buildBoard(store, d, NOW)
+
+    const radar = (await store.read<{ date: string; entries: { sym: string; date: string; daysToPrint: number; stage: string | null; rs21: number | null; hour?: string }[] }>('event-radar'))!
+    expect(radar).toBeDefined()
+    expect(radar.date).toBe(today)
+    const nvda = radar.entries.find(e => e.sym === 'NVDA')!
+    expect(nvda).toBeDefined()
+    expect(nvda.daysToPrint).toBe(3) // print is three days out
+    expect(nvda.date).toBe(printDate)
+    expect(nvda.hour).toBe('amc')
+    expect(nvda.stage).not.toBeNull() // real candle history → a real technical stage going in
+    expect(radar.entries.find(e => e.sym === 'OFFPOOL')).toBeUndefined() // not a candidate → not on the radar
   })
 })
 

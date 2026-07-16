@@ -132,6 +132,15 @@ export default async (req: Request) => {
     })
     const engineFresh = !!engineBoard?.length
 
+    // event radar: the same predict run writes this alongside the board — dated
+    // earnings binaries the engine tracks, with the shape going in. Fresh = today.
+    // Never a call; the paper prints it as a forward-looking heads-up table.
+    const eventRadar = await grab(async () => {
+      const r = await blobAppStore.read<{ date: string; entries: { sym: string; name?: string | null; date: string; daysToPrint: number; stage: string | null; rs21: number | null; note: string | null }[] }>('event-radar')
+      if (!r || r.date !== dateISO || !Array.isArray(r.entries)) return null
+      return r.entries.slice(0, 12).map(e => ({ sym: e.sym, name: e.name ?? null, date: e.date, daysToPrint: e.daysToPrint, stage: e.stage, rs21: e.rs21, note: e.note }))
+    })
+
     const news = await grab(async () => {
       const { fetchNews } = await import('./lib/news')
       return (await fetchNews(symbols, process.env.FINNHUB_API_KEY ?? '', nowSec)).slice(0, 10).map(n => n.title)
@@ -225,6 +234,7 @@ export default async (req: Request) => {
       rotationTables,
       socialBoard,
       ipos,
+      eventRadar: eventRadar ?? undefined,
       calendar: (econ ?? []).filter(e => e.at > nowSec && e.at < nowSec + 5 * 86_400).slice(0, 6),
       spyCloses: spy?.slice(-63).map(c => c.c),
       sectorBars: (sectors ?? []).map(s => ({ name: SECTORS.find(x => x.sym === s.sym)?.name ?? s.sym, rs21: s.rs21 })),
@@ -417,6 +427,7 @@ export default async (req: Request) => {
       calendar: extras.calendar,
       ipos: extras.ipos,
       socialBoard: extras.socialBoard,
+      eventRadar: extras.eventRadar,
       rotationTables: (extras.rotationTables ?? []).map(t => ({ sector: t.sector, etf: t.etf, rows: t.rows.map(r => ({ sym: r.sym, price: r.price, wkPct: r.wkPct })) })),
     }
     const putHtml = await fetch(`${SITE}/report`, {

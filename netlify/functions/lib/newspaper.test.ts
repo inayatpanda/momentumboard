@@ -77,6 +77,30 @@ describe('buildNewspaperHtml', () => {
   })
 })
 
+describe('event radar in the paper', () => {
+  const radar = [
+    { sym: 'IBM', name: 'International Business Machines', date: '2026-07-23', daysToPrint: 4, stage: 'weak', rs21: -3.2, note: 'Below the 50-day and drifting — no edge here.' },
+    { sym: 'NVDA', name: 'NVIDIA Corp', date: '2026-07-28', daysToPrint: 9, stage: 'pullback', rs21: 2.1, note: 'Healthy pullback.' },
+  ]
+  const html = buildNewspaperHtml(sample, 'Thursday 2 July 2026', { eventRadar: radar })
+  it('renders the Event Radar section with a merged company cell and days-to-print', () => {
+    expect(html).toContain('Event Radar — Prints Ahead')
+    // ticker bold + name subtle share ONE cell (the phone-safe New Listings pattern)
+    expect(html).toContain('<b>IBM</b> <span class="subtle">International Business Machines</span>')
+    expect(html).toContain('4d') // days to print
+    expect(html).toContain('weak') // the shape going in
+  })
+  it('colours rs21 by sign and prints the never-bet-a-print footer', () => {
+    expect(html).toContain('RS -3.2pp')
+    expect(html).toContain('class="num dn"') // negative RS renders red
+    expect(html).toContain('RS +2.1pp')
+    expect(html).toContain('never bets an earnings print')
+  })
+  it('no radar → no section', () => {
+    expect(buildNewspaperHtml(sample, 'x').includes('Event Radar')).toBe(false)
+  })
+})
+
 describe('sectioned compose', () => {
   it('merges section outputs into a valid report', () => {
     const parts = [

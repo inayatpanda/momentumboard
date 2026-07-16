@@ -60,6 +60,10 @@ const PRINT: ReportPrintData = {
     { title: 'ISM Services PMI with a deliberately long title to force the event cell to wrap onto a second line', country: 'USD', at: 1_800_100_000, impact: 'Medium', forecast: '52.4', previous: '51.8' },
   ],
   ipos: { upcoming: [{ sym: 'CRWV', name: 'CoreWeave Inc.', date: '2026-07-18', status: 'Expected' }], recent: [{ sym: 'RDDT', name: 'Reddit Inc.', date: '2026-07-10', status: 'Priced' }] },
+  eventRadar: [
+    { sym: 'IBM', name: 'International Business Machines', date: '2026-07-23', daysToPrint: 4, stage: 'weak', rs21: -3.2, note: 'Below the 50-day and drifting — no edge here.' },
+    { sym: 'NVDA', name: 'NVIDIA Corp', date: '2026-07-28', daysToPrint: 9, stage: 'pullback', rs21: 2.1, note: 'Healthy pullback in an uptrend.' },
+  ],
   socialBoard: [
     { sym: 'IONQ', redditRank: 1, redditMentions: 842, surgeMultiple: 3.1, sources: 2, capUsdM: 9000 },
     { sym: 'ABBV', redditRank: 12, redditMentions: 88, surgeMultiple: 1.1, sources: 1, capUsdM: 316000 },
@@ -196,6 +200,7 @@ describe('composeReportPdf — structured print path', () => {
       calendar: [{ title: 'Event', country: 'USD', at: 0, impact: 'Low' }],
       socialBoard: [{ sym: 'AAA', redditRank: null, redditMentions: null, surgeMultiple: null, sources: 0 }],
       ipos: { upcoming: [], recent: [] },
+      eventRadar: [{ sym: 'A', name: null, date: '', daysToPrint: 0, stage: null, rs21: null, note: null }],
       rotationTables: [{ sector: 'S', etf: 'E', rows: [{ sym: 'A', price: null, wkPct: null }] }],
     }
     expect(pdfMagic(await composeReportPdf({ html: '', print: ragged }))).toBe('%PDF-')

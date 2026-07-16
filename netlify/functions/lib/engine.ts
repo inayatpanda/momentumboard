@@ -39,6 +39,7 @@ import {
   type WeightsState,
 } from '../../../shared/engine/calibration'
 import { pickDiverse } from '../../../shared/engine/select'
+import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
 import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
 import { capCohortOf, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
@@ -80,6 +81,11 @@ export interface EngineDeps {
   // key / a Finnhub outage → [] → the engine is unchanged.
   recentIpos: () => Promise<{ sym: string; date: string }[]>
   earningsSyms: () => Promise<Set<string>>
+  // the SAME earnings calendar as earningsSyms but DATED — every name reporting in
+  // the next fortnight with its print date/hour, for the event radar (buildBoard).
+  // In defaultDeps both share ONE Finnhub call; earningsSyms derives its Set from
+  // this. Fail-soft: any error → [] (the radar just goes empty, the board is fine).
+  earningsCalendar: () => Promise<{ sym: string; date: string; hour?: string }[]>
   // overnight world tape: latest daily % change for the Asia/Europe indices, US
   // futures and VIX (^VIX carried in the same list, split out in buildBoard).
   // Fail-soft: any read the source can't supply is null — a vote it cannot cast.
@@ -121,6 +127,27 @@ export async function fetchMediaTitles(fetchFn: typeof fetch = fetch): Promise<s
 }
 
 export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: string; T212_SECRET_KEY?: string; T212_HOST?: string }): EngineDeps {
+  // one dated earnings-calendar fetch (next 14 days), memoised so earningsSyms and
+  // earningsCalendar share a SINGLE Finnhub call per run rather than hitting the
+  // free-tier limit twice for the identical window. Fail-soft to [].
+  let earningsOnce: Promise<{ sym: string; date: string; hour?: string }[]> | null = null
+  const fetchEarnings = () => {
+    if (!earningsOnce)
+      earningsOnce = (async () => {
+        try {
+          const from = new Date().toISOString().slice(0, 10)
+          const to = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
+          const res = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${env.FINNHUB_API_KEY ?? ''}`)
+          const j = (await res.json()) as { earningsCalendar?: { symbol?: string; date?: string; hour?: string }[] }
+          return (j.earningsCalendar ?? [])
+            .filter(e => e.symbol)
+            .map(e => ({ sym: e.symbol as string, date: e.date ?? '', hour: e.hour || undefined }))
+        } catch {
+          return []
+        }
+      })()
+    return earningsOnce
+  }
   return {
     candles: async sym => {
       const { cachedCandles } = await import('./marketCache')
@@ -203,17 +230,9 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
       const { fetchT212Positions } = await import('./t212lib')
       return fetchT212Positions({ T212_API_KEY: env.T212_API_KEY, T212_SECRET_KEY: env.T212_SECRET_KEY, T212_HOST: env.T212_HOST })
     },
-    earningsSyms: async () => {
-      try {
-        const from = new Date().toISOString().slice(0, 10)
-        const to = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
-        const res = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${env.FINNHUB_API_KEY ?? ''}`)
-        const j = (await res.json()) as { earningsCalendar?: { symbol?: string }[] }
-        return new Set((j.earningsCalendar ?? []).map(e => e.symbol ?? '').filter(Boolean))
-      } catch {
-        return new Set<string>()
-      }
-    },
+    // both derive from the same memoised fetch above — one HTTP call, two shapes
+    earningsSyms: async () => new Set((await fetchEarnings()).map(e => e.sym)),
+    earningsCalendar: () => fetchEarnings(),
   }
 }
 
@@ -780,6 +799,9 @@ export async function buildBoard(
       shadow: shadow || undefined,
       watchOnly: watchOnly || undefined,
       belowBase: belowBase || undefined,
+      // 'week' for actionable trades; 'developing' for watch rows whose SHAPE is a
+      // 2-4 week build (horizon.ts) — pure, tested, never inlined here
+      horizon: horizonOf({ watchOnly, belowBase, stage: call.stage, setup: call.setup, evidence: call.evidence }),
       probability: Math.round(p * 100) / 100,
       provisional,
       grade: grade ?? 'C',
@@ -897,6 +919,53 @@ export async function buildBoard(
     if (todaysHits.length) console.log('PATTERNS:', todaysHits.map(t => `${t.sym} ${t.hits.map(h => `${h.kind}:${h.status}`).join('+')}`).join(' · '))
   } catch (e) {
     console.log('PATTERNS: scorecard sweep failed —', String(e).slice(0, 160))
+  }
+
+  // ---- event radar: dated earnings binaries the engine already tracks ----
+  // The engine REFUSES to bet an earnings print — earningsRisk still shadows those
+  // trades (a coin-flip has no place on the live board). The radar is the opposite
+  // service: for every roster/candidate name reporting in the next fortnight, here
+  // is the SHAPE going into the print (stage, RS, one-line read). So a 26%-overnight
+  // surprise (IBM post-print, say) is never a name the reader had never heard of —
+  // it's "IBM reports Thursday, chart weak, RS deteriorating" days beforehand. NOT a
+  // call. Fail-soft like the pattern sweep: a radar hiccup must never touch the board.
+  try {
+    const earningsCal = await deps.earningsCalendar().catch(() => [] as { sym: string; date: string; hour?: string }[])
+    const todayMs = Date.parse(today)
+    const ret21 = (xs: number[]): number | null =>
+      xs.length >= 22 && xs[xs.length - 22] ? ((xs[xs.length - 1] - xs[xs.length - 22]) / xs[xs.length - 22]) * 100 : null
+    const spyRet21 = ret21(spyCloses) // reuse the momentumFactor maths — 21d return vs SPY
+    // base ticker → the actual candidate/roster sym we already hold candles for.
+    // candleMap only holds candidate/roster names, so membership here IS the
+    // "on the roster OR in today's candidate pool AND has candles" gate.
+    const radarSymOf = new Map<string, string>()
+    for (const sym of candleMap.keys()) {
+      const key = baseSym(sym).toUpperCase()
+      if (!radarSymOf.has(key)) radarSymOf.set(key, sym)
+    }
+    const seen = new Set<string>()
+    const radarRaw = earningsCal
+      .map(e => {
+        const sym = radarSymOf.get(baseSym(e.sym).toUpperCase())
+        if (!sym || seen.has(sym) || !e.date) return null
+        const daysToPrint = Math.round((Date.parse(e.date) - todayMs) / 86_400_000)
+        if (!Number.isFinite(daysToPrint) || daysToPrint < 0) return null
+        seen.add(sym)
+        const candles = candleMap.get(sym)!
+        const read = technicalStage(sym, candles)
+        const r = ret21(candles.map(c => c.c))
+        const rs21 = r != null && spyRet21 != null ? Math.round((r - spyRet21) * 10) / 10 : null
+        return { sym, date: e.date, hour: e.hour, daysToPrint, stage: read?.stage ?? null, entryQuality: read?.entryQuality ?? null, rs21, note: read?.note ?? null }
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => a.daysToPrint - b.daysToPrint)
+      .slice(0, 12)
+    // company names ride the radar like the board — near-free from the cap cache, fail-soft
+    const entries = await mapLimit(radarRaw, 8, async r => ({ ...r, name: await deps.companyName(r.sym).catch(() => null) }))
+    await store.write('event-radar', { date: today, generatedAt: nowSec, entries })
+    if (entries.length) console.log('RADAR:', entries.map(e => `${e.sym} in ${e.daysToPrint}d (${e.stage})`).join(' · '))
+  } catch (e) {
+    console.log('RADAR: event-radar sweep failed —', String(e).slice(0, 160))
   }
 
   // ---- the engine's daily opinion on every REAL holding ----

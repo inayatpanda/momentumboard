@@ -66,6 +66,50 @@ function Call({ p }: { p: EnginePrediction }) {
   )
 }
 
+// a name's technical stage tinted by how it reads going into a print: weak/knife/
+// stretched charts are the danger set (bad), a base or plain trend is neutral (warn),
+// early-reversal / pullback near support reads constructive (no tint).
+function stageTone(stage: string | null): string {
+  if (!stage) return ''
+  if (['weak', 'falling-knife', 'extended', 'exhausted'].includes(stage)) return 'bad'
+  if (['basing', 'trending'].includes(stage)) return 'warn'
+  return ''
+}
+
+// EVENT RADAR: dated earnings binaries the engine already tracks. Explicitly NOT
+// a call — the engine refuses to bet a print (earningsRisk shadows those trades).
+// This is the shape going INTO the print, so a big overnight surprise is never a
+// name the reader had never heard of.
+function EventRadar({ radar }: { radar: EngineData['eventRadar'] }) {
+  if (!radar || radar.entries.length === 0) return null
+  return (
+    <div style={{ marginTop: 12 }}>
+      <h4 className="section-title" style={{ fontSize: 12 }}>Event radar — earnings ahead</h4>
+      {radar.entries.map(e => (
+        <div key={`${e.sym}-${e.date}`} className="perf-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+            <span style={{ minWidth: 0 }}>
+              <b>{e.sym}</b>
+              {e.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{e.name}</span>}
+            </span>
+            <span style={{ color: 'var(--muted)', fontSize: 12, flexShrink: 0 }}>prints {e.date} ({e.daysToPrint}d)</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'baseline', fontSize: 11.5 }}>
+            {e.stage && <span className={`badge ${stageTone(e.stage)}`}>{e.stage}</span>}
+            {e.rs21 != null && (
+              <span className={e.rs21 >= 0 ? 'up-text' : 'down-text'}>RS {e.rs21 >= 0 ? '+' : ''}{e.rs21}pp</span>
+            )}
+            {e.note && <span style={{ color: 'var(--faint)' }}>{e.note}</span>}
+          </div>
+        </div>
+      ))}
+      <p className="empty-line" style={{ fontSize: 11 }}>
+        The engine never bets an earnings print — this is the shape going in, so a 26%-overnight surprise is never a name you'd never heard of.
+      </p>
+    </div>
+  )
+}
+
 export function EngineBoard() {
   const [data, setData] = useState<EngineData | null>(null)
   useEffect(() => {
@@ -105,24 +149,36 @@ export function EngineBoard() {
       </p>
       {b.board.length === 0 && <p className="empty-line">No edge today — every candidate failed the gates. An honest empty board beats a forced call.</p>}
       {(() => {
+        // the new taxonomy: this-week trades, developing 2-4 week builds, then the
+        // remaining short-horizon watch observations (horizon stamped by the engine)
         const trades = b.board.filter(p => !p.watchOnly)
-        const watch = b.board.filter(p => p.watchOnly)
+        const developing = b.board.filter(p => p.watchOnly && p.horizon === 'developing')
+        const watch = b.board.filter(p => p.watchOnly && p.horizon !== 'developing')
         return (
           <>
-            {trades.length > 0 && <h4 className="section-title" style={{ fontSize: 12, marginTop: 6 }}>Today's trades</h4>}
+            {trades.length > 0 && <h4 className="section-title" style={{ fontSize: 12, marginTop: 6 }}>This week — trades</h4>}
             {trades.map(p => (
               <Call key={p.id} p={p} />
             ))}
             {trades.length === 0 && b.board.length > 0 && (
-              <p className="empty-line">No qualified trades today — nothing earned an A/B grade on full evidence. The watch list is what the engine is tracking.</p>
+              <p className="empty-line">No qualified trades this week — nothing earned an A/B grade on full evidence. What follows is what the engine is tracking.</p>
             )}
-            {watch.length > 0 && <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Watch — tracked, no size{trades.length === 0 ? '' : ' (grade C, thin evidence, or below base rate)'}</h4>}
+            {developing.length > 0 && (
+              <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Developing — building over 2–4 weeks</h4>
+            )}
+            {developing.map(p => (
+              <Call key={p.id} p={p} />
+            ))}
+            {watch.length > 0 && (
+              <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Watch — short-term observations</h4>
+            )}
             {watch.map(p => (
               <Call key={p.id} p={p} />
             ))}
           </>
         )
       })()}
+      <EventRadar radar={data?.eventRadar ?? null} />
       <p className="empty-line" style={{ fontSize: 11 }}>
         Grades are calibrated on the engine's own graded history: a hit must beat SPY by ≥1pp over the horizon, and stops are judged on daily closes — an
         intraday wick through is survivable. A/B/C means the call's bucket beats the engine's own base rate, not a coin flip. Provisional = thin evidence

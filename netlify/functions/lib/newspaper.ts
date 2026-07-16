@@ -202,6 +202,19 @@ export interface IpoListingRow {
   status: string
 }
 
+// One event-radar row: a name reporting earnings ahead with the SHAPE going in.
+// NOT a call — the engine won't bet a print; this is the heads-up so a big
+// overnight surprise is never an unfamiliar ticker.
+export interface EventRadarRow {
+  sym: string
+  name?: string | null
+  date: string
+  daysToPrint: number
+  stage: string | null
+  rs21: number | null // 21d return minus SPY's, pp
+  note?: string | null
+}
+
 export interface BoardRow {
   sym: string
   name?: string // company display name, enriched post-compose (fail-soft)
@@ -226,6 +239,7 @@ export interface PaperExtras {
   rotationTables?: RotationTable[]
   socialBoard?: SocialRow[]
   ipos?: { upcoming: IpoListingRow[]; recent: IpoListingRow[] } // new-listings tape (ipoCalendar.ts)
+  eventRadar?: EventRadarRow[] // earnings binaries ahead — the shape going in, never a call
   calendar?: CalendarRow[]
   spyCloses?: number[] // ~3 months for the masthead chart
   sectorBars?: { name: string; rs21: number | null }[]
@@ -662,6 +676,17 @@ ${t.rows
     .map(({ r, when }) => `<tr><td><b>${esc(r.sym)}</b>${r.name ? ` <span class="subtle">${esc(r.name)}</span>` : ''}</td><td class="num">${esc(r.date)}</td><td class="num">${esc(when)} · ${esc(r.status)}</td></tr>`)
     .join('')
 
+  // event radar: ticker+company share one merged cell (like New Listings) so the
+  // company column keeps the honest majority of a phone row — no fixed width on it.
+  const eventRadarRows = (x.eventRadar ?? [])
+    .slice(0, 12)
+    .map(e => {
+      const rs = e.rs21 == null ? '' : `<span class="num ${e.rs21 >= 0 ? 'up' : 'dn'}">RS ${e.rs21 >= 0 ? '+' : ''}${num(e.rs21)}pp</span>`
+      const shape = [e.stage ? esc(e.stage) : '', rs, e.note ? `<span class="subtle">${esc(e.note)}</span>` : ''].filter(Boolean).join(' &middot; ')
+      return `<tr><td><b>${esc(e.sym)}</b>${e.name ? ` <span class="subtle">${esc(e.name)}</span>` : ''}</td><td class="num">${esc(e.date)} &middot; ${e.daysToPrint}d</td><td>${shape}</td></tr>`
+    })
+    .join('')
+
   const wisdom = pickWisdom(new Date().toISOString().slice(0, 10))
   // The pull-quote used to reprint a strong idea's caseText VERBATIM right
   // under the idea block that just made the case — the pitch's third
@@ -833,6 +858,14 @@ ${
 ${
     ipoRows
       ? wide('New Listings — Fresh on the Tape', `<table><thead><tr><th>Company</th><th style="width:90px">Date</th><th style="width:130px">Status</th></tr></thead><tbody>${ipoRows}</tbody></table>`)
+      : ''
+  }
+${
+    eventRadarRows
+      ? wide(
+          'Event Radar — Prints Ahead',
+          `<table><thead><tr><th>Company</th><th style="width:120px">Prints</th><th>The shape going in</th></tr></thead><tbody>${eventRadarRows}</tbody></table><p class="foot">The engine never bets an earnings print — this is the shape going in, so a 26%-overnight surprise is never a name you'd never heard of.</p>`,
+        )
       : ''
   }
 ${dept('Crypto Wire', paras(r.crypto))}

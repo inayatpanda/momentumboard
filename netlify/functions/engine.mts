@@ -49,10 +49,13 @@ export default async (req: Request) => {
     blobAppStore.read<{ startedAt: number; updatedAt: number; phase: string; completedAt?: number; failedAt?: number; error?: string; graded?: number; boardSize?: number; rosterSize?: number; holdingsCount?: number; regime?: string }>('engine-run-status'),
   ])
 
-  const [paperBook, paperMonths, patternSightings] = await Promise.all([
+  const [paperBook, paperMonths, patternSightings, eventRadar] = await Promise.all([
     blobAppStore.read('paper-book'),
     blobAppStore.read('paper-months'),
     blobAppStore.read<import('../../shared/engine/patternScore').PatternSighting[]>('pattern-sightings'),
+    // the event radar: dated earnings binaries the engine tracks, with the shape
+    // going in (written by buildBoard). Display-only — never a call.
+    blobAppStore.read<{ date: string; generatedAt: number; entries: { sym: string; name?: string | null; date: string; hour?: string; daysToPrint: number; stage: string | null; entryQuality: string | null; rs21: number | null; note: string | null }[] }>('event-radar'),
   ])
 
   // pattern scorecard: rolled up at read time (pure + cheap) from the sweep's
@@ -105,6 +108,7 @@ export default async (req: Request) => {
     // news-tone history is surfaced as a bounded tail for the display-only trend.
     board,
     openTrace: openTrace ?? null,
+    eventRadar: eventRadar ?? null,
     runStatus: runStatus ?? null,
     patternScore,
     ledger,

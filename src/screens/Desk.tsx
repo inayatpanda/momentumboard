@@ -162,6 +162,7 @@ export function Desk({ onStandard, onQuant, onOpen }: { onStandard: () => void; 
 
   const cohorts = capClassBreakdown(flattenLedger(data?.ledger ?? []))
   const catalysts = board.filter(p => p.catalyst)
+  const radar = data?.eventRadar ?? null
 
   if (loading && !data) {
     return (
@@ -269,6 +270,39 @@ export function Desk({ onStandard, onQuant, onOpen }: { onStandard: () => void; 
                 <span style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>{p.catalyst!.reason}</span>
               </div>
             ))}
+          </section>
+
+          <section className="card">
+            <h3 className="section-title">Event radar — earnings ahead</h3>
+            {(!radar || radar.entries.length === 0) && <p className="empty-line">No tracked names print in the next fortnight.</p>}
+            {radar?.entries.map(e => (
+              <div
+                key={`${e.sym}-${e.date}`}
+                className="perf-row"
+                style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2, cursor: 'pointer' }}
+                role="button"
+                tabIndex={0}
+                onClick={() => (onOpen ?? setFocus)(e.sym)}
+                onKeyDown={ev => ev.key === 'Enter' && (onOpen ?? setFocus)(e.sym)}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                  <span style={{ fontWeight: 700 }}>
+                    {e.sym}
+                    {e.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}> · {e.name}</span>}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>{e.date} ({e.daysToPrint}d)</span>
+                </div>
+                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                  {e.stage ?? 'no read'}
+                  {e.rs21 != null && (
+                    <span className={e.rs21 >= 0 ? 'up-text' : 'down-text'}> · RS {e.rs21 >= 0 ? '+' : ''}{e.rs21}pp</span>
+                  )}
+                </span>
+              </div>
+            ))}
+            {radar && radar.entries.length > 0 && (
+              <p className="empty-line" style={{ fontSize: 10.5 }}>The engine never bets a print — this is the shape going in.</p>
+            )}
           </section>
 
           <section className="card">
