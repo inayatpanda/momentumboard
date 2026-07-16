@@ -6,8 +6,18 @@ import type { AppConfig } from '../../shared/config'
 
 const MAX_BYTES = 800_000
 
-const page = (status: number, body: string) =>
-  new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } })
+const page = (status: number, body: string, downloadName?: string) =>
+  new Response(body, {
+    status,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-cache',
+      // ?download=1 — the edition is one self-contained document (styles inline,
+      // no external assets), so an attachment disposition turns the SAME bytes
+      // into a share-anywhere .html file that opens offline in any browser
+      ...(downloadName ? { 'content-disposition': `attachment; filename="${downloadName}"` } : {}),
+    },
+  })
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -48,12 +58,14 @@ export async function routeReport(
       const hit = day.find(b => b.kind === bKind)
       return page(hit ? 200 : 404, hit?.html ?? PLACEHOLDER)
     }
+    const asFile = url?.searchParams.get('download') != null
     if (wantedDate) {
       const archived = await store.read<StoredReport>(`report:${wantedDate}`)
-      return page(archived ? 200 : 404, archived?.html ?? PLACEHOLDER)
+      return page(archived ? 200 : 404, archived?.html ?? PLACEHOLDER, asFile && archived ? `StreetSignal-${wantedDate}.html` : undefined)
     }
     const report = await store.read<StoredReport>('morning-report')
-    return page(200, report?.html ?? PLACEHOLDER)
+    const latestDate = report ? new Date(report.at * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) : ''
+    return page(200, report?.html ?? PLACEHOLDER, asFile && report ? `StreetSignal-${latestDate}.html` : undefined)
   }
 
   if (method === 'PUT') {

@@ -85,22 +85,25 @@ export function Reports({ onOpenSettings }: { onOpenSettings: () => void }) {
                       ))}
                     </span>
                   )}
-                  {dayBulletins.length > 0 && (
-                    <span className="report-bulletins">
-                      {dayBulletins.map(k => (
-                        <a
-                          key={k}
-                          className="badge info"
-                          href={`/report?bulletin=${d}:${k}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          {k === 'premarket' ? 'pre-market' : 'evening'}
-                        </a>
-                      ))}
-                    </span>
-                  )}
+                  <span className="report-bulletins">
+                    {dayBulletins.map(k => (
+                      <a
+                        key={k}
+                        className="badge info"
+                        href={`/report?bulletin=${d}:${k}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        {k === 'premarket' ? 'pre-market' : 'evening'}
+                      </a>
+                    ))}
+                    {/* the edition is one self-contained document — this saves it as a
+                        share-anywhere .html that opens offline in any browser */}
+                    <a className="badge" href={`/report?date=${d}&download=1`} onClick={e => e.stopPropagation()} title="Download this edition as a shareable HTML file">
+                      ⤓ html
+                    </a>
+                  </span>
                   <span className="report-chev" aria-hidden="true">›</span>
                 </a>
               )
