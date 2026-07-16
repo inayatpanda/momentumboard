@@ -12,6 +12,7 @@ import { rsi } from '../../shared/indicators'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction, isMarketOpen } from '../../shared/rvol'
 import { detectSetups, regimeFromCandles } from '../../shared/setups'
 import { exchangeFor } from '../../shared/symbols'
+import type { FlagCandidate, IntradayFlagsBlob } from './lib/intradayFlags'
 
 export default async () => {
   const nowSec = Math.floor(Date.now() / 1000)
@@ -278,6 +279,96 @@ export default async () => {
     if (alerts.length || Object.keys(fired).length !== Object.keys(firedBefore).length) await store.write('call-cross-alerts', fired)
   } catch (e) {
     errors.push(`CALL-CROSS: ${e}`)
+  }
+
+  // intraday ENTRY FLAGS: the morning's setups re-checked live, so an obvious
+  // entry gets surfaced at least once during the session. Two 15-min windows on
+  // the reader's clock (London ~15:30 after the US open, ~19:30 into power hour),
+  // deduped per window, one push a day. Mirrors the call-cross section: pure
+  // detection lives in lib/intradayFlags; this owns the data-gathering, the blob
+  // and the single notification. Never a new call — just the board's own levels.
+  try {
+    const { scanWindowAt, scanIntradayFlags, foldScan } = await import('./lib/intradayFlags')
+    const window = scanWindowAt(Date.now())
+    if (window && isMarketOpen('US', nowSec)) {
+      const londonDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date(nowSec * 1000))
+      const prior = await store.read<IntradayFlagsBlob>('intraday-flags')
+      // an already-swept window this session is a no-op — the cron fires ~3× per slot
+      if (!(prior?.date === londonDate && prior.scans.some(s => s.window === window))) {
+        const { technicalStage } = await import('../../shared/technicals')
+        const board = (await store.read<{ date: string; board: Prediction[] }>('engine-board'))?.board ?? []
+        const snapBySym = new Map(snapshots.filter((s): s is TickerSnapshot => s !== null).map(s => [s.symbol, s]))
+        const todayISO = new Date(nowSec * 1000).toISOString().slice(0, 10)
+
+        // one candidate = live quote + daily candles + (for board rows) engine levels.
+        // Quotes are 60s-cached and candles 900s-cached, so most are already warm.
+        const build = async (sym: string, lv: Partial<Pick<FlagCandidate, 'side' | 'entry' | 'stage' | 'watchOnly' | 'published' | 'name'>> = {}): Promise<FlagCandidate | null> => {
+          const exch = exchangeFor(sym)
+          const snap = snapBySym.get(sym)
+          const [quote, candles] = await Promise.all([cachedQuote(sym, finnhubKey), cachedCandles(sym)])
+          const price = quote?.price ?? snap?.price ?? null
+          if (price == null || !Number.isFinite(price)) return null
+          let rvol = snap?.rvol ?? null
+          let high20: number | null = null
+          let sessionHigh: number | null = null
+          let sessionLow: number | null = null
+          let stage = lv.stage ?? null
+          if (candles && candles.length > 25) {
+            const avg = avgDailyVolume(candles)
+            const todayVol = quote?.todayVolume ?? candles[candles.length - 1].v
+            if (avg != null && rvol == null) rvol = relativeVolume(todayVol, avg, sessionElapsedFraction(exch, nowSec))
+            // 20-session high with TODAY'S forming bar excluded — the breakout level
+            high20 = Math.max(...candles.slice(0, -1).slice(-20).map(c => c.h))
+            // today's range so far, only if the last bar really is today's
+            const last = candles[candles.length - 1]
+            if (new Date(last.t * 1000).toISOString().slice(0, 10) === todayISO) {
+              sessionHigh = last.h
+              sessionLow = last.l
+            }
+            if (stage == null) stage = technicalStage(sym, candles)?.stage ?? null
+          }
+          return { sym, name: lv.name ?? quote?.name ?? null, price, changePct: quote?.changePct ?? snap?.changePct ?? null, rvol, side: lv.side, entry: lv.entry, stage, watchOnly: lv.watchOnly, published: lv.published, sessionHigh, sessionLow, high20 }
+        }
+
+        const candidates: FlagCandidate[] = []
+        const boardSyms = new Set<string>()
+        for (const p of board.slice(0, 40)) {
+          boardSyms.add(p.sym)
+          const c = await build(p.sym, {
+            side: p.side,
+            entry: p.entry,
+            stage: p.stage,
+            name: p.name ?? null,
+            watchOnly: p.watchOnly === true,
+            published: !p.watchOnly && (p.grade === 'A' || p.grade === 'B'),
+          })
+          if (c) candidates.push(c)
+        }
+        // watchlist names the board never published — breakout only (no engine levels)
+        for (const sym of symbols.filter(s => !boardSyms.has(s)).slice(0, 20)) {
+          const c = await build(sym)
+          if (c) candidates.push(c)
+        }
+
+        const flags = scanIntradayFlags(candidates, nowSec)
+        const { blob, accepted } = foldScan(prior ?? null, londonDate, { at: nowSec, window, flags })
+        if (accepted) {
+          // push once a day, only when a scan actually found something
+          if (flags.length && !blob.pushedAt) {
+            const lead = flags[0]
+            const extra = flags.length > 1 ? ` (+${flags.length - 1} more)` : ''
+            await deliver(`👀 ${lead.sym} ${lead.detail}${extra} — the morning setup at today's prices, not a new call.`)
+            blob.pushedAt = nowSec
+            const history = (await store.read<unknown[]>('alert-history')) ?? []
+            history.push({ text: `👀 Intraday flags: ${flags.map(f => f.sym).join(', ')}`, tier: 'instant', at: nowSec })
+            await store.write('alert-history', history.slice(-200))
+          }
+          await store.write('intraday-flags', blob)
+        }
+      }
+    }
+  } catch (e) {
+    errors.push(`intraday-flags: ${e}`)
   }
 
   // intraday trending: watchlist movers + market-wide (Yahoo trending), snapshotted through the day

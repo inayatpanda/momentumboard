@@ -49,13 +49,16 @@ export default async (req: Request) => {
     blobAppStore.read<{ startedAt: number; updatedAt: number; phase: string; completedAt?: number; failedAt?: number; error?: string; graded?: number; boardSize?: number; rosterSize?: number; holdingsCount?: number; regime?: string }>('engine-run-status'),
   ])
 
-  const [paperBook, paperMonths, patternSightings, eventRadar] = await Promise.all([
+  const [paperBook, paperMonths, patternSightings, eventRadar, intradayFlagsBlob] = await Promise.all([
     blobAppStore.read('paper-book'),
     blobAppStore.read('paper-months'),
     blobAppStore.read<import('../../shared/engine/patternScore').PatternSighting[]>('pattern-sightings'),
     // the event radar: dated earnings binaries the engine tracks, with the shape
     // going in (written by buildBoard). Display-only — never a call.
     blobAppStore.read<{ date: string; generatedAt: number; entries: { sym: string; name?: string | null; date: string; hour?: string; daysToPrint: number; stage: string | null; entryQuality: string | null; rs21: number | null; note: string | null }[] }>('event-radar'),
+    // intraday entry flags: today's live-scan blob (alert-check writes it in two
+    // session windows). Display-only — the morning's setups at today's prices.
+    blobAppStore.read<import('./lib/intradayFlags').IntradayFlagsBlob>('intraday-flags'),
   ])
 
   // pattern scorecard: rolled up at read time (pure + cheap) from the sweep's
@@ -109,6 +112,8 @@ export default async (req: Request) => {
     board,
     openTrace: openTrace ?? null,
     eventRadar: eventRadar ?? null,
+    // only today's flags — a stale blob from a prior session must not show as live
+    intradayFlags: intradayFlagsBlob && intradayFlagsBlob.date === new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date()) ? intradayFlagsBlob : null,
     runStatus: runStatus ?? null,
     patternScore,
     ledger,

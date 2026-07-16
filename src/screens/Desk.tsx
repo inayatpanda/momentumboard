@@ -9,6 +9,7 @@ import { PriceChart } from '../components/PriceChart'
 import { RsiChart } from '../components/RsiChart'
 import { RegimeBanner } from '../components/RegimeBanner'
 import { GradeChip } from '../components/GradeChip'
+import { FLAG_LABEL, FLAG_BADGE, flattenIntradayFlags } from '../components/EngineBoard'
 
 // THE DESK: a wide command-deck for laptop/monitor screens, built entirely out
 // of data the phone app already fetches (getEngine + getMovers). Two call
@@ -229,6 +230,46 @@ export function Desk({ onStandard, onQuant, onOpen }: { onStandard: () => void; 
         </main>
 
         <aside className="desk-rail">
+          {(() => {
+            // intraday flags: the morning setups flagged the moment price reaches
+            // the level. Nothing before the first scan; an honest empty line after
+            // a scan finds nothing. Rows open the stock page — not new calls.
+            const blob = data?.intradayFlags
+            if (!blob || blob.scans.length === 0) return null
+            const flags = flattenIntradayFlags(blob)
+            const lastAt = blob.scans[0]?.at
+            const t = (sec: number) => new Date(sec * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            return (
+              <section className="card">
+                <h3 className="section-title">Intraday flags</h3>
+                {flags.length === 0 ? (
+                  <p className="empty-line">Scanned {lastAt ? t(lastAt) : ''} — no clean intraday entries.</p>
+                ) : (
+                  <>
+                    {flags.map(f => (
+                      <div
+                        key={`${f.sym}-${f.kind}`}
+                        className="perf-row"
+                        style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2, cursor: onOpen ? 'pointer' : undefined }}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onOpen?.(f.sym)}
+                        onKeyDown={e => e.key === 'Enter' && onOpen?.(f.sym)}
+                      >
+                        <span style={{ fontWeight: 700 }}>
+                          {f.sym} <span className={`badge ${FLAG_BADGE[f.kind]}`}>{FLAG_LABEL[f.kind]}</span>
+                          <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11, marginLeft: 6 }}>flagged {t(f.at)}</span>
+                        </span>
+                        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{f.detail}</span>
+                      </div>
+                    ))}
+                    <p className="empty-line" style={{ fontSize: 10.5 }}>The morning setup at today's prices — not a new call, no new levels.</p>
+                  </>
+                )}
+              </section>
+            )
+          })()}
+
           <section className="card">
             <h3 className="section-title">Track record — large vs small</h3>
             {cohorts.length === 0 && <p className="empty-line">No graded calls yet.</p>}

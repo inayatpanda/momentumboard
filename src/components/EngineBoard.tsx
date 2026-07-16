@@ -1,7 +1,55 @@
 import { useEffect, useState } from 'react'
-import { getEngine, type EngineData, type EnginePrediction } from '../lib/api'
+import { getEngine, type EngineData, type EnginePrediction, type IntradayFlag } from '../lib/api'
 import { capBand } from '../lib/format'
 import { GradeChip } from './GradeChip'
+
+// the intraday-flag chip vocabulary, shared with the Desk rail card
+export const FLAG_LABEL: Record<IntradayFlag['kind'], string> = { 'entry-zone': 'entry zone', 'second-chance': 'second chance', breakout: 'breakout' }
+export const FLAG_BADGE: Record<IntradayFlag['kind'], string> = { 'entry-zone': 'info', 'second-chance': 'good', breakout: 'warn' }
+
+// flatten a day's scans (newest scan first) into one row per symbol, freshest kept
+export function flattenIntradayFlags(blob: EngineData['intradayFlags']): IntradayFlag[] {
+  if (!blob) return []
+  const seen = new Set<string>()
+  const out: IntradayFlag[] = []
+  for (const s of blob.scans) for (const f of s.flags) if (!seen.has(f.sym)) { seen.add(f.sym); out.push(f) }
+  return out
+}
+
+const flagTime = (sec: number) => new Date(sec * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })
+
+// INTRADAY FLAGS strip: the morning's setups the moment price reaches the level,
+// so an obvious entry gets surfaced at least once a day. Renders nothing before
+// the first scan; an honest "scanned — nothing" line once a scan has run empty.
+function IntradayFlagsStrip({ blob }: { blob: EngineData['intradayFlags'] }) {
+  if (!blob || blob.scans.length === 0) return null // no scan yet — say nothing
+  const flags = flattenIntradayFlags(blob)
+  const lastAt = blob.scans[0]?.at
+  if (flags.length === 0) {
+    return <p className="empty-line" style={{ fontSize: 11 }}>Scanned {lastAt ? flagTime(lastAt) : ''} — no clean intraday entries.</p>
+  }
+  return (
+    <div style={{ marginTop: 6, marginBottom: 4 }}>
+      <h4 className="section-title" style={{ fontSize: 12 }}>Intraday flags — the morning setup at today's prices</h4>
+      {flags.map(f => (
+        <div key={`${f.sym}-${f.kind}`} className="perf-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+            <span style={{ minWidth: 0 }}>
+              <b>{f.sym}</b>
+              {f.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{f.name}</span>}
+              <span className={`badge ${FLAG_BADGE[f.kind]}`} style={{ marginLeft: 6 }}>{FLAG_LABEL[f.kind]}</span>
+            </span>
+            <span style={{ color: 'var(--muted)', fontSize: 11, flexShrink: 0 }}>flagged {flagTime(f.at)}</span>
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+            <span style={{ fontFamily: 'var(--font-num)' }}>{f.price} vs {f.level}</span> — {f.detail}
+          </div>
+        </div>
+      ))}
+      <p className="empty-line" style={{ fontSize: 11 }}>Not new calls — the same setups the board carries, flagged when price reaches the level intraday. No new sizing, no new levels.</p>
+    </div>
+  )
+}
 
 // THE BOARD: today's scored calls from the prediction engine. Numbers only —
 // grade, calibrated probability, entry/stop/target — with the factor evidence
@@ -147,6 +195,7 @@ export function EngineBoard() {
           </>
         )}
       </p>
+      <IntradayFlagsStrip blob={data?.intradayFlags ?? null} />
       {b.board.length === 0 && <p className="empty-line">No edge today — every candidate failed the gates. An honest empty board beats a forced call.</p>}
       {(() => {
         // the new taxonomy: this-week trades, developing 2-4 week builds, then the

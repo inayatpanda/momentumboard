@@ -8,6 +8,7 @@ import {
 import { IconGear, IconCalendar, IconLandmark, IconFlame, IconPlay, stripEmoji } from '../components/icons'
 import { EngineBoard } from '../components/EngineBoard'
 import { ClampText } from '../components/AskDesk'
+import { feedOrder, bestDateMs, isNew } from '../lib/feedOrder'
 
 // Intel, in four streams the user asked for:
 //   Markets: macro, earnings, 13F, headlines, alerts
@@ -72,6 +73,7 @@ function ClusterRow({ c }: { c: InsiderCluster }) {
       <span className="intel-crow-main">
         <span className="intel-clus-head">
           <b className="intel-crow-sym">{c.symbol}</b>{' '}
+          {isNew(c.lastDate) && <span className="badge info">new</span>}{' '}
           <span className="intel-crow-sub">{c.buyers} buyers · {fmtUsd(c.totalValueUsd)}</span>
         </span>
         {c.names.length > 0 && <span className="intel-names">{c.names.join(' · ')}</span>}
@@ -342,26 +344,33 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
                       ))}
                     </>
                   )}
-                  {congress.trades.length > 0 && (
-                    <>
-                      <p className="eyebrow" style={{ margin: '12px 0 6px' }}>
-                        Recent — market-wide · swept {relDate(new Date(congress.asOf * 1000).toISOString().slice(0, 10))} · newest filing {relDate(congress.trades[0].filed)}
-                      </p>
-                      {/* swipeable — each disclosure is a card; the rail cycles through them */}
-                      <div className="rail">
-                        {congress.trades.slice(0, 40).map((t, i) => (
-                          <div key={`mkt-${t.politician}-${t.symbol}-${t.traded}-${i}`} className="rail-card congress-card">
-                            <span className="intel-crow-sub congress-card-pol">{t.politician} · {t.chamber}</span>
-                            <b className="intel-crow-sym">{t.symbol}</b>
-                            <span className={`rc-chg ${t.side === 'buy' ? 'up' : 'down'}`}>
-                              {t.side === 'buy' ? '↗' : '↘'} {t.amountRange || t.side}
-                            </span>
-                            <span className="intel-crow-when">{relDate(t.traded)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
+                  {congress.trades.length > 0 && (() => {
+                    // FEED, not a static board: newest DISCLOSURE at the front (filing
+                    // date, falling back to the trade date) so the rail actually
+                    // refreshes as filings land, instead of the biggest deals sitting
+                    // for days. A filing within 48h earns a `new` badge.
+                    const feed = feedOrder(congress.trades, t => bestDateMs(t.filed, t.traded))
+                    return (
+                      <>
+                        <p className="eyebrow" style={{ margin: '12px 0 6px' }}>
+                          Recent — market-wide · swept {relDate(new Date(congress.asOf * 1000).toISOString().slice(0, 10))} · newest filing {relDate(feed[0].filed || feed[0].traded)}
+                        </p>
+                        {/* swipeable — each disclosure is a card; the rail cycles through them, newest first */}
+                        <div className="rail">
+                          {feed.slice(0, 40).map((t, i) => (
+                            <div key={`mkt-${t.politician}-${t.symbol}-${t.traded}-${i}`} className="rail-card congress-card">
+                              <span className="intel-crow-sub congress-card-pol">{t.politician} · {t.chamber}</span>
+                              <b className="intel-crow-sym">{t.symbol}{' '}{isNew(t.filed || t.traded) && <span className="badge info">new</span>}</b>
+                              <span className={`rc-chg ${t.side === 'buy' ? 'up' : 'down'}`}>
+                                {t.side === 'buy' ? '↗' : '↘'} {t.amountRange || t.side}
+                              </span>
+                              <span className="intel-crow-when">{relDate(t.traded)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )
+                  })()}
                   {congress.aggregates && congress.aggregates.sectorBreakdown.length > 0 && (
                     <>
                       <p className="eyebrow" style={{ margin: '12px 0 6px' }}>Where the money went — by sector</p>
@@ -449,23 +458,34 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
 
             <section className="digest-section">
               <h3 className="section-title">Insider buying — on your watchlist</h3>
-              {insiders.length > 0 ? (
-                <>
-                  {insiders.map(i => (
-                    <div key={i.symbol} className="perf-row intel-row-col">
-                      <span className="intel-il-head">
-                        <b>{i.symbol}</b> {i.isCluster && <span className="badge good">cluster</span>}{' '}
-                        <span className="intel-crow-sub">
-                          {i.buyers.length} insider{i.buyers.length > 1 ? 's' : ''}
-                          {i.totalValueUsd > 0 && ` · ${fmtUsd(i.totalValueUsd)}`}
-                        </span>
-                      </span>
-                      <span className="intel-names">{i.latest.map(l => `${l.name.split(' ')[0]} +${l.shares.toLocaleString()}`).join(' · ')}</span>
-                    </div>
-                  ))}
-                  <p className="empty-line intel-fine">Open-market buys only (Form 4, code P). Clustered buying has real empirical support.</p>
-                </>
-              ) : (
+              {insiders.length > 0 ? (() => {
+                // recency decides POSITION — most-recent open-market buy first — while
+                // dollar size stays ON the row. A buy filed within 48h earns a `new` badge.
+                const feed = feedOrder(insiders, i => bestDateMs(...i.latest.map(l => l.date)))
+                const newest = feed[0].latest.map(l => l.date).sort().at(-1)
+                return (
+                  <>
+                    {newest && <p className="eyebrow" style={{ margin: '4px 0 6px' }}>newest open-market buy {relDate(newest)}</p>}
+                    {feed.map(i => {
+                      const last = i.latest.map(l => l.date).sort().at(-1)
+                      return (
+                        <div key={i.symbol} className="perf-row intel-row-col">
+                          <span className="intel-il-head">
+                            <b>{i.symbol}</b> {last && isNew(last) && <span className="badge info">new</span>} {i.isCluster && <span className="badge good">cluster</span>}{' '}
+                            <span className="intel-crow-sub">
+                              {i.buyers.length} insider{i.buyers.length > 1 ? 's' : ''}
+                              {i.totalValueUsd > 0 && ` · ${fmtUsd(i.totalValueUsd)}`}
+                              {last && ` · ${relDate(last)}`}
+                            </span>
+                          </span>
+                          <span className="intel-names">{i.latest.map(l => `${l.name.split(' ')[0]} +${l.shares.toLocaleString()}`).join(' · ')}</span>
+                        </div>
+                      )
+                    })}
+                    <p className="empty-line intel-fine">Open-market buys only (Form 4, code P). Clustered buying has real empirical support.</p>
+                  </>
+                )
+              })() : (
                 <p className="empty-line">No open-market insider buys on your watchlist in the last 90 days. Executives buying their own beaten-down stock is one of the few signals with real empirical weight; when it appears here, pay attention.</p>
               )}
             </section>
@@ -474,12 +494,21 @@ export function Intel({ onOpenSettings }: { onOpenSettings: () => void }) {
               <h3 className="section-title">Insider clusters — market-wide</h3>
               {clusters == null ? (
                 <p className="empty-line">Loading insider sweep…</p>
-              ) : clusters.clusters.length > 0 ? (
-                <>
-                  {clusters.clusters.map(c => <ClusterRow key={c.symbol} c={c} />)}
-                  <p className="empty-line intel-fine">Distinct open-market buyers over ~90 days, aggregated across the engine's roster coverage.</p>
-                </>
-              ) : (
+              ) : clusters.clusters.length > 0 ? (() => {
+                // newest buy at the top — the dollar-ranked board sat unchanged for
+                // days; recency now decides order, the sweep clock is stamped honestly
+                const feed = feedOrder(clusters.clusters, c => bestDateMs(c.lastDate))
+                return (
+                  <>
+                    <p className="eyebrow" style={{ margin: '4px 0 6px' }}>
+                      swept {relDate(new Date(clusters.asOf * 1000).toISOString().slice(0, 10))}
+                      {feed[0].lastDate && ` · newest buy ${relDate(feed[0].lastDate)}`}
+                    </p>
+                    {feed.map(c => <ClusterRow key={c.symbol} c={c} />)}
+                    <p className="empty-line intel-fine">Distinct open-market buyers over ~90 days, aggregated across the engine's roster coverage.</p>
+                  </>
+                )
+              })() : (
                 <p className="empty-line">The engine's insider sweep is still accumulating coverage.</p>
               )}
             </section>

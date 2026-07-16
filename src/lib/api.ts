@@ -501,6 +501,27 @@ export interface EventRadarEntry {
   note: string | null // one-line technical read
 }
 
+// One intraday entry flag: the morning's setup, re-checked live, at today's
+// prices. NEVER a new call — `level` is the board's own entry (entry-zone /
+// second-chance) or the 20-session high (breakout), no sizing, no new levels.
+export type IntradayFlagKind = 'entry-zone' | 'second-chance' | 'breakout'
+export interface IntradayFlag {
+  sym: string
+  name?: string | null
+  kind: IntradayFlagKind
+  price: number // live print at the scan
+  level: number // the level in play
+  detail: string // one honest sentence, reads after the ticker
+  at: number // unix seconds the scan fired
+}
+// Today's live-scan blob: both session windows' scans, newest first; null before
+// the first scan of the day. `pushedAt` marks the single daily notification.
+export interface IntradayFlagsBlob {
+  date: string
+  scans: { at: number; window: 'london-open' | 'power-hour'; flags: IntradayFlag[] }[]
+  pushedAt?: number
+}
+
 export interface EngineData {
   runStatus?: {
     startedAt: number
@@ -534,6 +555,9 @@ export interface EngineData {
   // with the shape going in. Never a call — the engine won't bet a print (null
   // until the first predict run writes it).
   eventRadar?: { date: string; generatedAt: number; entries: EventRadarEntry[] } | null
+  // today's intraday entry flags (null before the first scan of the session);
+  // powers the board's "Intraday flags" strip and the Desk rail card
+  intradayFlags?: IntradayFlagsBlob | null
   // the pattern scorecard: chart-wall badges logged and graded like calls —
   // the measured answer to "do the shapes pay?" (empty until sightings accrue)
   patternScore?: {
