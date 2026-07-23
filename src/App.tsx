@@ -1,24 +1,29 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { syncFromServer } from './lib/sync'
 import { seedStarterWatchlist } from './lib/starter'
 import { Watchlist } from './screens/Watchlist'
 import { Movers } from './screens/Movers'
-import { TickerDetail } from './screens/TickerDetail'
-import { Journal } from './screens/Journal'
-import { Research } from './screens/Research'
-import { Reports } from './screens/Reports'
-import { Ledger } from './screens/Ledger'
 import { Intel } from './screens/Intel'
-import { CalendarScreen } from './screens/CalendarScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
-import { Desk } from './screens/Desk'
-import { Quant } from './screens/Quant'
-import { Positions } from './screens/Positions'
 import { Landing } from './screens/Landing'
 import { AppGate } from './screens/AppGate'
 import { EnginePage, FaqPage, LedgerPage, PaperPage, siteRouteFor } from './screens/SitePages'
 import { More } from './screens/More'
+// Lazily loaded (audit L-1): the chart-heavy and secondary screens ship in
+// their own chunks, and the charting library rides with them — so the initial
+// bundle (the mobile Signals/Watchlist first paint) no longer carries it.
+const TickerDetail = lazy(() => import('./screens/TickerDetail').then(m => ({ default: m.TickerDetail })))
+const Journal = lazy(() => import('./screens/Journal').then(m => ({ default: m.Journal })))
+const Research = lazy(() => import('./screens/Research').then(m => ({ default: m.Research })))
+const Reports = lazy(() => import('./screens/Reports').then(m => ({ default: m.Reports })))
+const Ledger = lazy(() => import('./screens/Ledger').then(m => ({ default: m.Ledger })))
+const CalendarScreen = lazy(() => import('./screens/CalendarScreen').then(m => ({ default: m.CalendarScreen })))
+const Desk = lazy(() => import('./screens/Desk').then(m => ({ default: m.Desk })))
+const Quant = lazy(() => import('./screens/Quant').then(m => ({ default: m.Quant })))
+const Positions = lazy(() => import('./screens/Positions').then(m => ({ default: m.Positions })))
+
+const ScreenFallback = () => <p className="empty-line" style={{ padding: 24 }}>Loading…</p>
 import { NavContext, TabBar } from './components/TabBar'
 import { useIsWide } from './hooks/useIsWide'
 import { clearToken, getToken, validateAccess } from './lib/api'
@@ -207,15 +212,17 @@ export default function App() {
     return (
       <NavContext.Provider value={{ active, navigate }}>
         <TabBar active="desk" onNavigate={navigate} />
-        <Desk
-          key={syncTick}
-          onStandard={() => {
-            localStorage.setItem('mb-home', 'standard')
-            setView({ screen: 'watchlist' })
-          }}
-          onQuant={() => setView({ screen: 'quant' })}
-          onOpen={open}
-        />
+        <Suspense fallback={<ScreenFallback />}>
+          <Desk
+            key={syncTick}
+            onStandard={() => {
+              localStorage.setItem('mb-home', 'standard')
+              setView({ screen: 'watchlist' })
+            }}
+            onQuant={() => setView({ screen: 'quant' })}
+            onOpen={open}
+          />
+        </Suspense>
       </NavContext.Provider>
     )
   }
@@ -224,7 +231,9 @@ export default function App() {
     return (
       <NavContext.Provider value={{ active, navigate }}>
         <TabBar active="desk" onNavigate={navigate} />
-        <Quant key={syncTick} onBack={() => setView({ screen: 'desk' })} onOpen={open} />
+        <Suspense fallback={<ScreenFallback />}>
+          <Quant key={syncTick} onBack={() => setView({ screen: 'desk' })} onOpen={open} />
+        </Suspense>
       </NavContext.Provider>
     )
   }
@@ -240,6 +249,7 @@ export default function App() {
           exit={reduced ? undefined : { opacity: 0, y: -6 }}
           transition={{ duration: 0.16, ease: 'easeOut' }}
         >
+          <Suspense fallback={<ScreenFallback />}>
           {view.screen === 'watchlist' && <Watchlist onOpen={open} onOpenSettings={openSettings} />}
           {view.screen === 'movers' && <Movers onOpen={open} onOpenSettings={openSettings} />}
           {view.screen === 'detail' && (
@@ -262,6 +272,7 @@ export default function App() {
           {view.screen === 'calendar' && <CalendarScreen onOpenSettings={openSettings} />}
           {view.screen === 'more' && <More onOpenSettings={openSettings} />}
           {view.screen === 'settings' && <SettingsScreen onBack={() => navigate(view.from === 'detail' ? 'watchlist' : view.from)} />}
+          </Suspense>
         </motion.div>
       </AnimatePresence>
       <TabBar active={active} chartsReady={!!lastSymbol} onNavigate={navigate} />
