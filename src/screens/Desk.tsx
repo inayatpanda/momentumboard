@@ -276,7 +276,8 @@ export function Desk({ onStandard, onQuant, onOpen }: { onStandard: () => void; 
             {cohorts.map(c => (
               <div key={c.key} className="perf-row">
                 <span>
-                  <span className="badge">{c.key}</span> ×{c.n} · {c.graded} graded
+                  {/* drop the redundant "· 0 graded" — the right side already says "none graded yet" */}
+                  <span className="badge">{c.key}</span> ×{c.n}{c.graded > 0 ? ` · ${c.graded} graded` : ''}
                 </span>
                 <span>
                   {c.hitRate == null ? (

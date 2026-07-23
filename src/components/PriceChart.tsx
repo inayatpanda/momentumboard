@@ -69,6 +69,11 @@ export function PriceChart({
       wickUpColor: up,
       wickDownColor: down,
       borderVisible: false,
+      // drop the last-price axis pill + line: on a card it stacks onto the
+      // entry/stop/target labels and the four numbers collide into a pile.
+      // The axis now shows ONLY the engine levels; live price is the last candle.
+      lastValueVisible: false,
+      priceLineVisible: false,
     })
     candleSeries.setData(toCandleSeries(candles))
 

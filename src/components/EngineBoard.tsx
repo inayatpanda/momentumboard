@@ -66,7 +66,14 @@ function Call({ p }: { p: EnginePrediction }) {
           {p.belowBase ? <span className="badge">tracking</span> : <GradeChip grade={p.grade} provisional={p.provisional} />}{' '}
           {p.sym}
           <span className={p.side === 'long' ? 'up-text' : 'down-text'} style={{ fontSize: 11, marginLeft: 6, fontWeight: 700 }}>{dir}</span>
-          {p.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{p.name}</span>}
+          {p.name && (
+            <span
+              title={p.name}
+              style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6, display: 'inline-block', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}
+            >
+              {p.name}
+            </span>
+          )}
         </span>
         <span style={{ color: 'var(--muted)', fontSize: 12, flexShrink: 0 }}>{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>
       </div>
@@ -86,11 +93,6 @@ function Call({ p }: { p: EnginePrediction }) {
         <span>in {p.entry} · stop {p.stop} · tgt {p.target}</span>
         <span>{p.watchOnly ? 'watch — no size' : `risk ${p.riskPct}%${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}</span>
       </div>
-      {p.belowBase && (
-        <div style={{ fontSize: 11, color: 'var(--faint)' }}>
-          Valid {p.side} setup — but calibration rates this side below its base rate in a {p.side === 'long' ? 'mixed/soft' : 'firm'} tape, so it's tracked, not sized.
-        </div>
-      )}
       <button className="mini-btn ghost" style={{ alignSelf: 'flex-start', fontSize: 11, padding: '1px 6px' }} onClick={() => setOpen(o => !o)}>
         {open ? 'hide evidence' : 'evidence'}
       </button>
@@ -164,7 +166,17 @@ export function EngineBoard() {
     getEngine().then(setData).catch(() => {})
   }, [])
   const b = data?.board
-  if (!b) return null
+  if (!b)
+    // skeleton shaped like the board, not a blank void — the Signals/Markets
+    // tab used to render nothing here while loading, which read as broken
+    return (
+      <section className="digest-section" aria-busy="true">
+        <div className="skeleton" style={{ height: 18, width: '55%', marginBottom: 12 }} />
+        {[0, 1, 2].map(i => (
+          <div key={i} className="skeleton" style={{ height: 84, marginBottom: 8 }} />
+        ))}
+      </section>
+    )
   const todayLondon = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
   const weekend = [0, 6].includes(new Date().getDay())
   const stale = b.date !== todayLondon
@@ -213,13 +225,20 @@ export function EngineBoard() {
               <p className="empty-line">No qualified trades this week — nothing earned an A/B grade on full evidence. What follows is what the engine is tracking.</p>
             )}
             {developing.length > 0 && (
-              <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Developing — building over 2–4 weeks</h4>
+              <>
+                <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Developing — building over 2–4 weeks</h4>
+                {/* the tracked-not-sized reason, said ONCE for the group instead of on every card */}
+                <p className="empty-line" style={{ fontSize: 11, marginTop: -2, marginBottom: 4 }}>Valid setups the engine rates below their base rate in this tape — tracked while they build, not sized.</p>
+              </>
             )}
             {developing.map(p => (
               <Call key={p.id} p={p} />
             ))}
             {watch.length > 0 && (
-              <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Watch — short-term observations</h4>
+              <>
+                <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Watch — short-term observations</h4>
+                <p className="empty-line" style={{ fontSize: 11, marginTop: -2, marginBottom: 4 }}>Short-horizon reads below the sizing bar — observed, not sized.</p>
+              </>
             )}
             {watch.map(p => (
               <Call key={p.id} p={p} />
