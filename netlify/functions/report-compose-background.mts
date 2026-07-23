@@ -497,6 +497,39 @@ export default async (req: Request) => {
       : null
 
     console.log('COMPOSE: putHtml', putHtml.status, 'putPicks', putPicks?.status)
+
+    // A failed publish must be LOUD. The old code logged the status then
+    // returned 200 regardless, so a rejected PUT left the Action green with no
+    // paper and no alert (audit H-2). HTML is the hard requirement: its failure
+    // returns non-2xx (daily-run exits 1 → Action red) and skips the success
+    // bookkeeping, and because report:<today> stays absent the watchdog re-kick
+    // still fires. A picks-only failure means the paper IS live but its
+    // scorecard source is missing — the owner is alerted; the edition stands.
+    const alertOwner = async (msg: string) => {
+      try {
+        const { sendTelegram } = await import('./lib/telegram')
+        const tok = process.env.TELEGRAM_BOT_TOKEN
+        const chat = process.env.TELEGRAM_CHAT_ID
+        if (tok && chat) await sendTelegram(tok, chat, msg)
+      } catch (err) {
+        console.error('COMPOSE: owner alert failed', err) // never let the alert mask the real failure
+      }
+    }
+
+    if (!putHtml.ok) {
+      const body = await putHtml.text().catch(() => '')
+      const failLog = (await blobAppStore.read<unknown[]>('runlog')) ?? []
+      failLog.push({ at: nowSec, kind: 'report-compose', provider, htmlOk: false, status: putHtml.status, ideas: composed.ideas.length })
+      await blobAppStore.write('runlog', failLog.slice(-200))
+      await alertOwner(`🚨 StreetSignal ${dateISO}: report PUBLISH failed — HTTP ${putHtml.status}. No new edition today. ${body.slice(0, 120)}`)
+      console.error('COMPOSE: publish FAILED', putHtml.status, body.slice(0, 200))
+      return new Response(`publish-failed ${putHtml.status}`, { status: 502 })
+    }
+    if (putPicks && !putPicks.ok) {
+      await alertOwner(`⚠️ StreetSignal ${dateISO}: paper published, but PICKS write failed — HTTP ${putPicks.status}. Today's scorecard/ledger source is missing.`)
+      console.error('COMPOSE: picks publish failed', putPicks.status)
+    }
+
     // continuity memory: tomorrow's edition reads what today's said, so it builds instead of repeating
     const historyEntry = {
       date: dateISO,

@@ -52,6 +52,24 @@ export function modelFor(provider: keyof typeof DEFAULT_MODELS, e: LlmEnv): stri
 
 type Provider = { name: string; available: (e: LlmEnv) => boolean; call: (prompt: string, e: LlmEnv, fetchFn: typeof fetch) => Promise<string> }
 
+/** Turn a non-2xx provider response into an error that names the real cause —
+ * status plus the provider's own error code/message — instead of the old
+ * `${name}-empty` symptom that made a 429/expired-key/retired-model all look
+ * identical. Bounded and secret-free (only status + error code/message, never
+ * the request). Returns null on a 2xx so the caller proceeds to parse. */
+async function httpErrorFor(name: string, res: Response): Promise<Error | null> {
+  if (res.ok !== false) return null // 2xx (or a status-less mock) → let the caller parse the body
+  let detail = ''
+  try {
+    const body = (await res.clone().json()) as { error?: { message?: string; code?: string; type?: string } | string }
+    const err = body?.error
+    detail = typeof err === 'string' ? err : [err?.code, err?.type, err?.message].filter(Boolean).join(': ')
+  } catch {
+    try { detail = (await res.clone().text()).slice(0, 200) } catch { /* body already consumed / unreadable */ }
+  }
+  return new Error(`${name} HTTP ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`)
+}
+
 const PROVIDERS: Provider[] = [
   {
     name: 'groq',
@@ -62,6 +80,8 @@ const PROVIDERS: Provider[] = [
         headers: { 'content-type': 'application/json', authorization: `Bearer ${e.GROQ_API_KEY}` },
         body: JSON.stringify({ model: modelFor('groq', e), messages: [{ role: 'user', content: prompt }], max_tokens: e.maxTokens ?? 700 }),
       })
+      const httpErr = await httpErrorFor('groq', res)
+      if (httpErr) throw httpErr
       const j = (await res.json()) as { choices?: { message?: { content?: string } }[] }
       const text = j.choices?.[0]?.message?.content
       if (!text) throw new Error('groq-empty')
@@ -79,6 +99,8 @@ const PROVIDERS: Provider[] = [
         // thinkingBudget 0: 2.5-flash otherwise spends the output budget on hidden reasoning and truncates long JSON
         body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: e.maxTokens ?? 2048, thinkingConfig: { thinkingBudget: 0 } } }),
       })
+      const httpErr = await httpErrorFor('gemini', res)
+      if (httpErr) throw httpErr
       const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
       const text = j.candidates?.[0]?.content?.parts?.[0]?.text
       if (!text) throw new Error('gemini-empty')
@@ -95,6 +117,8 @@ const PROVIDERS: Provider[] = [
         headers: { 'content-type': 'application/json', authorization: `Bearer ${e.OPENAI_API_KEY}` },
         body: JSON.stringify({ model: modelFor('openai', e), messages: [{ role: 'user', content: prompt }], max_tokens: e.maxTokens ?? 700 }),
       })
+      const httpErr = await httpErrorFor('openai', res)
+      if (httpErr) throw httpErr
       const j = (await res.json()) as { choices?: { message?: { content?: string } }[] }
       const text = j.choices?.[0]?.message?.content
       if (!text) throw new Error('openai-empty')
@@ -111,6 +135,8 @@ const PROVIDERS: Provider[] = [
         headers: { 'content-type': 'application/json', 'x-api-key': e.ANTHROPIC_API_KEY!, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({ model: modelFor('anthropic', e), max_tokens: e.maxTokens ?? 700, messages: [{ role: 'user', content: prompt }] }),
       })
+      const httpErr = await httpErrorFor('anthropic', res)
+      if (httpErr) throw httpErr
       const j = (await res.json()) as { content?: { text?: string }[] }
       const text = j.content?.[0]?.text
       if (!text) throw new Error('anthropic-empty')

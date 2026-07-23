@@ -21,6 +21,29 @@ describe('llm router', () => {
     expect(r.provider).toBe('gemini')
   })
 
+  it('surfaces the real HTTP cause instead of a generic *-empty', async () => {
+    // groq 429 with only that provider configured — the thrown error must name
+    // the status and code, not mask it as "groq-empty" (audit H-3).
+    const err = JSON.stringify({ error: { code: 'rate_limit_exceeded', message: 'slow down' } })
+    const fetchFn = vi.fn(async () => new Response(err, { status: 429 }))
+    await expect(callLlm('hi', { GROQ_API_KEY: 'g' }, fetchFn as never)).rejects.toThrow(/groq HTTP 429/)
+    await expect(callLlm('hi', { GROQ_API_KEY: 'g' }, fetchFn as never)).rejects.toThrow(/rate_limit_exceeded/)
+  })
+
+  it('an HTTP error still falls through to a healthy provider', async () => {
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes('groq')) return new Response(JSON.stringify({ error: { message: 'expired' } }), { status: 401 })
+      return new Response(geminiOk)
+    })
+    const r = await callLlm('hi', { GROQ_API_KEY: 'g', GEMINI_API_KEY: 'x' }, fetchFn as never)
+    expect(r.provider).toBe('gemini')
+  })
+
+  it('a non-JSON error body still yields a status-bearing error', async () => {
+    const fetchFn = vi.fn(async () => new Response('<html>502 Bad Gateway</html>', { status: 502 }))
+    await expect(callLlm('hi', { GROQ_API_KEY: 'g' }, fetchFn as never)).rejects.toThrow(/groq HTTP 502/)
+  })
+
   it('LLM_PROVIDER forces the primary', async () => {
     const fetchFn = vi.fn(async (url: string) => new Response(url.includes('generativelanguage') || url.includes('netlify') ? geminiOk : groqOk))
     const r = await callLlm('hi', { GROQ_API_KEY: 'g', GEMINI_API_KEY: 'x', LLM_PROVIDER: 'gemini' }, fetchFn as never)
