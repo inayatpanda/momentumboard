@@ -264,6 +264,29 @@ export function fallbackIdeasFromBoard(board: (BoardIdeaSlim & { note?: string; 
   }))
 }
 
+/** Sentences (≥minLen chars, whitespace-normalized) in today's prose that
+ * already appeared verbatim in the previous edition — the "same paper, twice"
+ * tell. Genuine data prose carries fresh numbers and never trips this; only
+ * recycled wording does. */
+export function findVerbatimRepeats(
+  fields: Record<string, string | undefined | null>,
+  priorText: string,
+  minLen = 45,
+): { field: string; sentence: string }[] {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+  const sentences = (t: string) => t.split(/(?<=[.!?])\s+/)
+  const prior = new Set(sentences(priorText).map(norm).filter(s => s.length >= minLen))
+  const out: { field: string; sentence: string }[] = []
+  for (const [field, text] of Object.entries(fields)) {
+    if (!text) continue
+    for (const sentence of sentences(text)) {
+      const n = norm(sentence)
+      if (n.length >= minLen && prior.has(n)) out.push({ field, sentence: sentence.trim() })
+    }
+  }
+  return out
+}
+
 /** Serialize the prompt data within budget by dropping WHOLE low-priority keys
  * (in dropOrder) — a mid-string cut hands the model malformed JSON and silently
  * deletes whatever serialized last (which was the headlines). */
@@ -388,15 +411,15 @@ export const SECTIONS: SectionSpec[] = [
   {
     key: 'lead',
     fields: ['headline', 'standfirst', 'lead', 'regime', 'fedStance', 'macroNotes'],
-    brief: 'The front page: a punchy newspaper headline for the day\'s most important thing, a 1-2 sentence italic standfirst, and a lead of 3-4 substantial paragraphs telling today\'s story. Also your regime/fedStance verdicts and 1-3 macroNotes.',
-    shape: '{"headline":"...","standfirst":"...","lead":"<3-4 paragraphs \\n\\n separated>","regime":"green|amber|red","fedStance":"hawkish|neutral|dovish","macroNotes":["..."]}',
+    brief: 'The front page: a punchy newspaper headline for the day\'s most important thing, a 1-2 sentence italic standfirst, and a lead of 2-3 TIGHT paragraphs telling today\'s story — the story, not a survey; if it fits in two paragraphs, write two. Also your regime/fedStance verdicts and 1-3 macroNotes.',
+    shape: '{"headline":"...","standfirst":"...","lead":"<2-3 tight paragraphs \\n\\n separated>","regime":"green|amber|red","fedStance":"hawkish|neutral|dovish","macroNotes":["..."]}',
   },
   {
     key: 'desk',
     // portfolioDesk retired 2026-07-15: the paper now reaches outside readers,
     // and the publisher's personal T212 book is nobody's business but theirs
     fields: ['tape'],
-    brief: 'tape: the macro brief, and it MUST preview the next 48h of high-impact events from econCalendarThisWeek using their forecast vs previous numbers and say how to position around each.',
+    brief: 'tape: the macro brief, and it MUST preview the next 48h of high-impact events from econCalendarThisWeek using their forecast vs previous numbers and say how to position around each. One tight line per event — no filler between them.',
     shape: '{"tape":"..."}',
   },
   {
@@ -417,7 +440,7 @@ IF engineBoard IS ABSENT (engine offline): fall back to candidateReads — an id
   {
     key: 'discovery',
     fields: ['smallCap', 'channels', 'readersNotes', 'nominations'],
-    brief: 'smallCap: the 0-1 discovery from socialPulse with full company name, surge evidence, market cap, liquidity check (omit field if none deserves it). channels: NAME the YouTube channels explicitly (e.g. \'Stocks with Josh\') — use channelConsensus stances where present AND recentChannelVideos titles for what each channel just covered; give YOUR take on each; if transcript data is thin say plainly what is known only from titles. readersNotes: his observations tested against data — held up or contradicted (omit if userNotes is empty). nominations: up to 3 tickers you believe deserve the QUANT ENGINE\'s attention TOMORROW — each REQUIRES a citation of a concrete headline or event from the data (mediaHeadlines/headlines). A nomination is NOT a trade call: it only asks the engine to examine the name, which then gates and prices it exactly like any other candidate. NEVER nominate a ticker already in engineBoard or on the watchlist. Omit the field entirely if none deserves it.',
+    brief: 'smallCap: the 0-1 discovery from socialPulse with full company name, surge evidence, market cap, liquidity check. If none deserves it, OMIT the field entirely — never write a "nothing today" placeholder line. channels: NAME the YouTube channels explicitly (e.g. \'Stocks with Josh\') — use channelConsensus stances where present AND recentChannelVideos titles for what each channel just covered; give YOUR take on each; if transcript data is thin say plainly what is known only from titles. readersNotes: his observations tested against data — held up or contradicted (omit if userNotes is empty). nominations: up to 3 tickers you believe deserve the QUANT ENGINE\'s attention TOMORROW — each REQUIRES a citation of a concrete headline or event from the data (mediaHeadlines/headlines). A nomination is NOT a trade call: it only asks the engine to examine the name, which then gates and prices it exactly like any other candidate. NEVER nominate a ticker already in engineBoard or on the watchlist. Omit the field entirely if none deserves it.',
     shape: '{"smallCap":"<omit if none>","channels":"...","readersNotes":"<omit if no notes>","nominations":[{"ticker":"XYZ","reason":"<cites a specific headline from the data>"}]}',
   },
   {
@@ -429,20 +452,23 @@ IF engineBoard IS ABSENT (engine offline): fall back to candidateReads — an id
   {
     key: 'signal',
     fields: ['signal', 'signalWhy'],
-    brief: `THE SIGNAL — the single suggestion that matters most today, chosen ONLY when the full stack aligns AND the chart is at a GOOD ENTRY (entryQuality early strongly preferred; NEVER an extended/exhausted chase — the reader is reversal-first): (1) data: typical10dMovePct >= 8% AND a favourable stage (early-reversal/pullback/basing turning up), volume-confirmed, (2) news: a concrete headline or catalyst, (3) channels: what the YouTube channels say (by name; or honestly silent), (4) social: mention/surge numbers, (5) company: one plain line on what the business is and why it is positioned. Give thesis (2-3 sentences), expectedMove (<=1.3x its capacity), conviction, and action (exact entry plan + invalidation). HARD GATE: a signal requires the data pillar PLUS at least TWO other pillars with CONCRETE POSITIVE evidence (a real headline, a named channel take, actual mention numbers, insider buys). "Silent on the channels" and "no direct catalyst" are NOT evidence — if three pillars read empty, set signal to null and explain in signalWhy. An honest no-signal day beats a forced one, and conviction A is reserved for four or five live pillars.`,
+    brief: `THE SIGNAL — the single suggestion that matters most today, chosen ONLY when the full stack aligns AND the chart is at a GOOD ENTRY (entryQuality early strongly preferred; NEVER an extended/exhausted chase — the reader is reversal-first): (1) data: typical10dMovePct >= 8% AND a favourable stage (early-reversal/pullback/basing turning up), volume-confirmed, (2) news: a concrete headline or catalyst, (3) channels: what the YouTube channels say (by name; or honestly silent), (4) social: mention/surge numbers, (5) company: one plain line on what the business is and why it is positioned. Give thesis (2-3 sentences), expectedMove (<=1.3x its capacity), conviction, and action (exact entry plan + invalidation). HARD GATE: a signal requires the data pillar PLUS at least TWO other pillars with CONCRETE POSITIVE evidence (a real headline, a named channel take, actual mention numbers, insider buys). "Silent on the channels" and "no direct catalyst" are NOT evidence — if three pillars read empty, set signal to null and explain in signalWhy. An honest no-signal day beats a forced one, and conviction A is reserved for four or five live pillars.
+NO-SIGNAL DAYS: the reader values a real explanation — signalWhy is 3-5 tight sentences, not a shrug and not an essay. Write it FRESH each day: lead with what CHANGED since the previous edition (a pillar that filled in or fell away, a new near-miss), name today's nearest miss and the one thing that would flip it to a call. If this is day N of no signal running (see previousEditions), say so plainly. Never restate the standing criteria — the reader knows the bar; allude in half a sentence at most, in plain English.`,
     shape: '{"signal":{"ticker":"XYZ","company":"Full Name","thesis":"...","evidence":{"data":"...","news":"...","channels":"...","social":"...","company":"..."},"expectedMove":"+X-Y% in N weeks","conviction":"A|B|C","action":"..."} OR {"signal":null,"signalWhy":"..."}}',
   },
   {
     key: 'voice',
     fields: ['editorial', 'honestClose'],
-    brief: 'editorial (The Long View): 2-3 paragraphs of well-established market history or a great investor\'s principle that rhymes with TODAY\'s tape — tied explicitly to current conditions, no invented statistics. honestClose: confidence grade, what proves today wrong, what was unverifiable.',
+    brief: 'editorial (The Long View): 1-2 TIGHT paragraphs of well-established market history or a great investor\'s principle that rhymes with TODAY\'s tape — tied explicitly to current conditions, no invented statistics, and never a principle used in a recent edition (see previousEditions). honestClose: confidence grade, what proves today wrong, what was unverifiable — three crisp sentences, no more.',
     shape: '{"editorial":"...","honestClose":"..."}',
   },
 ]
 
 const PERSONA = (dateLabel: string) => `You are a seasoned, decisive Wall Street analyst writing THE STREET SIGNAL for ${dateLabel} — a morning newspaper for one UK retail swing trader (Trading 212 ISA, reversal-first, 1 day-3 week holds, LSE inverse ETPs for shorts, small caps welcome at half size). Confident; both directions are opportunity; numbered reasons; no hedging filler.
 NUMERIC DISCIPLINE: use ONLY numbers present in the data; never invent a price, level or statistic; no price for a ticker → qualitative levels only. Round every percentage to ONE decimal place in prose — never print long raw decimals.
-CONTINUITY: previousEditions in the data show what the reader was already told. Never re-introduce a covered theme as new — reference and build ("the healthcare rotation we flagged is now day 3 and CONFIRMED: rs5 still leads rs21" / "yesterday's call is fading — one-day event"). Repeated picks: say it is a repeat and what changed.
+CONTINUITY: previousEditions in the data show what the reader was already told. Never re-introduce a covered theme as new — reference and build ("the healthcare rotation we flagged is now day 3 and CONFIRMED" / "yesterday's call is fading — one-day event"). Repeated picks: say it is a repeat and what changed. If the macro story is unchanged from the previous edition's headline, today's headline must ADVANCE it (what is new, how many days running) — never re-announce it as breaking. Never reuse a previous edition's sentences or stock phrases; vary the wording.
+CRISP: this is a broadsheet, not a research note. Short declarative sentences; no throat-clearing ("it's worth noting", "investors should be aware"); never restate what a table in the same paper already shows. Every sentence earns its place with a fact, a level, or a decision — cut the rest.
+PLAIN ENGLISH: NEVER print internal data key names (typical10dMovePct, entryQuality, socialPulse, engineBoard, rs5/rs21 and the like) in reader-facing prose — translate them ("typically moves 8% in two weeks", "a clean early entry", "social chatter", "5-day vs 1-month relative strength").
 REVERSAL-FIRST (the reader's core edge — obey it): candidateReads gives each name's STAGE and entryQuality from real chart+volume analysis. STRONGLY PREFER entryQuality "early" (early-reversal or healthy pullback near support — turning up with room to run). A name that has already climbed and reads "extended" or "exhausted" (high RSI, stretched above the 20-day, pinned at range highs) is a CHASE, not a buy — do NOT make it a long however strong its momentum or rotation; skip it, wait for a pullback (name the level), or treat it as a SHORT/fade via an inverse ETP. "falling-knife" = wait. Volume must confirm — call out light-volume (unconfirmed) moves.
 NAMES: full company name once at first mention of any ticker.
 ONE PAPER: each ticker gets ONE full pitch, in its home section (ideas/shortDesk for board calls). Every other section that touches the same name references it in half a sentence at most — never restates its case, levels or reasons.`

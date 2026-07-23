@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDataJson, fallbackIdeasFromBoard, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, type ComposedReport, type StoredNomination } from './newspaper'
+import { buildDataJson, fallbackIdeasFromBoard, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, findVerbatimRepeats, type ComposedReport, type StoredNomination } from './newspaper'
 
 const sample: ComposedReport = {
   headline: 'Tech Leads a Cautious Tape Higher',
@@ -286,5 +286,29 @@ describe('fallbackIdeasFromBoard', () => {
     expect(ideas).toHaveLength(2) // top 2 only
     expect(ideas[0]).toMatchObject({ ticker: 'IREN', side: 'short', playbook: 'S', entry: '38.82', invalidation: '46.16', target: '29.03', conviction: 'C', predictionId: '2026-07-02:IREN:short' })
     expect(ideas[0].caseText).toContain('Paper-only')
+  })
+})
+
+describe('findVerbatimRepeats', () => {
+  const prior = `The Signal No conviction call today. No compelling small-cap discovery from social chatter today that meets liquidity or reversal-first criteria. Energy leads while technology fades on the week. XOM 151.71 +4.6%`
+  it('flags sentences recycled from the previous edition', () => {
+    const hits = findVerbatimRepeats(
+      { smallCap: 'No compelling small-cap discovery from social chatter today that meets liquidity or reversal-first criteria.', rotation: 'Fresh take on the same tape with new numbers.' },
+      prior,
+    )
+    expect(hits).toHaveLength(1)
+    expect(hits[0].field).toBe('smallCap')
+  })
+  it('ignores short sentences, case and whitespace differences count as repeats', () => {
+    const hits = findVerbatimRepeats(
+      { crypto: 'ENERGY leads   while technology fades on the week. BTC basing.', tape: 'No conviction call today.' },
+      prior,
+    )
+    expect(hits).toHaveLength(1) // "No conviction call today." is under the length floor
+    expect(hits[0].field).toBe('crypto')
+  })
+  it('empty and missing fields are safe', () => {
+    expect(findVerbatimRepeats({ smallCap: undefined, tape: '' }, prior)).toHaveLength(0)
+    expect(findVerbatimRepeats({ tape: 'Anything.' }, '')).toHaveLength(0)
   })
 })

@@ -283,8 +283,10 @@ export default async (req: Request) => {
         recentEventAssessments: dossiers,
       },
       // drop order: least critical first — the engine board and headlines must
-      // survive; colour and history give way
-      ['recentEventAssessments', 'userNotes', 'pickPersistence', 'insiderBuying', 'recentChannelVideos', 'socialPulse', 'rotationLeaders', 'candidateReads', 'ownScorecard', 'previousEditions', 'channelConsensus', 'sectorRotation', 'watchlistQuotes'],
+      // survive. pickPersistence + previousEditions are last: they are tiny and
+      // they are the paper's memory — dropping them (as the old order did every
+      // single day) is why editions re-announced the same story as breaking.
+      ['recentEventAssessments', 'userNotes', 'insiderBuying', 'recentChannelVideos', 'socialPulse', 'rotationLeaders', 'candidateReads', 'ownScorecard', 'channelConsensus', 'sectorRotation', 'watchlistQuotes', 'pickPersistence', 'previousEditions'],
     )
 
     console.log('COMPOSE: gathered ok, data bytes', data.length, dropped.length ? `| dropped to fit: ${dropped.join(',')}` : '')
@@ -410,6 +412,51 @@ export default async (req: Request) => {
       }
     } catch { /* audit is best-effort — the original prose stands */ }
 
+    // ---- freshness pass: no sentence runs in two editions ----
+    // The continuity data tells the writer what was already covered; this
+    // catches what slips through anyway. Deterministic detector first (zero
+    // LLM cost on clean days); one rewrite call only when yesterday's wording
+    // actually recurs. Fail-soft: today's prose stands on any error.
+    try {
+      const hist = ((await blobAppStore.read<{ date: string }[]>('composed-history')) ?? []).filter(h => h.date !== dateISO)
+      const prevDate = hist.at(-1)?.date
+      const prior = prevDate ? await blobAppStore.read<{ html?: string }>(`report:${prevDate}`) : null
+      const priorText = (prior?.html ?? '')
+        .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&[a-z#0-9]+;/gi, ' ')
+      if (priorText) {
+        const { findVerbatimRepeats } = await import('./lib/newspaper')
+        const proseFields: Record<string, string | undefined> = {
+          lead: composed.lead, tape: composed.tape, shortDesk: composed.shortDesk,
+          smallCap: composed.smallCap, rotation: composed.rotation, crypto: composed.crypto,
+          channels: composed.channels, editorial: composed.editorial,
+          signalWhy: composed.signalWhy, honestClose: composed.honestClose,
+        }
+        const repeats = findVerbatimRepeats(proseFields, priorText).slice(0, 10)
+        if (repeats.length) {
+          const byField = [...new Set(repeats.map(r => r.field))]
+          const rewritePrompt = `You are the sub-editor of a daily market paper. These sentences in today's draft appeared VERBATIM in yesterday's edition. Rewrite each listed section so the recycled sentences are freshly worded — same facts, same numbers, and where it reads naturally acknowledge the continuity ("as flagged yesterday…", "for the third session…"). Change nothing else in the section.\n\nRECYCLED:\n${repeats.map(r => `[${r.field}] ${r.sentence}`).join('\n')}\n\nSECTIONS:\n${byField.map(f => `${f}: ${proseFields[f]}`).join('\n\n')}\n\nReturn ONLY JSON: {${byField.map(f => `"${f}":"..."`).join(',')}} — every listed field present, full replacement text for the whole section.`
+          const { text } = await callLlm(rewritePrompt, { maxTokens: 1800 })
+          const m = text.match(/\{[\s\S]*\}/)
+          if (m) {
+            const fresh = JSON.parse(m[0]) as Record<string, string>
+            let applied = 0
+            for (const f of byField) {
+              const next = fresh[f]
+              const orig = proseFields[f] ?? ''
+              // sanity: a rewrite is a rewording, not a rewrite of scope
+              if (typeof next === 'string' && next.length >= orig.length * 0.4 && next.length <= orig.length * 2 + 200) {
+                ;(composed as unknown as Record<string, unknown>)[f] = next
+                applied++
+              }
+            }
+            console.log(`COMPOSE: freshness pass rewrote ${applied}/${byField.length} sections (${repeats.length} recycled sentences)`)
+          }
+        } else console.log('COMPOSE: freshness pass clean')
+      }
+    } catch { /* freshness is best-effort — today's prose stands */ }
+
     // ---- publish through the same pipe the routine uses ----
     const html = buildNewspaperHtml(composed, dateLabel, extras)
     // The print-edition PDF is now TYPESET from this structured payload (heat map,
@@ -459,6 +506,10 @@ export default async (req: Request) => {
       ideas: composed.ideas.map(i => ({ ticker: i.ticker, side: i.side, strength: i.strength })),
       rotationGist: composed.rotation.slice(0, 300),
       smallCapGist: (composed.smallCap ?? '').slice(0, 200),
+      // what The Signal said — a call, or the gist of the no-signal reasoning —
+      // so tomorrow's writer can vary it and count the streak instead of
+      // re-deriving the same apology from scratch
+      signalGist: composed.signal ? `called ${composed.signal.ticker} (${composed.signal.conviction})` : (composed.signalWhy ?? '').slice(0, 220),
     }
     const composedHistory = ((await blobAppStore.read<{ date: string }[]>('composed-history')) ?? []).filter(h => h.date !== dateISO)
     composedHistory.push(historyEntry)
