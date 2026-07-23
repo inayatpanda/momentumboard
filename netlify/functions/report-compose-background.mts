@@ -441,17 +441,27 @@ export default async (req: Request) => {
           const m = text.match(/\{[\s\S]*\}/)
           if (m) {
             const fresh = JSON.parse(m[0]) as Record<string, string>
+            // audit L-3: a rewording must not INVENT or change a fact. Reject any
+            // rewrite whose numeric tokens aren't all present in the original —
+            // a changed price/level/percent silently corrupting the paper is far
+            // worse than a repeated sentence surviving. Rejections are logged.
+            const numsOf = (s: string) => new Set((s.match(/-?\d[\d,]*\.?\d*%?/g) ?? []).map(n => n.replace(/,/g, '')))
             let applied = 0
+            const rejected: string[] = []
             for (const f of byField) {
               const next = fresh[f]
               const orig = proseFields[f] ?? ''
-              // sanity: a rewrite is a rewording, not a rewrite of scope
-              if (typeof next === 'string' && next.length >= orig.length * 0.4 && next.length <= orig.length * 2 + 200) {
+              const lenOk = typeof next === 'string' && next.length >= orig.length * 0.4 && next.length <= orig.length * 2 + 200
+              const origNums = numsOf(orig)
+              const numsOk = lenOk && [...numsOf(next)].every(n => origNums.has(n))
+              if (numsOk) {
                 ;(composed as unknown as Record<string, unknown>)[f] = next
                 applied++
+              } else {
+                rejected.push(`${f}:${!lenOk ? 'length' : 'new-number'}`)
               }
             }
-            console.log(`COMPOSE: freshness pass rewrote ${applied}/${byField.length} sections (${repeats.length} recycled sentences)`)
+            console.log(`COMPOSE: freshness pass rewrote ${applied}/${byField.length} sections (${repeats.length} recycled)${rejected.length ? ` | REJECTED ${rejected.join(', ')} — original kept` : ''}`)
           }
         } else console.log('COMPOSE: freshness pass clean')
       }
