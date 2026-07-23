@@ -1,11 +1,20 @@
 /// <reference lib="webworker" />
 declare let self: ServiceWorkerGlobalScope
 
-import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
+import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from 'workbox-precaching'
+import { registerRoute, NavigationRoute } from 'workbox-routing'
 import { clientsClaim } from 'workbox-core'
 
 cleanupOutdatedCaches()
 precacheAndRoute(self.__WB_MANIFEST)
+
+// Offline navigation (audit M-3): the installed PWA opens at its start_url
+// /app/, which maps to no precached file, so an offline launch showed the
+// browser's error page. Serve the precached SPA shell (index.html) for any
+// /app/ navigation instead. Scoped to /app/ so the public marketing pages and
+// the report are untouched.
+registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html'), { allowlist: [/^\/app(\/|$)/] }))
+
 self.skipWaiting()
 clientsClaim()
 
