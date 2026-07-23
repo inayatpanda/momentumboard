@@ -135,7 +135,7 @@ export function Journal() {
     const blob = new Blob([JSON.stringify(trades, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `momentumboard-journal-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `streetsignal-journal-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
   }
 
