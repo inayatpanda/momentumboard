@@ -24,18 +24,27 @@ export interface SocialPulseRow {
 }
 
 export async function fetchRedditTrends(fetchFn: typeof fetch = fetch): Promise<RedditTrend[]> {
+  // Loud on failure: this used to return [] silently, so an ApeWisdom outage
+  // was indistinguishable from a genuinely quiet market. The warn lines land in
+  // the function/Actions log — the only place a degraded source can be seen.
   try {
     const res = await fetchFn('https://apewisdom.io/api/v1.0/filter/all-stocks/page/1', { headers: { 'User-Agent': 'Mozilla/5.0 (MomentumBoard)' } })
-    if (!res.ok) return []
+    if (!res.ok) {
+      console.warn(`SOCIAL: apewisdom (reddit) HTTP ${res.status} — reddit sentiment missing this cycle`)
+      return []
+    }
     const j = (await res.json()) as { results?: { ticker: string; name: string; rank: number; mentions: number | string; mentions_24h_ago: number | string }[] }
-    return (j.results ?? []).slice(0, 30).map(r => ({
+    const rows = (j.results ?? []).slice(0, 30).map(r => ({
       ticker: r.ticker.toUpperCase(),
       name: r.name,
       rank: r.rank,
       mentions: Number(r.mentions) || 0,
       mentions24hAgo: Number(r.mentions_24h_ago) || 0,
     }))
-  } catch {
+    if (!rows.length) console.warn('SOCIAL: apewisdom (reddit) returned 0 rows — reddit sentiment empty this cycle')
+    return rows
+  } catch (e) {
+    console.warn(`SOCIAL: apewisdom (reddit) fetch failed: ${String(e).slice(0, 120)} — reddit sentiment missing this cycle`)
     return []
   }
 }
@@ -43,10 +52,14 @@ export async function fetchRedditTrends(fetchFn: typeof fetch = fetch): Promise<
 export async function fetchStocktwitsTrending(fetchFn: typeof fetch = fetch): Promise<string[]> {
   try {
     const res = await fetchFn('https://api.stocktwits.com/api/2/trending/symbols.json', { headers: { 'User-Agent': 'Mozilla/5.0 (MomentumBoard)' } })
-    if (!res.ok) return []
+    if (!res.ok) {
+      console.warn(`SOCIAL: stocktwits trending HTTP ${res.status} — stocktwits signal missing this cycle`)
+      return []
+    }
     const j = (await res.json()) as { symbols?: { symbol: string }[] }
     return (j.symbols ?? []).map(s => s.symbol.toUpperCase()).slice(0, 30)
-  } catch {
+  } catch (e) {
+    console.warn(`SOCIAL: stocktwits trending fetch failed: ${String(e).slice(0, 120)} — stocktwits signal missing this cycle`)
     return []
   }
 }

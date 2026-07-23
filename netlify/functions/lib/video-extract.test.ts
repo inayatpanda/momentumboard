@@ -27,10 +27,20 @@ describe('extract tier rung ladder', () => {
     transcriptMock.fetchTranscriptAny.mockResolvedValue({ text: 'a long transcript about NVDA', source: 'free' })
     llmMock.callLlm.mockResolvedValue({ text: EXTRACT_JSON })
     const res = await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=t1'), { APP_TOKEN: 'app' }, store)
-    expect(await res.text()).toBe('extracted:transcript')
+    expect(await res.text()).toBe('extracted:free')
     const rows = (await store.read<VideoExtract[]>('video-extracts'))!
     expect(rows[0].tickers[0].sym).toBe('NVDA')
-    expect(rows[0].via).toBe('transcript')
+    expect(rows[0].via).toBe('free')
+  })
+
+  it('supadata rung: the row is tagged supadata, not a generic transcript', async () => {
+    const store = memoryStore()
+    transcriptMock.fetchTranscriptAny.mockResolvedValue({ text: 'a long transcript about NVDA', source: 'supadata' })
+    llmMock.callLlm.mockResolvedValue({ text: EXTRACT_JSON })
+    const res = await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=s1'), { APP_TOKEN: 'app', SUPADATA_API_KEY: 'k' }, store)
+    expect(await res.text()).toBe('extracted:supadata')
+    const rows = (await store.read<VideoExtract[]>('video-extracts'))!
+    expect(rows[0].via).toBe('supadata')
   })
 
   it('no transcript: Gemini watches the video and the row is tagged gemini-video', async () => {

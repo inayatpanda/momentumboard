@@ -72,12 +72,18 @@ export async function fetchTranscript(videoUrl: string, apiKey: string, fetchFn:
     const res = await fetchFn(`https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(videoUrl)}&text=true`, {
       headers: { 'x-api-key': apiKey },
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      // loud: a bad key or exhausted 100/mo free quota shows here instead of
+      // silently dropping straight through to the paid Gemini rung
+      console.warn(`TRANSCRIPT: supadata HTTP ${res.status} — falling through to the Gemini rung`)
+      return null
+    }
     const j = (await res.json()) as { content?: string | { text: string }[] }
     if (typeof j.content === 'string') return j.content
     if (Array.isArray(j.content)) return j.content.map(c => c.text).join(' ')
     return null
-  } catch {
+  } catch (e) {
+    console.warn(`TRANSCRIPT: supadata fetch failed: ${String(e).slice(0, 120)}`)
     return null
   }
 }

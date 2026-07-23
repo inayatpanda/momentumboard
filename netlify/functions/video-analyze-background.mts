@@ -82,8 +82,9 @@ export async function routeVideoAnalyze(
     if (extracts.filter(e => nowSec - e.at < 86_400).length >= 25) return new Response('extract-daily-cap', { status: 200 })
     const got = await fetchTranscriptAny(body.url, env.SUPADATA_API_KEY)
     let raw: string | null = null
-    let via: 'transcript' | 'gemini-video' = 'transcript'
+    let via: 'free' | 'supadata' | 'gemini-video' = 'gemini-video'
     if (got) {
+      via = got.source // 'free' (caption scrape) or 'supadata' — kept distinct so the health line shows which cheap rung actually fired
       try {
         raw = (await callLlm(EXTRACT_PROMPT(body.title ?? '', body.channel ?? '', got.text), env)).text
       } catch (e) {
@@ -111,6 +112,15 @@ export async function routeVideoAnalyze(
     const archive = (await store.read<unknown[]>(monthKey)) ?? []
     archive.push(extract)
     await store.write(monthKey, archive)
+    // Health line: which rung is actually carrying the load over the last 24h.
+    // If free+supadata stay 0 and gemini climbs, the cheap tiers are dead and
+    // the day's videos beyond the Gemini cap are being dropped — the one signal
+    // that used to be invisible until someone grepped the Actions log by hand.
+    const last24 = extracts.filter(e => nowSec - e.at < 86_400)
+    const n = (v: string) => last24.filter(e => e.via === v).length
+    console.log(
+      `EXTRACT-HEALTH: read via ${via} | 24h rungs free=${n('free')} supadata=${n('supadata')} gemini=${n('gemini-video')}${last24.some(e => e.via === 'transcript') ? ` transcript(legacy)=${n('transcript')}` : ''} | caps: gemini ${GEMINI_EXTRACT_DAILY_CAP}/day, extract 25/day`,
+    )
     return new Response(`extracted:${via}`, { status: 200 })
   }
   const list = (await store.read<VideoAnalysis[]>('video-analyses')) ?? []
