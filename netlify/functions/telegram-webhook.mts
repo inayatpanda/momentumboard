@@ -12,11 +12,17 @@ import { CANONICAL_SITE } from './lib/site'
 export async function routeTelegramWebhook(
   headers: Headers,
   bodyText: string | null,
-  env: { REPORT_TOKEN?: string; TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; URL?: string },
+  env: { REPORT_TOKEN?: string; TELEGRAM_WEBHOOK_SECRET?: string; TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; URL?: string },
   store: AppStore,
   send: typeof sendTelegram = sendTelegram,
 ): Promise<Response> {
-  if (!env.REPORT_TOKEN || headers.get('x-telegram-bot-api-secret-token') !== env.REPORT_TOKEN) {
+  // audit H-1: one REPORT_TOKEN guarded the webhook, the publisher AND the
+  // private export. Prefer a dedicated TELEGRAM_WEBHOOK_SECRET when set; fall
+  // back to REPORT_TOKEN so nothing breaks before the owner cuts over (set the
+  // scoped secret + re-register the Telegram webhook with it, then drop
+  // REPORT_TOKEN — see the overnight report).
+  const webhookSecret = env.TELEGRAM_WEBHOOK_SECRET ?? env.REPORT_TOKEN
+  if (!webhookSecret || headers.get('x-telegram-bot-api-secret-token') !== webhookSecret) {
     return new Response('unauthorized', { status: 401 })
   }
   const update = bodyText ? (JSON.parse(bodyText) as { message?: { chat?: { id: number }; text?: string } }) : null
@@ -141,6 +147,7 @@ export default async (req: Request, _context: Context) =>
     await req.text(),
     {
       REPORT_TOKEN: process.env.REPORT_TOKEN,
+      TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET,
       TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
       TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
       URL: process.env.URL,

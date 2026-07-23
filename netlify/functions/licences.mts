@@ -66,12 +66,22 @@ export async function routeLicences(
     if (wantsTrial) {
       const ip = headers.get('x-nf-client-connection-ip') ?? headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
       const ipHash = await hash8(ip)
-      const issues = ((await store.read<{ ipHash: string; at: number }[]>('trial-issues')) ?? []).filter(i => nowSec - i.at < 7 * 86_400)
+      // audit M-7: Blobs is eventually consistent and this counter is a plain
+      // read-modify-write, so concurrent requests could all read a stale count
+      // and blow past the cap. Read STRONG for the freshest count, and merge our
+      // entry onto the latest list on write (never clobber a concurrent append)
+      // so the first write propagates the increment and later requests are
+      // blocked. Not truly atomic — a burst of genuinely simultaneous requests
+      // can still slip a couple through — but it closes the wide staleness gap.
+      const strongRead = <T,>(k: string): Promise<T | null> => (store.readStrong ? store.readStrong<T>(k) : store.read<T>(k))
+      const readIssues = async () => ((await strongRead<{ ipHash: string; at: number }[]>('trial-issues')) ?? []).filter(i => nowSec - i.at < 7 * 86_400)
+      const issues = await readIssues()
       if (issues.filter(i => i.ipHash === ipHash).length >= TRIAL_PER_IP_WEEK) return json(429, { ok: false, error: 'trial-limit' })
       if (issues.filter(i => nowSec - i.at < 86_400).length >= TRIAL_GLOBAL_PER_DAY) return json(429, { ok: false, error: 'trial-limit' })
       const lic: Licence = { key: generateLicenceKey(), label: `trial-${ipHash}`, createdAt: nowSec, expiresAt: nowSec + TRIAL_DAYS * 86_400, trial: true }
       if (!(await addLicenceVerified(store, lic))) return json(500, { ok: false, error: 'mint-failed' })
-      await store.write('trial-issues', [...issues, { ipHash, at: nowSec }])
+      const latest = await readIssues() // re-read fresh so a concurrent append isn't lost
+      await store.write('trial-issues', [...latest, { ipHash, at: nowSec }])
       return json(200, { ok: true, data: { key: lic.key, expiresAt: lic.expiresAt } })
     }
   }

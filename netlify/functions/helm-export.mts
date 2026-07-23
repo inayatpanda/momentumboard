@@ -43,11 +43,14 @@ interface PickDay {
 export async function routeExport(
   url: URL,
   headers: Headers,
-  env: { APP_TOKEN?: string; REPORT_TOKEN?: string },
+  env: { APP_TOKEN?: string; REPORT_TOKEN?: string; HELM_EXPORT_TOKEN?: string },
   store: AppStore,
 ): Promise<Response> {
   const tok = headers.get('x-report-token') || headers.get('x-app-token')
-  const ok = (!!env.REPORT_TOKEN && tok === env.REPORT_TOKEN) || (!!env.APP_TOKEN && tok === env.APP_TOKEN)
+  // audit H-1: prefer a dedicated HELM_EXPORT_TOKEN; fall back to REPORT_TOKEN
+  // until the owner sets it + updates the Helm app to send it.
+  const exportTok = env.HELM_EXPORT_TOKEN ?? env.REPORT_TOKEN
+  const ok = (!!exportTok && tok === exportTok) || (!!env.APP_TOKEN && tok === env.APP_TOKEN)
   if (!ok) return json(401, { ok: false, error: 'unauthorized' })
 
   const now = Math.floor(Date.now() / 1000)
@@ -124,4 +127,4 @@ export async function routeExport(
 }
 
 export default async (req: Request, _context: Context) =>
-  routeExport(new URL(req.url), req.headers, { APP_TOKEN: process.env.APP_TOKEN, REPORT_TOKEN: process.env.REPORT_TOKEN }, blobAppStore)
+  routeExport(new URL(req.url), req.headers, { APP_TOKEN: process.env.APP_TOKEN, REPORT_TOKEN: process.env.REPORT_TOKEN, HELM_EXPORT_TOKEN: process.env.HELM_EXPORT_TOKEN }, blobAppStore)

@@ -36,7 +36,7 @@ export async function routeReport(
   method: string,
   headers: Headers,
   bodyText: string | null,
-  env: { REPORT_TOKEN?: string; TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; URL?: string; FINNHUB_API_KEY?: string },
+  env: { REPORT_TOKEN?: string; REPORT_PUBLISH_TOKEN?: string; TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; URL?: string; FINNHUB_API_KEY?: string },
   store: AppStore,
   telegramSend: typeof sendTelegram = sendTelegram,
   url?: URL,
@@ -69,7 +69,10 @@ export async function routeReport(
   }
 
   if (method === 'PUT') {
-    if (!env.REPORT_TOKEN || headers.get('x-report-token') !== env.REPORT_TOKEN) return json(401, { ok: false, error: 'unauthorized' })
+    // audit H-1: prefer a dedicated REPORT_PUBLISH_TOKEN; fall back to
+    // REPORT_TOKEN until the owner sets it everywhere the composer runs.
+    const publishTok = env.REPORT_PUBLISH_TOKEN ?? env.REPORT_TOKEN
+    if (!publishTok || headers.get('x-report-token') !== publishTok) return json(401, { ok: false, error: 'unauthorized' })
 
     // JSON body = the day's structured picks (published alongside the HTML article)
     if ((headers.get('content-type') ?? '').includes('application/json')) {
@@ -194,6 +197,7 @@ export default async (req: Request, _context: Context) =>
     req.method === 'PUT' ? await req.text() : null,
     {
       REPORT_TOKEN: process.env.REPORT_TOKEN,
+      REPORT_PUBLISH_TOKEN: process.env.REPORT_PUBLISH_TOKEN,
       TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
       TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
       URL: process.env.URL,
