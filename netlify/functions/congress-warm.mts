@@ -34,10 +34,12 @@ const fetchCloses = async (sym: string, allowFetch: boolean): Promise<{ series: 
 type CongressBlob = { trades: CongressTrade[]; source: string; asOf: number }
 
 export default async (req: Request, _context: Context) => {
-  // Public URL, no secret cron signal (audit C-1). Low harm (cache warming, 2
-  // upstream calls) and already bounded by the 2h cache check below, but guard
-  // it explicitly for consistency; admin token bypasses.
+  // Public URL, no secret cron signal (audit C-1). Reject non-scheduler /
+  // non-admin requests, and rate-bound whatever passes; admin bypasses. Low harm
+  // anyway (cache warming), already bounded by the 2h cache check below.
+  const body = await req.text().catch(() => '')
   const admin = req?.headers?.get('x-app-token') === process.env.APP_TOKEN
+  if (!admin && !body.includes('next_run')) return new Response('forbidden', { status: 401 })
   const { claimScheduleSlot } = await import('./lib/schedule')
   if (!(await claimScheduleSlot('congress-warm', 7200, admin))) return new Response('throttled', { status: 429 })
   // Unlike the lazy on-request path, the warm FORCES a sweep (2 cheap upstream

@@ -15,11 +15,13 @@ import { exchangeFor } from '../../shared/symbols'
 import type { FlagCandidate, IntradayFlagsBlob } from './lib/intradayFlags'
 
 export default async (req: Request) => {
-  // Public URL with no secret Netlify-cron signal (audit C-1). Rate-BOUND to
-  // the ~5-min cadence (4-min window) so a flood can't burn LLM/market quota or
-  // force extra runs; admin token bypasses. Alert dedup already prevents
-  // duplicate owner pings, so this only needs to cap the run frequency.
+  // Public URL, no secret cron signal (audit C-1). Reject requests that are
+  // neither the scheduler (its body carries next_run) nor admin, AND rate-BOUND
+  // whatever passes to the ~5-min cadence (4-min window) so a flood can't burn
+  // LLM/market quota. Admin token bypasses.
+  const body = await req.text().catch(() => '')
   const admin = req.headers?.get('x-app-token') === process.env.APP_TOKEN
+  if (!admin && !body.includes('next_run')) return new Response('forbidden', { status: 401 })
   const { claimScheduleSlot } = await import('./lib/schedule')
   if (!(await claimScheduleSlot('alert-check', 240, admin))) return new Response('throttled', { status: 429 })
   const nowSec = Math.floor(Date.now() / 1000)

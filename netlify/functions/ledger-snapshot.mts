@@ -6,10 +6,12 @@ import { blobAppStore } from './lib/store'
 // accountability record survives anything that happens to the hosting.
 
 export default async (req: Request) => {
-  // Emails the full backup — an open URL is a spam vector. `next_run` is not a
-  // secret (audit C-1); rate-BOUND public triggers to ~once/day (20h window),
-  // admin token bypasses.
+  // Emails the full backup — an open URL is a spam vector. Reject non-scheduler /
+  // non-admin requests, AND (since `next_run` is a guessable string, audit C-1)
+  // rate-BOUND whatever passes to ~once/day (20h window). Admin token bypasses.
+  const body = await req.text().catch(() => '')
   const admin = req.headers.get('x-app-token') === process.env.APP_TOKEN
+  if (!admin && !body.includes('next_run')) return new Response('forbidden', { status: 401 })
   const { claimScheduleSlot } = await import('./lib/schedule')
   if (!(await claimScheduleSlot('ledger-snapshot', 72_000, admin))) return new Response('throttled', { status: 429 })
 
