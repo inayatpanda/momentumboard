@@ -488,13 +488,15 @@ export default async (req: Request) => {
       macro: { fedStance: composed.fedStance, notes: composed.macroNotes },
       picks: composed.ideas.map(i => ({ ticker: i.ticker, side: i.side, playbook: i.playbook, conviction: i.conviction, strength: i.strength, reasons: i.reasons ?? [i.caseText] })),
     }
-    const putPicks = composed.ideas.length
-      ? await fetch(`${SITE}/report`, {
-          method: 'PUT',
-          headers: { 'x-report-token': process.env.REPORT_TOKEN ?? '', 'content-type': 'application/json' },
-          body: JSON.stringify(picksBody),
-        })
-      : null
+    // Always record a pick day — even an empty one (audit M-8). The persistence
+    // ledger's "last 7 reports" counts stored pick days, so a skipped no-signal
+    // day used to vanish and inflate streaks; now every published edition has a
+    // day, and `picks: []` cleanly means "no call was made".
+    const putPicks = await fetch(`${SITE}/report`, {
+      method: 'PUT',
+      headers: { 'x-report-token': process.env.REPORT_TOKEN ?? '', 'content-type': 'application/json' },
+      body: JSON.stringify(picksBody),
+    })
 
     console.log('COMPOSE: putHtml', putHtml.status, 'putPicks', putPicks?.status)
 
@@ -555,6 +557,21 @@ export default async (req: Request) => {
     return new Response('ok')
   } catch (e) {
     console.error('COMPOSE-FAILED:', e)
+    // H-2 gap: a fetch() throw (network/TLS/DNS) or any earlier error lands here
+    // before putHtml exists, bypassing the in-try alert. Page the owner + log a
+    // failure runlog so a dead compose is never silent (the Action goes red, but
+    // the owner isn't watching CI). Best-effort — never mask the real failure.
+    try {
+      const failLog = (await blobAppStore.read<unknown[]>('runlog')) ?? []
+      failLog.push({ at: Math.floor(Date.now() / 1000), kind: 'report-compose', htmlOk: false, error: String(e).slice(0, 200) })
+      await blobAppStore.write('runlog', failLog.slice(-200))
+      const tok = process.env.TELEGRAM_BOT_TOKEN
+      const chat = process.env.TELEGRAM_CHAT_ID
+      if (tok && chat) {
+        const { sendTelegram } = await import('./lib/telegram')
+        await sendTelegram(tok, chat, `🚨 StreetSignal: report compose FAILED before publish — ${String(e).slice(0, 150)}`)
+      }
+    } catch { /* alert/log is best-effort */ }
     return new Response(String(e), { status: 502 })
   }
 }

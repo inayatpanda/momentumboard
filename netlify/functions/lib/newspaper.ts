@@ -306,7 +306,26 @@ export function buildDataJson(
       json = JSON.stringify(work, null, 1)
     }
   }
-  if (json.length > budget) json = json.slice(0, budget) // still over with nothing left to drop — should not happen
+  if (json.length > budget) {
+    // Still over with nothing left to drop. NEVER slice the serialized string
+    // (audit L-4) — that hands the model malformed JSON. Instead truncate the
+    // longest string VALUES in place, which keeps the document parseable, and
+    // failing that return valid-but-oversized JSON (better than garbage).
+    const clampStrings = (o: unknown, max: number): unknown => {
+      if (typeof o === 'string') return o.length > max ? `${o.slice(0, max)}…` : o
+      if (Array.isArray(o)) return o.map(x => clampStrings(x, max))
+      if (o && typeof o === 'object') {
+        const r: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(o)) r[k] = clampStrings(v, max)
+        return r
+      }
+      return o
+    }
+    for (const max of [400, 200, 100, 50]) {
+      json = JSON.stringify(clampStrings(work, max), null, 1)
+      if (json.length <= budget) break
+    }
+  }
   return { json, dropped }
 }
 

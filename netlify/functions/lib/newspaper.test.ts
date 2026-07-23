@@ -249,6 +249,13 @@ describe('buildDataJson', () => {
     // tighter budget takes both
     expect(buildDataJson(obj, ['colourA', 'colourB'], 120).dropped).toEqual(['colourA', 'colourB'])
   })
+  it('an oversized NON-droppable field stays valid JSON, never a mid-string slice (L-4)', () => {
+    const big = { headlines: 'H'.repeat(5000), board: ['A'.repeat(3000)] } // nothing in dropOrder
+    const { json } = buildDataJson(big, [], 1_000)
+    expect(json.length).toBeLessThanOrEqual(1_000)
+    expect(() => JSON.parse(json)).not.toThrow() // the old code sliced → SyntaxError
+    expect(JSON.parse(json).headlines).toBeDefined()
+  })
 })
 
 describe('deterministic board table in the paper', () => {

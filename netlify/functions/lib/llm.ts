@@ -57,7 +57,7 @@ type Provider = { name: string; available: (e: LlmEnv) => boolean; call: (prompt
  * `${name}-empty` symptom that made a 429/expired-key/retired-model all look
  * identical. Bounded and secret-free (only status + error code/message, never
  * the request). Returns null on a 2xx so the caller proceeds to parse. */
-async function httpErrorFor(name: string, res: Response): Promise<Error | null> {
+export async function httpErrorFor(name: string, res: Response): Promise<Error | null> {
   if (res.ok !== false) return null // 2xx (or a status-less mock) → let the caller parse the body
   let detail = ''
   try {

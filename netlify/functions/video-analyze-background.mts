@@ -29,7 +29,7 @@ interface Env {
 }
 
 export const watchVideo: GeminiVideoCall = async (videoUrl, prompt, env) => {
-  const { modelFor } = await import('./lib/llm')
+  const { modelFor, httpErrorFor } = await import('./lib/llm')
   const base = env.GOOGLE_GEMINI_BASE_URL ?? 'https://generativelanguage.googleapis.com'
   const res = await fetch(`${base}/v1beta/models/${modelFor('gemini', env)}:generateContent`, {
     method: 'POST',
@@ -38,6 +38,10 @@ export const watchVideo: GeminiVideoCall = async (videoUrl, prompt, env) => {
       contents: [{ role: 'user', parts: [{ fileData: { fileUri: videoUrl, mimeType: 'video/*' } }, { text: prompt }] }],
     }),
   })
+  // audit L-5: keep the real HTTP cause (401/429/404/5xx) instead of a bare
+  // 'gemini-video: empty' — the H-3 fix hadn't reached this native-video path.
+  const httpErr = await httpErrorFor('gemini-video', res)
+  if (httpErr) throw httpErr
   const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; error?: { message?: string } }
   const text = j.candidates?.[0]?.content?.parts?.[0]?.text
   if (!text) throw new Error(`gemini-video: ${j.error?.message ?? 'empty'}`)
