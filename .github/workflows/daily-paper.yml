@@ -1,13 +1,15 @@
-# The morning engine + paper, moved off Netlify background functions (not on
-# the free plan). 05:35 UTC — 15 min after Netlify's legacy 05:20 kick — so
-# while the paid plan lingers, the guard in daily-run.mts sees the work already
-# done and no-ops; after the downgrade this is the only path. Actions cron can
-# run a few minutes late; the paper needs to exist by ~07:00 UK, so the slack
-# is fine.
+# The morning engine + paper. report-kick.mts was deleted (audit C-1), so this
+# Actions cron is now the ONLY trigger — hence three redundant morning shots so
+# a dropped/late GitHub run still lands a paper. daily-run.mts is idempotent
+# (fresh board / existing report → no-op) so only the first shot past the
+# London-06:00 floor composes; the rest are cheap no-ops. The floor (in
+# daily-run.mts) keeps GMT/winter from publishing an hour early (audit M-2).
 name: daily-paper
 on:
   schedule:
-    - cron: '35 5 * * *'
+    - cron: '35 5 * * *' # 06:35 BST (summer) — composes; 05:35 GMT (winter) — held by the floor
+    - cron: '35 6 * * *' # 06:35 GMT (winter) — composes; already done in summer
+    - cron: '35 7 * * *' # late-drift fallback
   workflow_dispatch: {}
 concurrency:
   group: daily-paper
@@ -26,6 +28,7 @@ jobs:
       - run: npx tsx scripts/bg/daily-run.mts
         env:
           URL: https://thestreetsignal.rqai.co.uk
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           APP_TOKEN: ${{ secrets.APP_TOKEN }}

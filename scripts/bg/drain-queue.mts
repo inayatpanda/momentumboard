@@ -82,17 +82,32 @@ const run = async () => {
     }
     // re-read before writing: alert-check may have enqueued while we worked
     const fresh = (await blobAppStore.read<WorkItem[]>('work-queue')) ?? []
+    const deadlettered: WorkItem[] = []
     const next = fresh
       .filter(i => !done.has(i.id))
       .map(i => (failed.has(i.id) ? { ...i, attempts: (i.attempts ?? 0) + 1 } : i))
       .filter(i => {
         if ((i.attempts ?? 0) >= MAX_ATTEMPTS) {
           console.log(`dropping ${i.kind} ${i.id} after ${i.attempts} attempts`)
+          deadlettered.push(i)
           return false
         }
         return true
       })
     await blobAppStore.write('work-queue', next)
+    if (deadlettered.length) {
+      // audit M-1: a recoverable job used to vanish silently after 3 attempts.
+      // Keep it in a dead-letter blob and page the owner so a persistent failure
+      // (e.g. a video that never yields a transcript) is visible, not lost.
+      const dl = (await blobAppStore.read<WorkItem[]>('work-queue-deadletter')) ?? []
+      await blobAppStore.write('work-queue-deadletter', [...dl, ...deadlettered].slice(-50))
+      const tok = process.env.TELEGRAM_BOT_TOKEN
+      const chat = process.env.TELEGRAM_CHAT_ID
+      if (tok && chat) {
+        const { sendTelegram } = await import('../../netlify/functions/lib/telegram')
+        await sendTelegram(tok, chat, `⚠️ StreetSignal queue: dropped ${deadlettered.length} item(s) after ${MAX_ATTEMPTS} attempts — ${deadlettered.map(i => i.kind).join(', ')}. Kept in work-queue-deadletter.`).catch(() => {})
+      }
+    }
     console.log(`done: ${done.size} ok, ${failed.size} failed, ${next.length} left in queue`)
   } finally {
     await releaseLease(blobAppStore, 'lease:queue-worker', lease)

@@ -28,6 +28,15 @@ const run = async () => {
   requireEnv(['NETLIFY_SITE_ID', 'NETLIFY_AUTH_TOKEN', 'APP_TOKEN', 'FINNHUB_API_KEY'])
   const nowSec = Math.floor(Date.now() / 1000)
   const today = londonDate(nowSec)
+  // audit M-2: a fixed-UTC cron publishes an hour early in GMT/winter. Hold the
+  // run until it is at least 06:00 in London so the edition lands near the stated
+  // ~06:45 UK time year-round; the redundant later cron shots then compose. A
+  // manual workflow_dispatch (FORCE_RUN=1) bypasses the floor.
+  const londonHour = new Date(new Date(nowSec * 1000).toLocaleString('en-US', { timeZone: 'Europe/London' })).getHours()
+  if (process.env.FORCE_RUN !== '1' && londonHour < 6) {
+    console.log(`daily-run: ${today} — London ${londonHour}:xx is too early, deferring to the next cron slot`)
+    return
+  }
   const utcDay = new Date().getUTCDay()
   const isoDate = new Date().toISOString().slice(0, 10)
   const tradingDay = utcDay !== 0 && utcDay !== 6 && !isUsMarketHoliday(isoDate)
