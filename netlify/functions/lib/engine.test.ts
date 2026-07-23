@@ -58,7 +58,7 @@ const calWith = (key: string): CalibrationState => ({ buckets: { [key]: { n: 20,
 describe('buildBoard', () => {
   it('scores a rolled-over name as a graded short, writes every blob, paper-only at R0', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -98,7 +98,7 @@ describe('buildBoard', () => {
 
   it('a risk-off world tape rides the board blob and nudges each call by side', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     // both bands covered so the 1.1 short nudge can shift NVDA's band without ungrading it
     await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 20, hits: 14 }, 'short:amber:70+': { n: 20, hits: 14 } }, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('video-extracts', [
@@ -146,7 +146,7 @@ describe('buildBoard', () => {
 
   it('an earnings print inside the horizon forces SHADOW — off the public board, still logged for the print-edge ledger', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     // calibration that would otherwise grade this an A live call
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('video-extracts', [
@@ -165,9 +165,9 @@ describe('buildBoard', () => {
     expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
   })
 
-  it('a SHORT on a small-cap is forced to SHADOW — off the board (no takeable route), still graded', async () => {
+  it('a SHORT with no inverse-ETP route is forced to SHADOW — off the board, still graded', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} }) // no route for NVDA
     await store.write('engine-calibration', calWith('short:amber:55-70')) // would otherwise grade an A live short
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -188,7 +188,7 @@ describe('buildBoard', () => {
 
   it('one outstanding shadow per sym+side: a repeat shadow is skipped while the first is still ungraded', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -208,7 +208,7 @@ describe('buildBoard', () => {
 
   it('...but once the first shadow has matured (graded), a fresh same-name shadow is allowed back in', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -227,7 +227,7 @@ describe('buildBoard', () => {
 
   it('below-base but fully-evidenced calls surface as TRACKED watch rows — seen, unsized, still graded', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     // this band has PROVEN it loses → grade null. The old behaviour buried the
     // call as an invisible shadow; the reader then watched "big names move with
     // an empty board" (live complaint 2026-07-15). Fully-evidenced null-grades
@@ -274,7 +274,7 @@ describe('buildBoard', () => {
 
   it('an AI nomination joins the roster as a scored candidate (source ai-nomination); an expired one is ignored', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:25-40'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'GNOM', stance: 'bear', levels: [] }], themes: [] },
@@ -303,7 +303,7 @@ describe('buildBoard', () => {
 
   it('a high-credibility off-roster channel stance NOMINATES a symbol as a candidate (source channel:consensus); a lone low-cred stance does not', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:25-40'))
     // PUND: one bear from 'Stocks with Josh' — the default favourite → credibilityOf
     //   prior 0.6 ≥ 0.55, so a single call qualifies it as a candidate on its own.
@@ -334,7 +334,7 @@ describe('buildBoard', () => {
 
   it('two lesser-known channels agreeing on a side also NOMINATE a candidate (the ≥2-agree branch)', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:25-40'))
     // neither 'Guy A' nor 'Guy B' is a favourite → each cred 0.5 < 0.55, so no single
     // voice clears the credibility gate; their agreement on a bear side is what nominates.
@@ -360,7 +360,7 @@ describe('buildBoard', () => {
 
   it('a recently-listed name joins the candidate pool as a fresh-listing source (catalyst:ipo, side null → no free vote)', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:25-40'))
     // FRESH just priced 40-odd days ago (enough candles to read); the IPO calendar
     // is its ONLY candidate source — no screener, no social, no headline mentions it.
@@ -387,7 +387,7 @@ describe('buildBoard', () => {
 
   it('Fix A: a non-watchlist roster name with a cached cluster-buy gets a non-null insiders factor', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] }) // NVDA is roster-only, never on the watchlist
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } }) // NVDA is roster-only, never on the watchlist
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     const cluster: InsiderSummary = { symbol: 'NVDA', buyers: ['CEO', 'CFO'], totalBought: 9000, totalValueUsd: 900_000, isCluster: true, latest: [] }
     const coverage = new Map<string, InsiderSummary | null>([['NVDA', cluster]])
@@ -400,7 +400,7 @@ describe('buildBoard', () => {
 
   it('T212 holdings: writes holdings + holdings-reads blobs, a held mover earns a roster slot (source holding), an unreadable name reads null', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     const d = deps({
       screens: async () => [], // HELD's ONLY candidate source is the holdings pool
@@ -440,7 +440,7 @@ describe('buildBoard', () => {
 
   it('T212 holdings fail-soft: a null book leaves the holdings blobs untouched', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     const { holdingsCount } = await buildBoard(store, deps({ holdings: async () => null }), NOW)
     expect(holdingsCount).toBe(0)
@@ -450,7 +450,7 @@ describe('buildBoard', () => {
 
   it('Fix B: a smartMoney 13F match surfaces in the prediction factor breakdown', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     const moves: FundMoves[] = [
       { fund: 'Scion Asset Management', filedAt: '2026-05-15', newPositions: [{ issuer: 'NVIDIA CORP', shares: 100, value: 100 }], increased: [], exited: [] },
@@ -496,7 +496,7 @@ describe('buildBoard', () => {
 
   it('always evaluates holdings/watchlist ahead of a saturated discovery budget', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [{ symbol: 'NVDA' }], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [{ symbol: 'NVDA' }], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     const noisyScreens = Array.from({ length: 110 }, (_, i) => ({
       row: { sym: `ZZ${String(i).padStart(3, '0')}`, price: 10, capUsdM: 5_000, changePct: 1, name: null },
@@ -508,7 +508,7 @@ describe('buildBoard', () => {
 
   it('event radar: an earnings-calendar name on the roster lands in the event-radar blob with daysToPrint and its shape', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:55-70'))
     const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
     const printDate = new Date(Date.parse(today) + 3 * 86_400_000).toISOString().slice(0, 10)

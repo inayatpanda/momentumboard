@@ -783,14 +783,16 @@ export async function buildBoard(
     // tracking META/AVGO, with an honest "below our base rate — tape-dependent"
     // read. Still shadow: a coin-flip into an earnings print, or a null grade on
     // thin evidence (contract failed) — those genuinely don't belong on the board.
-    // A SHORT on a small/micro-cap is not a takeable call for this reader — an
-    // ISA is long-only, and single-stock inverse ETPs exist only for a handful of
-    // large names, never a small-cap. So it must never appear on the board as a
-    // 'position'. Keep it as a SHADOW: the small-cap cohort still learns from the
-    // outcome, but it stays off the reader-facing board (only `live` calls reach
-    // engine-board). Longs on small-caps are untouched — takeable at half size.
-    // (user 2026-07-24: "shorts I can't take on microcap/small stocks".)
-    const unshortable = call.side === 'short' && cohort === 'small'
+    // A SHORT the reader can't ROUTE is not a takeable call — an ISA is long-only,
+    // so a short is placeable only through an inverse ETP mapped in levMap.
+    // Small-caps never have one; most single large-caps (IBM, ORCL…) don't
+    // either. A short with no levMap short route therefore never reaches the
+    // board: keep it as a SHADOW (still graded, so the cohort learns) but off the
+    // reader-facing engine-board. A name WITH a route stays visible even when the
+    // risk ladder hasn't unlocked it yet (that's the honest paper-only case).
+    // Longs are untouched. (user 2026-07-24: only show shorts I can place.)
+    const shortRoute = (cfg.levMap ?? {})[call.sym]
+    const unshortable = call.side === 'short' && !(shortRoute?.short2x || shortRoute?.short3x)
     const belowBase = !grade && call.evidence.contract && !call.earningsRisk && !unshortable
     const shadow = call.earningsRisk || (!grade && !call.evidence.contract) || unshortable
     // Only A/B calls that pass the core-data contract are trades. Grade C, thin
