@@ -6,3 +6,6 @@ dev.log
 .playwright-mcp/
 desktop/node_modules/
 desktop/dist/
+
+# security audit reports — keep local, not in version control
+docs/AUDIT-*.md
