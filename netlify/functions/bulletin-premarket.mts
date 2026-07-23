@@ -6,12 +6,12 @@ import { isUsMarketHoliday } from '../../shared/usMarketHolidays'
 // summer (BST/EDT); in winter the same cron lands 12:45 UK / 07:45 ET — still
 // comfortably pre-open, so the drift is accepted rather than juggled.
 export default async (req: Request) => {
-  // fire only for the scheduler (body carries next_run) or the admin token —
-  // an open URL that sends emails is a spam vector
-  const body = await req.text().catch(() => '')
-  const scheduled = body.includes('next_run')
+  // An open URL that sends bulletins is a spam vector. `next_run` is not a
+  // secret (audit C-1) so we rate-BOUND public triggers to the real cadence:
+  // at most one send per window, admin token bypasses.
   const admin = req.headers.get('x-app-token') === process.env.APP_TOKEN
-  if (!scheduled && !admin) return new Response('forbidden', { status: 401 })
+  const { claimScheduleSlot } = await import('./lib/schedule')
+  if (!(await claimScheduleSlot('bulletin-premarket', 3600, admin))) return new Response('throttled', { status: 429 })
   // no US open to call on a market holiday — a "pre-market brief" would be noise
   if (isUsMarketHoliday(new Date().toISOString().slice(0, 10))) return new Response('holiday-skip')
   await publishBulletin('premarket', blobAppStore).catch(e => console.error('BULLETIN-PREMARKET failed:', e))

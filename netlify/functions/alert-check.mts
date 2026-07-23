@@ -14,7 +14,14 @@ import { detectSetups, regimeFromCandles } from '../../shared/setups'
 import { exchangeFor } from '../../shared/symbols'
 import type { FlagCandidate, IntradayFlagsBlob } from './lib/intradayFlags'
 
-export default async () => {
+export default async (req: Request) => {
+  // Public URL with no secret Netlify-cron signal (audit C-1). Rate-BOUND to
+  // the ~5-min cadence (4-min window) so a flood can't burn LLM/market quota or
+  // force extra runs; admin token bypasses. Alert dedup already prevents
+  // duplicate owner pings, so this only needs to cap the run frequency.
+  const admin = req.headers?.get('x-app-token') === process.env.APP_TOKEN
+  const { claimScheduleSlot } = await import('./lib/schedule')
+  if (!(await claimScheduleSlot('alert-check', 240, admin))) return new Response('throttled', { status: 429 })
   const nowSec = Math.floor(Date.now() / 1000)
   const errors: string[] = []
   const store = blobAppStore

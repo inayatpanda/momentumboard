@@ -90,10 +90,11 @@ async function maybeRekick(nowSec: number, today: string, weekday: boolean, repo
 }
 
 export default async (req: Request) => {
-  const body = await req.text().catch(() => '')
-  const scheduled = body.includes('next_run')
+  // `next_run` is not a secret (audit C-1); rate-BOUND public triggers, admin bypasses.
   const admin = req.headers.get('x-app-token') === process.env.APP_TOKEN
-  if (!scheduled && !admin) return new Response('forbidden', { status: 401 })
+  const { claimScheduleSlot } = await import('./lib/schedule')
+  if (!(await claimScheduleSlot('watchdog', 3600, admin))) return new Response('throttled', { status: 429 })
+  const scheduled = !admin // a run that passed the slot guard without the admin token is the cron run — it re-kicks and pages
 
   const nowSec = Math.floor(Date.now() / 1000)
   const today = londonDate(nowSec)
