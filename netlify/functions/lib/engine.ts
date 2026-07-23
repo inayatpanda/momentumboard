@@ -783,8 +783,16 @@ export async function buildBoard(
     // tracking META/AVGO, with an honest "below our base rate — tape-dependent"
     // read. Still shadow: a coin-flip into an earnings print, or a null grade on
     // thin evidence (contract failed) — those genuinely don't belong on the board.
-    const belowBase = !grade && call.evidence.contract && !call.earningsRisk
-    const shadow = call.earningsRisk || (!grade && !call.evidence.contract)
+    // A SHORT on a small/micro-cap is not a takeable call for this reader — an
+    // ISA is long-only, and single-stock inverse ETPs exist only for a handful of
+    // large names, never a small-cap. So it must never appear on the board as a
+    // 'position'. Keep it as a SHADOW: the small-cap cohort still learns from the
+    // outcome, but it stays off the reader-facing board (only `live` calls reach
+    // engine-board). Longs on small-caps are untouched — takeable at half size.
+    // (user 2026-07-24: "shorts I can't take on microcap/small stocks".)
+    const unshortable = call.side === 'short' && cohort === 'small'
+    const belowBase = !grade && call.evidence.contract && !call.earningsRisk && !unshortable
+    const shadow = call.earningsRisk || (!grade && !call.evidence.contract) || unshortable
     // Only A/B calls that pass the core-data contract are trades. Grade C, thin
     // evidence, or a below-base setup are watchlist observations (riskPct 0) —
     // "barely passed the gate" reads differently from a genuinely strong setup.

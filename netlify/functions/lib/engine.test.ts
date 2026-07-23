@@ -165,6 +165,27 @@ describe('buildBoard', () => {
     expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
   })
 
+  it('a SHORT on a small-cap is forced to SHADOW — off the board (no takeable route), still graded', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
+    await store.write('engine-calibration', calWith('short:amber:55-70')) // would otherwise grade an A live short
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    // NVDA priced as a small-cap ($800M < $2B): an ISA can't route a short on it
+    const smallCapScreen = async () => [{ row: { sym: 'NVDA', price: 162, capUsdM: 800, changePct: null, name: null }, source: 'screener:gainers' }]
+    const { board } = await buildBoard(store, deps({ screens: smallCapScreen }), NOW)
+    expect(board.find(b => b.sym === 'NVDA')).toBeUndefined() // never on the reader-facing board
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
+    const shadow = ledger.find(p => p.sym === 'NVDA')!
+    expect(shadow.shadow).toBe(true) // still logged so the small-cap cohort learns
+    expect(shadow.side).toBe('short')
+    expect(shadow.riskPct).toBe(0)
+    const publicBoard = (await store.read<{ board: Prediction[] }>('engine-board'))!
+    expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
+  })
+
   it('one outstanding shadow per sym+side: a repeat shadow is skipped while the first is still ungraded', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [] })
