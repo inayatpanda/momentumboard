@@ -87,7 +87,14 @@ function ChartCard({ p, expanded, onToggle, onOpen }: { p: EnginePrediction; exp
           >
             {p.sym}
           </b>
-          {p.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6 }}>{p.name}</span>}
+          {p.name && (
+            <span
+              title={p.name}
+              style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 6, display: 'inline-block', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}
+            >
+              {p.name}
+            </span>
+          )}
           <span style={{ color: dirColor }}>{p.side === 'long' ? '▲' : '▼'}</span>
           {p.watchOnly && <span className="badge warn">watch</span>}
           {p.setup && <span className="badge">{p.setup}</span>}
