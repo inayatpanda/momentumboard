@@ -84,3 +84,29 @@ describe('validatePicks', () => {
     expect(validatePicks({ date: 'yesterday', picks: [] })).toBeNull()
   })
 })
+
+// Reviewing the first 26 live calls (2026-07-25) surfaced two ways the scorecard
+// flattered itself. Both are about HONESTY of the number, not the maths.
+describe('scorePicks reports an honest number', () => {
+  const DAY = 86_400
+  const base = Date.parse('2026-06-01') / 1000
+  // priceAtPick is captured pre-open, so it is the PREVIOUS session's close: the
+  // paper says "entry 100" but the market opens at 110 and you can never get 100.
+  const gapped: Candle[] = Array.from({ length: 20 }, (_, i) => ({ t: base + i * DAY, o: 110, h: 112, l: 108, c: 110, v: 1000 }))
+
+  it('scores from a price you could actually pay, not the stale quote', () => {
+    const history: DailyPicks[] = [{ date: '2026-06-01', picks: [{ ticker: 'GAP', side: 'long', priceAtPick: 100 }] }]
+    const all = scorePicks(history, new Map([['GAP', gapped]])).find(s => s.bucket === 'ALL')!
+    expect(all.avg5).toBeCloseTo(0, 4) // opened 110, still 110 → flat. From the stale 100 it would read +10%.
+  })
+
+  it('reports the 10-day sample size separately from the 5-day one', () => {
+    // 8 bars: enough for a 5-day forward move, not for a 10-day one.
+    const short: Candle[] = Array.from({ length: 8 }, (_, i) => ({ t: base + i * DAY, o: 100, h: 101, l: 99, c: 100 + i, v: 1000 }))
+    const history: DailyPicks[] = [{ date: '2026-06-01', picks: [{ ticker: 'YOUNG', side: 'long', priceAtPick: 100 }] }]
+    const all = scorePicks(history, new Map([['YOUNG', short]])).find(s => s.bucket === 'ALL')!
+    expect(all.scored).toBe(1)
+    expect(all.scored10).toBe(0) // avg10 is null and its sample is VISIBLY zero
+    expect(all.avg10).toBeNull()
+  })
+})

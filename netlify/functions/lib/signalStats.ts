@@ -15,6 +15,7 @@ export interface SignalScore {
   scored: number // how many had ≥5 sessions of history to score
   win5: number | null
   avg5: number | null
+  scored10: number // sample behind avg10 — a DIFFERENT, smaller set than `scored`
   avg10: number | null
 }
 
@@ -45,6 +46,7 @@ export function scoreSignals(log: SignalLogEntry[], candlesBySymbol: Map<string,
       scored: a.f5.length,
       win5: a.f5.length ? a.f5.filter(x => x > 0).length / a.f5.length : null,
       avg5: mean(a.f5),
+      scored10: a.f10.length,
       avg10: mean(a.f10),
     }))
     .sort((a, b) => b.n - a.n)

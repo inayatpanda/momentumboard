@@ -137,7 +137,7 @@ export interface NewsDeskItem { title: string; url: string; syms: string[]; scor
 export const getNewsDesk = () => apiGet<{ items: NewsDeskItem[] }>('/api/market?type=news-desk').then(d => d.items)
 
 export const getSignalStats = () =>
-  apiGet<{ scores: { setup: string; n: number; scored: number; win5: number | null; avg5: number | null; avg10: number | null }[]; totalSignals: number }>('/api/market?type=signal-stats')
+  apiGet<{ scores: { setup: string; n: number; scored: number; win5: number | null; avg5: number | null; scored10: number; avg10: number | null }[]; totalSignals: number }>('/api/market?type=signal-stats')
 
 export const getSmartMoney = () =>
   apiGet<{ funds: { fund: string; filedAt: string; newPositions: { issuer: string }[]; increased: { issuer: string; pctChange: number }[]; exited: { issuer: string }[] }[]; lagNote: string }>('/api/market?type=smart-money')
@@ -298,7 +298,7 @@ export const getOutcomes = () =>
   apiGet<{ date: string; regime?: string; picks: { ticker: string; side: string; strength?: string; conviction?: string; priceAtPick?: number; f5: number | null; f10: number | null }[] }[]>('/api/config?view=outcomes')
 
 export const getPickStats = () =>
-  apiGet<{ scores: { bucket: string; n: number; scored: number; win5: number | null; avg5: number | null; avg10: number | null }[]; reports: number }>('/api/market?type=pick-stats')
+  apiGet<{ scores: { bucket: string; n: number; scored: number; win5: number | null; avg5: number | null; scored10: number; avg10: number | null }[]; reports: number }>('/api/market?type=pick-stats')
 
 export const getPicks = () =>
   apiGet<{ persistence: { ticker: string; side: 'long' | 'short'; appearances: number; streak: number; latestConviction?: string; persistent: boolean }[]; reports: number; latest: { date: string; regime?: string } | null }>('/api/config?view=picks')

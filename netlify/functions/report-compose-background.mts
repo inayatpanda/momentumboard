@@ -81,8 +81,12 @@ export default async (req: Request) => {
         return { persistence: computePersistence(history).slice(0, 8), reports: history.length }
       }),
       grab(async () => {
+        // Cache first, then the durable copy. The cache holds pick-stats for an
+        // hour, so before this fallback the paper only carried a scorecard when a
+        // reader had opened the app just beforehand — most mornings it wrote the
+        // performance section with nothing to go on.
         const { getCached } = await import('./lib/cache')
-        return getCached('pick-stats')
+        return (await getCached('pick-stats')) ?? (await blobAppStore.read('pick-stats'))
       }),
     ])
 

@@ -56,6 +56,17 @@ const run = async () => {
     }
   }
 
+  // Score yesterday's calls BEFORE composing, so the paper (and Helm) carry a
+  // current scorecard. Nothing used to compute this on a schedule — it was built
+  // lazily when a reader opened the app, so the record was usually absent.
+  try {
+    const { default: market } = await import('../../netlify/functions/market-data.mts')
+    const res = await market(new Request('https://actions.local/api/market?type=pick-stats', { headers: { 'x-app-token': process.env.APP_TOKEN ?? '' } }), {} as never)
+    console.log(`scorecard: ${res.status}`)
+  } catch (e) {
+    console.error('scorecard: FAILED (paper still publishes)', e) // never block the edition
+  }
+
   const paper = await blobAppStore.read<unknown>(`report:${today}`)
   if (paper) {
     console.log('paper: already composed today — skipping')

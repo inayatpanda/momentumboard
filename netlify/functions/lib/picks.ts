@@ -92,6 +92,7 @@ export interface PickScore {
   scored: number
   win5: number | null
   avg5: number | null
+  scored10: number // how many calls were old enough for a 10-day move — NOT the same set as `scored`
   avg10: number | null
 }
 
@@ -117,8 +118,15 @@ export function scorePicks(history: DailyPicks[], candlesBySymbol: Map<string, C
         let idx = candles.findIndex(c => c.t >= dayEpoch)
         if (idx === -1) idx = candles.length
         const sign = p.side === 'short' ? -1 : 1
-        if (idx + 5 < candles.length) f5 = (sign * (candles[idx + 5].c - p.priceAtPick) * 100) / p.priceAtPick
-        if (idx + 10 < candles.length) f10 = (sign * (candles[idx + 10].c - p.priceAtPick) * 100) / p.priceAtPick
+        // priceAtPick is captured pre-open, so it is the PREVIOUS session's close —
+        // a price no reader could transact at. Score from the first achievable fill
+        // instead: the open of the first bar on/after the call, which is when you
+        // could act on a 06:35 paper. Measured over the first 26 live calls, the
+        // stale basis flattered the average 5-day move by +1.7pp (worse on 13/20).
+        // `||` not `??`: a zero open is not a price.
+        const basis = candles[idx]?.o || p.priceAtPick
+        if (idx + 5 < candles.length) f5 = (sign * (candles[idx + 5].c - basis) * 100) / basis
+        if (idx + 10 < candles.length) f10 = (sign * (candles[idx + 10].c - basis) * 100) / basis
       }
       add('ALL', f5, f10)
       if (p.strength === 'strong') add('STRONG calls', f5, f10)
@@ -134,6 +142,10 @@ export function scorePicks(history: DailyPicks[], candlesBySymbol: Map<string, C
       scored: b.f5.length,
       win5: b.f5.length ? b.f5.filter(x => x > 0).length / b.f5.length : null,
       avg5: mean(b.f5),
+      // avg10 is averaged over a DIFFERENT, smaller set than avg5 — only calls old
+      // enough to have ten bars. Publishing `scored` alone made 6 calls' +0.6% read
+      // as a recovery from 20 calls' −1.7%; the same six were flat across horizons.
+      scored10: b.f10.length,
       avg10: mean(b.f10),
     }))
     .sort((a, b) => (a.bucket === 'ALL' ? -1 : b.bucket === 'ALL' ? 1 : b.n - a.n))

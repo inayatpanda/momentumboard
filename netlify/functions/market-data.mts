@@ -525,8 +525,13 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
       const symbols = [...new Set(history.flatMap(d => d.picks.map(p => p.ticker)))].slice(0, 40)
       const pairs = await Promise.all(symbols.map(async s => [s, await cachedCandles(s)] as const))
       const candlesBySymbol = new Map(pairs.filter((p): p is [string, NonNullable<(typeof pairs)[0][1]>] => p[1] !== null))
-      const data = { scores: scorePicks(history, candlesBySymbol), reports: history.length }
+      const data = { scores: scorePicks(history, candlesBySymbol), reports: history.length, at: Math.floor(Date.now() / 1000) }
       await setCached('pick-stats', data, 3600)
+      // ALSO keep a durable copy in the app store. The cache lives in a different
+      // blob store ('cache') from the one helm-export reads ('app'), so Helm's
+      // scorecard was structurally always null — and the paper's prompt only saw
+      // one if a reader happened to open the app within the last hour.
+      await blobAppStore.write('pick-stats', data)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
