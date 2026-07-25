@@ -31,4 +31,19 @@ describe('report endpoint', () => {
   it('rejects non-HTML or oversized bodies', async () => {
     expect((await routeReport('PUT', auth, 'no tags here', env, memoryStore())).status).toBe(400)
   })
+
+  // 2026-07-24/25 outage: the composer runs in GitHub Actions, where a MISSING
+  // `secrets.REPORT_PUBLISH_TOKEN` arrives as '' rather than undefined, so the
+  // H-1 fallback never fired and every morning publish 401'd.
+  it('PUT still accepts REPORT_TOKEN when REPORT_PUBLISH_TOKEN is present but blank', async () => {
+    const blank = { ...env, REPORT_PUBLISH_TOKEN: '' }
+    const tg = vi.fn(async () => {})
+    const res = await routeReport('PUT', auth, '<html><body>Morning brief</body></html>', blank, memoryStore(), tg)
+    expect(res.status).toBe(200)
+  })
+
+  it('PUT rejects when neither publish token is set', async () => {
+    const none = { ...env, REPORT_TOKEN: '', REPORT_PUBLISH_TOKEN: '' }
+    expect((await routeReport('PUT', auth, '<html></html>', none, memoryStore())).status).toBe(401)
+  })
 })

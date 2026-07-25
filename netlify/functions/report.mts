@@ -1,6 +1,7 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 import { sendTelegram } from './lib/telegram'
+import { scopedToken } from './lib/auth'
 import { CANONICAL_SITE } from './lib/site'
 import type { AppConfig } from '../../shared/config'
 
@@ -71,7 +72,7 @@ export async function routeReport(
   if (method === 'PUT') {
     // audit H-1: prefer a dedicated REPORT_PUBLISH_TOKEN; fall back to
     // REPORT_TOKEN until the owner sets it everywhere the composer runs.
-    const publishTok = env.REPORT_PUBLISH_TOKEN ?? env.REPORT_TOKEN
+    const publishTok = scopedToken(env.REPORT_PUBLISH_TOKEN, env.REPORT_TOKEN)
     if (!publishTok || headers.get('x-report-token') !== publishTok) return json(401, { ok: false, error: 'unauthorized' })
 
     // JSON body = the day's structured picks (published alongside the HTML article)

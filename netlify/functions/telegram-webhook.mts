@@ -2,7 +2,7 @@ import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 import { sendTelegram } from './lib/telegram'
 import { parseCallText, toExtract, type PunditExtract } from './lib/punditCalls'
-import { addLicenceVerified, generateLicenceKey, readLicencesFresh, type Licence } from './lib/auth'
+import { addLicenceVerified, generateLicenceKey, readLicencesFresh, scopedToken, type Licence } from './lib/auth'
 import { CANONICAL_SITE } from './lib/site'
 
 /** Two-way Telegram commands: /status /portfolio /mute [hours] /unmute /report
@@ -21,7 +21,7 @@ export async function routeTelegramWebhook(
   // back to REPORT_TOKEN so nothing breaks before the owner cuts over (set the
   // scoped secret + re-register the Telegram webhook with it, then drop
   // REPORT_TOKEN — see the overnight report).
-  const webhookSecret = env.TELEGRAM_WEBHOOK_SECRET ?? env.REPORT_TOKEN
+  const webhookSecret = scopedToken(env.TELEGRAM_WEBHOOK_SECRET, env.REPORT_TOKEN)
   if (!webhookSecret || headers.get('x-telegram-bot-api-secret-token') !== webhookSecret) {
     return new Response('unauthorized', { status: 401 })
   }

@@ -21,6 +21,20 @@ export interface AuthResult {
   house?: boolean // carried from the licence — grants server-key LLM access without admin powers
 }
 
+/** First candidate that is actually SET — a blank value counts as unset.
+ *
+ * The H-1 scoped-token cutover (REPORT_PUBLISH_TOKEN / HELM_EXPORT_TOKEN /
+ * TELEGRAM_WEBHOOK_SECRET) promises "falls back to REPORT_TOKEN until you set
+ * it", but `??` only falls back on null/undefined. The daily-paper workflow
+ * passes `${{ secrets.REPORT_PUBLISH_TOKEN }}` for a secret that does not
+ * exist, and GitHub materialises that as an EMPTY STRING — so the composer
+ * PUT its paper with `x-report-token: ''` and the site 401'd every morning
+ * from 2026-07-24 until this fix. `.env.example` ships the same three vars
+ * blank, so `netlify dev` had the identical trap waiting. */
+export function scopedToken(...candidates: (string | undefined)[]): string | undefined {
+  return candidates.find(c => (c ?? '').trim() !== '')
+}
+
 export async function hash8(input: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
   return [...new Uint8Array(buf)].slice(0, 4).map(b => b.toString(16).padStart(2, '0')).join('')

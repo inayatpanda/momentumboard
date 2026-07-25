@@ -1,6 +1,7 @@
 import type { Context } from '@netlify/functions'
 import { blobAppStore, type AppStore } from './lib/store'
 import { CANONICAL_SITE } from './lib/site'
+import { scopedToken } from './lib/auth'
 
 // The Helm integration (Option A): one stable, read-only contract The Helm's
 // pull-agent hits on a schedule to archive every edition, pick, event, the
@@ -49,7 +50,7 @@ export async function routeExport(
   const tok = headers.get('x-report-token') || headers.get('x-app-token')
   // audit H-1: prefer a dedicated HELM_EXPORT_TOKEN; fall back to REPORT_TOKEN
   // until the owner sets it + updates the Helm app to send it.
-  const exportTok = env.HELM_EXPORT_TOKEN ?? env.REPORT_TOKEN
+  const exportTok = scopedToken(env.HELM_EXPORT_TOKEN, env.REPORT_TOKEN)
   const ok = (!!exportTok && tok === exportTok) || (!!env.APP_TOKEN && tok === env.APP_TOKEN)
   if (!ok) return json(401, { ok: false, error: 'unauthorized' })
 

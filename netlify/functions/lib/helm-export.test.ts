@@ -41,6 +41,14 @@ describe('routeExport', () => {
     expect(res.status).toBe(401)
   })
 
+  // a blank HELM_EXPORT_TOKEN means "not cut over yet", not "no auth"
+  it('still accepts REPORT_TOKEN when the scoped token is present but blank', async () => {
+    const store = await seed()
+    const blank = { ...env, HELM_EXPORT_TOKEN: '' }
+    const res = await routeExport(new URL('http://x/api/export?summary=1'), new Headers({ 'x-report-token': 'rep' }), blank, store)
+    expect(res.status).toBe(200)
+  })
+
   it('summary mode returns the dashboard card without heavy html', async () => {
     const store = await seed()
     const res = await routeExport(new URL('http://x/api/export?summary=1'), new Headers({ 'x-report-token': 'rep' }), env, store)

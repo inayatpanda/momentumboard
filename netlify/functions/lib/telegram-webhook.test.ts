@@ -13,6 +13,12 @@ describe('telegram webhook', () => {
     await routeTelegramWebhook(auth, msg('/status', 999), env, memoryStore(), send as never)
     expect(send).not.toHaveBeenCalled()
   })
+  // a blank TELEGRAM_WEBHOOK_SECRET means "not cut over yet", not "no auth"
+  it('still accepts REPORT_TOKEN when the scoped secret is present but blank', async () => {
+    const send = vi.fn(async () => {})
+    const res = await routeTelegramWebhook(auth, msg('/status'), { ...env, TELEGRAM_WEBHOOK_SECRET: '' }, memoryStore(), send as never)
+    expect(res.status).toBe(200)
+  })
   it('/mute stores a mute window and /unmute clears it', async () => {
     const store = memoryStore()
     const send = vi.fn(async () => {})

@@ -1,5 +1,5 @@
 import { blobAppStore } from './lib/store'
-import { authenticate } from './lib/auth'
+import { authenticate, scopedToken } from './lib/auth'
 import { callLlm } from './lib/llm'
 import { composePrompt, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, validateNominations, mergeNominations, type StoredNomination } from './lib/newspaper'
 import { cachedQuote, cachedCandles, cachedCompanyName } from './lib/marketCache'
@@ -489,7 +489,7 @@ export default async (req: Request) => {
     }
     const putHtml = await fetch(`${SITE}/report`, {
       method: 'PUT',
-      headers: { 'x-report-token': process.env.REPORT_PUBLISH_TOKEN ?? process.env.REPORT_TOKEN ?? '', 'content-type': 'text/html' },
+      headers: { 'x-report-token': scopedToken(process.env.REPORT_PUBLISH_TOKEN, process.env.REPORT_TOKEN) ?? '', 'content-type': 'text/html' },
       body: JSON.stringify({ html, print }),
     })
     const picksBody = {
@@ -504,7 +504,7 @@ export default async (req: Request) => {
     // day, and `picks: []` cleanly means "no call was made".
     const putPicks = await fetch(`${SITE}/report`, {
       method: 'PUT',
-      headers: { 'x-report-token': process.env.REPORT_PUBLISH_TOKEN ?? process.env.REPORT_TOKEN ?? '', 'content-type': 'application/json' },
+      headers: { 'x-report-token': scopedToken(process.env.REPORT_PUBLISH_TOKEN, process.env.REPORT_TOKEN) ?? '', 'content-type': 'application/json' },
       body: JSON.stringify(picksBody),
     })
 
