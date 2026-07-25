@@ -1,0 +1,38 @@
+# Does the composer's publish credential still work? Run this after rotating
+# REPORT_PUBLISH_TOKEN / REPORT_TOKEN, on either side of the boundary.
+#
+# On 2026-07-24/25 the answer was no for two mornings: a missing
+# `secrets.REPORT_PUBLISH_TOKEN` arrived as an empty string, the `??` fallback
+# never fired, and the paper composed in full and then 401'd at the last step.
+# The token resolution below is deliberately identical to the composer's
+# (`scopedToken` in lib/auth.ts): `:-` treats blank as unset, same as the code.
+#
+# Non-destructive: it sends a body that fails picks validation, so a passing
+# token gets 400 invalid-picks and NOTHING is written. 401 means the composer
+# would fail tomorrow morning.
+name: publish-auth-check
+on:
+  workflow_dispatch: {}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: PUT /report with the composer's credential
+        env:
+          URL: https://thestreetsignal.rqai.co.uk
+          REPORT_TOKEN: ${{ secrets.REPORT_TOKEN }}
+          REPORT_PUBLISH_TOKEN: ${{ secrets.REPORT_PUBLISH_TOKEN }}
+        run: |
+          TOK="${REPORT_PUBLISH_TOKEN:-$REPORT_TOKEN}"
+          if [ -z "$TOK" ]; then echo "::error::no publish token in the runner at all"; exit 1; fi
+          if [ -n "$REPORT_PUBLISH_TOKEN" ]; then echo "using: REPORT_PUBLISH_TOKEN (scoped)"; else echo "using: REPORT_TOKEN (fallback)"; fi
+          CODE=$(curl -sS -o /tmp/body.txt -w '%{http_code}' -X PUT "$URL/report" \
+            -H "x-report-token: $TOK" -H 'content-type: application/json' \
+            --data '{"deliberately":"invalid — auth probe only"}')
+          echo "HTTP $CODE — $(cat /tmp/body.txt)"
+          case "$CODE" in
+            400) echo "✅ authenticated (400 invalid-picks = the token was accepted, nothing written)" ;;
+            401) echo "::error::401 unauthorized — the composer WILL fail. The site expects a different token."; exit 1 ;;
+            *)   echo "::error::unexpected $CODE — investigate before the next morning run."; exit 1 ;;
+          esac
