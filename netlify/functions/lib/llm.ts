@@ -70,6 +70,12 @@ export async function httpErrorFor(name: string, res: Response): Promise<Error |
   return new Error(`${name} HTTP ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`)
 }
 
+/** A 2xx that carried no text is almost always a STOP REASON — length, safety,
+ * a tool call — and a bare `${name}-empty` never said which. Name it. */
+export function emptyError(name: string, reason?: string): Error {
+  return new Error(`${name}-empty${reason ? ` (${reason})` : ''}`)
+}
+
 const PROVIDERS: Provider[] = [
   {
     name: 'groq',
@@ -82,9 +88,9 @@ const PROVIDERS: Provider[] = [
       })
       const httpErr = await httpErrorFor('groq', res)
       if (httpErr) throw httpErr
-      const j = (await res.json()) as { choices?: { message?: { content?: string } }[] }
+      const j = (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[] }
       const text = j.choices?.[0]?.message?.content
-      if (!text) throw new Error('groq-empty')
+      if (!text) throw emptyError('groq', j.choices?.[0]?.finish_reason)
       return text
     },
   },
@@ -101,9 +107,9 @@ const PROVIDERS: Provider[] = [
       })
       const httpErr = await httpErrorFor('gemini', res)
       if (httpErr) throw httpErr
-      const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
+      const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[] }
       const text = j.candidates?.[0]?.content?.parts?.[0]?.text
-      if (!text) throw new Error('gemini-empty')
+      if (!text) throw emptyError('gemini', j.candidates?.[0]?.finishReason)
       return text
     },
   },
@@ -119,9 +125,9 @@ const PROVIDERS: Provider[] = [
       })
       const httpErr = await httpErrorFor('openai', res)
       if (httpErr) throw httpErr
-      const j = (await res.json()) as { choices?: { message?: { content?: string } }[] }
+      const j = (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[] }
       const text = j.choices?.[0]?.message?.content
-      if (!text) throw new Error('openai-empty')
+      if (!text) throw emptyError('openai', j.choices?.[0]?.finish_reason)
       return text
     },
   },
@@ -137,9 +143,9 @@ const PROVIDERS: Provider[] = [
       })
       const httpErr = await httpErrorFor('anthropic', res)
       if (httpErr) throw httpErr
-      const j = (await res.json()) as { content?: { text?: string }[] }
+      const j = (await res.json()) as { content?: { text?: string }[]; stop_reason?: string }
       const text = j.content?.[0]?.text
-      if (!text) throw new Error('anthropic-empty')
+      if (!text) throw emptyError('anthropic', j.stop_reason)
       return text
     },
   },
@@ -154,16 +160,20 @@ export async function callLlm(prompt: string, env: Partial<LlmEnv> = {}, fetchFn
   const e = env.strict ? (env as LlmEnv) : { ...(process.env as LlmEnv), ...env }
   const forced = e.LLM_PROVIDER?.toLowerCase()
   const order = forced ? [...PROVIDERS.filter(p => p.name === forced), ...PROVIDERS.filter(p => p.name !== forced)] : PROVIDERS
-  let lastErr: unknown = new Error('no-llm-provider-configured')
+  // Keep EVERY provider's cause. `lastErr` used to overwrite, so on 2026-07-23
+  // a gemini quota error was replaced by the groq fallback's `groq-empty` and
+  // the morning alert named the wrong provider entirely.
+  const failures: string[] = []
   for (const p of order) {
     if (!p.available(e)) continue
     try {
       return { text: await p.call(prompt, e, fetchFn), provider: p.name }
     } catch (err) {
-      lastErr = err // fall through to the next provider
+      failures.push(err instanceof Error ? err.message : String(err)) // fall through to the next provider
     }
   }
-  throw lastErr
+  if (!failures.length) throw new Error('no-llm-provider-configured')
+  throw new Error(failures.length > 1 ? `all ${failures.length} LLM providers failed — ${failures.join(' | ')}` : failures[0])
 }
 
 /** Cheap liveness probe for the Groq PRIMARY, for the watchdog's daily run.

@@ -44,6 +44,31 @@ describe('llm router', () => {
     await expect(callLlm('hi', { GROQ_API_KEY: 'g' }, fetchFn as never)).rejects.toThrow(/groq HTTP 502/)
   })
 
+  // 2026-07-23: the compose fell to plan C (forced gemini), gemini failed, groq
+  // then failed, and the Action died with a bare "groq-empty" — the gemini cause
+  // was overwritten and lost. Whoever reads the alert needs EVERY cause.
+  it('names every provider that failed, not just the last one', async () => {
+    const quota = JSON.stringify({ error: { code: 'RESOURCE_EXHAUSTED', message: 'quota' } })
+    const fetchFn = vi.fn(async (url: string) => (url.includes('groq') ? new Response('{}') : new Response(quota, { status: 429 })))
+    const call = callLlm('hi', { GROQ_API_KEY: 'g', GEMINI_API_KEY: 'x', LLM_PROVIDER: 'gemini' }, fetchFn as never)
+    await expect(call).rejects.toThrow(/gemini HTTP 429/)
+    await expect(call).rejects.toThrow(/groq-empty/)
+  })
+
+  // A 2xx carrying no text is almost always a stop reason (length/safety), and
+  // "groq-empty" alone never said which.
+  it('a 2xx with no text names the finish reason', async () => {
+    const truncated = JSON.stringify({ choices: [{ finish_reason: 'length', message: {} }] })
+    const fetchFn = vi.fn(async () => new Response(truncated))
+    await expect(callLlm('hi', { GROQ_API_KEY: 'g' }, fetchFn as never)).rejects.toThrow(/groq-empty \(length\)/)
+  })
+
+  it('a truncated gemini answer names MAX_TOKENS', async () => {
+    const truncated = JSON.stringify({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] })
+    const fetchFn = vi.fn(async () => new Response(truncated))
+    await expect(callLlm('hi', { GEMINI_API_KEY: 'x' }, fetchFn as never)).rejects.toThrow(/gemini-empty \(MAX_TOKENS\)/)
+  })
+
   it('LLM_PROVIDER forces the primary', async () => {
     const fetchFn = vi.fn(async (url: string) => new Response(url.includes('generativelanguage') || url.includes('netlify') ? geminiOk : groqOk))
     const r = await callLlm('hi', { GROQ_API_KEY: 'g', GEMINI_API_KEY: 'x', LLM_PROVIDER: 'gemini' }, fetchFn as never)
