@@ -93,6 +93,10 @@ export async function routeReport(
           if (q) p.priceAtPick = q.price
         }),
       )
+      // Stamp when the day was actually stored, so incremental consumers (the Helm
+      // mirror) can tell a freshly published day from an old one without guessing
+      // from `date`. Set after validation — validatePicks rebuilds the object.
+      picks.at = Math.floor(Date.now() / 1000)
       const history = ((await store.read<(typeof picks)[]>('report-picks')) ?? []).filter(h => h.date !== picks.date)
       history.push(picks)
       history.sort((a, b) => a.date.localeCompare(b.date))

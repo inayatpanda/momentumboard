@@ -94,7 +94,11 @@ export async function routeExport(
   }
 
   const allPicks = (await store.read<PickDay[]>('report-picks')) ?? []
-  const picks = allPicks.filter(p => (p.at ?? Date.parse(`${p.date}T00:00:00Z`) / 1000) > since)
+  // Legacy pick days carry no `at`. Dating them from MIDNIGHT made them invisible
+  // to any watermark set later that same day — the paper publishes ~06:35, so an
+  // every-15-minutes mirror never once received them. End-of-day keeps an unstamped
+  // day exportable for the rest of its date; days before that are genuinely old.
+  const picks = allPicks.filter(p => (p.at ?? Date.parse(`${p.date}T23:59:59Z`) / 1000) > since)
 
   const allEvents = (await store.read<{ at: number }[]>('event-dossiers')) ?? []
   const events = allEvents.filter(e => e.at > since)

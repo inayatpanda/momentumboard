@@ -14,6 +14,10 @@ export interface Pick {
 
 export interface DailyPicks {
   date: string // YYYY-MM-DD; one entry per report
+  at?: number // unix sec the day was STORED. Set server-side (validatePicks strips
+  // unknown fields, so it is stamped after validation like priceAtPick). Without it
+  // the Helm export had to date a pick day from `date` alone, and an incremental
+  // mirror whose watermark had already passed midnight never saw it again.
   regime?: string
   macro?: { fedStance?: string; notes?: string[] } // structured macro read, archived daily
   picks: Pick[]

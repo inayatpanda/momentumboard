@@ -95,3 +95,35 @@ describe('routeExport', () => {
     expect(body.data.config.capital).toBe(5000)
   })
 })
+
+// The Helm mirror lost EVERY day's picks. A pick day carries no `at`, so the
+// export dated it midnight of its own date — but the paper publishes ~06:35 and
+// the mirror's watermark advances every 15 minutes, so by the time the picks
+// existed the watermark was already hours past midnight and `> since` was never
+// true again. Live on 2026-07-25: the site held 15 pick days, Helm had 4.
+describe('picks reach an incremental mirror the day they are published', () => {
+  const midday = Date.parse('2026-07-25T12:00:00Z') / 1000
+
+  it('exports an unstamped pick day to a watermark set later the same day', async () => {
+    const store = memoryStore()
+    await store.write('report-picks', [{ date: '2026-07-25', picks: [{ ticker: 'MS', side: 'long' }] }])
+    const res = await routeExport(new URL(`http://x/api/export?since=${midday}`), new Headers({ 'x-app-token': 'app' }), env, store)
+    const body = await res.json()
+    expect(body.data.picks.map((p: { date: string }) => p.date)).toEqual(['2026-07-25'])
+  })
+
+  it('still excludes pick days the mirror already has', async () => {
+    const store = memoryStore()
+    await store.write('report-picks', [{ date: '2026-07-20', picks: [] }, { date: '2026-07-25', picks: [] }])
+    const res = await routeExport(new URL(`http://x/api/export?since=${midday}`), new Headers({ 'x-app-token': 'app' }), env, store)
+    const body = await res.json()
+    expect(body.data.picks.map((p: { date: string }) => p.date)).toEqual(['2026-07-25'])
+  })
+
+  it('prefers a real `at` stamp over the date fallback', async () => {
+    const store = memoryStore()
+    await store.write('report-picks', [{ date: '2026-07-25', at: midday - 3600, picks: [] }])
+    const res = await routeExport(new URL(`http://x/api/export?since=${midday}`), new Headers({ 'x-app-token': 'app' }), env, store)
+    expect((await res.json()).data.picks).toHaveLength(0) // stamped BEFORE the watermark → mirror has it
+  })
+})
