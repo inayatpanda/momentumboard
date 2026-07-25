@@ -61,7 +61,7 @@ const run = async () => {
   // lazily when a reader opened the app, so the record was usually absent.
   try {
     const { default: market } = await import('../../netlify/functions/market-data.mts')
-    const res = await market(new Request('https://actions.local/api/market?type=pick-stats', { headers: { 'x-app-token': process.env.APP_TOKEN ?? '' } }), {} as never)
+    const res = await market(new Request('https://actions.local/api/market?type=pick-stats&fresh=1', { headers: { 'x-app-token': process.env.APP_TOKEN ?? '' } }), {} as never)
     console.log(`scorecard: ${res.status}`)
   } catch (e) {
     console.error('scorecard: FAILED (paper still publishes)', e) // never block the edition

@@ -515,7 +515,11 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
   }
 
   if (type === 'pick-stats') {
-    const hit = await getCached<unknown>('pick-stats')
+    // `fresh=1` skips the cache. The morning run needs a REAL recompute: a cache
+    // hit returns early, so warming through the cache silently skipped the
+    // durable write and left Helm's scorecard null even on a 200.
+    const fresh = url.searchParams.get('fresh') === '1'
+    const hit = fresh ? null : await getCached<unknown>('pick-stats')
     if (hit) return json(200, { ok: true, data: hit })
     try {
       const { blobAppStore } = await import('./lib/store')
