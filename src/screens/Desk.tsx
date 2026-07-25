@@ -5,6 +5,7 @@ import { detectPatterns, type PatternHit } from '../../shared/patterns'
 import { capBand, fmtPct, humanError } from '../lib/format'
 import { capClassBreakdown, flattenLedger } from '../lib/ledgerStats'
 import { engineLevelLines } from '../lib/engineLevels'
+import { callStatus, type CallState } from '../../shared/engine/callStatus'
 import { PriceChart } from '../components/PriceChart'
 import { RsiChart } from '../components/RsiChart'
 import { RegimeBanner } from '../components/RegimeBanner'
@@ -38,6 +39,36 @@ function PatternBadges({ patterns }: { patterns: PatternHit[] }) {
         </span>
       ))}
     </span>
+  )
+}
+
+const STATE_BADGE: Record<Exclude<CallState, 'live'>, { cls: string; label: string }> = {
+  'through-stop': { cls: 'bad', label: 'through stop' },
+  'at-target': { cls: 'good', label: 'at target' },
+  extended: { cls: 'warn', label: 'extended' },
+}
+
+/** Where the price actually is, against the call's own levels. The levels line
+ * above is fixed at publication — and `entry` is a PRE-OPEN quote, so it is the
+ * previous session's close. Without this line a reader cannot tell an available
+ * setup from one that has already run or been invalidated. Last close, not a
+ * live tick: this is a swing board, and the candles are already loaded. */
+export function CallNow({ call, candles }: { call: EnginePrediction; candles: Candle[] }) {
+  const last = candles.length ? candles[candles.length - 1].c : null
+  const s = last == null ? null : callStatus(call, last)
+  if (!s) return null
+  const badge = s.state === 'live' ? null : STATE_BADGE[s.state]
+  const tone = s.pctFromEntry >= 0 ? 'var(--green)' : 'var(--red)'
+  return (
+    <div className="chart-card-now">
+      now {s.price.toFixed(2)} ·{' '}
+      <span style={{ color: tone }}>
+        {s.pctFromEntry >= 0 ? '+' : ''}
+        {s.pctFromEntry.toFixed(1)}% from entry
+      </span>{' '}
+      · {s.pctToStop >= 0 ? `stop ${s.pctToStop.toFixed(1)}% away` : `stop breached by ${Math.abs(s.pctToStop).toFixed(1)}%`}
+      {badge && <span className={`badge ${badge.cls}`} style={{ marginLeft: 6 }}>{badge.label}</span>}
+    </div>
   )
 }
 
@@ -108,6 +139,7 @@ function ChartCard({ p, expanded, onToggle, onOpen }: { p: EnginePrediction; exp
         in {p.entry} · stop {p.stop} · tgt {p.target}
         <PatternBadges patterns={patterns} />
       </div>
+      <CallNow call={p} candles={candles} />
       {candles.length ? (
         // pan/zoom only once you've chosen the card — collapsed cards are
         // pictures, so wheeling down the wall scrolls the page, not a chart

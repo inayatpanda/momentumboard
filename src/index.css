@@ -2527,6 +2527,8 @@ a.dl-btn:hover { border-color: var(--gold); transform: translateY(-1px); }
   color: var(--muted);
   font-family: var(--font-num);
 }
+.chart-card-now { font-size: 11.5px; color: var(--muted); margin: 1px 0 2px; display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+
 .chart-card-cat { display: flex; align-items: baseline; gap: 6px; font-size: 11.5px; color: var(--muted); font-style: italic; }
 .pat-badges { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .badge.pat-bull { color: var(--green); border-color: var(--green-soft); background: var(--green-soft); }
