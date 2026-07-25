@@ -27,8 +27,7 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           APP_TOKEN: ${{ secrets.APP_TOKEN }}
-          REPORT_TOKEN: ${{ secrets.REPORT_TOKEN }}
-          REPORT_PUBLISH_TOKEN: ${{ secrets.REPORT_PUBLISH_TOKEN }} # H-1: falls back to REPORT_TOKEN in code until set
+          REPORT_PUBLISH_TOKEN: ${{ secrets.REPORT_PUBLISH_TOKEN }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

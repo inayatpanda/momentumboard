@@ -4,8 +4,8 @@
 # On 2026-07-24/25 the answer was no for two mornings: a missing
 # `secrets.REPORT_PUBLISH_TOKEN` arrived as an empty string, the `??` fallback
 # never fired, and the paper composed in full and then 401'd at the last step.
-# The token resolution below is deliberately identical to the composer's
-# (`scopedToken` in lib/auth.ts): `:-` treats blank as unset, same as the code.
+# REPORT_TOKEN was retired on 2026-07-25, so there is no fallback left to test:
+# an empty REPORT_PUBLISH_TOKEN in the runner is now itself the failure.
 #
 # Non-destructive: it sends a body that fails picks validation, so a passing
 # token gets 400 invalid-picks and NOTHING is written. 401 means the composer
@@ -21,12 +21,10 @@ jobs:
       - name: PUT /report with the composer's credential
         env:
           URL: https://thestreetsignal.rqai.co.uk
-          REPORT_TOKEN: ${{ secrets.REPORT_TOKEN }}
           REPORT_PUBLISH_TOKEN: ${{ secrets.REPORT_PUBLISH_TOKEN }}
         run: |
-          TOK="${REPORT_PUBLISH_TOKEN:-$REPORT_TOKEN}"
-          if [ -z "$TOK" ]; then echo "::error::no publish token in the runner at all"; exit 1; fi
-          if [ -n "$REPORT_PUBLISH_TOKEN" ]; then echo "using: REPORT_PUBLISH_TOKEN (scoped)"; else echo "using: REPORT_TOKEN (fallback)"; fi
+          TOK="$REPORT_PUBLISH_TOKEN"
+          if [ -z "$TOK" ]; then echo "::error::REPORT_PUBLISH_TOKEN is empty in the runner — exactly the 2026-07-24 failure"; exit 1; fi
           CODE=$(curl -sS -o /tmp/body.txt -w '%{http_code}' -X PUT "$URL/report" \
             -H "x-report-token: $TOK" -H 'content-type: application/json' \
             --data '{"deliberately":"invalid — auth probe only"}')
