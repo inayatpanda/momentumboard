@@ -1,7 +1,7 @@
 # Where is the price now? — call status on the board
 
 **Date:** 2026-07-25
-**Status:** implemented (board); paper strip deferred
+**Status:** implemented — board and paper
 
 ## The problem
 
@@ -49,11 +49,17 @@ Green/red on the from-entry figure; a badge only when the state is not `live` (`
 
 **Cost: zero new requests.** Every card already loads candles — collapsed cards render a 190px chart — so the last close is in hand. This is deliberately last close, not a live tick: it is a swing board, and real-time streaming is a large change for little gain.
 
-## Deferred: the paper strip
+## The paper strip
 
-The report is static HTML that also becomes the PDF, so live prices there need a client-side fetch and a read-only quote route. Deferred until the board version has been used.
+Built server-side at READ time, not with the client-side fetch originally sketched here. The composer leaves an empty `<span data-call-status="TICKER"></span>` in each call block; `report.mts` fills it when the page is served.
 
-One decision made in advance: in **today's** edition this should read as a live price, but in an **archived** edition it must read as *outcome* ("since this call: +4.8%, invalidation never hit") — otherwise a two-week-old edition looks like it is still recommending something.
+Why the change: the report is also a PDF and an emailed document, and both use the stored HTML directly. Filling on read means the stored edition stays a clean record — no stale price, no JavaScript in a document destined for print — and it needs no public quote endpoint, which would otherwise have been an unauthenticated symbol-quoting proxy on a public page.
+
+- `numericCalls()` persists the edition's levels as `report-calls:<date>` at publish. The composer's entry/invalidation/target are free text and deliberately qualitative when no price was available, so anything unparseable is dropped and that call simply gets no strip.
+- **Today's** edition reads `now 12.62 · +4.8% from entry · invalidation 12.6% away`; an **archived** one reads `since this call: …`, so an old edition cannot pose as a live recommendation.
+- A `?download=1` snapshot is served unfilled — never bake a live price into a file someone keeps.
+- Fail-soft everywhere: a quote outage serves the paper unchanged, and an unfilled marker renders as nothing.
+- The strip never echoes the ticker and the marker pattern cannot be quoted out of, so a hostile symbol reaches the page as nothing at all.
 
 ## Testing
 

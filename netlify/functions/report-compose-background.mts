@@ -560,6 +560,18 @@ export default async (req: Request) => {
       // re-deriving the same apology from scratch
       signalGist: composed.signal ? `called ${composed.signal.ticker} (${composed.signal.conviction})` : (composed.signalWhy ?? '').slice(0, 220),
     }
+    // The edition's levels in NUMERIC form, for the read-time status strip. The
+    // composer's entry/invalidation/target are free text and deliberately
+    // qualitative when no price was available, so anything unparseable is simply
+    // dropped and that call gets no strip.
+    try {
+      const { numericCalls } = await import('./lib/callStrip')
+      const calls = numericCalls(composed.ideas)
+      if (calls.length) await blobAppStore.write(`report-calls:${dateISO}`, calls)
+    } catch (e) {
+      console.error('COMPOSE: could not store call levels (edition unaffected)', e)
+    }
+
     const composedHistory = ((await blobAppStore.read<{ date: string }[]>('composed-history')) ?? []).filter(h => h.date !== dateISO)
     composedHistory.push(historyEntry)
     await blobAppStore.write('composed-history', composedHistory.slice(-4))

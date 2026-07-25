@@ -654,7 +654,11 @@ export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: Pape
       levelCell('Invalidation', esc(i.invalidation)) +
       levelCell('Target', esc(i.target)) +
       levelCell('Potential', i.expectedMove ? esc(i.expectedMove) : '&middot;', true) +
-      `</tr></tbody></table>`
+      `</tr></tbody></table>` +
+      // Filled at READ time by report.mts (see lib/callStrip): where the price is
+      // now, against these levels. Stays empty in the stored copy, so the PDF and
+      // the emailed edition carry no stale price and no script.
+      `<span data-call-status="${esc(i.ticker)}"></span>`
     const reasons =
       i.reasons?.length
         ? `<div class="reasons" style="margin-top:7px;font-size:13px;color:#3d382f;line-height:1.55">` +

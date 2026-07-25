@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+
+vi.mock('./marketCache', () => ({ cachedQuote: vi.fn(async (sym: string) => (sym === 'PATH' ? { price: 12.6 } : null)) }))
 import { routeReport } from '../report.mts'
 import { memoryStore } from './store'
 
@@ -45,5 +47,37 @@ describe('report endpoint', () => {
   it('PUT rejects when neither publish token is set', async () => {
     const none = { ...env, REPORT_TOKEN: '', REPORT_PUBLISH_TOKEN: '' }
     expect((await routeReport('PUT', auth, '<html></html>', none, memoryStore())).status).toBe(401)
+  })
+})
+
+// The paper prints fixed levels; the strip says where price is NOW. It is filled
+// when the page is SERVED, so the stored edition (and therefore the PDF and the
+// emailed copy) keeps no stale price.
+describe('call-status strip on a served edition', () => {
+  const marker = '<span data-call-status="PATH"></span>'
+  const seedEdition = async () => {
+    const store = memoryStore()
+    await store.write('report:2026-07-22', { html: `<html><body>call${marker}</body></html>`, at: 1_000 })
+    await store.write('report-calls:2026-07-22', [{ sym: 'PATH', side: 'long', entry: 12.04, stop: 11.03, target: 13.2 }])
+    return store
+  }
+
+  it('fills the strip when the edition is viewed', async () => {
+    const res = await routeReport('GET', new Headers(), null, env, await seedEdition(), undefined, new URL('http://x/report?date=2026-07-22'))
+    const html = await res.text()
+    expect(html).toContain('from entry')
+    expect(html).not.toContain('data-call-status') // never leave a raw marker on screen
+  })
+
+  it('leaves a DOWNLOAD as a clean snapshot, with no live price baked in', async () => {
+    const res = await routeReport('GET', new Headers(), null, env, await seedEdition(), undefined, new URL('http://x/report?date=2026-07-22&download=1'))
+    expect(await res.text()).not.toContain('from entry')
+  })
+
+  it('serves the paper untouched when the edition has no stored levels', async () => {
+    const store = memoryStore()
+    await store.write('report:2026-07-21', { html: `<html><body>x${marker}</body></html>`, at: 1_000 })
+    const res = await routeReport('GET', new Headers(), null, env, store, undefined, new URL('http://x/report?date=2026-07-21'))
+    expect(await res.text()).toContain(marker) // nothing to fill, nothing broken
   })
 })

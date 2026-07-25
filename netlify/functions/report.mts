@@ -42,6 +42,30 @@ export async function routeReport(
   telegramSend: typeof sendTelegram = sendTelegram,
   url?: URL,
 ): Promise<Response> {
+  // Fill each call block's status marker with where the price is NOW. Read-time,
+  // not publish-time: the stored edition stays a clean record, and the PDF and
+  // emailed copies (which use the stored HTML directly) carry no stale price.
+  // FAIL-SOFT throughout — a quote outage must serve the paper, not break it.
+  const withCallStatus = async (html: string, dateISO: string): Promise<string> => {
+    try {
+      const calls = await store.read<import('./lib/callStrip').EditionCall[]>(`report-calls:${dateISO}`)
+      if (!calls?.length) return html
+      const { cachedQuote } = await import('./lib/marketCache')
+      const { fillCallStatus } = await import('./lib/callStrip')
+      const prices = new Map<string, number>()
+      await Promise.all(
+        calls.map(async c => {
+          const q = await cachedQuote(c.sym, env.FINNHUB_API_KEY ?? '').catch(() => null)
+          if (q?.price) prices.set(c.sym, q.price)
+        }),
+      )
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+      return fillCallStatus(html, calls, sym => prices.get(sym) ?? null, { live: dateISO === today })
+    } catch {
+      return html
+    }
+  }
+
   if (method === 'GET') {
     const wantedDate = url?.searchParams.get('date')
     if (url?.searchParams.get('list') != null) {
@@ -62,11 +86,14 @@ export async function routeReport(
     const asFile = url?.searchParams.get('download') != null
     if (wantedDate) {
       const archived = await store.read<StoredReport>(`report:${wantedDate}`)
-      return page(archived ? 200 : 404, archived?.html ?? PLACEHOLDER, asFile && archived ? `StreetSignal-${wantedDate}.html` : undefined)
+      // a DOWNLOAD is a snapshot to keep — never bake a live price into it
+      const body = archived && !asFile ? await withCallStatus(archived.html, wantedDate) : archived?.html
+      return page(archived ? 200 : 404, body ?? PLACEHOLDER, asFile && archived ? `StreetSignal-${wantedDate}.html` : undefined)
     }
     const report = await store.read<StoredReport>('morning-report')
     const latestDate = report ? new Date(report.at * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) : ''
-    return page(200, report?.html ?? PLACEHOLDER, asFile && report ? `StreetSignal-${latestDate}.html` : undefined)
+    const latestBody = report && !asFile ? await withCallStatus(report.html, latestDate) : report?.html
+    return page(200, latestBody ?? PLACEHOLDER, asFile && report ? `StreetSignal-${latestDate}.html` : undefined)
   }
 
   if (method === 'PUT') {
