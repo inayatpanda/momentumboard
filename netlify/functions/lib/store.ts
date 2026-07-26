@@ -20,6 +20,40 @@ async function blobStore() {
   }
 }
 
+// Blobs talks over the network, and a connect timeout is weather, not a failure.
+// One 10s blip killed the 01:11 queue-worker run on 2026-07-26 and emailed the
+// owner "all jobs have failed" — and the same blip during the 06:35 run would
+// have cost that morning's paper outright. Retry a few times; a genuine outage
+// still fails, loudly, after the retries are spent.
+const TRANSIENT = /fetch failed|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|socket hang up|UND_ERR|ConnectTimeout|other side closed|network/i
+
+/** Is this error worth another go? Walks the cause chain — undici buries the
+ * real reason ("ConnectTimeoutError") under a bland "fetch failed". */
+export function isTransientNetworkError(e: unknown): boolean {
+  const seen: string[] = []
+  let cur: unknown = e
+  for (let depth = 0; depth < 5 && cur; depth++) {
+    const o = cur as { message?: unknown; code?: unknown; name?: unknown; cause?: unknown }
+    seen.push(String(o.message ?? ''), String(o.code ?? ''), String(o.name ?? ''))
+    cur = o.cause
+  }
+  return TRANSIENT.test(seen.join(' '))
+}
+
+const BACKOFF_MS = [200, 600]
+
+export async function withBlobRetry<T>(op: () => Promise<T>, what: string, sleep = (ms: number) => new Promise(r => setTimeout(r, ms))): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await op()
+    } catch (e) {
+      if (attempt >= BACKOFF_MS.length || !isTransientNetworkError(e)) throw e
+      console.warn(`blob ${what}: transient failure (attempt ${attempt + 1}), retrying — ${String((e as Error)?.message ?? e).slice(0, 120)}`)
+      await sleep(BACKOFF_MS[attempt])
+    }
+  }
+}
+
 export interface AppStore {
   read<T>(key: string): Promise<T | null>
   write(key: string, value: unknown): Promise<void>
@@ -55,12 +89,12 @@ export async function releaseLease(store: AppStore, key: string, token: string):
 export const blobAppStore: AppStore = {
   async read<T>(key: string): Promise<T | null> {
     const store = await blobStore()
-    if (store) return ((await store.get(key, { type: 'json' })) as T | null) ?? null
+    if (store) return await withBlobRetry(async () => ((await store.get(key, { type: 'json' })) as T | null) ?? null, `read ${key}`)
     return (mem.get(key) as T | undefined) ?? null
   },
   async write(key: string, value: unknown): Promise<void> {
     const store = await blobStore()
-    if (store) await store.setJSON(key, value)
+    if (store) await withBlobRetry(() => store.setJSON(key, value), `write ${key}`)
     else mem.set(key, value)
   },
   async readStrong<T>(key: string): Promise<T | null> {
