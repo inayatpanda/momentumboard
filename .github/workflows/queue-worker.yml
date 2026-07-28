@@ -5,7 +5,15 @@
 name: queue-worker
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # Actions minutes are BILLED on this private repo, and polling every 15
+    # minutes spent 117 of the last 143 billed minutes — five times what the
+    # morning paper costs — usually to find an empty queue. Exhausting the
+    # budget blocks EVERY workflow, which is what stopped the paper on 27/28
+    # July and mailed "all jobs have failed" all day. Three-hourly is plenty for
+    # background enrichment (video reads, dossiers); the paper has its own crons.
+    # Once the Netlify dispatcher lands this schedule can go entirely: the queue
+    # only needs draining when something is actually queued.
+    - cron: '20 */3 * * *'
   workflow_dispatch: {}
 concurrency:
   group: queue-worker
@@ -19,8 +27,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+      # cache node_modules itself, not just the npm cache: `npm ci` wipes and
+      # reinstalls every run, and it is most of the billed minute.
+      - uses: actions/cache@v4
+        id: modules
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
       - run: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
       - run: npx tsx scripts/bg/drain-queue.mts
         env:
           URL: https://thestreetsignal.rqai.co.uk

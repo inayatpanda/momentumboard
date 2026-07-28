@@ -23,8 +23,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+      # cache node_modules itself, not just the npm cache: `npm ci` wipes and
+      # reinstalls every run, and it is most of the billed minute.
+      - uses: actions/cache@v4
+        id: modules
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
       - run: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
       - run: npx tsx scripts/bg/daily-run.mts
         env:
           URL: https://thestreetsignal.rqai.co.uk
