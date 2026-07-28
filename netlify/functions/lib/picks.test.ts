@@ -110,3 +110,40 @@ describe('scorePicks reports an honest number', () => {
     expect(all.avg10).toBeNull()
   })
 })
+
+// The scorecard measured only where price ENDED, so a call that collapsed
+// through its stop on day two and limped back scored the same as one that ran
+// clean. Without this you cannot tell a working call from a survivor.
+describe('scorePicks knows when a call was stopped out', () => {
+  const DAY = 86_400
+  const base = Date.parse('2026-06-01') / 1000
+  // drifts up, but day 2 wicks down to 89 — through a stop at 90
+  const wick: Candle[] = Array.from({ length: 20 }, (_, i) => ({
+    t: base + i * DAY, o: 100, h: 106, l: i === 2 ? 89 : 98, c: 100 + i, v: 1000,
+  }))
+
+  it('flags a long whose low traded through the stop, even though it closed higher', () => {
+    const history: DailyPicks[] = [{ date: '2026-06-01', picks: [{ ticker: 'W', side: 'long', priceAtPick: 100, stop: 90 }] }]
+    const all = scorePicks(history, new Map([['W', wick]])).find(s => s.bucket === 'ALL')!
+    expect(all.withStop).toBe(1)
+    expect(all.stopped5).toBe(1) // 100% of calls carrying a stop were hit
+    expect(all.avg5).toBeGreaterThan(0) // and it STILL shows a positive 5-day move
+  })
+
+  it('leaves a long alone when the stop was never touched', () => {
+    const history: DailyPicks[] = [{ date: '2026-06-01', picks: [{ ticker: 'W', side: 'long', priceAtPick: 100, stop: 50 }] }]
+    expect(scorePicks(history, new Map([['W', wick]])).find(s => s.bucket === 'ALL')!.stopped5).toBe(0)
+  })
+
+  it("reads a short's stop as ABOVE the price", () => {
+    const history: DailyPicks[] = [{ date: '2026-06-01', picks: [{ ticker: 'W', side: 'short', priceAtPick: 100, stop: 105 }] }]
+    expect(scorePicks(history, new Map([['W', wick]])).find(s => s.bucket === 'ALL')!.stopped5).toBe(1) // high 106 >= 105
+  })
+
+  it('reports nothing rather than zero when no call carries a stop', () => {
+    const history: DailyPicks[] = [{ date: '2026-06-01', picks: [{ ticker: 'W', side: 'long', priceAtPick: 100 }] }]
+    const all = scorePicks(history, new Map([['W', wick]])).find(s => s.bucket === 'ALL')!
+    expect(all.withStop).toBe(0)
+    expect(all.stopped5).toBeNull()
+  })
+})

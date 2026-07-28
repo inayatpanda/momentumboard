@@ -10,6 +10,12 @@ export interface Pick {
   strength?: 'strong' | 'standard' // 'strong' = multi-factor "I strongly suggest" call — scored separately
   reasons?: string[] // the WHY behind the call, mandatory for strong calls
   priceAtPick?: number // captured server-side when the pick is stored — outcome scoring baseline
+  // The PUBLISHED levels, carried so the scorecard can tell a call that was
+  // stopped out from one that merely ended lower. Absent when the composer
+  // wrote them qualitatively ("reclaim of the 20-day"), which is legitimate.
+  entry?: number
+  stop?: number
+  target?: number
 }
 
 export interface DailyPicks {
@@ -32,6 +38,9 @@ export interface Persistence {
   persistent: boolean // streak ≥3 OR ≥4 of last 7
 }
 
+const num = (field: 'entry' | 'stop' | 'target', v: unknown): Record<string, number> =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 ? { [field]: v } : {}
+
 export function validatePicks(raw: unknown): DailyPicks | null {
   const d = raw as DailyPicks
   if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.date ?? '') || !Array.isArray(d.picks)) return null
@@ -45,6 +54,11 @@ export function validatePicks(raw: unknown): DailyPicks | null {
       conviction: p.conviction,
       strength: p.strength === 'strong' ? ('strong' as const) : undefined,
       reasons: Array.isArray(p.reasons) ? p.reasons.filter(r => typeof r === 'string').slice(0, 6).map(r => r.slice(0, 220)) : undefined,
+      // published levels ride along when numeric, so the scorecard can tell a
+      // stop-out from a call that merely drifted; qualitative levels are dropped
+      ...num('entry', p.entry),
+      ...num('stop', p.stop),
+      ...num('target', p.target),
     }))
   const macro =
     d.macro && typeof d.macro === 'object'
@@ -92,6 +106,8 @@ export interface PickScore {
   scored: number
   win5: number | null
   avg5: number | null
+  withStop: number // how many scored calls carried a stop at all
+  stopped5: number | null // share of THOSE whose stop was traded through inside 5 bars; null when none carried one
   scored10: number // how many calls were old enough for a 10-day move — NOT the same set as `scored`
   avg10: number | null
 }
@@ -99,12 +115,16 @@ export interface PickScore {
 /** Scores the REPORT itself: what did price do after each recommendation?
  * Shorts are scored inverted (price falling = the call working). */
 export function scorePicks(history: DailyPicks[], candlesBySymbol: Map<string, Candle[]>): PickScore[] {
-  const buckets = new Map<string, { f5: number[]; f10: number[]; total: number }>()
-  const add = (bucket: string, f5: number | null, f10: number | null) => {
-    const b = buckets.get(bucket) ?? { f5: [], f10: [], total: 0 }
+  const buckets = new Map<string, { f5: number[]; f10: number[]; total: number; withStop: number; stopped: number }>()
+  const add = (bucket: string, f5: number | null, f10: number | null, stopped: boolean | null) => {
+    const b = buckets.get(bucket) ?? { f5: [], f10: [], total: 0, withStop: 0, stopped: 0 }
     b.total++
     if (f5 != null) b.f5.push(f5)
     if (f10 != null) b.f10.push(f10)
+    if (stopped != null) {
+      b.withStop++
+      if (stopped) b.stopped++
+    }
     buckets.set(bucket, b)
   }
   for (const day of history) {
@@ -114,9 +134,10 @@ export function scorePicks(history: DailyPicks[], candlesBySymbol: Map<string, C
       const candles = candlesBySymbol.get(p.ticker)
       let f5: number | null = null
       let f10: number | null = null
+      // hoisted: the stop-out check below needs the entry bar too
+      let idx = candles ? candles.findIndex(c => c.t >= dayEpoch) : -1
+      if (candles && idx === -1) idx = candles.length
       if (candles) {
-        let idx = candles.findIndex(c => c.t >= dayEpoch)
-        if (idx === -1) idx = candles.length
         const sign = p.side === 'short' ? -1 : 1
         // priceAtPick is captured pre-open, so it is the PREVIOUS session's close —
         // a price no reader could transact at. Score from the first achievable fill
@@ -128,10 +149,18 @@ export function scorePicks(history: DailyPicks[], candlesBySymbol: Map<string, C
         if (idx + 5 < candles.length) f5 = (sign * (candles[idx + 5].c - basis) * 100) / basis
         if (idx + 10 < candles.length) f10 = (sign * (candles[idx + 10].c - basis) * 100) / basis
       }
-      add('ALL', f5, f10)
-      if (p.strength === 'strong') add('STRONG calls', f5, f10)
-      if (p.conviction) add(`grade ${p.conviction}`, f5, f10)
-      if (p.playbook) add(`playbook ${p.playbook}`, f5, f10)
+      // Did price trade THROUGH the stop inside the window? Uses the bar's low
+      // (long) or high (short), not its close: a call that collapsed on day two
+      // and limped back is a loss you already took, not a winner.
+      let stopped: boolean | null = null
+      if (p.stop != null && candles && idx < candles.length) {
+        const window = candles.slice(idx, idx + 6) // entry bar + 5 forward
+        stopped = p.side === 'short' ? window.some(c => c.h >= p.stop!) : window.some(c => c.l <= p.stop!)
+      }
+      add('ALL', f5, f10, stopped)
+      if (p.strength === 'strong') add('STRONG calls', f5, f10, stopped)
+      if (p.conviction) add(`grade ${p.conviction}`, f5, f10, stopped)
+      if (p.playbook) add(`playbook ${p.playbook}`, f5, f10, stopped)
     }
   }
   const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null)
@@ -145,6 +174,8 @@ export function scorePicks(history: DailyPicks[], candlesBySymbol: Map<string, C
       // avg10 is averaged over a DIFFERENT, smaller set than avg5 — only calls old
       // enough to have ten bars. Publishing `scored` alone made 6 calls' +0.6% read
       // as a recovery from 20 calls' −1.7%; the same six were flat across horizons.
+      withStop: b.withStop,
+      stopped5: b.withStop ? b.stopped / b.withStop : null,
       scored10: b.f10.length,
       avg10: mean(b.f10),
     }))

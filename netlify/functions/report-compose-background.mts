@@ -496,11 +496,23 @@ export default async (req: Request) => {
       headers: { 'x-report-token': scopedToken(process.env.REPORT_PUBLISH_TOKEN, process.env.REPORT_TOKEN) ?? '', 'content-type': 'text/html' },
       body: JSON.stringify({ html, print }),
     })
+    const { numericCalls: parseLevels } = await import('./lib/callStrip')
+    const levelsBySym = new Map(parseLevels(composed.ideas).map(c => [c.sym, { entry: c.entry, stop: c.stop, target: c.target }]))
     const picksBody = {
       date: dateISO,
       regime: composed.regime,
       macro: { fedStance: composed.fedStance, notes: composed.macroNotes },
-      picks: composed.ideas.map(i => ({ ticker: i.ticker, side: i.side, playbook: i.playbook, conviction: i.conviction, strength: i.strength, reasons: i.reasons ?? [i.caseText] })),
+      picks: composed.ideas.map(i => ({
+        ticker: i.ticker,
+        side: i.side,
+        playbook: i.playbook,
+        conviction: i.conviction,
+        strength: i.strength,
+        reasons: i.reasons ?? [i.caseText],
+        // the published levels, when the composer wrote them as real numbers —
+        // the scorecard needs the stop to distinguish a stop-out from a drift
+        ...(levelsBySym.get(i.ticker) ?? {}),
+      })),
     }
     // Always record a pick day — even an empty one (audit M-8). The persistence
     // ledger's "last 7 reports" counts stored pick days, so a skipped no-signal
