@@ -651,7 +651,7 @@ export async function buildBoard(
         price: closes[closes.length - 1] ?? null,
       }
     })
-  const { roster, joined, dropped } = updateRoster(currentRoster, candidates, watchSyms, today)
+  const { roster, joined, dropped } = updateRoster(currentRoster, candidates, watchSyms, today, Object.keys(cfg.levMap ?? {}))
   await store.write('engine-roster', roster)
   const rosterLog = ((await store.read<unknown[]>('engine-roster-log')) ?? []) as { date: string }[]
   await store.write('engine-roster-log', [...rosterLog.filter(l => l.date !== today), { date: today, joined, dropped }].slice(-60))

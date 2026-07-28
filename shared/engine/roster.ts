@@ -43,9 +43,16 @@ export function updateRoster(
   candidates: RosterCandidate[],
   watchlist: string[],
   today: string,
+  /** Names with a leveraged/inverse route (levMap keys). The trim below sheds
+   * the largest caps first — which is exactly the set that HAS a route on an
+   * ISA, so the roster was quietly evicting the only names the reader can
+   * actually place, shorts especially. Protection is trim-only: a routable name
+   * still has to clear every join gate on its own merit. */
+  routable: string[] = [],
 ): { roster: RosterEntry[]; joined: string[]; dropped: { sym: string; why: string }[] } {
   const bySym = new Map(current.map(e => [e.sym, { ...e }]))
   const watch = new Set(watchlist)
+  const canRoute = new Set(routable.map(s => s.toUpperCase()))
   const joined: string[] = []
   const dropped: { sym: string; why: string }[] = []
 
@@ -89,7 +96,7 @@ export function updateRoster(
   let roster = [...bySym.values()]
   if (roster.length > ROSTER_MAX) {
     const cuttable = roster
-      .filter(e => !watch.has(e.sym))
+      .filter(e => !watch.has(e.sym) && !canRoute.has(e.sym.toUpperCase()))
       .sort((a, b) => (b.capUsdM ?? 0) - (a.capUsdM ?? 0)) // largest first
     for (const cut of cuttable) {
       if (roster.length <= ROSTER_MAX) break

@@ -62,3 +62,32 @@ describe('updateRoster', () => {
     expect(roster.every(r => r.source === 'watchlist')).toBe(true)
   })
 })
+
+// The roster sheds the LARGEST caps first when full — but large caps are the
+// only names with a leveraged/inverse route on an ISA, so the trim was quietly
+// evicting exactly the names the reader can trade. Live on 2026-07-28: not one
+// of the 19 tickers ever called had a route, while all 10 routable names had
+// been screened out. (user: "I'm ok with leverage as long as it's on T212".)
+describe('updateRoster protects routable names', () => {
+  const full = (n: number): RosterCandidate[] =>
+    Array.from({ length: n }, (_, i) => cand(`S${i}`, { capUsdM: 500 })) // small caps, all qualify
+
+  it('keeps a routable large cap when the roster is over capacity', () => {
+    const routable = ['NVDA']
+    const cands = [...full(ROSTER_MAX + 5), cand('NVDA', { capUsdM: 3_000_000 })] // the biggest cap present
+    const { roster } = updateRoster([], cands, [], '2026-07-02', routable)
+    expect(roster.map(r => r.sym)).toContain('NVDA')
+    expect(roster.length).toBeLessThanOrEqual(ROSTER_MAX)
+  })
+
+  it('still sheds a large cap that has no route', () => {
+    const cands = [...full(ROSTER_MAX + 5), cand('IBM', { capUsdM: 3_000_000 })]
+    const { roster } = updateRoster([], cands, [], '2026-07-02', ['NVDA'])
+    expect(roster.map(r => r.sym)).not.toContain('IBM')
+  })
+
+  it('protection is trim-only — a routable name still has to qualify to join', () => {
+    const { joined } = updateRoster([], [cand('NVDA', { capacityPct: 2 })], [], '2026-07-02', ['NVDA'])
+    expect(joined).toEqual([]) // capacity gate still applies
+  })
+})
