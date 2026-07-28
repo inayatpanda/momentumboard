@@ -93,6 +93,13 @@ export default async (req: Request) => {
           expectedMovePct: p.expectedMovePct,
           stage: p.stage,
           regime: p.regime,
+          // The factor vector behind `composite`. Without it a conviction
+          // inversion can only be RECONSTRUCTED from the note text — which is
+          // how the short-side inversion (2026-07-28) had to be diagnosed.
+          // score+weight only: `detail` is prose and would bloat 30 days of rows.
+          factors: p.factors
+            ? Object.fromEntries(Object.entries(p.factors).map(([k, f]) => [k, { score: f.score, weight: f.weight }]))
+            : undefined,
           worldTape: p.worldTape,
           earningsRisk: p.earningsRisk,
           overlay: p.overlay,
