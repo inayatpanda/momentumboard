@@ -25,7 +25,15 @@ export function technicalFactor(read: { stage: Stage; volumeConfirmed: boolean; 
   // Confirmed reversals keep the full score plus the ×1.2 volume boost below.
   const dampedReversal = read.stage === 'early-reversal' && !read.volumeConfirmed
   if (dampedReversal) base *= 0.7
-  const score = clamp(read.volumeConfirmed ? base * 1.2 : base, -100, 100)
+  // The confirmation boost is LONG-ONLY. Measured over 96 live shorts
+  // (2026-07-28): weakness without volume confirmation hit 65.3% for +4.31%
+  // average excess; weakness WITH it hit 47.6% for -1.97% — yet the x1.2 was
+  // deepening the score, i.e. raising conviction on the worse group. Heavy
+  // volume into weakness is usually capitulation, a bounce setup, not
+  // continuation. Bearish stages keep their base score; the RVOL is still
+  // reported so the reader sees what the engine saw.
+  const amplify = read.volumeConfirmed && base > 0
+  const score = clamp(amplify ? base * 1.2 : base, -100, 100)
   const suffix = read.volumeConfirmed ? ` volume-confirmed (RVOL ${read.rvol})` : dampedReversal ? ' unconfirmed turn (damped)' : ''
   return { score: round1(score), detail: `${read.stage}${suffix}` }
 }

@@ -157,3 +157,26 @@ describe('catalystFactor', () => {
     expect(catalystFactor({ kind: 'news', side: 'long', reason: 'x', strength: 80 }).detail).toContain('news')
   })
 })
+
+// Measured over 96 live shorts (2026-07-28): weakness WITHOUT volume confirmation
+// hit 65.3% for +4.31% average excess; weakness WITH it hit 47.6% for -1.97%.
+// The x1.2 boost was raising conviction on the worse group. Heavy volume into
+// weakness is usually capitulation — a bounce setup — not continuation, so the
+// confirmation boost is long-only. Bearish stages keep their base score.
+describe('volume confirmation is a LONG-side amplifier', () => {
+  const read = (stage: Parameters<typeof technicalFactor>[0] extends null ? never : NonNullable<Parameters<typeof technicalFactor>[0]>['stage'], vol: boolean) =>
+    technicalFactor({ stage, volumeConfirmed: vol, rvol: vol ? 1.8 : null })
+
+  it('still boosts a confirmed bullish stage', () => {
+    expect(read('pullback', true).score!).toBeGreaterThan(read('pullback', false).score!)
+  })
+
+  it('does NOT deepen a bearish stage on volume', () => {
+    expect(read('weak', true).score).toBe(read('weak', false).score)
+    expect(read('exhausted', true).score).toBe(read('exhausted', false).score)
+  })
+
+  it('still reports the volume it saw, so the reader is not misled', () => {
+    expect(read('weak', true).detail).toContain('RVOL')
+  })
+})
