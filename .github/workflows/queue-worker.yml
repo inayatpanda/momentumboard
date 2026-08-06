@@ -13,7 +13,12 @@ on:
     # background enrichment (video reads, dossiers); the paper has its own crons.
     # Once the Netlify dispatcher lands this schedule can go entirely: the queue
     # only needs draining when something is actually queued.
-    - cron: '20 */3 * * *'
+    # First drain at 08:20 UTC, AFTER the morning paper's cron window: drains
+    # share Groq's 100k tokens-per-day budget with the composer, and the
+    # 00:20/03:20/06:20 slots were spending the freshly reset budget before the
+    # paper's first claim on it — on a Gemini-depleted day that alone can kill
+    # the edition (2026-08-04). Nothing queues overnight anyway.
+    - cron: '20 8-23/3 * * *'
   workflow_dispatch: {}
 concurrency:
   group: queue-worker

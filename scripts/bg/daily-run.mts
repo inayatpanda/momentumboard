@@ -74,8 +74,27 @@ const run = async () => {
     console.log('paper: running report-compose-background in-process…')
     const { default: compose } = await import('../../netlify/functions/report-compose-background.mts')
     const res = await compose(adminReq())
-    console.log(`paper: ${res.status} ${await res.text()}`)
-    if (res.status >= 400) process.exit(1)
+    const body = await res.text()
+    console.log(`paper: ${res.status} ${body}`)
+    if (res.status >= 400) {
+      // Provider-quota mornings (Gemini prepay depleted + Groq tokens-per-day
+      // spent) fail every one of the three cron shots identically, mailing
+      // three "Run failed" alerts for ONE condition (2026-08-04). Quota does
+      // not come back between shots on its own, so only the FIRST quota
+      // failure of the day is loud; later shots still retry — a mid-morning
+      // top-up composes the paper — but exit quietly if quota is still gone.
+      // Any non-quota failure stays loud on every shot.
+      const quotaShaped = /\b429\b|rate[_ ]?limit|quota|depleted|credit/i.test(body)
+      if (quotaShaped) {
+        const alertKey = `report-quota-alerted:${today}`
+        if (await blobAppStore.read<unknown>(alertKey)) {
+          console.log('paper: providers still quota-exhausted — already alerted once today, exiting quietly (next shot retries)')
+          return
+        }
+        await blobAppStore.write(alertKey, { at: nowSec, body: body.slice(0, 500) })
+      }
+      process.exit(1)
+    }
   }
   console.log('daily-run: done')
 }
