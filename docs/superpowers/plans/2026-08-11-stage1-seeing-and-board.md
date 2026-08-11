@@ -365,6 +365,8 @@ git commit -m "feat(engine): the core sleeve — 130 famous names the engine nev
 
 Rules [G6 + R4 folded in]: trigger = drop ≥ 12% from the 20-session closing high, OR worst single-session decline ≥ 7% measured as `max(close-to-close drop, open-gap vs prior close)` within the last 10 sessions (uses `Candle.o`). Holding = NOT a new 5-session closing low today, AND volume ≥ 1.5× the 20-day average, AND (close > 50-EMA OR close ≥ 3% above the dip-window low — the slide case must have a reclaim path that doesn't require the far-away 50-EMA [G6]). Earnings/news linkage is NOT required in Stage 1 — the price signature suffices; the tag is narration.
 
+Ratified at Task-4 review (2026-08-11, controller decision): **stop = min(dip-window low, today's intraday low)** (the brief's literal stop could sit inside today's range); **minimum 1:1 reward-to-risk** — `dipCall` returns null when `(target − entry) < (entry − stop)` (kills the depth-blind-gap degenerate: entry 99 / stop 90 / target 99.5 must never publish); `evidence.coverage`/`famAgree` are NOMINAL placeholders and must say so in a code comment. All dipCall null paths and the washout-bar stop semantics carry tests.
+
 - [ ] **Step 1: Failing tests** — truth table:
 
 ```ts
