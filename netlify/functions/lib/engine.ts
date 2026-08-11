@@ -19,6 +19,8 @@ import {
   type SmartMoneyInput,
 } from '../../../shared/engine/factors'
 import { composeCall } from '../../../shared/engine/composite'
+import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleeve'
+import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
 import { gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
@@ -45,7 +47,7 @@ import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, map
 import { capCohortOf, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
-import type { FactorName, FactorScore, PredOutcome, Prediction } from '../../../shared/engine/types'
+import type { EngineCall, FactorName, FactorScore, PredOutcome, Prediction } from '../../../shared/engine/types'
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { primaryThemeOf, themeCandidates, themeHeat, themesOf } from '../../../shared/engine/themes'
 import { traceOpenCall, type OpenTraceEntry } from '../../../shared/engine/openTrace'
@@ -65,6 +67,11 @@ export interface EngineDeps {
   capUsdM: (sym: string) => Promise<number | null>
   companyName: (sym: string) => Promise<string | null>
   screens: () => Promise<{ row: ScreenRow; source: string }[]>
+  // Batched daily closes for the core sleeve (spark.ts) — ~7 calls cover 130
+  // famous names. The sleeve's cheap eye: this is what lets the engine notice
+  // that GLW fell 15% on a day no screener surfaced it. Fail-soft: an empty map
+  // turns EVERY sleeve behaviour off, so the run is a sleeve-less run.
+  sparkCloses: (syms: string[]) => Promise<Map<string, number[]>>
   social: (watchSyms: string[]) => Promise<SocialPulseRow[]>
   // roster-wide insider coverage: watchlist every run + a rotating cached slice
   // of the rest. Map value: summary → buys; null → checked-empty; absent → never checked.
@@ -177,6 +184,10 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
       const flat = results.flat()
       if (flat.length) return flat
       return (await fetchTrending()).map(row => ({ row, source: 'trending' })) // screeners refused — fall back
+    },
+    sparkCloses: async syms => {
+      const { fetchSparkCloses } = await import('./spark')
+      return fetchSparkCloses(syms)
     },
     social: async watchSyms => {
       const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse } = await import('./social')
@@ -321,7 +332,12 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // THE calibrated grade: calibration buckets, factor-IC weights, the
           // Brier trail and the risk-ladder counters all learn here, at 10d.
           updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
-          w = updateIcStats(w, pred, o)
+          // …but NOT factor IC for a lane call. A dip call carries a constant
+          // technical +40 placeholder (dipLane.ts) rather than a measured factor
+          // vote, so booking its outcome would train the technical factor's IC on
+          // the dip lane's P&L — a signal it never cast. Calibration buckets and
+          // setup buckets above still accrue: only factor-IC is excluded.
+          if (pred.catalyst?.kind !== 'dip') w = updateIcStats(w, pred, o)
           newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow })
           graded++
           if (!pred.shadow && !pred.watchOnly) newByCohort[capCohortOf(pred.capUsdM)]++
@@ -485,7 +501,20 @@ export async function buildBoard(
   // discovery inflows → roster candidates. Media titles come first: theme
   // heat ("chips are in the news") decides which theme members join today's
   // candidate pool, and the same titles later feed the news factor + tone.
-  const [screens, social, mediaTitles] = await Promise.all([deps.screens(), deps.social(watchSyms), deps.mediaTitles()])
+  // The core sleeve: famous names evaluated every day. One spark batch ranks them
+  // by unusualness (each name's move vs its OWN typical move); the top movers join
+  // full evaluation. sleeveActive gates EVERY sleeve behaviour below, so a failed
+  // fetch runs exactly like a sleeve-less engine. [R7]
+  const sleeveSyms = sleeveWithDefaults(cfg.coreSleeve)
+  const [screens, social, mediaTitles, sleeveCloses] = await Promise.all([
+    deps.screens(),
+    deps.social(watchSyms),
+    deps.mediaTitles(),
+    deps.sparkCloses(sleeveSyms).catch(() => new Map<string, number[]>()),
+  ])
+  const sleeveActive = sleeveCloses.size > 0
+  const sleeveTop = sleeveActive ? rankSleeve(sleeveCloses, 40) : []
+  const sleeveSet = new Set(sleeveActive ? sleeveSyms : [])
   const sectorPairs = await mapLimit(Object.keys(SECTOR_MEMBERS), 6, async etf => [etf, await deps.candles(etf)] as const)
   const sectorRows = computeSectorRows(new Map(sectorPairs.filter((p): p is [string, Candle[]] => p[1] !== null)), spy)
   const topSectorMembers = sectorRows.slice(0, 2).flatMap(r => SECTOR_MEMBERS[r.sym] ?? [])
@@ -588,8 +617,8 @@ export async function buildBoard(
   // The reader's REAL Trading 212 book. Fetched fail-soft (a broker outage never
   // stops the board). Held names join the CANDIDATE pool with source 'holding' —
   // gated exactly like any mover, so they must EARN their roster slot and are NOT
-  // watchlist-immortal. Added LAST so a large book never evicts the movers from the
-  // 110-candidate evaluation cap. The engine's per-holding opinion (holdings-reads)
+  // watchlist-immortal. Added late so a large book never evicts the movers from the
+  // 180-candidate evaluation cap. The engine's per-holding opinion (holdings-reads)
   // is written separately below, after the board is scored.
   const holdings = await deps.holdings().catch(() => null)
   if (holdings) {
@@ -597,9 +626,18 @@ export async function buildBoard(
     for (const p of holdings.slice(0, ROSTER_MAX)) addSource(p.symbol, 'holding')
   }
 
+  // The sleeve door, added LAST on purpose: addSource keeps the FIRST source, so
+  // this stamps 'sleeve' ONLY on a name no other door claimed. That makes the
+  // source string an exact test for "sleeve-only" (used by the roster filter
+  // below) and leaves every other door's attribution — holding, watchlist,
+  // roster, catalyst — untouched when a famous name also happens to be moving.
+  // Sleeve BEHAVIOUR is keyed off sleeveSet, never off the source string. [R1]
+  for (const r of sleeveTop) addSource(r.sym, 'sleeve')
+
   // The evaluation budget is explicit: real holdings/watchlist first, then the
-  // established roster, live catalysts and earned channel nominations, then
-  // discovery feeds. Insertion order must never decide what the engine sees.
+  // established roster, live catalysts, the core sleeve and earned channel
+  // nominations, then discovery feeds. Insertion order must never decide what
+  // the engine sees.
   const watchSet = new Set(watchSyms.map(s => s.toUpperCase()))
   const holdingSet = new Set((holdings ?? []).map(p => p.symbol.toUpperCase()))
   const rosterSet = new Set(currentRoster.map(e => e.sym.toUpperCase()))
@@ -608,14 +646,18 @@ export async function buildBoard(
     if (watchSet.has(sym)) return 1
     if (rosterSet.has(sym)) return 2
     if (catalystBySym.has(sym)) return 3
-    if (sources.get(sym)?.source.startsWith('channel:')) return 4
-    if (sources.get(sym)?.source.startsWith('theme:') || sources.get(sym)?.source === 'rotation') return 5
-    if (sources.get(sym)?.source === 'social') return 6
-    return 7
+    if (sleeveSet.has(sym)) return 4 // the SET, not the source string — a sleeve name found by the losers screen is still a sleeve name
+    if (sources.get(sym)?.source.startsWith('channel:')) return 5
+    if (sources.get(sym)?.source.startsWith('theme:') || sources.get(sym)?.source === 'rotation') return 6
+    if (sources.get(sym)?.source === 'social') return 7
+    return 8
   }
+  // 180, not 110: the sleeve adds up to 40 permanent candidates and the losers
+  // screen another slice, and neither may crowd out discovery. Worst case is
+  // +70 candle fetches, bounded by the mapLimit(8) below — noted, accepted. [R16]
   const candidateSyms = [...sources.keys()]
     .sort((a, b) => candidatePriority(a) - candidatePriority(b) || a.localeCompare(b))
-    .slice(0, 110)
+    .slice(0, 180)
   const candleMap = new Map<string, Candle[]>()
   await mapLimit(candidateSyms, 8, async sym => {
     const c = await deps.candles(sym)
@@ -628,6 +670,21 @@ export async function buildBoard(
     const cap = await deps.capUsdM(sym)
     if (cap != null) sources.get(sym)!.capUsdM = cap
   })
+
+  // Dip lane: a quality name (sleeve member, or > $10B) hit hard but HOLDING is a
+  // LONG candidate — via its own call constructor, because composeCall reads that
+  // same chart as a short and context may never flip a side (dipLane.ts). Read
+  // AFTER the cap-enrichment pass above, so the >$10B quality test sees the caps
+  // that pass actually fetched. [R5]
+  const dipReads = new Map<string, DipRead>()
+  for (const sym of candidateSyms) {
+    const candles = candleMap.get(sym)
+    if (!candles) continue
+    const quality = sleeveSet.has(sym) || (sources.get(sym)?.capUsdM ?? 0) > 10_000
+    if (!quality) continue
+    const read = classifyDip(candles)
+    if (read?.triggered && read.holding) dipReads.set(sym, read)
+  }
 
   // regime, refined: the SPY+QQQ slope read is checked against market breadth
   // (share of today's candidate pool above its 50-SMA) and the VIX LEVEL —
@@ -652,7 +709,13 @@ export async function buildBoard(
         price: closes[closes.length - 1] ?? null,
       }
     })
-  const { roster, joined, dropped } = updateRoster(currentRoster, candidates, watchSyms, today, Object.keys(cfg.levMap ?? {}))
+  // The sleeve is watched, not enrolled: a name whose ONLY door was the sleeve is
+  // evaluated every day (see evalRows below) but never joins the roster — the
+  // roster is the engine's earned hunting ground and must not fill with 130
+  // permanent members. A sleeve name that ALSO came through an ordinary door
+  // (screener, holding, watchlist…) keeps that source and competes normally. [R2]
+  const rosterCandidates = candidates.filter(c => !(sleeveSet.has(c.sym) && sources.get(c.sym)?.source === 'sleeve'))
+  const { roster, joined, dropped } = updateRoster(currentRoster, rosterCandidates, watchSyms, today, Object.keys(cfg.levMap ?? {}))
   await store.write('engine-roster', roster)
   const rosterLog = ((await store.read<unknown[]>('engine-roster-log')) ?? []) as { date: string }[]
   await store.write('engine-roster-log', [...rosterLog.filter(l => l.date !== today), { date: today, joined, dropped }].slice(-60))
@@ -702,8 +765,94 @@ export async function buildBoard(
     return mediaTitles.filter(t => re.test(t))
   }
 
+  // What actually gets SCORED today: the roster, plus every sleeve candidate the
+  // roster doesn't already carry. The sleeve reaches evaluation through this
+  // append regardless of which door discovered the name — membership of
+  // sleeveSet is the test, never the source string, so a sleeve name found by
+  // the losers screen and rejected by the roster's join gate is still read. [R1]
+  const rosterSymSet = new Set(roster.map(e => e.sym.toUpperCase())) // the NEW roster: a sleeve name that just joined must not be scored twice
+  const evalRows = [
+    ...roster.map(e => ({ sym: e.sym, capUsdM: e.capUsdM })),
+    ...candidateSyms
+      .filter(sym => sleeveSet.has(sym) && !rosterSymSet.has(sym) && candleMap.has(sym))
+      .map(sym => ({ sym, capUsdM: sources.get(sym)?.capUsdM ?? null })),
+  ]
+
   const board: Prediction[] = []
-  for (const entry of roster) {
+  // The ONE publication path. Both the composite loop and the dip-lane merge below
+  // push through here, so calibration, grading, the shadow/watch/belowBase flags,
+  // routing and sizing can never drift between the two lanes.
+  const publishCall = (call: EngineCall, capUsdM: number | null, cat: CatalystTag | null) => {
+    // cap-class cohort drives BOTH the calibration lookup (its own buckets first,
+    // then pooled) and the risk rung below. Unknown cap pools to the cohortless
+    // path and the combined rung — never guessed into a sleeve.
+    const cohort = capCohortOf(capUsdM)
+    const { p, provisional } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort)
+    const grade = gradeFor(p, provisional, call.capacityPct, engineBaseRate)
+    // grade null = calibration sees no edge in this bucket. The call stays off
+    // the paper — but it MUST enter the ledger as a shadow, or buckets below
+    // 50% can never earn their way back up (nothing would ever get graded).
+    // An earnings print inside the horizon also forces shadow: a binary coin
+    // flip has no place on the live board, but its outcome is kept (earningsRisk
+    // stays on the record) so the ledger can later show whether the engine has
+    // any edge INTO prints — half-sizing a coin flip just pollutes the buckets.
+    // A graded-null call that nonetheless clears the FULL evidence contract is a
+    // real, well-evidenced setup the calibration simply rates below its own base
+    // rate — classically a strong LONG in a mixed/amber tape, where the seed says
+    // that side underperforms. Hiding it as a shadow produced the "big names
+    // moved, the board showed nothing" experience (2026-07-15, user). Surface it
+    // as WATCH (no size) instead of burying it: the reader sees the engine IS
+    // tracking META/AVGO, with an honest "below our base rate — tape-dependent"
+    // read. Still shadow: a coin-flip into an earnings print, or a null grade on
+    // thin evidence (contract failed) — those genuinely don't belong on the board.
+    // A SHORT the reader can't ROUTE is not a takeable call — an ISA is long-only,
+    // so a short is placeable only through an inverse ETP mapped in levMap.
+    // Small-caps never have one; most single large-caps (IBM, ORCL…) don't
+    // either. A short with no levMap short route therefore never reaches the
+    // board: keep it as a SHADOW (still graded, so the cohort learns) but off the
+    // reader-facing engine-board. A name WITH a route stays visible even when the
+    // risk ladder hasn't unlocked it yet (that's the honest paper-only case).
+    // Longs are untouched. (user 2026-07-24: only show shorts I can place.)
+    const shortRoute = (cfg.levMap ?? {})[call.sym]
+    const unshortable = call.side === 'short' && !(shortRoute?.short2x || shortRoute?.short3x)
+    const belowBase = !grade && call.evidence.contract && !call.earningsRisk && !unshortable
+    const shadow = call.earningsRisk || (!grade && !call.evidence.contract) || unshortable
+    // Only A/B calls that pass the core-data contract are trades. Grade C, thin
+    // evidence, or a below-base setup are watchlist observations (riskPct 0) —
+    // "barely passed the gate" reads differently from a genuinely strong setup.
+    const watchOnly = !shadow && (grade == null || grade === 'C' || !call.evidence.contract)
+
+    const rung = cohortRungOf(risk, cohort)
+    const instrument = shadow || watchOnly ? null : mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {})
+    const callThemes = themesOf(call.sym)
+    board.push({
+      ...call,
+      id: `${today}:${call.sym}:${call.side}`,
+      date: today,
+      modelVersion: ENGINE_MODEL_VERSION,
+      regime,
+      priceAtPrediction: call.entry,
+      themes: callThemes.length ? callThemes : undefined,
+      catalyst: cat ? { kind: cat.kind, reason: cat.reason } : undefined,
+      capUsdM,
+      shadow: shadow || undefined,
+      watchOnly: watchOnly || undefined,
+      belowBase: belowBase || undefined,
+      // 'week' for actionable trades; 'developing' for watch rows whose SHAPE is a
+      // 2-4 week build (horizon.ts) — pure, tested, never inlined here
+      horizon: horizonOf({ watchOnly, belowBase, stage: call.stage, setup: call.setup, evidence: call.evidence }),
+      probability: Math.round(p * 100) / 100,
+      provisional,
+      grade: grade ?? 'C',
+      riskRung: rung,
+      riskPct: shadow || watchOnly ? 0 : RUNG_RISK_PCT[rung],
+      instrument,
+      paperOnly: call.side === 'short' && !watchOnly && !instrument,
+      worldTape: { tone: tone.tone, mult: worldMult(tone.tone, call.side) },
+    })
+  }
+
+  for (const entry of evalRows) {
     const candles = candleMap.get(entry.sym) ?? (await deps.candles(entry.sym).then(c => (c && c.length >= 30 ? c : null)))
     if (!candles) continue
     const closes = candles.map(c => c.c)
@@ -743,6 +892,9 @@ export async function buildBoard(
       capUsdM: entry.capUsdM,
       gates,
       catalyst: cat,
+      // a core-sleeve name earns the lowest capacity floor (composite.ts). Gated on
+      // sleeveActive so a failed spark fetch changes nothing about this call. [R7]
+      sleeve: sleeveActive && sleeveSet.has(entry.sym.toUpperCase()),
       volumeConfirmed: read.volumeConfirmed,
       breadthKnown: breadth != null,
     }
@@ -761,74 +913,27 @@ export async function buildBoard(
       call = composeCall({ ...composeInput, factors, worldMult: worldMult(tone.tone, call.side) })
     }
     if (!call) continue
+    publishCall(call, entry.capUsdM, cat)
+  }
 
-    // cap-class cohort drives BOTH the calibration lookup (its own buckets first,
-    // then pooled) and the risk rung below. Unknown cap pools to the cohortless
-    // path and the combined rung — never guessed into a sleeve.
-    const cohort = capCohortOf(entry.capUsdM)
-    const { p, provisional } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort)
-    const grade = gradeFor(p, provisional, call.capacityPct, engineBaseRate)
-    // grade null = calibration sees no edge in this bucket. The call stays off
-    // the paper — but it MUST enter the ledger as a shadow, or buckets below
-    // 50% can never earn their way back up (nothing would ever get graded).
-    // An earnings print inside the horizon also forces shadow: a binary coin
-    // flip has no place on the live board, but its outcome is kept (earningsRisk
-    // stays on the record) so the ledger can later show whether the engine has
-    // any edge INTO prints — half-sizing a coin flip just pollutes the buckets.
-    // A graded-null call that nonetheless clears the FULL evidence contract is a
-    // real, well-evidenced setup the calibration simply rates below its own base
-    // rate — classically a strong LONG in a mixed/amber tape, where the seed says
-    // that side underperforms. Hiding it as a shadow produced the "big names
-    // moved, the board showed nothing" experience (2026-07-15, user). Surface it
-    // as WATCH (no size) instead of burying it: the reader sees the engine IS
-    // tracking META/AVGO, with an honest "below our base rate — tape-dependent"
-    // read. Still shadow: a coin-flip into an earnings print, or a null grade on
-    // thin evidence (contract failed) — those genuinely don't belong on the board.
-    // A SHORT the reader can't ROUTE is not a takeable call — an ISA is long-only,
-    // so a short is placeable only through an inverse ETP mapped in levMap.
-    // Small-caps never have one; most single large-caps (IBM, ORCL…) don't
-    // either. A short with no levMap short route therefore never reaches the
-    // board: keep it as a SHADOW (still graded, so the cohort learns) but off the
-    // reader-facing engine-board. A name WITH a route stays visible even when the
-    // risk ladder hasn't unlocked it yet (that's the honest paper-only case).
-    // Longs are untouched. (user 2026-07-24: only show shorts I can place.)
-    const shortRoute = (cfg.levMap ?? {})[call.sym]
-    const unshortable = call.side === 'short' && !(shortRoute?.short2x || shortRoute?.short3x)
-    const belowBase = !grade && call.evidence.contract && !call.earningsRisk && !unshortable
-    const shadow = call.earningsRisk || (!grade && !call.evidence.contract) || unshortable
-    // Only A/B calls that pass the core-data contract are trades. Grade C, thin
-    // evidence, or a below-base setup are watchlist observations (riskPct 0) —
-    // "barely passed the gate" reads differently from a genuinely strong setup.
-    const watchOnly = !shadow && (grade == null || grade === 'C' || !call.evidence.contract)
-
-    const rung = cohortRungOf(risk, cohort)
-    const instrument = shadow || watchOnly ? null : mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {})
-    const callThemes = themesOf(entry.sym)
-    board.push({
-      ...call,
-      id: `${today}:${call.sym}:${call.side}`,
-      date: today,
-      modelVersion: ENGINE_MODEL_VERSION,
-      regime,
-      priceAtPrediction: call.entry,
-      themes: callThemes.length ? callThemes : undefined,
-      catalyst: cat ? { kind: cat.kind, reason: cat.reason } : undefined,
-      capUsdM: entry.capUsdM,
-      shadow: shadow || undefined,
-      watchOnly: watchOnly || undefined,
-      belowBase: belowBase || undefined,
-      // 'week' for actionable trades; 'developing' for watch rows whose SHAPE is a
-      // 2-4 week build (horizon.ts) — pure, tested, never inlined here
-      horizon: horizonOf({ watchOnly, belowBase, stage: call.stage, setup: call.setup, evidence: call.evidence }),
-      probability: Math.round(p * 100) / 100,
-      provisional,
-      grade: grade ?? 'C',
-      riskRung: rung,
-      riskPct: shadow || watchOnly ? 0 : RUNG_RISK_PCT[rung],
-      instrument,
-      paperOnly: call.side === 'short' && !watchOnly && !instrument,
-      worldTape: { tone: tone.tone, mult: worldMult(tone.tone, call.side) },
-    })
+  // ---- the dip lane's own calls, merged into the same board ----
+  // A quality name hit hard but holding gets a LONG the composite could never
+  // produce (dipLane.ts). Merged AFTER the loop so a name that already earned an
+  // ordinary long keeps it — one row per name per side. The lane's structural
+  // levels and composite come from dipCall; everything downstream (calibration,
+  // grade, shadow rules, sizing) is the SAME publishCall path as every other call.
+  const alreadyLong = new Set(board.filter(b => b.side === 'long').map(b => b.sym.toUpperCase()))
+  for (const [sym, read] of dipReads) {
+    if (alreadyLong.has(sym.toUpperCase())) continue
+    const candles = candleMap.get(sym)
+    if (!candles) continue
+    const capUsdM = sources.get(sym)?.capUsdM ?? null
+    const raw = dipCall(sym, candles, read, capUsdM)
+    if (!raw) continue
+    // dipCall is pure and has no calendar — earnings honesty is applied here, so a
+    // dip into a print shadows exactly like any other call.
+    const call = { ...raw, earningsRisk: earningsSet.has(baseSym(sym)) }
+    publishCall(call, capUsdM, { kind: 'dip', side: 'long', reason: read.detail, strength: 40 })
   }
 
   // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side

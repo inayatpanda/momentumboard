@@ -43,6 +43,12 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
  * and — since a gated core is ≥ the dead zone — can never flip the side. */
 export const CONTEXT_MAX_PTS = 12
 
+/** Capacity floor for a core-sleeve name. Below every other floor on purpose:
+ * these are household, liquid names whose 10-session travel is genuinely modest,
+ * and the point of the sleeve is that they get looked at every day. Still a
+ * floor — a name that cannot move at all is still no trade. */
+export const SLEEVE_CAPACITY_FLOOR = 3
+
 /** The setup shape of a call, from its side and technical stage. Longs riding
  * strength are continuation; longs buying a dip/turn are reversal; shorting
  * a stretched chart is a fade, shorting confirmed weakness is continuation
@@ -87,6 +93,12 @@ export interface ComposeInput {
   // relaxed catalystCapacityFloor is used instead of the ordinary capacity floor,
   // because swing-capacity is trailing and lags the day the news actually breaks.
   catalyst?: CatalystTag | null
+  // This name is in the CORE SLEEVE (coreSleeve.ts) — a famous, liquid name the
+  // engine watches every day. It earns the lowest capacity floor: a megacap's
+  // trailing swing-capacity is honestly small, and the ordinary floor would
+  // exclude the entire sleeve from ever making a call. Everything else (dead
+  // zone, entry gates, calibration, grading) is unchanged.
+  sleeve?: boolean
   // Evidence-contract inputs (default false — an unknown never passes a gate):
   // was the technical read's volume confirmation present, and did the run know
   // market breadth? Both feed the "at least one of sector/breadth/volume" leg.
@@ -133,8 +145,10 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   const adj = coreAdj + ctxPts
   if (Math.abs(adj) < gates.deadZone) return null
   // a live catalyst earns the lower floor — the name is in play TODAY even if its
-  // trailing swing-capacity hasn't caught up to the news yet.
-  const capacityFloor = input.catalyst ? gates.catalystCapacityFloor : gates.capacityFloor
+  // trailing swing-capacity hasn't caught up to the news yet. A sleeve name earns
+  // the lowest floor of all: its capacity is small because it is a megacap, not
+  // because it is going nowhere.
+  const capacityFloor = input.sleeve ? SLEEVE_CAPACITY_FLOOR : input.catalyst ? gates.catalystCapacityFloor : gates.capacityFloor
   if (input.capacityPct == null || input.capacityPct < capacityFloor) return null
   if (input.atr == null || input.lastClose == null) return null
   // side-aware entry gates: never chase a long, never short fresh strength, knives wait

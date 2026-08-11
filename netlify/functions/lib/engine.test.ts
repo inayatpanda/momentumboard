@@ -4,7 +4,7 @@ import type { OpenTraceEntry } from '../../../shared/engine/openTrace'
 import { memoryStore } from './store'
 import type { Candle } from '../../../shared/types'
 import type { Prediction } from '../../../shared/engine/types'
-import { CALIB_DEF_VERSION, type CalibrationState } from '../../../shared/engine/calibration'
+import { CALIB_DEF_VERSION, initWeights, type CalibrationState, type WeightsState } from '../../../shared/engine/calibration'
 import type { RiskState } from '../../../shared/engine/riskLadder'
 import type { InsiderSummary } from './insiders'
 import type { FundMoves } from './edgar'
@@ -21,6 +21,33 @@ const shorty = mk(i => (i < 200 ? 80 + i * 1.0 : 280 - (i - 200) * 2.0))
 const flat = mk(() => 500)
 const NOW = Math.floor(shorty[shorty.length - 1].t + 86_400) // day after the last bar
 
+// A CALM megacap bleed: −0.5%/day. Capacity 4.9% — under the roster's join gate
+// (8) AND under the ordinary composite capacity floor (6), but over the sleeve
+// floor (3). Exactly the shape the sleeve exists for: a famous name that moved
+// meaningfully for itself without ever being volatile enough to be "a mover".
+const calmSlide = mk(i => 100 * Math.pow(0.995, i))
+
+// GLW's dip tape: 60 calm sessions at 100, a slide to 85, then a volume-paid
+// reclaim to 88 — dipLane's 'holding' signature (−12% off the 20-session high,
+// 4.1% off the dip low on 1.6× volume). Composites as a SHORT (or as nothing —
+// capacity is 0 here), which is precisely why the dip lane builds its own long.
+const dipTape: Candle[] = (() => {
+  const bars: Candle[] = []
+  const push = (c: number, v = 1_000_000, o = c, h = c, l = c) => bars.push({ t: T0 + bars.length * 86_400, o, h, l, c, v })
+  for (let i = 0; i < 60; i++) push(100)
+  push(94)
+  push(90)
+  push(87)
+  push(85, 1_000_000, 86, 86, 84.5)
+  push(85.5)
+  push(88, 1_600_000)
+  return bars
+})()
+
+// GLW is in DEFAULT_CORE_SLEEVE, in no SECTOR_MEMBERS list and matches no theme,
+// so anything it does on the board can only have arrived through the sleeve.
+const sparkOf = (tape: Candle[], sym = 'GLW') => async () => new Map([[sym, tape.map(c => c.c)]])
+
 const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   candles: async sym => (sym === 'NVDA' ? shorty : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null),
   candles5y: async () => null,
@@ -28,6 +55,9 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   companyName: async () => null,
   screens: async () => [{ row: { sym: 'NVDA', price: 162, capUsdM: 50_000, changePct: null, name: null }, source: 'screener:gainers' }],
   social: async () => [],
+  // no sleeve prices by default → sleeveActive false → every sleeve behaviour off,
+  // so every pre-sleeve test below runs exactly the engine it was written against
+  sparkCloses: async () => new Map<string, number[]>(),
   insiderCoverage: async () => new Map(),
   smartMoney: async () => [],
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
@@ -528,6 +558,156 @@ describe('buildBoard', () => {
     expect(nvda.stage).not.toBeNull() // real candle history → a real technical stage going in
     expect(radar.entries.find(e => e.sym === 'OFFPOOL')).toBeUndefined() // not a candidate → not on the radar
   })
+
+  // ---- the core sleeve: famous names are candidates every day ----
+
+  const todayOf = () => new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+  const ledgerOf = (store: ReturnType<typeof memoryStore>) => store.read<Prediction[]>(`predictions:${todayOf()}`)
+
+  it('a sleeve mover reaches evaluation even when no screen and no roster carry it', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    // every ordinary door is dead: no screens, no social, no headlines, no roster.
+    // The spark batch is GLW's ONLY route into the run.
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' ? shorty : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      sparkCloses: sparkOf(shorty),
+    })
+    await buildBoard(store, d, NOW)
+
+    const ledger = (await ledgerOf(store))!
+    expect(ledger.find(p => p.sym === 'GLW')).toBeDefined() // evaluated and published (shadow: no short route)
+  })
+
+  it('a sleeve name arriving via day_losers still reaches evaluation when it fails the roster join gate', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' } } })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    // GLW's FIRST source is the losers screen, so addSource stamps 'screener:losers'
+    // and the sleeve never owns the source string. Its capacity (4.9%) fails the
+    // roster join gate (8) — the old engine would have scanned it and thrown it away.
+    const base = {
+      screens: async () => [{ row: { sym: 'GLW', price: 27, capUsdM: 35_000, changePct: -9, name: null }, source: 'screener:losers' }],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async (sym: string) => (sym === 'GLW' ? calmSlide : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+    }
+    await buildBoard(store, deps({ ...base, sparkCloses: sparkOf(calmSlide) }), NOW)
+
+    const ledger = (await ledgerOf(store))!
+    expect(ledger.find(p => p.sym === 'GLW')).toBeDefined() // sleeve MEMBERSHIP drove the append, not the source string
+    const roster = (await store.read<{ sym: string }[]>('engine-roster'))!
+    expect(roster.find(r => r.sym === 'GLW')).toBeUndefined() // it genuinely failed the join gate
+
+    // and the control: with the spark batch empty the sleeve is inert, so the same
+    // screener row is scanned and dropped exactly as it was before this feature
+    const store2 = memoryStore()
+    await store2.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' } } })
+    await store2.write('engine-calibration', calWith('short:amber:25-40'))
+    await buildBoard(store2, deps(base), NOW)
+    expect((await ledgerOf(store2))!.find(p => p.sym === 'GLW')).toBeUndefined()
+  })
+
+  it('sleeve names are not written into the roster', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    // GLW and NVDA ride the SAME qualifying tape (capacity ~9, liquid, priced).
+    // NVDA came through the screener and joins; GLW came only through the sleeve
+    // and must not — the roster is the engine's earned hunting ground, not a
+    // dumping ground for 130 permanently-watched names.
+    const d = deps({
+      candles: async sym =>
+        sym === 'GLW' || sym === 'NVDA' || sym === 'XLK' ? shorty : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : null,
+      sparkCloses: sparkOf(shorty),
+    })
+    await buildBoard(store, d, NOW)
+
+    const roster = (await store.read<{ sym: string }[]>('engine-roster'))!
+    expect(roster.find(r => r.sym === 'NVDA')).toBeDefined() // same tape, ordinary door → earns its slot
+    expect(roster.find(r => r.sym === 'GLW')).toBeUndefined() // sleeve-only → evaluated, never enrolled
+    expect((await ledgerOf(store))!.find(p => p.sym === 'GLW')).toBeDefined() // …and still evaluated
+  })
+
+  // ---- the dip lane ----
+
+  it('a holding dip on a quality name publishes a LONG reversal row with a dip tag', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' ? dipTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      capUsdM: async sym => (sym === 'GLW' ? 35_000 : null), // cap arrives via the enrichment pass
+      sparkCloses: sparkOf(dipTape),
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call).toBeDefined()
+    expect(call.side).toBe('long') // the ordinary composite reads this chart as weakness
+    expect(call.setup).toBe('reversal')
+    expect(call.catalyst).toEqual({ kind: 'dip', reason: expect.stringContaining('holding') })
+    expect(call.stop).toBeLessThan(call.entry)
+    expect(call.target).toBeGreaterThan(call.entry)
+    expect(call.capUsdM).toBe(35_000)
+    expect(call.shadow).toBeUndefined()
+    expect(call.grade).toBe('B') // graded on the ordinary calibration path like any call
+  })
+
+  it('dip earnings override: a dip name inside the earnings window is shadowed like any call', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' ? dipTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      capUsdM: async sym => (sym === 'GLW' ? 35_000 : null),
+      sparkCloses: sparkOf(dipTape),
+      earningsSyms: async () => new Set(['GLW']),
+    })
+    const { board } = await buildBoard(store, d, NOW)
+    expect(board.find(b => b.sym === 'GLW')).toBeUndefined() // a coin-flip is a coin-flip in every lane
+
+    const row = (await ledgerOf(store))!.find(p => p.sym === 'GLW')!
+    expect(row).toBeDefined()
+    expect(row.earningsRisk).toBe(true) // dipCall hard-codes false — the merge reads the real calendar
+    expect(row.shadow).toBe(true)
+    expect(row.riskPct).toBe(0)
+  })
+
+  it('sleeve fetch failure leaves the run byte-identical to a sleeve-less run', async () => {
+    // Same world in all three runs — only the spark batch differs.
+    const world = {
+      candles: async (sym: string) =>
+        sym === 'GLW' || sym === 'NVDA' || sym === 'XLK' ? shorty : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : null,
+    }
+    const run = async (sparkCloses: EngineDeps['sparkCloses']) => {
+      const store = memoryStore()
+      await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' } } })
+      await store.write('engine-calibration', calWith('short:amber:55-70'))
+      await buildBoard(store, deps({ ...world, sparkCloses }), NOW)
+      return (await ledgerOf(store))!
+    }
+
+    const failed = await run(async () => {
+      throw new Error('yahoo spark refused')
+    })
+    const sleeveless = await run(async () => new Map())
+    expect(failed.map(p => p.sym)).toContain('NVDA') // the comparison has real content in it
+    expect(failed).toEqual(sleeveless) // every row, side, size, grade and flag identical
+
+    // …and the comparison is not vacuous: a working batch really does change the run
+    const active = await run(sparkOf(shorty))
+    expect(active.find(p => p.sym === 'GLW')).toBeDefined()
+    expect(failed.find(p => p.sym === 'GLW')).toBeUndefined()
+  })
 })
 
 describe('gradeOutstanding', () => {
@@ -619,6 +799,51 @@ describe('gradeOutstanding', () => {
     expect(scorecard.byGrade.A.n).toBe(1)
     expect(scorecard.byGrade.C.n).toBe(1)
     expect(scorecard.bySetup.continuation.n).toBe(1)
+  })
+
+  it('a graded DIP call never touches factor IC — the lane must not train the technical factor', async () => {
+    const store = memoryStore()
+    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    // Two identical long calls on the same tape, both carrying the dip lane's
+    // constant technical +40 placeholder. Only one is tagged as a dip call.
+    const planted = (over: Partial<Prediction>): Partial<Prediction> => ({
+      date,
+      side: 'long',
+      composite: 37,
+      regime: 'amber',
+      probability: 0.6,
+      provisional: false,
+      grade: 'B',
+      setup: 'reversal',
+      capUsdM: 35_000,
+      priceAtPrediction: shorty[239].c,
+      entry: shorty[239].c,
+      stop: shorty[239].c * 0.5, // wide enough that the bleed never stops it out
+      target: shorty[239].c * 1.2,
+      instrument: null,
+      factors: { technical: { score: 40, detail: 'dip lane', weight: 0 } } as never,
+      ...over,
+    })
+    await store.write(`predictions:${date}`, [
+      planted({ id: `${date}:GLW:long`, sym: 'GLW', catalyst: { kind: 'dip', reason: 'dip −12% · holding' } }),
+      planted({ id: `${date}:NVDA:long`, sym: 'NVDA' }), // an ordinary call — the control
+    ])
+    await store.write('predictions-index', [date])
+    await store.write('engine-weights', initWeights())
+    await store.write('engine-calibration', calWith('long:amber:25-40')) // known start: no setup buckets yet
+    const d = deps({ candles: async sym => (sym === 'GLW' || sym === 'NVDA' ? shorty : sym === 'SPY' ? flat : null) })
+
+    expect((await gradeOutstanding(store, d, NOW, null)).graded).toBe(2) // BOTH graded
+
+    const w = (await store.read<WeightsState>('engine-weights'))!
+    const ic = w.ic.technical
+    expect(ic.nAgree + ic.nDisagree).toBe(1) // only the ordinary call booked an observation
+    expect(w.gradedSinceNudge).toBe(1)
+
+    // …but the dip's outcome still teaches calibration and the setup buckets
+    const cal = (await store.read<CalibrationState>('engine-calibration'))!
+    expect(cal.buckets['large:long:amber:25-40']).toEqual({ n: 2, hits: 0 })
+    expect(cal.setupBuckets!['reversal:long:25-40']).toEqual({ n: 2, hits: 0 })
   })
 
   it('production migration: a legacy rung-0 risk-state + cohortless seeded calibration load and behave; a known-cap grade books into its cohort bucket', async () => {

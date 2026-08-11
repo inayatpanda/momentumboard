@@ -141,6 +141,17 @@ describe('composeCall', () => {
     expect(composeCall(withCat)).not.toBeNull() // same chart, live catalyst → gets a look
   })
 
+  it('sleeve names clear a lower capacity floor; non-sleeve keep floor 6', () => {
+    // The core sleeve is famous, liquid, permanently-watched names. Their
+    // trailing swing-capacity is genuinely small (a megacap does not travel
+    // like a small cap) — the ordinary floor would silently exclude the whole
+    // sleeve from ever making a call, which is the opposite of the point.
+    const input = { ...base({ factors: longFactors(), capacityPct: 4 }), sleeve: true }
+    expect(composeCall(input)).not.toBeNull() // 4 ≥ SLEEVE_CAPACITY_FLOOR (3)
+    expect(composeCall({ ...input, sleeve: false })).toBeNull() // 4 < the ordinary floor (6)
+    expect(composeCall({ ...input, capacityPct: 2 })).toBeNull() // still gated: 2 < 3
+  })
+
   it('catalyst is still gated: below the catalyst floor it is suppressed', () => {
     expect(
       composeCall(base({ factors: longFactors(), capacityPct: 2, catalyst: { kind: 'news', side: 'long', reason: 'x', strength: 90 } })),
