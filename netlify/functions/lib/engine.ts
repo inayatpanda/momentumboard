@@ -83,11 +83,21 @@ export interface EngineDeps {
   // LLM-backed; fail-soft to [] when no provider is configured, so the engine still
   // runs deterministically without it. Called once per run with the media titles.
   newsCatalysts: (titles: string[]) => Promise<NewsCatalyst[]>
+  // The FREE half of the dip-news read: the verdict already sitting in the
+  // `dip-news:{sym}` blob, or null when there is none. Costs no HTTP call, no
+  // LLM token and no budget slot, so buildBoard probes it for EVERY servable dip
+  // candidate before spending a single fresh read. Keeping the cache INSIDE
+  // dipNews (as it was) made five cache hits burn the whole budget with zero
+  // fresh reads, and relabelled a sixth candidate 'unclear/budget' even when its
+  // structural veto had been on the blob all along — so it traded. Fail-soft: a
+  // rejection is a miss, and the name simply queues for a fresh read.
+  dipNewsCached: (sym: string) => Promise<DipNewsVerdict | null>
   // one narrow question per dip candidate: do this name's recent headlines read
   // overreaction or broken thesis? (dipNews.ts). Structural stands the dip trade
-  // down; anything else trades. Budgeted to DIP_NEWS_BUDGET calls per run,
-  // deepest dip first, and cached three days behind the default impl. Fail-soft:
-  // a rejection is an 'unclear' — the lane never blocks on a lookup it couldn't make.
+  // down; anything else trades. This is the FRESH read — the cache is probed
+  // through dipNewsCached above, and only cache MISSES reach here, budgeted to
+  // DIP_NEWS_BUDGET calls per run, deepest dip first. Fail-soft: a rejection is
+  // an 'unclear' — the lane never blocks on a lookup it couldn't make.
   dipNews: (sym: string) => Promise<DipNewsVerdict>
   // recently-listed US names (Finnhub IPO calendar, cached ~6h). A post-IPO name
   // the momentum scanner would never surface — it has no price history to screen
@@ -214,27 +224,32 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
     // keys (GROQ/GEMINI/…), so this uses whatever provider the deployment has and
     // returns [] when none is set — the board never depends on the LLM being up.
     newsCatalysts: titles => extractNewsCatalysts(titles),
-    // Dip corroboration, cached. The read itself (Finnhub headlines → LLM →
-    // keyword fallback) lives in dipNews.ts; the ONLY thing added here is the
-    // `dip-news:{sym}` blob. Deliberately, only a DECISIVE verdict is cached:
-    // freezing an 'unclear' would let one LLM outage or one quiet news window
-    // silence the check on a name all week, and 'unclear' is the answer we most
-    // want to improve on tomorrow. How LONG a decisive verdict freezes depends on
-    // WHO decided it: a model that read the whole headline set holds for three
-    // days, a single keyword hit thaws overnight so tomorrow's run can ask a
-    // provider that may be back up. Unknown provenance takes the shorter freeze —
-    // the cheap error is re-reading, not standing a name down on a stale regex.
-    // Cache faults are swallowed both ways: a blob hiccup must never cost the
-    // lane its verdict.
+    // Dip corroboration, in two halves so the engine can spend its budget on the
+    // reads that actually cost something. The cache probe is free and is asked
+    // FIRST for every candidate; only a miss reaches the fresh read below.
+    // A blob fault is swallowed both ways: a hiccup must never cost the lane its
+    // verdict, and a hiccup on the probe just means a fresh read instead.
+    dipNewsCached: async sym => {
+      const { getCached } = await import('./cache')
+      const hit = await getCached<DipNewsVerdict>(`dip-news:${sym.toUpperCase()}`).catch(() => null)
+      return hit?.verdict ? hit : null
+    },
+    // The read itself (Finnhub headlines → LLM → keyword fallback) lives in
+    // dipNews.ts; the ONLY thing added here is WRITING the `dip-news:{sym}` blob.
+    // Deliberately, only a DECISIVE verdict is cached: freezing an 'unclear' would
+    // let one LLM outage or one quiet news window silence the check on a name all
+    // week, and 'unclear' is the answer we most want to improve on tomorrow. How
+    // LONG a decisive verdict freezes depends on WHO decided it: a model that read
+    // the whole headline set holds for three days, a single keyword hit thaws
+    // overnight so tomorrow's run can ask a provider that may be back up. Unknown
+    // provenance takes the shorter freeze — the cheap error is re-reading, not
+    // standing a name down on a stale regex.
     dipNews: async sym => {
-      const key = `dip-news:${sym.toUpperCase()}`
-      const { getCached, setCached } = await import('./cache')
-      const hit = await getCached<DipNewsVerdict>(key).catch(() => null)
-      if (hit?.verdict) return hit
+      const { setCached } = await import('./cache')
       const { readDipNews, DIP_NEWS_TTL_SEC, DIP_NEWS_HEURISTIC_TTL_SEC } = await import('./dipNews')
       const verdict = await readDipNews(sym, env.FINNHUB_API_KEY ?? '')
       const ttl = verdict.via === 'llm' ? DIP_NEWS_TTL_SEC : DIP_NEWS_HEURISTIC_TTL_SEC
-      if (verdict.verdict !== 'unclear') await setCached(key, verdict, ttl).catch(() => {})
+      if (verdict.verdict !== 'unclear') await setCached(`dip-news:${sym.toUpperCase()}`, verdict, ttl).catch(() => {})
       return verdict
     },
     // fresh listings: pull the IPO calendar (90d back → 7d ahead, one cached
@@ -544,7 +559,14 @@ export async function buildBoard(
   ])
   const sleeveActive = sleeveCloses.size > 0
   const sleeveTop = sleeveActive ? rankSleeve(sleeveCloses, 40) : []
-  const sleeveSet = new Set(sleeveActive ? sleeveSyms : [])
+  // Sleeve membership is what the batch actually RETURNED, not what was asked
+  // for. fetchSparkCloses fails soft per 20-name chunk, so one refused chunk
+  // leaves twenty configured names with no closes at all — and granting those
+  // names the sleeve's capacity floor, its dip-lane quality admission and
+  // priority 4 would be handing out privileges with no data behind them. The
+  // intersection means a name whose chunk died is read exactly as it was before
+  // the sleeve existed, which is the only honest reading of "we don't know".
+  const sleeveSet = new Set(sleeveActive ? sleeveSyms.filter(s => sleeveCloses.has(s.toUpperCase())) : [])
   const sectorPairs = await mapLimit(Object.keys(SECTOR_MEMBERS), 6, async etf => [etf, await deps.candles(etf)] as const)
   const sectorRows = computeSectorRows(new Map(sectorPairs.filter((p): p is [string, Candle[]] => p[1] !== null)), spy)
   const topSectorMembers = sectorRows.slice(0, 2).flatMap(r => SECTOR_MEMBERS[r.sym] ?? [])
@@ -974,6 +996,13 @@ export async function buildBoard(
   // grade, shadow rules, sizing) is the SAME publishCall path as every other call.
   const alreadyLong = new Set(board.filter(b => b.side === 'long').map(b => b.sym.toUpperCase()))
   const dipCandidates: { sym: string; read: DipRead; call: EngineCall; capUsdM: number | null }[] = []
+  // The names whose dip long was actually CONSTRUCTED this run. A dip READ is not
+  // a dip CALL: dipCall refuses the 1:1 reward-to-risk gate and the degenerate
+  // shapes (stop at or above entry, target at or below it), and a refused dip
+  // publishes nothing at all. The demotion rule below keys off this set rather
+  // than off dipReads, so a dip the lane itself declined can no longer take a
+  // valid composite short down with it and leave the reader nothing on the name.
+  const constructedDipLongs = new Set<string>()
   for (const [sym, read] of dipReads) {
     if (alreadyLong.has(sym.toUpperCase())) continue
     const candles = candleMap.get(sym)
@@ -984,6 +1013,7 @@ export async function buildBoard(
     // dipCall is pure and has no calendar — earnings honesty is applied here, so a
     // dip into a print shadows exactly like any other call.
     dipCandidates.push({ sym, read, call: { ...raw, earningsRisk: earningsSet.has(baseSym(sym)) }, capUsdM })
+    constructedDipLongs.add(sym.toUpperCase())
   }
 
   // ---- a dip only trades when the news reads overreaction, not broken thesis ----
@@ -1002,7 +1032,17 @@ export async function buildBoard(
   // and never touch it: spending a slot on a call guaranteed to return nothing
   // would let five UK names starve five checkable US ones. They land on 'unclear'
   // naming the coverage gap, which trades, exactly as they did before this lane.
+  //
+  // Then the CACHE, before the budget and for every remaining candidate. A verdict
+  // already on the blob costs nothing to read — no Finnhub call, no LLM token — so
+  // it must not consume one of the five. When the cache did consume them (the probe
+  // lived inside the dep), five hits could burn the whole budget on zero fresh
+  // reads, and a sixth candidate whose structural veto was sitting in the cache all
+  // along got relabelled 'unclear/budget' and traded. A cached verdict now protects
+  // a name however many other dips the morning throws up.
   const dipVerdicts = new Map<string, DipNewsVerdict>()
+  const usable = (v: DipNewsVerdict | null): v is DipNewsVerdict =>
+    !!v && (v.verdict === 'transient' || v.verdict === 'structural' || v.verdict === 'unclear')
   const byDepth = [...dipCandidates].sort((a, b) => b.read.dropPct - a.read.dropPct)
   const servable: typeof byDepth = []
   for (const c of byDepth) {
@@ -1010,14 +1050,23 @@ export async function buildBoard(
     if (venue) dipVerdicts.set(c.sym, { verdict: 'unclear', reason: `no news source for ${venue} names yet` })
     else servable.push(c)
   }
+  // Probed in parallel but consumed in DEPTH order: the fresh reads that follow
+  // must still go to the deepest unresolved dips, so the miss list is rebuilt from
+  // `servable` rather than from whichever probe happened to settle first.
+  const cacheHits = await Promise.all(servable.map(c => deps.dipNewsCached(c.sym).catch(() => null)))
+  const misses: typeof servable = []
+  servable.forEach((c, i) => {
+    const hit = cacheHits[i]
+    if (usable(hit)) dipVerdicts.set(c.sym, hit)
+    else misses.push(c)
+  })
   await Promise.all(
-    servable.slice(0, DIP_NEWS_BUDGET).map(async ({ sym }) => {
+    misses.slice(0, DIP_NEWS_BUDGET).map(async ({ sym }) => {
       const raw = await deps.dipNews(sym).catch(() => null)
-      const ok = raw && (raw.verdict === 'transient' || raw.verdict === 'structural' || raw.verdict === 'unclear')
-      dipVerdicts.set(sym, ok ? raw : { verdict: 'unclear', reason: 'lookup failed' })
+      dipVerdicts.set(sym, usable(raw) ? raw : { verdict: 'unclear', reason: 'lookup failed' })
     }),
   )
-  for (const { sym } of servable.slice(DIP_NEWS_BUDGET)) dipVerdicts.set(sym, { verdict: 'unclear', reason: 'budget' })
+  for (const { sym } of misses.slice(DIP_NEWS_BUDGET)) dipVerdicts.set(sym, { verdict: 'unclear', reason: 'budget' })
 
   // Only an EXPLICIT structural verdict frees the composite short below, so the
   // set is built from what was actually read, never from what was skipped.
@@ -1056,8 +1105,15 @@ export async function buildBoard(
   // EXPLICIT structural verdict only: a dip that was never examined (never a
   // candidate, over budget, a dead dep, a venue with no source) leaves the price
   // evidence standing unopposed, and unopposed dip evidence still wins.
+  //
+  // The trigger is a CONSTRUCTED dip long (published, live or news-shadowed), not
+  // a bare dip read. dipCall declines a shape that risks more than its target pays
+  // (the 1:1 gate) and the degenerate stop/target shapes — and a dip the lane
+  // itself refused to trade is no evidence against anything. Keying on dipReads
+  // silently deleted the day's only call on such a name: the dip published nothing
+  // and the perfectly good composite short was demoted beside it.
   for (const row of board) {
-    if (row.side !== 'short' || row.shadow || !dipReads.has(row.sym.toUpperCase())) continue
+    if (row.side !== 'short' || row.shadow || !constructedDipLongs.has(row.sym.toUpperCase())) continue
     if (structuralVetoes.has(row.sym.toUpperCase())) {
       console.log(`BOARD: structural news on ${row.sym} frees the composite short — both lanes now read the same way`)
       continue

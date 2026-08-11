@@ -139,6 +139,16 @@ describe('classifyDipNews', () => {
     expect(llm).not.toHaveBeenCalled()
   })
 
+  it('caps the prompt at twelve headlines — the cheap input is the tape, not the tokens', async () => {
+    const llm = vi.fn(async (_prompt: string) => '{"verdict":"transient","reason":"sector selloff"}')
+    const twenty = Array.from({ length: 20 }, (_, i) => `ACME headline number ${i}`)
+    await classifyDipNews('ACME', twenty, llm)
+    const prompt = llm.mock.calls[0][0]
+    expect(prompt.split('\n').filter(l => l.startsWith('- ACME headline number '))).toHaveLength(12)
+    expect(prompt).toContain('ACME headline number 11') // the twelfth, kept
+    expect(prompt).not.toContain('ACME headline number 12') // the thirteenth, dropped
+  })
+
   it('trims a rambling LLM reason instead of printing an essay on the card', async () => {
     const llm = async () => JSON.stringify({ verdict: 'transient', reason: 'word '.repeat(80) })
     const v = await classifyDipNews('ACME', headlines, llm)
@@ -209,6 +219,20 @@ describe('unservedVenue', () => {
     expect(unservedVenue('AAPL')).toBeNull()
     expect(unservedVenue('BRK-B')).toBeNull()
     expect(unservedVenue('ASML.AS')).toBe('.AS') // an unmapped suffix still names itself
+  })
+
+  it('reads a crypto pair as unserved, and a share-class dash as the US equity it is', () => {
+    // A Yahoo crypto pair sent to Finnhub's US company-news endpoint is another
+    // guaranteed-empty read — it must not burn a budget slot a checkable name
+    // could have used. The tell is the QUOTE CURRENCY after the dash, never the
+    // dash itself: BRK-B and BF-B are share classes, not currency pairs, and
+    // writing them off as crypto would cost them a read they would have answered.
+    expect(unservedVenue('BTC-USD')).toBe('crypto')
+    expect(unservedVenue('ETH-USD')).toBe('crypto')
+    expect(unservedVenue('SOL-GBP')).toBe('crypto')
+    expect(unservedVenue('ETH-BTC')).toBe('crypto')
+    expect(unservedVenue('BF-B')).toBeNull()
+    expect(unservedVenue('BRK-A')).toBeNull()
   })
 })
 

@@ -64,6 +64,21 @@ const dipAndShortTape: Candle[] = (() => {
   return bars
 })()
 
+// The same rolled-over name, but today OPENED with an −10% gap and closed the
+// hole. classifyDip still reads triggered AND holding (the gap is trigger B, the
+// close is 6% off the dip low on 1.6× volume, no new 5-session low) — but dipCall
+// REFUSES it: the stop has to hide under today's 144 low while the half-retrace
+// target sits ~14 above a 171 entry. Risking 27 to make 14 is a negative edge, so
+// the dip lane publishes NOTHING. The composite, reading the same closes, still
+// calls the identical live short — and that short must survive.
+const dipNoRewardTape: Candle[] = (() => {
+  const bars = mk(i => (i < 200 ? 80 + i : 280 - (i - 200) * 2), 259)
+  const prev = bars[bars.length - 1]
+  const c = prev.c * 1.045
+  bars.push({ t: prev.t + 86_400, o: prev.c * 0.9, h: c, l: prev.c * 0.88, c, v: 1_600_000 })
+  return bars
+})()
+
 // GLW is in DEFAULT_CORE_SLEEVE, in no SECTOR_MEMBERS list and matches no theme,
 // so anything it does on the board can only have arrived through the sleeve.
 const sparkOf = (tape: Candle[], sym = 'GLW') => async () => new Map([[sym, tape.map(c => c.c)]])
@@ -83,7 +98,10 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
   newsCatalysts: async () => [], // no LLM catalysts by default
   // the dip-news lane checks nothing by default, so every pre-5b test runs the
-  // engine it was written against: an unchecked dip still trades, honestly labelled
+  // engine it was written against: an unchecked dip still trades, honestly labelled.
+  // The cache is EMPTY by default — every candidate is a miss, so the budget tests
+  // below measure fresh reads and nothing else.
+  dipNewsCached: async () => null,
   dipNews: async () => ({ verdict: 'unclear', reason: 'stub' }),
   recentIpos: async () => [], // no fresh listings by default
   earningsSyms: async () => new Set<string>(),
@@ -707,6 +725,42 @@ describe('buildBoard', () => {
     expect(roster.find(r => r.sym === 'MMM')).toBeUndefined() // the genuinely sleeve-only twin stays out
   })
 
+  it('a sleeve name whose spark CHUNK failed gets no sleeve treatment — membership is what was fetched', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' }, MMM: { short2x: 'INV' } } })
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+    // GLW and MMM are both configured sleeve members riding the SAME calm tape:
+    // capacity 4.9%, under the ordinary composite floor (6) and over the sleeve
+    // floor (3). fetchSparkCloses fails soft per 20-name chunk, and here GLW's
+    // chunk died: the batch came back with MMM and without GLW. The sleeve floor,
+    // the dip-lane quality grant and priority 4 are all privileges paid for by
+    // having the data — so GLW must be read exactly as it was pre-sleeve, while
+    // MMM, whose closes really did arrive, keeps every one of them.
+    const base = {
+      screens: async () => [
+        { row: { sym: 'GLW', price: 27, capUsdM: 35_000, changePct: -9, name: null }, source: 'screener:losers' },
+        { row: { sym: 'MMM', price: 27, capUsdM: 35_000, changePct: -9, name: null }, source: 'screener:losers' },
+      ],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async (sym: string) => (sym === 'GLW' || sym === 'MMM' ? calmSlide : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+    }
+    await buildBoard(store, deps({ ...base, sparkCloses: async () => new Map([['MMM', calmSlide.map(c => c.c)]]) }), NOW)
+
+    const ledger = (await ledgerOf(store))!
+    expect(ledger.find(p => p.sym === 'MMM')).toBeDefined() // fetched → a real sleeve member
+    expect(ledger.find(p => p.sym === 'GLW')).toBeUndefined() // no closes behind it → no sleeve floor
+
+    // the control: when GLW's chunk DOES come back, the identical row publishes —
+    // so the assertion above is about the missing data and nothing else
+    const store2 = memoryStore()
+    await store2.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' }, MMM: { short2x: 'INV' } } })
+    await store2.write('engine-calibration', calWith('short:amber:25-40'))
+    const bothCloses = new Map([['MMM', calmSlide.map(c => c.c)], ['GLW', calmSlide.map(c => c.c)]])
+    await buildBoard(store2, deps({ ...base, sparkCloses: async () => bothCloses }), NOW)
+    expect((await ledgerOf(store2))!.find(p => p.sym === 'GLW')).toBeDefined()
+  })
+
   // ---- the dip lane ----
 
   it('a holding dip on a quality name publishes a LONG reversal row with a dip tag', async () => {
@@ -871,6 +925,37 @@ describe('buildBoard', () => {
     expect(rows.find(p => p.side === 'long')!.catalyst!.reason).toContain('budget')
   })
 
+  it('a dip the lane REFUSED to trade demotes nothing: the composite short stays live', async () => {
+    const store = await collisionStore()
+    // The tape is triggered AND holding, so classifyDip reads a dip and the old
+    // rule (keyed on dipReads) demoted the short beside it. But dipCall declined
+    // the shape on the 1:1 reward-to-risk gate, so the dip long never published:
+    // demoting the short left the reader with NO live call at all on a name the
+    // engine had a perfectly good, routable, grade-A short on.
+    const asked: string[] = []
+    const d = collisionDeps({
+      candles: async sym => (sym === 'GLW' ? dipNoRewardTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      sparkCloses: sparkOf(dipNoRewardTape),
+      dipNews: async sym => {
+        asked.push(sym)
+        return { verdict: 'transient', reason: 'sector sympathy' }
+      },
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const rows = (await ledgerOf(store))!.filter(p => p.sym === 'GLW')
+    expect(rows.map(p => p.side)).toEqual(['short']) // the dip long really was never constructed
+    expect(asked).toEqual([]) // …so no news read was ever spent on it either
+
+    const shown = board.filter(b => b.sym === 'GLW')
+    expect(shown).toHaveLength(1)
+    expect(shown[0].side).toBe('short')
+    expect(shown[0].shadow).toBeUndefined() // NOT demoted — nothing opposed it
+    expect(shown[0].riskPct).toBeGreaterThan(0)
+    expect(shown[0].grade).toBe('A')
+    expect(shown[0].evidence.contract).toBe(true)
+  })
+
   it('the dip lane never receives the world-tape nudge, so its row records the multiplier it actually ran at', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
@@ -1021,6 +1106,116 @@ describe('buildBoard', () => {
     expect(unread.shadow).toBeUndefined()
     expect(unread.catalyst!.reason).toContain('news unchecked')
     expect(unread.catalyst!.reason).toContain('budget')
+  })
+
+  // Six sleeve names on six dip depths, deepest → shallowest:
+  // OXY 12.9, NEM 12.8, FCX 12.6, DOW 12.4, MMM 12.2, GLW 12.0.
+  const sixDips = new Map<string, Candle[]>([
+    ['GLW', dipTapeAt(88.0)],
+    ['MMM', dipTapeAt(87.8)],
+    ['DOW', dipTapeAt(87.6)],
+    ['FCX', dipTapeAt(87.4)],
+    ['NEM', dipTapeAt(87.2)],
+    ['OXY', dipTapeAt(87.1)],
+  ])
+  const sixDipStore = async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    return store
+  }
+  const sixDipDeps = (over: Partial<EngineDeps>) =>
+    deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => sixDips.get(sym) ?? (sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      sparkCloses: async () => new Map([...sixDips].map(([sym, t]) => [sym, t.map(c => c.c)])),
+      ...over,
+    })
+
+  it('a CACHED verdict protects the shallowest dip on the board, however many deeper ones there are', async () => {
+    const store = await sixDipStore()
+    // GLW is the sixth-deepest, so under a budget that counts cache hits it was
+    // relabelled 'unclear/budget' and TRADED — while its structural veto sat in
+    // the blob the whole time. A cached verdict costs nothing to read, so it must
+    // never be crowded out, and it must never crowd out a fresh read either.
+    const asked: string[] = []
+    const d = sixDipDeps({
+      dipNewsCached: async sym => (sym === 'GLW' ? { verdict: 'structural', reason: `cached probe at ${sym}`, via: 'llm' } : null),
+      dipNews: async sym => {
+        asked.push(sym)
+        return { verdict: 'transient', reason: `sympathy at ${sym}` }
+      },
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    // the five misses still get their five fresh reads — the hit cost nothing
+    expect(asked).toEqual(['OXY', 'NEM', 'FCX', 'DOW', 'MMM'])
+    expect(asked).not.toContain('GLW')
+
+    const ledger = (await ledgerOf(store))!
+    const glw = ledger.find(p => p.sym === 'GLW' && p.side === 'long')!
+    expect(glw.shadow).toBe(true) // the cached veto stood it down
+    expect(glw.riskPct).toBe(0)
+    expect(glw.catalyst!.reason).toContain('cached probe at GLW')
+    expect(glw.catalyst!.reason).not.toContain('budget')
+    expect(board.find(b => b.sym === 'GLW')).toBeUndefined() // never reached the reader
+    // …and the fresh reads were acted on: OXY (the deepest, and the one the
+    // diversity gates let through for its correlated crowd) trades on its own
+    // transient verdict, and no row anywhere came back 'budget'
+    const oxy = board.find(b => b.sym === 'OXY')!
+    expect(oxy.shadow).toBeUndefined()
+    expect(oxy.catalyst!.reason).toContain('sympathy at OXY')
+    expect(ledger.filter(p => p.catalyst?.reason.includes('budget'))).toEqual([])
+  })
+
+  it('cache hits do not consume the budget: five hits still leave the sixth name a fresh read', async () => {
+    const store = await sixDipStore()
+    // The five DEEPEST dips are all cached. Before the split, those five hits ate
+    // all five slots and GLW — the only name that actually needed the network —
+    // came back 'budget' without a single Finnhub call having been made.
+    const cached = new Set(['OXY', 'NEM', 'FCX', 'DOW', 'MMM'])
+    const asked: string[] = []
+    const d = sixDipDeps({
+      dipNewsCached: async sym => (cached.has(sym) ? { verdict: 'transient', reason: `cached sympathy at ${sym}`, via: 'llm' } : null),
+      dipNews: async sym => {
+        asked.push(sym)
+        return { verdict: 'structural', reason: `fresh probe at ${sym}` }
+      },
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    expect(asked).toEqual(['GLW']) // exactly one fresh read, spent on the only miss
+
+    const ledger = (await ledgerOf(store))!
+    const glw = ledger.find(p => p.sym === 'GLW' && p.side === 'long')!
+    expect(glw.catalyst!.reason).toContain('fresh probe at GLW')
+    expect(glw.catalyst!.reason).not.toContain('budget')
+    expect(glw.shadow).toBe(true) // and the fresh verdict was acted on
+    // the cached five carried their cached verdicts (OXY is the deepest, and the
+    // one the diversity gates let through for its correlated crowd)
+    expect(cached.has('OXY')).toBe(true)
+    const oxy = board.find(b => b.sym === 'OXY')!
+    expect(oxy.catalyst!.reason).toContain('cached sympathy at OXY')
+    expect(oxy.shadow).toBeUndefined()
+    expect(ledger.filter(p => p.catalyst?.reason.includes('budget'))).toEqual([]) // nobody was starved
+  })
+
+  it('a rejecting cache probe is a miss, not a verdict — the name still gets its fresh read', async () => {
+    const store = await sixDipStore()
+    const asked: string[] = []
+    const d = sixDipDeps({
+      dipNewsCached: async () => {
+        throw new Error('blobs down')
+      },
+      dipNews: async sym => {
+        asked.push(sym)
+        return { verdict: 'transient', reason: `sympathy at ${sym}` }
+      },
+    })
+    await buildBoard(store, d, NOW)
+    expect(asked).toEqual(['OXY', 'NEM', 'FCX', 'DOW', 'MMM']) // exactly the pre-cache behaviour
   })
 
   it('a .L dip never spends a budget slot: the source cannot serve it, so five US names still get read', async () => {

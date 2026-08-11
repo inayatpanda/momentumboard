@@ -111,16 +111,32 @@ export function heuristicDipVerdict(headlines: string[]): DipNewsVerdict {
   return { verdict: 'unclear', reason: 'headlines name no clear cause', via: 'heuristic' }
 }
 
+/** Currency legs of a Yahoo crypto pair (BTC-USD, ETH-BTC…). This is the ONLY
+ * dash the venue read may act on: BRK-B, BF-B and BT-A are ordinary equities
+ * whose dash means a share class, not a quote currency. */
+const QUOTE_CURRENCIES = new Set(['USD', 'GBP', 'EUR', 'JPY', 'BTC', 'ETH', 'USDT'])
+
 /** Non-null when the news source cannot serve this symbol AT ALL: Finnhub's
- * company-news endpoint is US-listed only, so any dotted ticker (RR.L, BT-A.L,
- * 3LAL.L…) is a guaranteed-empty read, not an inconclusive one. Returns the
- * venue to name in the reason. exchangeFor() reads a DASH first and would call
- * BT-A.L crypto, so the suffix is read directly here. */
+ * company-news endpoint is US-listed only, so a dotted ticker (RR.L, BT-A.L,
+ * 3LAL.L…) or a crypto pair (BTC-USD) is a guaranteed-empty read, not an
+ * inconclusive one. Returns the venue to name in the reason.
+ *
+ * The suffix is read directly rather than through exchangeFor(), which checks a
+ * DASH first and so calls BT-A.L crypto AND BRK-B crypto. Here the dot is read
+ * first (BT-A.L is LSE), and a dash only counts when what follows it is a quote
+ * currency — so BTC-USD is crypto and BRK-B is the US equity it actually is.
+ * Getting that wrong in either direction costs a budget slot: a crypto pair sent
+ * to the US endpoint burns one on a guaranteed-empty read, and BRK-B written off
+ * as crypto never gets the read it would have answered. */
 export function unservedVenue(sym: string): string | null {
   const dot = sym.lastIndexOf('.')
-  if (dot === -1) return null
-  const suffix = sym.slice(dot + 1).toUpperCase()
-  return ({ L: 'LSE' } as Record<string, string>)[suffix] ?? `.${suffix}`
+  if (dot !== -1) {
+    const suffix = sym.slice(dot + 1).toUpperCase()
+    return ({ L: 'LSE' } as Record<string, string>)[suffix] ?? `.${suffix}`
+  }
+  const dash = sym.lastIndexOf('-')
+  if (dash !== -1 && QUOTE_CURRENCIES.has(sym.slice(dash + 1).toUpperCase())) return 'crypto'
+  return null
 }
 
 /** Tolerantly pull {verdict, reason} out of whatever the router handed back —
