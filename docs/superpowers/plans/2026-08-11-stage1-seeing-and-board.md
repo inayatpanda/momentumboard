@@ -608,6 +608,8 @@ git commit -m "feat(engine): a dip only trades when the news reads overreaction,
 
 ---
 
+Ratified at the codex/gpt-oss cross-check (2026-08-11, supersedes conflicting earlier text): **demotion requires a CONSTRUCTED dip long** — `dipCall` returned non-null (the 1:1 gate passed); a dip read whose long was rejected leaves the composite short standing; **the news cache is consulted for every servable candidate before budgeting** — the 5-slot budget covers FRESH reads only (supersedes the brief's "cache hits consume budget"), so a cached structural verdict always protects regardless of queue position; **sleeve membership = successfully fetched names only** (`sleeveCloses` keys ∩ configured sleeve) — a partial spark failure sidelines exactly the failed chunks' names; **dashed symbols (crypto) count as unserved venues** for the news budget.
+
 Ratified at Task-5b review (2026-08-11, controller decisions): **a structural news verdict releases the 5g short demotion** — demotion applies only when the dip long actually publishes (an explicit `structural` verdict restores the loop short; absence of a verdict does NOT — unexamined dip evidence still stands); **`outstandingShadowKeys` must match its own comment** — built from prior SHADOW rows only (`p.shadow &&`), so a structural veto row is never silently dropped because a live row awaits its outcome; **heuristic-derived verdicts carry provenance and get a 1-day TTL** (LLM verdicts keep 3 days), with the matched headline recorded in the reason; **non-US symbols skip the news budget** (straight to 'unclear', reason naming the exchange gap) so guaranteed-empty Finnhub reads never starve checkable names.
 
 ### Task 6: Never-blank board — half-size C, contract-fail half-size, near-misses named
