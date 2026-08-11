@@ -109,7 +109,8 @@ function ChartCard({ p, expanded, onToggle, onOpen }: { p: EnginePrediction; exp
     >
       <div className="chart-card-top">
         <span className="chart-card-id">
-          <GradeChip grade={p.grade} provisional={p.provisional} />
+          {/* a near miss was never scored — a letter grade would be a fiction */}
+          {p.nearMiss ? <span className="badge">near miss</span> : <GradeChip grade={p.grade} provisional={p.provisional} />}
           {/* the ticker itself is a door to the full stock page; the card body still toggles expand */}
           <b
             className={onOpen ? 'sym-link' : undefined}
@@ -127,7 +128,7 @@ function ChartCard({ p, expanded, onToggle, onOpen }: { p: EnginePrediction; exp
             </span>
           )}
           <span style={{ color: dirColor }}>{p.side === 'long' ? '▲' : '▼'}</span>
-          {p.watchOnly && <span className="badge warn">watch</span>}
+          {p.watchOnly && !p.nearMiss && <span className="badge warn">watch</span>}
           {p.setup && <span className="badge">{p.setup}</span>}
           <span className="badge">{capBand(p.capUsdM) ?? 'small cap'}</span>
         </span>

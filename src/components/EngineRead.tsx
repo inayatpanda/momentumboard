@@ -73,11 +73,12 @@ export function EngineFactors({ call, hasRead }: { call: EnginePrediction | null
       <h3>Factor breakdown <span className="calc-sub">live engine call</span></h3>
       <div className="engine-factor-top">
         <span className="engine-factor-id">
-          <GradeChip grade={call.grade} provisional={call.provisional} />{' '}
+          {/* a near miss was never scored — a letter grade would be a fiction */}
+          {call.nearMiss ? <span className="badge">near miss</span> : <GradeChip grade={call.grade} provisional={call.provisional} />}{' '}
           <b>{call.sym}</b>
           {call.name && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12, marginLeft: 4 }}>{call.name}</span>}
           <span className="engine-factor-dir" style={{ color: dirColor }}>{call.side === 'long' ? '▲ long' : '▼ short'}</span>
-          {call.watchOnly && <span className="badge warn">watch</span>}
+          {call.watchOnly && !call.nearMiss && <span className="badge warn">watch</span>}
           {call.setup && <span className="badge">{call.setup}</span>}
         </span>
         <span className="engine-factor-prob num">{Math.round(call.probability * 100)}% · ~{call.expectedMovePct}%</span>
