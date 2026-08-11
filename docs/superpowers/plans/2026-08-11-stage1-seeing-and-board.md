@@ -213,7 +213,52 @@ git commit -m "feat(engine): fetch day_losers — the board can finally see what
 **Interfaces:**
 - Produces: `DEFAULT_CORE_SLEEVE: string[]` (~130 names); `sleeveWithDefaults(cfgSleeve: string[] | undefined | null): string[]` (union over defaults, upper-cased, deduped); `rankSleeve(closesBySym: Map<string, number[]>, topN: number): SleeveRank[]` with `SleeveRank = { sym: string; unusualness: number; typicalMovePct: number | null }`, `unusualness = |1-day move %| / max(typicalMovePct ?? 0.5, 0.5)`, `typicalMovePct` from `swingCapacity` (`shared/indicators.ts:60` — p80 of |10-session move|, the repo's one typical-move measure).
 
-- [ ] **Step 1: Failing tests** — as v1 (sleeve size/uniqueness/famous-names; union/dedupe/null; ranking + <30-bars skip + topN) PLUS the sync test:
+- [ ] **Step 1: Failing tests**
+
+```ts
+// shared/engine/coreSleeve.test.ts
+import { describe, expect, it } from 'vitest'
+import { DEFAULT_CORE_SLEEVE, rankSleeve, sleeveWithDefaults } from './coreSleeve'
+
+describe('DEFAULT_CORE_SLEEVE', () => {
+  it('has 100-200 unique upper-case names including the famous ones', () => {
+    expect(DEFAULT_CORE_SLEEVE.length).toBeGreaterThanOrEqual(100)
+    expect(DEFAULT_CORE_SLEEVE.length).toBeLessThanOrEqual(200)
+    expect(new Set(DEFAULT_CORE_SLEEVE).size).toBe(DEFAULT_CORE_SLEEVE.length)
+    for (const sym of ['AAPL', 'NVDA', 'TSLA', 'GOOGL', 'GLW', 'AMD', 'PLTR', 'COIN', 'MSTR', 'RR.L', 'BP.L', 'SHEL.L'])
+      expect(DEFAULT_CORE_SLEEVE).toContain(sym)
+  })
+})
+
+describe('sleeveWithDefaults', () => {
+  it('unions config names over defaults, deduped and upper-cased', () => {
+    const s = sleeveWithDefaults(['aapl', 'ZZZZ'])
+    expect(s.filter(x => x === 'AAPL')).toHaveLength(1)
+    expect(s).toContain('ZZZZ')
+    expect(s.length).toBe(new Set(s).size)
+  })
+  it('null/undefined leaves the defaults untouched', () => {
+    expect(sleeveWithDefaults(null)).toEqual(DEFAULT_CORE_SLEEVE)
+  })
+})
+
+describe('rankSleeve', () => {
+  const flat = [...Array.from({ length: 62 }, () => 100), 112] // +12% on the last day
+  const steady = Array.from({ length: 63 }, (_, i) => 100 * Math.pow(1.01, i % 2))
+  it('ranks the unusual mover first and reports typical move', () => {
+    const ranked = rankSleeve(new Map([['CALM', steady], ['MOVE', flat]]), 2)
+    expect(ranked[0].sym).toBe('MOVE')
+    expect(ranked[0].unusualness).toBeGreaterThan(ranked[1].unusualness)
+    expect(ranked[0].typicalMovePct).not.toBeNull()
+  })
+  it('respects topN and skips series shorter than 30', () => {
+    const ranked = rankSleeve(new Map([['SHORT', [1, 2, 3]], ['MOVE', flat]]), 5)
+    expect(ranked.map(r => r.sym)).toEqual(['MOVE'])
+  })
+})
+```
+
+PLUS the sync test:
 
 ```ts
 // in netlify/functions/lib/config-sync.test.ts, alongside the existing preserve cases
@@ -228,7 +273,67 @@ it('a phone payload without coreSleeve does not wipe the stored coreSleeve', asy
 
 - [ ] **Step 2: Verify failures.**
 
-- [ ] **Step 3: Implement** `coreSleeve.ts` exactly as v1 (the 130-name list: US megacaps/household, high-beta favourites incl. IONQ/RGTI/AAOI, US breadth incl. GLW, UK large caps incl. RR.L/BP.L/SHEL.L), plus:
+- [ ] **Step 3: Implement** `coreSleeve.ts`:
+
+```ts
+// shared/engine/coreSleeve.ts
+// The standing sleeve of famous, liquid names the engine looks at EVERY day —
+// the fix for "GLW dropped 15% and the movers scanner never saw it". Names here
+// are permanent candidates: no roster join gate, no largest-cap-first trim.
+// Curation beats cleverness: T212-routable, household, liquid. Owner can extend
+// via config.coreSleeve (union, never replace — the withDefaults pattern).
+import { swingCapacity } from '../indicators'
+
+export const DEFAULT_CORE_SLEEVE: string[] = [
+  // US megacaps + household tech
+  'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AVGO', 'AMD', 'INTC',
+  'CRM', 'ORCL', 'ADBE', 'NFLX', 'QCOM', 'TXN', 'MU', 'AMAT', 'LRCX', 'KLAC',
+  'NOW', 'UBER', 'ABNB', 'SHOP', 'SNOW', 'PANW', 'CRWD', 'ZS', 'DDOG', 'NET',
+  // high-beta favourites / retail darlings
+  'PLTR', 'COIN', 'MSTR', 'HOOD', 'SOFI', 'RBLX', 'DKNG', 'RIVN', 'LCID', 'SMCI',
+  'ARM', 'DELL', 'IONQ', 'RGTI', 'AAOI', 'APP', 'CVNA', 'AFRM', 'UPST', 'RKLB',
+  // US large-cap breadth: financials, health, industrials, energy, consumer
+  'JPM', 'BAC', 'GS', 'MS', 'WFC', 'C', 'V', 'MA', 'AXP', 'BLK',
+  'UNH', 'LLY', 'JNJ', 'PFE', 'MRK', 'ABBV', 'TMO', 'AMGN', 'GILD', 'CVS',
+  'CAT', 'DE', 'BA', 'GE', 'HON', 'LMT', 'RTX', 'NOC', 'UPS', 'FDX',
+  'XOM', 'CVX', 'COP', 'SLB', 'OXY', 'FCX', 'NEM', 'GLW', 'MMM', 'DOW',
+  'WMT', 'COST', 'TGT', 'HD', 'LOW', 'MCD', 'SBUX', 'NKE', 'DIS', 'CMCSA',
+  'PG', 'KO', 'PEP', 'PM', 'T', 'VZ', 'TMUS', 'CSCO', 'IBM', 'PYPL',
+  // liquid UK large caps (T212-routable)
+  'RR.L', 'BP.L', 'SHEL.L', 'AZN.L', 'GSK.L', 'HSBA.L', 'BARC.L', 'LLOY.L', 'VOD.L', 'BT-A.L',
+  'GLEN.L', 'RIO.L', 'AAL.L', 'TSCO.L', 'MKS.L', 'IAG.L', 'RMV.L', 'BA.L', 'STAN.L', 'PRU.L',
+]
+
+export function sleeveWithDefaults(cfgSleeve: string[] | undefined | null): string[] {
+  const out = [...DEFAULT_CORE_SLEEVE]
+  const seen = new Set(out)
+  for (const raw of cfgSleeve ?? []) {
+    const sym = raw.toUpperCase()
+    if (!seen.has(sym)) { seen.add(sym); out.push(sym) }
+  }
+  return out
+}
+
+export interface SleeveRank { sym: string; unusualness: number; typicalMovePct: number | null }
+
+/** Rank sleeve names by how unusual today's move is vs the name's OWN typical
+ * 10-session move. A calm megacap doing +4% outranks a biotech doing +4%. */
+export function rankSleeve(closesBySym: Map<string, number[]>, topN: number): SleeveRank[] {
+  const ranked: SleeveRank[] = []
+  for (const [sym, closes] of closesBySym) {
+    if (closes.length < 30) continue
+    const last = closes[closes.length - 1]
+    const prev = closes[closes.length - 2]
+    if (!prev) continue
+    const movePct = Math.abs((last / prev - 1) * 100)
+    const typicalMovePct = swingCapacity(closes)
+    ranked.push({ sym, unusualness: movePct / Math.max(typicalMovePct ?? 0.5, 0.5), typicalMovePct })
+  }
+  return ranked.sort((a, b) => b.unusualness - a.unusualness).slice(0, topN)
+}
+```
+
+(Check `swingCapacity`'s real export/signature in `shared/indicators.ts` first and adapt the import if it differs.) Plus:
   - `shared/config.ts`: `coreSleeve?: string[]` next to `levMap` (line 18); validate: strings, upper-case, `/^[A-Z0-9.\-]{1,12}$/`, `.slice(0, 200)`, emit only if non-empty (mirror levMap at lines 53-62, 106).
   - `config-sync.mts` ~151: add `coreSleeve` to the preserved engine-only fields, matching how `levMap` is carried.
 
