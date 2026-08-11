@@ -13,7 +13,7 @@ Measured (Helm mirror, 28 editions to 2026-08-11):
 - 24 of 32 picks are grade **B**; 1 A ever. Grading carries no information.
 - 25 unique tickers, skewed small/mid momentum (NRGV/PATH/JACK ×3). Famous names ~absent.
 
-Owner-selected miss classes: **big names on big news**, **steady runners** invisible to a movers-only scanner, **empty board days**.
+Owner-selected miss classes: **big names on big news**, **steady runners** invisible to a movers-only scanner, **empty board days** — and (spec-review addition) **hype runners**: occasional small/mid caps in mid-mania (AAOI, the quantum cluster), explicitly acknowledged as unreliable, to be ridden sized-down rather than trusted.
 
 ## 2. Diagnosis (from the 2026-08-11 code map; file refs at that date)
 
@@ -43,6 +43,7 @@ Standing constraints: $0 data cost; GH Actions runtime stays within a few minute
 - **`day_losers` wired** as a fourth screen (one-line fetch + tests). Feeds short candidates *and* the dip-buy lane.
 - **Dip-buy lane** (setup family `reversal`, long): eligible names = core sleeve or cap > $10B. Trigger: drop ≥ 12% from 20-session high, or gap-down ≥ 7% on earnings/news. Hold evidence required (this is the knife guard): close back above the 50-EMA **or** reclaim of the trigger-day low, on volume ≥ 1.5× 20-day average; no new 5-session low on entry day. Costs 1–2 days of entry lag by design.
 - **Capacity rethink**: the flat capacity floor (6, catalyst-relaxed 4) is replaced for sleeve/large names by per-name expectation scaling — targets, stops and ladder size scale to the name's own `typical10dMovePct` (existing machinery). A 6%-mover GLW is a valid, smaller-sized trade.
+- **Hype/velocity lane** (setup family `velocity`, long; owner: AAOI, the quantum cluster — "not saying these are reliable"): for small/mid caps in the middle of a run. Trigger: +15% over 5 sessions or ≥3 up-days of 5, on volume ≥ 2× 20-day average. Discovery gap closed two ways: `day_gainers` deepened 25 → 50 rows (same single call), and **dynamic theme clustering** — when ≥3 names sharing a sector/theme tag co-occur across social pulse and the gainers screens within a rolling week, the cluster's liquid members get elevated candidate priority. The static theme list remains only as a seed; manias the config never heard of (quantum) are detected from co-movement. Velocity calls always trade at **half size with a tight trailing falsifier** (first close below the 8-EMA or the 5-session low, whichever is nearer) and are labelled explicitly as momentum-not-quality; the per-setup calibration (§4.3) learns what the family is actually worth and can promote or bury it on evidence.
 
 ### 4.2 Scoring + conviction
 
@@ -58,7 +59,7 @@ Standing constraints: $0 data cost; GH Actions runtime stays within a few minute
 - **Miss detection** at +10 sessions, inside the existing grading pass: names not called whose 10-session excess vs SPY ≥ +5pp are misses; each charged to its snapshot gate. `miss-ledger` blob accrues per-gate `{cost, saved, examples}` — *saved* = names the gate blocked that went on to lose. Both sides always counted.
 - **Bounded gate feedback**: a gate is eligible to move one notch when it has ≥ 30 attributed outcomes AND cost > 2× saved. Eligible gates and hard bounds: dead-zone 25 → floor 20; capacity floor 6 → floor 4 (where still applicable); context cap 12 → ceiling 16; evidence-contract core-agreement 2 → floor 2 (i.e. reportable but immovable for now). Max one notch per gate per 20 sessions; symmetric tightening when saves overtake cost; every move logged to the ledger, announced in the paper and on the engine panel. No other constant self-adjusts.
 - **Post-mortems**: when a call closes as a loser, deterministic classification against its falsifier — `stopped` (stop hit), `thesis-break` (falsifier condition met), `market-drag` (lost absolutely but excess ≥ 0), `news-reversal` (catalyst tone flipped) — plus one plain LLM sentence in the paper, fail-soft to the deterministic line. Stored per call; aggregated by setup family × regime so the engine knows *how* it loses.
-- **Weight-loop repairs**: (a) `nDisagree = 0` → skip the nudge instead of decaying against phantom evidence; (b) factors where zero is a genuine reading (news tone, seasonality) accrue IC on zero scores; null still skipped; (c) `setupBuckets` finally consumed — blended into probability at weight 0.3 once a `setup:side:band` bucket reaches n ≥ 30 (earn-influence rule); (d) `bySetup` surfaced in the client scorecard type. Pattern sightings and news-tone keep accruing untouched.
+- **Weight-loop repairs**: (a) `nDisagree = 0` → skip the nudge instead of decaying against phantom evidence; (b) factors where zero is a genuine reading (news tone, seasonality) accrue IC on zero scores; null still skipped; (c) `setupBuckets` finally consumed — blended into probability at weight 0.3 once a `setup:side:band` bucket reaches n ≥ 30 (earn-influence rule); `velocity` joins continuation/reversal/fade as a fourth setup family so hype trades are graded on their own record; (d) `bySetup` surfaced in the client scorecard type. Pattern sightings and news-tone keep accruing untouched.
 
 ### 4.4 Data flow and error handling
 
@@ -67,7 +68,7 @@ Daily order unchanged: grade (now also: detect misses, write ledger, run post-mo
 ## 5. Testing
 
 - TDD per mechanism; suite currently green (~575 tests) stays green.
-- Unit: sleeve merge + unusualness ranking; losers wiring; dip-lane trigger/hold/knife-guard truth table; interpolation monotonicity (p non-decreasing in composite within side/regime/cohort; 70+ ≥ 55-70); A-reachability; sizing by grade; snapshot gate attribution; miss detection vs SPY excess; feedback bounds + notch cadence + symmetry; post-mortem classification precedence; IC repair cases.
+- Unit: sleeve merge + unusualness ranking; losers wiring; dip-lane trigger/hold/knife-guard truth table; velocity trigger + theme-cluster detection (≥3 co-occurring names, rolling week) + trailing-falsifier maths; interpolation monotonicity (p non-decreasing in composite within side/regime/cohort; 70+ ≥ 55-70); A-reachability; sizing by grade; snapshot gate attribution; miss detection vs SPY excess; feedback bounds + notch cadence + symmetry; post-mortem classification precedence; IC repair cases.
 - **Replay acceptance** (existing `scripts/engine-replay.ts` over the mirrored July–Aug window) before deploy: (1) zero blank boards across the window; (2) GLW-class dip names become visible candidates; (3) ≥ 1 core-sleeve name reaches a board during the window; (4) grade distribution is no longer ≥ 90% B; (5) no regression in win5/avg5 vs the shipped engine on the same window.
 
 ## 6. Rollout
@@ -91,3 +92,4 @@ Continuous/ML probability model (approach B); paid data sources; Twitter/X or Di
 - Grades: A appears when earned; B no longer ≥ 75% of picks; C trades at half size instead of vanishing.
 - Every closed losing call has a stored post-mortem line in the paper.
 - Miss ledger live with per-gate cost/saved; first bounded gate move (if any) correctly announced.
+- Velocity lane: when a hype cluster forms (≥3 co-moving theme names), its members appear as half-sized labelled trades or the miss ledger records which gate blocked them.
