@@ -231,6 +231,8 @@ describe('unservedVenue', () => {
     expect(unservedVenue('ETH-USD')).toBe('crypto')
     expect(unservedVenue('SOL-GBP')).toBe('crypto')
     expect(unservedVenue('ETH-BTC')).toBe('crypto')
+    expect(unservedVenue('BTC-CAD')).toBe('crypto') // codex cross-check: Yahoo lists CAD/AUD pairs too
+    expect(unservedVenue('BTC-AUD')).toBe('crypto')
     expect(unservedVenue('BF-B')).toBeNull()
     expect(unservedVenue('BRK-A')).toBeNull()
   })

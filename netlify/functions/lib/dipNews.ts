@@ -114,7 +114,7 @@ export function heuristicDipVerdict(headlines: string[]): DipNewsVerdict {
 /** Currency legs of a Yahoo crypto pair (BTC-USD, ETH-BTC…). This is the ONLY
  * dash the venue read may act on: BRK-B, BF-B and BT-A are ordinary equities
  * whose dash means a share class, not a quote currency. */
-const QUOTE_CURRENCIES = new Set(['USD', 'GBP', 'EUR', 'JPY', 'BTC', 'ETH', 'USDT'])
+const QUOTE_CURRENCIES = new Set(['USD', 'GBP', 'EUR', 'JPY', 'CAD', 'AUD', 'CHF', 'BTC', 'ETH', 'USDT', 'USDC'])
 
 /** Non-null when the news source cannot serve this symbol AT ALL: Finnhub's
  * company-news endpoint is US-listed only, so a dotted ticker (RR.L, BT-A.L,
