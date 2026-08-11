@@ -80,11 +80,12 @@ Daily order unchanged: grade (now also: detect misses, write ledger, run post-mo
 
 ## 6. Rollout
 
-Three stages, each an independently shippable commit set on `main` (Netlify auto-deploys; **no Co-Authored-By trailer**):
+Four stages, each an independently shippable commit set on `main` (Netlify auto-deploys; **no Co-Authored-By trailer**):
 
-1. **Seeing + never-blank board** — sleeve, losers, dip lane, sizing-by-grade, capacity rethink. Immediate relief.
+1. **Seeing + never-blank board** — sleeve, `day_losers`, dip-buy lane, sizing-by-grade, capacity rethink. Immediate relief.
+1b. **Velocity + crypto lanes** — two-door velocity with cluster detection; the BTC/ETH/SOL cohort.
 2. **Scoring + grades + voice** — factor re-base, EMA/volume upgrade, continuous probability, A-reachability, thesis/falsifier. `ENGINE_MODEL_VERSION` 2 → 3.
-3. **Learning** — snapshot, miss ledger, gate feedback, post-mortems, IC repairs, setup-bucket consumption.
+3. **Learning** — snapshot, miss ledger, gate feedback, post-mortems, IC repairs, setup-bucket consumption, and the wildcard slot (it needs the ledger's gate machinery).
 
 Per session protocol: the implementation plan goes through codex + DeepSeek review before any code is written.
 
