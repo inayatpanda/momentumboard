@@ -715,6 +715,8 @@ git commit -m "feat(board): never blank — half-size C, contract-fail trades na
 
 ---
 
+Ratified at Task-6 review (2026-08-11, controller decisions): **near-miss rows are contained** — excluded from intraday entry-zone alerts, from open-trace "re-qualified" verdicts, and from Ask-AI live-call descriptions; the paper's typeset board renders them as "nearest miss", never with a letter grade. **Unroutable-short near-misses MAY show** as watch-only observations labelled "no ISA route — observation only" — the only-placeable-shorts rule governs sized CALLS, not observations, and this closes the fourth blank-board path. **One maths**: extract unrounded `coreAdjOf` so composeCall and `coreCompositeOf` share the regime-scaled core, and a shared level helper so stop/target maths exists once.
+
 ### Task 7: Replay harness + acceptance (ship gate)
 
 [R15] The existing `scripts/engine-replay.ts` drives `composeCall` over a fixed 50-symbol universe on 5 Mondays — it cannot measure this stage. Build a real window replay that drives `buildBoard`.
