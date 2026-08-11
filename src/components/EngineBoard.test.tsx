@@ -55,6 +55,16 @@ describe('EngineBoard', () => {
     expect(screen.getByText(/paper-only/)).toBeInTheDocument()
   })
 
+  // a halved rung risk is 1.25 / 2 = 0.625 — a number no card should print raw
+  it('rounds a halved risk to 2dp rather than printing 0.625%', async () => {
+    data.board!.board = [{ ...prediction, riskRung: 1, riskPct: 0.625, paperOnly: false }]
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText(/risk 0.63%/)).toBeInTheDocument())
+    expect(screen.getByText(/half size/)).toBeInTheDocument()
+    expect(screen.queryByText(/0.625/)).toBeNull()
+    data.board!.board = [prediction] // restore for any later test
+  })
+
   it('shows the world-tape header strip when the board provides one', async () => {
     render(<EngineBoard />)
     await waitFor(() => expect(screen.getByText(/Asia red, VIX bid/)).toBeInTheDocument())

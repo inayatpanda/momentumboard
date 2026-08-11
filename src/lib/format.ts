@@ -13,6 +13,12 @@ export function fmtPct(p: number): string {
 }
 
 /** Market-cap band from $M — identification chip for engine calls. */
+/** Risk percentages are HALVED for demoted rows, so the ladder's 1.25% becomes
+ * 0.625% — a number no UI should print raw. Two places, trailing zeros dropped. */
+export function fmtRiskPct(p: number): string {
+  return String(Math.round(p * 100) / 100)
+}
+
 export function capBand(capUsdM: number | null | undefined): string | null {
   if (capUsdM == null) return null
   if (capUsdM < 300) return 'micro cap'

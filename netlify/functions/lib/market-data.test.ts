@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { routeRequest } from '../market-data.mts'
+import { boardEvidenceLine, routeRequest } from '../market-data.mts'
 import type { Quote } from '../../../shared/types'
 
 const q = (symbol: string): Quote => ({ symbol, price: 1, prevClose: 1, changePct: 0, currency: 'USD', todayVolume: null, asOf: 0, source: 'finnhub' })
@@ -47,5 +47,44 @@ describe('market-data routing', () => {
     const body = await res.json()
     expect(body.data.items[0].title).toBe('Apple thing')
     expect(news).toHaveBeenCalledWith('AAPL', 'fk', expect.any(Number), expect.anything(), undefined)
+  })
+})
+
+// Ask-AI grounds its answer in this evidence block. Describing every board row
+// as "a live call" hands the model a falsehood to reason from — and a near-miss
+// row is the engine's explicit NO, dressed as its yes.
+describe('boardEvidenceLine — what Ask-AI is told the board said', () => {
+  const row = {
+    side: 'short', grade: 'C', probability: 0.5, entry: 10, stop: 11.5, target: 8.6,
+    note: 'nearest miss — the engine looked and said no',
+  }
+
+  it('a NEAR MISS is reported as declined — no call, no grade, no probability, no levels', () => {
+    const s = boardEvidenceLine('2026-08-11', { ...row, watchOnly: true, nearMiss: true })
+    expect(s).toContain('NEAR MISS')
+    expect(s).toContain('DECLINED')
+    expect(s).not.toContain('live call')
+    expect(s).not.toContain('grade C')
+    expect(s).not.toContain('50%')
+    expect(s).not.toContain('11.5') // no stop it never set
+  })
+
+  it('a watch row is described as watch-only, not as a live call', () => {
+    const s = boardEvidenceLine('2026-08-11', { ...row, watchOnly: true })
+    expect(s).toContain('watch-only observation (no size)')
+    expect(s).not.toContain('live call')
+    expect(s).toContain('grade C')
+  })
+
+  it('a sized call is still a live call, levels and all', () => {
+    const s = boardEvidenceLine('2026-08-11', { ...row, grade: 'A', probability: 0.67 })
+    expect(s).toContain('live call')
+    expect(s).toContain('grade A')
+    expect(s).toContain('67%')
+    expect(s).toContain('entry 10 / stop 11.5 / target 8.6')
+  })
+
+  it('no row at all says so', () => {
+    expect(boardEvidenceLine('2026-08-11', undefined)).toBe('Engine board: no live call on this name today.')
   })
 })

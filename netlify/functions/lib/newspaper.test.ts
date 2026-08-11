@@ -280,6 +280,44 @@ describe('deterministic board table in the paper', () => {
     const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [] })
     expect(html).not.toContain('The Board — Engine Calls')
   })
+
+  // A near miss cleared NO gate. Printing "C · watch" and a 50% probability
+  // beside it dresses two placeholders as measurements — on precisely the
+  // mornings when near misses are the only rows the paper has.
+  const nearMissRow = {
+    sym: 'DROP', side: 'short' as const, grade: 'C' as const, provisional: true, probability: 0.5,
+    entry: 10, stop: 11.5, target: 8.6, expectedMovePct: 4.2, paperOnly: false, watchOnly: true,
+    nearMiss: true, earningsRisk: false, instrument: null,
+  }
+
+  it('a near-miss row wears no letter grade and no probability — it says what it is', () => {
+    const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [nearMissRow] })
+    expect(html).toContain('DROP')
+    expect(html).toContain('nearest miss &mdash; did not clear the gates')
+    expect(html).not.toContain('C&middot;prov') // no grade chip
+    expect(html).not.toContain('&middot;watch')
+    expect(html).not.toContain('50%') // no calibrated probability it never earned
+  })
+
+  it('the footer explains only the row kinds actually on the board', () => {
+    const nm = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [nearMissRow] })
+    expect(nm).toContain('Nearest-miss rows cleared NO gate')
+    expect(nm).not.toContain('Paper-only calls are analysis') // no paper-only row present
+    expect(nm).not.toContain('grade C, thin evidence') // the watch clause is not the near-miss clause
+
+    const sized = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: board })
+    expect(sized).toContain('Paper-only calls are analysis')
+    expect(sized).not.toContain('Nearest-miss rows cleared NO gate')
+  })
+
+  it('an ordinary watch row keeps its grade and probability', () => {
+    const watch = { ...nearMissRow, sym: 'WTCH', nearMiss: false, provisional: false }
+    const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [watch] })
+    expect(html).toContain('50%')
+    expect(html).toContain('&middot;watch')
+    expect(html).not.toContain('nearest miss')
+    expect(html).toContain('grade C, thin evidence')
+  })
 })
 
 describe('fallbackIdeasFromBoard', () => {

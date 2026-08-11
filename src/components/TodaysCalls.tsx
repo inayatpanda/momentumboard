@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getEngine, type EngineData } from '../lib/api'
-import { capBand } from '../lib/format'
+import { getEngine, type EngineData, type EnginePrediction } from '../lib/api'
+import { capBand, fmtRiskPct } from '../lib/format'
 import { RUNG_RISK_PCT } from '../../shared/engine/riskLadder'
 import { GradeChip } from './GradeChip'
 
@@ -10,6 +10,26 @@ import { GradeChip } from './GradeChip'
 // Intel → Markets.
 
 const MAX_SHOWN = 6
+
+/** Trades lead, watch rows fill what's left — but a side is never silenced by
+ * the cut. If the board has a short and the first six rows are all longs, the
+ * reader would be told the engine saw nothing short today, which is false. So
+ * each side with any row is guaranteed its best row a slot, taken from the
+ * weakest slot of the crowded side. PURE + exported so it can be tested. */
+export function visibleCalls(board: readonly EnginePrediction[], max = MAX_SHOWN): EnginePrediction[] {
+  const ordered = [...board.filter(p => !p.watchOnly), ...board.filter(p => p.watchOnly)]
+  const shown = ordered.slice(0, max)
+  for (const side of ['long', 'short'] as const) {
+    const best = ordered.find(p => p.side === side)
+    if (!best || shown.some(p => p.side === side)) continue
+    // the crowded side gives up its weakest slot — but only while it keeps one,
+    // so squeezing a short in can never silence the longs in its turn
+    const evictAt = shown.length - 1
+    if (evictAt < 1) continue
+    shown[evictAt] = best
+  }
+  return shown
+}
 
 export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
   const [data, setData] = useState<EngineData | null>(null)
@@ -21,9 +41,10 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
   const todayLondon = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
   const weekend = [0, 6].includes(new Date().getDay())
   const stale = b.date !== todayLondon
-  // trades lead; watch-only fills what's left of the shown slots
+  // trades lead; watch-only fills what's left of the shown slots, and neither
+  // side is ever cut away entirely while it has a row (visibleCalls)
   const trades = b.board.filter(p => !p.watchOnly)
-  const calls = [...trades, ...b.board.filter(p => p.watchOnly)].slice(0, MAX_SHOWN)
+  const calls = visibleCalls(b.board)
   return (
     <section className="digest-section" style={{ marginBottom: 14 }}>
       <h3 className="section-title">
@@ -60,7 +81,7 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
             </span>
             {/* what the row is WORTH, said on the card: full size, half size, or nothing */}
             <span className="calls-risk" style={{ fontSize: 11, color: 'var(--muted)' }}>
-              {p.riskPct > 0 ? `${p.riskPct}% risk${p.riskPct < RUNG_RISK_PCT[p.riskRung] ? ' (half size)' : ''}` : p.nearMiss ? 'nearest miss — no size' : 'watch only'}
+              {p.riskPct > 0 ? `${fmtRiskPct(p.riskPct)}% risk${p.riskPct < RUNG_RISK_PCT[p.riskRung] ? ' (half size)' : ''}` : p.nearMiss ? 'nearest miss — no size' : 'watch only'}
             </span>
             {(band || (p.themes ?? []).length > 0 || p.earningsRisk) && (
               <span className="calls-tags">

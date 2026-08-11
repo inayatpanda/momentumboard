@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  foldScan, scanIntradayFlags, scanWindowAt, MAX_FLAGS,
+  boardFlagRows, foldScan, scanIntradayFlags, scanWindowAt, MAX_FLAGS,
   type FlagCandidate, type IntradayFlagsBlob, type IntradayScan,
 } from './intradayFlags'
 import { memoryStore } from './store'
@@ -44,6 +44,34 @@ describe('scanIntradayFlags — entry-zone', () => {
     const short = cand({ watchOnly: true, side: 'short', entry: 100, price: 99.5, rvol: 1.5, changePct: -1 })
     expect(scanIntradayFlags([short], AT)[0]?.kind).toBe('entry-zone')
     expect(scanIntradayFlags([{ ...short, changePct: 1 }], AT)).toHaveLength(0)
+  })
+
+  // CONTAINMENT: a near-miss row's "entry" is yesterday's close, not a trigger
+  // the engine chose. Flagging one would push the reader "at its entry" for a
+  // name the engine explicitly refused to call — on exactly the gates-empty
+  // mornings when near misses are the only thing on the board.
+  it('a near-miss row NEVER fires an entry-zone flag, while an identical watch row does', () => {
+    const watch = base()
+    expect(scanIntradayFlags([watch], AT)[0]?.kind).toBe('entry-zone') // the control
+    expect(scanIntradayFlags([{ ...watch, nearMiss: true }], AT)).toHaveLength(0)
+  })
+
+  it('a near-miss row is refused a second-chance flag too — there was never a first chance', () => {
+    const nm = cand({ published: true, nearMiss: true, side: 'long', entry: 100, price: 100.4, sessionHigh: 103, sessionLow: 99 })
+    expect(scanIntradayFlags([nm], AT)).toHaveLength(0)
+    expect(scanIntradayFlags([{ ...nm, nearMiss: false }], AT)[0]?.kind).toBe('second-chance')
+  })
+})
+
+describe('boardFlagRows — what the runner may feed the scan', () => {
+  it('drops near-miss rows and honours the cap', () => {
+    const board = [{ sym: 'A' }, { sym: 'B', nearMiss: true }, { sym: 'C' }]
+    expect(boardFlagRows(board, 40).map(r => r.sym)).toEqual(['A', 'C'])
+    expect(boardFlagRows(board, 1).map(r => r.sym)).toEqual(['A'])
+  })
+
+  it('a board of nothing BUT near misses feeds the scan no engine levels at all', () => {
+    expect(boardFlagRows([{ sym: 'A', nearMiss: true as const }, { sym: 'B', nearMiss: true as const }], 40)).toEqual([])
   })
 })
 

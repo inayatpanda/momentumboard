@@ -37,6 +37,10 @@ export interface FlagCandidate {
   stage?: string | null // technicalStage read (breakout needs 'basing')
   watchOnly?: boolean // a watch/developing board row → entry-zone eligible
   published?: boolean // an A/B trade (not watch-only) → second-chance eligible
+  // A near-miss board row: the engine looked at this name and made NO call, and
+  // its "entry" is only yesterday's close carried through for display. It must
+  // never reach a level rule — see the guards in detectEntryZone/SecondChance.
+  nearMiss?: boolean
   sessionHigh?: number | null // today's high so far — how far it ranged (second-chance)
   sessionLow?: number | null // today's low so far
   high20?: number | null // 20-session high, TODAY EXCLUDED → the breakout level
@@ -55,8 +59,20 @@ const fmt = (x: number) => String(Math.abs(x) >= 1 ? Math.round(x * 100) / 100 :
 const rvolStr = (r: number) => `${Math.round(r * 10) / 10}×`
 const within = (price: number, level: number, frac: number) => level > 0 && Math.abs(price - level) / level <= frac
 
+/** Which board rows may lend their ENGINE LEVELS to a scan. A near miss cleared
+ * no gate at all — its entry is yesterday's close, not a trigger the engine
+ * chose — so pushing "X is at its entry" for one would alert the reader to a
+ * name the engine explicitly refused to call. Board-level containment; the
+ * level rules below refuse them a second time. PURE, so the runner's rule is
+ * the tested rule. A near-miss name still on the watchlist can of course earn
+ * the generic breakout flag, which needs no engine levels. */
+export function boardFlagRows<T extends { nearMiss?: boolean }>(board: readonly T[], limit: number): T[] {
+  return board.filter(p => p.nearMiss !== true).slice(0, limit)
+}
+
 // a. the watch setup from this morning is at its entry, moving through it on volume
 function detectEntryZone(c: FlagCandidate, at: number): IntradayFlag | null {
+  if (c.nearMiss) return null // the engine made no call here — there is no entry to be "at"
   if (!c.watchOnly || c.entry == null || !c.side) return null
   if (c.rvol == null || c.rvol < ENTRY_ZONE_MIN_RVOL) return null
   if (!within(c.price, c.entry, ENTRY_PROXIMITY)) return null
@@ -72,6 +88,7 @@ function detectEntryZone(c: FlagCandidate, at: number): IntradayFlag | null {
 
 // b. a published A/B trade the reader may have missed at the open, back at entry
 function detectSecondChance(c: FlagCandidate, at: number): IntradayFlag | null {
+  if (c.nearMiss) return null // there was never a first chance to miss
   if (!c.published || c.entry == null || !c.side) return null
   if (!within(c.price, c.entry, ENTRY_PROXIMITY)) return null
   if (c.sessionHigh == null || c.sessionLow == null) return null

@@ -18,7 +18,7 @@ import {
   technicalFactor,
   type SmartMoneyInput,
 } from '../../../shared/engine/factors'
-import { composeCall, coreCompositeOf, setupFamilyOf } from '../../../shared/engine/composite'
+import { composeCall, coreCompositeOf, levelsFor, setupFamilyOf } from '../../../shared/engine/composite'
 import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleeve'
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
 import { DIP_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
@@ -48,7 +48,7 @@ import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, map
 import { capCohortOf, SMALL_CAP_MAX_USD_M, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
-import { round1, round2, type EngineCall, type FactorName, type FactorScore, type PredOutcome, type Prediction } from '../../../shared/engine/types'
+import { round2, type EngineCall, type FactorName, type FactorScore, type PredOutcome, type Prediction } from '../../../shared/engine/types'
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { primaryThemeOf, themeCandidates, themeHeat, themesOf } from '../../../shared/engine/themes'
 import { traceOpenCall, type OpenTraceEntry } from '../../../shared/engine/openTrace'
@@ -1247,9 +1247,13 @@ export async function buildBoard(
   // prediction, and grading it would quietly bias every bucket it landed in
   // toward the population the gates exist to reject.
   //
-  // A SHORT with no inverse-ETP route is skipped here exactly as it is skipped
-  // everywhere else (an ISA cannot place it), so a side can still legitimately
-  // come up empty — the guarantee is a never-blank BOARD, not a full grid.
+  // The only-placeable-shorts rule governs SIZED CALLS: an ISA cannot place a
+  // naked short, so a short trade needs an inverse-ETP route. A near miss is not
+  // a call — it is an observation printed so the board is never blank — and
+  // suppressing the unroutable ones handed us a fourth blank-board path: a day
+  // where nothing clears the gates AND every core read is negative showed the
+  // reader nothing at all. So a near-miss short publishes either way, and the
+  // unroutable ones say so in the open ("no ISA route — observation only").
   // Keyed off EVERY published row, shadows included: the dip lane can publish a
   // long on a name whose composite produced nothing, and a near miss must never
   // duplicate the id of a row already in the ledger.
@@ -1264,15 +1268,16 @@ export async function buildBoard(
     const candidates = nearMisses
       .filter(n => (n.core >= 0 ? 'long' : 'short') === side)
       .filter(n => !publishedKeys.has(`${n.sym.toUpperCase()}:${side}`))
-      .filter(n => side === 'long' || routableShort(n.sym))
       .sort((a, b) => Math.abs(b.core) - Math.abs(a.core))
       .slice(0, 2)
     for (const n of candidates) {
       const cohort = capCohortOf(n.capUsdM)
       const smallCap = n.capUsdM != null && n.capUsdM < SMALL_CAP_MAX_USD_M
-      const dir = side === 'long' ? 1 : -1
-      const expectedMovePct = round1(Math.min(Math.abs(n.core) / 100, 0.8) * (n.capacityPct ?? 0))
-      const entry = round2(n.lastClose)
+      // the SAME arithmetic composeCall would have used (composite.ts) — a near
+      // miss must never drift onto its own stop
+      const { expectedMovePct, entry, stop, target } = levelsFor(n.core, n.capacityPct ?? 0, n.atrNow, n.lastClose, smallCap)
+      const unroutable = side === 'short' && !routableShort(n.sym)
+      const routeNote = unroutable ? ' · no ISA route — observation only' : ''
       const themes = themesOf(n.sym)
       nearMissRows.push({
         id: `${today}:${n.sym}:${side}`,
@@ -1294,17 +1299,17 @@ export async function buildBoard(
           famAgree: 0,
           contract: false,
           contextPts: 0,
-          detail: `core read ${n.core} — short of the gates (dead zone ${gates.deadZone}, capacity floor, entry timing); no evidence contract was ever assessed`,
+          detail: `core read ${n.core} — short of the gates (dead zone ${gates.deadZone}, capacity floor, entry timing); no evidence contract was ever assessed${routeNote}`,
         },
         expectedMovePct,
         entry,
-        stop: round2(n.lastClose - dir * (smallCap ? 2 : 1.5) * n.atrNow),
-        target: round2(n.lastClose + dir * Math.max(2 * n.atrNow, (n.lastClose * expectedMovePct) / 100)),
+        stop,
+        target,
         capacityPct: n.capacityPct ?? 0,
         smallCap,
         earningsRisk: false, // earnings names are never recorded as near misses
         stage: n.stage,
-        note: 'nearest miss — the engine looked and said no; shown so the day is not blank',
+        note: `nearest miss — the engine looked and said no; shown so the day is not blank${routeNote}`,
         probability: round2(engineBaseRate),
         provisional: true,
         grade: 'C',
@@ -1483,7 +1488,13 @@ export async function traceOpenIdeas(store: AppStore, deps: EngineDeps, nowSec: 
     }
   }
   const board = await store.read<{ date: string; board: Prediction[] }>('engine-board')
-  const todayLive = new Set((board?.date === today ? board.board : []).map(b => `${b.sym}:${b.side}`))
+  // "re-qualified" means the engine would TAKE this trade again today — so only
+  // rows that actually cleared the gates may grant it. A near miss cleared none;
+  // counting it would tell the reader an open call was re-affirmed on the very
+  // day the engine refused to make it.
+  const todayLive = new Set(
+    (board?.date === today ? board.board : []).filter(b => !b.nearMiss).map(b => `${b.sym}:${b.side}`),
+  )
   const syms = [...new Set(open.map(p => p.sym))].slice(0, 80)
   const candleMap = new Map<string, Candle[] | null>()
   await mapLimit(syms, 8, async sym => candleMap.set(sym, await deps.candles(sym).catch(() => null)))

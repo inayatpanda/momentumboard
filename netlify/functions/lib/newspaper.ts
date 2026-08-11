@@ -613,6 +613,25 @@ const REGIME_COLOR: Record<string, string> = { green: '#0c7a55', amber: '#8a6510
 const PLAYBOOK_LABEL: Record<string, string> = { R: 'Reversal', B: 'Breakout', A: 'Accumulate', S: 'Short' }
 const num = (v: number | null | undefined, dp = 1) => (v == null ? '·' : v.toFixed(dp))
 
+/** The board's small print, written to match the rows actually on it. Each
+ * clause is earned by a row that is present — a footer promising to explain
+ * "paper-only calls" on a board with none is the same kind of small dishonesty
+ * as the one it exists to prevent. Exported so the tests can read it directly. */
+export function boardFootnote(board: readonly BoardRow[]): string {
+  const parts = ["Calibrated on the engine's own graded history, excess vs S&amp;P."]
+  if (board.some(b => b.watchOnly && !b.nearMiss))
+    parts.push(
+      'Watch rows are observations — grade C, thin evidence, or a row the diversity gates left unpicked — no size until they earn A/B.',
+    )
+  if (board.some(b => b.nearMiss))
+    parts.push(
+      'Nearest-miss rows cleared NO gate: the engine looked and said no, and they are printed only so a side with nothing on it is not blank. No grade, no probability, no size — their levels are orientation, not a trigger.',
+    )
+  if (board.some(b => b.paperOnly && !b.watchOnly))
+    parts.push('Paper-only calls are analysis — the risk ladder has not unlocked their route yet.')
+  return parts.join(' ')
+}
+
 export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: PaperExtras = {}): string {
   const dept = (title: string, body: string) => (body ? `<section class="dept"><h2>${title}</h2>${body}</section>` : '')
   // Each wide section carries an id anchor and an EMAIL-ONLY escape hatch: mail
@@ -876,19 +895,27 @@ ${
           `${x.engineBoard
             .map(b => {
               const isShort = b.side === 'short'
-              const route = b.watchOnly ? 'watch — no size' : b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
+              const route = b.nearMiss ? 'no size' : b.watchOnly ? 'watch — no size' : b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
+              // A near miss cleared NO gate, so it gets no letter grade and no
+              // probability: both would be fictions dressed as measurements (the
+              // stored C and the base rate are placeholders it never earned). It
+              // says what it is instead, and its levels stay as orientation only.
+              const chip = b.nearMiss
+                ? `nearest miss &mdash; did not clear the gates`
+                : `${b.grade}${b.provisional ? '&middot;prov' : ''}${b.watchOnly ? '&middot;watch' : ''}`
               return (
                 `<div style="padding:7px 0;border-bottom:1px solid #e6e0d2">` +
                 `<div style="line-height:1.45"><span style="font-weight:700;font-size:14.5px">${esc(b.sym)}</span>` +
                 (b.name ? `<span style="color:#6b6257;font-size:12.5px"> &middot; ${esc(b.name)}</span>` : '') +
                 ` <span style="color:${isShort ? '#b03040' : '#0c7a55'};font-weight:700;font-size:11px;letter-spacing:.06em">${isShort ? '&#9660; SHORT' : '&#9650; LONG'}</span>` +
-                ` <span style="border:1px solid #d8d2c4;border-radius:3px;padding:0 5px;font-size:10px;letter-spacing:.06em;color:#6b6257">${b.grade}${b.provisional ? '&middot;prov' : ''}${b.watchOnly ? '&middot;watch' : ''}</span>` +
-                `<span style="float:right;font-variant-numeric:tabular-nums;font-size:13px">${Math.round(b.probability * 100)}%</span></div>` +
+                ` <span style="border:1px solid #d8d2c4;border-radius:3px;padding:0 5px;font-size:10px;letter-spacing:.06em;color:#6b6257">${chip}</span>` +
+                (b.nearMiss ? '' : `<span style="float:right;font-variant-numeric:tabular-nums;font-size:13px">${Math.round(b.probability * 100)}%</span>`) +
+                `</div>` +
                 `<div style="clear:both;font-variant-numeric:tabular-nums;font-size:12.5px;color:#6b6257">in ${b.entry} &middot; stop ${b.stop} &middot; tgt ${b.target} &middot; ~${b.expectedMovePct}% &middot; ${route}${b.earningsRisk ? ' &middot; earnings' : ''}</div>` +
                 `</div>`
               )
             })
-            .join('')}<p class="foot">Calibrated on the engine's own graded history, excess vs S&amp;P. Watch rows are observations — grade C or thin evidence, no size until they earn A/B. Paper-only calls are analysis — the risk ladder has not unlocked their route yet.</p>`,
+            .join('')}<p class="foot">${boardFootnote(x.engineBoard)}</p>`,
         )
       : ''
   }

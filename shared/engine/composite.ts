@@ -133,13 +133,13 @@ function tallyFactors(
   return { coreNum, coreDen, ctxNum, coreWeightTotal }
 }
 
-/** The GATE-FREE core read: the weighted core composite after regime scaling,
- * and nothing else — no context nudge, no world tape, no dead zone, no capacity
- * floor, no entry gate. composeCall's own first half, exported so the board can
- * NAME its nearest misses on a day when nothing clears the gates (engine.ts):
- * "these two came closest, and here is by how much". Null when the name has no
- * core data at all — there is then nothing honest to say about it. */
-export function coreCompositeOf(
+/** The GATE-FREE core read, UNROUNDED: the weighted core composite after regime
+ * scaling, and nothing else — no context nudge, no world tape, no dead zone, no
+ * capacity floor, no entry gate. This is literally composeCall's own first half,
+ * extracted so the published call and the named near miss can never fork. Null
+ * when the name has no core data at all. Callers that DISPLAY the number take
+ * coreCompositeOf (rounded); callers that keep computing take this. */
+export function coreAdjOf(
   factors: Record<FactorName, FactorScore>,
   weights: Record<FactorName, number>,
   regime: RegimeColor | 'unknown',
@@ -148,7 +148,43 @@ export function coreCompositeOf(
   if (!coreDen) return null
   const raw = coreNum / coreDen
   const side: 'long' | 'short' = raw >= 0 ? 'long' : 'short'
-  return round1(raw * (side === 'long' ? LONG_REGIME_MULT[regime] : SHORT_REGIME_MULT[regime]))
+  return raw * (side === 'long' ? LONG_REGIME_MULT[regime] : SHORT_REGIME_MULT[regime])
+}
+
+/** coreAdjOf rounded to one place — the displayed core read. Exported so the
+ * board can NAME its nearest misses on a day when nothing clears the gates
+ * (engine.ts): "these two came closest, and here is by how much". */
+export function coreCompositeOf(
+  factors: Record<FactorName, FactorScore>,
+  weights: Record<FactorName, number>,
+  regime: RegimeColor | 'unknown',
+): number | null {
+  const adj = coreAdjOf(factors, weights, regime)
+  return adj == null ? null : round1(adj)
+}
+
+/** THE LEVELS, one place only. Expected move, entry, stop and target derived
+ * from a conviction number, the name's swing capacity and its ATR. composeCall
+ * publishes them for a real call and engine.ts prints them beside a near miss —
+ * two callers, one arithmetic, so a near-miss row can never quietly drift onto
+ * a different stop from the call it nearly was. `adj` carries the SIDE in its
+ * sign (long ≥ 0), exactly as the composite does. */
+export function levelsFor(
+  adj: number,
+  capacityPct: number,
+  atr: number,
+  lastClose: number,
+  smallCap: boolean,
+): { expectedMovePct: number; entry: number; stop: number; target: number } {
+  const expectedMovePct = round1(Math.min(Math.abs(adj) / 100, 0.8) * capacityPct)
+  const stopMult = smallCap ? 2 : 1.5 // small caps gap — give the stop room or it's noise
+  const dir = adj >= 0 ? 1 : -1
+  return {
+    expectedMovePct,
+    entry: round2(lastClose),
+    stop: round2(lastClose - dir * stopMult * atr),
+    target: round2(lastClose + dir * Math.max(2 * atr, (lastClose * expectedMovePct) / 100)),
+  }
 }
 
 /** Weighted composite over the CORE factors that have data, plus a capped
@@ -159,12 +195,11 @@ export function coreCompositeOf(
 export function composeCall(input: ComposeInput): EngineCall | null {
   const { coreNum, coreDen, ctxNum, coreWeightTotal } = tallyFactors(input.factors, input.weights)
   if (!coreDen) return null // no market-derived signal at all — context alone is never a call
-  const raw = coreNum / coreDen
-  const side: 'long' | 'short' = raw >= 0 ? 'long' : 'short'
+  const side: 'long' | 'short' = coreNum / coreDen >= 0 ? 'long' : 'short'
   // regime mult first, then the overnight world-tape nudge (both scale conviction;
   // worldMult is > 0 so the side never flips). The regime STRING stays untouched —
   // world tape can move a call across the dead zone but never into another bucket.
-  const coreAdj = raw * (side === 'long' ? LONG_REGIME_MULT[input.regime] : SHORT_REGIME_MULT[input.regime]) * (input.worldMult ?? 1)
+  const coreAdj = coreAdjOf(input.factors, input.weights, input.regime)! * (input.worldMult ?? 1)
   const gates = input.gates ?? MODERATE_GATES
   if (Math.abs(coreAdj) < gates.deadZone) return null // context can't rescue a core below the gate
   // context measured in core-composite points (its vote mass over the core's),
@@ -186,13 +221,8 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   if (side === 'long' && input.entryQuality === 'chase') return null
   if (side === 'short' && (input.stage === 'early-reversal' || input.stage === 'pullback')) return null
 
-  const expectedMovePct = round1(Math.min(Math.abs(adj) / 100, 0.8) * input.capacityPct)
   const smallCap = input.capUsdM != null && input.capUsdM < SMALL_CAP_MAX_USD_M
-  const stopMult = smallCap ? 2 : 1.5 // small caps gap — give the stop room or it's noise
-  const entry = input.lastClose
-  const dir = side === 'long' ? 1 : -1
-  const stop = round2(entry - dir * stopMult * input.atr)
-  const target = round2(entry + dir * Math.max(2 * input.atr, (entry * expectedMovePct) / 100))
+  const { expectedMovePct, entry, stop, target } = levelsFor(adj, input.capacityPct, input.atr, input.lastClose, smallCap)
 
   const contributors = (Object.entries(input.factors) as [FactorName, FactorScore][])
     .filter(([, f]) => f.score != null && f.score !== 0)
@@ -210,6 +240,7 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   // (sector / breadth / volume), and ≥2 core families agreeing with the side.
   // Two agreeing families means technical-plus-nothing never acts alone.
   const coreFamilies = (Object.keys(FACTOR_FAMILY) as FactorName[]).filter(n => FACTOR_FAMILY[n] === 'core')
+  const dir = side === 'long' ? 1 : -1
   const famAgree = coreFamilies.filter(n => {
     const s = input.factors[n]?.score
     return s != null && s !== 0 && Math.sign(s) === dir
@@ -238,7 +269,7 @@ export function composeCall(input: ComposeInput): EngineCall | null {
     evidence,
     factors: withWeights,
     expectedMovePct,
-    entry: round2(entry),
+    entry,
     stop,
     target,
     capacityPct: input.capacityPct,

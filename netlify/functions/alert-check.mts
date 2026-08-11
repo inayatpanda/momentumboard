@@ -297,7 +297,7 @@ export default async (req: Request) => {
   // detection lives in lib/intradayFlags; this owns the data-gathering, the blob
   // and the single notification. Never a new call — just the board's own levels.
   try {
-    const { scanWindowAt, scanIntradayFlags, foldScan } = await import('./lib/intradayFlags')
+    const { scanWindowAt, scanIntradayFlags, foldScan, boardFlagRows } = await import('./lib/intradayFlags')
     const window = scanWindowAt(Date.now())
     if (window && isMarketOpen('US', nowSec)) {
       const londonDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date(nowSec * 1000))
@@ -341,7 +341,10 @@ export default async (req: Request) => {
 
         const candidates: FlagCandidate[] = []
         const boardSyms = new Set<string>()
-        for (const p of board.slice(0, 40)) {
+        // near-miss rows are dropped here, NOT filtered downstream: their entry is
+        // yesterday's close, so feeding them in would push "at its entry" alerts
+        // for names the engine refused to call (intradayFlags.boardFlagRows)
+        for (const p of boardFlagRows(board, 40)) {
           boardSyms.add(p.sym)
           const c = await build(p.sym, {
             side: p.side,

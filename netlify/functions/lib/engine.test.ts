@@ -513,7 +513,16 @@ describe('buildBoard', () => {
       expect(row.note).toContain('nearest miss')
       expect(row.evidence.contract).toBe(false)
     }
-    expect(board.find(b => b.sym === 'DROP')).toBeUndefined() // an unroutable short is never shown, near miss or not
+    // RATIFIED: the only-placeable-shorts rule governs SIZED CALLS. A near miss is
+    // an observation, so an unroutable short is shown — and says so in the open.
+    const unroutable = board.find(b => b.sym === 'DROP')!
+    expect(unroutable).toBeDefined()
+    expect(unroutable.nearMiss).toBe(true)
+    expect(unroutable.riskPct).toBe(0)
+    expect(unroutable.instrument).toBeNull()
+    expect(unroutable.note).toContain('no ISA route — observation only')
+    expect(unroutable.evidence.detail).toContain('no ISA route — observation only')
+    expect(short.note).not.toContain('no ISA route') // CALM has a route: no false label
     const blob = (await store.read<{ board: Prediction[] }>('engine-board'))!
     expect(blob.board.filter(p => p.nearMiss).length).toBeGreaterThanOrEqual(2)
     // …but the LEDGER stays clean: a row that cleared no gate must never teach the
@@ -521,6 +530,41 @@ describe('buildBoard', () => {
     const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
     const ledger = (await store.read<Prediction[]>(`predictions:${today}`)) ?? []
     expect(ledger.some(p => p.nearMiss)).toBe(false)
+  })
+
+  // THE FOURTH BLANK-BOARD PATH: nothing clears the gates AND every core read is
+  // negative AND no name has an inverse-ETP route. Suppressing unroutable short
+  // near misses used to empty the board completely on exactly that day.
+  it('an all-negative day with NO short routes still fills the board — labelled, never blank', async () => {
+    const store = memoryStore()
+    await store.write('config', {
+      watchlist: [{ symbol: 'CALM' }, { symbol: 'DROP' }],
+      rules: [],
+      ytChannels: [],
+      levMap: {}, // not one routable short anywhere
+    })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION })
+    const d = deps({
+      screens: async () => [],
+      mediaTitles: async () => [],
+      // every candidate bleeds → every core read is negative → no long side at all
+      candles: async sym => (sym === 'CALM' || sym === 'DROP' ? calmSlide : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    expect(board.length).toBeGreaterThan(0) // the whole point: NEVER blank
+    expect(board.every(b => b.side === 'short')).toBe(true)
+    expect(board.every(b => b.nearMiss)).toBe(true)
+    for (const row of board) {
+      expect(row.watchOnly).toBe(true)
+      expect(row.riskPct).toBe(0) // an observation is never sized
+      expect(row.instrument).toBeNull()
+      expect(row.note).toContain('no ISA route — observation only')
+      expect(row.entry).toBeGreaterThan(0)
+    }
+    // …and the ledger stays clean: nothing here ever teaches the engine
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    expect(((await store.read<Prediction[]>(`predictions:${today}`)) ?? []).some(p => p.nearMiss)).toBe(false)
   })
 
   it('near misses only fill an EMPTY side — a side with a real row is left alone', async () => {
@@ -1176,7 +1220,17 @@ describe('buildBoard', () => {
     const d = dipDeps({ dipNews: async () => ({ verdict: 'structural', reason: 'SEC probe into revenue recognition' }) })
     const { board } = await buildBoard(store, d, NOW)
 
-    expect(board.find(b => b.sym === 'GLW')).toBeUndefined() // the reader is never shown it
+    // the reader is never shown the DIP CALL. (The composite's own read on GLW is
+    // bearish, so the empty short side may still name it as a nearest miss — a
+    // different statement entirely: no size, no grade, and no dip thesis.)
+    expect(board.find(b => b.sym === 'GLW' && b.side === 'long')).toBeUndefined()
+    const asNearMiss = board.find(b => b.sym === 'GLW')
+    if (asNearMiss) {
+      expect(asNearMiss.side).toBe('short')
+      expect(asNearMiss.nearMiss).toBe(true)
+      expect(asNearMiss.riskPct).toBe(0)
+      expect(asNearMiss.catalyst).toBeUndefined() // it carries no dip catalyst/thesis
+    }
 
     const row = (await ledgerOf(store))!.find(p => p.sym === 'GLW')!
     expect(row).toBeDefined() // …but it still publishes and still grades
@@ -1588,6 +1642,51 @@ describe('gradeOutstanding', () => {
     expect(scorecard.bySetup.continuation.n).toBe(1)
   })
 
+  // THE RISK LADDER STAYS CLEAN. Rung progression is earned only on calls the
+  // reader could actually have taken. A demoted/watch row is graded, calibrated
+  // and scorecarded like everything else — but if it could move the ladder, the
+  // engine could climb its way to leverage on trades it never asked anyone to
+  // place. Pinned end-to-end: a run containing NOTHING BUT watch rows.
+  it('a watch-only row never enters rung progression — it learns, the ladder does not move', async () => {
+    const store = memoryStore()
+    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    const watchRow: Partial<Prediction> = {
+      id: `${date}:XLK:short`,
+      date,
+      sym: 'XLK',
+      side: 'short',
+      composite: -38.9,
+      regime: 'amber',
+      probability: 0.67,
+      provisional: false,
+      grade: 'C',
+      watchOnly: true,
+      riskPct: 0,
+      setup: 'continuation',
+      priceAtPrediction: shorty[239].c,
+      entry: shorty[239].c,
+      stop: shorty[239].c * 1.1,
+      target: shorty[239].c * 0.9,
+      instrument: null,
+      factors: { technical: { score: -30, detail: '', weight: 1 } } as never,
+    }
+    await store.write(`predictions:${date}`, [watchRow])
+    await store.write('predictions-index', [date])
+    await store.write('engine-calibration', calWith('short:amber:25-40'))
+
+    const { graded } = await gradeOutstanding(store, deps(), NOW, null)
+    expect(graded).toBe(1) // it IS graded — the learning loop eats everything published
+
+    const cal = (await store.read<CalibrationState>('engine-calibration'))!
+    expect(cal.buckets['short:amber:25-40']!.n).toBe(21) // …and it DID teach calibration
+
+    const risk = (await store.read<RiskState>('risk-state'))!
+    expect(risk.gradedAtRung).toBe(0) // …but the ladder never counted it
+    expect(risk.rung).toBe(0) // …and never climbed on it
+    expect(risk.cohorts!.large.gradedAtRung).toBe(0)
+    expect(risk.cohorts!.small.gradedAtRung).toBe(0)
+  })
+
   it('a graded DIP call never touches factor IC — the lane must not train the technical factor', async () => {
     const store = memoryStore()
     const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
@@ -1715,5 +1814,34 @@ describe('traceOpenIdeas', () => {
     expect(e.movePct).toBeLessThan(0)
     expect(e.requalified).toBe(true)
     expect(e.verdict).toBe('still-on') // re-qualified beats the drift
+  })
+
+  // "re-qualified" claims the engine WOULD TAKE THIS TRADE AGAIN today. A near
+  // miss cleared no gate — counting it would tell the reader an open call was
+  // re-affirmed on the very morning the engine refused to make it.
+  it('a NEAR MISS on today’s board never re-qualifies a prior call', async () => {
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const date = new Date(shorty[257].t * 1000).toISOString().slice(0, 10)
+    const open: Partial<Prediction> = {
+      id: `${date}:NVDA:long`, date, sym: 'NVDA', side: 'long', grade: 'B',
+      entry: shorty[257].c, stop: shorty[257].c * 0.8, target: shorty[257].c * 1.2,
+    }
+    const traceWith = async (boardRow: Record<string, unknown>) => {
+      const store = memoryStore()
+      await store.write(`predictions:${date}`, [open])
+      await store.write('predictions-index', [date])
+      await store.write('engine-board', { date: today, board: [boardRow] })
+      await traceOpenIdeas(store, deps(), NOW)
+      return (await store.read<{ entries: OpenTraceEntry[] }>('open-trace'))!.entries[0]
+    }
+
+    const viaNearMiss = await traceWith({ sym: 'NVDA', side: 'long', nearMiss: true })
+    expect(viaNearMiss.requalified).toBe(false)
+    expect(viaNearMiss.verdict).not.toBe('still-on')
+    expect(viaNearMiss.note).not.toContain('re-qualified')
+
+    // the control: the SAME row without the near-miss stamp still re-qualifies
+    const viaRealRow = await traceWith({ sym: 'NVDA', side: 'long' })
+    expect(viaRealRow.requalified).toBe(true)
   })
 })

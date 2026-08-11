@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData, type EnginePrediction, type IntradayFlag } from '../lib/api'
-import { capBand } from '../lib/format'
+import { capBand, fmtRiskPct } from '../lib/format'
 import { RUNG_RISK_PCT } from '../../shared/engine/riskLadder'
 import { GradeChip } from './GradeChip'
 
@@ -102,7 +102,7 @@ function Call({ p }: { p: EnginePrediction }) {
             ? p.nearMiss
               ? 'nearest miss — no size'
               : 'watch — no size'
-            : `risk ${p.riskPct}%${halfSize ? ' (half size)' : ''}${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}
+            : `risk ${fmtRiskPct(p.riskPct)}%${halfSize ? ' (half size)' : ''}${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}
         </span>
       </div>
       <button className="mini-btn ghost" style={{ alignSelf: 'flex-start', fontSize: 11, padding: '1px 6px' }} onClick={() => setOpen(o => !o)}>

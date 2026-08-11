@@ -9,6 +9,22 @@ import { isYahooSymbol } from '../../shared/symbols'
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
+/** What the board actually says about a name, for the Ask-AI evidence block.
+ * The distinction is the whole point: a sized call, an unsized observation and
+ * a near miss the engine DECLINED are three different statements, and calling
+ * all three "a live call" hands the model a falsehood to reason from. A near
+ * miss is given no grade, no probability and no levels — it never earned them. */
+export function boardEvidenceLine(
+  date: string,
+  row: { side: string; grade: string; probability: number; entry: number; stop: number; target: number; note: string; watchOnly?: boolean; nearMiss?: boolean } | undefined,
+): string {
+  if (!row) return 'Engine board: no live call on this name today.'
+  if (row.nearMiss)
+    return `Engine board (${date}): NEAR MISS — the engine scored this name and DECLINED it; nothing cleared the gates, so there is no call, no grade, no probability and no levels. It is named only so the board is not blank.`
+  const kind = row.watchOnly ? 'watch-only observation (no size)' : 'live call'
+  return `Engine board (${date}): ${kind}, ${row.side}, grade ${row.grade}, p=${Math.round(row.probability * 100)}%, entry ${row.entry} / stop ${row.stop} / target ${row.target} — ${row.note}.`
+}
+
 export async function routeRequest(
   url: URL,
   headers: Headers,
@@ -296,7 +312,7 @@ export async function routeRequest(
       const capacity = swingCapacity(closes)
       const regime = spy && qqq ? regimeFromCandles(spy, qqq) : 'unknown'
       const boardBlob = await blobAppStore
-        .read<{ date: string; board: { sym: string; side: string; grade: string; probability: number; entry: number; stop: number; target: number; note: string }[] }>('engine-board')
+        .read<{ date: string; board: { sym: string; side: string; grade: string; probability: number; entry: number; stop: number; target: number; note: string; watchOnly?: boolean; nearMiss?: boolean }[] }>('engine-board')
         .catch(() => null)
       const call = boardBlob?.board?.find(p => p.sym === symbol)
       const evidence = [
@@ -304,9 +320,7 @@ export async function routeRequest(
         read ? `Chart read: ${read.note} (stage ${read.stage}, entry quality ${read.entryQuality}, RSI ${read.rsi ?? '?'}, RVOL ${read.rvol ?? '?'}).` : 'No confident chart read.',
         `Active setups: ${setups.join(', ') || 'none'}. Typical 10-day swing capacity ±${capacity ?? '?'}%.`,
         `Market regime: ${regime}.`,
-        call
-          ? `Engine board (${boardBlob!.date}): live ${call.side} call, grade ${call.grade}, p=${Math.round(call.probability * 100)}%, entry ${call.entry} / stop ${call.stop} / target ${call.target} — ${call.note}.`
-          : 'Engine board: no live call on this name today.',
+        boardEvidenceLine(boardBlob?.date ?? '', call),
         news.length ? `Recent headlines: ${news.slice(0, 4).map(n => n.title).join(' | ')}.` : 'No notable recent headlines.',
       ].join('\n- ')
       const prompt = `You are the StreetSignal research desk — a seasoned, plain-spoken swing-trading analyst. A reader asks about ${symbol}: "${q}"
