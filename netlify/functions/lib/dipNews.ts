@@ -24,12 +24,22 @@ export interface DipNewsVerdict {
   verdict: 'transient' | 'structural' | 'unclear'
   /** why, in a handful of words — printed on the card beside the price read */
   reason: string
+  /** WHO decided: the model, or the keyword floor below it. Set at both production
+   * sites in this file; absent on the verdicts the engine synthesises for itself
+   * ('budget', 'lookup failed'), which are never cached. Provenance is not
+   * decoration — a keyword hit on one headline is a far thinner read than a model
+   * that saw twelve, and it is frozen for a shorter time because of it. */
+  via?: 'llm' | 'heuristic'
 }
 
 /** Fresh news reads per run. The engine spends them on the DEEPEST dips first. */
 export const DIP_NEWS_BUDGET = 5
-/** A decisive verdict holds for three days: a fraud probe is not yesterday's news. */
+/** A decisive LLM verdict holds for three days: a fraud probe is not yesterday's news. */
 export const DIP_NEWS_TTL_SEC = 3 * 86_400
+/** A KEYWORD verdict thaws daily. It is one regex on one headline — right often
+ * enough to be the floor, wrong often enough that freezing it for three days
+ * would keep a name stood down on a phrase the model would have read past. */
+export const DIP_NEWS_HEURISTIC_TTL_SEC = 86_400
 /** How far back the headline window reaches. A dip's cause is days old, not weeks. */
 export const DIP_NEWS_WINDOW_DAYS = 7
 /** Headlines are cheap but a prompt is not: cap what the LLM is asked to read. */
@@ -71,17 +81,46 @@ const TRANSIENT: [RegExp, string][] = [
   [/\brotation out of\b|\bvaluation concerns?\b/i, 'a rotation'],
 ]
 
-const firstMatch = (table: [RegExp, string][], text: string): string | null => table.find(([re]) => re.test(text))?.[1] ?? null
+// Table order is priority order, so the FIRST rule with any hit wins — and the
+// hit is returned with the headline that produced it. Matching per headline
+// rather than against one joined blob also means a rule can never span two
+// unrelated stories.
+const firstMatch = (table: [RegExp, string][], headlines: string[]): { rule: string; headline: string } | null => {
+  for (const [re, rule] of table) {
+    const headline = headlines.find(h => re.test(h))
+    if (headline) return { rule, headline }
+  }
+  return null
+}
 
-/** The fallback that always has an answer. No LLM, no network, no throw. */
+const clip = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s)
+
+/** The fallback that always has an answer. No LLM, no network, no throw.
+ * The reason quotes the HEADLINE that tripped the rule, not just the rule word:
+ * "structural — guidance cut" is unarguable and unauditable, while "guidance
+ * cut: 'ACME pulls full-year outlook'" lets the reader see the evidence and
+ * disagree with it. */
 export function heuristicDipVerdict(headlines: string[]): DipNewsVerdict {
-  const text = headlines.join(' | ')
-  if (!text.trim()) return { verdict: 'unclear', reason: 'no recent headlines' }
-  const structural = firstMatch(STRUCTURAL, text)
-  if (structural) return { verdict: 'structural', reason: `headlines read ${structural}` }
-  const transient = firstMatch(TRANSIENT, text)
-  if (transient) return { verdict: 'transient', reason: `headlines read ${transient}` }
-  return { verdict: 'unclear', reason: 'headlines name no clear cause' }
+  const heads = headlines.filter(h => h && h.trim())
+  if (!heads.length) return { verdict: 'unclear', reason: 'no recent headlines', via: 'heuristic' }
+  const cited = (hit: { rule: string; headline: string }) => clip(`${hit.rule}: "${hit.headline.trim()}"`, MAX_REASON_CHARS)
+  const structural = firstMatch(STRUCTURAL, heads)
+  if (structural) return { verdict: 'structural', reason: cited(structural), via: 'heuristic' }
+  const transient = firstMatch(TRANSIENT, heads)
+  if (transient) return { verdict: 'transient', reason: cited(transient), via: 'heuristic' }
+  return { verdict: 'unclear', reason: 'headlines name no clear cause', via: 'heuristic' }
+}
+
+/** Non-null when the news source cannot serve this symbol AT ALL: Finnhub's
+ * company-news endpoint is US-listed only, so any dotted ticker (RR.L, BT-A.L,
+ * 3LAL.L…) is a guaranteed-empty read, not an inconclusive one. Returns the
+ * venue to name in the reason. exchangeFor() reads a DASH first and would call
+ * BT-A.L crypto, so the suffix is read directly here. */
+export function unservedVenue(sym: string): string | null {
+  const dot = sym.lastIndexOf('.')
+  if (dot === -1) return null
+  const suffix = sym.slice(dot + 1).toUpperCase()
+  return ({ L: 'LSE' } as Record<string, string>)[suffix] ?? `.${suffix}`
 }
 
 /** Tolerantly pull {verdict, reason} out of whatever the router handed back —
@@ -112,7 +151,7 @@ function parseVerdict(raw: unknown): DipNewsVerdict | null {
     const verdict = typeof rec.verdict === 'string' ? rec.verdict.trim().toLowerCase() : ''
     if (!VERDICTS.has(verdict)) return null
     const reason = (rec.reason == null ? '' : String(rec.reason)).trim().replace(/\s+/g, ' ').slice(0, MAX_REASON_CHARS)
-    return { verdict: verdict as DipNewsVerdict['verdict'], reason: reason || 'no reason given' }
+    return { verdict: verdict as DipNewsVerdict['verdict'], reason: reason || 'no reason given', via: 'llm' }
   } catch {
     return null
   }

@@ -23,7 +23,7 @@ import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleev
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
 import { DIP_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
-import { DIP_NEWS_BUDGET, type DipNewsVerdict } from './dipNews'
+import { DIP_NEWS_BUDGET, unservedVenue, type DipNewsVerdict } from './dipNews'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
 import {
   baseHitRate,
@@ -216,19 +216,25 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
     newsCatalysts: titles => extractNewsCatalysts(titles),
     // Dip corroboration, cached. The read itself (Finnhub headlines → LLM →
     // keyword fallback) lives in dipNews.ts; the ONLY thing added here is the
-    // three-day `dip-news:{sym}` blob. Deliberately, only a DECISIVE verdict is
-    // cached: freezing an 'unclear' for three days would let one LLM outage or
-    // one quiet news window silence the check on a name all week, and 'unclear'
-    // is the answer we most want to improve on tomorrow. Cache faults are
-    // swallowed both ways — a blob hiccup must never cost the lane its verdict.
+    // `dip-news:{sym}` blob. Deliberately, only a DECISIVE verdict is cached:
+    // freezing an 'unclear' would let one LLM outage or one quiet news window
+    // silence the check on a name all week, and 'unclear' is the answer we most
+    // want to improve on tomorrow. How LONG a decisive verdict freezes depends on
+    // WHO decided it: a model that read the whole headline set holds for three
+    // days, a single keyword hit thaws overnight so tomorrow's run can ask a
+    // provider that may be back up. Unknown provenance takes the shorter freeze —
+    // the cheap error is re-reading, not standing a name down on a stale regex.
+    // Cache faults are swallowed both ways: a blob hiccup must never cost the
+    // lane its verdict.
     dipNews: async sym => {
       const key = `dip-news:${sym.toUpperCase()}`
       const { getCached, setCached } = await import('./cache')
       const hit = await getCached<DipNewsVerdict>(key).catch(() => null)
       if (hit?.verdict) return hit
-      const { readDipNews, DIP_NEWS_TTL_SEC } = await import('./dipNews')
+      const { readDipNews, DIP_NEWS_TTL_SEC, DIP_NEWS_HEURISTIC_TTL_SEC } = await import('./dipNews')
       const verdict = await readDipNews(sym, env.FINNHUB_API_KEY ?? '')
-      if (verdict.verdict !== 'unclear') await setCached(key, verdict, DIP_NEWS_TTL_SEC).catch(() => {})
+      const ttl = verdict.via === 'llm' ? DIP_NEWS_TTL_SEC : DIP_NEWS_HEURISTIC_TTL_SEC
+      if (verdict.verdict !== 'unclear') await setCached(key, verdict, ttl).catch(() => {})
       return verdict
     },
     // fresh listings: pull the IPO calendar (90d back → 7d ahead, one cached
@@ -960,31 +966,6 @@ export async function buildBoard(
     publishCall(call, entry.capUsdM, cat)
   }
 
-  // ---- dip evidence outranks the composite's read of the SAME chart ----
-  // A triggered-and-holding dip is the tape saying this name is being BOUGHT: a
-  // measured drop, the knife guard passed, a volume-PAID reclaim. The composite
-  // reading the identical candles sees only deep negative momentum and calls a
-  // short (dipLane.ts explains why it must). Publishing both would put the board
-  // on both sides of one name on one morning — an unreadable card, and a hedge
-  // the reader never asked for. Ratified 2026-08-11: the dip read wins the
-  // reader-facing row, the short is DEMOTED to a shadow before board assembly.
-  // Demotion, not deletion — the short still publishes and still grades, so the
-  // ledger can eventually answer "when the two lanes disagreed, who was right?".
-  // Longs need no rule: an ordinary long is the same side and simply wins the
-  // merge below. Keyed on dipReads (the evidence), not on whether the lane's own
-  // call cleared its 1:1 gate — the evidence is what contradicts the short.
-  for (const row of board) {
-    if (row.side !== 'short' || row.shadow || !dipReads.has(row.sym.toUpperCase())) continue
-    row.shadow = true
-    row.watchOnly = undefined // shadow and watch are exclusive in publishCall — keep them so
-    row.belowBase = undefined
-    row.riskPct = 0
-    row.instrument = null
-    row.paperOnly = true // a short with no instrument, exactly as publishCall stamps one
-    row.horizon = horizonOf({ watchOnly: false, stage: row.stage, setup: row.setup, evidence: row.evidence })
-    console.log(`BOARD: dip read on ${row.sym} demotes the composite short to a shadow`)
-  }
-
   // ---- the dip lane's own calls, merged into the same board ----
   // A quality name hit hard but holding gets a LONG the composite could never
   // produce (dipLane.ts). Merged AFTER the loop so a name that already earned an
@@ -1016,29 +997,79 @@ export async function buildBoard(
   // on a name that was never going to reach the board. Beyond the budget: honestly
   // 'unclear' with reason 'budget' — unchecked, and labelled unchecked, never
   // silently vetoed. A rejecting dep is the same: 'unclear', and the dip trades.
+  // Names the source cannot serve at all (the sleeve's twenty .L tickers — the
+  // company-news endpoint is US-listed only) are settled BEFORE the budget is cut
+  // and never touch it: spending a slot on a call guaranteed to return nothing
+  // would let five UK names starve five checkable US ones. They land on 'unclear'
+  // naming the coverage gap, which trades, exactly as they did before this lane.
   const dipVerdicts = new Map<string, DipNewsVerdict>()
   const byDepth = [...dipCandidates].sort((a, b) => b.read.dropPct - a.read.dropPct)
+  const servable: typeof byDepth = []
+  for (const c of byDepth) {
+    const venue = unservedVenue(c.sym)
+    if (venue) dipVerdicts.set(c.sym, { verdict: 'unclear', reason: `no news source for ${venue} names yet` })
+    else servable.push(c)
+  }
   await Promise.all(
-    byDepth.slice(0, DIP_NEWS_BUDGET).map(async ({ sym }) => {
+    servable.slice(0, DIP_NEWS_BUDGET).map(async ({ sym }) => {
       const raw = await deps.dipNews(sym).catch(() => null)
       const ok = raw && (raw.verdict === 'transient' || raw.verdict === 'structural' || raw.verdict === 'unclear')
       dipVerdicts.set(sym, ok ? raw : { verdict: 'unclear', reason: 'lookup failed' })
     }),
   )
-  for (const { sym } of byDepth.slice(DIP_NEWS_BUDGET)) dipVerdicts.set(sym, { verdict: 'unclear', reason: 'budget' })
+  for (const { sym } of servable.slice(DIP_NEWS_BUDGET)) dipVerdicts.set(sym, { verdict: 'unclear', reason: 'budget' })
 
+  // Only an EXPLICIT structural verdict frees the composite short below, so the
+  // set is built from what was actually read, never from what was skipped.
+  const structuralVetoes = new Set<string>()
   for (const { sym, read, call, capUsdM } of dipCandidates) {
     const v = dipVerdicts.get(sym) ?? { verdict: 'unclear' as const, reason: 'not checked' }
+    const why = v.reason ?? 'no reason given' // a dep may hand back a verdict with no reason at all
     const note =
-      v.verdict === 'structural'
-        ? `news: broken thesis — ${v.reason}`
-        : v.verdict === 'transient'
-          ? `news: overreaction — ${v.reason}`
-          : `news unchecked — ${v.reason}`
-    if (v.verdict === 'structural') console.log(`BOARD: dip on ${sym} stands down — ${v.reason}`)
+      v.verdict === 'structural' ? `news: broken thesis — ${why}` : v.verdict === 'transient' ? `news: overreaction — ${why}` : `news unchecked — ${why}`
+    if (v.verdict === 'structural') {
+      structuralVetoes.add(sym.toUpperCase())
+      console.log(`BOARD: dip on ${sym} stands down — ${why}`)
+    }
     // Structural → the row publishes as a SHADOW: off the reader's board, still
     // graded, so the ledger can eventually answer whether standing down was right.
     publishCall(call, capUsdM, { kind: DIP_CATALYST_KIND, side: 'long', reason: `${read.detail} · ${note}`, strength: 40 }, v.verdict === 'structural')
+  }
+
+  // ---- dip evidence outranks the composite's read of the SAME chart ----
+  // A triggered-and-holding dip is the tape saying this name is being BOUGHT: a
+  // measured drop, the knife guard passed, a volume-PAID reclaim. The composite
+  // reading the identical candles sees only deep negative momentum and calls a
+  // short (dipLane.ts explains why it must). Publishing both live would put the
+  // board on both sides of one name on one morning — an unreadable card, and a
+  // hedge the reader never asked for. Ratified 2026-08-11: the dip read wins the
+  // reader-facing row and the short is DEMOTED to a shadow. Demotion, not
+  // deletion — the short still publishes and still grades, so the ledger can
+  // eventually answer "when the two lanes disagreed, who was right?". Longs need
+  // no rule: an ordinary long is the same side and simply won the merge above.
+  //
+  // Run AFTER the news pass, because news can dissolve the disagreement: when the
+  // headlines say the thesis BROKE, the dip long has already been stood down to a
+  // shadow and the two lanes no longer contradict each other — the news corroborates
+  // the short. Demoting it then would leave the reader with nothing on a name where
+  // the engine has real, agreeing evidence to short. That release is keyed on an
+  // EXPLICIT structural verdict only: a dip that was never examined (never a
+  // candidate, over budget, a dead dep, a venue with no source) leaves the price
+  // evidence standing unopposed, and unopposed dip evidence still wins.
+  for (const row of board) {
+    if (row.side !== 'short' || row.shadow || !dipReads.has(row.sym.toUpperCase())) continue
+    if (structuralVetoes.has(row.sym.toUpperCase())) {
+      console.log(`BOARD: structural news on ${row.sym} frees the composite short — both lanes now read the same way`)
+      continue
+    }
+    row.shadow = true
+    row.watchOnly = undefined // shadow and watch are exclusive in publishCall — keep them so
+    row.belowBase = undefined
+    row.riskPct = 0
+    row.instrument = null
+    row.paperOnly = true // a short with no instrument, exactly as publishCall stamps one
+    row.horizon = horizonOf({ watchOnly: false, stage: row.stage, setup: row.setup, evidence: row.evidence })
+    console.log(`BOARD: dip read on ${row.sym} demotes the composite short to a shadow`)
   }
 
   // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side
@@ -1046,12 +1077,17 @@ export async function buildBoard(
   // a recent prior date — three correlated CEG shorts teach nothing while starving
   // the tiny shadow budget of fresh names. Gated on outcome10 (not outcome5) so a
   // slot frees only once its evidence has actually fed the learning loop, at 10d.
-  // Live (non-shadow) calls are never deduped.
+  // Live (non-shadow) calls are never deduped — on EITHER side of the comparison.
+  // The set is built from prior SHADOW rows only: an ungraded LIVE call from
+  // yesterday holds no shadow slot, and counting it used to make today's shadow of
+  // that name vanish from the ledger entirely — which silently swallowed exactly
+  // the rows the shadow budget exists to collect (a structural-news veto on a name
+  // the engine called live the day before).
   const priorDates = ((await store.read<string[]>('predictions-index')) ?? []).filter(d => d !== today).slice(-10)
   const outstandingShadowKeys = new Set<string>()
   for (const date of priorDates) {
     for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
-      if (!p.outcome10) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
+      if (p.shadow && !p.outcome10) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
     }
   }
   const pickShadow = (side: 'long' | 'short', cap: number) =>

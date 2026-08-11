@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
-import { classifyDipNews, DIP_NEWS_BUDGET, DIP_NEWS_TTL_SEC, fetchCompanyNews, heuristicDipVerdict, readDipNews } from './dipNews'
+import {
+  classifyDipNews,
+  DIP_NEWS_BUDGET,
+  DIP_NEWS_HEURISTIC_TTL_SEC,
+  DIP_NEWS_TTL_SEC,
+  fetchCompanyNews,
+  heuristicDipVerdict,
+  readDipNews,
+  unservedVenue,
+} from './dipNews'
 
 describe('heuristicDipVerdict', () => {
   // The keyword table is the floor the lane can never fall through: no LLM
@@ -29,7 +38,29 @@ describe('heuristicDipVerdict', () => {
   })
 
   it('has no verdict without headlines — silence is not evidence', () => {
-    expect(heuristicDipVerdict([])).toEqual({ verdict: 'unclear', reason: expect.stringContaining('no recent headlines') })
+    expect(heuristicDipVerdict([])).toEqual({ verdict: 'unclear', reason: expect.stringContaining('no recent headlines'), via: 'heuristic' })
+  })
+
+  it('quotes the HEADLINE it matched, not just the rule that fired', () => {
+    // "structural — guidance cut" is unauditable; the reader cannot tell whether
+    // the lane read a real profit warning or tripped over the word 'guidance' in
+    // a story about a new CFO. The evidence goes on the record with the verdict.
+    const v = heuristicDipVerdict(['ACME opens new plant in Ohio', 'ACME cuts guidance for the full year'])
+    expect(v.verdict).toBe('structural')
+    expect(v.reason).toContain('ACME cuts guidance for the full year')
+    expect(v.reason).not.toContain('Ohio') // the headline that fired, not the whole tape
+  })
+
+  it('stamps every keyword verdict as heuristic, decisive or not', () => {
+    for (const heads of [[], ['ACME names new head of European sales'], ['SEC opens investigation into ACME'], ['Analyst downgrade sends ACME lower']]) {
+      expect(heuristicDipVerdict(heads).via).toBe('heuristic')
+    }
+  })
+
+  it('clips a runaway headline instead of printing a paragraph on the card', () => {
+    const v = heuristicDipVerdict([`SEC opens investigation into ACME ${'and its many subsidiaries '.repeat(20)}`])
+    expect(v.verdict).toBe('structural')
+    expect(v.reason.length).toBeLessThanOrEqual(140)
   })
 
   it('is unclear when nothing in the headlines is either signature', () => {
@@ -53,9 +84,9 @@ describe('heuristicDipVerdict', () => {
 describe('classifyDipNews', () => {
   const headlines = ['ACME names new head of European sales'] // heuristic reads this as unclear
 
-  it('takes a well-formed LLM verdict at its word', async () => {
+  it('takes a well-formed LLM verdict at its word, stamped as the model’s own', async () => {
     const llm = vi.fn(async () => JSON.stringify({ verdict: 'transient', reason: 'sector sympathy move, thesis intact' }))
-    expect(await classifyDipNews('ACME', headlines, llm)).toEqual({ verdict: 'transient', reason: 'sector sympathy move, thesis intact' })
+    expect(await classifyDipNews('ACME', headlines, llm)).toEqual({ verdict: 'transient', reason: 'sector sympathy move, thesis intact', via: 'llm' })
     expect(llm).toHaveBeenCalledTimes(1)
   })
 
@@ -73,18 +104,19 @@ describe('classifyDipNews', () => {
 
   it('digs the JSON out of a fenced or chatty answer', async () => {
     const llm = async () => '```json\n{"verdict": "structural", "reason": "guidance withdrawn"}\n```\nHope that helps!'
-    expect(await classifyDipNews('ACME', headlines, llm)).toEqual({ verdict: 'structural', reason: 'guidance withdrawn' })
+    expect(await classifyDipNews('ACME', headlines, llm)).toEqual({ verdict: 'structural', reason: 'guidance withdrawn', via: 'llm' })
   })
 
   it('accepts an already-parsed object from the router', async () => {
     const llm = async () => ({ verdict: 'transient', reason: 'priced-in miss' })
-    expect(await classifyDipNews('ACME', headlines, llm)).toEqual({ verdict: 'transient', reason: 'priced-in miss' })
+    expect(await classifyDipNews('ACME', headlines, llm)).toEqual({ verdict: 'transient', reason: 'priced-in miss', via: 'llm' })
   })
 
-  it('falls back to the heuristic when the answer is malformed', async () => {
+  it('falls back to the heuristic when the answer is malformed — and says so', async () => {
     const llm = async () => 'no idea mate'
     const v = await classifyDipNews('ACME', ['SEC opens investigation into ACME'], llm)
     expect(v.verdict).toBe('structural') // the keyword table, not the LLM
+    expect(v.via).toBe('heuristic') // …and the record shows which one answered
   })
 
   it('falls back to the heuristic when the verdict is not one of the three', async () => {
@@ -163,12 +195,28 @@ describe('readDipNews', () => {
     // strict:true with no keys → callLlm throws no-llm-provider-configured → heuristic
     const v = await readDipNews('ACME', 'key', 1_800_000_000, fetchFn as unknown as typeof fetch, { strict: true })
     expect(v.verdict).toBe('structural')
+    expect(v.via).toBe('heuristic') // the provenance the engine's cache TTL reads
+    expect(v.reason).toContain('SEC opens investigation into ACME')
+  })
+})
+
+describe('unservedVenue', () => {
+  it('names the venue the news source cannot reach, and stays quiet about US tickers', () => {
+    // Finnhub company-news is US-listed only. A .L read is guaranteed empty, not
+    // inconclusive — the engine skips it rather than spending a budget slot.
+    expect(unservedVenue('RR.L')).toBe('LSE')
+    expect(unservedVenue('BT-A.L')).toBe('LSE') // the dash must not send this down the crypto path
+    expect(unservedVenue('AAPL')).toBeNull()
+    expect(unservedVenue('BRK-B')).toBeNull()
+    expect(unservedVenue('ASML.AS')).toBe('.AS') // an unmapped suffix still names itself
   })
 })
 
 describe('the lane budget', () => {
-  it('is five fresh reads a run, cached for three days', () => {
+  it('is five fresh reads a run; a model verdict freezes for three days, a keyword verdict for one', () => {
     expect(DIP_NEWS_BUDGET).toBe(5)
     expect(DIP_NEWS_TTL_SEC).toBe(3 * 86_400)
+    expect(DIP_NEWS_HEURISTIC_TTL_SEC).toBe(86_400)
+    expect(DIP_NEWS_HEURISTIC_TTL_SEC).toBeLessThan(DIP_NEWS_TTL_SEC) // thinner evidence, shorter freeze
   })
 })

@@ -32,17 +32,20 @@ const calmSlide = mk(i => 100 * Math.pow(0.995, i))
 // 4.1% off the dip low on 1.6× volume). Composites as a SHORT (or as nothing —
 // capacity is 0 here), which is precisely why the dip lane builds its own long.
 // The same tape parametrised by its LAST close, so a test can dial the dip's
-// DEPTH: dropPct = 100 − final. Holding needs final ≥ 87.04 (3% off the 84.5 dip
+// DEPTH: dropPct = 100 − final. Holding needs final ≥ low × 1.03 (3% off the dip
 // low) and triggering needs final ≤ 88 (12% under the 20-session high of 100).
-const dipTapeAt = (final: number): Candle[] => {
+// `low` moves the dip's floor, which is what lets a test build a dip DEEPER than
+// the 12.96% ceiling the default 84.5 low imposes — needed to queue five names
+// ahead of the −14.3% collision tape below.
+const dipTapeAt = (final: number, low = 84.5): Candle[] => {
   const bars: Candle[] = []
   const push = (c: number, v = 1_000_000, o = c, h = c, l = c) => bars.push({ t: T0 + bars.length * 86_400, o, h, l, c, v })
   for (let i = 0; i < 60; i++) push(100)
   push(94)
   push(90)
   push(87)
-  push(85, 1_000_000, 86, 86, 84.5)
-  push(85.5)
+  push(low + 0.5, 1_000_000, low + 1.5, low + 1.5, low)
+  push(low + 1)
   push(final, 1_600_000)
   return bars
 }
@@ -273,6 +276,28 @@ describe('buildBoard', () => {
     const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
     const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
     expect(ledger.find(p => p.sym === 'NVDA' && p.shadow)).toBeDefined() // prior slot freed → fresh shadow allowed
+  })
+
+  it('a prior LIVE call holds no shadow slot: yesterday’s ungraded trade never swallows today’s shadow', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    // Yesterday's NVDA short was a real, live, sized call and is still ungraded —
+    // exactly what an open position looks like on day 2. The dedup exists to stop
+    // three correlated SHADOWS crowding the shadow budget; a live call occupies
+    // none of it. Counting it made today's shadow vanish from the ledger entirely,
+    // which silently discarded the rows the budget exists to collect.
+    const priorDate = '2026-05-01'
+    await store.write('predictions-index', [priorDate])
+    await store.write(`predictions:${priorDate}`, [{ id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: undefined }])
+
+    await buildBoard(store, deps({ earningsSyms: async () => new Set(['NVDA']) }), NOW)
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
+    expect(ledger.find(p => p.sym === 'NVDA' && p.shadow)).toBeDefined()
   })
 
   it('below-base but fully-evidenced calls surface as TRACKED watch rows — seen, unsized, still graded', async () => {
@@ -733,24 +758,35 @@ describe('buildBoard', () => {
     expect(row.riskPct).toBe(0)
   })
 
-  it('dip evidence demotes the opposing SHORT: the long is the live row, the short shadows on (ratified 2026-08-11)', async () => {
+  // the collision harness: one tape both lanes read, opposite sides, GLW routable
+  // so 'unshortable' can never be what shadows the short. Both bands proven and
+  // total n under 50, so baseHitRate stays 0.5 and BOTH calls grade — the short is
+  // a genuine live A before anything demotes it.
+  const collisionStore = async () => {
     const store = memoryStore()
-    // GLW HAS an inverse route, so 'unshortable' can never be what shadows the short
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' } } })
-    // Both lanes' bands proven. Total n stays under 50 so baseHitRate stays 0.5
-    // and BOTH calls grade — the short is a genuine live A before the demotion.
     await store.write('engine-calibration', {
       buckets: { 'short:amber:40-55': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 14 } },
       brier: [],
       defVersion: CALIB_DEF_VERSION,
     })
-    const d = deps({
+    return store
+  }
+  const collisionDeps = (over: Partial<EngineDeps> = {}) =>
+    deps({
       screens: async () => [],
       social: async () => [],
       mediaTitles: async () => [],
       candles: async sym => (sym === 'GLW' ? dipAndShortTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
       sparkCloses: sparkOf(dipAndShortTape),
+      ...over,
     })
+
+  it('dip evidence demotes the opposing SHORT: the long is the live row, the short shadows on (ratified 2026-08-11)', async () => {
+    const store = await collisionStore()
+    // an OVERREACTION read: the news agrees with the dip lane, so the two lanes
+    // genuinely disagree and the dip's long is the row the reader gets
+    const d = collisionDeps({ dipNews: async () => ({ verdict: 'transient', reason: 'sector sympathy, guidance intact' }) })
     const { board } = await buildBoard(store, d, NOW)
 
     // the reader-facing board carries ONE GLW row, and it is the dip's long
@@ -774,6 +810,65 @@ describe('buildBoard', () => {
     expect(short.grade).toBe('A')
     expect(short.evidence.contract).toBe(true)
     expect(short.earningsRisk).toBe(false)
+  })
+
+  it('…but a STRUCTURAL news read frees that short: the news corroborates it, so the short is the live row', async () => {
+    const store = await collisionStore()
+    // The dip lane and the composite disagreed on price alone. The headlines
+    // settle it: the thesis broke. The dip long stands down — and demoting the
+    // short too would leave the reader nothing on a name where both lanes now
+    // agree it is going lower.
+    const d = collisionDeps({ dipNews: async () => ({ verdict: 'structural', reason: 'SEC probe into revenue recognition' }) })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const shown = board.filter(b => b.sym === 'GLW')
+    expect(shown).toHaveLength(1)
+    expect(shown[0].side).toBe('short') // the opposite row from the transient case above
+    expect(shown[0].shadow).toBeUndefined()
+    expect(shown[0].riskPct).toBeGreaterThan(0) // fully live and sized, not a survivor of a demotion
+    expect(shown[0].grade).toBe('A')
+
+    const rows = (await ledgerOf(store))!.filter(p => p.sym === 'GLW')
+    expect(rows).toHaveLength(2) // both lanes still publish and still grade
+    const long = rows.find(p => p.side === 'long')!
+    expect(long.shadow).toBe(true) // the vetoed dip
+    expect(long.catalyst!.reason).toContain('SEC probe into revenue recognition')
+  })
+
+  it('an UNREAD dip still demotes the short — unexamined price evidence stands, silence is not a release', async () => {
+    const store = await collisionStore()
+    // Five deeper dips (−16%…−15.6%) take the whole news budget, so GLW's own
+    // −14.3% dip is never read. 'budget' is not a verdict about GLW: the dip
+    // evidence against the short is exactly as strong as it was before the news
+    // lane existed, so the 5g demotion must still apply.
+    const deeper = new Map<string, Candle[]>([
+      ['MMM', dipTapeAt(84.0, 80)],
+      ['DOW', dipTapeAt(84.1, 80)],
+      ['FCX', dipTapeAt(84.2, 80)],
+      ['NEM', dipTapeAt(84.3, 80)],
+      ['OXY', dipTapeAt(84.4, 80)],
+    ])
+    const sparked = new Map<string, Candle[]>([...deeper, ['GLW', dipAndShortTape]])
+    const asked: string[] = []
+    const d = collisionDeps({
+      candles: async sym => deeper.get(sym) ?? (sym === 'GLW' ? dipAndShortTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      sparkCloses: async () => new Map([...sparked].map(([sym, t]) => [sym, t.map(c => c.c)])),
+      dipNews: async sym => {
+        asked.push(sym)
+        return { verdict: 'transient', reason: 'sector sympathy' }
+      },
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    expect(asked).toHaveLength(5)
+    expect(asked).not.toContain('GLW') // shallower than all five — over budget
+
+    const rows = (await ledgerOf(store))!.filter(p => p.sym === 'GLW')
+    const short = rows.find(p => p.side === 'short')!
+    expect(short.shadow).toBe(true)
+    expect(short.riskPct).toBe(0)
+    expect(board.find(b => b.sym === 'GLW' && b.side === 'short')).toBeUndefined()
+    expect(rows.find(p => p.side === 'long')!.catalyst!.reason).toContain('budget')
   })
 
   it('the dip lane never receives the world-tape nudge, so its row records the multiplier it actually ran at', async () => {
@@ -866,6 +961,9 @@ describe('buildBoard', () => {
     expect(call.shadow).toBeUndefined()
     expect(call.riskPct).toBeGreaterThan(0)
     expect(call.catalyst!.reason).toContain('news unchecked')
+    // …and the card says WHICH kind of unchecked: a dead dep reads differently
+    // from a quiet news window, and the reader can tell them apart
+    expect(call.catalyst!.reason).toContain('lookup failed')
   })
 
   it('an unclear verdict trades too — the lane only stands aside on evidence of a broken thesis', async () => {
@@ -923,6 +1021,48 @@ describe('buildBoard', () => {
     expect(unread.shadow).toBeUndefined()
     expect(unread.catalyst!.reason).toContain('news unchecked')
     expect(unread.catalyst!.reason).toContain('budget')
+  })
+
+  it('a .L dip never spends a budget slot: the source cannot serve it, so five US names still get read', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    // RR.L is the DEEPEST dip on the board (−16% vs 12.0–12.9 for the US five),
+    // so under a naive depth queue it would take the first slot and starve MMM.
+    // Finnhub company-news is US-listed only: that read is guaranteed empty, and
+    // spending the budget on it buys nothing while costing a checkable name.
+    const tapes = new Map<string, Candle[]>([
+      ['RR.L', dipTapeAt(84.0, 80)],
+      ['GLW', dipTapeAt(88.0)],
+      ['MMM', dipTapeAt(87.8)],
+      ['DOW', dipTapeAt(87.6)],
+      ['FCX', dipTapeAt(87.4)],
+      ['NEM', dipTapeAt(87.2)],
+    ])
+    const asked: string[] = []
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => tapes.get(sym) ?? (sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      sparkCloses: async () => new Map([...tapes].map(([sym, t]) => [sym, t.map(c => c.c)])),
+      dipNews: async sym => {
+        asked.push(sym)
+        return { verdict: 'transient', reason: `sympathy at ${sym}` }
+      },
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    // all five US names read, in depth order; the unservable name asked nothing
+    expect(asked).toEqual(['NEM', 'FCX', 'DOW', 'MMM', 'GLW'])
+    expect(asked).not.toContain('RR.L')
+
+    // …and RR.L still publishes, trading, with the coverage gap named on the card
+    const uk = board.find(b => b.sym === 'RR.L')!
+    expect(uk).toBeDefined()
+    expect(uk.shadow).toBeUndefined() // an unservable venue is not a veto
+    expect(uk.catalyst!.reason).toContain('news unchecked')
+    expect(uk.catalyst!.reason).toContain('no news source for LSE names yet')
   })
 
   it('the sleeve cannot starve cap enrichment: discovery names get the lookups first', async () => {
