@@ -28,6 +28,16 @@ describe('validateConfig engine fields', () => {
     // explicit null: the user cleared the pin — a real "engine decides" instruction
     expect(validateConfig({ ...minimal, riskRungOverride: null })!.riskRungOverride).toBeNull()
   })
+  it('coreSleeve: upper-cases entries, drops junk (bad chars/overlong), absent/empty stays undefined', () => {
+    const cfg = validateConfig({ ...minimal, coreSleeve: ['spy', 'qqq.l', 'bad symbol!', 'toolongsymbolname12'] })!
+    expect(cfg.coreSleeve).toEqual(['SPY', 'QQQ.L'])
+    expect(validateConfig(minimal)!.coreSleeve).toBeUndefined()
+    expect(validateConfig({ ...minimal, coreSleeve: [] })!.coreSleeve).toBeUndefined()
+  })
+  it('coreSleeve: caps at 200 entries', () => {
+    const many = Array.from({ length: 250 }, (_, i) => `T${i}`)
+    expect(validateConfig({ ...minimal, coreSleeve: many })!.coreSleeve).toHaveLength(200)
+  })
   it('riskAppetite: accepts aggressive/moderate, ignores junk, absent stays undefined', () => {
     expect(validateConfig({ ...minimal, riskAppetite: 'aggressive' })!.riskAppetite).toBe('aggressive')
     expect(validateConfig({ ...minimal, riskAppetite: 'moderate' })!.riskAppetite).toBe('moderate')
