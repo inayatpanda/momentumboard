@@ -13,7 +13,7 @@
 // exactly like everything else. News buys a name a fair look, not a free pass.
 
 export interface CatalystTag {
-  kind: 'news' | 'event' | 'ipo' | 'listing' | 'earnings'
+  kind: 'news' | 'event' | 'ipo' | 'listing' | 'earnings' | 'dip'
   side: 'long' | 'short' | null // null = "in play", no clean direction — relaxes the gate but casts no vote
   reason: string
   strength: number // 0..100 — how direct/material the catalyst is
