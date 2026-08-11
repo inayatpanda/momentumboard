@@ -608,6 +608,8 @@ git commit -m "feat(engine): a dip only trades when the news reads overreaction,
 
 ---
 
+Ratified at Task-5b review (2026-08-11, controller decisions): **a structural news verdict releases the 5g short demotion** — demotion applies only when the dip long actually publishes (an explicit `structural` verdict restores the loop short; absence of a verdict does NOT — unexamined dip evidence still stands); **`outstandingShadowKeys` must match its own comment** — built from prior SHADOW rows only (`p.shadow &&`), so a structural veto row is never silently dropped because a live row awaits its outcome; **heuristic-derived verdicts carry provenance and get a 1-day TTL** (LLM verdicts keep 3 days), with the matched headline recorded in the reason; **non-US symbols skip the news budget** (straight to 'unclear', reason naming the exchange gap) so guaranteed-empty Finnhub reads never starve checkable names.
+
 ### Task 6: Never-blank board — half-size C, contract-fail half-size, near-misses named
 
 **Files:**
