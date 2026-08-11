@@ -561,6 +561,8 @@ const evalRows = [
 
 iterate `evalRows`, and pass `sleeve: sleeveActive && sleeveSet.has(entry.sym)` in `composeInput` (the second compose call at line 760 spreads the first input — one placement covers both).
 
+(g0) **IC isolation for lane calls** (Task 4 implementer finding): dip calls carry a constant `technical: +40` placeholder score, so `updateIcStats` in the grading pass would book every dip outcome into the technical factor's IC as a perpetual "agree" — the lane's P&L silently training an unrelated factor. In `gradeOutstanding` (engine.ts:316-329), skip the `updateIcStats` call for predictions whose `catalyst?.kind === 'dip'` (calibration buckets and setup buckets still accrue — only factor-IC is excluded). Add an engine test: a graded dip prediction leaves the weights' IC observation counts untouched.
+
 (g) **Dip-call merge** — after the compose loop, before shadow dedup (~line 832): for each `dipReads` entry whose sym did NOT produce a long call in the loop, build `dipCall(sym, candles, read, capUsdM)`; if non-null, set `earningsRisk = earningsSet.has(baseSym(sym))` [earnings honesty], then push it through the SAME post-compose pipeline as loop calls: cohort → `probabilityFor` → `gradeFor` → shadow/watchOnly/belowBase flags → `board.push({...})` with `catalyst: { kind: 'dip', reason: read.detail }`. Factor this shared post-compose block into a local function `publishCall(call, capUsdM, cat)` so the loop and the dip merge use ONE code path (no drift).
 
 - [ ] **Step 4: Full suite + `npm run build`** — green; tsc clean.
