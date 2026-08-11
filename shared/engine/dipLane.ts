@@ -159,13 +159,22 @@ export function dipCall(sym: string, candles: Candle[], read: DipRead, capUsdM: 
   const entry = round2(last.c)
   // The stop sits under the WHOLE dip, today included — a stop inside today's
   // range is not a stop. (The reclaim check above deliberately excludes today;
-  // risk placement is the one place today's low has to count.)
+  // risk placement is the one place today's low has to count.) Ratified
+  // 2026-08-11: stop = min(dip-window low, today's low).
   const stop = round2(Math.min(low, last.l))
   const high20 = Math.max(...closes.slice(-HIGH_WINDOW))
   const target = round2(entry + (high20 - entry) / 2)
   // No room either way = no trade. Reachable only in degenerate shapes (a shock
   // that closed at the 20-session high, or a close exactly on the dip low).
   if (stop >= entry || target <= entry) return null
+
+  // Minimum 1:1 reward-to-risk (ratified 2026-08-11). The trigger is depth-blind:
+  // a one-day gap that closes near the 20-session high triggers the lane while
+  // leaving a half-retrace target inches above entry and the stop a mile below,
+  // under the whole dip. Structurally sound, but it is a bet that loses ten to
+  // make one — it must never publish. Risking more than the target pays is not
+  // a modest edge, it is a negative one.
+  if (target - entry < entry - stop) return null
 
   const expectedMovePct = round1(((target - entry) / entry) * 100)
   const composite = round1(clamp(25 + read.dropPct, 25, 55))
@@ -186,6 +195,8 @@ export function dipCall(sym: string, candles: Candle[], read: DipRead, capUsdM: 
   // The lane's own gates ARE its evidence contract: a measured drop, a volume-paid
   // reclaim and the knife guard all had to pass before this function was reached.
   const evidence: CallEvidence = {
+    // NOMINAL placeholders — this lane has ONE real factor (its own price read).
+    // Nothing downstream may read these as a count of independent evidence.
     coverage: 1,
     famAgree: 2,
     contract: true,
