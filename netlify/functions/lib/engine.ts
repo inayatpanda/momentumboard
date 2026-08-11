@@ -169,6 +169,7 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
       const { fetchScreen, fetchTrending } = await import('./screener')
       const kinds = [
         ['day_gainers', 'screener:gainers'],
+        ['day_losers', 'screener:losers'],
         ['most_actives', 'screener:actives'],
         ['small_cap_gainers', 'screener:smallcap'],
       ] as const
