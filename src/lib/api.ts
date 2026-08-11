@@ -357,10 +357,14 @@ export interface EnginePrediction {
   riskPct: number
   instrument: { ticker: string; leverage: number } | null
   paperOnly: boolean
-  // grade C / thin evidence: published and graded, but an observation — no
-  // size, no instrument. Only A/B contract-passing calls are trades.
+  // an observation, not a trade: grade C on thin evidence, a below-base read, or
+  // an actionable row the diversity gates did not pick. A/B on the full contract
+  // carry full size; C WITH the contract and A/B WITHOUT it carry half.
   watchOnly?: boolean
   belowBase?: boolean // fully-evidenced watch row rated below the engine's base rate — shown, no size
+  // the nearest thing to a call on a side where nothing cleared the gates at all:
+  // named so the board is never blank, always watch-only, never in the ledger
+  nearMiss?: boolean
   // 'week' = a this-week trade/observation; 'developing' = a watch row whose shape is a
   // 2-4 week build (basing/pullback, below-base, or a thin-evidence reversal). Stamped by the engine.
   horizon?: 'week' | 'developing'

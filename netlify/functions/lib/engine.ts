@@ -2,7 +2,7 @@ import type { Candle } from '../../../shared/types'
 import type { AppStore } from './store'
 import { validateConfig, type AppConfig } from '../../../shared/config'
 import { atr, swingCapacity } from '../../../shared/indicators'
-import { technicalStage } from '../../../shared/technicals'
+import { technicalStage, type Stage } from '../../../shared/technicals'
 import { breadthAbove50, refineRegime, regimeFromCandles } from '../../../shared/setups'
 import { seasonalitySummary } from '../../../shared/seasonality'
 import {
@@ -18,7 +18,7 @@ import {
   technicalFactor,
   type SmartMoneyInput,
 } from '../../../shared/engine/factors'
-import { composeCall } from '../../../shared/engine/composite'
+import { composeCall, coreCompositeOf, setupFamilyOf } from '../../../shared/engine/composite'
 import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleeve'
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
 import { DIP_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
@@ -45,10 +45,10 @@ import { pickDiverse } from '../../../shared/engine/select'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
 import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
-import { capCohortOf, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
+import { capCohortOf, SMALL_CAP_MAX_USD_M, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
-import type { EngineCall, FactorName, FactorScore, PredOutcome, Prediction } from '../../../shared/engine/types'
+import { round1, round2, type EngineCall, type FactorName, type FactorScore, type PredOutcome, type Prediction } from '../../../shared/engine/types'
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { primaryThemeOf, themeCandidates, themeHeat, themesOf } from '../../../shared/engine/themes'
 import { traceOpenCall, type OpenTraceEntry } from '../../../shared/engine/openTrace'
@@ -884,13 +884,26 @@ export async function buildBoard(
     const unshortable = call.side === 'short' && !(shortRoute?.short2x || shortRoute?.short3x)
     const belowBase = !grade && call.evidence.contract && !call.earningsRisk && !unshortable && !forceShadow
     const shadow = call.earningsRisk || (!grade && !call.evidence.contract) || unshortable || forceShadow
-    // Only A/B calls that pass the core-data contract are trades. Grade C, thin
-    // evidence, or a below-base setup are watchlist observations (riskPct 0) —
-    // "barely passed the gate" reads differently from a genuinely strong setup.
-    const watchOnly = !shadow && (grade == null || grade === 'C' || !call.evidence.contract)
+    // Sizing, in three tiers instead of the old on/off (ratified 2026-08-11).
+    // The old rule — only A/B on the FULL contract carries size — kept producing
+    // boards where nothing was actionable: a perfectly real grade-C setup, or an
+    // A whose only missing leg was an unknown regime, both published at zero size
+    // beside each other, which reads to the reader as "the engine has no opinion".
+    //   full  = A/B AND the core-data contract → the rung's full risk
+    //   half  = C WITH the contract, or A/B WITHOUT it → half the rung's risk.
+    //           One of conviction/evidence is short, never both — a real trade
+    //           taken smaller, with the gap named in evidence.detail. [R12]
+    //   watch = everything else: an ungraded (below-base) call, or C on thin
+    //           evidence — where conviction AND evidence are both short.
+    // Leverage is a separate, stricter question: an ETP is only ever routed for a
+    // FULL trade, so a half-size call is a plain share/paper position. Grade C
+    // never unlocks leverage anyway (riskLadder.leverageAllowed) — untouched. [R14]
+    const fullTrade = !shadow && (grade === 'A' || grade === 'B') && call.evidence.contract
+    const halfTrade = !shadow && !fullTrade && grade != null && (grade !== 'C' || call.evidence.contract)
+    const watchOnly = !shadow && !fullTrade && !halfTrade
 
     const rung = cohortRungOf(risk, cohort)
-    const instrument = shadow || watchOnly ? null : mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {})
+    const instrument = fullTrade ? mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {}) : null
     const callThemes = themesOf(call.sym)
     board.push({
       ...call,
@@ -912,7 +925,7 @@ export async function buildBoard(
       provisional,
       grade: grade ?? 'C',
       riskRung: rung,
-      riskPct: shadow || watchOnly ? 0 : RUNG_RISK_PCT[rung],
+      riskPct: shadow || watchOnly ? 0 : halfTrade ? RUNG_RISK_PCT[rung] / 2 : RUNG_RISK_PCT[rung],
       instrument,
       paperOnly: call.side === 'short' && !watchOnly && !instrument,
       // The stamp must describe what the call ACTUALLY got. The composite loop
@@ -923,6 +936,21 @@ export async function buildBoard(
       worldTape: { tone: tone.tone, mult: cat?.kind === DIP_CATALYST_KIND ? 1 : worldMult(tone.tone, call.side) },
     })
   }
+
+  // Every name that produced a real core read and STILL published nothing — the
+  // dead zone, the capacity floor or an entry gate turned it down. Kept so a day
+  // on which nothing at all qualifies can still name what came closest instead of
+  // showing the reader an empty card (assembly below). [R11]
+  const nearMisses: {
+    sym: string
+    core: number
+    capUsdM: number | null
+    lastClose: number
+    atrNow: number
+    capacityPct: number | null
+    stage: Stage | null
+    factors: Record<FactorName, FactorScore>
+  }[] = []
 
   for (const entry of evalRows) {
     const candles = candleMap.get(entry.sym) ?? (await deps.candles(entry.sym).then(c => (c && c.length >= 30 ? c : null)))
@@ -984,7 +1012,20 @@ export async function buildBoard(
       // seasonality (if it loaded) rides the same re-score — honest both ways.
       call = composeCall({ ...composeInput, factors, worldMult: worldMult(tone.tone, call.side) })
     }
-    if (!call) continue
+    if (!call) {
+      // Nothing published. Record the gate-free core read (composite.ts — the same
+      // arithmetic the call would have stood on) so the assembly can name this name
+      // if the whole side comes up empty. Requires real levels: a row the reader
+      // cannot even see an entry/stop for is not worth naming. An earnings print
+      // inside the horizon is excluded on the same principle that shadows the
+      // trade — the engine does not point at coin flips.
+      const core = coreCompositeOf(factors, weights.current, regime)
+      const lastClose = closes[closes.length - 1]
+      const atrNow = atr(candles)[candles.length - 1]
+      if (core != null && lastClose != null && atrNow != null && !composeInput.earningsWithinHorizon)
+        nearMisses.push({ sym: entry.sym, core, capUsdM: entry.capUsdM, lastClose, atrNow, capacityPct: composeInput.capacityPct, stage: read.stage, factors })
+      continue
+    }
     publishCall(call, entry.capUsdM, cat)
   }
 
@@ -1167,23 +1208,127 @@ export async function buildBoard(
     if (skipped.length) console.log(`BOARD: diversity gates (${label} ${side}):`, skipped.map(s => `${s.sym} — ${s.why}`).join('; '))
     return picked
   }
-  // The actionable board is SMALL by design: at most 3 trades per side, A/B
-  // contract-passing only. The watch list carries the rest of the ranked
-  // read (grade C / low evidence) so a day with no qualified trades still
-  // publishes what the engine is looking at — as observations, not calls.
+  // The actionable board is SMALL by design: at most 3 trades per side. The watch
+  // list carries the rest of the ranked read so a day with no qualified trades
+  // still publishes what the engine is looking at — as observations, not calls.
+  //
+  // Order matters. The trade slots are picked FIRST, and an actionable row the
+  // diversity gates did not pick then falls THROUGH to the watch list instead of
+  // off the board entirely [R13]. Under the old order (both pools computed up
+  // front) the 4th-best long simply vanished — from the board AND the ledger —
+  // which is how a screen full of correlated names could publish three rows and
+  // silently discard nine. Demotion strips size and route; the row itself stays.
   const actionablePool = board.filter(b => !b.shadow && !b.watchOnly)
-  const watchPool = board.filter(b => !b.shadow && b.watchOnly)
   const trades = [...pickDiverseSide(actionablePool, 'long', 3, 'trade'), ...pickDiverseSide(actionablePool, 'short', 3, 'trade')]
+  const picked = new Set(trades.map(t => t.id))
+  for (const b of actionablePool) {
+    if (picked.has(b.id)) continue
+    b.watchOnly = true
+    b.riskPct = 0
+    b.instrument = null
+    b.paperOnly = false // a watch row is nobody's position — exactly as publishCall stamps one
+    b.horizon = horizonOf({ watchOnly: true, belowBase: b.belowBase, stage: b.stage, setup: b.setup, evidence: b.evidence })
+  }
+  const watchPool = board.filter(b => !b.shadow && b.watchOnly)
   const watch = [...pickDiverseSide(watchPool, 'long', 6, 'watch'), ...pickDiverseSide(watchPool, 'short', 6, 'watch')]
-  const live = [...trades, ...watch].sort((a, b) => (a.watchOnly ? 1 : 0) - (b.watchOnly ? 1 : 0) || Math.abs(b.composite) - Math.abs(a.composite))
+  const liveCalls = [...trades, ...watch].sort((a, b) => (a.watchOnly ? 1 : 0) - (b.watchOnly ? 1 : 0) || Math.abs(b.composite) - Math.abs(a.composite))
+
+  // ---- nearest misses: an empty SIDE still says what came closest ----
+  // A morning where every candidate died at a gate used to publish a blank card,
+  // which reads as "the engine is broken" rather than "the engine said no". So a
+  // side with no live row at all names up to two nearest misses: the largest core
+  // reads of that sign (composite.ts's gate-free maths), carrying real levels off
+  // lastClose/ATR and labelled for exactly what they are. Zero size, zero route,
+  // probability = the engine's own base rate — they earned no calibrated bucket.
+  //
+  // They are BOARD-ONLY on purpose: a near miss never enters `predictions:${date}`,
+  // so it can never teach the calibration buckets, the factor-IC loop or the Brier
+  // trail. A row with no evidence read and a base-rate probability is not a
+  // prediction, and grading it would quietly bias every bucket it landed in
+  // toward the population the gates exist to reject.
+  //
+  // A SHORT with no inverse-ETP route is skipped here exactly as it is skipped
+  // everywhere else (an ISA cannot place it), so a side can still legitimately
+  // come up empty — the guarantee is a never-blank BOARD, not a full grid.
+  // Keyed off EVERY published row, shadows included: the dip lane can publish a
+  // long on a name whose composite produced nothing, and a near miss must never
+  // duplicate the id of a row already in the ledger.
+  const publishedKeys = new Set(board.map(b => `${b.sym.toUpperCase()}:${b.side}`))
+  const routableShort = (sym: string) => {
+    const m = (cfg.levMap ?? {})[sym.toUpperCase()]
+    return !!(m?.short2x || m?.short3x)
+  }
+  const nearMissRows: Prediction[] = []
+  for (const side of ['long', 'short'] as const) {
+    if (liveCalls.some(b => b.side === side)) continue
+    const candidates = nearMisses
+      .filter(n => (n.core >= 0 ? 'long' : 'short') === side)
+      .filter(n => !publishedKeys.has(`${n.sym.toUpperCase()}:${side}`))
+      .filter(n => side === 'long' || routableShort(n.sym))
+      .sort((a, b) => Math.abs(b.core) - Math.abs(a.core))
+      .slice(0, 2)
+    for (const n of candidates) {
+      const cohort = capCohortOf(n.capUsdM)
+      const smallCap = n.capUsdM != null && n.capUsdM < SMALL_CAP_MAX_USD_M
+      const dir = side === 'long' ? 1 : -1
+      const expectedMovePct = round1(Math.min(Math.abs(n.core) / 100, 0.8) * (n.capacityPct ?? 0))
+      const entry = round2(n.lastClose)
+      const themes = themesOf(n.sym)
+      nearMissRows.push({
+        id: `${today}:${n.sym}:${side}`,
+        date: today,
+        sym: n.sym,
+        side,
+        composite: n.core,
+        setup: setupFamilyOf(side, n.stage),
+        modelVersion: ENGINE_MODEL_VERSION,
+        regime,
+        priceAtPrediction: entry,
+        themes: themes.length ? themes : undefined,
+        capUsdM: n.capUsdM,
+        factors: Object.fromEntries(
+          (Object.entries(n.factors) as [FactorName, FactorScore][]).map(([name, f]) => [name, { ...f, weight: weights.current[name] ?? 0 }]),
+        ) as Record<FactorName, FactorScore & { weight: number }>,
+        evidence: {
+          coverage: 0,
+          famAgree: 0,
+          contract: false,
+          contextPts: 0,
+          detail: `core read ${n.core} — short of the gates (dead zone ${gates.deadZone}, capacity floor, entry timing); no evidence contract was ever assessed`,
+        },
+        expectedMovePct,
+        entry,
+        stop: round2(n.lastClose - dir * (smallCap ? 2 : 1.5) * n.atrNow),
+        target: round2(n.lastClose + dir * Math.max(2 * n.atrNow, (n.lastClose * expectedMovePct) / 100)),
+        capacityPct: n.capacityPct ?? 0,
+        smallCap,
+        earningsRisk: false, // earnings names are never recorded as near misses
+        stage: n.stage,
+        note: 'nearest miss — the engine looked and said no; shown so the day is not blank',
+        probability: round2(engineBaseRate),
+        provisional: true,
+        grade: 'C',
+        riskRung: cohortRungOf(risk, cohort),
+        riskPct: 0,
+        instrument: null,
+        paperOnly: false,
+        watchOnly: true,
+        nearMiss: true,
+        horizon: 'week',
+      })
+    }
+  }
+  if (nearMissRows.length) console.log('BOARD: nearest misses named —', nearMissRows.map(n => `${n.sym} ${n.side} ${n.composite}`).join(', '))
+
+  const live = [...liveCalls, ...nearMissRows]
   const shadows = [...pickShadow('long', 5), ...pickShadow('short', 5)]
-  const final = [...live, ...shadows]
+  const final = [...liveCalls, ...shadows] // the LEDGER — near misses are board-only
 
   // Company names ride the published rows so the board, ledger, open book and
   // paper all print "SOC — Sable Offshore" without their own enrichment pass.
   // cachedCompanyName reads the cap: blob the capUsdM lookups already warmed,
   // so this is near-free; a miss just leaves the row ticker-only.
-  await mapLimit(final, 8, async p => {
+  await mapLimit([...final, ...nearMissRows], 8, async p => {
     const name = await deps.companyName(p.sym).catch(() => null)
     if (name) p.name = name
   })

@@ -231,7 +231,8 @@ export interface BoardRow {
   target: number
   expectedMovePct: number
   paperOnly: boolean
-  watchOnly?: boolean // grade C / low evidence: printed as an observation
+  watchOnly?: boolean // unsized: C on thin evidence, below-base, or an unpicked overflow row — printed as an observation
+  nearMiss?: boolean // cleared NO gate; named only so a side with nothing on it is not blank — never an idea
   earningsRisk: boolean
   instrument: { ticker: string; leverage: number } | null
 }
@@ -451,7 +452,8 @@ export const SECTIONS: SectionSpec[] = [
     brief: `1-3 long ideas MAX and the short desk (0-2 fades), plus shortDesk prose.
 IF engineBoard IS PRESENT in the data (the quant engine's scored calls, each with probability/grade/entry/stop/target): you are the JOURNALIST, not the analyst. HARD RULES:
 - Select ideas ONLY from engineBoard entries — ticker and side copied exactly; you may NOT introduce any other ticker as an idea.
-- Entries with watchOnly:true are OBSERVATIONS (grade C or thin evidence), never ideas — you may mention them as "the engine is watching X" colour, but they get no entry/size framing.
+- Entries with watchOnly:true are OBSERVATIONS (grade C on thin evidence, a below-base read, or a row the diversity gates did not pick), never ideas — you may mention them as "the engine is watching X" colour, but they get no entry/size framing. Sized entries carry riskPct > 0; a HALVED riskPct means the engine took a real setup smaller because either its grade or its evidence was short — never write those up as full-conviction calls.
+- Entries with nearMiss:true cleared NO gate at all: the engine looked and said no, and they are shown only so a side with nothing on it is not blank. At most one clause — "nothing cleared the gates; the closest was X" — and never a level, a size or a case.
 - Copy entry, invalidation (the stop), target and conviction (the grade) VERBATIM from the board entry. You write the caseText, chartRead (from its stage/note), streetCheck (channels by name, then Reddit/Stocktwits), and 2-4 numbered reasons from the factor details.
 - You get ONE qualitative power per idea: an optional overlay {"flag":"boost|caution|veto","reason":"<grounded in a REAL headline or event in the data>"}. veto = the idea is dropped from the paper (say why in shortDesk if a short, lead if a long). Use it sparingly — every overlay is logged and graded against what price then did.
 - paperOnly:true board shorts are analysis, not executable — present them as "fade/avoid" and say the ETP route is locked until the risk ladder earns it. Board entries with an instrument: name the ETP ticker and its leverage, warn on daily-rebalance decay, max hold 10 sessions.

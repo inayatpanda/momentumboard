@@ -106,19 +106,21 @@ export interface ComposeInput {
   breadthKnown?: boolean
 }
 
-/** Weighted composite over the CORE factors that have data, plus a capped
- * context nudge → a concrete call, or null. Most tickers most days are a "no":
- * dead zone, capacity gate, and side-aware entry gates all have to clear
- * before a number reaches the paper. Direction and eligibility come from the
- * core alone; context can only tilt conviction by ≤ CONTEXT_MAX_PTS. */
-export function composeCall(input: ComposeInput): EngineCall | null {
+/** ONE walk over the factor table, shared by composeCall and coreCompositeOf so
+ * the "what does the core say?" arithmetic can never fork between the call the
+ * engine publishes and the near miss it names. Returns raw sums, unrounded — the
+ * rounding belongs to whoever produces a displayed number. */
+function tallyFactors(
+  factors: Record<FactorName, FactorScore>,
+  weights: Record<FactorName, number>,
+): { coreNum: number; coreDen: number; ctxNum: number; coreWeightTotal: number } {
   let coreNum = 0
   let coreDen = 0
   let ctxNum = 0
   let coreWeightTotal = 0
-  for (const name of Object.keys(input.factors) as FactorName[]) {
-    const f = input.factors[name]
-    const w = input.weights[name] ?? 0
+  for (const name of Object.keys(factors) as FactorName[]) {
+    const f = factors[name]
+    const w = weights[name] ?? 0
     if (FACTOR_FAMILY[name] === 'core') coreWeightTotal += w
     if (f.score == null) continue
     if (FACTOR_FAMILY[name] === 'core') {
@@ -128,6 +130,34 @@ export function composeCall(input: ComposeInput): EngineCall | null {
       ctxNum += w * f.score
     }
   }
+  return { coreNum, coreDen, ctxNum, coreWeightTotal }
+}
+
+/** The GATE-FREE core read: the weighted core composite after regime scaling,
+ * and nothing else — no context nudge, no world tape, no dead zone, no capacity
+ * floor, no entry gate. composeCall's own first half, exported so the board can
+ * NAME its nearest misses on a day when nothing clears the gates (engine.ts):
+ * "these two came closest, and here is by how much". Null when the name has no
+ * core data at all — there is then nothing honest to say about it. */
+export function coreCompositeOf(
+  factors: Record<FactorName, FactorScore>,
+  weights: Record<FactorName, number>,
+  regime: RegimeColor | 'unknown',
+): number | null {
+  const { coreNum, coreDen } = tallyFactors(factors, weights)
+  if (!coreDen) return null
+  const raw = coreNum / coreDen
+  const side: 'long' | 'short' = raw >= 0 ? 'long' : 'short'
+  return round1(raw * (side === 'long' ? LONG_REGIME_MULT[regime] : SHORT_REGIME_MULT[regime]))
+}
+
+/** Weighted composite over the CORE factors that have data, plus a capped
+ * context nudge → a concrete call, or null. Most tickers most days are a "no":
+ * dead zone, capacity gate, and side-aware entry gates all have to clear
+ * before a number reaches the paper. Direction and eligibility come from the
+ * core alone; context can only tilt conviction by ≤ CONTEXT_MAX_PTS. */
+export function composeCall(input: ComposeInput): EngineCall | null {
+  const { coreNum, coreDen, ctxNum, coreWeightTotal } = tallyFactors(input.factors, input.weights)
   if (!coreDen) return null // no market-derived signal at all — context alone is never a call
   const raw = coreNum / coreDen
   const side: 'long' | 'short' = raw >= 0 ? 'long' : 'short'

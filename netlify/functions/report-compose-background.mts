@@ -129,6 +129,7 @@ export default async (req: Request) => {
         instrument: p.instrument,
         paperOnly: p.paperOnly,
         watchOnly: p.watchOnly,
+        nearMiss: p.nearMiss, // a row that cleared no gate — the journalist must not write it up
         setup: p.setup,
         evidence: p.evidence?.detail,
         factorDetails: Object.fromEntries(Object.entries(p.factors).filter(([, f]) => f.score != null).map(([k, f]) => [k, `${f.score} — ${f.detail}`])),

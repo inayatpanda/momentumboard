@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData, type EnginePrediction, type IntradayFlag } from '../lib/api'
 import { capBand } from '../lib/format'
+import { RUNG_RISK_PCT } from '../../shared/engine/riskLadder'
 import { GradeChip } from './GradeChip'
 
 // the intraday-flag chip vocabulary, shared with the Desk rail card
@@ -58,12 +59,17 @@ function IntradayFlagsStrip({ blob }: { blob: EngineData['intradayFlags'] }) {
 function Call({ p }: { p: EnginePrediction }) {
   const [open, setOpen] = useState(false)
   const dir = p.side === 'long' ? '▲ LONG' : '▼ SHORT'
+  // half size = one of conviction/evidence was short (grade C with the full
+  // contract, or A/B without it). Read off the rung rather than stored, so the
+  // label can never disagree with the number beside it.
+  const halfSize = p.riskPct > 0 && p.riskPct < RUNG_RISK_PCT[p.riskRung]
   return (
     <div className="perf-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 3 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
         <span style={{ fontWeight: 700, minWidth: 0 }}>
-          {/* below-base rows have no honest letter grade (they're beneath C's bar) — a plain "tracking" chip instead of a misleading C */}
-          {p.belowBase ? <span className="badge">tracking</span> : <GradeChip grade={p.grade} provisional={p.provisional} />}{' '}
+          {/* below-base and near-miss rows have no honest letter grade (they're beneath C's bar,
+              or never scored at all) — a plain chip instead of a misleading C */}
+          {p.nearMiss ? <span className="badge">near miss</span> : p.belowBase ? <span className="badge">tracking</span> : <GradeChip grade={p.grade} provisional={p.provisional} />}{' '}
           {p.sym}
           <span className={p.side === 'long' ? 'up-text' : 'down-text'} style={{ fontSize: 11, marginLeft: 6, fontWeight: 700 }}>{dir}</span>
           {p.name && (
@@ -91,7 +97,13 @@ function Call({ p }: { p: EnginePrediction }) {
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--muted)' }}>
         <span>in {p.entry} · stop {p.stop} · tgt {p.target}</span>
-        <span>{p.watchOnly ? 'watch — no size' : `risk ${p.riskPct}%${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}</span>
+        <span>
+          {p.watchOnly
+            ? p.nearMiss
+              ? 'nearest miss — no size'
+              : 'watch — no size'
+            : `risk ${p.riskPct}%${halfSize ? ' (half size)' : ''}${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}
+        </span>
       </div>
       <button className="mini-btn ghost" style={{ alignSelf: 'flex-start', fontSize: 11, padding: '1px 6px' }} onClick={() => setOpen(o => !o)}>
         {open ? 'hide evidence' : 'evidence'}
@@ -211,10 +223,13 @@ export function EngineBoard() {
       {b.board.length === 0 && <p className="empty-line">No edge today — every candidate failed the gates. An honest empty board beats a forced call.</p>}
       {(() => {
         // the new taxonomy: this-week trades, developing 2-4 week builds, then the
-        // remaining short-horizon watch observations (horizon stamped by the engine)
+        // remaining short-horizon watch observations (horizon stamped by the engine),
+        // and last of all the nearest misses — rows that cleared no gate at all and
+        // exist only so a side with nothing on it still says what came closest.
         const trades = b.board.filter(p => !p.watchOnly)
-        const developing = b.board.filter(p => p.watchOnly && p.horizon === 'developing')
-        const watch = b.board.filter(p => p.watchOnly && p.horizon !== 'developing')
+        const developing = b.board.filter(p => p.watchOnly && !p.nearMiss && p.horizon === 'developing')
+        const watch = b.board.filter(p => p.watchOnly && !p.nearMiss && p.horizon !== 'developing')
+        const nearMisses = b.board.filter(p => p.nearMiss)
         return (
           <>
             {trades.length > 0 && <h4 className="section-title" style={{ fontSize: 12, marginTop: 6 }}>This week — trades</h4>}
@@ -222,7 +237,7 @@ export function EngineBoard() {
               <Call key={p.id} p={p} />
             ))}
             {trades.length === 0 && b.board.length > 0 && (
-              <p className="empty-line">No qualified trades this week — nothing earned an A/B grade on full evidence. What follows is what the engine is tracking.</p>
+              <p className="empty-line">No sized trades this week — nothing reached even half size. What follows is what the engine is tracking.</p>
             )}
             {developing.length > 0 && (
               <>
@@ -243,6 +258,20 @@ export function EngineBoard() {
             {watch.map(p => (
               <Call key={p.id} p={p} />
             ))}
+            {nearMisses.length > 0 && (
+              <>
+                <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>
+                  Nearest misses{nearMisses.some(p => p.side === 'long') && nearMisses.some(p => p.side === 'short') ? '' : ` — ${nearMisses[0].side} side`}
+                </h4>
+                <p className="empty-line" style={{ fontSize: 11, marginTop: -2, marginBottom: 4 }}>
+                  Nothing cleared the gates on {nearMisses.some(p => p.side === 'long') && nearMisses.some(p => p.side === 'short') ? 'either side' : `the ${nearMisses[0].side} side`} today — these came closest.
+                  Named, not called: no evidence read, no calibrated grade, no size, and they never enter the ledger.
+                </p>
+              </>
+            )}
+            {nearMisses.map(p => (
+              <Call key={p.id} p={p} />
+            ))}
           </>
         )
       })()}
@@ -250,7 +279,8 @@ export function EngineBoard() {
       <p className="empty-line" style={{ fontSize: 11 }}>
         Grades are calibrated on the engine's own graded history: a hit must beat SPY by ≥1pp over the horizon, and stops are judged on daily closes — an
         intraday wick through is survivable. A/B/C means the call's bucket beats the engine's own base rate, not a coin flip. Provisional = thin evidence
-        bucket. Only A/B calls on full evidence carry size — watch rows are observations. This is analysis, not advice.
+        bucket. A/B on full evidence carry full size; grade C on full evidence, and A/B whose evidence is thin, carry HALF size; below-base, unpicked and
+        near-miss rows are watch-only. This is analysis, not advice.
       </p>
     </section>
   )

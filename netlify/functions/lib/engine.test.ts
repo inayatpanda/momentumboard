@@ -5,7 +5,7 @@ import { memoryStore } from './store'
 import type { Candle } from '../../../shared/types'
 import type { Prediction } from '../../../shared/engine/types'
 import { CALIB_DEF_VERSION, initWeights, type CalibrationState, type WeightsState } from '../../../shared/engine/calibration'
-import type { RiskState } from '../../../shared/engine/riskLadder'
+import { RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
 import type { InsiderSummary } from './insiders'
 import type { FundMoves } from './edgar'
 
@@ -18,6 +18,12 @@ const mk = (fn: (i: number) => number, days = 260): Candle[] =>
 
 // rolled-over name: ran 80→280, now bleeding −2/day. Stage 'weak', capacity ~9%.
 const shorty = mk(i => (i < 200 ? 80 + i * 1.0 : 280 - (i - 200) * 2.0))
+
+// The same rolled-over skeleton, each copy oscillating at its own frequency, so
+// five of them are five genuinely different bets (60-day return correlation
+// under 0.1) rather than one bet in five tickers. Used to overflow the 3-a-side
+// trade cap WITHOUT the correlation gate doing the culling instead.
+const shortyVariant = (k: number) => mk(i => (i < 200 ? 80 + i : 280 - (i - 200) * 2) * (1 + 0.04 * Math.sin(i * k)))
 const flat = mk(() => 500)
 const NOW = Math.floor(shorty[shorty.length - 1].t + 86_400) // day after the last bar
 
@@ -26,6 +32,12 @@ const NOW = Math.floor(shorty[shorty.length - 1].t + 86_400) // day after the la
 // floor (3). Exactly the shape the sleeve exists for: a famous name that moved
 // meaningfully for itself without ever being volatile enough to be "a mover".
 const calmSlide = mk(i => 100 * Math.pow(0.995, i))
+
+// The mirror image: a calm +0.5%/day grind higher. Same ~4.9% capacity, so the
+// core read is strong and the CAPACITY gate is what kills it — a candidate that
+// dies at the gates with a real, nameable core composite. The never-blank
+// board's long-side near miss.
+const calmClimb = mk(i => 100 * Math.pow(1.005, i))
 
 // GLW's dip tape: 60 calm sessions at 100, a slide to 85, then a volume-paid
 // reclaim to 88 — dipLane's 'holding' signature (−12% off the 20-session high,
@@ -344,25 +356,191 @@ describe('buildBoard', () => {
     expect(publicBoard.board.find(p => p.sym === 'NVDA')?.belowBase).toBe(true)
   })
 
-  it('grade C publishes as WATCH-ONLY: on the board with riskPct 0, no instrument — an observation, not a trade', async () => {
+  it('grade C on THIN evidence stays WATCH-ONLY: on the board with riskPct 0, no instrument — an observation, not a trade', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
-    // bucket edges past the base rate but under B: laplace (11+2)/(20+4)=0.54 → C
-    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION })
+    // bucket edges past the base rate but under B: laplace (11+2)/(20+4)=0.54 → C.
+    // No QQQ candles → the regime read is 'unknown' → the evidence contract fails.
+    // C plus a failed contract is the ONE combination that still carries no size.
+    await store.write('engine-calibration', { buckets: { 'short:unknown:55-70': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('risk-state', { rung: 1, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
-    const { board } = await buildBoard(store, deps(), NOW)
+    const noQqq = deps({ candles: async sym => (sym === 'NVDA' ? shorty : sym === 'SPY' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null) })
+    const { board, regime } = await buildBoard(store, noQqq, NOW)
+    expect(regime).toBe('unknown')
     const call = board.find(b => b.sym === 'NVDA')!
     expect(call).toBeDefined() // still published — the day is never blank just because nothing qualified
     expect(call.grade).toBe('C')
+    expect(call.evidence.contract).toBe(false)
     expect(call.watchOnly).toBe(true)
     expect(call.riskPct).toBe(0) // no size for a watch idea
     expect(call.instrument).toBeNull() // even though rung+levMap would have unlocked SNVD
     expect(call.shadow).toBeUndefined() // visible and graded, unlike a shadow
     const publicBoard = (await store.read<{ board: Prediction[] }>('engine-board'))!
     expect(publicBoard.board.find(p => p.sym === 'NVDA')?.watchOnly).toBe(true)
+  })
+
+  it('grade C WITH the contract is a HALF-SIZE trade: sized, no instrument, not paper-only (a plain share buy)', async () => {
+    const store = memoryStore()
+    // the dip lane's long carries a full evidence contract by construction; this
+    // calibration rates its band barely over the base rate → grade C. Until
+    // 2026-08-11 that combination published unsized; now it is a trade at half
+    // the rung's risk — a real setup the calibration merely rates modestly. [R12][R14]
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { long2x: 'GLW2' } } })
+    await store.write('engine-calibration', { buckets: { 'long:amber:25-40': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION })
+    await store.write('risk-state', { rung: 3, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] }) // the top rung: leverage is only ever withheld by the GRADE
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' ? dipTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      capUsdM: async sym => (sym === 'GLW' ? 35_000 : null),
+      sparkCloses: sparkOf(dipTape),
+    })
+    const { board } = await buildBoard(store, d, NOW)
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call).toBeDefined()
+    expect(call.grade).toBe('C')
+    expect(call.evidence.contract).toBe(true)
+    expect(call.watchOnly).toBeUndefined() // a trade, not an observation
+    expect(call.riskPct).toBe(RUNG_RISK_PCT[call.riskRung] / 2)
+    expect(call.riskPct).toBeGreaterThan(0)
+    expect(call.instrument).toBeNull() // C never unlocks leverage — riskLadder untouched
+    expect(call.paperOnly).toBe(false) // a long at C is a plain share buy, fully placeable
+    expect(call.horizon).toBe('week') // sized rows run on the calibrated clock
+  })
+
+  it('an A/B call that fails the contract trades at HALF size and names the gap in its evidence', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
+    // no QQQ → regime 'unknown' → the contract fails on the missing regime leg,
+    // while the band itself has proven itself → grade A on thin evidence.
+    await store.write('engine-calibration', calWith('short:unknown:55-70'))
+    await store.write('risk-state', { rung: 2, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const noQqq = deps({ candles: async sym => (sym === 'NVDA' ? shorty : sym === 'SPY' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null) })
+    const { board } = await buildBoard(store, noQqq, NOW)
+    const call = board.find(b => b.sym === 'NVDA')!
+    expect(call).toBeDefined()
+    expect(call.grade).toBe('A')
+    expect(call.evidence.contract).toBe(false)
+    expect(call.watchOnly).toBeUndefined() // it acts — at half the size
+    expect(call.riskPct).toBe(RUNG_RISK_PCT[call.riskRung] / 2)
+    expect(call.evidence.detail.length).toBeGreaterThan(0) // the UI can say WHAT is missing
+    expect(call.instrument).toBeNull() // rung 2 + an A would route SNVD — leverage needs the FULL contract
+    expect(call.paperOnly).toBe(true) // an unrouted short is honestly paper-only
+  })
+
+  it('unpicked actionable calls fall THROUGH to the watch list, not into the void', async () => {
+    const store = memoryStore()
+    // five uncorrelated rolled-over names, all half-size C trades (empty
+    // calibration → base rate 0.5 → every band grades C; the contract passes on
+    // breadth + two agreeing core families). Five actionable rows, three slots.
+    const fives: [string, number][] = [['AAA', 0.7], ['BBB', 1.1], ['CCC', 1.9], ['DDD', 2.5], ['EEE', 1.5]]
+    const tapes = new Map(fives.map(([sym, k]) => [sym, shortyVariant(k)]))
+    const syms = fives.map(([sym]) => sym)
+    await store.write('config', {
+      watchlist: syms.map(symbol => ({ symbol })),
+      rules: [],
+      ytChannels: [],
+      levMap: Object.fromEntries(syms.map(s => [s, { short2x: `I${s}` }])),
+    })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION })
+    // six flat fillers so the candidate pool clears breadthAbove50's 10-series
+    // minimum — breadth known is the confirming leg that lets the contract pass
+    const fillers = ['FIL1', 'FIL2', 'FIL3', 'FIL4', 'FIL5', 'FIL6']
+    const d = deps({
+      screens: async () =>
+        [...syms, ...fillers].map(sym => ({ row: { sym, price: 150, capUsdM: 50_000, changePct: null, name: null }, source: 'screener:losers' as const })),
+      mediaTitles: async () => [],
+      candles: async sym => tapes.get(sym) ?? (fillers.includes(sym) || sym === 'SPY' || sym === 'QQQ' ? flat : null),
+    })
+    const { board } = await buildBoard(store, d, NOW)
+    const shown = board.filter(b => syms.includes(b.sym))
+    expect(shown).toHaveLength(5) // every one of them is NAMED — the trade cap demotes, it does not delete
+    const trades = shown.filter(b => !b.watchOnly)
+    expect(trades).toHaveLength(3) // at most three trades a side
+    for (const t of trades) expect(t.riskPct).toBeGreaterThan(0)
+    const fellThrough = shown.filter(b => b.watchOnly)
+    expect(fellThrough).toHaveLength(2)
+    for (const w of fellThrough) {
+      expect(w.riskPct).toBe(0) // demoted rows carry no size…
+      expect(w.instrument).toBeNull() // …and no route
+      expect(w.paperOnly).toBe(false) // a watch row is nobody's position
+      expect(w.shadow).toBeUndefined() // visible, not buried
+    }
+    // and they reach the LEDGER too — a demoted call is still a call the engine
+    // made, so its outcome must come back and teach the buckets
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
+    expect(ledger.filter(p => syms.includes(p.sym))).toHaveLength(5)
+  })
+
+  it('a day where every candidate dies at the gates still NAMES the nearest misses', async () => {
+    const store = memoryStore()
+    await store.write('config', {
+      watchlist: [{ symbol: 'CALM' }, { symbol: 'RISE' }, { symbol: 'DROP' }],
+      rules: [],
+      ytChannels: [],
+      levMap: { CALM: { short2x: 'ICLM' } }, // DROP deliberately has no short route
+    })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION }) // base rate 0.5
+    const d = deps({
+      screens: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym =>
+        sym === 'CALM' || sym === 'DROP' ? calmSlide : sym === 'RISE' ? calmClimb : sym === 'SPY' || sym === 'QQQ' ? flat : null,
+    })
+    const { board } = await buildBoard(store, d, NOW)
+    expect(board.length).toBeGreaterThan(0) // NEVER blank
+    const long = board.find(b => b.sym === 'RISE')!
+    const short = board.find(b => b.sym === 'CALM')!
+    expect(long).toBeDefined()
+    expect(short).toBeDefined()
+    expect(long.side).toBe('long')
+    expect(short.side).toBe('short')
+    for (const row of [long, short]) {
+      expect(row.nearMiss).toBe(true)
+      expect(row.watchOnly).toBe(true)
+      expect(row.riskPct).toBe(0)
+      expect(row.grade).toBe('C')
+      expect(row.probability).toBe(0.5) // the engine's own base rate, not a bucket read it never earned
+      expect(row.entry).toBeGreaterThan(0) // real levels off lastClose/ATR
+      expect(row.note).toContain('nearest miss')
+      expect(row.evidence.contract).toBe(false)
+    }
+    expect(board.find(b => b.sym === 'DROP')).toBeUndefined() // an unroutable short is never shown, near miss or not
+    const blob = (await store.read<{ board: Prediction[] }>('engine-board'))!
+    expect(blob.board.filter(p => p.nearMiss).length).toBeGreaterThanOrEqual(2)
+    // …but the LEDGER stays clean: a row that cleared no gate must never teach the
+    // calibration buckets, the IC loop or the Brier trail.
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const ledger = (await store.read<Prediction[]>(`predictions:${today}`)) ?? []
+    expect(ledger.some(p => p.nearMiss)).toBe(false)
+  })
+
+  it('near misses only fill an EMPTY side — a side with a real row is left alone', async () => {
+    const store = memoryStore()
+    await store.write('config', {
+      watchlist: [{ symbol: 'RISE' }],
+      rules: [],
+      ytChannels: [],
+      levMap: { NVDA: { short2x: 'SNVD' } },
+    })
+    await store.write('engine-calibration', calWith('short:amber:55-70')) // NVDA shorts grade A
+    const d = deps({
+      mediaTitles: async () => [],
+      candles: async sym =>
+        sym === 'NVDA' ? shorty : sym === 'RISE' ? calmClimb : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
+    })
+    const { board } = await buildBoard(store, d, NOW)
+    expect(board.find(b => b.sym === 'NVDA' && !b.watchOnly)).toBeDefined() // the short side has a real trade
+    expect(board.some(b => b.side === 'short' && b.nearMiss)).toBe(false) // …so no short near miss is invented
+    expect(board.find(b => b.sym === 'RISE')?.nearMiss).toBe(true) // the empty long side still gets named
   })
 
   it('an AI nomination joins the roster as a scored candidate (source ai-nomination); an expired one is ignored', async () => {

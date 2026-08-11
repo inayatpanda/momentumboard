@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CONTEXT_MAX_PTS, DEFAULT_WEIGHTS, composeCall, setupFamilyOf, type ComposeInput } from './composite'
+import { CONTEXT_MAX_PTS, DEFAULT_WEIGHTS, LONG_REGIME_MULT, composeCall, coreCompositeOf, setupFamilyOf, type ComposeInput } from './composite'
 import { AGGRESSIVE_GATES, MODERATE_GATES } from './catalyst'
 import { catalystFactor } from './factors'
 import type { FactorName, FactorScore } from './types'
@@ -253,6 +253,27 @@ describe('two-layer composite: core decides, context colours', () => {
   it('coverage reports the core weight actually present', () => {
     // technical+momentum = 1.8 of the 2.7 core weight → 0.67
     expect(composeCall(base({ factors: longFactors() }))!.evidence.coverage).toBeCloseTo(0.67, 2)
+  })
+
+  it('coreCompositeOf is composeCall\'s core read with every gate removed', () => {
+    // the SAME arithmetic the published call stands on: core-only, regime-scaled,
+    // no context, no dead zone, no capacity floor, no entry gate.
+    const factors = longFactors()
+    const core = coreCompositeOf(factors, DEFAULT_WEIGHTS, 'green')!
+    expect(core).toBeCloseTo((1.0 * 84 + 0.8 * 40) / 1.8 * LONG_REGIME_MULT.green, 1)
+    // a call that clears every gate reports the same core, plus the capped context
+    const call = composeCall(base({ factors }))!
+    expect(Math.abs(call.composite - core)).toBeLessThanOrEqual(CONTEXT_MAX_PTS)
+    // and it reads the names the GATES throw away — that is its whole purpose
+    expect(coreCompositeOf(factors, DEFAULT_WEIGHTS, 'red')).not.toBeNull()
+    expect(composeCall(base({ factors, capacityPct: 1 }))).toBeNull()
+    // regime scales it by side
+    expect(coreCompositeOf(factors, DEFAULT_WEIGHTS, 'red')!).toBeLessThan(core)
+    // no core data at all → nothing honest to say
+    expect(coreCompositeOf(nullFactors(), DEFAULT_WEIGHTS, 'green')).toBeNull()
+    // context factors alone are never a core read
+    const ctxOnly = { ...nullFactors(), news: { score: 90, detail: '' } }
+    expect(coreCompositeOf(ctxOnly, DEFAULT_WEIGHTS, 'green')).toBeNull()
   })
 
   it('setup family stamps: trend longs continue, dip longs reverse, weak shorts continue, stretched shorts fade', () => {

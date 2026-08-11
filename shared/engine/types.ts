@@ -47,12 +47,14 @@ export interface GradedCall extends EngineCall {
   provisional: boolean
   grade: 'A' | 'B' | 'C'
   riskRung: number
-  riskPct: number // suggested % of capital at risk; 0 when watch-only
+  riskPct: number // suggested % of capital at risk; 0 when watch-only, HALF the rung's for a half-size trade
   instrument: { ticker: string; leverage: number } | null
   paperOnly: boolean // a short with no executable mapping at the current rung
-  // Published and graded but NOT a trade: grade C, or the evidence contract
-  // failed. The board shows it as an observation — no size, no instrument, no
-  // paper-book entry, no stop alerts. Only A/B contract-passing calls act.
+  // Published and graded but NOT a trade: grade C on thin evidence, a below-base
+  // setup, or an actionable row the diversity gates did not pick. The board shows
+  // it as an observation — no size, no instrument, no paper-book entry, no stop
+  // alerts. A/B on the full contract trade at full size; C WITH the contract and
+  // A/B WITHOUT it trade at half (engine.ts) — those are not watch rows.
   watchOnly?: boolean
   // A watch row that is fully-evidenced but priced BELOW the engine's base rate
   // (e.g. a strong long in a mixed tape the seed rates poorly). Shown so the
@@ -81,6 +83,12 @@ export interface Prediction extends GradedCall {
   horizon?: Horizon
   capUsdM?: number | null // market cap in $M when known — lets the UI band micro/small/mid/large
   shadow?: boolean // suppressed by calibration but logged anyway — the learning loop must eat even when the paper doesn't
+  // The board's last resort: a name that cleared NO gate, published purely so a
+  // day when nothing qualified still says what came closest. Always watch-only,
+  // riskPct 0, probability = the engine's own base rate (it earned no bucket
+  // read). Board-only by design — a near miss is not a prediction, so it never
+  // enters the ledger and never teaches calibration, IC or the Brier trail.
+  nearMiss?: true
   worldTape?: { tone: string; mult: number } // overnight world-tape nudge applied to this call's conviction (bounded ±10/−15%)
   overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string }
   catalyst?: { kind: string; reason: string } // a market-moving news/event that put this name in play (catalyst.ts)
