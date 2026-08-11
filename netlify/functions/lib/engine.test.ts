@@ -44,6 +44,19 @@ const dipTape: Candle[] = (() => {
   return bars
 })()
 
+// A rolled-over name whose LAST session is a volume-paid bounce off the low:
+// −14.3% under the 20-session high, no new 5-session low, +6% off the dip low on
+// 1.6× volume. classifyDip reads a triggered AND holding dip; the composite,
+// reading the same candles, still sees a 19%-below-the-50-day 'weak' chart and
+// calls a SHORT. One tape, two lanes, opposite sides — the collision.
+const dipAndShortTape: Candle[] = (() => {
+  const bars = mk(i => (i < 200 ? 80 + i : 280 - (i - 200) * 2), 259)
+  const prev = bars[bars.length - 1]
+  const c = prev.c * 1.045
+  bars.push({ t: prev.t + 86_400, o: prev.c, h: c, l: prev.c * 0.995, c, v: 1_600_000 })
+  return bars
+})()
+
 // GLW is in DEFAULT_CORE_SLEEVE, in no SECTOR_MEMBERS list and matches no theme,
 // so anything it does on the board can only have arrived through the sleeve.
 const sparkOf = (tape: Candle[], sym = 'GLW') => async () => new Map([[sym, tape.map(c => c.c)]])
@@ -628,7 +641,38 @@ describe('buildBoard', () => {
     const roster = (await store.read<{ sym: string }[]>('engine-roster'))!
     expect(roster.find(r => r.sym === 'NVDA')).toBeDefined() // same tape, ordinary door → earns its slot
     expect(roster.find(r => r.sym === 'GLW')).toBeUndefined() // sleeve-only → evaluated, never enrolled
-    expect((await ledgerOf(store))!.find(p => p.sym === 'GLW')).toBeDefined() // …and still evaluated
+    const rows = (await ledgerOf(store))!
+    expect(rows.find(p => p.sym === 'GLW')).toBeDefined() // …and still evaluated
+
+    // Row ids are `${date}:${sym}:${side}` and the ledger is written by id-keyed
+    // merge on a rerun — a duplicate id would silently overwrite a real row and
+    // hide one lane's call. The sleeve appends to evalRows, so this is exactly
+    // where a double-evaluation would show up.
+    expect(new Set(rows.map(p => p.id)).size).toBe(rows.length)
+  })
+
+  it('door order is not overwritten by the sleeve: a sleeve name that ALSO came through a screen keeps that source and its roster slot', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    // GLW and MMM are both sleeve members riding the SAME qualifying tape. GLW
+    // additionally arrives through the losers screen — addSource stamps the FIRST
+    // door, and the sleeve door is added LAST precisely so it can never overwrite
+    // it. That matters twice: the roster's sleeve-only filter is an exact string
+    // test on the source, and the cap-enrichment budget now orders on it too.
+    const d = deps({
+      screens: async () => [{ row: { sym: 'GLW', price: 164, capUsdM: 35_000, changePct: -9, name: null }, source: 'screener:losers' }],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' || sym === 'MMM' ? shorty : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      sparkCloses: async () => new Map([['GLW', shorty.map(c => c.c)], ['MMM', shorty.map(c => c.c)]]),
+    })
+    await buildBoard(store, d, NOW)
+
+    const roster = (await store.read<{ sym: string; source: string }[]>('engine-roster'))!
+    const glw = roster.find(r => r.sym === 'GLW')
+    expect(glw).toBeDefined() // the screen door earned it a slot — the sleeve must not evict it
+    expect(glw!.source).toBe('screener:losers') // ORIGINAL attribution, never restamped 'sleeve'
+    expect(roster.find(r => r.sym === 'MMM')).toBeUndefined() // the genuinely sleeve-only twin stays out
   })
 
   // ---- the dip lane ----
@@ -680,6 +724,102 @@ describe('buildBoard', () => {
     expect(row.earningsRisk).toBe(true) // dipCall hard-codes false — the merge reads the real calendar
     expect(row.shadow).toBe(true)
     expect(row.riskPct).toBe(0)
+  })
+
+  it('dip evidence demotes the opposing SHORT: the long is the live row, the short shadows on (ratified 2026-08-11)', async () => {
+    const store = memoryStore()
+    // GLW HAS an inverse route, so 'unshortable' can never be what shadows the short
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' } } })
+    // Both lanes' bands proven. Total n stays under 50 so baseHitRate stays 0.5
+    // and BOTH calls grade — the short is a genuine live A before the demotion.
+    await store.write('engine-calibration', {
+      buckets: { 'short:amber:40-55': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 14 } },
+      brier: [],
+      defVersion: CALIB_DEF_VERSION,
+    })
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' ? dipAndShortTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      sparkCloses: sparkOf(dipAndShortTape),
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    // the reader-facing board carries ONE GLW row, and it is the dip's long
+    const shown = board.filter(b => b.sym === 'GLW')
+    expect(shown).toHaveLength(1)
+    expect(shown[0].side).toBe('long')
+    expect(shown[0].catalyst).toEqual({ kind: 'dip', reason: expect.stringContaining('holding') })
+    expect(shown[0].riskPct).toBeGreaterThan(0) // a real, sized call
+
+    const rows = (await ledgerOf(store))!.filter(p => p.sym === 'GLW')
+    expect(rows).toHaveLength(2) // both lanes still published — learning intact
+    expect(new Set(rows.map(p => p.id)).size).toBe(2) // sym+side ids never collide
+
+    const short = rows.find(p => p.side === 'short')!
+    expect(short.shadow).toBe(true)
+    expect(short.riskPct).toBe(0)
+    expect(short.instrument).toBeNull()
+    expect(short.watchOnly).toBeUndefined() // shadow and watch stay mutually exclusive
+    // …and nothing ELSE could have shadowed it: it graded A on a passing contract,
+    // no earnings print, and a routable inverse ETP. Only the dip read did this.
+    expect(short.grade).toBe('A')
+    expect(short.evidence.contract).toBe(true)
+    expect(short.earningsRisk).toBe(false)
+  })
+
+  it('the dip lane never receives the world-tape nudge, so its row records the multiplier it actually ran at', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' ? dipTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      capUsdM: async sym => (sym === 'GLW' ? 35_000 : null),
+      sparkCloses: sparkOf(dipTape),
+      worldReads: riskOffReads, // a long in risk-off would ordinarily be nudged to 0.85
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call.catalyst?.kind).toBe('dip')
+    // dipCall's composite is structural (depth-derived) and is never re-scored with
+    // worldMult — printing 0.85 would advertise an adjustment that never happened
+    expect(call.worldTape).toEqual({ tone: 'risk-off', mult: 1 })
+  })
+
+  it('the sleeve cannot starve cap enrichment: discovery names get the lookups first', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    // 20 sleeve members (none of them a theme-inflow name, so the sleeve really is
+    // their only door) all sort AHEAD of discovery in candidatePriority and all
+    // start capUsdM null — the spark batch carries closes, never fundamentals.
+    // Three screener names arrive with a null cap too. The budget is 15: before the
+    // ordering fix the sleeve took all 15 and the discovery names went unpriced.
+    const sleeve20 = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'INTC', 'CRM', 'ORCL', 'ADBE',
+      'NFLX', 'QCOM', 'TXN', 'MU', 'NOW', 'UBER', 'ABNB', 'SHOP', 'SNOW', 'PANW']
+    const discovery = ['DISCA', 'DISCB', 'DISCC']
+    const priced = new Set([...sleeve20, ...discovery])
+    const enriched: string[] = []
+    const d = deps({
+      screens: async () => discovery.map(sym => ({ row: { sym, price: 164, capUsdM: null, changePct: 5, name: null }, source: 'screener:gainers' })),
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (priced.has(sym) ? shorty : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      capUsdM: async sym => {
+        enriched.push(sym)
+        return 4_000
+      },
+      sparkCloses: async () => new Map(sleeve20.map(sym => [sym, shorty.map(c => c.c)])),
+    })
+    await buildBoard(store, d, NOW)
+
+    expect(enriched).toHaveLength(15) // the budget itself is unchanged
+    for (const sym of discovery) expect(enriched).toContain(sym) // …and discovery is served first
+    expect(enriched.filter(s => sleeve20.includes(s))).toHaveLength(12) // the sleeve takes what is left
   })
 
   it('sleeve fetch failure leaves the run byte-identical to a sleeve-less run', async () => {

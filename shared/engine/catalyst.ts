@@ -12,8 +12,15 @@
 // (relaxed) capacity gate, the side-aware entry gates and calibration grading
 // exactly like everything else. News buys a name a fair look, not a free pass.
 
+// The tag the DIP LANE stamps on its own rows. One exported constant because two
+// places must agree on it forever and neither can see the other: the PRODUCER
+// (buildBoard's dip merge) and the factor-IC GUARD in gradeOutstanding, which
+// keeps the lane's constant technical placeholder out of the IC loop. A typo in
+// either literal would silently train the technical factor on the dip lane's P&L.
+export const DIP_CATALYST_KIND = 'dip'
+
 export interface CatalystTag {
-  kind: 'news' | 'event' | 'ipo' | 'listing' | 'earnings' | 'dip'
+  kind: 'news' | 'event' | 'ipo' | 'listing' | 'earnings' | typeof DIP_CATALYST_KIND
   side: 'long' | 'short' | null // null = "in play", no clean direction — relaxes the gate but casts no vote
   reason: string
   strength: number // 0..100 — how direct/material the catalyst is

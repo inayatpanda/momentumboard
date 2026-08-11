@@ -21,7 +21,7 @@ import {
 import { composeCall } from '../../../shared/engine/composite'
 import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleeve'
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
-import { gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
+import { DIP_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
 import {
@@ -337,7 +337,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // vote, so booking its outcome would train the technical factor's IC on
           // the dip lane's P&L — a signal it never cast. Calibration buckets and
           // setup buckets above still accrue: only factor-IC is excluded.
-          if (pred.catalyst?.kind !== 'dip') w = updateIcStats(w, pred, o)
+          if (pred.catalyst?.kind !== DIP_CATALYST_KIND) w = updateIcStats(w, pred, o)
           newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow })
           graded++
           if (!pred.shadow && !pred.watchOnly) newByCohort[capCohortOf(pred.capUsdM)]++
@@ -664,8 +664,18 @@ export async function buildBoard(
     if (c && c.length >= 30) candleMap.set(sym, c)
   })
 
-  // cap lookups are budgeted: screener caps ride along free, the rest rotate
-  const noCap = candidateSyms.filter(s => sources.get(s)!.capUsdM == null && candleMap.has(s)).slice(0, 15)
+  // cap lookups are budgeted: screener caps ride along free, the rest rotate.
+  // The sleeve must not EAT the budget. Sleeve names always start capUsdM null
+  // (the spark batch carries closes, not fundamentals) and they sort ahead of
+  // discovery in candidatePriority, so a full sleeve would take all 15 slots and
+  // every discovery name would go the day unpriced — no cap cohort, no >$10B
+  // quality read, no small-cap stop widening. Non-sleeve names therefore fill the
+  // budget FIRST (keeping their own priority order among themselves) and sleeve-only
+  // names take whatever is left. A sleeve name needs the cap least: its dip-lane
+  // quality is already granted by sleeveSet, never by its cap. [R17]
+  const noCapAll = candidateSyms.filter(s => sources.get(s)!.capUsdM == null && candleMap.has(s))
+  const sleeveOnly = (s: string) => sources.get(s)?.source === 'sleeve' // exact test — the sleeve door is stamped LAST
+  const noCap = [...noCapAll.filter(s => !sleeveOnly(s)), ...noCapAll.filter(sleeveOnly)].slice(0, 15)
   await mapLimit(noCap, 5, async sym => {
     const cap = await deps.capUsdM(sym)
     if (cap != null) sources.get(sym)!.capUsdM = cap
@@ -848,7 +858,12 @@ export async function buildBoard(
       riskPct: shadow || watchOnly ? 0 : RUNG_RISK_PCT[rung],
       instrument,
       paperOnly: call.side === 'short' && !watchOnly && !instrument,
-      worldTape: { tone: tone.tone, mult: worldMult(tone.tone, call.side) },
+      // The stamp must describe what the call ACTUALLY got. The composite loop
+      // re-scores with worldMult before publishing; the dip lane's composite is
+      // structural (depth-derived, dipLane.ts) and never sees the nudge at all.
+      // Printing 1.1 on a dip row would advertise a conviction adjustment that
+      // was never applied — so a dip row records the multiplier it truly ran at: 1.
+      worldTape: { tone: tone.tone, mult: cat?.kind === DIP_CATALYST_KIND ? 1 : worldMult(tone.tone, call.side) },
     })
   }
 
@@ -916,6 +931,31 @@ export async function buildBoard(
     publishCall(call, entry.capUsdM, cat)
   }
 
+  // ---- dip evidence outranks the composite's read of the SAME chart ----
+  // A triggered-and-holding dip is the tape saying this name is being BOUGHT: a
+  // measured drop, the knife guard passed, a volume-PAID reclaim. The composite
+  // reading the identical candles sees only deep negative momentum and calls a
+  // short (dipLane.ts explains why it must). Publishing both would put the board
+  // on both sides of one name on one morning — an unreadable card, and a hedge
+  // the reader never asked for. Ratified 2026-08-11: the dip read wins the
+  // reader-facing row, the short is DEMOTED to a shadow before board assembly.
+  // Demotion, not deletion — the short still publishes and still grades, so the
+  // ledger can eventually answer "when the two lanes disagreed, who was right?".
+  // Longs need no rule: an ordinary long is the same side and simply wins the
+  // merge below. Keyed on dipReads (the evidence), not on whether the lane's own
+  // call cleared its 1:1 gate — the evidence is what contradicts the short.
+  for (const row of board) {
+    if (row.side !== 'short' || row.shadow || !dipReads.has(row.sym.toUpperCase())) continue
+    row.shadow = true
+    row.watchOnly = undefined // shadow and watch are exclusive in publishCall — keep them so
+    row.belowBase = undefined
+    row.riskPct = 0
+    row.instrument = null
+    row.paperOnly = true // a short with no instrument, exactly as publishCall stamps one
+    row.horizon = horizonOf({ watchOnly: false, stage: row.stage, setup: row.setup, evidence: row.evidence })
+    console.log(`BOARD: dip read on ${row.sym} demotes the composite short to a shadow`)
+  }
+
   // ---- the dip lane's own calls, merged into the same board ----
   // A quality name hit hard but holding gets a LONG the composite could never
   // produce (dipLane.ts). Merged AFTER the loop so a name that already earned an
@@ -933,7 +973,7 @@ export async function buildBoard(
     // dipCall is pure and has no calendar — earnings honesty is applied here, so a
     // dip into a print shadows exactly like any other call.
     const call = { ...raw, earningsRisk: earningsSet.has(baseSym(sym)) }
-    publishCall(call, capUsdM, { kind: 'dip', side: 'long', reason: read.detail, strength: 40 })
+    publishCall(call, capUsdM, { kind: DIP_CATALYST_KIND, side: 'long', reason: read.detail, strength: 40 })
   }
 
   // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side
