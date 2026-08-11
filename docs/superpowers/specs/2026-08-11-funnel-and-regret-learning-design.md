@@ -68,7 +68,11 @@ Standing constraints: $0 data cost; GH Actions runtime stays within a few minute
 - **Post-mortems**: when a call closes as a loser, deterministic classification against its falsifier — `stopped` (stop hit), `thesis-break` (falsifier condition met), `market-drag` (lost absolutely but excess ≥ 0), `news-reversal` (catalyst tone flipped) — plus one plain LLM sentence in the paper, fail-soft to the deterministic line. Stored per call; aggregated by setup family × regime so the engine knows *how* it loses.
 - **Weight-loop repairs**: (a) `nDisagree = 0` → skip the nudge instead of decaying against phantom evidence; (b) factors where zero is a genuine reading (news tone, seasonality) accrue IC on zero scores; null still skipped; (c) `setupBuckets` finally consumed — blended into probability at weight 0.3 once a `setup:side:band` bucket reaches n ≥ 30 (earn-influence rule); `velocity` joins continuation/reversal/fade as a fourth setup family so hype trades are graded on their own record; (d) `bySetup` surfaced in the client scorecard type. Pattern sightings and news-tone keep accruing untouched.
 
-### 4.4 Data flow and error handling
+### 4.4 Deep seed — learning from the past year (owner request, 2026-08-11)
+
+Rather than waiting for live evidence, pre-train everything **price-derived** on 1–2 years of history via an expanded `scripts/seed-engine.ts` replay: full core sleeve + historical movers, all lanes (continuation, dip-buy, velocity doors), core factors, world-tape tone (oil/VIX/gold/futures are just historical prices), graded with the SAME 10-session hit definition, accumulated **chronologically walk-forward** — each replayed day sees only data before it, so bucket probabilities are honest at every step. Deliverables: thousands of observations across all bands (the 70+ band and setup buckets get real samples; grade A earnable at launch), seeded IC stats for all four core factors, and a measured historical record for the dip and velocity lanes *before* they go live. **Honesty rules:** price-derived inputs only; no LLM-reconstructed news/social/pundit history ever feeds learning (hindsight contamination — the model knows what happened next); context factors stay null in the replay exactly as the current seed does; hit definition and `CALIB_DEF_VERSION` unchanged (same-definition seed regeneration is the established pattern, cf. the 10d switch in 21441fd). Historical *real* news archives (e.g. GDELT) are out of scope for now — revisit only if the price-only deep seed proves insufficient.
+
+### 4.5 Data flow and error handling
 
 Daily order unchanged: grade (now also: detect misses, write ledger, run post-mortems) → buildBoard (now also: sleeve quotes, losers screen, dip lane, funnel snapshot) → trace open ideas → compose. Every new component is fail-soft: sleeve quote batch or losers screen failing → today runs like yesterday; snapshot/ledger write failing → board still publishes; LLM post-mortem failing → deterministic sentence. New Yahoo load: 1–2 batch quote calls + ~40 extra candle fetches/day, within free tier; expected runtime +2–4 min.
 
@@ -85,6 +89,7 @@ Four stages, each an independently shippable commit set on `main` (Netlify auto-
 1. **Seeing + never-blank board** — sleeve, `day_losers`, dip-buy lane, sizing-by-grade, capacity rethink. Immediate relief.
 1b. **Velocity + crypto lanes** — two-door velocity with cluster detection; the BTC/ETH/SOL cohort.
 2. **Scoring + grades + voice** — factor re-base, EMA/volume upgrade, continuous probability, A-reachability, thesis/falsifier. `ENGINE_MODEL_VERSION` 2 → 3.
+2b. **Deep seed** — the §4.4 historical replay, regenerated after stage 2's scoring changes so the seed reflects the shipped model (running it before would seed the OLD factor mix).
 3. **Learning** — snapshot, miss ledger, gate feedback, post-mortems, IC repairs, setup-bucket consumption, and the wildcard slot (it needs the ledger's gate machinery).
 
 Per session protocol: the implementation plan goes through codex + DeepSeek review before any code is written.
