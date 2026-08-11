@@ -81,7 +81,8 @@ function Call({ p }: { p: EnginePrediction }) {
             </span>
           )}
         </span>
-        <span style={{ color: 'var(--muted)', fontSize: 12, flexShrink: 0 }}>{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>
+        {/* a near miss was never scored — its base-rate probability is a placeholder, not a read */}
+        <span style={{ color: 'var(--muted)', fontSize: 12, flexShrink: 0 }}>{p.nearMiss ? `~${p.expectedMovePct}%` : `${Math.round(p.probability * 100)}% · ~${p.expectedMovePct}%`}</span>
       </div>
       {(p.setup || p.smallCap || p.capUsdM != null || (p.themes ?? []).length > 0 || p.earningsRisk) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>

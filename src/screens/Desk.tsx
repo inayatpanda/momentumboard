@@ -133,7 +133,7 @@ function ChartCard({ p, expanded, onToggle, onOpen }: { p: EnginePrediction; exp
           <span className="badge">{capBand(p.capUsdM) ?? 'small cap'}</span>
         </span>
         <span className="chart-card-odds">
-          {Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%
+          {p.nearMiss ? `~${p.expectedMovePct}%` : `${Math.round(p.probability * 100)}% · ~${p.expectedMovePct}%`}
         </span>
       </div>
       <div className="chart-card-levels">

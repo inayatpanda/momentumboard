@@ -311,7 +311,7 @@ export default async (req: Request) => {
 
         // one candidate = live quote + daily candles + (for board rows) engine levels.
         // Quotes are 60s-cached and candles 900s-cached, so most are already warm.
-        const build = async (sym: string, lv: Partial<Pick<FlagCandidate, 'side' | 'entry' | 'stage' | 'watchOnly' | 'published' | 'name'>> = {}): Promise<FlagCandidate | null> => {
+        const build = async (sym: string, lv: Partial<Pick<FlagCandidate, 'side' | 'entry' | 'stage' | 'watchOnly' | 'nearMiss' | 'published' | 'name'>> = {}): Promise<FlagCandidate | null> => {
           const exch = exchangeFor(sym)
           const snap = snapBySym.get(sym)
           const [quote, candles] = await Promise.all([cachedQuote(sym, finnhubKey), cachedCandles(sym)])
@@ -352,6 +352,9 @@ export default async (req: Request) => {
             stage: p.stage,
             name: p.name ?? null,
             watchOnly: p.watchOnly === true,
+            // stamped so the detectors' own near-miss guards are live, not inert —
+            // boardFlagRows dropping the row first is the primary gate, this is the belt
+            nearMiss: p.nearMiss === true,
             // every row the engine put risk on — full size AND half size. Asking
             // for grade A/B here predated half sizing, so a C-with-contract half
             // trade could never be offered its level back (intradayFlags).

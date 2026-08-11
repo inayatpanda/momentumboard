@@ -21,8 +21,8 @@ async function runChecks(nowSec: number, report: { at: number } | null): Promise
   const checks: { name: string; ok: boolean; detail: string }[] = []
   const add = (name: string, ok: boolean, detail: string) => checks.push({ name, ok, detail })
 
-  const board = await blobAppStore.read<{ date: string; board: unknown[] }>('engine-board').catch(() => null)
-  add('engine board', !tradingDay || board?.date === today, board ? `dated ${board.date}, ${board.board?.length ?? 0} live calls` : 'missing')
+  const board = await blobAppStore.read<{ date: string; board: { nearMiss?: boolean }[] }>('engine-board').catch(() => null)
+  add('engine board', !tradingDay || board?.date === today, board ? `dated ${board.date}, ${board.board?.filter(b => !b.nearMiss).length ?? 0} live calls` : 'missing')
 
   add('morning paper', !!report && londonDate(report.at) === today, report ? `published ${londonDate(report.at)}` : 'missing')
 

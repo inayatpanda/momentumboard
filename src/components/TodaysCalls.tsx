@@ -77,7 +77,7 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
               {p.name && <span className="calls-name">{p.name}</span>}
               <span className={`chg-pill calls-side ${p.side === 'long' ? 'up' : 'down'}`}>{p.side === 'long' ? '▲ Long' : '▼ Short'}</span>
               {p.watchOnly && <span className="badge warn">{p.nearMiss ? 'near miss' : 'watch'}</span>}
-              <span className="calls-odds">{Math.round(p.probability * 100)}% · ~{p.expectedMovePct}%</span>
+              <span className="calls-odds">{p.nearMiss ? `~${p.expectedMovePct}%` : `${Math.round(p.probability * 100)}% · ~${p.expectedMovePct}%`}</span>
             </span>
             {/* what the row is WORTH, said on the card: full size, half size, or nothing */}
             <span className="calls-risk" style={{ fontSize: 11, color: 'var(--muted)' }}>

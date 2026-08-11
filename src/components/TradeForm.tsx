@@ -29,8 +29,10 @@ export function TradeForm({
   const set = (k: string, v: string | boolean) => setF(s => ({ ...s, [k]: v }))
 
   const symbol = f.symbol.trim().toUpperCase()
-  // The engine's own view of this ticker, if it made a live call today.
-  const call = symbol ? board?.find(p => p.sym === symbol) ?? null : null
+  // The engine's own view of this ticker, if it made a live call today. A near
+  // miss is NOT a call — offering its levels as "engine levels" would stamp
+  // fromSuggestion on a name the engine declined.
+  const call = symbol ? board?.find(p => p.sym === symbol && !p.nearMiss) ?? null : null
   const riskClass = f.riskClass as 'normal' | 'speculative'
   const entryN = parseFloat(f.entry)
   const stopN = parseFloat(f.stop)

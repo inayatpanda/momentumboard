@@ -107,7 +107,9 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
 
   // The engine's chart read — pure client maths on the candles, no board needed.
   const engineRead = useMemo(() => technicalStage(symbol, candles), [symbol, candles])
-  const priceLines = useMemo<PriceLineSpec[]>(() => (engineCall ? engineLevelLines(engineCall) : []), [engineCall])
+  // a near miss's levels are synthetic orientation, not a designed trade — drawing
+  // them unlabelled on the chart would read as engine conviction
+  const priceLines = useMemo<PriceLineSpec[]>(() => (engineCall && !engineCall.nearMiss ? engineLevelLines(engineCall) : []), [engineCall])
   const stageMarker = useMemo<StageMarkerSpec | undefined>(() => (engineRead ? stageMarkerSpec(engineRead) : undefined), [engineRead])
 
   const shareBrief = () => {
