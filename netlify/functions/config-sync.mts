@@ -165,6 +165,7 @@ export async function routeConfig(
       // engine-only fields the phone mirror never carries — preserve like the above
       riskAppetite: cfg.riskAppetite ?? stored?.riskAppetite,
       reportRecipients: cfg.reportRecipients ?? stored?.reportRecipients,
+      coreSleeve: cfg.coreSleeve ?? stored?.coreSleeve,
     }
     await store.write(`${ns}config`, merged)
     return json(200, { ok: true, data: merged })

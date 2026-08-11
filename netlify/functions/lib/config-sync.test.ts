@@ -83,4 +83,14 @@ describe('config-sync', () => {
     const body = await (await routeConfig(new URL('http://x/api/config'), 'GET', headers, null, env, store)).json()
     expect(body.data.riskRungOverride).toBeNull()
   })
+
+  it('a phone payload without coreSleeve does not wipe the stored coreSleeve', async () => {
+    const store = memoryStore()
+    await store.write('config', { ...goodConfig, coreSleeve: ['ZZZZ'] })
+    // exactly what mirrorConfig() sends: no coreSleeve
+    const put = await routeConfig(new URL('http://x/api/config'), 'PUT', headers, JSON.stringify(goodConfig), env, store)
+    expect(put.status).toBe(200)
+    const body = await (await routeConfig(new URL('http://x/api/config'), 'GET', headers, null, env, store)).json()
+    expect(body.data.coreSleeve).toEqual(['ZZZZ'])
+  })
 })

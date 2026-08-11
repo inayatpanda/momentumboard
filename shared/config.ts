@@ -16,6 +16,7 @@ export interface AppConfig {
   capital: number
   notes?: UserNote[]
   levMap?: LevMap // underlying → ISA-eligible leveraged/inverse ETP tickers
+  coreSleeve?: string[] // owner-extended additions to the standing core sleeve (union over defaults, never replace)
   riskRungOverride?: 0 | 1 | 2 | 3 | null // manual risk-ladder pin; null = engine decides
   favouriteChannels?: string[] // credibility prior 0.6 instead of 0.5
   riskAppetite?: 'moderate' | 'aggressive' // engine gates: aggressive widens the funnel (catalyst.ts). Default moderate.
@@ -71,6 +72,13 @@ export function validateConfig(raw: unknown): AppConfig | null {
       : c.riskRungOverride === undefined
         ? undefined
         : null
+  const coreSleeve = Array.isArray(c.coreSleeve)
+    ? c.coreSleeve
+        .filter((s): s is string => typeof s === 'string')
+        .map(s => s.toUpperCase())
+        .filter(s => /^[A-Z0-9.\-]{1,12}$/.test(s))
+        .slice(0, 200)
+    : undefined
   const favouriteChannels = Array.isArray(c.favouriteChannels)
     ? c.favouriteChannels.filter(f => typeof f === 'string').slice(0, 10).map(f => f.slice(0, 40))
     : undefined
@@ -104,6 +112,7 @@ export function validateConfig(raw: unknown): AppConfig | null {
     capital: typeof c.capital === 'number' ? c.capital : 5000,
     notes,
     levMap: Object.keys(levMap).length ? levMap : undefined,
+    coreSleeve: coreSleeve && coreSleeve.length ? coreSleeve : undefined,
     riskRungOverride,
     favouriteChannels,
     riskAppetite,
