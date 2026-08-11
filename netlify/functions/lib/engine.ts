@@ -23,6 +23,7 @@ import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleev
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
 import { DIP_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
+import { DIP_NEWS_BUDGET, type DipNewsVerdict } from './dipNews'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
 import {
   baseHitRate,
@@ -82,6 +83,12 @@ export interface EngineDeps {
   // LLM-backed; fail-soft to [] when no provider is configured, so the engine still
   // runs deterministically without it. Called once per run with the media titles.
   newsCatalysts: (titles: string[]) => Promise<NewsCatalyst[]>
+  // one narrow question per dip candidate: do this name's recent headlines read
+  // overreaction or broken thesis? (dipNews.ts). Structural stands the dip trade
+  // down; anything else trades. Budgeted to DIP_NEWS_BUDGET calls per run,
+  // deepest dip first, and cached three days behind the default impl. Fail-soft:
+  // a rejection is an 'unclear' — the lane never blocks on a lookup it couldn't make.
+  dipNews: (sym: string) => Promise<DipNewsVerdict>
   // recently-listed US names (Finnhub IPO calendar, cached ~6h). A post-IPO name
   // the momentum scanner would never surface — it has no price history to screen
   // on — joins the candidate pool as a GATED fresh-listing source. Fail-soft: no
@@ -207,6 +214,23 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
     // keys (GROQ/GEMINI/…), so this uses whatever provider the deployment has and
     // returns [] when none is set — the board never depends on the LLM being up.
     newsCatalysts: titles => extractNewsCatalysts(titles),
+    // Dip corroboration, cached. The read itself (Finnhub headlines → LLM →
+    // keyword fallback) lives in dipNews.ts; the ONLY thing added here is the
+    // three-day `dip-news:{sym}` blob. Deliberately, only a DECISIVE verdict is
+    // cached: freezing an 'unclear' for three days would let one LLM outage or
+    // one quiet news window silence the check on a name all week, and 'unclear'
+    // is the answer we most want to improve on tomorrow. Cache faults are
+    // swallowed both ways — a blob hiccup must never cost the lane its verdict.
+    dipNews: async sym => {
+      const key = `dip-news:${sym.toUpperCase()}`
+      const { getCached, setCached } = await import('./cache')
+      const hit = await getCached<DipNewsVerdict>(key).catch(() => null)
+      if (hit?.verdict) return hit
+      const { readDipNews, DIP_NEWS_TTL_SEC } = await import('./dipNews')
+      const verdict = await readDipNews(sym, env.FINNHUB_API_KEY ?? '')
+      if (verdict.verdict !== 'unclear') await setCached(key, verdict, DIP_NEWS_TTL_SEC).catch(() => {})
+      return verdict
+    },
     // fresh listings: pull the IPO calendar (90d back → 7d ahead, one cached
     // fetch shared with the market-data endpoint) and keep the recently-priced
     // names that now carry some price history. Fail-soft to [].
@@ -792,7 +816,12 @@ export async function buildBoard(
   // The ONE publication path. Both the composite loop and the dip-lane merge below
   // push through here, so calibration, grading, the shadow/watch/belowBase flags,
   // routing and sizing can never drift between the two lanes.
-  const publishCall = (call: EngineCall, capUsdM: number | null, cat: CatalystTag | null) => {
+  // forceShadow: the caller has evidence this call must not be traded, but it
+  // still has to publish so the ledger can grade the veto. Today's only user is
+  // the dip lane's news check (a dip into a broken thesis); it deliberately goes
+  // through the shadow flag rather than a new one, so sizing, routing and the
+  // shadow/watch exclusivity below stay in exactly one place.
+  const publishCall = (call: EngineCall, capUsdM: number | null, cat: CatalystTag | null, forceShadow = false) => {
     // cap-class cohort drives BOTH the calibration lookup (its own buckets first,
     // then pooled) and the risk rung below. Unknown cap pools to the cohortless
     // path and the combined rung — never guessed into a sleeve.
@@ -825,8 +854,8 @@ export async function buildBoard(
     // Longs are untouched. (user 2026-07-24: only show shorts I can place.)
     const shortRoute = (cfg.levMap ?? {})[call.sym]
     const unshortable = call.side === 'short' && !(shortRoute?.short2x || shortRoute?.short3x)
-    const belowBase = !grade && call.evidence.contract && !call.earningsRisk && !unshortable
-    const shadow = call.earningsRisk || (!grade && !call.evidence.contract) || unshortable
+    const belowBase = !grade && call.evidence.contract && !call.earningsRisk && !unshortable && !forceShadow
+    const shadow = call.earningsRisk || (!grade && !call.evidence.contract) || unshortable || forceShadow
     // Only A/B calls that pass the core-data contract are trades. Grade C, thin
     // evidence, or a below-base setup are watchlist observations (riskPct 0) —
     // "barely passed the gate" reads differently from a genuinely strong setup.
@@ -963,6 +992,7 @@ export async function buildBoard(
   // levels and composite come from dipCall; everything downstream (calibration,
   // grade, shadow rules, sizing) is the SAME publishCall path as every other call.
   const alreadyLong = new Set(board.filter(b => b.side === 'long').map(b => b.sym.toUpperCase()))
+  const dipCandidates: { sym: string; read: DipRead; call: EngineCall; capUsdM: number | null }[] = []
   for (const [sym, read] of dipReads) {
     if (alreadyLong.has(sym.toUpperCase())) continue
     const candles = candleMap.get(sym)
@@ -972,8 +1002,43 @@ export async function buildBoard(
     if (!raw) continue
     // dipCall is pure and has no calendar — earnings honesty is applied here, so a
     // dip into a print shadows exactly like any other call.
-    const call = { ...raw, earningsRisk: earningsSet.has(baseSym(sym)) }
-    publishCall(call, capUsdM, { kind: DIP_CATALYST_KIND, side: 'long', reason: read.detail, strength: 40 })
+    dipCandidates.push({ sym, read, call: { ...raw, earningsRisk: earningsSet.has(baseSym(sym)) }, capUsdM })
+  }
+
+  // ---- a dip only trades when the news reads overreaction, not broken thesis ----
+  // The price signature cannot tell the two apart, and the difference is the whole
+  // trade: a −14% sympathy move is this lane's bread and butter, a −14% move on a
+  // fraud probe is a name that keeps falling. So each dip that would actually
+  // publish gets ONE narrow news question (dipNews.ts). The budget is deliberately
+  // tiny — DIP_NEWS_BUDGET reads a run, spent on the DEEPEST dips first, because a
+  // deeper drop is both the more dangerous trade and the more likely to have a
+  // real story behind it. The list is built AFTER dipCall so a read is never spent
+  // on a name that was never going to reach the board. Beyond the budget: honestly
+  // 'unclear' with reason 'budget' — unchecked, and labelled unchecked, never
+  // silently vetoed. A rejecting dep is the same: 'unclear', and the dip trades.
+  const dipVerdicts = new Map<string, DipNewsVerdict>()
+  const byDepth = [...dipCandidates].sort((a, b) => b.read.dropPct - a.read.dropPct)
+  await Promise.all(
+    byDepth.slice(0, DIP_NEWS_BUDGET).map(async ({ sym }) => {
+      const raw = await deps.dipNews(sym).catch(() => null)
+      const ok = raw && (raw.verdict === 'transient' || raw.verdict === 'structural' || raw.verdict === 'unclear')
+      dipVerdicts.set(sym, ok ? raw : { verdict: 'unclear', reason: 'lookup failed' })
+    }),
+  )
+  for (const { sym } of byDepth.slice(DIP_NEWS_BUDGET)) dipVerdicts.set(sym, { verdict: 'unclear', reason: 'budget' })
+
+  for (const { sym, read, call, capUsdM } of dipCandidates) {
+    const v = dipVerdicts.get(sym) ?? { verdict: 'unclear' as const, reason: 'not checked' }
+    const note =
+      v.verdict === 'structural'
+        ? `news: broken thesis — ${v.reason}`
+        : v.verdict === 'transient'
+          ? `news: overreaction — ${v.reason}`
+          : `news unchecked — ${v.reason}`
+    if (v.verdict === 'structural') console.log(`BOARD: dip on ${sym} stands down — ${v.reason}`)
+    // Structural → the row publishes as a SHADOW: off the reader's board, still
+    // graded, so the ledger can eventually answer whether standing down was right.
+    publishCall(call, capUsdM, { kind: DIP_CATALYST_KIND, side: 'long', reason: `${read.detail} · ${note}`, strength: 40 }, v.verdict === 'structural')
   }
 
   // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side

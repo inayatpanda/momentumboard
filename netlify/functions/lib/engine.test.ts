@@ -31,7 +31,10 @@ const calmSlide = mk(i => 100 * Math.pow(0.995, i))
 // reclaim to 88 — dipLane's 'holding' signature (−12% off the 20-session high,
 // 4.1% off the dip low on 1.6× volume). Composites as a SHORT (or as nothing —
 // capacity is 0 here), which is precisely why the dip lane builds its own long.
-const dipTape: Candle[] = (() => {
+// The same tape parametrised by its LAST close, so a test can dial the dip's
+// DEPTH: dropPct = 100 − final. Holding needs final ≥ 87.04 (3% off the 84.5 dip
+// low) and triggering needs final ≤ 88 (12% under the 20-session high of 100).
+const dipTapeAt = (final: number): Candle[] => {
   const bars: Candle[] = []
   const push = (c: number, v = 1_000_000, o = c, h = c, l = c) => bars.push({ t: T0 + bars.length * 86_400, o, h, l, c, v })
   for (let i = 0; i < 60; i++) push(100)
@@ -40,9 +43,10 @@ const dipTape: Candle[] = (() => {
   push(87)
   push(85, 1_000_000, 86, 86, 84.5)
   push(85.5)
-  push(88, 1_600_000)
+  push(final, 1_600_000)
   return bars
-})()
+}
+const dipTape: Candle[] = dipTapeAt(88)
 
 // A rolled-over name whose LAST session is a volume-paid bounce off the low:
 // −14.3% under the 20-session high, no new 5-session low, +6% off the dip low on
@@ -75,6 +79,9 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   smartMoney: async () => [],
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
   newsCatalysts: async () => [], // no LLM catalysts by default
+  // the dip-news lane checks nothing by default, so every pre-5b test runs the
+  // engine it was written against: an unchecked dip still trades, honestly labelled
+  dipNews: async () => ({ verdict: 'unclear', reason: 'stub' }),
   recentIpos: async () => [], // no fresh listings by default
   earningsSyms: async () => new Set<string>(),
   earningsCalendar: async () => [], // no earnings prints ahead by default
@@ -789,6 +796,133 @@ describe('buildBoard', () => {
     // dipCall's composite is structural (depth-derived) and is never re-scored with
     // worldMult — printing 0.85 would advertise an adjustment that never happened
     expect(call.worldTape).toEqual({ tone: 'risk-off', mult: 1 })
+  })
+
+  // ---- dip-news corroboration: a dip trades on overreaction, not on a broken thesis ----
+
+  const dipDeps = (over: Partial<EngineDeps> = {}) =>
+    deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' ? dipTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      capUsdM: async sym => (sym === 'GLW' ? 35_000 : null),
+      sparkCloses: sparkOf(dipTape),
+      ...over,
+    })
+
+  it('a dip whose news reads a BROKEN THESIS never reaches the board — it shadows, with the reason on the record', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    const d = dipDeps({ dipNews: async () => ({ verdict: 'structural', reason: 'SEC probe into revenue recognition' }) })
+    const { board } = await buildBoard(store, d, NOW)
+
+    expect(board.find(b => b.sym === 'GLW')).toBeUndefined() // the reader is never shown it
+
+    const row = (await ledgerOf(store))!.find(p => p.sym === 'GLW')!
+    expect(row).toBeDefined() // …but it still publishes and still grades
+    expect(row.shadow).toBe(true)
+    expect(row.riskPct).toBe(0)
+    expect(row.instrument).toBeNull()
+    expect(row.watchOnly).toBeUndefined() // shadow and watch stay mutually exclusive
+    expect(row.belowBase).toBeUndefined()
+    expect(row.grade).toBe('B') // nothing ELSE shadowed it: it graded, on a passing contract
+    expect(row.evidence.contract).toBe(true)
+    expect(row.earningsRisk).toBe(false)
+    expect(row.catalyst!.reason).toContain('SEC probe into revenue recognition')
+    expect(row.catalyst!.reason).toContain('holding') // the price read stays on the record too
+  })
+
+  it('a dip whose news reads an OVERREACTION trades, carrying the reason', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    const d = dipDeps({ dipNews: async () => ({ verdict: 'transient', reason: 'sector sympathy, guidance intact' }) })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call).toBeDefined()
+    expect(call.side).toBe('long')
+    expect(call.shadow).toBeUndefined()
+    expect(call.riskPct).toBeGreaterThan(0)
+    expect(call.catalyst!.reason).toContain('sector sympathy, guidance intact')
+    expect(call.catalyst!.reason).toContain('holding')
+  })
+
+  it('a dip-news lookup that fails never blocks the lane — the dip trades, labelled "news unchecked"', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    const d = dipDeps({
+      dipNews: async () => {
+        throw new Error('finnhub down')
+      },
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call).toBeDefined()
+    expect(call.shadow).toBeUndefined()
+    expect(call.riskPct).toBeGreaterThan(0)
+    expect(call.catalyst!.reason).toContain('news unchecked')
+  })
+
+  it('an unclear verdict trades too — the lane only stands aside on evidence of a broken thesis', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    const { board } = await buildBoard(store, dipDeps(), NOW) // the default stub is unclear/'stub'
+
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call.shadow).toBeUndefined()
+    expect(call.catalyst!.reason).toContain('news unchecked')
+  })
+
+  it('spends at most five news reads a run, deepest dip first, and skips the rest as "budget"', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    // Six sleeve names, six different dip depths. Deepest → shallowest:
+    // OXY 12.9, NEM 12.8, FCX 12.6, DOW 12.4, MMM 12.2, GLW 12.0.
+    const tapes = new Map<string, Candle[]>([
+      ['GLW', dipTapeAt(88.0)],
+      ['MMM', dipTapeAt(87.8)],
+      ['DOW', dipTapeAt(87.6)],
+      ['FCX', dipTapeAt(87.4)],
+      ['NEM', dipTapeAt(87.2)],
+      ['OXY', dipTapeAt(87.1)],
+    ])
+    const asked: string[] = []
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => tapes.get(sym) ?? (sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      sparkCloses: async () => new Map([...tapes].map(([sym, t]) => [sym, t.map(c => c.c)])),
+      dipNews: async sym => {
+        asked.push(sym)
+        return { verdict: 'structural', reason: `probe at ${sym}` }
+      },
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    // the budget is spent on the five deepest dips, in depth order
+    expect(asked).toEqual(['OXY', 'NEM', 'FCX', 'DOW', 'MMM'])
+    expect(asked).not.toContain('GLW')
+
+    const ledger = (await ledgerOf(store))!
+    for (const sym of ['OXY', 'NEM', 'FCX', 'DOW', 'MMM']) {
+      const row = ledger.find(p => p.sym === sym && p.side === 'long')!
+      expect(row.shadow, `${sym} should shadow on a structural verdict`).toBe(true)
+      expect(row.catalyst!.reason).toContain(`probe at ${sym}`)
+    }
+    // the sixth was never read, so it cannot be shadowed by news it never saw
+    const unread = board.find(b => b.sym === 'GLW')!
+    expect(unread).toBeDefined()
+    expect(unread.shadow).toBeUndefined()
+    expect(unread.catalyst!.reason).toContain('news unchecked')
+    expect(unread.catalyst!.reason).toContain('budget')
   })
 
   it('the sleeve cannot starve cap enrichment: discovery names get the lookups first', async () => {
