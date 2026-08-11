@@ -14,6 +14,9 @@ const trades: Trade[] = [
   mkTrade({ id: 't1', symbol: 'AAPL', direction: 'long', openedAt: 300 }),
   mkTrade({ id: 't2', symbol: 'TSLA', direction: 'long', openedAt: 200 }),
   mkTrade({ id: 't3', symbol: 'XYZ', direction: 'long', openedAt: 100 }),
+  // held long, while the board's only row for the name is a nearest miss on the
+  // short side — the engine declined it, and said so
+  mkTrade({ id: 't4', symbol: 'NMS', direction: 'long', openedAt: 50 }),
 ]
 
 const mkCall = (o: Partial<EnginePrediction>): EnginePrediction => ({
@@ -29,6 +32,8 @@ const engine: EngineData = {
     board: [
       mkCall({ id: 'c1', sym: 'AAPL', side: 'long', grade: 'A' }),
       mkCall({ id: 'c2', sym: 'TSLA', side: 'short', grade: 'B', stage: 'extended' }),
+      // the last-resort row: no gate cleared, placeholder grade C, base-rate odds
+      mkCall({ id: 'c3', sym: 'NMS', side: 'short', grade: 'C', provisional: true, probability: 0.5, watchOnly: true, nearMiss: true }),
     ],
   },
   ledger: [],
@@ -46,6 +51,7 @@ const quoteMap: Record<string, Quote> = {
   AAPL: { symbol: 'AAPL', price: 104, prevClose: 100, changePct: 4, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
   TSLA: { symbol: 'TSLA', price: 102, prevClose: 100, changePct: 2, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
   XYZ: { symbol: 'XYZ', price: 101, prevClose: 100, changePct: 1, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
+  NMS: { symbol: 'NMS', price: 100, prevClose: 100, changePct: 0, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
 }
 
 vi.mock('../lib/api', () => ({
@@ -88,6 +94,22 @@ describe('Journal — positions joined to the ledger', () => {
     await waitFor(() => expect(cardFor(container, 'TSLA')).toBeTruthy())
     const conflict = cardFor(container, 'TSLA').querySelector('.engine-conflict')!
     expect(conflict.textContent).toBe('engine disagrees — extended')
+  })
+
+  // The board row for a held name can be the engine's NO. Wearing a letter grade
+  // beside a position reads as the engine backing it, which is the opposite of
+  // what a near miss says — it cleared no gate and was never scored.
+  it('labels a near-miss board row as one instead of grading it', async () => {
+    const { container } = render(<Journal />)
+    await waitFor(() => expect(cardFor(container, 'NMS')?.querySelector('.engine-read')).toBeTruthy())
+    const card = cardFor(container, 'NMS')
+    const read = card.querySelector('.engine-read')!
+    expect(read.textContent).toContain('nearest miss — not a call')
+    expect(card.querySelector('.grade-chip')).toBeNull()
+    expect(read.textContent).not.toContain('engine ▼ short')
+    // levels still shown as orientation, but the row cannot "disagree" — it is not a call
+    expect(read.textContent).toContain('stop 95')
+    expect(card.querySelector('.engine-conflict')).toBeNull()
   })
 
   it('renders a muted "no engine read" when the engine has no view of the name', async () => {

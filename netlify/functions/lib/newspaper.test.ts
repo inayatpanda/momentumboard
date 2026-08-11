@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDataJson, fallbackIdeasFromBoard, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, findVerbatimRepeats, type ComposedReport, type StoredNomination } from './newspaper'
+import { buildDataJson, boardExportRows, fallbackIdeasFromBoard, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, findVerbatimRepeats, type ComposedReport, type StoredNomination } from './newspaper'
 
 const sample: ComposedReport = {
   headline: 'Tech Leads a Cautious Tape Higher',
@@ -317,6 +317,31 @@ describe('deterministic board table in the paper', () => {
     expect(html).toContain('&middot;watch')
     expect(html).not.toContain('nearest miss')
     expect(html).toContain('grade C, thin evidence')
+  })
+
+  // The projection the compose pipe hands BOTH exports (email HTML + print PDF).
+  // It used to be a hand-written literal that silently dropped nearMiss, so the
+  // containment above was dead code in production: every renderer downstream saw
+  // a graded call where the engine had said no.
+  describe('boardExportRows — the projection every export renders from', () => {
+    it('carries the row kinds through — nearMiss included', () => {
+      const rows = boardExportRows([nearMissRow, { ...board[0], watchOnly: false }])
+      expect(rows[0].nearMiss).toBe(true)
+      expect(rows[0].watchOnly).toBe(true)
+      expect(rows[1].nearMiss).toBeUndefined()
+      // and the numbers ride through untouched
+      expect(rows[1]).toMatchObject({ sym: 'IREN', side: 'short', grade: 'C', probability: 0.5, entry: 38.82, stop: 46.16, target: 29.03, paperOnly: true, instrument: null })
+    })
+
+    it('leaves name undefined for the post-projection cap-cache enrichment', () => {
+      expect(boardExportRows([nearMissRow])[0].name).toBeUndefined()
+    })
+
+    it('the projected near miss still prints as a near miss in the paper', () => {
+      const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: boardExportRows([nearMissRow]) })
+      expect(html).toContain('nearest miss &mdash; did not clear the gates')
+      expect(html).not.toContain('50%')
+    })
   })
 })
 

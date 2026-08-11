@@ -36,7 +36,7 @@ export interface FlagCandidate {
   entry?: number | null // the engine entry/trigger level
   stage?: string | null // technicalStage read (breakout needs 'basing')
   watchOnly?: boolean // a watch/developing board row → entry-zone eligible
-  published?: boolean // an A/B trade (not watch-only) → second-chance eligible
+  published?: boolean // a RISK-CARRYING row (isActionableRow) → second-chance eligible
   // A near-miss board row: the engine looked at this name and made NO call, and
   // its "entry" is only yesterday's close carried through for display. It must
   // never reach a level rule — see the guards in detectEntryZone/SecondChance.
@@ -68,6 +68,19 @@ const within = (price: number, level: number, frac: number) => level > 0 && Math
  * the generic breakout flag, which needs no engine levels. */
 export function boardFlagRows<T extends { nearMiss?: boolean }>(board: readonly T[], limit: number): T[] {
   return board.filter(p => p.nearMiss !== true).slice(0, limit)
+}
+
+/** Which board rows CARRY RISK — the rows a "second chance" can be offered on,
+ * because they are the rows the reader may actually be holding. A row is
+ * actionable when it is none of watch-only, shadow or near miss; that is exactly
+ * the set the engine sized, at FULL or at HALF (engine.ts: A/B on the full
+ * evidence contract trade full; grade C WITH the contract, and A/B WITHOUT it,
+ * trade half with the gap named). The old test asked for grade A or B, which
+ * predates half sizing and could therefore never see a real C-with-contract
+ * trade — on a board whose only sized rows were half trades, the second-chance
+ * flag was unreachable. PURE + exported so the runner's rule is the tested rule. */
+export function isActionableRow(p: { watchOnly?: boolean; shadow?: boolean; nearMiss?: boolean }): boolean {
+  return p.watchOnly !== true && p.shadow !== true && p.nearMiss !== true
 }
 
 // a. the watch setup from this morning is at its entry, moving through it on volume

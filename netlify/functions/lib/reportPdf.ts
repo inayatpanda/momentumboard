@@ -7,6 +7,7 @@
 // wraps the call in try/catch so a PDF failure never blocks the email.
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type Color } from 'pdf-lib'
+import { boardFootnote } from './newspaper'
 import type { ComposedReport, PaperExtras, Idea, SocialRow, CalendarRow } from './newspaper'
 
 // The structured payload the compose pipe now ships alongside the HTML (see
@@ -597,24 +598,56 @@ function drawHeatMap(c: Cursor, bars: NonNullable<PaperExtras['sectorBars']>, fo
 
 // ---------- The Board ----------
 
+export type PrintBoardRow = NonNullable<PaperExtras['engineBoard']>[number]
+
+/** What the print edition says ABOUT one board row — the same three decisions
+ * the emailed paper makes in newspaper.ts, kept pure and exported so the rule is
+ * testable without decompressing a PDF content stream.
+ *
+ * A near miss cleared NO gate: the engine looked and said no, and the row is
+ * printed only so a side with nothing on it is not blank. Its grade C and its
+ * probability are placeholders it never earned — a letter and a percentage
+ * printed beside it would be fictions dressed as measurements — so it gets
+ * neither, and says what it is instead. Its levels stay as orientation. */
+export function boardPrintRow(b: PrintBoardRow): { chip: string; route: string; probability: string | null } {
+  if (b.nearMiss) return { chip: 'nearest miss — did not clear the gates', route: 'no size', probability: null }
+  return {
+    chip: `${b.grade}${b.provisional ? ' prov' : ''}${b.watchOnly ? ' watch' : ''}`,
+    route: b.watchOnly ? 'watch - no size' : b.instrument ? `${b.instrument.ticker} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash',
+    probability: `${Math.round((b.probability || 0) * 100)}%`,
+  }
+}
+
+/** The footer, taken from the paper's own boardFootnote so print and email can
+ * never explain the board differently — it already names only the row kinds
+ * actually present. HTML entities are the only thing that does not survive the
+ * trip into a PDF text run, so they are decoded here (and the em dashes then
+ * fold to ASCII in sanitizeWinAnsi like every other glyph). */
+export function boardPrintFootline(board: readonly PrintBoardRow[]): string {
+  return boardFootnote(board)
+    .replace(/&mdash;/g, '—')
+    .replace(/&middot;/g, '·')
+    .replace(/&amp;/g, '&')
+}
+
 function drawBoard(c: Cursor, board: NonNullable<PaperExtras['engineBoard']>, fonts: Fonts): void {
   for (const b of board) {
     if (!b || !b.sym) continue
     const isShort = b.side === 'short'
     const sideCol = isShort ? RED : GREEN
+    const { chip, route, probability } = boardPrintRow(b)
     const segs: Seg[] = [{ kind: 'text', text: b.sym, font: fonts.sansBold, size: 11, color: INK }]
     if (b.name) segs.push({ kind: 'text', text: `- ${b.name}`, font: fonts.sans, size: 9.5, color: GREY })
     segs.push({ kind: 'text', text: isShort ? 'SHORT' : 'LONG', font: fonts.sansBold, size: 9, color: sideCol })
-    segs.push({ kind: 'chip', text: `${b.grade}${b.provisional ? ' prov' : ''}${b.watchOnly ? ' watch' : ''}`, font: fonts.sans, size: 7.5, color: GREY, border: HAIR })
-    drawSegments(c, segs, 15, { right: [{ text: `${Math.round((b.probability || 0) * 100)}%`, font: fonts.sansBold, size: 10, color: INK }] })
-    const route = b.watchOnly ? 'watch - no size' : b.instrument ? `${b.instrument.ticker} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
+    segs.push({ kind: 'chip', text: chip, font: fonts.sans, size: 7.5, color: GREY, border: HAIR })
+    drawSegments(c, segs, 15, { right: probability ? [{ text: probability, font: fonts.sansBold, size: 10, color: INK }] : [] })
     const l2 = `in ${fmtNum(b.entry)}  ·  stop ${fmtNum(b.stop)}  ·  tgt ${fmtNum(b.target)}  ·  ~${b.expectedMovePct}%  ·  ${route}${b.earningsRisk ? '  ·  earnings' : ''}`
     c.line(sanitizeWinAnsi(l2), fonts.sans, 9, GREY, MARGIN.left, 13)
     c.gap(4)
     c.rule(FAINT, 0.5)
   }
   c.gap(3)
-  drawFootline(c, "Calibrated on the engine's own graded history, excess vs S&P 500. Watch rows are observations — grade C or thin evidence, no size until they earn A/B. Paper-only calls are analysis; the risk ladder has not unlocked their route.", fonts)
+  drawFootline(c, boardPrintFootline(board), fonts)
 }
 
 // ---------- ruled data tables (calendar / social / IPO / rotation) ----------

@@ -92,6 +92,31 @@ describe('EngineFactors', () => {
     expect(rows[1].textContent).toContain('technical')
   })
 
+  // A near-miss row cleared no gate: the engine looked at the name and said no.
+  // The panel was titling it a "live engine call" and printing the base rate it
+  // was handed as if it were a calibrated probability.
+  describe('a near-miss row is never dressed as a call', () => {
+    const nearMiss: EnginePrediction = { ...call, grade: 'C', provisional: true, probability: 0.5, watchOnly: true, nearMiss: true }
+
+    it('titles the panel as a nearest miss, with no grade chip and no probability', () => {
+      render(<EngineFactors call={nearMiss} hasRead />)
+      expect(screen.getByText('nearest miss — not a call')).toBeInTheDocument()
+      expect(screen.queryByText('live engine call')).not.toBeInTheDocument()
+      expect(screen.getByText('near miss')).toBeInTheDocument()
+      expect(screen.queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+      expect(screen.queryByText(/50%/)).not.toBeInTheDocument()
+      expect(screen.getByText(/~6.1%/)).toBeInTheDocument() // the level orientation stays
+    })
+
+    it('an ordinary watch row keeps the live wording, its grade and its probability', () => {
+      render(<EngineFactors call={{ ...call, watchOnly: true }} hasRead />)
+      expect(screen.getByText('live engine call')).toBeInTheDocument()
+      expect(screen.getByLabelText('Grade A')).toBeInTheDocument()
+      expect(screen.getByText(/67%/)).toBeInTheDocument()
+      expect(screen.getByText('watch')).toBeInTheDocument()
+    })
+  })
+
   it('falls back to a muted one-liner when there is a read but no live call', () => {
     render(<EngineFactors call={null} hasRead />)
     expect(screen.getByText(/no live engine call/i)).toBeInTheDocument()

@@ -297,7 +297,7 @@ export default async (req: Request) => {
   // detection lives in lib/intradayFlags; this owns the data-gathering, the blob
   // and the single notification. Never a new call — just the board's own levels.
   try {
-    const { scanWindowAt, scanIntradayFlags, foldScan, boardFlagRows } = await import('./lib/intradayFlags')
+    const { scanWindowAt, scanIntradayFlags, foldScan, boardFlagRows, isActionableRow } = await import('./lib/intradayFlags')
     const window = scanWindowAt(Date.now())
     if (window && isMarketOpen('US', nowSec)) {
       const londonDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date(nowSec * 1000))
@@ -352,7 +352,10 @@ export default async (req: Request) => {
             stage: p.stage,
             name: p.name ?? null,
             watchOnly: p.watchOnly === true,
-            published: !p.watchOnly && (p.grade === 'A' || p.grade === 'B'),
+            // every row the engine put risk on — full size AND half size. Asking
+            // for grade A/B here predated half sizing, so a C-with-contract half
+            // trade could never be offered its level back (intradayFlags).
+            published: isActionableRow(p),
           })
           if (c) candidates.push(c)
         }

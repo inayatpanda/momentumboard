@@ -237,6 +237,45 @@ export interface BoardRow {
   instrument: { ticker: string; leverage: number } | null
 }
 
+/** The ONE projection of the engine's board into the rows every export renders
+ * from: the emailed paper (buildNewspaperHtml below) and the print edition's
+ * typeset board (reportPdf.ts), which both read the same `extras.engineBoard`.
+ *
+ * It exists because a hand-written object literal in the compose function is
+ * exactly where a field goes missing silently: `nearMiss` was dropped here, so
+ * every renderer downstream — including the containment newspaper.ts had already
+ * grown — saw a graded call where the engine had said no. A near miss carries a
+ * placeholder grade C and a base-rate probability precisely BECAUSE nothing else
+ * would typecheck; losing the flag turns both placeholders into measurements.
+ *
+ * PURE + exported so the projection is testable without running the compose pipe.
+ * `name` is intentionally left undefined: the compose function enriches it from
+ * the cap cache after the fact. */
+export function boardExportRows(board: readonly BoardExportSource[]): BoardRow[] {
+  return board.map(b => ({
+    sym: b.sym,
+    name: undefined as string | undefined, // enriched post-projection from the cap cache
+    side: b.side,
+    grade: b.grade,
+    provisional: b.provisional,
+    probability: b.probability,
+    entry: b.entry,
+    stop: b.stop,
+    target: b.target,
+    expectedMovePct: b.expectedMovePct,
+    paperOnly: b.paperOnly,
+    watchOnly: b.watchOnly,
+    nearMiss: b.nearMiss, // the row kind the renderers key their honesty off
+    earningsRisk: b.earningsRisk,
+    instrument: b.instrument,
+  }))
+}
+
+/** What boardExportRows needs of a board row — every printed field except the
+ * enriched display name, so the compose pipe's own slimmed Prediction rows (and
+ * a Prediction itself) satisfy it structurally, without a cast. */
+export type BoardExportSource = Omit<BoardRow, 'name'>
+
 export interface PaperExtras {
   firstEdition?: boolean
   pdfLink?: string

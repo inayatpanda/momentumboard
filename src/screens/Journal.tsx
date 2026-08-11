@@ -28,18 +28,25 @@ interface EngineView {
   target: number
   stage: string | null
   source: 'board' | 'ledger'
+  // The board's last-resort row: the engine looked at this name and made NO
+  // call, and it is on the board only so a side with nothing on it is not blank.
+  // Its grade C is a placeholder it never earned, so the row is labelled rather
+  // than graded here too — a held name must never be told the engine backs it
+  // when the engine declined it. Near misses never enter the ledger, so only the
+  // board branch can produce one.
+  nearMiss: boolean
 }
 
 function engineViewFor(sym: string, engine: EngineData | null): EngineView | null {
   if (!engine) return null
   const call = engine.board?.board.find(p => p.sym === sym)
   if (call) {
-    return { grade: call.grade, provisional: call.provisional, side: call.side, entry: call.entry, stop: call.stop, target: call.target, stage: call.stage, source: 'board' }
+    return { grade: call.grade, provisional: call.provisional, side: call.side, entry: call.entry, stop: call.stop, target: call.target, stage: call.stage, source: 'board', nearMiss: call.nearMiss === true }
   }
   const days = [...(engine.ledger ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10)
   for (const d of days) {
     const p = d.predictions.find(pr => pr.sym === sym && !pr.shadow)
-    if (p) return { grade: p.grade, provisional: p.provisional, side: p.side, entry: p.entry, stop: p.stop, target: p.target, stage: p.stage, source: 'ledger' }
+    if (p) return { grade: p.grade, provisional: p.provisional, side: p.side, entry: p.entry, stop: p.stop, target: p.target, stage: p.stage, source: 'ledger', nearMiss: false }
   }
   return null
 }
@@ -284,7 +291,9 @@ export function Journal() {
           const ev = engineViewFor(t.symbol, engine)
           const distEngStop = ev && cur != null ? ((ev.stop - cur) / cur) * 100 : null
           const distEngTgt = ev && cur != null ? ((ev.target - cur) / cur) * 100 : null
-          const conflict = ev != null && ev.side !== t.direction
+          // a near miss is not a call, so it cannot disagree with one either —
+          // the row's own label says the engine declined the name
+          const conflict = ev != null && !ev.nearMiss && ev.side !== t.direction
           return (
           <div key={t.id} className="card">
             <div className="row-top">
@@ -308,9 +317,9 @@ export function Journal() {
             </div>
             {ev ? (
               <div className="engine-read">
-                <GradeChip grade={ev.grade} provisional={ev.provisional} />
+                {ev.nearMiss ? <span className="badge">near miss</span> : <GradeChip grade={ev.grade} provisional={ev.provisional} />}
                 <span className="engine-read-lv num">
-                  engine {ev.side === 'long' ? '▲ long' : '▼ short'} · stop {ev.stop}
+                  {ev.nearMiss ? 'nearest miss — not a call' : `engine ${ev.side === 'long' ? '▲ long' : '▼ short'}`} · stop {ev.stop}
                   {distEngStop != null && ` (${fmtPct(distEngStop)})`} · tgt {ev.target}
                   {distEngTgt != null && ` (${fmtPct(distEngTgt)})`}
                 </span>

@@ -93,8 +93,9 @@ export function EnginePage() {
         Direction and eligibility come only from repeatable, point-in-time market data: the chart's technical stage, momentum
         relative to the S&amp;P 500, sector strength, seasonal tendency, volume confirmation, market breadth and regime. Before a call
         can act it must satisfy a minimum evidence contract — technical and momentum readable, the market regime known, at least one
-        confirming leg, and at least two independent signal families agreeing. A call standing on a single pillar stays watch-only,
-        labelled as such.
+        confirming leg, and at least two independent signal families agreeing. A call that misses the contract is not silenced: if the
+        conviction is genuinely there it trades at half size with the missing leg named on the card, and only when conviction is thin
+        as well does it drop to a watch-only observation.
       </p>
       <h3>3 · Context — colour, capped</h3>
       <p>
@@ -106,10 +107,17 @@ export function EnginePage() {
       <h2>Grades that mean something</h2>
       <p>
         Every published call carries a probability calibrated on the engine's own graded history — not a vibe, a bucket of past
-        outcomes. <b>A</b> and <b>B</b> grades on full evidence are trades, at most three per side per day, each with entry,
-        invalidation, target and a risk size the engine's track record has earned. <b>C</b> grades and thin-evidence calls publish as
-        watch-only: visible, graded, learning — but carrying no size. On a day nothing qualifies, the paper says so. "No qualified
-        trades" is a result, not a failure.
+        outcomes. Size then follows conviction <em>and</em> evidence together, in three tiers. <b>A</b> or <b>B</b> on the full
+        evidence contract is a full-size trade — at most three per side per day, each with entry, invalidation, target and the risk
+        the engine's track record has earned. When exactly one of the two is short — a <b>C</b> that clears the full contract, or an
+        A/B whose evidence is thin — the call still trades, at <b>half size</b>, with the gap it is missing named on the card. Only
+        when conviction and evidence are both short — a C on thin evidence, or a setup priced below the engine's own base rate — does
+        the row publish watch-only: visible, graded, learning, carrying no size.
+      </p>
+      <p>
+        On a morning when nothing clears the gates at all, the board still refuses to go blank: it names the <b>nearest misses</b>,
+        the reads that came closest, for exactly what they are. No letter grade, no probability, no size, and they never enter the
+        ledger — they are the engine's "no", said out loud. "No qualified trades" is a result, not a failure.
       </p>
       <p>
         Calls are also stamped by setup family — trend continuation, pullback/reversal, exhaustion fade — because a breakout long and
@@ -196,9 +204,11 @@ export function LedgerPage() {
       </p>
       <h2>Why some days say "no qualified trades"</h2>
       <p>
-        The board is small by design: at most three trades per side, and only grades that beat the engine's own base rate on full
-        evidence. Weak setups are shown as watch-only observations with no size attached. An honest empty board beats seven forced
-        calls — and the ledger is what keeps that promise checkable.
+        The board is small by design: at most three full-size trades per side, and only grades that beat the engine's own base rate
+        on full evidence. A call short of one of those two — grade C with the full evidence, or an A/B whose evidence is thin — trades
+        at half size and says which half is missing. Setups short of both are shown as watch-only observations with no size attached,
+        and on a day nothing clears the gates the board names the nearest misses instead of pretending it has a call. An honest empty
+        board beats seven forced ones — and the ledger is what keeps that promise checkable.
       </p>
     </SiteShell>
   )
@@ -217,7 +227,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'Why does it sometimes say "no qualified trades today"?',
-    a: 'Because that is the truthful answer. Only A/B-grade calls on full evidence carry size; weaker setups are published watch-only. A day with nothing qualified shows the ranked watch list instead of dressing weak calls up as trades.',
+    a: 'Because that is the truthful answer. Full size is reserved for A/B grades on full evidence; a grade C that clears the full evidence contract, or an A/B whose evidence is thin, trades at half size with the missing half named. Only when conviction and evidence are both short does a row publish watch-only, with no size. A day with nothing qualified shows the ranked watch list — and if nothing cleared the gates at all, the nearest misses, labelled as misses — instead of dressing weak calls up as trades.',
   },
   {
     q: 'Does the engine really short?',

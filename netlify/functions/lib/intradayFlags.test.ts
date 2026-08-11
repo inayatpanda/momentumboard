@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  boardFlagRows, foldScan, scanIntradayFlags, scanWindowAt, MAX_FLAGS,
+  boardFlagRows, foldScan, isActionableRow, scanIntradayFlags, scanWindowAt, MAX_FLAGS,
   type FlagCandidate, type IntradayFlagsBlob, type IntradayScan,
 } from './intradayFlags'
 import { memoryStore } from './store'
@@ -94,6 +94,32 @@ describe('scanIntradayFlags — second-chance', () => {
 
   it('blocks when the session range is unknown', () => {
     expect(scanIntradayFlags([{ ...base(), sessionHigh: null, sessionLow: null }], AT)).toHaveLength(0)
+  })
+
+  // The runner derives `published` from isActionableRow, so a HALF-size trade —
+  // grade C on the full evidence contract — is offered its level back like any
+  // other risk-carrying row. The old grade A/B test could not see one at all.
+  it('a grade-C half-size trade earns a second chance; a watch row still does not', () => {
+    const half = { sym: 'HALF', grade: 'C' as const, watchOnly: false, riskPct: 0.63 }
+    const watch = { sym: 'WTCH', grade: 'C' as const, watchOnly: true, riskPct: 0 }
+    expect(scanIntradayFlags([{ ...base(), sym: half.sym, published: isActionableRow(half) }], AT)[0]?.kind).toBe('second-chance')
+    expect(scanIntradayFlags([{ ...base(), sym: watch.sym, published: isActionableRow(watch), watchOnly: true }], AT)).toHaveLength(0)
+  })
+})
+
+describe('isActionableRow — which board rows carry risk', () => {
+  it('accepts every SIZED row, full or half, whatever its letter', () => {
+    expect(isActionableRow({ watchOnly: false })).toBe(true) // A/B on the full contract — full size
+    expect(isActionableRow({})).toBe(true) // flags absent on a plain trade row
+    // the rows the A/B test used to miss: grade C WITH the contract, and A/B without it
+    expect(isActionableRow({ watchOnly: false, shadow: false, nearMiss: false })).toBe(true)
+  })
+
+  it('refuses watch rows, shadows and near misses', () => {
+    expect(isActionableRow({ watchOnly: true })).toBe(false)
+    expect(isActionableRow({ shadow: true })).toBe(false)
+    expect(isActionableRow({ nearMiss: true })).toBe(false)
+    expect(isActionableRow({ watchOnly: true, nearMiss: true })).toBe(false)
   })
 })
 

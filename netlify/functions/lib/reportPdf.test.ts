@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
-import { composeReportPdf, sanitizeWinAnsi, htmlToBlocks, type ReportPrintData } from './reportPdf'
+import { boardPrintFootline, boardPrintRow, composeReportPdf, sanitizeWinAnsi, htmlToBlocks, type PrintBoardRow, type ReportPrintData } from './reportPdf'
 
 // a representative full-fat payload — the data path renders every section, so the
 // smoke tests exercise the heat map, sparkline, board, ideas and every table.
@@ -215,5 +215,49 @@ describe('composeReportPdf — structured print path', () => {
     const bytes = await composeReportPdf({ html: SAMPLE, dateLabel: 'Thursday, 10 July 2026' })
     expect(pdfMagic(bytes)).toBe('%PDF-')
     expect(bytes.length).toBeGreaterThan(500)
+  })
+})
+
+// The print edition's board said the same thing about every row: a letter grade,
+// a probability and a route. A near miss cleared no gate — both of those numbers
+// are placeholders it never earned — so it is typeset the way the emailed paper
+// typesets it (newspaper.ts). Asserted on the pure row/footer decisions, since a
+// finished PDF's text lives in a compressed content stream.
+describe('the printed board tells the truth about a near miss', () => {
+  const nearMiss: PrintBoardRow = {
+    sym: 'DROP', name: 'Dropped Co', side: 'short', grade: 'C', provisional: true, probability: 0.5,
+    entry: 10, stop: 11.5, target: 8.6, expectedMovePct: 4.2, paperOnly: false, watchOnly: true,
+    nearMiss: true, earningsRisk: false, instrument: null,
+  }
+
+  it('gives a near miss no letter grade, no probability and no size', () => {
+    const r = boardPrintRow(nearMiss)
+    expect(r.chip).toBe('nearest miss — did not clear the gates')
+    expect(r.probability).toBeNull()
+    expect(r.route).toBe('no size')
+    expect(r.chip).not.toMatch(/\bC\b/)
+  })
+
+  it('leaves a graded call, a watch row and a paper-only short exactly as they were', () => {
+    expect(boardPrintRow({ ...nearMiss, nearMiss: false, watchOnly: false, provisional: false, grade: 'A', instrument: { ticker: 'SNBS', leverage: 2 } }))
+      .toEqual({ chip: 'A', route: 'SNBS 2x', probability: '50%' })
+    expect(boardPrintRow({ ...nearMiss, nearMiss: false })).toEqual({ chip: 'C prov watch', route: 'watch - no size', probability: '50%' })
+    expect(boardPrintRow({ ...nearMiss, nearMiss: false, watchOnly: false, paperOnly: true })).toMatchObject({ route: 'paper-only' })
+  })
+
+  it('the footer explains only the row kinds on the board, and carries no HTML entities', () => {
+    const foot = boardPrintFootline([nearMiss])
+    expect(foot).toContain('Nearest-miss rows cleared NO gate')
+    expect(foot).not.toContain('Paper-only calls are analysis')
+    expect(foot).not.toContain('&amp;')
+    expect(foot).toContain('excess vs S&P')
+
+    const graded = boardPrintFootline(PRINT.engineBoard!)
+    expect(graded).not.toContain('Nearest-miss rows cleared NO gate')
+    expect(graded).toContain('Watch rows are observations')
+  })
+
+  it('a board of nothing but near misses still renders a valid PDF', async () => {
+    expect(pdfMagic(await composeReportPdf({ html: '', print: { engineBoard: [nearMiss] } }))).toBe('%PDF-')
   })
 })

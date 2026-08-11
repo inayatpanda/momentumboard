@@ -70,7 +70,9 @@ export function EngineFactors({ call, hasRead }: { call: EnginePrediction | null
     .sort((a, b) => Math.abs(b[1].weight * (b[1].score ?? 0)) - Math.abs(a[1].weight * (a[1].score ?? 0)))
   return (
     <section className="calc engine-factors">
-      <h3>Factor breakdown <span className="calc-sub">live engine call</span></h3>
+      {/* a near miss is the engine's NO, on the board only so a side with nothing
+          on it is not blank — calling this panel a live call would invert it */}
+      <h3>Factor breakdown <span className="calc-sub">{call.nearMiss ? 'nearest miss — not a call' : 'live engine call'}</span></h3>
       <div className="engine-factor-top">
         <span className="engine-factor-id">
           {/* a near miss was never scored — a letter grade would be a fiction */}
@@ -81,7 +83,10 @@ export function EngineFactors({ call, hasRead }: { call: EnginePrediction | null
           {call.watchOnly && !call.nearMiss && <span className="badge warn">watch</span>}
           {call.setup && <span className="badge">{call.setup}</span>}
         </span>
-        <span className="engine-factor-prob num">{Math.round(call.probability * 100)}% · ~{call.expectedMovePct}%</span>
+        {/* a near miss earned no calibrated bucket — its stored probability is the
+            engine's base rate, so printing it as a percentage would be a fiction
+            dressed as a measurement (same rule as the printed board) */}
+        <span className="engine-factor-prob num">{call.nearMiss ? `~${call.expectedMovePct}%` : `${Math.round(call.probability * 100)}% · ~${call.expectedMovePct}%`}</span>
       </div>
       <div className="engine-factor-meta num">
         <span>composite {call.composite}</span>

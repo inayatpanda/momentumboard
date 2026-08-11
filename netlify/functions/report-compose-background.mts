@@ -1,7 +1,7 @@
 import { blobAppStore } from './lib/store'
 import { authenticate, scopedToken } from './lib/auth'
 import { callLlm } from './lib/llm'
-import { composePrompt, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, validateNominations, mergeNominations, type StoredNomination } from './lib/newspaper'
+import { composePrompt, parseComposed, buildNewspaperHtml, boardExportRows, constrainIdeasToBoard, validateNominations, mergeNominations, type StoredNomination } from './lib/newspaper'
 import { cachedQuote, cachedCandles, cachedCompanyName } from './lib/marketCache'
 import { regimeFromCandles } from '../../shared/setups'
 import type { AppConfig } from '../../shared/config'
@@ -243,23 +243,10 @@ export default async (req: Request) => {
       calendar: (econ ?? []).filter(e => e.at > nowSec && e.at < nowSec + 5 * 86_400).slice(0, 6),
       spyCloses: spy?.slice(-63).map(c => c.c),
       sectorBars: (sectors ?? []).map(s => ({ name: SECTORS.find(x => x.sym === s.sym)?.name ?? s.sym, rs21: s.rs21 })),
-      // the board typeset in code — grades and levels never depend on the LLM
-      engineBoard: (engineBoard ?? []).map(b => ({
-        sym: b.sym,
-        name: undefined as string | undefined, // enriched below from the cap cache
-        side: b.side,
-        grade: b.grade,
-        provisional: b.provisional,
-        probability: b.probability,
-        entry: b.entry,
-        stop: b.stop,
-        target: b.target,
-        expectedMovePct: b.expectedMovePct,
-        paperOnly: b.paperOnly,
-        watchOnly: b.watchOnly,
-        earningsRisk: b.earningsRisk,
-        instrument: b.instrument,
-      })),
+      // the board typeset in code — grades and levels never depend on the LLM.
+      // One projection (newspaper.boardExportRows) shared with the print edition,
+      // so a row kind can never be dropped on the way out to one renderer only.
+      engineBoard: boardExportRows(engineBoard ?? []),
     }
 
     // Budget-aware: whole low-priority keys drop first — never a mid-JSON cut
