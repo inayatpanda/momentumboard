@@ -471,6 +471,32 @@ git commit -m "feat(engine): sleeve and dip lane reach the board — famous name
 
 ---
 
+### Task 5b: Dip-news corroboration (owner addition, 2026-08-11)
+
+A dip only trades when the news says overreaction, not broken thesis. Targeted and tiny: ≤5 fresh reads/day, verdicts cached 3 days.
+
+**Files:**
+- Create: `netlify/functions/lib/dipNews.ts`
+- Test: `netlify/functions/lib/dipNews.test.ts`
+- Modify: `netlify/functions/lib/engine.ts` (dip-merge block from Task 5g)
+
+**Interfaces:**
+- Consumes: the Finnhub key already in `defaultDeps(env)`; `callLlm`-style helper from `netlify/functions/lib/llm.ts` (read its exports first and use the established call pattern — the same fail-soft router `newsCatalysts` uses).
+- Produces: `fetchCompanyNews(sym: string, fromISO: string, toISO: string, key: string, fetchFn?: typeof fetch): Promise<string[]>` (headlines, fail-soft []); `classifyDipNews(sym: string, headlines: string[], llmJson: (prompt: string) => Promise<unknown>): Promise<DipNewsVerdict>` with `DipNewsVerdict = { verdict: 'transient' | 'structural' | 'unclear', reason: string }`; `heuristicDipVerdict(headlines: string[]): DipNewsVerdict` (keyword fallback). New dep `EngineDeps.dipNews: (sym: string) => Promise<DipNewsVerdict>` whose default impl wires news fetch + LLM + heuristic fallback + a `dip-news:{sym}` blob cache with a 3-day TTL.
+
+- [ ] **Step 1: Failing tests** — heuristic table (fraud/investigation/"cuts guidance"/bankruptcy/delisting → structural; "misses estimates"/"downgrade"/sector-sympathy phrasing → transient; empty → unclear); classifyDipNews parses a well-formed LLM JSON verdict, falls back to the heuristic on malformed output or a thrown call; engine tests: structural verdict → the merged dip row is `shadow` with the reason in `catalyst.reason`; transient → trades with reason; deps.dipNews rejecting → dip trades labelled "news unchecked" (fail-soft).
+- [ ] **Step 2: Verify failures.**
+- [ ] **Step 3: Implement.** LLM prompt (constrained, JSON-only): "TICKER dropped hard recently. Given ONLY these headlines, classify the cause: transient (overreaction, sympathy move, priced-in miss) | structural (fraud, investigation, guidance collapse, financing/going-concern, secular loss) | unclear. Return {verdict, reason} with a reason under 20 words." Cap ≤5 dipNews calls per run, ordered by dip size; skip (→ 'unclear', reason 'budget') beyond the cap. Cache verdicts in the `dip-news:{sym}` blob for 3 days before re-reading.
+- [ ] **Step 4: Full suite green.**
+- [ ] **Step 5: Commit**
+
+```bash
+git add netlify/functions/lib/dipNews.ts netlify/functions/lib/dipNews.test.ts netlify/functions/lib/engine.ts
+git commit -m "feat(engine): a dip only trades when the news reads overreaction, not broken thesis"
+```
+
+---
+
 ### Task 6: Never-blank board — half-size C, contract-fail half-size, near-misses named
 
 **Files:**
