@@ -8,10 +8,13 @@ export interface FactorScore {
   detail: string
 }
 
-/** The three specialist shapes a call can take. Direction alone is not a
- * setup: a trend-follow long and a knife-catch long fail in different ways,
- * so their outcomes must never learn from the same bucket. */
-export type SetupFamily = 'continuation' | 'reversal' | 'fade'
+/** The specialist shapes a call can take. Direction alone is not a setup: a
+ * trend-follow long and a knife-catch long fail in different ways, so their
+ * outcomes must never learn from the same bucket. 'velocity' is the momentum
+ * lane's own family (velocityLane.ts) — a name bought IN FLIGHT fails
+ * differently again from an ordinary continuation, which is entered on a
+ * composite rather than on a break, and it is calibrated separately for it. */
+export type SetupFamily = 'continuation' | 'reversal' | 'fade' | 'velocity'
 
 /** Why one side of the board carries nothing tradeable today — recorded by the
  * engine's assembly and rendered by `emptySideLine`. Three genuinely different

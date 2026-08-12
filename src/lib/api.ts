@@ -375,7 +375,8 @@ export interface EnginePrediction {
   // 'week' = a this-week trade/observation; 'developing' = a watch row whose shape is a
   // 2-4 week build (basing/pullback, below-base, or a thin-evidence reversal). Stamped by the engine.
   horizon?: 'week' | 'developing'
-  setup?: 'continuation' | 'reversal' | 'fade' | null
+  // mirrors SetupFamily in shared/engine/types.ts — keep the two in step
+  setup?: 'continuation' | 'reversal' | 'fade' | 'velocity' | null
   evidence?: { coverage: number; famAgree: number; contract: boolean; contextPts: number; detail: string }
   factors: Record<string, { score: number | null; detail: string; weight: number }>
   overlay?: { flag: string; reason: string }
