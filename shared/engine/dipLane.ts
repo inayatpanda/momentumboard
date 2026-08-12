@@ -12,6 +12,11 @@
 // The lane is deliberately modest: its composite lives inside the calibrated
 // 25-55 bands. Buying a falling name is a real edge, not a high-conviction one.
 //
+// "Holding" is three legs: no new 5-session closing low TODAY, a reclaim path
+// (over the 50-EMA or 3% off the dip low) TODAY, and a volume-paid turn in the
+// last five sessions — the volume leg alone is turn-scoped, because a turn is
+// confirmed once and then grinds quietly (ratified 2026-08-12; see classifyDip).
+//
 // Pure module: candles in, a read and a call out. No IO, no LLM. The engine loop
 // (buildBoard) supplies the earnings calendar and the catalyst narration tag.
 
@@ -33,6 +38,9 @@ export const DROP_TRIGGER_PCT = 12
 export const ONE_DAY_TRIGGER_PCT = 7
 /** Holding: the reclaim has to be PAID for. An unconfirmed bounce is a bounce, not a base. */
 export const VOLUME_MULT = 1.5
+/** …and paid ONCE is paid. How many sessions back the confirming print may sit
+ * (today included) — see the turn-scoped note in `classifyDip`. */
+export const VOLUME_LOOKBACK = 5
 /** Holding: the slide case's reclaim path — off the low by this much, no 50-EMA required [G6]. */
 export const RECLAIM_PCT = 3
 export const EMA_PERIOD = 50
@@ -102,11 +110,36 @@ export function classifyDip(candles: Candle[]): DipRead | null {
   const low5 = prior4.length ? Math.min(...prior4) : null
   const newLow = low5 != null && last.c <= low5
 
-  // 2. Volume. Same 20-session trailing baseline technicals.ts uses (excludes today).
-  const volWindow = candles.slice(-(HIGH_WINDOW + 1), -1).map(c => c.v)
-  const avgVol20 = volWindow.length >= 5 ? volWindow.reduce((s, v) => s + v, 0) / volWindow.length : null
-  const rvol = avgVol20 != null && avgVol20 > 0 ? last.v / avgVol20 : null
-  const volumeOk = rvol != null && rvol >= VOLUME_MULT
+  // 2. Volume — TURN-SCOPED. Same 20-session trailing baseline technicals.ts uses
+  //    (excluding the session being measured), but the leg is satisfied if ANY of
+  //    the last VOLUME_LOOKBACK sessions printed >= VOLUME_MULT×, today included.
+  //
+  //    Demanding it of TODAY made a grinding recovery permanently unholdable: the
+  //    session that pays for a turn is by definition the one that reverses it, and
+  //    the quiet sessions after are the base forming, not the confirmation
+  //    expiring. GLW rallied +28% off its low over nine sessions in the July-August
+  //    replay and `holding` was false on all 21 days for exactly this reason
+  //    (docs/superpowers/plans/2026-08-11-stage1-replay-results.md §4). Ratified
+  //    2026-08-12: a turn confirmed on volume once stays confirmed for a week.
+  //    The other two legs are unchanged and still measured on TODAY — a name making
+  //    a new 5-session low, or back under both reclaim paths, is not holding however
+  //    it traded last Tuesday.
+  const rvolAt = (i: number): number | null => {
+    const w = candles.slice(Math.max(0, i - HIGH_WINDOW), i).map(c => c.v)
+    if (w.length < 5) return null
+    const avg = w.reduce((s, v) => s + v, 0) / w.length
+    return avg > 0 ? candles[i].v / avg : null
+  }
+  // the best-paid session in the window, and how many sessions back it printed
+  let paidRvol: number | null = null
+  let paidAgo = 0
+  for (let i = candles.length - 1; i >= Math.max(0, candles.length - VOLUME_LOOKBACK); i--) {
+    const r = rvolAt(i)
+    if (r == null || (paidRvol != null && r <= paidRvol)) continue
+    paidRvol = r
+    paidAgo = candles.length - 1 - i
+  }
+  const volumeOk = paidRvol != null && paidRvol >= VOLUME_MULT
 
   // 3. A reclaim path. Either back over the 50-EMA (the shallow-pullback case),
   //    or RECLAIM_PCT off the dip low — the slide case, where the 50-EMA is far
@@ -120,7 +153,10 @@ export function classifyDip(candles: Candle[]): DipRead | null {
 
   const holding = triggered && !newLow && volumeOk && reclaim
 
-  const rvolStr = rvol != null ? `${round1(rvol)}×` : 'unknown'
+  const paidStr = paidRvol != null ? `${round1(paidRvol)}×` : 'unknown'
+  // WHEN the turn was paid for is part of the read, not decoration: "on 1.6× volume"
+  // when today paid, "on 1.6× volume 3 sessions ago" when the confirmation is older.
+  const when = paidAgo === 0 ? '' : ` ${paidAgo} session${paidAgo === 1 ? '' : 's'} ago`
   let detail: string
   if (!triggered) {
     detail = `no dip: ${pct(dropPct)} off the 20-session high, worst session −${pct(worstDayPct)}`
@@ -128,11 +164,11 @@ export function classifyDip(candles: Candle[]): DipRead | null {
     const depth = dropPct >= DROP_TRIGGER_PCT ? `−${pct(dropPct)} from the 20-session high` : `one-day shock −${pct(worstDayPct)}`
     if (holding) {
       const how = aboveEma ? 'back over the 50-EMA' : `${pct(offLow ?? 0)} above the ${round2(low ?? 0)} dip low`
-      detail = `dip ${depth} · holding: ${how} on ${rvolStr} volume`
+      detail = `dip ${depth} · holding: ${how} on ${paidStr} volume${when}`
     } else {
       const why: string[] = []
       if (newLow) why.push('new 5-session closing low')
-      if (!volumeOk) why.push(`${rvolStr} volume (need ${VOLUME_MULT}×)`)
+      if (!volumeOk) why.push(`no ${VOLUME_MULT}× session in the last ${VOLUME_LOOKBACK} (best ${paidStr})`)
       if (!reclaim) why.push('no reclaim of the 50-EMA or the dip low')
       detail = `dip ${depth} · not holding: ${why.join('; ')}`
     }

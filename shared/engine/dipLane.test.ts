@@ -8,6 +8,16 @@ const base = () => flat(60)
 /** The dip bars every holding fixture shares: slide to 85, stabilise, reclaim on 1.6× volume. */
 const slide = () => [mk(94), mk(90), mk(87), mk(85, 1_000_000, 86, 86, 84.5), mk(85.5)]
 
+/** A GRINDING recovery — the shape the turn-scoped volume rule exists for. A deeper
+ * slide to a 79 low, ONE volume-paid turn bar at 83, then `quiet` ordinary sessions
+ * grinding higher on average volume. `quiet` is how many sessions ago the turn was
+ * paid for: 0 = today, 3 = three sessions back, 5 = out of the 5-session window. */
+const grindingRecovery = (quiet: number, turnVol = 1_600_000) => {
+  const bars = [...base(), mk(94), mk(90), mk(87), mk(80, 1_000_000, 81, 81, 79), mk(80.5), mk(83, turnVol)]
+  for (let i = 1; i <= quiet; i++) bars.push(mk(83 + i * 0.5))
+  return bars
+}
+
 describe('classifyDip', () => {
   it('null when under 30 candles', () => expect(classifyDip([mk(1)])).toBeNull())
   it('calm tape: not triggered', () => expect(classifyDip(base())!.triggered).toBe(false))
@@ -31,6 +41,43 @@ describe('classifyDip', () => {
     expect(read.triggered).toBe(true)
     expect(read.holding).toBe(true)
   })
+  // ---- the volume leg is TURN-SCOPED (ratified 2026-08-12) ----
+  // GLW rallied +28% off its low across nine sessions and `holding` was false on
+  // all 21 replay days, because the rule demanded the 1.5× print TODAY — and the
+  // session that pays for a turn is by definition the one that reverses it. The
+  // quiet days after are the base forming, not the confirmation expiring.
+  it('a turn paid for THREE sessions ago still holds while the recovery grinds quietly', () => {
+    const cs = grindingRecovery(3)
+    const read = classifyDip(cs)!
+    expect(read.triggered).toBe(true)
+    expect(read.holding).toBe(true)
+    // today itself printed nothing special — the old rule failed exactly here
+    expect(cs[cs.length - 1].v).toBe(1_000_000)
+    expect(read.detail).toContain('3 sessions ago')
+  })
+
+  it('the same tape with NO paid session anywhere in the last five is still not holding', () => {
+    // identical bars, the turn bar printed on ORDINARY volume: nothing confirmed
+    // the turn, so the always-false rule must not have quietly become always-true
+    const read = classifyDip(grindingRecovery(3, 1_000_000))!
+    expect(read.triggered).toBe(true)
+    expect(read.holding).toBe(false)
+    expect(read.detail).toContain('no 1.5× session in the last 5')
+  })
+
+  it('a turn paid for SIX sessions ago has aged out of the window', () => {
+    const read = classifyDip(grindingRecovery(5))! // today + 5 quiet = the turn is the 6th session back
+    expect(read.triggered).toBe(true)
+    expect(read.holding).toBe(false)
+  })
+
+  it('the paid session printing TODAY reads exactly as it always did', () => {
+    const read = classifyDip(grindingRecovery(0))!
+    expect(read.holding).toBe(true)
+    expect(read.detail).toContain('1.6× volume')
+    expect(read.detail).not.toContain('sessions ago')
+  })
+
   it('thin-volume reclaim is not holding', () => {
     const cs = [...base(), ...slide(), mk(88, 1_100_000)]
     expect(classifyDip(cs)!.holding).toBe(false)
@@ -62,6 +109,17 @@ describe('dipCall', () => {
     expect(Math.abs(call.composite)).toBeGreaterThanOrEqual(25)
     expect(Math.abs(call.composite)).toBeLessThanOrEqual(55)
   })
+  it('builds the grinding recovery GLW never got: stop under the dip low, target half-way back', () => {
+    const cs = grindingRecovery(3)
+    const call = dipCall('GLW', cs, classifyDip(cs)!, 35_000)!
+    expect(call).not.toBeNull()
+    expect(call.side).toBe('long')
+    expect(call.entry).toBe(84.5)
+    expect(call.stop).toBe(79) // the dip-window low, under the whole slide
+    expect(call.target).toBe(92.25) // half of the way back to the 100 high
+    expect(call.target - call.entry).toBeGreaterThan(call.entry - call.stop) // clears the 1:1 gate
+  })
+
   it('returns null when not holding', () => {
     const notHolding = [...base(), mk(92), mk(90), mk(88), mk(86), mk(84)]
     expect(dipCall('GLW', notHolding, classifyDip(notHolding)!, 35_000)).toBeNull()

@@ -384,3 +384,137 @@ regenerable from the commands in §1; the candle cache makes a re-run take secon
 The harness's pure helpers (`sliceBefore`, `tradingDays`, `synthScreens`, `sparkClosesFrom`,
 `summariseBoard`, `doorsFor`, and the `SLEEVE_MIRROR` drift guard) are covered by
 `scripts/replay-window.test.ts` — 16 tests, part of `npm test`.
+
+---
+
+## 11. 2026-08-12 holding-rule re-run
+
+The owner ratified one change on the back of §4: **the dip lane's volume leg becomes
+turn-scoped.** Holding's volume condition is now satisfied if volume ≥ 1.5× the 20-session
+average printed on **any of the last 5 sessions** (today included), instead of on today alone.
+The other two legs are untouched and still measured on today (no new 5-session closing low; close
+over the 50-EMA **or** ≥3% above the dip-window low). The reasoning is in `dipLane.ts`: the
+session that pays for a turn is the one that reverses it, and the quiet sessions after it are the
+base forming, not the confirmation expiring.
+
+Two runs were needed to keep the attribution honest, because the closing wave also carried the
+final review's board fixes:
+
+```bash
+# both from the repo root; the SAME candle cache as §1, so the tape is identical
+REPLAY_CACHE_DIR=…/scratchpad/replay-candles npx vite-node scripts/replay-window.ts -- \
+  --from 2026-07-14 --to 2026-08-11 --watch GLW,TSLA,NVDA --out …/scratchpad/replay-partB.json    # d6f63a2, board fixes only
+REPLAY_CACHE_DIR=…/scratchpad/replay-candles npx vite-node scripts/replay-window.ts -- \
+  --from 2026-07-14 --to 2026-08-11 --watch GLW,TSLA,NVDA --out …/scratchpad/replay-turnvol.json  # + the turn-scoped rule
+```
+
+(The cache default is now the repo-relative `./.replay-cache`; `REPLAY_CACHE_DIR` points both runs
+at the §1 cache so nothing was re-fetched and no bar differs. The baseline was **not** re-run —
+it cannot change.)
+
+### 11.1 GLW — the acceptance question
+
+**Yes. GLW's dip call constructs, and it reaches the reader's board as a full-size trade.**
+
+| date | close | holding | dip call | entry | stop | target | R:R | 5-session outcome |
+|---|---|---|---|---|---|---|---|---|
+| 2026-07-31 | 135.22 | ✅ (3.6× volume **2 sessions ago**) | **built** | 135.22 | 114.50 | 166.00 | 1.49 | **HIT, +11.4% vs SPY** |
+| 2026-08-03 | 138.25 | ✅ (3.6×, 3 sessions ago) | **built** | 138.25 | 114.50 | 166.53 | 1.19 | **HIT, +13.8% vs SPY** |
+| 2026-08-04 | 146.64 | ✅ (3.6×, 4 sessions ago) | declined | — | — | — | 0.63 | — |
+| 2026-08-05 | 159.89 | ✅ (1.8×, 4 sessions ago) | declined | — | — | — | 0.18 | — |
+| 2026-08-06 → 08-11 | 156.70 → 165.68 | ❌ (best 1.4× in 5) | — | — | — | — | — | — |
+
+Both rows published **grade B, 1% risk, catalyst `dip`**, and on 07-31 — the red-regime day that
+was the baseline's only blank board — GLW was the **first trade on the board**. On 08-03 the
+composite also published its opposing GLW short, as a shadow; F3's new condition was satisfied on
+both days (the dip long published as a *sized* row, so it is entitled to demote). Whether the
+demotion itself fired cannot be read off this harness — with an empty `levMap` (approximation #6)
+every short is unroutable and shadows anyway.
+
+The two declines matter as much as the two builds: on 08-04 and 08-05 the dip was still *holding*,
+but price had run so far off the 114.50 low that the half-retrace target no longer paid for the
+stop — R:R 0.63 and 0.18 against a 1:1 floor. **The lane refused to chase its own winner.** Then
+the 3.6× session aged out of the 5-day window and holding went false on its own. So the rule did
+not simply switch GLW on for the month; it opened a **two-day window at the turn** and closed it.
+
+Honest caveats: n = 2, both graded at 5 sessions only (10-session grades are not yet reachable for
+either), and 07-31/08-03 are consecutive reads of the same recovery — one event, not two
+independent successes. GLW's *earlier* collapse (14 Jul → 30 Jul, −51%) is still refused on all
+13 days, by the knife guard and the reclaim leg, which is the outcome §4 said was correct.
+
+### 11.2 What the change did to the window — three-way
+
+Part B (the board fixes) is measured on its own first, so nothing below is misattributed.
+
+| | §3-§7 run (`69ced4c`) | + board fixes (`d6f63a2`) | + turn-scoped volume |
+|---|---|---|---|
+| Sized trades | 63 | **63** | **63** |
+| Watch rows | 125 | 133 | 134 |
+| Near-miss rows | 42 | **26** | 26 |
+| Short **observations** (F2, "no ISA route") | 0 | **8** | 8 |
+| Ledger rows (incl. shadows) | 279 (91 shadow) | 287 (91) | 288 (91) |
+| Grade A / B / C on trades | 0 / 52 / 11 | 0 / 52 / 11 | 0 / **55** / **8** |
+| `riskPct` values seen | {0.5, 1, 1.25} | {0.5, 1, 1.25} | {0.5, **0.625**, 1, 1.25} |
+| Zero-trade days | 0 / 21 | 0 / 21 | 0 / 21 |
+| Blank sides | 0 / 42 | 0 / 42 | 0 / 42 |
+| Dip **holding**-days (all names) | 48 | 48 | **182** |
+| `dipCall` constructions | 15 | 15 | **68** |
+| Dip rows on the board | 10 (9 sized) | 10 (9) | **45 (32 sized)** |
+| Trades win5 / avg5 | 52.1% / +2.48% | 52.1% / +2.48% | **54.2% / +1.85%** |
+| Trades win10 / avg10 | 54.5% / +1.95% | 54.5% / +1.95% | 51.5% / +1.59% |
+| Near-miss win5 / avg5 | 48.4% / −0.30% | 52.0% / +1.74% | 52.0% / +1.74% |
+
+**Part B changed no trade, no grade and no outcome** — 63 trades, identical rows, identical
+5- and 10-session numbers. Its whole footprint is the 16 near-miss rows replaced by 8 labelled
+observations (an unroutable short that cleared every gate now outranks a row that cleared none),
+the ledger rows those observations bring with them, and the board copy telling the truth about why
+a side is empty. That is what "additive" was supposed to mean, and it is what the numbers show.
+The near-miss outcome shift (−0.30% → +1.74%) is not an improvement in near misses: it is a
+different, smaller *set* of them, because the strongest 8 side-days are now observations instead.
+
+**The turn-scoped rule is a real loosening, and the size of it should not be glossed:** holding-days
+48 → 182 (3.8×), constructions 15 → 68, and dip rows go from 10 to 45 — **32 of the window's 63
+trades are now dip-lane rows**, against 9 before. The trade count is unchanged because the board is
+capped at 3 per side; the dip lane did not enlarge the board, it **displaced composite rows** on 17
+of the 21 days (the other 4 are unchanged).
+
+That displacement is where the outcome numbers come from:
+
+| | prev run | turn-scoped run |
+|---|---|---|
+| **dip** trades | 9 (4 graded) — win5 **25.0%**, avg5 **−1.00%** | 32 (21 graded) — win5 **66.7%**, avg5 **+2.24%** |
+| **composite** trades | 54 (44 graded) — win5 **54.5%**, avg5 **+2.80%** | 31 (27 graded) — win5 **44.4%**, avg5 **+1.54%** |
+| all trades | 48 graded — 52.1% / +2.48% | 48 graded — 54.2% / +1.85% |
+
+The dip lane's own record improves enormously (n went from 4 to 21, so the old −1.00% was never
+worth much); the composite rows that survived the displacement did worse than the composite
+population that preceded them. Net: **+2.1 pp win5, −0.63 pp avg5.** On 48 graded rows with an
+excess-return sd near 10.7 that is **t ≈ 0.3** — the same "cannot tell them apart" verdict §7
+reached, and it must not be read as either a win or a regression. Nor is the sample clean: 5-session
+grades run out on 2026-08-04, so 11 of the 32 dip trades — most of the August cluster the rule
+created — carry **no grade at all** yet.
+
+The new `0.625` risk value is not a new tier: it is the existing half-size rung after the risk
+ladder climbed to 1.25% mid-window.
+
+### 11.3 The honest read
+
+- **The acceptance criterion is met.** GLW constructs, on 07-31 and 08-03, at real levels, and both
+  reads paid at 5 sessions. §4's "criterion 2 fails on its last clause" is now satisfied — by a
+  rule change the owner ratified after seeing why it failed, not by tuning until it passed.
+- **The lane still says no far more than it says yes.** GLW's 51% collapse is refused on all 13 of
+  its falling days, and the 1:1 gate declined the two days when the recovery had already run.
+- **The cost is concentration.** A third of the board's trades are now one lane's rows, and on
+  08-06 and 08-10 the entire long side is dip rows. That is a real change in what the reader sees
+  every morning, it is not measured by this window, and the first live weeks should be watched for
+  it. Recommended follow-up (Stage 2, NOT done here): a per-lane cap, or dip rows competing on the
+  same diversity gates rather than arriving via their own merge.
+- **Nothing else moved.** Blank boards 0/21, blank sides 0/42, no A grade produced by any engine on
+  this tape, and the A/B-without-contract tier still never fired.
+- **Not measured, again:** any LLM lane. `dipNews` returned `unclear` on all 68 constructions, so
+  the safety valve that is supposed to stand a dip down on a broken thesis was never once exercised
+  — and the turn-scoped rule hands that valve **4.5× more work** in production than it had before.
+  That is the single biggest gap between this replay and the live board.
+
+Raw output: `replay-partB.json` and `replay-turnvol.json` beside the §1 files; the three-way diff
+script is `turnvol-compare.mjs` in the same directory.

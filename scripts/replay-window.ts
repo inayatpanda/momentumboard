@@ -389,6 +389,7 @@ interface Row {
   probability: number
   entry: number
   stop: number
+  target: number
   watchOnly: boolean
   nearMiss: boolean
   shadow: boolean
@@ -424,6 +425,7 @@ const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
   probability: p.probability,
   entry: p.entry,
   stop: p.stop,
+  target: p.target,
   watchOnly: !!p.watchOnly,
   nearMiss: !!p.nearMiss,
   shadow: !!p.shadow,
