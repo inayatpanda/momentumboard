@@ -22,6 +22,8 @@ describe('the public pages describe the real sizing policy', () => {
     // and the OTHER reason a side goes quiet is named too — "nothing cleared the
     // gates" is false when a graded call simply cannot be routed inside an ISA
     expect(t).toContain('cannot be routed inside an ISA')
+    // …and so is the third: the engine's own dip read outranking the short it had
+    expect(t).toContain('outranked the short it had on that chart')
     // the old claim, in either of its forms, is gone
     expect(t).not.toMatch(/C grades and thin-evidence calls publish as watch-only/)
     expect(t).not.toMatch(/stays watch-only, labelled as such/)

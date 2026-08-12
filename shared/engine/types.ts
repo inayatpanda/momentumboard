@@ -13,6 +13,14 @@ export interface FactorScore {
  * so their outcomes must never learn from the same bucket. */
 export type SetupFamily = 'continuation' | 'reversal' | 'fade'
 
+/** Why one side of the board carries nothing tradeable today — recorded by the
+ * engine's assembly and rendered by `emptySideLine`. Three genuinely different
+ * sentences, and saying the wrong one teaches the reader to distrust the right
+ * one: 'gates' = nothing cleared them; 'no-route' = something did and an ISA
+ * cannot place it; 'dip-lane' = the side HAD a live short and the engine's own
+ * dip read on the same chart outranked it. */
+export type EmptySideReason = 'gates' | 'no-route' | 'dip-lane'
+
 /** What the composite actually stood on. coverage/famAgree describe the CORE
  * (price-derived) factors only — context factors are capped colour, and their
  * presence or absence must never change how much we trust the direction. */

@@ -48,7 +48,7 @@ import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, map
 import { capCohortOf, SMALL_CAP_MAX_USD_M, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
-import { round2, type EngineCall, type FactorName, type FactorScore, type PredOutcome, type Prediction } from '../../../shared/engine/types'
+import { round2, type EmptySideReason, type EngineCall, type FactorName, type FactorScore, type PredOutcome, type Prediction } from '../../../shared/engine/types'
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { primaryThemeOf, themeCandidates, themeHeat, themesOf } from '../../../shared/engine/themes'
 import { traceOpenCall, type OpenTraceEntry } from '../../../shared/engine/openTrace'
@@ -842,9 +842,15 @@ export async function buildBoard(
 
   const board: Prediction[] = []
   /** Row ids of shorts shadowed ONLY for want of an ISA route, having cleared
-   * every other gate. Read by the assembly below (empty-side reason + the
-   * observation rank), never written to a row or to the ledger. */
+   * every other gate — the rows the observation rank may promote. Read by the
+   * assembly below, never written to a row or to the ledger. */
   const routeBlockedShorts = new Set<string>()
+  /** The wider set: every short the route is the ONLY reason the reader cannot
+   * see — including the ones that would have landed as watch rows rather than
+   * trades. They are never promoted (an observation has to have cleared the
+   * sizing gates), but the empty-side copy must still not call their side
+   * "nothing cleared the gates": the gates are not what hid them. */
+  const routeShadowedShorts = new Set<string>()
   // The ONE publication path. Both the composite loop and the dip-lane merge below
   // push through here, so calibration, grading, the shadow/watch/belowBase flags,
   // routing and sizing can never drift between the two lanes.
@@ -912,14 +918,17 @@ export async function buildBoard(
     // be able to tell the reader which one is true (and to rank such a row above
     // a near miss, which cleared nothing at all). Recorded by id, not on the row:
     // the ledger must not grow a field that means "why we hid it".
-    const routeBlocked =
-      unshortable && !call.earningsRisk && !forceShadow && grade != null && (grade !== 'C' || call.evidence.contract)
+    // …and the same sentence one rung lower: a short that would have reached the
+    // board at all (as a trade OR as a watch row) if only it could be routed.
+    const routeShadowed = unshortable && !call.earningsRisk && !forceShadow && (grade != null || call.evidence.contract)
+    const routeBlocked = routeShadowed && grade != null && (grade !== 'C' || call.evidence.contract)
 
     const rung = cohortRungOf(risk, cohort)
     const instrument = fullTrade ? mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {}) : null
     const callThemes = themesOf(call.sym)
     const id = `${today}:${call.sym}:${call.side}`
     if (routeBlocked) routeBlockedShorts.add(id)
+    if (routeShadowed) routeShadowedShorts.add(id)
     board.push({
       ...call,
       id,
@@ -1141,59 +1150,6 @@ export async function buildBoard(
     publishCall(call, capUsdM, { kind: DIP_CATALYST_KIND, side: 'long', reason: `${read.detail} · ${note}`, strength: 40 }, v.verdict === 'structural')
   }
 
-  // ---- dip evidence outranks the composite's read of the SAME chart ----
-  // A triggered-and-holding dip is the tape saying this name is being BOUGHT: a
-  // measured drop, the knife guard passed, a volume-PAID reclaim. The composite
-  // reading the identical candles sees only deep negative momentum and calls a
-  // short (dipLane.ts explains why it must). Publishing both live would put the
-  // board on both sides of one name on one morning — an unreadable card, and a
-  // hedge the reader never asked for. Ratified 2026-08-11: the dip read wins the
-  // reader-facing row and the short is DEMOTED to a shadow. Demotion, not
-  // deletion — the short still publishes and still grades, so the ledger can
-  // eventually answer "when the two lanes disagreed, who was right?". Longs need
-  // no rule: an ordinary long is the same side and simply won the merge above.
-  //
-  // Run AFTER the news pass, because news can dissolve the disagreement: when the
-  // headlines say the thesis BROKE, the dip long has already been stood down to a
-  // shadow and the two lanes no longer contradict each other — the news corroborates
-  // the short. Demoting it then would leave the reader with nothing on a name where
-  // the engine has real, agreeing evidence to short. That release is keyed on an
-  // EXPLICIT structural verdict only: a dip that was never examined (never a
-  // candidate, over budget, a dead dep, a venue with no source) leaves the price
-  // evidence standing unopposed, and unopposed dip evidence still wins.
-  //
-  // The trigger is a CONSTRUCTED dip long (published, live or news-shadowed), not
-  // a bare dip read. dipCall declines a shape that risks more than its target pays
-  // (the 1:1 gate) and the degenerate stop/target shapes — and a dip the lane
-  // itself refused to trade is no evidence against anything. Keying on dipReads
-  // silently deleted the day's only call on such a name: the dip published nothing
-  // and the perfectly good composite short was demoted beside it.
-  //
-  // And the dip long has to be a row the reader can actually TAKE (ratified
-  // 2026-08-12). A dip that published below its base rate, or graded C on thin
-  // evidence, lands watch-only at zero size: trading it is not on offer. Letting
-  // that row demote a live, routable, fully-graded short costs the reader the
-  // day's only sized call on the name and hands back an observation in its place
-  // — the disagreement is real, but the cure must not be worse than the clash.
-  const sizedDipLongs = new Set(
-    board.filter(b => b.side === 'long' && !b.shadow && !b.watchOnly && constructedDipLongs.has(b.sym.toUpperCase())).map(b => b.sym.toUpperCase()),
-  )
-  for (const row of board) {
-    if (row.side !== 'short' || row.shadow || !sizedDipLongs.has(row.sym.toUpperCase())) continue
-    if (structuralVetoes.has(row.sym.toUpperCase())) {
-      console.log(`BOARD: structural news on ${row.sym} frees the composite short — both lanes now read the same way`)
-      continue
-    }
-    row.shadow = true
-    row.watchOnly = undefined // shadow and watch are exclusive in publishCall — keep them so
-    row.belowBase = undefined
-    row.riskPct = 0
-    row.instrument = null
-    row.paperOnly = true // a short with no instrument, exactly as publishCall stamps one
-    row.horizon = horizonOf({ watchOnly: false, stage: row.stage, setup: row.setup, evidence: row.evidence })
-    console.log(`BOARD: dip read on ${row.sym} demotes the composite short to a shadow`)
-  }
-
   // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side
   // still has a shadow that hasn't reached its calibrated grade (no outcome10) on
   // a recent prior date — three correlated CEG shorts teach nothing while starving
@@ -1243,17 +1199,102 @@ export async function buildBoard(
   // front) the 4th-best long simply vanished — from the board AND the ledger —
   // which is how a screen full of correlated names could publish three rows and
   // silently discard nine. Demotion strips size and route; the row itself stays.
-  const actionablePool = board.filter(b => !b.shadow && !b.watchOnly)
-  const trades = [...pickDiverseSide(actionablePool, 'long', 3, 'trade'), ...pickDiverseSide(actionablePool, 'short', 3, 'trade')]
-  const picked = new Set(trades.map(t => t.id))
-  for (const b of actionablePool) {
-    if (picked.has(b.id)) continue
-    b.watchOnly = true
-    b.riskPct = 0
-    b.instrument = null
-    b.paperOnly = false // a watch row is nobody's position — exactly as publishCall stamps one
-    b.horizon = horizonOf({ watchOnly: true, belowBase: b.belowBase, stage: b.stage, setup: b.setup, evidence: b.evidence })
+  //
+  // The two sides are cut SEPARATELY, with the dip-over-short demotion sitting
+  // between them. The demotion may only be triggered by a dip long that survived
+  // its own cut (F3, below), so the long side has to be final before it runs; and
+  // running it before the SHORT cut means a short the dip read shadows releases its
+  // slot to the next-best short instead of wasting it. The two picks never see each
+  // other (pickDiverseSide filters by side), so splitting them costs nothing.
+  const demoteToWatch = (pool: Prediction[], picked: Set<string>) => {
+    for (const b of pool) {
+      if (picked.has(b.id)) continue
+      b.watchOnly = true
+      b.riskPct = 0
+      b.instrument = null
+      b.paperOnly = false // a watch row is nobody's position — exactly as publishCall stamps one
+      b.horizon = horizonOf({ watchOnly: true, belowBase: b.belowBase, stage: b.stage, setup: b.setup, evidence: b.evidence })
+    }
   }
+  const actionableLongs = board.filter(b => !b.shadow && !b.watchOnly && b.side === 'long')
+  const longTrades = pickDiverseSide(actionableLongs, 'long', 3, 'trade')
+  demoteToWatch(actionableLongs, new Set(longTrades.map(t => t.id)))
+
+  // ---- dip evidence outranks the composite's read of the SAME chart ----
+  // A triggered-and-holding dip is the tape saying this name is being BOUGHT: a
+  // measured drop, the knife guard passed, a volume-PAID reclaim. The composite
+  // reading the identical candles sees only deep negative momentum and calls a
+  // short (dipLane.ts explains why it must). Publishing both live would put the
+  // board on both sides of one name on one morning — an unreadable card, and a
+  // hedge the reader never asked for. Ratified 2026-08-11: the dip read wins the
+  // reader-facing row and the short is DEMOTED to a shadow. Demotion, not
+  // deletion — the short still publishes and still grades, so the ledger can
+  // eventually answer "when the two lanes disagreed, who was right?". Longs need
+  // no rule: an ordinary long is the same side and simply won the merge above.
+  //
+  // Run AFTER the news pass, because news can dissolve the disagreement: when the
+  // headlines say the thesis BROKE, the dip long has already been stood down to a
+  // shadow and the two lanes no longer contradict each other — the news corroborates
+  // the short. Demoting it then would leave the reader with nothing on a name where
+  // the engine has real, agreeing evidence to short. That release is keyed on an
+  // EXPLICIT structural verdict only: a dip that was never examined (never a
+  // candidate, over budget, a dead dep, a venue with no source) leaves the price
+  // evidence standing unopposed, and unopposed dip evidence still wins.
+  //
+  // The trigger is a CONSTRUCTED dip long (published, live or news-shadowed), not
+  // a bare dip read. dipCall declines a shape that risks more than its target pays
+  // (the 1:1 gate) and the degenerate stop/target shapes — and a dip the lane
+  // itself refused to trade is no evidence against anything. Keying on dipReads
+  // silently deleted the day's only call on such a name: the dip published nothing
+  // and the perfectly good composite short was demoted beside it.
+  //
+  // And the dip long has to be a row the reader can actually TAKE (ratified
+  // 2026-08-12). A dip that published below its base rate, or graded C on thin
+  // evidence, lands watch-only at zero size: trading it is not on offer. Letting
+  // that row demote a live, routable, fully-graded short costs the reader the
+  // day's only sized call on the name and hands back an observation in its place
+  // — the disagreement is real, but the cure must not be worse than the clash.
+  //
+  // "Takeable" means takeable at the END of the assembly, which is why this runs
+  // here and not beside the news pass. A dip long can be sized when it publishes
+  // and still lose its slot to the 3-per-side cut or the diversity gates above —
+  // and then it is a zero-size observation like any other. Reading the PRE-cut
+  // state left exactly the state F3 forbids: an unplaceable dip row on the board
+  // and a routable, fully-graded short shadowed behind it.
+  const sizedDipLongs = new Set(
+    board.filter(b => b.side === 'long' && !b.shadow && !b.watchOnly && constructedDipLongs.has(b.sym.toUpperCase())).map(b => b.sym.toUpperCase()),
+  )
+  /** Row ids of shorts the dip lane demoted — read only by the empty-side copy,
+   * which must not tell the reader "nothing cleared the gates" about a row that
+   * cleared all of them and was then outranked by the other lane. */
+  const dipDemotedShorts = new Set<string>()
+  for (const row of board) {
+    if (row.side !== 'short' || row.shadow) continue
+    const sym = row.sym.toUpperCase()
+    // The release, logged where it can actually be true. A structural verdict has
+    // already published the dip long as a SHADOW, so such a name can never be in
+    // sizedDipLongs and this is not a gate — but "the news freed the short" is
+    // worth saying out loud, and inside the demotion branch it could never print.
+    if (structuralVetoes.has(sym) && constructedDipLongs.has(sym)) {
+      console.log(`BOARD: structural news on ${row.sym} frees the composite short — both lanes now read the same way`)
+      continue
+    }
+    if (!sizedDipLongs.has(sym)) continue
+    row.shadow = true
+    row.watchOnly = undefined // shadow and watch are exclusive in publishCall — keep them so
+    row.belowBase = undefined
+    row.riskPct = 0
+    row.instrument = null
+    row.paperOnly = true // a short with no instrument, exactly as publishCall stamps one
+    row.horizon = horizonOf({ watchOnly: false, stage: row.stage, setup: row.setup, evidence: row.evidence })
+    dipDemotedShorts.add(row.id)
+    console.log(`BOARD: dip read on ${row.sym} demotes the composite short to a shadow`)
+  }
+
+  const actionableShorts = board.filter(b => !b.shadow && !b.watchOnly && b.side === 'short')
+  const shortTrades = pickDiverseSide(actionableShorts, 'short', 3, 'trade')
+  demoteToWatch(actionableShorts, new Set(shortTrades.map(t => t.id)))
+  const trades = [...longTrades, ...shortTrades]
   const watchPool = board.filter(b => !b.shadow && b.watchOnly)
   const watch = [...pickDiverseSide(watchPool, 'long', 6, 'watch'), ...pickDiverseSide(watchPool, 'short', 6, 'watch')]
   const liveCalls = [...trades, ...watch].sort((a, b) => (a.watchOnly ? 1 : 0) - (b.watchOnly ? 1 : 0) || Math.abs(b.composite) - Math.abs(a.composite))
@@ -1288,10 +1329,12 @@ export async function buildBoard(
     return !!(m?.short2x || m?.short3x)
   }
   const nearMissRows: Prediction[] = []
-  /** Why a side carries nothing tradeable — 'gates' (nothing cleared them) or
-   * 'no-route' (something did, and an ISA cannot place it). Rides the board blob
-   * so the copy on the card can say which; a lie here reads as a broken engine. */
-  const emptySides: { long?: 'gates' | 'no-route'; short?: 'gates' | 'no-route' } = {}
+  /** Why a side carries nothing tradeable: 'gates' (nothing cleared them),
+   * 'no-route' (something did, and an ISA cannot place it) or 'dip-lane' (the
+   * engine had a live short and its own dip read outranked it). Rides the board
+   * blob so the copy on the card can say which; a lie here reads as a broken
+   * engine, and 'gates' was the lie in both of the other two cases. */
+  const emptySides: { long?: EmptySideReason; short?: EmptySideReason } = {}
   for (const side of ['long', 'short'] as const) {
     if (liveCalls.some(b => b.side === side)) continue
 
@@ -1321,7 +1364,21 @@ export async function buildBoard(
       console.log(`BOARD: ${observation.sym} cleared every gate with no ISA route — shown as an observation on the empty ${side} side`)
       continue
     }
-    emptySides[side] = 'gates'
+    // No promotable observation — but "nothing cleared the gates" is still only
+    // one of three ways a side empties, and it is the one that blames the gates.
+    //   dip-lane: the side HAD a live, routable, fully-graded short and the dip
+    //             read on the same chart demoted it. The gates passed; the engine
+    //             simply preferred its other lane on that name.
+    //   no-route: something cleared enough to be shown — a trade or a watch row —
+    //             and an ISA cannot place it. (The promoted-observation branch
+    //             above covers the sized ones; this covers the rest.)
+    // Ordered so the stronger claim wins: a demoted short was live, where a
+    // route-shadowed one never was.
+    emptySides[side] = board.some(b => b.side === side && dipDemotedShorts.has(b.id))
+      ? 'dip-lane'
+      : board.some(b => b.side === side && b.shadow && routeShadowedShorts.has(b.id))
+        ? 'no-route'
+        : 'gates'
 
     const candidates = nearMisses
       .filter(n => (n.core >= 0 ? 'long' : 'short') === side)

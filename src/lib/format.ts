@@ -1,4 +1,5 @@
 import { CAP_COHORT_LABEL, capCohortOf } from '../../shared/engine/capClass'
+import type { EmptySideReason } from '../../shared/engine/types'
 
 export function fmtPrice(price: number, currency: string): string {
   if (currency === 'GBp') return `${price.toFixed(1)}p`
@@ -37,12 +38,12 @@ export function capCohort(capUsdM: number | null | undefined): 'Large-cap' | 'Sm
 /** Why a side of the board carries nothing tradeable, in the reader's words.
  * The engine records the reason (buildBoard's assembly) because "nothing cleared
  * the gates" is simply false when the truth is "something did, and an ISA cannot
- * place it" — and a card that says the wrong one teaches the reader to distrust
- * the right one. */
-export function emptySideLine(side: 'long' | 'short', reason: 'gates' | 'no-route'): string {
-  return reason === 'no-route'
-    ? `Nothing tradeable on the ${side} side today — the candidates have no ISA route.`
-    : `Nothing cleared the gates on the ${side} side today.`
+ * place it" — or "something did, and our own dip read outranked it" — and a card
+ * that says the wrong one teaches the reader to distrust the right one. */
+export function emptySideLine(side: 'long' | 'short', reason: EmptySideReason): string {
+  if (reason === 'no-route') return `Nothing tradeable on the ${side} side today — the candidates have no ISA route.`
+  if (reason === 'dip-lane') return `Nothing tradeable on the ${side} side today — the dip read outranked the shorts we had.`
+  return `Nothing cleared the gates on the ${side} side today.`
 }
 
 /** Raw fetch/parse exceptions must never reach the screen — "SyntaxError:

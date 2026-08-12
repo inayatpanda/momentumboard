@@ -43,9 +43,10 @@ describe('classifyDip', () => {
   })
   // ---- the volume leg is TURN-SCOPED (ratified 2026-08-12) ----
   // GLW rallied +28% off its low across nine sessions and `holding` was false on
-  // all 21 replay days, because the rule demanded the 1.5× print TODAY — and the
-  // session that pays for a turn is by definition the one that reverses it. The
-  // quiet days after are the base forming, not the confirmation expiring.
+  // all 21 replay days, because the rule demanded the 1.5× print TODAY. What the
+  // leg accepts is real participation printed inside the turn window — on GLW the
+  // 3.6× bar was the −12% capitulation day and the +9% reversal printed only 1.34×,
+  // so "the session that pays is the one that reverses" was never true here.
   it('a turn paid for THREE sessions ago still holds while the recovery grinds quietly', () => {
     const cs = grindingRecovery(3)
     const read = classifyDip(cs)!
@@ -71,11 +72,43 @@ describe('classifyDip', () => {
     expect(read.holding).toBe(false)
   })
 
+  // ---- the read names the NEAREST paid session, not the loudest ----
+  // A capitulation bar is usually the biggest print of the whole turn, so quoting
+  // the window's maximum kept citing evidence that was days older than the real
+  // confirmation. GLW again: 3.6× on the −12% day, 1.34× on the +9% day that turned it.
+  it('with two paid sessions in the window the detail cites the nearer one', () => {
+    // −11% capitulation on 4× volume, then the quieter 1.7× session that followed it
+    const cs = [...base(), mk(94), mk(90), mk(80, 4_000_000, 87, 87, 79), mk(82, 2_000_000), mk(83)]
+    const read = classifyDip(cs)!
+    expect(read.holding).toBe(true)
+    expect(read.detail).toContain('on 1.7× volume 1 session ago')
+    expect(read.detail).not.toContain('4×') // the loudest print is not the nearest evidence
+    expect(read.detail).not.toContain('2 sessions ago')
+  })
+
   it('the paid session printing TODAY reads exactly as it always did', () => {
     const read = classifyDip(grindingRecovery(0))!
     expect(read.holding).toBe(true)
     expect(read.detail).toContain('1.6× volume')
     expect(read.detail).not.toContain('sessions ago')
+  })
+
+  // ---- the knife guard is not negotiable by volume ----
+  // The turn-scoped leg loosened ONE gate. This tape proves it loosened only that
+  // one: a 3× session four days back and a reclaim 23% above the flush low — both
+  // other legs genuinely passing — and today still prints a new 5-session closing
+  // low. A name still making lows is still falling, whatever the crowd paid.
+  it('knife guard alone refuses a paid, reclaimed tape that makes a new 5-session low today', () => {
+    // the flush prints 3× volume and an intraday low of 70, then closes drift down
+    const cs = [...base(), mk(88, 3_000_000, 95, 95, 70), mk(89), mk(88), mk(87), mk(86)]
+    const read = classifyDip(cs)!
+    expect(read.triggered).toBe(true)
+    expect(read.holding).toBe(false)
+    // …and the ONLY reason named is the knife guard: the other two legs passed
+    expect(read.detail).toContain('not holding: new 5-session closing low')
+    expect(read.detail).not.toContain('no 1.5× session')
+    expect(read.detail).not.toContain('no reclaim')
+    expect(dipCall('GLW', cs, read, 35_000)).toBeNull()
   })
 
   it('thin-volume reclaim is not holding', () => {

@@ -1,5 +1,6 @@
 import type { ApiEnvelope, Candle, Quote } from '../../shared/types'
 import type { AppConfig } from '../../shared/config'
+import type { EmptySideReason } from '../../shared/engine/types'
 
 export const getToken = () => localStorage.getItem('mb-token')
 export const setToken = (t: string) => localStorage.setItem('mb-token', t)
@@ -547,10 +548,10 @@ export interface EngineData {
     generatedAt: number
     regime: string
     board: EnginePrediction[]
-    // why a side carries nothing tradeable today: 'gates' = nothing cleared them,
-    // 'no-route' = something did and an ISA cannot place it. Absent on a board
-    // where both sides carry live rows (and on every board written before 2026-08-12).
-    emptySides?: { long?: 'gates' | 'no-route'; short?: 'gates' | 'no-route' }
+    // why a side carries nothing tradeable today (shared/engine/types). Absent on
+    // a board where both sides carry live rows — and on every board written
+    // before 2026-08-12, which is why the renderers treat it as optional.
+    emptySides?: { long?: EmptySideReason; short?: EmptySideReason }
     worldTape?: { tone: string; votes: { on: number; off: number }; detail: string }
     newsTone?: { score: number; label: string; hits: number }
     themes?: { key: string; name: string; hits: number }[]

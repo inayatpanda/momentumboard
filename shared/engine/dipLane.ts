@@ -14,8 +14,10 @@
 //
 // "Holding" is three legs: no new 5-session closing low TODAY, a reclaim path
 // (over the 50-EMA or 3% off the dip low) TODAY, and a volume-paid turn in the
-// last five sessions — the volume leg alone is turn-scoped, because a turn is
-// confirmed once and then grinds quietly (ratified 2026-08-12; see classifyDip).
+// last five sessions. Only the volume leg is turn-scoped, and what it accepts is
+// real participation printed inside that window — the capitulation OR the
+// confirmation, whichever the tape spent it on (ratified 2026-08-12; see
+// classifyDip, which names the GLW case where those were different sessions).
 //
 // Pure module: candles in, a read and a call out. No IO, no LLM. The engine loop
 // (buildBoard) supplies the earnings calendar and the catalyst narration tag.
@@ -114,32 +116,46 @@ export function classifyDip(candles: Candle[]): DipRead | null {
   //    (excluding the session being measured), but the leg is satisfied if ANY of
   //    the last VOLUME_LOOKBACK sessions printed >= VOLUME_MULT×, today included.
   //
-  //    Demanding it of TODAY made a grinding recovery permanently unholdable: the
-  //    session that pays for a turn is by definition the one that reverses it, and
-  //    the quiet sessions after are the base forming, not the confirmation
-  //    expiring. GLW rallied +28% off its low over nine sessions in the July-August
-  //    replay and `holding` was false on all 21 days for exactly this reason
-  //    (docs/superpowers/plans/2026-08-11-stage1-replay-results.md §4). Ratified
-  //    2026-08-12: a turn confirmed on volume once stays confirmed for a week.
-  //    The other two legs are unchanged and still measured on TODAY — a name making
-  //    a new 5-session low, or back under both reclaim paths, is not holding however
-  //    it traded last Tuesday.
+  //    What this leg accepts is REAL PARTICIPATION printed inside the turn window —
+  //    capitulation or confirmation, whichever way the tape chose to spend it. It is
+  //    explicitly NOT "the session that reversed the name", and the flagship case is
+  //    why: GLW's 3.6× bar was the −12% CAPITULATION day, and the +9% session that
+  //    actually turned it printed a mere 1.34×. Reading the crowd's size on either
+  //    side of the low is the evidence; insisting it land on the up-day would have
+  //    refused the turn outright, and insisting it land on TODAY refused it for nine
+  //    sessions while the name rallied +28% off that low (`holding` false on all 21
+  //    replay days — docs/superpowers/plans/2026-08-11-stage1-replay-results.md §4).
+  //    Ratified 2026-08-12: paid once inside the window is paid.
+  //
+  //    The loosening is bounded by the OTHER two legs, which are unchanged and still
+  //    measured on TODAY — a name making a new 5-session low, or back under both
+  //    reclaim paths, is not holding however it traded last Tuesday. Volume says the
+  //    turn was real; the knife guard and the reclaim say it is still standing.
   const rvolAt = (i: number): number | null => {
     const w = candles.slice(Math.max(0, i - HIGH_WINDOW), i).map(c => c.v)
     if (w.length < 5) return null
     const avg = w.reduce((s, v) => s + v, 0) / w.length
     return avg > 0 ? candles[i].v / avg : null
   }
-  // the best-paid session in the window, and how many sessions back it printed
+  // The confirming print is the NEAREST qualifying session, not the loudest: scan
+  // back from today and stop at the first one that paid. Reporting the window's
+  // biggest print instead made the read cite evidence that was not the nearest —
+  // on GLW, "3.6× volume 2 sessions ago" while a 1.8× session sat one day old.
   let paidRvol: number | null = null
   let paidAgo = 0
+  // …and separately the loudest print in the window, which is what a REFUSAL
+  // quotes ("best 1.4×"): there the reader wants to know how close the tape came.
+  let bestRvol: number | null = null
   for (let i = candles.length - 1; i >= Math.max(0, candles.length - VOLUME_LOOKBACK); i--) {
     const r = rvolAt(i)
-    if (r == null || (paidRvol != null && r <= paidRvol)) continue
-    paidRvol = r
-    paidAgo = candles.length - 1 - i
+    if (r == null) continue
+    if (bestRvol == null || r > bestRvol) bestRvol = r
+    if (paidRvol == null && r >= VOLUME_MULT) {
+      paidRvol = r
+      paidAgo = candles.length - 1 - i
+    }
   }
-  const volumeOk = paidRvol != null && paidRvol >= VOLUME_MULT
+  const volumeOk = paidRvol != null
 
   // 3. A reclaim path. Either back over the 50-EMA (the shallow-pullback case),
   //    or RECLAIM_PCT off the dip low — the slide case, where the 50-EMA is far
@@ -154,6 +170,7 @@ export function classifyDip(candles: Candle[]): DipRead | null {
   const holding = triggered && !newLow && volumeOk && reclaim
 
   const paidStr = paidRvol != null ? `${round1(paidRvol)}×` : 'unknown'
+  const bestStr = bestRvol != null ? `${round1(bestRvol)}×` : 'unknown'
   // WHEN the turn was paid for is part of the read, not decoration: "on 1.6× volume"
   // when today paid, "on 1.6× volume 3 sessions ago" when the confirmation is older.
   const when = paidAgo === 0 ? '' : ` ${paidAgo} session${paidAgo === 1 ? '' : 's'} ago`
@@ -168,7 +185,7 @@ export function classifyDip(candles: Candle[]): DipRead | null {
     } else {
       const why: string[] = []
       if (newLow) why.push('new 5-session closing low')
-      if (!volumeOk) why.push(`no ${VOLUME_MULT}× session in the last ${VOLUME_LOOKBACK} (best ${paidStr})`)
+      if (!volumeOk) why.push(`no ${VOLUME_MULT}× session in the last ${VOLUME_LOOKBACK} (best ${bestStr})`)
       if (!reclaim) why.push('no reclaim of the 50-EMA or the dip low')
       detail = `dip ${depth} · not holding: ${why.join('; ')}`
     }

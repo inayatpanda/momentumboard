@@ -34,4 +34,11 @@ describe('emptySideLine', () => {
   it('keeps the gates wording for a side where nothing actually cleared them', () => {
     expect(emptySideLine('long', 'gates')).toBe('Nothing cleared the gates on the long side today.')
   })
+
+  // A short the dip lane demoted cleared every gate AND had a route: it was a
+  // live, sized row until the engine's other lane outranked it. Both of the
+  // other two sentences would be false about it.
+  it('names the dip lane when it is what emptied the side', () => {
+    expect(emptySideLine('short', 'dip-lane')).toBe('Nothing tradeable on the short side today — the dip read outranked the shorts we had.')
+  })
 })

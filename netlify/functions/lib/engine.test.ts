@@ -663,6 +663,31 @@ describe('buildBoard', () => {
     expect(blob.emptySides?.short).toBeUndefined() // nothing empty about the short side
   })
 
+  it('an unroutable short that would only have been a WATCH row still spares its side the gates line', async () => {
+    // Grade C on thin evidence: with a route this row would have been shown as a
+    // watch observation. It is NOT promotable — the observation rank is for rows
+    // that cleared the sizing gates — but the gates are not what hid it either,
+    // and "nothing cleared the gates on the short side today" is the flat
+    // opposite of the truth about a row the route alone suppressed.
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} }) // no inverse ETP anywhere
+    // (11+2)/(20+4) = 0.54 → C; no QQQ candles → regime 'unknown' → contract fails
+    await store.write('engine-calibration', { buckets: { 'short:unknown:55-70': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION })
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const noQqq = deps({ candles: async sym => (sym === 'NVDA' ? shorty : sym === 'SPY' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null) })
+    const { board } = await buildBoard(store, noQqq, NOW)
+
+    const nvda = (await ledgerOf(store))!.find(p => p.sym === 'NVDA')!
+    expect(nvda.grade).toBe('C')
+    expect(nvda.evidence.contract).toBe(false)
+    expect(nvda.shadow).toBe(true) // the route is the only reason it is not on the board
+    expect(board.some(b => b.sym === 'NVDA' && !b.nearMiss)).toBe(false) // …and it is not promoted
+    const blob = (await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!
+    expect(blob.emptySides?.short).toBe('no-route')
+  })
+
   it('an AI nomination joins the roster as a scored candidate (source ai-nomination); an expired one is ignored', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
@@ -1283,6 +1308,93 @@ describe('buildBoard', () => {
     expect(short.shadow).toBeUndefined() // NOT demoted
     expect(short.riskPct).toBeGreaterThan(0) // the day's only sized row survives
     expect(short.watchOnly).toBeUndefined()
+  })
+
+  it('a dip long that loses the SLOT CUT demotes nothing either: the guard reads the final sized state', async () => {
+    // The F3 hole. GLW's dip long is sized when it publishes — grade B, real risk
+    // — so the pre-cut read of "sized" said yes and the composite short was
+    // shadowed. Then the trade cut ran: OXY's deeper dip took the long slot and
+    // GLW, moving in lockstep with it, was culled by the correlation gate into a
+    // zero-size watch row. The morning ended in exactly the state F3 forbids — an
+    // unplaceable observation on the board and a routable, grade-A short hidden
+    // behind it. The demotion now runs AFTER the cut, on the state the reader gets.
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' } } })
+    await store.write('engine-calibration', {
+      // OXY's deeper dip composites at 41.4 (the 40-55 band), GLW's at 39.3 — both
+      // bands proven, so BOTH dip longs are genuinely sized before the cut speaks.
+      // Each bucket clears MIN_BUCKET_N (15) and the three together stay under the
+      // 50 observations baseHitRate needs, so the base rate is still 0.5 and a
+      // 0.67 bucket really is an edge over it.
+      buckets: {
+        'short:amber:40-55': { n: 16, hits: 11 },
+        'long:amber:25-40': { n: 16, hits: 11 },
+        'long:amber:40-55': { n: 16, hits: 11 },
+      },
+      brier: [],
+      defVersion: CALIB_DEF_VERSION,
+    })
+    // the same rolled-over-and-bounced shape as GLW, bouncing less: a DEEPER dip
+    // (16.4% vs 14.3%) on a 60-day return path that is all but identical
+    const deeperTwin: Candle[] = (() => {
+      const bars = mk(i => (i < 200 ? 80 + i : 280 - (i - 200) * 2), 259)
+      const prev = bars[bars.length - 1]
+      const c = prev.c * 1.02
+      bars.push({ t: prev.t + 86_400, o: prev.c, h: c, l: prev.c * 0.995, c, v: 1_600_000 })
+      return bars
+    })()
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym =>
+        sym === 'GLW' ? dipAndShortTape : sym === 'OXY' ? deeperTwin : sym === 'SPY' || sym === 'QQQ' ? flat : null,
+      sparkCloses: async () =>
+        new Map([
+          ['GLW', dipAndShortTape.map(c => c.c)],
+          ['OXY', deeperTwin.map(c => c.c)],
+        ]),
+      dipNews: async () => ({ verdict: 'transient', reason: 'sector sympathy, guidance intact' }),
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    // the deeper dip took the day's long slot…
+    const oxy = board.find(b => b.sym === 'OXY' && b.side === 'long')!
+    expect(oxy).toBeDefined()
+    expect(oxy.riskPct).toBeGreaterThan(0)
+
+    // …and GLW's dip long, sized when it published, ended the assembly unsized
+    const long = board.find(b => b.sym === 'GLW' && b.side === 'long')!
+    expect(long).toBeDefined()
+    expect(long.catalyst?.kind).toBe('dip')
+    expect(long.watchOnly).toBe(true)
+    expect(long.riskPct).toBe(0)
+
+    // so the short it would have demoted keeps the row: live, routable, sized
+    const short = board.find(b => b.sym === 'GLW' && b.side === 'short')!
+    expect(short).toBeDefined()
+    expect(short.shadow).toBeUndefined()
+    expect(short.watchOnly).toBeUndefined()
+    expect(short.riskPct).toBeGreaterThan(0)
+    expect(short.grade).toBe('A')
+    // …and the side is not described as empty, because it isn't
+    const blob = (await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!
+    expect(blob.emptySides?.short).toBeUndefined()
+  })
+
+  it('a dip long that KEEPS its slot still demotes, and the empty short side says the dip lane did it', async () => {
+    // The mirror of the test above: nothing outranks GLW's dip long, so it holds
+    // its slot, the demotion fires as ratified — and the short side is now empty
+    // for a reason that is neither the gates nor the route. Saying "nothing
+    // cleared the gates" there would be a lie about a grade-A row.
+    const store = await collisionStore()
+    const d = collisionDeps({ dipNews: async () => ({ verdict: 'transient', reason: 'sector sympathy, guidance intact' }) })
+    const { board } = await buildBoard(store, d, NOW)
+
+    expect(board.find(b => b.sym === 'GLW' && b.side === 'long')!.riskPct).toBeGreaterThan(0)
+    expect(board.some(b => b.side === 'short')).toBe(false) // the demoted short was the only one
+    const blob = (await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!
+    expect(blob.emptySides?.short).toBe('dip-lane')
   })
 
   it('the dip lane never receives the world-tape nudge, so its row records the multiplier it actually ran at', async () => {

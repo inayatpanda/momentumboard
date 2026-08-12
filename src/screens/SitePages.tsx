@@ -115,11 +115,13 @@ export function EnginePage() {
         the row publish watch-only: visible, graded, learning, carrying no size.
       </p>
       <p>
-        On a morning when a side carries nothing tradeable, the board still refuses to go blank — and it says which of the two
-        reasons is true. When nothing cleared the gates, it names the <b>nearest misses</b>, the reads that came closest, for exactly
+        On a morning when a side carries nothing tradeable, the board still refuses to go blank — and it says which reason is the true
+        one. When nothing cleared the gates, it names the <b>nearest misses</b>, the reads that came closest, for exactly
         what they are: no letter grade, no probability, no size, and they never enter the ledger. When something did clear every gate
         and simply cannot be routed inside an ISA — the usual fate of a short with no inverse ETP — it says that instead, and shows
-        the call as an observation. Either way it is the engine's "no", said out loud. "No qualified trades" is a result, not a failure.
+        the call as an observation. And when the side is empty because the engine's own <b>dip read</b> outranked the short it had on
+        that chart, it says that too, rather than blaming gates that were passed. Either way it is the engine's "no", said out loud.
+        "No qualified trades" is a result, not a failure.
       </p>
       <p>
         Calls are also stamped by setup family — trend continuation, pullback/reversal, exhaustion fade — because a breakout long and

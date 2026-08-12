@@ -5,6 +5,7 @@ import { composePrompt, parseComposed, buildNewspaperHtml, boardExportRows, cons
 import { cachedQuote, cachedCandles, cachedCompanyName } from './lib/marketCache'
 import { regimeFromCandles } from '../../shared/setups'
 import type { AppConfig } from '../../shared/config'
+import type { Prediction } from '../../shared/engine/types'
 
 // The guaranteed morning paper: gathers everything the system already knows,
 // has the LLM write the journalism, builds the newspaper in code, publishes
@@ -13,6 +14,49 @@ import type { AppConfig } from '../../shared/config'
 // weekday mornings or manually by the admin.
 
 const SITE = process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'
+
+/** What the JOURNALIST is shown of the engine's board: the top 16 rows, slimmed
+ * to the fields the prose may lean on. Two of those fields are the whole reason
+ * this is a named, tested function rather than a literal inside the handler:
+ *
+ *  - `watchOnly` is the row's licence to be traded. constrainIdeasToBoard refuses
+ *    to turn a watch-only row into an idea and fallbackIdeasFromBoard skips it,
+ *    so a promoted route-blocked short — a real, graded call the reader simply
+ *    cannot place — reaches the paper as analysis and never as a placeable trade.
+ *  - `note` carries the engine's own label ("… · no ISA route — observation only").
+ *    Dropping it would hand the model a graded short with no hint that it is an
+ *    observation, which is exactly how a paper starts telling people to sell
+ *    something they were never offered a way to sell.
+ *
+ * PURE + exported so both can be tested without running the compose pipe. */
+export function journalistBoardRows(board: readonly Prediction[]) {
+  return board.slice(0, 16).map(p => ({
+    id: p.id,
+    sym: p.sym,
+    side: p.side,
+    grade: p.grade,
+    probability: p.probability,
+    provisional: p.provisional,
+    composite: p.composite,
+    entry: p.entry,
+    stop: p.stop,
+    target: p.target,
+    expectedMovePct: p.expectedMovePct,
+    capacityPct: p.capacityPct,
+    stage: p.stage,
+    note: p.note,
+    smallCap: p.smallCap,
+    earningsRisk: p.earningsRisk,
+    riskPct: p.riskPct,
+    instrument: p.instrument,
+    paperOnly: p.paperOnly,
+    watchOnly: p.watchOnly, // an observation, not a trade — may never become an idea
+    nearMiss: p.nearMiss, // a row that cleared no gate — the journalist must not write it up
+    setup: p.setup,
+    evidence: p.evidence?.detail,
+    factorDetails: Object.fromEntries(Object.entries(p.factors).filter(([, f]) => f.score != null).map(([k, f]) => [k, `${f.score} — ${f.detail}`])),
+  }))
+}
 
 export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
@@ -106,34 +150,9 @@ export default async (req: Request) => {
     // the engine's scored board: fresh = composed today (London). Stale or
     // missing → the paper still publishes, in legacy qualitative mode.
     const engineBoard = await grab(async () => {
-      const b = await blobAppStore.read<{ date: string; board: import('../../shared/engine/types').Prediction[] }>('engine-board')
+      const b = await blobAppStore.read<{ date: string; board: Prediction[] }>('engine-board')
       if (!b || b.date !== dateISO || !Array.isArray(b.board)) return null
-      return b.board.slice(0, 16).map(p => ({
-        id: p.id,
-        sym: p.sym,
-        side: p.side,
-        grade: p.grade,
-        probability: p.probability,
-        provisional: p.provisional,
-        composite: p.composite,
-        entry: p.entry,
-        stop: p.stop,
-        target: p.target,
-        expectedMovePct: p.expectedMovePct,
-        capacityPct: p.capacityPct,
-        stage: p.stage,
-        note: p.note,
-        smallCap: p.smallCap,
-        earningsRisk: p.earningsRisk,
-        riskPct: p.riskPct,
-        instrument: p.instrument,
-        paperOnly: p.paperOnly,
-        watchOnly: p.watchOnly,
-        nearMiss: p.nearMiss, // a row that cleared no gate — the journalist must not write it up
-        setup: p.setup,
-        evidence: p.evidence?.detail,
-        factorDetails: Object.fromEntries(Object.entries(p.factors).filter(([, f]) => f.score != null).map(([k, f]) => [k, `${f.score} — ${f.detail}`])),
-      }))
+      return journalistBoardRows(b.board)
     })
     const engineFresh = !!engineBoard?.length
 

@@ -416,15 +416,47 @@ it cannot change.)
 
 **Yes. GLW's dip call constructs, and it reaches the reader's board as a full-size trade.**
 
-| date | close | holding | dip call | entry | stop | target | R:R | 5-session outcome |
-|---|---|---|---|---|---|---|---|---|
-| 2026-07-31 | 135.22 | ✅ (3.6× volume **2 sessions ago**) | **built** | 135.22 | 114.50 | 166.00 | 1.49 | **HIT, +11.4% vs SPY** |
-| 2026-08-03 | 138.25 | ✅ (3.6×, 3 sessions ago) | **built** | 138.25 | 114.50 | 166.53 | 1.19 | **HIT, +13.8% vs SPY** |
-| 2026-08-04 | 146.64 | ✅ (3.6×, 4 sessions ago) | declined | — | — | — | 0.63 | — |
-| 2026-08-05 | 159.89 | ✅ (1.8×, 4 sessions ago) | declined | — | — | — | 0.18 | — |
-| 2026-08-06 → 08-11 | 156.70 → 165.68 | ❌ (best 1.4× in 5) | — | — | — | — | — | — |
+The `close` column is the last close the engine could **see** on that board date (D−1 under the
+point-in-time rule of §1), which is the price every level below is derived from.
 
-Both rows published **grade B, 1% risk, catalyst `dip`**, and on 07-31 — the red-regime day that
+| board date | close seen | holding | dip call | entry | stop | target | R:R | 5-session outcome |
+|---|---|---|---|---|---|---|---|---|
+| 2026-07-31 | 135.22 (07-30) | ✅ (3.6× volume **2 sessions ago**) | **built** | 135.22 | 114.50 | 166.00 | 1.49 | **HIT, +11.4% vs SPY** |
+| 2026-08-03 | 138.25 (07-31) | ✅ (3.6×, 3 sessions ago) | **built** | 138.25 | 114.50 | 166.53 | 1.19 | **HIT, +13.8% vs SPY** |
+| 2026-08-04 | 146.64 (08-03) | ✅ (3.6×, 4 sessions ago) | declined | — | — | — | 0.712 | — |
+| 2026-08-05 | 159.89 (08-04) | ✅ (1.8×, 4 sessions ago) | declined | — | — | — | 0.358 | — |
+| 2026-08-06 | 156.70 (08-05) | ❌ (best 1.4× in 5) | — | — | — | — | — | — |
+| 2026-08-07 | 157.18 (08-06) | ❌ (best 1.4× in 5) | — | — | — | — | — | — |
+| 2026-08-10 | 165.68 (08-07) | ❌ (best 1.4× in 5) | — | — | — | — | — | — |
+| 2026-08-11 | 157.76 (08-10) | ❌ (best 1.4× in 5) | — | — | — | — | — | — |
+
+*(The last four rows were previously collapsed to "2026-08-06 → 08-11 | 156.70 → 165.68", which
+reads as a start-and-end pair. It was not one: 165.68 is the 08-07 close, seen by the **08-10**
+board, and the window ends at 157.76. The dates and the closes now line up one for one.)*
+
+**Reproducing the R:R column.** Every figure is `dipCall`'s own arithmetic on the bars the engine
+saw — `target = entry + (high20 − entry)/2`, `stop = min(dip-window low, today's low)`,
+`R:R = (target − entry) / (entry − stop)` — and both declines are worked through here because
+the first draft of this table printed 0.63 and 0.18, which reproduce from nothing:
+
+- **08-04** — entry 146.64, high20 **192.38** (the 09 Jul close, still inside the 20-session
+  window), so target = 146.64 + (192.38 − 146.64)/2 = **169.51**; stop 114.50 (the 28 Jul low),
+  so risk = **32.14** and reward = 22.87. **R:R = 22.87 / 32.14 = 0.712.**
+- **08-05** — entry 159.89, same high20 192.38, target = **176.14**; risk = 159.89 − 114.50 =
+  **45.39**, reward = 16.25. **R:R = 16.25 / 45.39 = 0.358.**
+
+The conclusion is unchanged in both cases and in the same direction — both are far under the 1:1
+floor, and the lane was right to decline — but a number nobody can reproduce is not evidence.
+
+**One later change to the wording, not the verdict.** The `holding` column above quotes the run as
+it happened, when `paidRvol` reported the window's LOUDEST session. It now reports the nearest
+QUALIFYING one, so the same four days read "on 1.8× volume 1 / 2 / 3 / 4 sessions ago" instead of
+"3.6× … 2 / 3 / 4 sessions ago" — the 3.6× print was the 28 Jul capitulation bar, and a 1.8×
+session (29 Jul) sat nearer on every one of those boards. Same holding verdict, same levels, same
+R:R; only the evidence the sentence names is closer to hand. The refusals from 08-06 are unchanged
+("best 1.4× in 5") because a refusal still quotes the loudest print, which is the useful one there.
+
+Both built rows published **grade B, 1% risk, catalyst `dip`**, and on 07-31 — the red-regime day that
 was the baseline's only blank board — GLW was the **first trade on the board**. On 08-03 the
 composite also published its opposing GLW short, as a shadow; F3's new condition was satisfied on
 both days (the dip long published as a *sized* row, so it is entitled to demote). Whether the
@@ -433,7 +465,7 @@ every short is unroutable and shadows anyway.
 
 The two declines matter as much as the two builds: on 08-04 and 08-05 the dip was still *holding*,
 but price had run so far off the 114.50 low that the half-retrace target no longer paid for the
-stop — R:R 0.63 and 0.18 against a 1:1 floor. **The lane refused to chase its own winner.** Then
+stop — R:R 0.712 and 0.358 against a 1:1 floor. **The lane refused to chase its own winner.** Then
 the 3.6× session aged out of the 5-day window and holding went false on its own. So the rule did
 not simply switch GLW on for the month; it opened a **two-day window at the turn** and closed it.
 
