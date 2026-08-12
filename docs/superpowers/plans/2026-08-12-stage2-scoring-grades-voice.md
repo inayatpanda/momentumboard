@@ -47,7 +47,7 @@
 
 **Scoring (technicalFactor v3):** input widens (structural type — additive at call sites, recon §1.2) to `{ stage, volumeConfirmed, rvol, emaStack, volThrust }`. Score = `STAGE_SCORE[stage]` (unchanged base) + stack bonus: aligned bull +15 / bear −15 / mixed 0 (null 0); thrust modifier: `volThrust ≥ 1.5` amplifies a non-zero score ×1.15, `≤ 0.6` damps ×0.85 (both directions — thrust is participation, not direction, unlike today's long-only amplify which stays as-is at `factors.ts:35`); clamp ±100. Detail names the stack state in plain words.
 
-**Weights:** DEFAULT_WEIGHTS → D3 vector. **Migration (D4):** `rebaseWeights(state, base)` in calibration.ts — when `state.base` differs from `base` on any key: set `base` and `current` to the new vector, keep `ic` accrual, push a history entry `{ date, changes: {...}, evidence: 'stage-2 re-base to the owner-ordered vector' }`. Called from `loadState` (engine.ts:306-320) after `migrateWeights`. Idempotent (fingerprint equality short-circuits).
+**Weights:** DEFAULT_WEIGHTS → D3 vector. **Migration (D4):** `rebaseWeights(state, base)` in calibration.ts — when `state.base` differs from `base` on any key: set `base` and `current` to the new vector, **zero the `ic` state** (evidence gathered under the old vector would confound the nudge loop — DeepSeek gate; the 778 all-agree technical observations carry no usable signal), push a history entry `{ date, changes: {...}, evidence: 'stage-2 re-base to the owner-ordered vector' }`. Called from `loadState` (engine.ts:306-320) after `migrateWeights`. Idempotent (fingerprint equality short-circuits).
 
 - [ ] TDD: factor tests (stack bonus both ways, thrust both ways, null legs leave v2 behaviour); migration tests (differing base → re-based once, idempotent second call, history entry; identical base → untouched); re-derive recon Tier-D composite pins (7 in composite.test.ts — recompute each expected composite under the new vector BY HAND in the test comments); full suite → commit `feat(engine): the charts speak first — owner-ordered weights, and a migration that actually re-bases production`.
 
@@ -64,35 +64,44 @@
 const BAND_MID: Record<Band, number> = { '25-40': 32.5, '40-55': 47.5, '55-70': 62.5, '70+': 77.5 }
 const SHRINK_K = 25
 
-/** Weighted PAVA: pool adjacent band estimates until non-decreasing in the band
- * midpoint. The one read-path prior: within a context, MORE conviction never
- * reads as WORSE. Evidence that disagrees is pooled, not overwritten. */
-function isotonic(points: { mid: number; p: number; n: number }[]): { mid: number; p: number; n: number }[] {
-  const blocks = points.map(pt => ({ ...pt }))
+/** Weighted PAVA — standard isotonic regression. Pools adjacent violators, then
+ * ASSIGNS each ORIGINAL band its block's pooled value [DeepSeek gate, blocker 1:
+ * interpolating over pooled-block midpoints over-corrects and fabricates
+ * conviction; the x-axis must stay the original band midpoints]. Returns the
+ * monotone fit per original band, alongside each band's ORIGINAL n. */
+function isotonicFit(bands: { band: Band; p: number; n: number }[]): { mid: number; p: number; n: number }[] {
+  const blocks = bands.map(b => ({ p: b.p, n: b.n, members: [b] }))
   let i = 0
   while (i < blocks.length - 1) {
     if (blocks[i].p <= blocks[i + 1].p + 1e-12) { i++; continue }
     const a = blocks[i], b = blocks[i + 1]
     const n = a.n + b.n
-    blocks.splice(i, 2, { mid: (a.mid * a.n + b.mid * b.n) / n, p: (a.p * a.n + b.p * b.n) / n, n })
+    blocks.splice(i, 2, { p: (a.p * a.n + b.p * b.n) / n, n, members: [...a.members, ...b.members] })
     if (i > 0) i--
   }
-  return blocks
+  // every original band keeps its own x (midpoint) and its own n; only p is fitted
+  return blocks.flatMap(bl => bl.members.map(m => ({ mid: BAND_MID[m.band], p: bl.p, n: m.n })))
 }
 
-/** probabilityFor v3: same 5-rung ladder, but each rung that has ANY evidence
- * builds a curve over its bands: laplace per band → weighted PAVA → piecewise-
- * linear at |composite| (flat extension beyond the outer midpoints — so 70+
- * inherits AT LEAST the 55-70 level [spec §4.2]) → shrink toward the rung's
- * pooled laplace by nLocal/(nLocal + SHRINK_K), where nLocal interpolates the
- * two straddling bands' n. Returns { p, provisional, nEff }: nEff = shrinkage-
- * effective evidence at this composite; provisional = nEff < MIN_BUCKET_N.
- * gradeFor consumes nEff (D6) — the rung index no longer decides trust. */
+/** probabilityFor v3: same 5-rung ladder. A rung with evidence builds its curve:
+ * laplace per band → isotonicFit → SHRINK each fitted band value toward the
+ * rung's pooled laplace by n/(n + SHRINK_K) — hierarchical partial pooling:
+ * band-level children shrink toward their rung-level parent (NOT circular: the
+ * parent pools SIBLING bands too; a band dominating its rung shrinks ~toward
+ * itself, which is the identity, and thin siblings borrow strength — exactly
+ * the intent) → piecewise-linear over the ORIGINAL midpoints → flat extension
+ * beyond the outer midpoints, applied AFTER shrinkage, so p(70+) equals the
+ * FINAL 55-70 value exactly [spec §4.2's floor; if a whole context reads below
+ * base, high conviction honestly reads below base — that is a shadow, and it
+ * is intended]. Returns { p, provisional, nEff } where nEff = the MINIMUM of
+ * the two straddling ORIGINAL bands' n (single band's n at/beyond the edges) —
+ * pooling can never inflate it [DeepSeek gate, blocker 2]; provisional =
+ * nEff < MIN_BUCKET_N. gradeFor consumes nEff (D6). */
 ```
 
 The implementation replaces `probabilityFor`'s per-rung band lookup with `curveFor(state, side, regime, cohort, rung)` producing the isotonic points from `poolBuckets` calls per band (recon §3.3: poolBuckets must become per-band callable — it already is, one band per call). Rung selection: first rung with total n > 0 across ANY band (rungs 1-4), else rung 5 base rate. `gradeFor(p, nEff, baseRate)`: A `p ≥ base+0.10 && nEff ≥ 30`; B `p ≥ base+0.05 && nEff ≥ 15`; C `p ≥ base`; null below. The `provisional` return survives for display; `capacityPct` leaves the signature (D6) — update the one production call (engine.ts:1048-1049) and the flags that read `provisional`.
 
-Also: `ENGINE_MODEL_VERSION = 3` (stamp only — recon §7.1); `probability` stays 2dp (display resolution decision, recorded); the `n ≥ 50 else 0.5` baseHitRate cliff stays (it's the cold-start guard).
+Also: `ENGINE_MODEL_VERSION = 3` (stamp only — recon §7.1); `probability` stays 2dp (display resolution decision, recorded); the `n ≥ 50 else 0.5` baseHitRate cliff stays — with the DOCUMENTED consequence (DeepSeek gate) that grade A is unreachable while the pool is under 50 observations (base 0.5 puts A at 0.60): in cold start the engine hands out no As, and that is intended, not accidental.
 
 - [ ] TDD order: isotonic unit tests FIRST (monotone in, untouched; the recon's real short inversion as a fixture — 0.41/0.25 pools to one weighted block; single point; all-equal); curve tests (interpolation between mids; flat extension both ends; 70+ ≥ 55-70 by construction; shrinkage toward pooled at low n; nEff arithmetic); THEN re-derive the 13 Tier-A tests (each expected value recomputed and shown in a comment); THEN gradeFor (D6 truth table incl. the thin-55-70-B kill: p 0.5 n 8 → nEff < 15 → C not B); THEN the 17 Tier-B engine tests (recon lists every line; the four load-bearing comments at engine.test.ts:132/1466/1652/2121 rewritten to the new arithmetic). Full suite → commit `feat(engine): probability is a curve — monotone, shrunk, and grade A is finally something the engine can earn`.
 
@@ -104,7 +113,7 @@ Also: `ENGINE_MODEL_VERSION = 3` (stamp only — recon §7.1); `probability` sta
 
 `ComposeInput.sleeve` dies; `SLEEVE_CAPACITY_FLOOR` dies (recon §5.3 — three sites). `Gates` gains `minExpectedMovePct` (moderate 1.5, aggressive 1.0); the floor test at composite.ts:216-217 becomes: compute `expectedMovePct` first (levelsFor's formula — hoist that one line above the gate), then `if (expectedMovePct < gates.minExpectedMovePct - (catalyst ? 0.5 : 0)) return null`. capacityPct stays in the call payload (display + calibration keys untouched).
 
-- [ ] TDD: a capacity-5 name at composite 45 passes moderate (expectedMove 2.25); the same name at composite 26 fails (1.3) but passes aggressive w/ catalyst (1.3 ≥ 0.5); GLW-class capacity-6 conviction-40 passes; sleeve flag gone from every call site; re-derive the composite tests that planted `sleeve: true`. Full suite → commit `feat(engine): eligibility is the move you can expect, not the volatility class you belong to`.
+- [ ] Also (DeepSeek gate): `backtest.ts`'s `composeCall` inherits the new Gates shape — verify it compiles with the default gates and note in the seed docblock that FUTURE regenerations (2b) score under the expected-move floor while the committed seed predates it (epochs distinguished by modelVersion). TDD: a capacity-5 name at composite 45 passes moderate (expectedMove 2.25); the same name at composite 26 fails (1.3) but passes aggressive w/ catalyst (1.3 ≥ 0.5); GLW-class capacity-6 conviction-40 passes; sleeve flag gone from every call site; re-derive the composite tests that planted `sleeve: true`. Full suite → commit `feat(engine): eligibility is the move you can expect, not the volatility class you belong to`.
 
 ---
 
@@ -118,7 +127,7 @@ Also: `ENGINE_MODEL_VERSION = 3` (stamp only — recon §7.1); `probability` sta
 - Velocity: `"Long {sym} — {door phrase} on {volume phrase}. Wrong on the first close below the trail ({stop} today, and it ratchets)."`
 - Near-miss/observation keep their existing honest sentences (thesis stays unset — they are not calls).
 
-- [ ] TDD: template tests per producer (assert no factor-name leakage: the banned-token list from newspaper's rule); projection tests (each of the five carries both fields); newspaper test (invalidation cell === stored falsifier verbatim; caseText prompt cites the thesis); UI render tests in the two components' existing style. Full suite → commit `feat(voice): every call says what it believes and what would prove it wrong`.
+- [ ] The humanisation mapping is CONCRETE, not aspirational (DeepSeek gate): a small `shared/engine/voice.ts` module owns STAGE_PHRASE and per-factor phrase tables + the banned-token list, with its own tests — producers consume it. TDD: template tests per producer (assert zero banned tokens); projection tests (each of the five PROPAGATES the fields when present; near-miss/observation rows legitimately lack them and every projection handles undefined cleanly — presence is asserted on trade rows only); newspaper test (invalidation cell === stored falsifier verbatim; caseText prompt cites the thesis); UI render tests in the two components' existing style. Full suite → commit `feat(voice): every call says what it believes and what would prove it wrong`.
 
 ---
 
@@ -137,7 +146,7 @@ Also: `ENGINE_MODEL_VERSION = 3` (stamp only — recon §7.1); `probability` sta
 **Gate (all must hold; report numbers, never tune):**
 1. Window re-run (2026-07-14→08-11, baseline = worktree of 2ae4484): zero-trade days stay 0; blank sides stay 0.
 2. Grade distribution: B ≤ 75% of graded board rows (was 100% baseline, 83% after 1b).
-3. Probability: ≥ 15 distinct values across the window (the step function is dead); monotone within every (side, regime, cohort) sampled.
+3. Probability: ≥ 15 distinct values across the window (the step function is dead). Monotonicity is asserted on the SYNTHETIC probe (curve sampled 26→78 per context from planted states — the window alone may never produce a 55+ composite and would make this check vacuous; DeepSeek gate); the window's own sampled bands are reported alongside.
 4. A-reachability: the synthetic probe produces an A; AND the window itself is reported honestly (an organic A is NOT required — the seed may not support one yet; say which).
 5. win5/avg5 vs baseline within noise (report t); Brier new ≤ old + 0.02.
 6. Voice: every board trade row in the window carries a thesis + falsifier with zero banned tokens.
