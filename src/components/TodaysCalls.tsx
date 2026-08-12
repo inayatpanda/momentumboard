@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData, type EnginePrediction } from '../lib/api'
-import { capBand, emptySideLine, fmtRiskPct } from '../lib/format'
-import { RUNG_RISK_PCT } from '../../shared/engine/riskLadder'
+import { capBand, emptySideLine, fmtRiskPct, sizeLabel } from '../lib/format'
 import { GradeChip } from './GradeChip'
 
 // TODAY'S CALLS: the engine board, front and centre on the watchlist. Each
@@ -88,9 +87,9 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
               {p.watchOnly && <span className="badge warn">{p.nearMiss ? 'near miss' : 'watch'}</span>}
               <span className="calls-odds">{p.nearMiss ? `~${p.expectedMovePct}%` : `${Math.round(p.probability * 100)}% · ~${p.expectedMovePct}%`}</span>
             </span>
-            {/* what the row is WORTH, said on the card: full size, half size, or nothing */}
+            {/* what the row is WORTH, said on the card: full, half, a lane's quarter-size probe, or nothing */}
             <span className="calls-risk" style={{ fontSize: 11, color: 'var(--muted)' }}>
-              {p.riskPct > 0 ? `${fmtRiskPct(p.riskPct)}% risk${p.riskPct < RUNG_RISK_PCT[p.riskRung] ? ' (half size)' : ''}` : p.nearMiss ? 'nearest miss — no size' : 'watch only'}
+              {p.riskPct > 0 ? `${fmtRiskPct(p.riskPct)}% risk${sizeLabel(p.riskPct, p.riskRung)}` : p.nearMiss ? 'nearest miss — no size' : 'watch only'}
             </span>
             {(band || (p.themes ?? []).length > 0 || p.earningsRisk) && (
               <span className="calls-tags">

@@ -8,14 +8,16 @@ import { describe, expect, it, vi } from 'vitest'
 // never received. That stamp used to test the dip LITERAL; it now tests the lane
 // FAMILY (LANE_CATALYST_KINDS).
 //
-// Proving "family, not literal" needs a lane-tagged row on a board, and the
-// velocity lane is not wired into buildBoard yet (a later Stage 1b task). So this
-// file hands the engine a DIFFERENT membership — 'ipo' declared a lane kind — and
-// pins the consequence: the ipo-tagged row records mult 1 while its untagged
-// neighbour on the same board, same tone, same side still takes the 1.1 nudge.
-// Under the old `cat?.kind === DIP_CATALYST_KIND` literal the ipo row would print
-// 1.1 and this test fails. Together with catalyst.test.ts (velocity IS in the
-// set) that closes the loop on velocity rows without pre-empting the wiring task.
+// Proving "family, not literal" needs a lane-tagged row that is NOT one of the
+// lanes the engine already publishes — otherwise a passing test cannot tell a
+// family rule from two literals. So this file hands the engine a DIFFERENT
+// membership — 'ipo' declared a lane kind — and pins the consequence: the
+// ipo-tagged row records mult 1 while its untagged neighbour on the same board,
+// same tone, same side still takes the 1.1 nudge. Under the old
+// `cat?.kind === DIP_CATALYST_KIND` literal the ipo row would print 1.1 and this
+// test fails. The velocity lane's own row is pinned where it is produced
+// (engine.test.ts, the quarter-size breakout test); this file guards the rule that
+// the NEXT lane will be right for free.
 vi.mock('../../../shared/engine/catalyst', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../shared/engine/catalyst')>()
   return { ...actual, LANE_CATALYST_KINDS: new Set([...actual.LANE_CATALYST_KINDS, 'ipo']) }

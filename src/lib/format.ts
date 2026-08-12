@@ -1,4 +1,5 @@
 import { CAP_COHORT_LABEL, capCohortOf } from '../../shared/engine/capClass'
+import { RUNG_RISK_PCT } from '../../shared/engine/riskLadder'
 import type { EmptySideReason } from '../../shared/engine/types'
 
 export function fmtPrice(price: number, currency: string): string {
@@ -17,6 +18,26 @@ export function fmtPct(p: number): string {
  * 0.625% — a number no UI should print raw. Two places, trailing zeros dropped. */
 export function fmtRiskPct(p: number): string {
   return String(Math.round(p * 100) / 100)
+}
+
+/** What a sized row is WORTH, in the reader's words, derived from the FRACTION of
+ * its rung it actually carries — never from "less than the rung", which called a
+ * quarter-size velocity probe "half size".
+ *
+ * Two rules can shrink a row (engine.ts, publishCall): the tier fraction (half a
+ * rung when conviction or evidence is short) and a lane's own door cap (a quarter
+ * on a fresh breakout, a half on a confirmed run — momentum sizing, not a
+ * deficiency). The engine applies the SMALLER of the two, so the fraction here is
+ * the whole story and the label follows it. */
+export function sizeLabel(riskPct: number, rung: number): string {
+  const base = RUNG_RISK_PCT[rung] ?? 0
+  if (!base || riskPct <= 0 || riskPct >= base) return ''
+  const frac = riskPct / base
+  if (frac <= 0.3) return ' (quarter size)'
+  if (frac <= 0.6) return ' (half size)'
+  // Nothing produces this today (the fractions are 1, 0.5 and 0.25) — but a future
+  // cap must degrade to an honest word rather than silently read as "half".
+  return ' (reduced size)'
 }
 
 /** Market-cap band from $M — identification chip for engine calls. */
@@ -43,6 +64,7 @@ export function capCohort(capUsdM: number | null | undefined): 'Large-cap' | 'Sm
 export function emptySideLine(side: 'long' | 'short', reason: EmptySideReason): string {
   if (reason === 'no-route') return `Nothing tradeable on the ${side} side today — the candidates have no ISA route.`
   if (reason === 'dip-lane') return `Nothing tradeable on the ${side} side today — the dip read outranked the shorts we had.`
+  if (reason === 'velocity-lane') return `Nothing tradeable on the ${side} side today — a breakout read outranked the shorts we had.`
   return `Nothing cleared the gates on the ${side} side today.`
 }
 

@@ -21,8 +21,9 @@ import {
 import { composeCall, coreCompositeOf, levelsFor, setupFamilyOf } from '../../../shared/engine/composite'
 import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleeve'
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
-import { TREND_DAY_SYMS, TREND_HISTORY_DAYS, type TrendDay } from '../../../shared/engine/hypeCluster'
-import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
+import { classifyVelocity, velocityCall, VELOCITY_DOOR_CAP } from '../../../shared/engine/velocityLane'
+import { clusterCandidates, detectClusters, TREND_DAY_SYMS, TREND_HISTORY_DAYS, type TrendDay } from '../../../shared/engine/hypeCluster'
+import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, VELOCITY_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
 import { DIP_NEWS_BUDGET, unservedVenue, type DipNewsVerdict } from './dipNews'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
@@ -535,6 +536,23 @@ const symToSector = (() => {
 
 const baseSym = (sym: string) => sym.split('.')[0].split('-')[0]
 
+/** The velocity lane's liquidity floor, in $M of market cap. A momentum door can
+ * open on anything that moves, and the smallest of those names cannot be got out
+ * of at all — so the lane trades nothing under this, and cluster membership never
+ * buys an exemption (a cluster ELEVATES priority; it is never eligibility).
+ *
+ * An UNKNOWN cap fails the floor, deliberately: an unknown never passes a gate in
+ * this engine. The cap-enrichment budget is 15 names a run, but a screener row
+ * carries its cap for free — and a name moving hard enough to open a door is
+ * overwhelmingly a screener name, so the floor bites the right population. */
+export const VELOCITY_MIN_CAP_USD_M = 20
+
+/** How many trending names one run may fetch candles for to check clusters.
+ * clusterCandidates has already narrowed the record to symbols sitting in a
+ * co-appearing pair — and returns [] outright under its 7-day warm-up, so a young
+ * record costs ZERO calls — and this is the hard ceiling on top of that. */
+export const CLUSTER_CANDLE_CAP = 25
+
 /** Bank one day of the trending record — the ONLY thing that makes co-appearance
  * measurable later (hypeCluster.ts). Append-if-new-date: the FIRST run to record a
  * date owns it, so the afternoon run cannot overwrite the morning's crowd with a
@@ -745,6 +763,52 @@ export async function buildBoard(
   // Sleeve BEHAVIOUR is keyed off sleeveSet, never off the source string. [R1]
   for (const r of sleeveTop) addSource(r.sym, 'sleeve')
 
+  // ---- hype clusters: the crowd's own themes, discovered from the record ----
+  // Names the crowd keeps naming TOGETHER whose tapes then actually move together
+  // (hypeCluster.ts — both legs required, no theme ever hard-coded). Membership
+  // ELEVATES priority to the sleeve's tier so a genuine crowd theme cannot be cut
+  // by the 180-candidate budget, and it rides the velocity lane's narration below.
+  // It is NEVER eligibility and never a call: a cluster member still faces the
+  // liquidity floor, the lane's own gates and calibration like everything else.
+  //
+  // Read AFTER the sleeve door on purpose. addSource keeps the FIRST source, so
+  // stamping 'hype-cluster' earlier would overwrite 'sleeve' on a famous name the
+  // crowd is also naming — and `sleeveOnly` (the exact source-string test below)
+  // would then hand that name the cap budget's front of the queue and a roster
+  // slot it was deliberately denied. Sleeve attribution stays untouched.
+  //
+  // The fetch is bounded twice: clusterCandidates names only the symbols already
+  // in a co-appearing pair (and [] under its 7-day warm-up — a young record costs
+  // no calls at all), capped again at CLUSTER_CANDLE_CAP. Worst case is therefore
+  // +25 candle reads on top of the 180-candidate budget below, and in practice far
+  // fewer: a member that becomes a candidate is read through the same cached
+  // fetcher (marketCache) either way, so only the trending names that DON'T make
+  // the cut cost anything at all. Fail-soft in full: any fault → no clusters →
+  // exactly the run this engine had before clusters existed.
+  const clusterPeers = new Map<string, string[]>()
+  try {
+    const history = await store.read<TrendDay[]>('social-history')
+    const wanted = clusterCandidates(history).slice(0, CLUSTER_CANDLE_CAP)
+    if (wanted.length) {
+      const clusterTapes = new Map<string, Candle[]>()
+      await mapLimit(wanted, 8, async sym => {
+        const c = await deps.candles(sym).catch(() => null)
+        if (c?.length) clusterTapes.set(sym, c)
+      })
+      for (const cluster of detectClusters(history, clusterTapes, spy)) {
+        for (const sym of cluster) {
+          clusterPeers.set(sym, cluster.filter(s => s !== sym))
+          addSource(sym, 'hype-cluster')
+        }
+      }
+      if (clusterPeers.size) console.log('BOARD: hype clusters —', [...clusterPeers.keys()].join(', '))
+    }
+  } catch (e) {
+    // A cluster is elevation and narration. Losing it costs a little priority and
+    // one clause of prose; it must never cost the board.
+    console.log('BOARD: cluster detection failed —', String(e).slice(0, 160))
+  }
+
   // The evaluation budget is explicit: real holdings/watchlist first, then the
   // established roster, live catalysts, the core sleeve and earned channel
   // nominations, then discovery feeds. Insertion order must never decide what
@@ -757,7 +821,11 @@ export async function buildBoard(
     if (watchSet.has(sym)) return 1
     if (rosterSet.has(sym)) return 2
     if (catalystBySym.has(sym)) return 3
-    if (sleeveSet.has(sym)) return 4 // the SET, not the source string — a sleeve name found by the losers screen is still a sleeve name
+    // the SET, not the source string — a sleeve name found by the losers screen is
+    // still a sleeve name. A hype-cluster member sits at the SAME tier: the crowd
+    // naming three names together while their tapes move together is evidence of
+    // the same weight as "this is a famous name", and both are elevation only.
+    if (sleeveSet.has(sym) || clusterPeers.has(sym)) return 4
     if (sources.get(sym)?.source.startsWith('channel:')) return 5
     if (sources.get(sym)?.source.startsWith('theme:') || sources.get(sym)?.source === 'rotation') return 6
     if (sources.get(sym)?.source === 'social') return 7
@@ -921,7 +989,12 @@ export async function buildBoard(
   // the dip lane's news check (a dip into a broken thesis); it deliberately goes
   // through the shadow flag rather than a new one, so sizing, routing and the
   // shadow/watch exclusivity below stay in exactly one place.
-  const publishCall = (call: EngineCall, capUsdM: number | null, cat: CatalystTag | null, forceShadow = false) => {
+  // sizeCap: the CALLER's own ceiling on how much of the rung this row may carry,
+  // 1 by default (no ceiling). The velocity lane's two doors set it (0.25 early,
+  // 0.5 confirmation — VELOCITY_DOOR_CAP): a fresh break is not worse evidence,
+  // it is earlier and wider, so it is sized smaller. See the sizing note below for
+  // why it is a CAP and never multiplied into the tier fraction.
+  const publishCall = (call: EngineCall, capUsdM: number | null, cat: CatalystTag | null, forceShadow = false, sizeCap = 1) => {
     // cap-class cohort drives BOTH the calibration lookup (its own buckets first,
     // then pooled) and the risk rung below. Unknown cap pools to the cohortless
     // path and the combined rung — never guessed into a sleeve.
@@ -973,6 +1046,16 @@ export async function buildBoard(
     const fullTrade = !shadow && (grade === 'A' || grade === 'B') && call.evidence.contract
     const halfTrade = !shadow && !fullTrade && grade != null && (grade !== 'C' || call.evidence.contract)
     const watchOnly = !shadow && !fullTrade && !halfTrade
+    // …and the row carries the SMALLER of two independent haircuts, never their
+    // product (the v1 D4 rule, ratified). The tier fraction answers "how much did
+    // conviction and evidence earn?" (1 full, 0.5 half); sizeCap answers "how much
+    // does this LANE allow on a row of this kind?" — the velocity door caps, which
+    // are momentum sizing and not an evidence deficiency. Multiplying them would
+    // publish a half-graded confirmation probe at an EIGHTH of a rung: two
+    // different statements about one row, both applied, and a number the reader
+    // cannot trace to either rule.
+    const tierFraction = fullTrade ? 1 : halfTrade ? 0.5 : 0
+    const sizedFraction = Math.min(tierFraction, sizeCap)
 
     // A short that cleared EVERY gate — graded, evidenced, no print in the way —
     // and is a shadow for ONE reason: an ISA cannot place it. That is a different
@@ -1011,7 +1094,7 @@ export async function buildBoard(
       provisional,
       grade: grade ?? 'C',
       riskRung: rung,
-      riskPct: shadow || watchOnly ? 0 : halfTrade ? RUNG_RISK_PCT[rung] / 2 : RUNG_RISK_PCT[rung],
+      riskPct: shadow || watchOnly ? 0 : RUNG_RISK_PCT[rung] * sizedFraction,
       instrument,
       paperOnly: call.side === 'short' && !watchOnly && !instrument,
       // The stamp must describe what the call ACTUALLY got. The composite loop
@@ -1213,6 +1296,66 @@ export async function buildBoard(
     publishCall(call, capUsdM, { kind: DIP_CATALYST_KIND, side: 'long', reason: `${read.detail} · ${note}`, strength: 40 }, v.verdict === 'structural')
   }
 
+  // ---- the velocity lane's own calls, merged into the same board ----
+  // A name already MOVING is a long the composite cannot say in time: composeCall
+  // derives its levels from an ATR-scaled conviction number, which is a
+  // mean-reversion instrument, so a momentum name only composites well once the
+  // move is five green days old (velocityLane.ts). The lane classifies the price
+  // signature itself and builds its own long, then walks the SAME publishCall path
+  // as everything else — calibration, grading, the shadow/watch rules, routing.
+  //
+  // Run AFTER the dip merge, and skipping any name that already carries a long,
+  // because one chart gets one row per side. Two skips, and they are different:
+  //   · a CONSTRUCTED dip long (dipCall actually built one) owns the name — the two
+  //     lanes would otherwise publish two longs on the same chart. Keyed on the
+  //     construction, never on `dipReads` [C9]: a dip the lane itself REFUSED (the
+  //     1:1 gate, a degenerate shape) published nothing at all, and letting a
+  //     refused read block a velocity call is how Stage 1 lost the day's only row
+  //     on a name — the same bug the short demotion already had to fix.
+  //   · any existing long ROW, shadow included (the `alreadyLong` rule the dip
+  //     merge uses), because the ledger holds one row per sym+side.
+  //
+  // The liquidity floor is the lane's only eligibility rule beyond its own gates:
+  // a door can open on anything that moves, and cluster membership is elevation,
+  // never a pass (VELOCITY_MIN_CAP_USD_M).
+  const constructedVelocityLongs = new Set<string>()
+  const longRows = new Set(board.filter(b => b.side === 'long').map(b => b.sym.toUpperCase()))
+  for (const sym of candidateSyms) {
+    const candles = candleMap.get(sym)
+    if (!candles) continue
+    const key = sym.toUpperCase()
+    if (longRows.has(key) || constructedDipLongs.has(key)) continue // constructedDipLongs is inside longRows; both stated, because they are two rules
+    const capUsdM = sources.get(sym)?.capUsdM ?? null
+    if (capUsdM == null || capUsdM < VELOCITY_MIN_CAP_USD_M) continue
+    // Per-SYMBOL fail-soft: one unreadable tape must cost that name its call and
+    // nothing else. A try around the whole lane would let one symbol silence a
+    // lane that had already found three other real breakouts.
+    try {
+      const read = classifyVelocity(candles)
+      if (!read?.door) continue
+      const raw = velocityCall(sym, candles, read, capUsdM)
+      if (!raw) continue
+      // Cluster membership is stamped into the catalyst reason so the paper can say
+      // WHY the crowd is here ("moving with the names it keeps being named beside")
+      // — narration off a discovered fact, never an extra vote in the composite.
+      const peers = clusterPeers.get(key) ?? []
+      const reason = peers.length ? `${read.detail} · hype cluster with ${peers.join(', ')}` : read.detail
+      // velocityCall is pure and has no calendar — earnings honesty is applied here,
+      // so a breakout into a print shadows exactly like any other call.
+      publishCall(
+        { ...raw, earningsRisk: earningsSet.has(baseSym(sym)) },
+        capUsdM,
+        { kind: VELOCITY_CATALYST_KIND, side: 'long', reason, strength: 50 },
+        false,
+        VELOCITY_DOOR_CAP[read.door], // early 0.25, confirmation 0.5 — the door's own ceiling
+      )
+      constructedVelocityLongs.add(key)
+      console.log(`BOARD: velocity ${read.door} door on ${sym} — ${read.detail}`)
+    } catch (e) {
+      console.log(`BOARD: velocity read on ${sym} failed —`, String(e).slice(0, 160))
+    }
+  }
+
   // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side
   // still has a shadow that hasn't reached its calibrated grade (no outcome10) on
   // a recent prior date — three correlated CEG shorts teach nothing while starving
@@ -1302,9 +1445,11 @@ export async function buildBoard(
   const longTrades = pickDiverseSide(actionableLongs, 'long', 3, 'trade')
   demoteToWatch(actionableLongs, new Set(longTrades.map(t => t.id)))
 
-  // ---- dip evidence outranks the composite's read of the SAME chart ----
+  // ---- LANE evidence outranks the composite's read of the SAME chart ----
   // A triggered-and-holding dip is the tape saying this name is being BOUGHT: a
-  // measured drop, the knife guard passed, a volume-PAID reclaim. The composite
+  // measured drop, the knife guard passed, a volume-PAID reclaim. A velocity door
+  // is the same kind of sentence one lane over — a paid break of the 20-session
+  // high, or a paid run still holding its 8-EMA. The composite
   // reading the identical candles sees only deep negative momentum and calls a
   // short (dipLane.ts explains why it must). Publishing both live would put the
   // board on both sides of one name on one morning — an unreadable card, and a
@@ -1323,12 +1468,19 @@ export async function buildBoard(
   // candidate, over budget, a dead dep, a venue with no source) leaves the price
   // evidence standing unopposed, and unopposed dip evidence still wins.
   //
-  // The trigger is a CONSTRUCTED dip long (published, live or news-shadowed), not
-  // a bare dip read. dipCall declines a shape that risks more than its target pays
-  // (the 1:1 gate) and the degenerate stop/target shapes — and a dip the lane
-  // itself refused to trade is no evidence against anything. Keying on dipReads
-  // silently deleted the day's only call on such a name: the dip published nothing
-  // and the perfectly good composite short was demoted beside it.
+  // The trigger is a CONSTRUCTED lane long (published, live or news-shadowed), not
+  // a bare lane read. dipCall declines a shape that risks more than its target pays
+  // (the 1:1 gate) and the degenerate stop/target shapes; velocityCall declines a
+  // trail with no room under it — and a call the lane itself refused to trade is no
+  // evidence against anything. Keying on dipReads silently deleted the day's only
+  // call on such a name: the dip published nothing and the perfectly good composite
+  // short was demoted beside it.
+  //
+  // BOTH lanes feed the key set, as one rule rather than two (Stage 1b). A sized
+  // velocity long beside a live short is the identical unreadable card — the engine
+  // telling the reader to buy the break and sell the chart on one morning — and the
+  // resolution is the same: the lane owns the reader-facing row, the short shadows
+  // on and still grades, so the ledger can answer who was right.
   //
   // And the dip long has to be a row the reader can actually TAKE (ratified
   // 2026-08-12). A dip that published below its base rate, or graded C on thin
@@ -1338,30 +1490,39 @@ export async function buildBoard(
   // — the disagreement is real, but the cure must not be worse than the clash.
   //
   // "Takeable" means takeable at the END of the assembly, which is why this runs
-  // here and not beside the news pass. A dip long can be sized when it publishes
+  // here and not beside the news pass. A lane long can be sized when it publishes
   // and still lose its slot to the 3-per-side cut or the diversity gates above —
   // and then it is a zero-size observation like any other. Reading the PRE-cut
   // state left exactly the state F3 forbids: an unplaceable dip row on the board
   // and a routable, fully-graded short shadowed behind it.
-  const sizedDipLongs = new Set(
-    board.filter(b => b.side === 'long' && !b.shadow && !b.watchOnly && constructedDipLongs.has(b.sym.toUpperCase())).map(b => b.sym.toUpperCase()),
+  //
+  // A velocity long's DOOR CAP is not a demotion: a quarter-size row is a sized,
+  // takeable trade (0.25 of the rung is what the lane offers), so it belongs here
+  // exactly like a full one. Only riskPct 0 — watch, shadow, cut — disqualifies.
+  const laneLongs = new Set([...constructedDipLongs, ...constructedVelocityLongs])
+  const sizedLaneLongs = new Set(
+    board.filter(b => b.side === 'long' && !b.shadow && !b.watchOnly && laneLongs.has(b.sym.toUpperCase())).map(b => b.sym.toUpperCase()),
   )
-  /** Row ids of shorts the dip lane demoted — read only by the empty-side copy,
-   * which must not tell the reader "nothing cleared the gates" about a row that
-   * cleared all of them and was then outranked by the other lane. */
-  const dipDemotedShorts = new Set<string>()
+  /** Row ids of shorts a lane demoted, and WHICH lane did it — read only by the
+   * empty-side copy, which must not tell the reader "nothing cleared the gates"
+   * about a row that cleared all of them and was then outranked by the other lane,
+   * nor name the wrong lane as the one that outranked it. */
+  const laneDemotedShorts = new Map<string, 'dip' | 'velocity'>()
   for (const row of board) {
     if (row.side !== 'short' || row.shadow) continue
     const sym = row.sym.toUpperCase()
     // The release, logged where it can actually be true. A structural verdict has
     // already published the dip long as a SHADOW, so such a name can never be in
-    // sizedDipLongs and this is not a gate — but "the news freed the short" is
-    // worth saying out loud, and inside the demotion branch it could never print.
+    // sizedLaneLongs through the dip — and the velocity lane skips any name the dip
+    // lane constructed a long on, so it cannot be in there the other way either.
+    // This is not a gate; but "the news freed the short" is worth saying out loud,
+    // and inside the demotion branch it could never print.
     if (structuralVetoes.has(sym) && constructedDipLongs.has(sym)) {
       console.log(`BOARD: structural news on ${row.sym} frees the composite short — both lanes now read the same way`)
       continue
     }
-    if (!sizedDipLongs.has(sym)) continue
+    if (!sizedLaneLongs.has(sym)) continue
+    const lane = constructedDipLongs.has(sym) ? 'dip' : 'velocity'
     row.shadow = true
     row.watchOnly = undefined // shadow and watch are exclusive in publishCall — keep them so
     row.belowBase = undefined
@@ -1369,8 +1530,8 @@ export async function buildBoard(
     row.instrument = null
     row.paperOnly = true // a short with no instrument, exactly as publishCall stamps one
     row.horizon = horizonOf({ watchOnly: false, stage: row.stage, setup: row.setup, evidence: row.evidence })
-    dipDemotedShorts.add(row.id)
-    console.log(`BOARD: dip read on ${row.sym} demotes the composite short to a shadow`)
+    laneDemotedShorts.set(row.id, lane)
+    console.log(`BOARD: ${lane} read on ${row.sym} demotes the composite short to a shadow`)
   }
 
   const actionableShorts = board.filter(b => !b.shadow && !b.watchOnly && b.side === 'short')
@@ -1412,10 +1573,12 @@ export async function buildBoard(
   }
   const nearMissRows: Prediction[] = []
   /** Why a side carries nothing tradeable: 'gates' (nothing cleared them),
-   * 'no-route' (something did, and an ISA cannot place it) or 'dip-lane' (the
-   * engine had a live short and its own dip read outranked it). Rides the board
-   * blob so the copy on the card can say which; a lie here reads as a broken
-   * engine, and 'gates' was the lie in both of the other two cases. */
+   * 'no-route' (something did, and an ISA cannot place it) or 'dip-lane' /
+   * 'velocity-lane' (the engine had a live short and its own lane read on the same
+   * chart outranked it — named by LANE, because "the dip read outranked it" is
+   * simply false about a breakout). Rides the board blob so the copy on the card
+   * can say which; a lie here reads as a broken engine, and 'gates' was the lie in
+   * every one of the other cases. */
   const emptySides: { long?: EmptySideReason; short?: EmptySideReason } = {}
   for (const side of ['long', 'short'] as const) {
     if (liveCalls.some(b => b.side === side)) continue
@@ -1437,9 +1600,9 @@ export async function buildBoard(
     //     would be re-promoted every morning and every copy graded as fresh live
     //     evidence — the shadow budget's dedup rule (above) exists for exactly
     //     this failure, and an observation is no more entitled to skip it.
-    //   · a name the FINAL BOARD already shows a live row on — in practice the dip
-    //     lane's long. A sized long beside a short observation on the same chart is
-    //     a board telling the reader both things at once, and the dip lane owns
+    //   · a name the FINAL BOARD already shows a live row on — in practice a lane's
+    //     long (dip or velocity). A sized long beside a short observation on the same
+    //     chart is a board telling the reader both things at once, and the lane owns
     //     that name for the day. The test is what the reader can SEE, not what the
     //     dip lane attempted: a dip long that a structural news read shadowed, or
     //     that lost its slot to the 3-per-side cut, contradicts nothing because it
@@ -1471,17 +1634,22 @@ export async function buildBoard(
       continue
     }
     // No promotable observation — but "nothing cleared the gates" is still only
-    // one of three ways a side empties, and it is the one that blames the gates.
-    //   dip-lane: the side HAD a live, routable, fully-graded short and the dip
-    //             read on the same chart demoted it. The gates passed; the engine
-    //             simply preferred its other lane on that name.
+    // one of several ways a side empties, and it is the one that blames the gates.
+    //   dip-lane / velocity-lane: the side HAD a live, routable, fully-graded short
+    //             and the engine's own lane read on the same chart demoted it. The
+    //             gates passed; the engine simply preferred its other lane on that
+    //             name — and the copy names WHICH lane, because a breakout and a
+    //             dip are not the same sentence to a reader.
     //   no-route: something cleared enough to be shown — a trade or a watch row —
     //             and an ISA cannot place it. (The promoted-observation branch
     //             above covers the sized ones; this covers the rest.)
     // Ordered so the stronger claim wins: a demoted short was live, where a
     // route-shadowed one never was.
-    emptySides[side] = board.some(b => b.side === side && dipDemotedShorts.has(b.id))
-      ? 'dip-lane'
+    const demoter = board.find(b => b.side === side && laneDemotedShorts.has(b.id))
+    emptySides[side] = demoter
+      ? laneDemotedShorts.get(demoter.id) === 'velocity'
+        ? 'velocity-lane'
+        : 'dip-lane'
       : board.some(b => b.side === side && b.shadow && routeShadowedShorts.has(b.id))
         ? 'no-route'
         : 'gates'
@@ -1489,6 +1657,13 @@ export async function buildBoard(
     const candidates = nearMisses
       .filter(n => (n.core >= 0 ? 'long' : 'short') === side)
       .filter(n => !publishedKeys.has(`${n.sym.toUpperCase()}:${side}`))
+      // ONE DIRECTION PER CHART, the same rule the observation promotion above
+      // obeys. A name the reader can SEE a live long on — in practice a lane's,
+      // since a name with a live composite row is never a near miss — must not
+      // also be named as the closest thing to a short. A near miss cleared no
+      // gate at all; putting it opposite a sized call on the same chart is the
+      // board contradicting itself over a row that was never evidence [C10].
+      .filter(n => !liveCalls.some(l => l.sym.toUpperCase() === n.sym.toUpperCase()))
       .sort((a, b) => Math.abs(b.core) - Math.abs(a.core))
       .slice(0, 2)
     for (const n of candidates) {

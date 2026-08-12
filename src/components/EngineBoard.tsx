@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData, type EnginePrediction, type IntradayFlag } from '../lib/api'
-import { capBand, emptySideLine, fmtRiskPct } from '../lib/format'
-import { RUNG_RISK_PCT } from '../../shared/engine/riskLadder'
+import { capBand, emptySideLine, fmtRiskPct, sizeLabel } from '../lib/format'
 import { GradeChip } from './GradeChip'
 
 // the intraday-flag chip vocabulary, shared with the Desk rail card
@@ -59,10 +58,11 @@ function IntradayFlagsStrip({ blob }: { blob: EngineData['intradayFlags'] }) {
 function Call({ p }: { p: EnginePrediction }) {
   const [open, setOpen] = useState(false)
   const dir = p.side === 'long' ? '▲ LONG' : '▼ SHORT'
-  // half size = one of conviction/evidence was short (grade C with the full
-  // contract, or A/B without it). Read off the rung rather than stored, so the
-  // label can never disagree with the number beside it.
-  const halfSize = p.riskPct > 0 && p.riskPct < RUNG_RISK_PCT[p.riskRung]
+  // A reduced row says WHY in one word: half = one of conviction/evidence was short
+  // (grade C with the full contract, or A/B without it); quarter = a lane's door cap
+  // (a fresh breakout, sized as momentum rather than as a deficiency). Derived from
+  // the FRACTION of the rung, so the label can never disagree with the number.
+  const size = sizeLabel(p.riskPct, p.riskRung)
   return (
     <div className="perf-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 3 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
@@ -107,7 +107,7 @@ function Call({ p }: { p: EnginePrediction }) {
                 p.observation
                 ? 'no ISA route — observation only'
                 : 'watch — no size'
-            : `risk ${fmtRiskPct(p.riskPct)}%${halfSize ? ' (half size)' : ''}${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}
+            : `risk ${fmtRiskPct(p.riskPct)}%${size}${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}
         </span>
       </div>
       <button className="mini-btn ghost" style={{ alignSelf: 'flex-start', fontSize: 11, padding: '1px 6px' }} onClick={() => setOpen(o => !o)}>
