@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { journalistBoardRows } from '../report-compose-background.mts'
 import { ledgerRow } from '../engine.mts'
-import { SECTIONS, boardExportRows, buildNewspaperHtml, constrainIdeasToBoard, fallbackIdeasFromBoard, type ComposedReport, type Idea } from './newspaper'
+import { SECTIONS, boardExportRows, buildNewspaperHtml, composePrompt, constrainIdeasToBoard, fallbackIdeasFromBoard, type ComposedReport, type Idea } from './newspaper'
 import type { FactorName, FactorScore, Prediction } from '../../../shared/engine/types'
 
 const factors = Object.fromEntries(
@@ -209,6 +209,16 @@ describe('thesis + falsifier — the two sentences reach the paper', () => {
     expect(brief).toContain('falsifier')
   })
 
+  // …and so does the single-shot fallback prompt. It is the SAME paper written by
+  // one call instead of six, reached exactly when the sectioned compose has
+  // already failed — the day the rule is least likely to be obeyed is not the day
+  // to stop stating it.
+  it('the single-shot fallback prompt carries the same rule as the sectioned one', () => {
+    const prompt = composePrompt('DATA', 'Wednesday, 12 August 2026')
+    expect(prompt).toContain('POLISH, NEVER INVENT')
+    expect(prompt).toContain('falsifier')
+  })
+
   it('the printed invalidation cell is the stored falsifier, VERBATIM', () => {
     const { ideas } = constrainIdeasToBoard(
       [{ ...shortIdea({ ticker: 'ABBV', side: 'long', invalidation: 'a level the model made up' }) }],
@@ -228,9 +238,31 @@ describe('thesis + falsifier — the two sentences reach the paper', () => {
 
   it('…and the desk\'s own fallback writes the case FROM the thesis, not from the factor line', () => {
     const [idea] = fallbackIdeasFromBoard(journalistBoardRows([spoken]))
-    expect(idea.caseText).toBe(spoken.thesis)
+    expect(idea.caseText).toBe('Long ABBV — it has pulled back into support with volume behind it.')
     expect(idea.caseText).not.toContain('technical:')
     expect(idea.falsifier).toBe(spoken.falsifier)
+  })
+
+  // The thesis ENDS with the falsifier by construction (voice.ts) and the
+  // invalidation cell prints the falsifier on its own line — so a fallback case
+  // that copies the whole thesis makes the paper say "Wrong if it closes below
+  // 178.2." twice in one idea, once as the case and once as the level.
+  it('the fallback case does not reprint the falsifier the invalidation cell already carries', () => {
+    const [idea] = fallbackIdeasFromBoard(journalistBoardRows([spoken]))
+    expect(idea.caseText).not.toContain(spoken.falsifier!)
+    const composed: ComposedReport = {
+      headline: 'H', standfirst: 'S', lead: 'L', portfolioDesk: 'p', tape: 't', ideas: [idea],
+      shortDesk: 's', rotation: 'r', crypto: 'c', channels: 'ch', editorial: 'e', honestClose: 'h',
+      regime: 'amber', fedStance: 'neutral', macroNotes: [],
+    }
+    const html = buildNewspaperHtml(composed, 'Wednesday, 12 August 2026', {})
+    expect(html.split(spoken.falsifier!).length - 1).toBe(1) // printed once, in the cell that owns it
+  })
+
+  it('…and a row whose thesis is NOT the engine\'s (or has no falsifier) is copied whole', () => {
+    const legacy = { ...spoken, thesis: 'An older row whose case was written before the falsifier was its own field.', falsifier: undefined }
+    const [idea] = fallbackIdeasFromBoard(journalistBoardRows([legacy]))
+    expect(idea.caseText).toBe(legacy.thesis)
   })
 
   it('a near miss has neither, and every projection handles that cleanly', () => {

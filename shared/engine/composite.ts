@@ -277,11 +277,16 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   // as a reason — a factor whose detail humanises to nothing is skipped rather
   // than printed hollow. Context is quoted only when the capped context layer
   // genuinely moved the number.
+  // …and the side goes into the filter, not just into the template: a factor is
+  // only a spokesman if it has something to say ON THIS SIDE, and some phrases
+  // are silent or worded differently on a short (voice.ts, technicalPhrase).
+  // Picking with one side and printing with another would skip the contributor
+  // that could actually speak.
   const spokesman = (family: 'core' | 'context') =>
     ranked
       .filter(([name, f]) => FACTOR_FAMILY[name] === family && Math.sign(f.score!) === dir)
       .map(([name, factor]) => ({ name, factor }))
-      .find(c => factorPhrase(c.name, c.factor) != null) ?? null
+      .find(c => factorPhrase(c.name, c.factor, side) != null) ?? null
   const { thesis, falsifier } = composeThesis({
     sym: input.sym,
     side,

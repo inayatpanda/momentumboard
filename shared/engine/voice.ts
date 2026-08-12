@@ -128,14 +128,31 @@ const num = (detail: string, re: RegExp): number | null => {
 /** The chart factor, MINUS the stage — the stage already leads the sentence, so
  * repeating it ("the chart has built a base with a base…") is the one thing this
  * phrase must not do. What is left is the confirmation the stage did or did not
- * get: timeframe agreement, the week's participation, today's volume. */
-function technicalPhrase(f: FactorScore): string | null {
+ * get: timeframe agreement, the week's participation, today's volume.
+ *
+ * TWO OF THOSE THREE READ DIFFERENTLY ON A SHORT, and the difference is measured,
+ * not stylistic (factors.ts, technicalFactor):
+ *
+ *  · VOLUME is scored LONG-ONLY. The ×1.2 confirmation boost is gated on
+ *    `volumeConfirmed && base > 0` because over 96 live shorts, weakness WITH
+ *    volume behind it did worse (47.6% / −1.97%) than weakness without it (65.3%
+ *    / +4.31%) — heavy volume into a fall is usually capitulation. The engine
+ *    gives a short exactly zero credit for it, so "volume behind it" in a short's
+ *    thesis is the prose claiming a reason the number refused. The fact is still
+ *    worth printing (factors.ts keeps reporting the RVOL "so the reader sees what
+ *    the engine saw") — printed with its accounting attached.
+ *  · THE WEEK is scored on BOTH sides: the thrust multiplier is applied to the
+ *    signed score, so a week of heavy participation deepens a short exactly as it
+ *    lifts a long. That one IS a reason for a short — but "the crowd arriving"
+ *    is a bull's sentence, and the same fact needs a word that does not cheer. */
+function technicalPhrase(f: FactorScore, side: 'long' | 'short'): string | null {
   const d = f.detail
+  const long = side === 'long'
   const parts: string[] = []
   if (/every timeframe pointing/.test(d)) parts.push('every timeframe pointing the same way')
-  if (/a week of building participation/.test(d)) parts.push('a week of the crowd arriving')
-  else if (/a week of thinning participation/.test(d)) parts.push('a week of the crowd leaving')
-  if (/volume-confirmed/.test(d)) parts.push('volume behind it')
+  if (/a week of building participation/.test(d)) parts.push(long ? 'a week of the crowd arriving' : 'a heavy week')
+  else if (/a week of thinning participation/.test(d)) parts.push(long ? 'a week of the crowd leaving' : 'a quiet week')
+  if (/volume-confirmed/.test(d)) parts.push(long ? 'volume behind it' : "heavy volume into the weakness, which the engine does not count in a short's favour")
   else if (/unconfirmed turn/.test(d)) parts.push('no volume behind the turn yet')
   return parts.length ? parts.slice(0, 2).join(' and ') : null
 }
@@ -161,10 +178,16 @@ function sectorPhrase(f: FactorScore): string | null {
   return null
 }
 
+/** The month's own average, with EXACTLY one sign in front of it. The capture is
+ * already signed — seasonalityFactor writes `August avg +3.1% over 7 yrs` — so
+ * the magnitude is separated from the sign before either is printed, rather than
+ * a `+` being prefixed onto a string that may already carry one ("averaging
+ * ++3.1%"). Reading the sign off the captured text rather than off `Number()`
+ * keeps the factor's own rounding: this phrase reformats nothing. */
 function seasonalityPhrase(f: FactorScore): string | null {
-  const m = f.detail.match(/^([A-Za-z]+) avg ([+-]?[\d.]+)% over (\d+) yrs$/)
+  const m = f.detail.match(/^([A-Za-z]+) avg ([+-]?)([\d.]+)% over (\d+) yrs$/)
   if (!m) return null
-  return `${m[1]} averaging ${m[2].startsWith('-') ? '' : '+'}${m[2]}% here over ${m[3]} years`
+  return `${m[1]} averaging ${m[2] === '-' ? '-' : '+'}${m[3]}% here over ${m[4]} years`
 }
 
 function socialPhrase(f: FactorScore): string | null {
@@ -181,10 +204,16 @@ function channelsPhrase(f: FactorScore): string | null {
   return names ? `the commentators we follow ${lean} (${names})` : `the commentators we follow ${lean}`
 }
 
+/** The insider factor's three details are `cluster: N insiders buying`, `insider
+ * buying`, and — the one a substring test gets wrong — `no insider buying`. The
+ * match is anchored so the absence of buying cannot phrase itself as a purchase.
+ * (composeCall only ever quotes a factor whose score agrees with the side, and
+ * that branch scores 0, so this was unreachable from the board; a phrase function
+ * that states the opposite of its input is a defect wherever it sits.) */
 function insidersPhrase(f: FactorScore): string | null {
   const n = num(f.detail, /cluster: (\d+)/)
   if (n != null) return `${n} of the company's own directors buying together`
-  return /buying/.test(f.detail) ? "one of the company's own directors buying" : null
+  return /^insider buying$/.test(f.detail) ? "one of the company's own directors buying" : null
 }
 
 function newsPhrase(f: FactorScore): string | null {
@@ -207,7 +236,13 @@ function catalystPhrase(f: FactorScore): string | null {
   return reason ? `a live event on it — ${reason}` : 'a live event on it today'
 }
 
-const FACTOR_PHRASE: Record<FactorName, (f: FactorScore) => string | null> = {
+/** Every phrase reads the SIDE as well as the factor. Most ignore it — a fund
+ * that sold is a fund that sold whichever way the call points — but a phrase that
+ * needs it must be able to ask, and a phrase that silently could not was how a
+ * bull's clause ended up in a short's thesis. */
+type PhraseWriter = (f: FactorScore, side: 'long' | 'short') => string | null
+
+const FACTOR_PHRASE: Record<FactorName, PhraseWriter> = {
   technical: technicalPhrase,
   momentum: momentumPhrase,
   sector: sectorPhrase,
@@ -222,10 +257,15 @@ const FACTOR_PHRASE: Record<FactorName, (f: FactorScore) => string | null> = {
 
 /** One factor, one clause — or null when that factor's detail carries nothing a
  * reader would recognise as a reason. Null is a real answer: the caller walks on
- * to the next contributor rather than printing a hollow clause. */
-export function factorPhrase(name: FactorName, f: FactorScore | null | undefined): string | null {
+ * to the next contributor rather than printing a hollow clause.
+ *
+ * `side` is REQUIRED rather than defaulted, because the default would have been
+ * `long` and the whole class of defect this parameter exists to close is a long's
+ * sentence appearing under a short. A caller that has not decided which way the
+ * call points has nothing for this function to write yet. */
+export function factorPhrase(name: FactorName, f: FactorScore | null | undefined, side: 'long' | 'short'): string | null {
   if (!f || f.score == null) return null
-  const phrase = FACTOR_PHRASE[name]?.(f) ?? null
+  const phrase = FACTOR_PHRASE[name]?.(f, side) ?? null
   return phrase && !bannedTokensIn(phrase).length ? phrase : null
 }
 
@@ -266,6 +306,18 @@ export interface ThesisInput {
  * headline bought them a trade that the chart bought them. */
 export const CONTEXT_MIN_PTS = 4
 
+/** …and the other half of the same claim. The threshold asks whether the context
+ * layer moved the number ENOUGH; this asks whether it moved it toward THIS call.
+ * Context points are signed with the side they argue for, so a long's supporting
+ * context is positive and a short's is negative — and −9 points under a long is
+ * context that argued against the trade the paper is about to print. Quoting it
+ * as a reason to take the trade is the same lie as quoting volume on a short,
+ * one layer up. */
+export function contextMoved(contextPts: number | undefined, side: 'long' | 'short'): boolean {
+  const pts = contextPts ?? 0
+  return side === 'long' ? pts >= CONTEXT_MIN_PTS : pts <= -CONTEXT_MIN_PTS
+}
+
 /** The composite call's two sentences.
  *
  *   "Long ABBV — it has pulled back into support with every timeframe pointing
@@ -277,9 +329,8 @@ export const CONTEXT_MIN_PTS = 4
  * two must be the same sentence, not two sentences that agree. */
 export function composeThesis(input: ThesisInput): { thesis: string; falsifier: string } {
   const falsifier = fixedFalsifier(input.side, input.stop)
-  const core = input.core ? factorPhrase(input.core.name, input.core.factor) : null
-  const ctx =
-    Math.abs(input.contextPts ?? 0) >= CONTEXT_MIN_PTS && input.context ? factorPhrase(input.context.name, input.context.factor) : null
+  const core = input.core ? factorPhrase(input.core.name, input.core.factor, input.side) : null
+  const ctx = contextMoved(input.contextPts, input.side) && input.context ? factorPhrase(input.context.name, input.context.factor, input.side) : null
   const body = core ? `${stagePhrase(input.stage)} with ${core}` : stagePhrase(input.stage)
   return {
     thesis: `${sideWord(input.side)} ${input.sym} — ${body}${ctx ? `, and ${ctx}` : ''}. ${falsifier}`,

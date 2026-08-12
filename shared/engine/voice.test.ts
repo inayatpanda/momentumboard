@@ -46,6 +46,27 @@ const realFactors = (): [FactorName, FactorScore][] => [
   ['catalyst', catalystFactor({ kind: 'earnings', side: 'long', strength: 70, reason: 'raised full-year guidance' })],
 ]
 
+/** …and the SAME factors on the other side of the tape. The sweep used to vary
+ * stage and side while every factor stayed bullish, so every phrase's negative
+ * branch — the seasonal month that loses money, the fund that sold, the week the
+ * crowd left — went unexercised. Both defects this file was rewritten for lived
+ * in that gap: a `+` prefixed onto an already-signed number (only reachable on a
+ * POSITIVE seasonal average, so the sweep never printed it) and a bullish volume
+ * clause on a SHORT (only reachable when the sign of the call and the sign of the
+ * factor disagree). Sign is now a dimension of the cross-product. */
+const bearFactors = (): [FactorName, FactorScore][] => [
+  ['technical', technicalFactor({ stage: 'weak', volumeConfirmed: true, rvol: 2.4, emaStack: { aligned: 'bear' }, volThrust: 0.5 })],
+  // …and the other bearish branch of the chart factor: a turn nothing paid for
+  ['technical', technicalFactor({ stage: 'early-reversal', volumeConfirmed: false, rvol: null, emaStack: null, volThrust: null })],
+  ['momentum', momentumFactor([...Array(21).fill(100), 88], [...Array(21).fill(100), 103])],
+  ['sector', sectorFactor(0.18)],
+  ['seasonality', seasonalityFactor({ reliable: true, months: [{ month: 8, name: 'August', avgPct: -3.1, n: 7 }] } as never, 8)],
+  ['channels', channelsFactor([{ channel: 'Stocks with Josh', stance: 'bear' }], () => 1)],
+  ['news', newsFactor(['XYZ misses and plunges', 'XYZ hit by a lawsuit'])],
+  ['smartMoney', smartMoneyFactor({ bought: [], exited: ['Duquesne'], filedAt: '2026-06-30' })],
+  ['catalyst', catalystFactor({ kind: 'earnings', side: 'short', strength: 70, reason: 'cut full-year guidance' })],
+]
+
 describe('the banned-token rule — the machine never speaks to the reader', () => {
   it('catches a factor name, a stage enum and a field name, whole-word and case-blind', () => {
     expect(bannedTokensIn('technical: pullback, every timeframe pointing up')).toEqual(expect.arrayContaining(['technical', 'pullback']))
@@ -89,43 +110,85 @@ describe('STAGE_PHRASE — all eight stages have a human sentence', () => {
 })
 
 describe('factorPhrase — one clause per factor, from that factor\'s own detail', () => {
-  it('translates every real factor output into clean prose', () => {
-    for (const [name, f] of realFactors()) {
-      const phrase = factorPhrase(name, f)
-      expect(phrase, `${name} produced no phrase from ${f.detail}`).toBeTruthy()
-      expect(bannedTokensIn(phrase!), `${name}: ${phrase}`).toEqual([])
+  it('translates every real factor output into clean prose — in BOTH directions', () => {
+    for (const side of ['long', 'short'] as const) {
+      for (const [name, f] of [...realFactors(), ...bearFactors()]) {
+        const phrase = factorPhrase(name, f, side)
+        expect(phrase, `${name} (${side}) produced no phrase from ${f.detail}`).toBeTruthy()
+        expect(bannedTokensIn(phrase!), `${name}: ${phrase}`).toEqual([])
+        expect(phrase!, `${name} (${side}) doubled a sign: ${phrase}`).not.toMatch(/\+\+|--/)
+      }
     }
   })
 
   it('reads the numbers out of the detail rather than inventing them', () => {
-    expect(factorPhrase('momentum', momentumFactor([...Array(21).fill(100), 118], [...Array(21).fill(100), 103]))).toBe(
+    expect(factorPhrase('momentum', momentumFactor([...Array(21).fill(100), 118], [...Array(21).fill(100), 103]), 'long')).toBe(
       '15 points of outperformance against the S&P over the last month',
     )
-    expect(factorPhrase('sector', sectorFactor(0.86))).toBe('its industry group among the strongest in the market')
-    expect(factorPhrase('insiders', insiderFactor({ isCluster: true, buyers: ['A', 'B', 'C'] }))).toBe(
+    expect(factorPhrase('sector', sectorFactor(0.86), 'long')).toBe('its industry group among the strongest in the market')
+    expect(factorPhrase('insiders', insiderFactor({ isCluster: true, buyers: ['A', 'B', 'C'] }), 'long')).toBe(
       "3 of the company's own directors buying together",
     )
-    expect(factorPhrase('news', newsFactor(['XYZ beats and surges']))).toBe('1 headline on it reading positive')
+    expect(factorPhrase('news', newsFactor(['XYZ beats and surges']), 'long')).toBe('1 headline on it reading positive')
+  })
+
+  // THE DOUBLE PLUS. seasonalityFactor writes its own sign into the detail
+  // (`August avg +3.1% over 7 yrs`), so a phrase that prefixes another one prints
+  // "averaging ++3.1%". Both signs are pinned VERBATIM here — this was the one
+  // factor whose output the phrase tests never spelt out, which is why a defect
+  // visible in the string escaped a suite that only asked whether it was clean.
+  it('the seasonal average carries exactly one sign, whichever way the month runs', () => {
+    const up = seasonalityFactor({ reliable: true, months: [{ month: 8, name: 'August', avgPct: 3.1, n: 7 }] } as never, 8)
+    expect(up.detail).toBe('August avg +3.1% over 7 yrs') // the sign is ALREADY in the capture
+    expect(factorPhrase('seasonality', up, 'long')).toBe('August averaging +3.1% here over 7 years')
+    const down = seasonalityFactor({ reliable: true, months: [{ month: 8, name: 'August', avgPct: -3.1, n: 7 }] } as never, 8)
+    expect(down.detail).toBe('August avg -3.1% over 7 yrs')
+    expect(factorPhrase('seasonality', down, 'short')).toBe('August averaging -3.1% here over 7 years')
+  })
+
+  // THE BULLISH CLAUSE ON A SHORT. factors.ts is explicit that heavy volume into
+  // weakness is usually capitulation and gives it ZERO weight on a short (the
+  // ×1.2 amplifier is `volumeConfirmed && base > 0`). A thesis that cites it as a
+  // reason to be short states a belief the engine measured and rejected.
+  it('a SHORT is never told there is volume behind it', () => {
+    // the reachable tape: a broken chart, timeframes disagreeing, today paid for
+    const f = technicalFactor({ stage: 'weak', volumeConfirmed: true, rvol: 2.4, emaStack: { aligned: 'mixed' }, volThrust: null })
+    expect(f.detail).toContain('volume-confirmed')
+    const short = factorPhrase('technical', f, 'short')!
+    expect(short).not.toContain('volume behind it')
+    expect(short).toContain('does not count in a short') // …the honest accounting, said out loud
+    // the same tape on a long, where the engine DOES count it, is unchanged
+    expect(factorPhrase('technical', f, 'long')).toBe('volume behind it')
+  })
+
+  it('…and the week the crowd arrived is reported on a short without reading bullish', () => {
+    const f = technicalFactor({ stage: 'weak', volumeConfirmed: false, rvol: null, emaStack: null, volThrust: 1.8 })
+    expect(f.detail).toContain('a week of building participation')
+    expect(factorPhrase('technical', f, 'long')).toBe('a week of the crowd arriving')
+    expect(factorPhrase('technical', f, 'short')).toBe('a heavy week') // counted, but not cheered
   })
 
   it('a factor with no data, and one whose detail carries no reason, both stay silent', () => {
-    expect(factorPhrase('momentum', { score: null, detail: 'insufficient history' })).toBeNull()
-    expect(factorPhrase('sector', sectorFactor(0.5))).toBeNull() // a middling rank is a measurement, not a reason
+    expect(factorPhrase('momentum', { score: null, detail: 'insufficient history' }, 'long')).toBeNull()
+    expect(factorPhrase('sector', sectorFactor(0.5), 'long')).toBeNull() // a middling rank is a measurement, not a reason
     // the chart factor MINUS the stage: nothing else in the detail → nothing to add
-    expect(factorPhrase('technical', technicalFactor({ stage: 'basing', volumeConfirmed: false, rvol: null, emaStack: null, volThrust: null }))).toBeNull()
+    expect(factorPhrase('technical', technicalFactor({ stage: 'basing', volumeConfirmed: false, rvol: null, emaStack: null, volThrust: null }), 'long')).toBeNull()
+    // …and the insider factor's own negative branch is `no insider buying`, whose
+    // phrase must be silence and not the buying claim the substring suggests
+    expect(factorPhrase('insiders', insiderFactor(null), 'long')).toBeNull()
   })
 
   it('free text the engine did not write is dropped when it would leak a name', () => {
     // a channel actually called this would otherwise put a factor name in the paper
     const dirty = channelsFactor([{ channel: 'Momentum Weekly', stance: 'bull' }], () => 1)
-    expect(factorPhrase('channels', dirty)).toBe('the commentators we follow calling it higher')
+    expect(factorPhrase('channels', dirty, 'long')).toBe('the commentators we follow calling it higher')
     // …and a catalyst whose reason is clean keeps the reason
-    expect(factorPhrase('catalyst', catalystFactor({ kind: 'earnings', side: 'long', strength: 70, reason: 'raised full-year guidance' }))).toBe(
+    expect(factorPhrase('catalyst', catalystFactor({ kind: 'earnings', side: 'long', strength: 70, reason: 'raised full-year guidance' }), 'long')).toBe(
       'a live event on it — raised full-year guidance',
     )
     // …while one whose reason is a lane's own read falls back to the bare sentence
     expect(
-      factorPhrase('catalyst', catalystFactor({ kind: 'dip', side: 'long', strength: 40, reason: 'dip −14.2% · news: overreaction' })),
+      factorPhrase('catalyst', catalystFactor({ kind: 'dip', side: 'long', strength: 40, reason: 'dip −14.2% · news: overreaction' }), 'long'),
     ).toBe('a live event on it today')
   })
 })
@@ -152,9 +215,20 @@ describe('composeThesis — the composite call says what it believes', () => {
     expect(under.thesis).not.toContain('headline')
     const over = composeThesis({ sym: 'ABBV', side: 'long', stage: 'pullback', stop: 90, core, context, contextPts: CONTEXT_MIN_PTS })
     expect(over.thesis).toContain(', and 1 headline on it reading positive.')
-    // a SHORT's supporting context is negative points — the gate is the magnitude
+    // a SHORT's supporting context is negative points — the magnitude AND the sign
     const short = composeThesis({ sym: 'NVDA', side: 'short', stage: 'weak', stop: 100, core: null, context, contextPts: -6 })
     expect(short.thesis).toContain('and 1 headline on it reading positive')
+  })
+
+  // …and the other half of the stated intent: context is quoted because it moved
+  // the number TOWARD this call. Points of the wrong sign moved it away, and a
+  // thesis that cites them tells the reader the case was helped by evidence that
+  // argued against it.
+  it('context that pushed the OTHER way is not quoted, however big it is', () => {
+    const long = composeThesis({ sym: 'ABBV', side: 'long', stage: 'pullback', stop: 90, core, context, contextPts: -9 })
+    expect(long.thesis).not.toContain('headline')
+    const short = composeThesis({ sym: 'NVDA', side: 'short', stage: 'weak', stop: 100, core: null, context, contextPts: 9 })
+    expect(short.thesis).not.toContain('headline')
   })
 
   it('a stage the engine could not read still produces a sentence, never a blank', () => {
@@ -162,17 +236,35 @@ describe('composeThesis — the composite call says what it believes', () => {
     expect(thesis).toBe('Long XYZ — the chart is not giving a clean read. Wrong if it closes below 9.')
   })
 
-  it('every stage × side × factor combination is clean prose', () => {
+  // THE SWEEP, and the dimension it was missing. Stage × side × factor now runs
+  // over the bearish branch of every factor as well as the bullish one, and the
+  // context points are signed to AGREE with the side so the second clause is
+  // actually exercised on a short. Two assertions beyond cleanliness: the prose
+  // never doubles a sign (`++3.1%`), and it always opens with its own side.
+  it('every stage × side × factor combination, in both signs, is clean prose', () => {
     for (const stage of [...STAGES, null]) {
       for (const side of ['long', 'short'] as const) {
-        for (const [name, factor] of realFactors()) {
-          const { thesis, falsifier } = composeThesis({ sym: 'SYM', side, stage, stop: 12.34, core: { name, factor }, context: { name, factor }, contextPts: 9 })
+        for (const [name, factor] of [...realFactors(), ...bearFactors()]) {
+          const contextPts = side === 'long' ? 9 : -9 // context that supports THIS call
+          const { thesis, falsifier } = composeThesis({ sym: 'SYM', side, stage, stop: 12.34, core: { name, factor }, context: { name, factor }, contextPts })
           expect(bannedTokensIn(thesis), thesis).toEqual([])
           expect(bannedTokensIn(falsifier), falsifier).toEqual([])
+          expect(thesis, `doubled sign: ${thesis}`).not.toMatch(/\+\+|--/)
           expect(thesis.startsWith(side === 'long' ? 'Long SYM — ' : 'Short SYM — ')).toBe(true)
         }
       }
     }
+  })
+
+  // The reviewer's reachable tape, end to end: a broken chart whose timeframes
+  // disagree and whose fall was volume-paid, published as a SHORT.
+  it('a short thesis never claims volume is behind it', () => {
+    const paidFall = { name: 'technical' as FactorName, factor: technicalFactor({ stage: 'weak', volumeConfirmed: true, rvol: 2.4, emaStack: { aligned: 'mixed' }, volThrust: null }) }
+    const { thesis } = composeThesis({ sym: 'NVDA', side: 'short', stage: 'weak', stop: 178.2, core: paidFall })
+    expect(thesis).toBe(
+      'Short NVDA — the chart is broken with heavy volume into the weakness, which the engine does not count in a short\'s favour. Wrong if it closes above 178.2.',
+    )
+    expect(thesis).not.toContain('volume behind it')
   })
 })
 

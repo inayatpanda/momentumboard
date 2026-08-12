@@ -538,6 +538,11 @@ export interface VelocityRead {
   confirmationTriggered: boolean
   greenStreak: number
   detail: string
+  /** The multiple the open door was actually paid at, or null. Optional here for
+   * the same reason it is optional there: a replay may load a lane old enough not
+   * to carry it. A MIRROR that quietly stops mirroring is worse than no mirror —
+   * it typechecks while describing a different shape. */
+  paidMult?: number | null
 }
 
 interface VelocityModule {

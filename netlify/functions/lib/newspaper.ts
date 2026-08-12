@@ -250,9 +250,13 @@ export interface BoardRow {
   observation?: boolean // cleared EVERY gate and an ISA cannot route it: fully graded, never placeable
   earningsRisk: boolean
   instrument: { ticker: string; leverage: number } | null
-  // The engine's two sentences (voice.ts), carried so the typeset board and the
-  // print edition can say what a row believes without re-deriving it from prose
-  // the projection deliberately drops. Undefined on near misses.
+  // The engine's two sentences (voice.ts). CARRIED, not yet printed here: the
+  // emailed paper renders them through the ideas table (the journalist polishes
+  // the thesis, the desk prints the falsifier verbatim in the invalidation cell)
+  // while the typeset board — this projection's other reader, reportPdf.ts —
+  // still prints only the numeric levels. They ride on the row so that becoming a
+  // rendering change is all it takes; today it is a data promise, not a render.
+  // Undefined on near misses, which have no call to state.
   thesis?: string
   falsifier?: string
 }
@@ -317,6 +321,17 @@ export interface PaperExtras {
   sectorBars?: { name: string; rs21: number | null }[]
 }
 
+/** The row's thesis with the falsifier sentence taken off the end, because the
+ * invalidation cell prints that sentence itself. Only the exact stored falsifier
+ * is stripped, and only when it really is the tail: a row from before the two
+ * fields existed, or one whose thesis was written some other way, is copied whole
+ * rather than trimmed by a guess at where its last sentence starts. */
+function caseFromThesis(b: { thesis?: string; falsifier?: string }): string | undefined {
+  if (!b.thesis) return undefined
+  const trimmed = b.falsifier && b.thesis.endsWith(b.falsifier) ? b.thesis.slice(0, -b.falsifier.length) : b.thesis
+  return trimmed.trim() || b.thesis
+}
+
 /** When the journalist files no ideas despite a speaking board, the desk sets
  * the table itself: top board calls become ideas verbatim — numbers from the
  * engine, one-line case from its own note. Picks capture must never starve. */
@@ -329,7 +344,13 @@ export function fallbackIdeasFromBoard(board: (BoardIdeaSlim & { note?: string; 
     // it is the sentence written for a reader, where `note` is the factor
     // breakdown written for an audit. The note stays as the fallback's fallback
     // for rows published before the engine had a voice.
-    caseText: `${b.thesis ?? b.note ?? `Engine call at composite conviction`}${b.paperOnly ? ' Paper-only until the risk ladder unlocks the route.' : ''}`,
+    //
+    // MINUS its last sentence. Every engine thesis ends with the falsifier
+    // (voice.ts composes them as one string precisely so the two can never drift),
+    // and the falsifier is ALSO printed on its own in the invalidation cell — so
+    // copying the thesis whole prints the same "Wrong if it closes below 178.2."
+    // twice in one idea. The cell owns that sentence; the case keeps the belief.
+    caseText: `${caseFromThesis(b) ?? b.note ?? `Engine call at composite conviction`}${b.paperOnly ? ' Paper-only until the risk ladder unlocks the route.' : ''}`,
     entry: String(b.entry),
     invalidation: String(b.stop),
     falsifier: b.falsifier,
@@ -442,6 +463,7 @@ export function composePrompt(data: string, dateLabel: string): string {
 
 NUMERIC DISCIPLINE (hard rules):
 - Use ONLY numbers present in the data below. NEVER invent a price, level or statistic.
+- EVERY board entry carries the engine's own one-sentence thesis and its falsifier. The thesis is your caseText's BASE: keep its claim and its direction exactly, then polish the wording and add the company, the story and the context around it. POLISH, NEVER INVENT — if you find yourself writing a different reason for the trade than the thesis states, you are writing about a call the engine did not make. The falsifier is printed verbatim by the desk; never contradict it, and never offer a different invalidation level in your prose.
 - No current price provided for a ticker → entry/invalidation/target must be QUALITATIVE ("reclaim of the 20-day on volume").
 - Crypto/index levels only if present in the data.
 - If userNotes is empty, OMIT readersNotes.

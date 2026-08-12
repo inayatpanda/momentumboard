@@ -122,16 +122,25 @@ describe('EngineBoard', () => {
   // as the evidence line, one tap down, exactly where the breakdown belongs.
   it('leads with the thesis, and keeps the factor line behind the evidence toggle', async () => {
     data.board!.board = [{ ...prediction, thesis: 'Short NVDA — the chart is broken. Wrong if it closes above 178.2.', falsifier: 'Wrong if it closes above 178.2.' }]
-    render(<EngineBoard />)
+    const { container } = render(<EngineBoard />)
     await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument())
     expect(screen.getByText('Short NVDA — the chart is broken. Wrong if it closes above 178.2.')).toBeInTheDocument()
     expect(screen.queryByText(/technical: weak/)).toBeNull() // still behind the toggle
+    // the node is marked, so the row that has NO thesis can be shown to have no
+    // node rather than merely no matching text
+    expect(container.querySelector('[data-thesis]')?.textContent).toBe('Short NVDA — the chart is broken. Wrong if it closes above 178.2.')
     data.board!.board = [prediction]
   })
 
   it('a row with no thesis renders exactly as it did — near misses have none', async () => {
-    render(<EngineBoard />)
+    const { container } = render(<EngineBoard />)
     await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument())
     expect(screen.getByText(/stop 178.2/)).toBeInTheDocument()
+    // "exactly as it did" has to mean the thesis node is ABSENT, not merely that
+    // the levels line survived: an empty div in its place is a gap above the
+    // levels on every card the engine did not speak for, and `undefined` rendered
+    // as text is the same bug with a word in it.
+    expect(container.textContent).not.toContain('undefined')
+    expect(container.querySelector('[data-thesis]')).toBeNull()
   })
 })
