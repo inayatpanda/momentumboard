@@ -213,6 +213,13 @@ export function gradePrediction(
   // intraday-pierce grading scored directional judgment as coin-flip misses).
   // EXECUTION advice on prediction cards is unchanged: the stop remains a hard
   // intraday level for anyone actually in the trade.
+  //
+  // …and it is the PUBLISHED stop, deliberately, even for a velocity row whose
+  // stop is a live trail (`Prediction.trail`). The books re-read that trail daily
+  // and can exit above this level (openTrace.ts, paperBook.ts); grading does not,
+  // because the hit definition is the calibration contract and moving it would be
+  // a CALIB_DEF_VERSION change that silently re-scores every seed and every past
+  // bucket. Grading measures the original thesis; the books trade the falsifier.
   let stopped = false
   for (let i = entryIdx; i <= entryIdx + horizon; i++) {
     if (pred.side === 'long' ? candles[i].c <= pred.stop : candles[i].c >= pred.stop) {

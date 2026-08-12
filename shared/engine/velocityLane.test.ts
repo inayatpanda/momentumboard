@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { VELOCITY_DOOR_CAP, classifyVelocity, velocityCall, velocityTrail } from './velocityLane'
+import { VELOCITY_DOOR_CAP, classifyVelocity, effectiveVelocityStop, velocityCall, velocityTrail } from './velocityLane'
 import type { Candle } from '../types'
 
 const mk = (c: number, v = 1_000_000, o = c, h = c, l = c): Candle => ({ t: 0, o, h, l, c, v })
@@ -179,6 +179,35 @@ describe('velocityTrail', () => {
   })
 
   it('null on a history too short to seed the 8-EMA', () => expect(velocityTrail(flat(5))).toBeNull())
+})
+
+describe('effectiveVelocityStop — the trail as the daily consumers enforce it', () => {
+  it('on the publication basis it IS the published stop — the daily check is continuous with the call', () => {
+    const cs = bothDoors()
+    const published = velocityCall('NVDA', cs, classifyVelocity(cs)!, 35_000)!.stop
+    expect(published).toBe(109.99)
+    // same candles, same function, same rounding: day one moves nothing
+    expect(effectiveVelocityStop(published, cs)).toBe(published)
+  })
+
+  it('RAISES the exit as the tape carries the trail up behind it', () => {
+    const cs = [...bothDoors(), mk(126), mk(130), mk(134)]
+    expect(velocityTrail(cs)!).toBeGreaterThan(109.99)
+    expect(effectiveVelocityStop(109.99, cs)).toBe(velocityTrail(cs))
+  })
+
+  it('never LOWERS it: a trail under the published stop leaves the published stop standing', () => {
+    // the same tape rolling over — both legs of the trail slide back under the level
+    // the call was published at, and the published stop is the floor
+    const cs = [...bothDoors(), mk(100), mk(98), mk(96), mk(95), mk(94), mk(93)]
+    expect(velocityTrail(cs)!).toBeLessThan(109.99)
+    expect(effectiveVelocityStop(109.99, cs)).toBe(109.99)
+  })
+
+  it('an unreadable trail moves nothing — an unknown is never a level', () => {
+    expect(velocityTrail(flat(5))).toBeNull()
+    expect(effectiveVelocityStop(94.5, flat(5))).toBe(94.5)
+  })
 })
 
 describe('velocityCall', () => {

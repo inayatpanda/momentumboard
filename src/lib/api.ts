@@ -457,8 +457,11 @@ export interface OpenTraceEntry {
   callDate: string
   grade: 'A' | 'B' | 'C'
   entry: number
-  stop: number
+  stop: number // the PUBLISHED stop — the number the formal grade reads
   target: number
+  // Velocity rows only: the live trail the open book actually enforced (never
+  // below `stop`). Grading is unaffected — see openTrace.ts for the split.
+  trailStop?: number
   status: 'in-play' | 'stopped' | 'target'
   crossedDate: string | null
   last: number
@@ -482,6 +485,7 @@ export interface PaperBookPosition {
   target: number
   qty: number
   costGBP: number
+  trail?: 'velocity' // this position's stop is the lane's live trail, re-read daily
 }
 
 export interface PaperBookTrade extends PaperBookPosition {
@@ -489,7 +493,7 @@ export interface PaperBookTrade extends PaperBookPosition {
   exit: number
   plGBP: number
   plPct: number
-  reason: 'stop' | 'target' | 'horizon' | 'month-end'
+  reason: 'stop' | 'trail' | 'target' | 'horizon' | 'month-end'
 }
 
 export interface PaperBookData {

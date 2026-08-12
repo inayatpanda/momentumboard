@@ -134,6 +134,28 @@ export function velocityTrail(candles: Candle[]): number | null {
   return round2(Math.max(ema, Math.min(...window.map(c => c.l))))
 }
 
+/** THE TRAIL, ENFORCED. The level a LIVE velocity row is judged against on the
+ * session ending at the last candle handed in: the higher of the published stop
+ * and the trail as the tape has since redrawn it.
+ *
+ * `candlesAsOfDay` must END on the session being judged — the same basis
+ * `velocityCall` published from — so on the entry session itself this returns the
+ * published stop EXACTLY: same candles, same function, same rounding. The daily
+ * check is therefore continuous with the call, never a second opinion about it.
+ *
+ * max(), and only max(). The trail may TIGHTEN the exit as the move carries the
+ * 8-EMA and the five-session low up behind it, and it may never loosen it: a tape
+ * rolling over drags both legs back down, and a "trail" that followed them down
+ * would widen the stop on precisely the day the position was failing — the same
+ * mistake velocityTrail refuses inside a single bar [C3], one timeframe up.
+ *
+ * No history, no trail, no move: an unreadable trail leaves the published stop
+ * standing, because an unknown is never a level. */
+export function effectiveVelocityStop(publishedStop: number, candlesAsOfDay: Candle[]): number {
+  const trail = velocityTrail(candlesAsOfDay)
+  return trail == null ? publishedStop : Math.max(publishedStop, trail)
+}
+
 /** Read the velocity signature off the tape. null iff the history is too short. */
 export function classifyVelocity(candles: Candle[]): VelocityRead | null {
   if (candles.length < MIN_CANDLES) return null

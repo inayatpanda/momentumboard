@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { bookEquity, closeOutMonth, freshBook, manageOpenPositions, sizePaperPosition, type PaperBook, type PaperPosition } from './paperBook'
+import { bookEquity, closeOutMonth, freshBook, manageOpenPositions, runPaperBook, sizePaperPosition, type PaperBook, type PaperPosition } from './paperBook'
+import { memoryStore } from './store'
+import { velocityTrail } from '../../../shared/engine/velocityLane'
 import type { Candle } from '../../../shared/types'
+import type { Prediction } from '../../../shared/engine/types'
 
 const mkCandles = (startISO: string, closes: number[]): Candle[] =>
   closes.map((c, i) => ({ t: Date.parse(startISO) / 1000 + i * 86_400, o: c, h: c + 1, l: c - 1, c, v: 1_000_000 }))
@@ -54,6 +57,94 @@ describe('manageOpenPositions', () => {
     manageOpenPositions(book, new Map([['AAA', mkCandles('2026-07-01', [101, 103])]]), '2026-07-03')
     expect(book.positions).toHaveLength(1)
     expect(bookEquity(book, () => 103)).toBe(9000 + 1000 + 30)
+  })
+})
+
+// ---- the LIVE velocity trail (Task 6) ----
+// Both tapes open on 2026-06-23 so the 2026-07-01 entry sits on eight (or ten)
+// sessions of history — the 8-EMA and the prior-five low need it.
+
+/** A run that keeps running: the trail climbs from the published 96.5 to 100.56,
+ *  then the tape closes 99 — still 2.5 points ABOVE the published stop. */
+const runningTape = () => mkCandles('2026-06-23', [92, 93, 94, 95, 96, 97, 98, 99, 100, 103, 104, 105, 99])
+
+/** The mirror: a shelf sets the published stop at 98, then a fade drags both legs
+ *  of the trail under it (97.9 on the last bar) while the close sits at 97.95 —
+ *  above the live trail, below the published stop. */
+const fadingTape = () => mkCandles('2026-06-21', [80, 80, 80, 80, 80, 99, 99, 99, 99, 99, 100, 99.5, 99.2, 99.1, 99.3, 98.9, 97.95])
+
+describe('manageOpenPositions — the velocity trail', () => {
+  it('exits a velocity position on the RISEN trail, and leaves the identical non-velocity position alone', () => {
+    const cs = runningTape()
+    expect(velocityTrail(cs)).toBe(100.21) // the trail on the closing bar, 3.71 above the published stop
+    const book: PaperBook = {
+      ...freshBook('2026-07'),
+      cash: 8000,
+      positions: [
+        pos({ sym: 'VELO', stop: 96.5, target: 107, trail: 'velocity' }),
+        pos({ sym: 'DIPR', stop: 96.5, target: 107 }), // same levels, same tape, no trail
+      ],
+    }
+    manageOpenPositions(book, new Map([['VELO', cs], ['DIPR', cs]]), '2026-07-05')
+
+    expect(book.closed).toHaveLength(1)
+    expect(book.closed[0]).toMatchObject({ sym: 'VELO', reason: 'trail', exit: 99, closedDate: '2026-07-05', plGBP: -10 })
+    expect(book.positions.map(p => p.sym)).toEqual(['DIPR']) // the published stop never came near
+  })
+
+  it('the trail never lowers the exit: a trail under the published stop still exits at the published stop', () => {
+    const cs = fadingTape()
+    expect(velocityTrail(cs)).toBe(97.9) // …under the 98 the call published
+    const book: PaperBook = { ...freshBook('2026-07'), cash: 9000, positions: [pos({ stop: 98, target: 104, trail: 'velocity' })] }
+    manageOpenPositions(book, new Map([['AAA', cs]]), '2026-07-07')
+    expect(book.closed[0]).toMatchObject({ reason: 'stop', exit: 97.95, closedDate: '2026-07-07' })
+  })
+})
+
+describe('runPaperBook — the marker survives the day it was opened', () => {
+  const runningBoardRow = {
+    id: '2026-07-01:VELO:long',
+    sym: 'VELO',
+    side: 'long',
+    grade: 'B',
+    entry: 100,
+    stop: 96.5,
+    target: 107,
+    riskPct: 1,
+    setup: 'velocity',
+    trail: 'velocity',
+  } as unknown as Prediction
+
+  it('carries trail:velocity onto the position, and a LATER run exits on it with no board row in sight', async () => {
+    const store = memoryStore()
+    const cs = runningTape()
+    const upToEntry = cs.slice(0, 9) // the tape as it stood on the day of the call
+    await store.write('engine-board', { date: '2026-07-01', board: [runningBoardRow] })
+
+    const day1 = await runPaperBook(store, { candles: async () => upToEntry }, Date.parse('2026-07-01T12:00:00Z') / 1000)
+    expect(day1.positions).toHaveLength(1)
+    expect(day1.positions[0]).toMatchObject({ sym: 'VELO', openedDate: '2026-07-01', trail: 'velocity' })
+
+    // Four sessions later the board has moved on and no longer carries VELO at all.
+    // The exit must come off the PERSISTED position — the marker is what makes it possible.
+    await store.write('engine-board', { date: '2026-07-05', board: [] })
+    const day2 = await runPaperBook(store, { candles: async () => cs }, Date.parse('2026-07-05T12:00:00Z') / 1000)
+    expect(day2.positions).toHaveLength(0)
+    expect(day2.closed).toHaveLength(1)
+    expect(day2.closed[0]).toMatchObject({ sym: 'VELO', reason: 'trail', exit: 99, closedDate: '2026-07-05' })
+  })
+
+  it('…and an ordinary board row opens with no marker, so nothing else in the book trails', async () => {
+    const store = memoryStore()
+    const ordinary = { ...runningBoardRow, id: '2026-07-01:DIPR:long', sym: 'DIPR', setup: 'dip', trail: undefined } as unknown as Prediction
+    await store.write('engine-board', { date: '2026-07-01', board: [ordinary] })
+    const day1 = await runPaperBook(store, { candles: async () => runningTape().slice(0, 9) }, Date.parse('2026-07-01T12:00:00Z') / 1000)
+    expect(day1.positions[0].trail).toBeUndefined()
+
+    await store.write('engine-board', { date: '2026-07-05', board: [] })
+    const day2 = await runPaperBook(store, { candles: async () => runningTape() }, Date.parse('2026-07-05T12:00:00Z') / 1000)
+    expect(day2.closed).toHaveLength(0) // the published stop was never touched
+    expect(day2.positions).toHaveLength(1)
   })
 })
 

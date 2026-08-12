@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { traceOpenCall, verdictFor } from './openTrace'
+import { velocityTrail } from './velocityLane'
 import type { Candle } from '../types'
 
 const T0 = Date.parse('2026-07-01') / 1000
@@ -87,6 +88,59 @@ describe('traceOpenCall — the walk', () => {
   it('candles that never reach the call date → null (nothing to walk)', () => {
     expect(traceOpenCall(call({ date: '2026-08-01' }), series([100, 101]), none)).toBeNull()
     expect(traceOpenCall(call(), [], none)).toBeNull()
+  })
+})
+
+// ---- the LIVE velocity trail (Task 6) ----
+// Two tapes, both walked from a call dated 2026-07-01 with eight (or ten) sessions
+// of prior history, because the trail needs the 8-EMA and the prior-five low.
+
+/** A run that keeps running: the trail climbs from the published 96.5 to 100.56,
+ *  then the tape closes 99 — six-and-a-half points ABOVE the published stop and
+ *  1.21 BELOW the trail. Only a live trail can fire here. */
+const runningTape = () => series([92, 93, 94, 95, 96, 97, 98, 99, 100, 103, 104, 105, 99], -8)
+
+/** The mirror: a shelf whose five prior lows set the published stop at 98.5, then
+ *  a slow fade that drags BOTH legs of the trail under it (98.4 by the last bar).
+ *  The 98.45 close is above the live trail and below the published stop. */
+const fadingTape = () => series([80, 80, 80, 80, 80, 99, 99, 99, 99, 99, 100, 99.5, 99.2, 99.1, 99.3, 98.9, 98.45], -10)
+
+describe('traceOpenCall — the velocity trail is enforced daily', () => {
+  it('a close under the RISEN trail (but above the published stop) reads as a trail hit', () => {
+    const cs = runningTape()
+    // the scenario, stated rather than assumed: the trail rose to 100.56 by 07-04…
+    expect(velocityTrail(cs.slice(0, 12))).toBe(100.56)
+    const e = traceOpenCall(call({ stop: 96.5, trail: 'velocity' }), cs, none)!
+    expect(e.status).toBe('stopped')
+    expect(e.crossedDate).toBe('2026-07-05')
+    expect(e.note).toContain('trail hit')
+    expect(e.trailStop).toBe(100.21) // the level that actually fired, not the published 96.5
+    expect(e.stop).toBe(96.5) // …and the published stop is reported unchanged: grading reads THAT
+  })
+
+  it('the SAME tape without the marker is untouched — one byte of difference on a dip row is a regression', () => {
+    const e = traceOpenCall(call({ stop: 96.5 }), runningTape(), none)!
+    expect(e.status).toBe('in-play')
+    expect(e.crossedDate).toBeNull()
+    expect(e.trailStop).toBeUndefined()
+    expect(e.note).not.toContain('trail')
+  })
+
+  it('the trail never lowers the exit below the published stop', () => {
+    const cs = fadingTape()
+    expect(velocityTrail(cs)!).toBe(98.4) // the live trail has slid UNDER the published stop…
+    const e = traceOpenCall(call({ stop: 98.5, target: 104, trail: 'velocity' }), cs, none)!
+    expect(e.status).toBe('stopped') // …and 98.45 still closes through it
+    expect(e.crossedDate).toBe('2026-07-07')
+    expect(e.trailStop).toBe(98.5) // the published stop, never the 98.4 the tape would have allowed
+    expect(e.note).not.toContain('trail hit') // nothing was raised — this is the ordinary stop
+  })
+
+  it('an open velocity row carries the level it is now judged against', () => {
+    const e = traceOpenCall(call({ stop: 96.5, trail: 'velocity' }), runningTape().slice(0, 12), none)!
+    expect(e.status).toBe('in-play')
+    expect(e.trailStop).toBe(100.56)
+    expect(e.note).toContain('trail at 100.56')
   })
 })
 

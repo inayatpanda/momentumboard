@@ -2142,6 +2142,10 @@ describe('buildBoard', () => {
     // the producer-side triad [T2-review]. (1) the tag the whole lane family is
     // keyed off — a typo here silently trains the technical factor on lane P&L:
     expect(call.catalyst).toEqual({ kind: 'velocity', reason: expect.stringContaining('early door') })
+    // …and the marker that makes the trail enforceable downstream (Task 6). It is
+    // stamped at THIS site, not derived later: the open book and the £10k book both
+    // read it off the row, and the paper book copies it onto the position it opens.
+    expect(call.trail).toBe('velocity')
     // (2) a structural composite never saw the world-tape nudge, so the row records
     // the multiplier it truly ran at — on a tape where the nudge is unmistakably ON:
     expect(call.worldTape).toEqual({ tone: 'risk-on', mult: 1 })
@@ -2163,6 +2167,10 @@ describe('buildBoard', () => {
     expect(sameSide.side).toBe('long')
     expect(sameSide.catalyst).toBeUndefined()
     expect(sameSide.worldTape).toEqual({ tone: 'risk-on', mult: 1.1 })
+    // …and neither control carries the trail marker: it belongs to the lane whose
+    // stop IS a trail, and one byte of it on an ordinary row moves that row's exit.
+    expect(ordinary.trail).toBeUndefined()
+    expect(sameSide.trail).toBeUndefined()
   })
 
   it('(3) …and nineteen sessions on, the graded break teaches calibration, its own setup family and the ladder — but never the technical factor', async () => {

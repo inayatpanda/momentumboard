@@ -1013,7 +1013,21 @@ export async function buildBoard(
   // 0.5 confirmation — VELOCITY_DOOR_CAP): a fresh break is not worse evidence,
   // it is earlier and wider, so it is sized smaller. See the sizing note below for
   // why it is a CAP and never multiplied into the tier fraction.
-  const publishCall = (call: EngineCall, capUsdM: number | null, cat: CatalystTag | null, forceShadow = false, sizeCap = 1) => {
+  // trail: the caller declares that this row's stop is a MOVING falsifier, not a
+  // fixed level, so the open book and the £10k book re-read it daily (Task 6,
+  // openTrace.ts / paperBook.ts). Threaded from the lane rather than inferred from
+  // `setup` here: the lane that defines a trail is the only thing that can promise
+  // one, and a row that merely looks like a breakout must never acquire a moving
+  // stop by resemblance. Grading is untouched either way — it reads the published
+  // `stop`, which is exactly what this field does NOT change.
+  const publishCall = (
+    call: EngineCall,
+    capUsdM: number | null,
+    cat: CatalystTag | null,
+    forceShadow = false,
+    sizeCap = 1,
+    trail?: Prediction['trail'],
+  ) => {
     // cap-class cohort drives BOTH the calibration lookup (its own buckets first,
     // then pooled) and the risk rung below. Unknown cap pools to the cohortless
     // path and the combined rung — never guessed into a sleeve.
@@ -1110,6 +1124,7 @@ export async function buildBoard(
       priceAtPrediction: call.entry,
       themes: callThemes.length ? callThemes : undefined,
       catalyst: cat ? { kind: cat.kind, reason: cat.reason } : undefined,
+      trail,
       capUsdM,
       shadow: shadow || undefined,
       watchOnly: watchOnly || undefined,
@@ -1375,6 +1390,10 @@ export async function buildBoard(
         { kind: VELOCITY_CATALYST_KIND, side: 'long', reason, strength: 50 },
         false,
         VELOCITY_DOOR_CAP[read.door], // early 0.25, confirmation 0.5 — the door's own ceiling
+        // …and this row's stop IS the trail (velocityLane.ts): the books re-read it
+        // every day from here on, so a momentum call that loses its falsifier is
+        // reported dead the day it dies rather than at a stale printed level.
+        'velocity',
       )
       constructedVelocityLongs.add(key)
       console.log(`BOARD: velocity ${read.door} door on ${sym} — ${read.detail}`)

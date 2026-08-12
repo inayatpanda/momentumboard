@@ -119,6 +119,14 @@ export interface Prediction extends GradedCall {
   worldTape?: { tone: string; mult: number } // overnight world-tape nudge applied to this call's conviction (bounded ±10/−15%)
   overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string }
   catalyst?: { kind: string; reason: string } // a market-moving news/event that put this name in play (catalyst.ts)
+  // This row's stop is a TRAIL, not a fixed level: the lane that made it defines a
+  // falsifier that moves with the tape, and the books re-read it every day
+  // (openTrace.ts, paperBook.ts — `effectiveVelocityStop`). Absent on every other
+  // row, which is the point: a dip or composite stop is a fixed number and must
+  // stay one. GRADING NEVER READS THIS — gradePrediction measures the published
+  // `stop`, so the calibration contract (CALIB_DEF_VERSION) is untouched; the trail
+  // governs the open book's narrative and the £10k book's exits.
+  trail?: 'velocity'
   outcome5?: PredOutcome
   outcome10?: PredOutcome
   outcome21?: PredOutcome // ~a month — the reader's actual holding period upper bound

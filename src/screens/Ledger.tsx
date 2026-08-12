@@ -153,8 +153,9 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
           })}
           <p className="empty-line led-fine">
             Every live call, re-checked each morning until its 10-session grade lands: daily closes against the published stop and target, the move from
-            entry, and whether the engine would still take the trade — “still a buy” is only ever earned by re-qualifying on today's board. Tap the
-            badge's row for the chart; hover/hold for the reason. Display-only: the grading above never moves.
+            entry, and whether the engine would still take the trade — “still a buy” is only ever earned by re-qualifying on today's board. Momentum
+            (velocity) calls are checked against their live trail instead, which only ever rises: they read as stopped the day the trail breaks. Tap the
+            badge's row for the chart; hover/hold for the reason. Display-only: the grading above never moves — it still measures the published stop.
           </p>
         </section>
       )}
@@ -192,7 +193,7 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
             {book.positions.map(p => (
               <div key={p.sym + p.side} className="perf-row led-clickable" onClick={() => onOpen(p.sym)} role="button" tabIndex={0}>
                 <span><strong>{p.sym}</strong> <span className={p.side === 'long' ? 'up-text' : 'down-text'}>{p.side}</span> <span className="led-n">{p.grade} · in {p.entry} · £{Math.round(p.costGBP)}</span></span>
-                <span className="led-meta">stop {p.stop} · tgt {p.target}</span>
+                <span className="led-meta">stop {p.stop}{p.trail ? ' (trailing)' : ''} · tgt {p.target}</span>
               </div>
             ))}
             {book.closed.slice(-5).reverse().map(t => (
@@ -209,7 +210,8 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
             ))}
             <p className="empty-line led-fine">
               A fresh mock £10,000 every month, traded mechanically on the engine's live calls: risk-ladder sizing, exits on daily closes at the published stop,
-              target or 10-session horizon; whatever remains closes at month-end. Finished months are banked above, permanently.
+              target or 10-session horizon — or, on a momentum call, at its live trail once that has risen above the published stop; whatever remains closes at
+              month-end. Finished months are banked above, permanently.
             </p>
           </section>
         )

@@ -1,5 +1,6 @@
 import type { Candle } from '../../../shared/types'
 import type { Prediction } from '../../../shared/engine/types'
+import { effectiveVelocityStop } from '../../../shared/engine/velocityLane'
 import type { AppStore } from './store'
 
 // THE £10,000 BOOK: a mock account the engine trades with its own calls, so
@@ -13,6 +14,19 @@ import type { AppStore } from './store'
 //     10-session horizon, or month-end. Entry marks at the call's printed
 //     entry (the close the level was computed from). Currency is nominal
 //     "£" 1:1 with the quote currency — it's a mock book, not an FX desk.
+//
+// …with ONE exit that is not a fixed number: a position opened from a row stamped
+// `trail: 'velocity'` carries that stamp (below), and its stop is re-read from the
+// tape every run — max(published stop, the lane's live trail). A momentum position
+// is closed by losing its trail, so a book that held it to a stale printed level
+// would be reporting a discipline no reader was told to follow.
+//
+// THE SPLIT, STATED HONESTLY (the same one openTrace.ts documents): GRADING is
+// untouched — gradePrediction measures the PUBLISHED stop, so the calibration
+// contract and the hit definition stay exactly as they were. This book trades the
+// trail. One row can therefore be closed here on a trail hit and later graded
+// against a lower level it never had to survive: grading measures the original
+// thesis, the book trades the falsifier that was actually in force.
 
 export interface PaperPosition {
   sym: string
@@ -20,10 +34,15 @@ export interface PaperPosition {
   grade: string
   openedDate: string
   entry: number
-  stop: number
+  stop: number // the PUBLISHED stop, always: the trail is derived, never stored
   target: number
   qty: number
   costGBP: number // committed capital: qty × entry (shorts: same, as margin)
+  // Copied off the board row at entry, and load-bearing: the board moves on
+  // overnight, so from tomorrow this position is the ONLY place that remembers
+  // its stop was a trail. Without it the marker dies the day after opening and no
+  // later run can enforce anything.
+  trail?: 'velocity'
 }
 
 export interface ClosedTrade extends PaperPosition {
@@ -31,7 +50,9 @@ export interface ClosedTrade extends PaperPosition {
   exit: number
   plGBP: number
   plPct: number
-  reason: 'stop' | 'target' | 'horizon' | 'month-end'
+  // 'trail' is a stop that MOVED before it fired — recorded separately from 'stop'
+  // so a month of exits can be read for what actually closed them.
+  reason: 'stop' | 'trail' | 'target' | 'horizon' | 'month-end'
 }
 
 export interface PaperBook {
@@ -82,18 +103,30 @@ export function sizePaperPosition(equity: number, cash: number, call: { entry: n
 
 /** Walk each open position through the daily closes SINCE it opened and
  * close on the first event: stop / target / the 10-session horizon.
- * Close-based on purpose — identical yardstick to the grading. */
+ * Close-based on purpose — identical yardstick to the grading.
+ *
+ * A `trail: 'velocity'` position is walked against its LIVE stop: the trail as the
+ * tape had drawn it by each session, floored at the published stop, so it can only
+ * ever tighten (`effectiveVelocityStop`). Every other position is compared to the
+ * published stop exactly as before — an untrailed row's stop is a fixed number and
+ * moving it by so much as a penny would be inventing an exit the call never made. */
 export function manageOpenPositions(book: PaperBook, candlesBySym: Map<string, Candle[]>, todayISO: string): void {
   const still: PaperPosition[] = []
   for (const p of book.positions) {
     const candles = candlesBySym.get(p.sym) ?? []
     const opened = Date.parse(p.openedDate) / 1000
-    const since = candles.filter(c => c.t > opened)
+    // `since` is the tail of `candles` (they are chronological), and the trail needs
+    // the history BEFORE it too — so the walk keeps the index into the full series.
+    const startIdx = candles.findIndex(c => c.t > opened)
+    const since = startIdx === -1 ? [] : candles.slice(startIdx)
     let exit: { price: number; date: string; reason: ClosedTrade['reason'] } | null = null
     for (let i = 0; i < since.length; i++) {
       const c = since[i]
       const date = new Date(c.t * 1000).toISOString().slice(0, 10)
-      if (p.side === 'long' ? c.c <= p.stop : c.c >= p.stop) { exit = { price: c.c, date, reason: 'stop' }; break }
+      // The stop as it stands on THIS session — the published number for everything
+      // that isn't trailed, and never below it for everything that is.
+      const stopNow = p.trail === 'velocity' ? effectiveVelocityStop(p.stop, candles.slice(0, startIdx + i + 1)) : p.stop
+      if (p.side === 'long' ? c.c <= stopNow : c.c >= stopNow) { exit = { price: c.c, date, reason: stopNow === p.stop ? 'stop' : 'trail' }; break }
       if (p.side === 'long' ? c.c >= p.target : c.c <= p.target) { exit = { price: c.c, date, reason: 'target' }; break }
       if (i + 1 >= HORIZON_SESSIONS) { exit = { price: c.c, date, reason: 'horizon' }; break }
     }
@@ -171,6 +204,10 @@ export async function runPaperBook(store: AppStore, deps: { candles: (sym: strin
       sym: call.sym, side: call.side, grade: call.grade,
       openedDate: todayISO, entry: call.entry, stop: call.stop, target: call.target,
       qty: sized.qty, costGBP: sized.costGBP,
+      // …and the trail marker travels with the position, not with the board row it
+      // came from: tomorrow's board no longer has this row, and the exit has to
+      // keep working [codex-v2 #10].
+      trail: call.trail,
     })
     const c = await deps.candles(call.sym).catch(() => null)
     if (c) candlesBySym.set(call.sym, c)
