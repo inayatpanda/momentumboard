@@ -21,7 +21,7 @@ import {
 import { composeCall, coreCompositeOf, levelsFor, setupFamilyOf } from '../../../shared/engine/composite'
 import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleeve'
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
-import { DIP_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
+import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
 import { DIP_NEWS_BUDGET, unservedVenue, type DipNewsVerdict } from './dipNews'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
@@ -377,12 +377,13 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // THE calibrated grade: calibration buckets, factor-IC weights, the
           // Brier trail and the risk-ladder counters all learn here, at 10d.
           updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
-          // …but NOT factor IC for a lane call. A dip call carries a constant
-          // technical +40 placeholder (dipLane.ts) rather than a measured factor
-          // vote, so booking its outcome would train the technical factor's IC on
-          // the dip lane's P&L — a signal it never cast. Calibration buckets and
-          // setup buckets above still accrue: only factor-IC is excluded.
-          if (pred.catalyst?.kind !== DIP_CATALYST_KIND) w = updateIcStats(w, pred, o)
+          // …but NOT factor IC for a lane call — ANY lane (LANE_CATALYST_KINDS,
+          // catalyst.ts). A lane call carries a constant technical placeholder
+          // (dipLane.ts, velocityLane.ts) rather than a measured factor vote, so
+          // booking its outcome would train the technical factor's IC on the
+          // lane's P&L — a signal it never cast. Calibration buckets and setup
+          // buckets above still accrue: only factor-IC is excluded.
+          if (!LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '')) w = updateIcStats(w, pred, o)
           newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow })
           graded++
           if (!pred.shadow && !pred.watchOnly) newByCohort[capCohortOf(pred.capUsdM)]++
@@ -953,11 +954,12 @@ export async function buildBoard(
       instrument,
       paperOnly: call.side === 'short' && !watchOnly && !instrument,
       // The stamp must describe what the call ACTUALLY got. The composite loop
-      // re-scores with worldMult before publishing; the dip lane's composite is
-      // structural (depth-derived, dipLane.ts) and never sees the nudge at all.
-      // Printing 1.1 on a dip row would advertise a conviction adjustment that
-      // was never applied — so a dip row records the multiplier it truly ran at: 1.
-      worldTape: { tone: tone.tone, mult: cat?.kind === DIP_CATALYST_KIND ? 1 : worldMult(tone.tone, call.side) },
+      // re-scores with worldMult before publishing; a LANE composite is structural
+      // (depth-derived in dipLane.ts, run-derived in velocityLane.ts) and never
+      // sees the nudge at all. Printing 1.1 on a lane row would advertise a
+      // conviction adjustment that was never applied — so every lane row records
+      // the multiplier it truly ran at: 1.
+      worldTape: { tone: tone.tone, mult: LANE_CATALYST_KINDS.has(cat?.kind ?? '') ? 1 : worldMult(tone.tone, call.side) },
     })
   }
 

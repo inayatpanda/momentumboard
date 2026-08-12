@@ -2109,6 +2109,58 @@ describe('gradeOutstanding', () => {
     expect(cal.setupBuckets!['reversal:long:25-40']).toEqual({ n: 2, hits: 0 })
   })
 
+  // The SAME quarantine, one rung more general. A velocity call's composite is
+  // built by velocityLane.ts, not measured by the factor stack, so booking its
+  // outcome would train the technical factor's IC on a vote it never cast —
+  // exactly the dip's problem. The guard therefore keys on the lane FAMILY
+  // (LANE_CATALYST_KINDS), not on the dip literal, and the 'velocity' setup
+  // family books its own bucket with ZERO changes to calibration.ts.
+  it('a graded VELOCITY call never touches factor IC either — the quarantine is the lane family, not a dip special case', async () => {
+    const store = memoryStore()
+    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    const planted = (over: Partial<Prediction>): Partial<Prediction> => ({
+      date,
+      side: 'long',
+      composite: 37,
+      regime: 'amber',
+      probability: 0.6,
+      provisional: false,
+      grade: 'B',
+      setup: 'reversal',
+      capUsdM: 35_000,
+      priceAtPrediction: shorty[239].c,
+      entry: shorty[239].c,
+      stop: shorty[239].c * 0.5, // wide enough that the bleed never stops it out
+      target: shorty[239].c * 1.2,
+      instrument: null,
+      factors: { technical: { score: 40, detail: 'velocity lane', weight: 0 } } as never,
+      ...over,
+    })
+    await store.write(`predictions:${date}`, [
+      planted({ id: `${date}:GLW:long`, sym: 'GLW', setup: 'velocity', catalyst: { kind: 'velocity', reason: 'breakout +18% · 3.1× volume' } }),
+      planted({ id: `${date}:NVDA:long`, sym: 'NVDA' }), // an ordinary call — the control
+    ])
+    await store.write('predictions-index', [date])
+    await store.write('engine-weights', initWeights())
+    await store.write('engine-calibration', calWith('long:amber:25-40')) // known start: no setup buckets yet
+    const d = deps({ candles: async sym => (sym === 'GLW' || sym === 'NVDA' ? shorty : sym === 'SPY' ? flat : null) })
+
+    expect((await gradeOutstanding(store, d, NOW, null)).graded).toBe(2) // BOTH graded
+
+    const w = (await store.read<WeightsState>('engine-weights'))!
+    const ic = w.ic.technical
+    expect(ic.nAgree + ic.nDisagree).toBe(1) // only the ordinary call booked an observation
+    expect(w.gradedSinceNudge).toBe(1)
+
+    // …and the velocity call's outcome still teaches calibration and its OWN
+    // setup bucket — the key template `${setup}:${side}:${band}` is family-agnostic,
+    // so a brand-new family accrues without a single production change.
+    const cal = (await store.read<CalibrationState>('engine-calibration'))!
+    expect(cal.buckets['large:long:amber:25-40']).toEqual({ n: 2, hits: 0 })
+    expect(cal.setupBuckets!['velocity:long:25-40']).toEqual({ n: 1, hits: 0 })
+    expect(cal.setupBuckets!['reversal:long:25-40']).toEqual({ n: 1, hits: 0 }) // the control's family, untouched by the newcomer
+  })
+
   it('production migration: a legacy rung-0 risk-state + cohortless seeded calibration load and behave; a known-cap grade books into its cohort bucket', async () => {
     const store = memoryStore()
     const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)

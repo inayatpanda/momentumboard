@@ -12,19 +12,37 @@
 // (relaxed) capacity gate, the side-aware entry gates and calibration grading
 // exactly like everything else. News buys a name a fair look, not a free pass.
 
-// The tag the DIP LANE stamps on its own rows. One exported constant because two
-// places must agree on it forever and neither can see the other: the PRODUCER
-// (buildBoard's dip merge) and the factor-IC GUARD in gradeOutstanding, which
-// keeps the lane's constant technical placeholder out of the IC loop. A typo in
-// either literal would silently train the technical factor on the dip lane's P&L.
+// The tag the DIP LANE stamps on its own rows. One exported constant because the
+// PRODUCER (buildBoard's dip merge) and the lane-family membership below must
+// agree on the literal forever, and a typo in either would silently train the
+// technical factor on the dip lane's P&L.
 export const DIP_CATALYST_KIND = 'dip'
 
+// The same, for the VELOCITY LANE (velocityLane.ts): a breakout/washout call
+// whose composite is derived from the run itself rather than measured by the
+// factor stack.
+export const VELOCITY_CATALYST_KIND = 'velocity' as const
+
 export interface CatalystTag {
-  kind: 'news' | 'event' | 'ipo' | 'listing' | 'earnings' | typeof DIP_CATALYST_KIND
+  kind: 'news' | 'event' | 'ipo' | 'listing' | 'earnings' | typeof DIP_CATALYST_KIND | typeof VELOCITY_CATALYST_KIND
   side: 'long' | 'short' | null // null = "in play", no clean direction — relaxes the gate but casts no vote
   reason: string
   strength: number // 0..100 — how direct/material the catalyst is
 }
+
+// THE LANE FAMILY. A lane call is not an ordinary call carrying news: its
+// composite is CONSTRUCTED (depth-derived in dipLane, run-derived in
+// velocityLane) rather than voted on by the factor stack, so two engine
+// behaviours must treat every lane alike:
+//   1. factor-IC (gradeOutstanding) skips it — booking a lane's outcome would
+//      train the technical factor's IC on a vote the factor never cast.
+//   2. the worldTape stamp (publishCall) records mult 1 — the composite loop's
+//      worldMult re-score never touched a structural composite, so printing the
+//      nudge would advertise an adjustment that was never applied.
+// Both used to test the dip literal, which quietly meant "every future lane
+// starts out mis-learning until someone remembers this file". Membership is the
+// contract now: add a lane's kind here and both behaviours follow it for free.
+export const LANE_CATALYST_KINDS: ReadonlySet<string> = new Set([DIP_CATALYST_KIND, VELOCITY_CATALYST_KIND])
 
 // The gates composeCall applies, parameterised by the reader's risk appetite.
 // A catalyst name gets a LOWER capacity floor on purpose: swing-capacity is a
