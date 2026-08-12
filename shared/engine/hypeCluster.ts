@@ -162,10 +162,19 @@ function excessByDate(candles: Candle[], spyRets: Map<string, number>): Map<stri
   return out
 }
 
+/** Crypto pairs trade seven-day weeks, so their Monday return spans one session
+ * where SPY's spans three — a joined-by-date comparison the gap guard cannot
+ * catch (both spans are ≤4 days). Until the crypto cohort exists (Stage 1c,
+ * with matched clocks), crypto symbols sit OUT of cluster detection entirely
+ * [codex cross-check, 2026-08-12]. The tell is the quote currency after the
+ * dash — BRK-B is a share class, not a pair (dipNews.unservedVenue's rule). */
+const QUOTE_CURRENCY_RE = /-(USD|GBP|EUR|JPY|CAD|AUD|CHF|BTC|ETH|USDT|USDC)$/
+const clusterable = (sym: string) => !QUOTE_CURRENCY_RE.test(sym)
+
 /** The pairs that clear the co-appearance leg inside the window. */
 function coAppearingPairs(window: Day[]): [string, string][] {
   const daysOf = new Map<string, number>()
-  for (const d of window) for (const s of d.syms) daysOf.set(s, (daysOf.get(s) ?? 0) + 1)
+  for (const d of window) for (const s of d.syms) if (clusterable(s)) daysOf.set(s, (daysOf.get(s) ?? 0) + 1)
   // A name that did not trend on CO_APPEAR_MIN days of its own cannot share that
   // many with anyone — checking it first keeps the pair loop small.
   const regulars = [...daysOf.entries()]

@@ -341,3 +341,22 @@ describe('clusterCandidates — the bounded fetch list', () => {
     expect(clusterCandidates(history(repeat(7, ABC)))).toEqual(['AAA', 'BBB', 'CCC'])
   })
 })
+
+describe('crypto sits out until Stage 1c', () => {
+  it('a quote-currency pair never enters candidacy or clusters — its Monday spans one session, SPY\'s spans three', () => {
+    // ETH-USD co-trends with two equities on every recorded day. Without the
+    // exclusion it would be a candidate (and, given correlated tapes, a member).
+    const days = history([
+      ['AAA', 'BBB', 'ETH-USD'], ['AAA', 'BBB', 'ETH-USD'], ['AAA', 'BBB', 'ETH-USD'],
+      ['AAA', 'BBB', 'ETH-USD'], ['AAA', 'BBB', 'ETH-USD'], ['AAA'], ['BBB'],
+    ])
+    expect(clusterCandidates(days)).toEqual(['AAA', 'BBB'])
+  })
+  it('a share-class dash is NOT crypto — BRK-B stays clusterable', () => {
+    const days = history([
+      ['AAA', 'BBB', 'BRK-B'], ['AAA', 'BBB', 'BRK-B'], ['AAA', 'BBB', 'BRK-B'],
+      ['AAA', 'BBB', 'BRK-B'], ['AAA', 'BBB', 'BRK-B'], ['AAA'], ['BBB'],
+    ])
+    expect(clusterCandidates(days)).toContain('BRK-B')
+  })
+})
