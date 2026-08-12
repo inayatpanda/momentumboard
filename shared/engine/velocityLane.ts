@@ -15,9 +15,11 @@
 //
 //   early        — the first break of the 20-session high, PAID FOR (3× volume).
 //                  Youngest, least confirmed, highest slippage risk. Smallest size.
-//   confirmation — the move is already established (+15% in five sessions, or
-//                  three of the last five up with real participation printed ON an
-//                  up-day) and the tape has just PAUSED without losing the 8-EMA.
+//   confirmation — the move is already established (+15% in five sessions, or three
+//                  of the last five up inside a net-UP window), it was PAID FOR —
+//                  either way — by real participation printed ON an up-day, and the
+//                  tape has just PAUSED without losing the 8-EMA. Both legs, always:
+//                  a big move nobody printed volume on is a move nobody defends.
 //                  Later, better evidence, larger size.
 //
 // Both open at once → early wins, and its smaller cap applies: the same tape read
@@ -67,6 +69,10 @@ export const MAX_GREEN_STREAK = 2
 export const EMA_PERIOD = 8
 /** Reward as a multiple of the risk the trail defines. */
 export const TARGET_R = 2
+/** The smallest risk distance worth trading, as a fraction of entry. A trail that
+ *  sits 4p under a 107.40 close is not a stop: ordinary noise takes it out, the 2R
+ *  target lands inside the same bar's range, and any R-based size explodes. */
+export const MIN_RISK_FRAC = 0.01
 
 /** How much of the rung each door may size to (Task 5's input). The early read is
  * the same move seen younger and less confirmed, so it is sized smaller — not
@@ -163,14 +169,14 @@ export function classifyVelocity(candles: Candle[]): VelocityRead | null {
   const earlyTriggered = brokeOut && paidEarly && timingOk
 
   // --- the confirmation door ---
-  // Leg A: the move is simply large. Rounded before the comparison so float noise
-  // on an exact 15.0% cannot flip the verdict (the dip lane's convention).
+  // A RUN, in one of two shapes: large, or broad. Rounded before the comparison so
+  // float noise on an exact 15.0% cannot flip the verdict (the dip lane's convention).
   const bigRun = round1(move5Pct) >= RUN_TRIGGER_PCT
 
-  // Leg B: three of the last five closed up AND at least one of THOSE up-days
-  // printed >= 2× the baseline. The volume evidence has to sit on an up-day [C7]:
-  // a 3× DOWN day inside a mixed week is distribution, and counting it let the
-  // loudest sellers in the window vouch for the buyers.
+  // PAID: at least one of the up-days inside the window printed >= 2× the baseline.
+  // The volume evidence has to sit on an up-day [C7]: a 3× DOWN day inside a mixed
+  // week is distribution, and counting it let the loudest sellers in the window
+  // vouch for the buyers.
   let upDays = 0
   let bestUpMult = 0
   let paidUpDay = false
@@ -181,16 +187,27 @@ export function classifyVelocity(candles: Candle[]): VelocityRead | null {
     if (m > bestUpMult) bestUpMult = m
     if (m >= CONFIRM_VOL_MULT) paidUpDay = true
   }
-  const paidRun = upDays >= UP_DAYS_MIN && paidUpDay
+  // A run is either large or broad — and, either way, UP. Three green sessions
+  // inside a collapse are bounces, so the breadth leg reads the direction of the
+  // window it is counting inside; without that a −6% five-session slide with a
+  // paid bounce reads as momentum.
+  const runLeg = bigRun || (upDays >= UP_DAYS_MIN && move5Pct > 0)
 
+  // …and BOTH run shapes must be paid for. A big move nobody printed volume on is
+  // a move nobody defends, and letting the 15% leg stand alone also let the door
+  // open on a tape whose volume was unknowable (`baseVol == null` ⇒ every up-day
+  // multiple is 0, i.e. no evidence at all, which must never read as evidence).
   const holdsEma = ema8 != null && last.c > ema8
-  const confirmationTriggered = (bigRun || paidRun) && timingOk && holdsEma
+  const confirmationTriggered = runLeg && paidUpDay && timingOk && holdsEma
 
   // Both open → early. The younger read is not the better one; it is the one whose
   // size cap is smaller, and on a tape that satisfies both we take the cautious cap.
   const door: VelocityDoor | null = earlyTriggered ? 'early' : confirmationTriggered ? 'confirmation' : null
 
   const volStr = volMult != null ? `${round1(volMult)}×` : 'unknown'
+  // With no baseline there is no multiple — say so. Printing "0×" would state a
+  // measurement that was never taken, and 0× reads as "nobody traded".
+  const bestUpStr = baseVol != null ? `${round1(bestUpMult)}×` : 'unknown'
   const streakStr = `${greenStreak} green day${greenStreak === 1 ? '' : 's'}`
   let detail: string
   if (door === 'early') {
@@ -198,7 +215,7 @@ export function classifyVelocity(candles: Candle[]): VelocityRead | null {
   } else if (door === 'confirmation') {
     const how = bigRun
       ? `${pct(move5Pct)} over ${RUN_WINDOW} sessions`
-      : `${upDays}/${RUN_WINDOW} up-days paid by a ${round1(bestUpMult)}× up-day`
+      : `${upDays}/${RUN_WINDOW} up-days paid by a ${bestUpStr} up-day`
     detail = `velocity (confirmation door): ${how} · holding the ${EMA_PERIOD}-EMA at ${round2(ema8 ?? 0)} · ${streakStr}`
   } else {
     const earlyWhy: string[] = []
@@ -206,10 +223,18 @@ export function classifyVelocity(candles: Candle[]): VelocityRead | null {
     if (!paidEarly) earlyWhy.push(`${volStr} volume under ${EARLY_VOL_MULT}×`)
     if (!timingOk) earlyWhy.push(streakStr)
     const confWhy: string[] = []
-    if (!bigRun && !paidRun) {
+    // The two legs refuse for different reasons and each must SAY which. Reporting
+    // only the joint failure left every "the run was there, nobody paid for it"
+    // refusal printing an empty clause — the least readable possible outcome for a
+    // reader asking why a name they can see moving was not called.
+    if (!runLeg) {
       confWhy.push(
-        `no ${RUN_TRIGGER_PCT}% ${RUN_WINDOW}-session run (${pct(move5Pct)}) and no ${CONFIRM_VOL_MULT}× up-day inside ${UP_DAYS_MIN}-of-${RUN_WINDOW} (${upDays}/${RUN_WINDOW} up, best up-day ${round1(bestUpMult)}×)`,
+        move5Pct > 0
+          ? `no ${RUN_TRIGGER_PCT}% ${RUN_WINDOW}-session run (${pct(move5Pct)}) and only ${upDays}/${RUN_WINDOW} up-days`
+          : `no run at all (${pct(move5Pct)} over ${RUN_WINDOW} sessions)`,
       )
+    } else if (!paidUpDay) {
+      confWhy.push(`no ${CONFIRM_VOL_MULT}× up-day (${upDays}/${RUN_WINDOW} up, best up-day ${bestUpStr})`)
     }
     if (!timingOk) confWhy.push(streakStr)
     if (!holdsEma) confWhy.push(`below the ${EMA_PERIOD}-EMA`)
@@ -243,12 +268,20 @@ export function velocityCall(
   // shelf: a break of the 20-session high that is nevertheless under the average
   // of the last eight closes has no risk distance to size against.
   if (stop == null || stop >= entry) return null
+  // And "barely any room" is the same trade. A pullback that lands a hair above its
+  // own 8-EMA prints a technically-valid stop pennies away; the risk distance is
+  // then smaller than the tape's own noise, so the stop is not a falsifier and the
+  // 2R target is not a move. Refuse rather than publish a fake risk number.
+  if (entry - stop < MIN_RISK_FRAC * entry) return null
   const target = round2(entry + TARGET_R * (entry - stop))
 
   const expectedMovePct = round1(((target - entry) / entry) * 100)
   const ref5 = closes[closes.length - 1 - RUN_WINDOW]
   const move5Pct = ref5 > 0 ? ((last.c - ref5) / ref5) * 100 : 0
-  const composite = round1(clamp(25 + Math.abs(move5Pct), 25, 55))
+  // max(0, …) not abs(…): this lane is long-only, so a NEGATIVE five-session move
+  // is not conviction of the same size — abs() scored a −20% slide exactly like a
+  // +20% run. A door reached with a net-down window scores the floor.
+  const composite = round1(clamp(25 + Math.max(0, move5Pct), 25, 55))
   const smallCap = capUsdM != null && capUsdM < SMALL_CAP_MAX_USD_M
 
   // A minimal, honest factor record: the lane's read is technical, everything

@@ -13,8 +13,33 @@ const calm = () => flat(60)
 /** The early door: a first break of the 20-session high, paid for 3×. */
 const breakout = (vol: number) => [...flat(59), mk(105, vol)]
 
-/** The confirmation door: +16% over five sessions, then a PAUSE that holds the 8-EMA. */
-const pauseAfterRun = () => [...flat(56), mk(104), mk(108), mk(112), mk(117), mk(116)]
+/** The confirmation door: +16% over five sessions PAID FOR (a 2.3× up-day on the
+ *  112 session, against the 1.075M baseline), then a PAUSE that holds the 8-EMA.
+ *  Today's own volume is 0.93× so the early door stays shut on price AND volume. */
+const pauseAfterRun = () => [...flat(56), mk(104), mk(108), mk(112, 2_500_000), mk(117), mk(116)]
+
+/** The same +16% run with NOBODY paying for it: every session prints the flat
+ *  1M baseline, so no up-day clears 2×. A big move alone is not evidence. */
+const unpaidRun = () => [...flat(56), mk(104), mk(108), mk(112), mk(117), mk(116)]
+
+/** The identical unpaid run on a tape whose volume is entirely UNKNOWABLE (the
+ *  baseline averages to zero), so no multiple can ever be computed. */
+const unpaidRunNoVolume = () => [
+  ...Array.from({ length: 56 }, () => mk(100, 0)),
+  mk(104, 0),
+  mk(108, 0),
+  mk(112, 0),
+  mk(117, 0),
+  mk(116, 0),
+]
+
+/** 3-of-5 up-days, a paid 2.3× up-day, holding nothing: the five-session move is
+ *  −6%. Up-days inside a collapse are bounces, not a run. */
+const netDownRun = () => [...flat(56, 100), mk(80), mk(85), mk(90, 2_500_000), mk(95), mk(94)]
+
+/** A confirmation tape whose trail (the 8-EMA, 107.36) sits 4p under the 107.40
+ *  entry — a "risk" of 0.04% that would size to an absurd position. */
+const noRiskDistance = () => [...flat(56, 100), mk(104), mk(108), mk(112, 2_500_000), mk(117), mk(107.4)]
 
 /** 3-of-5 up-days — but the loud session is the DOWN day [C7]. `loudDown` false
  * moves the identical 2.5× print onto the 103 UP day, which must open the door. */
@@ -99,6 +124,30 @@ describe('classifyVelocity', () => {
     expect(read.door).toBe('confirmation')
   })
 
+  it('a +16% five-session run NOBODY paid for opens nothing — both legs need a 2× up-day', () => {
+    const read = classifyVelocity(unpaidRun())!
+    expect(read.confirmationTriggered).toBe(false)
+    expect(read.door).toBeNull()
+    // the run leg itself passed; the refusal must name the missing participation
+    expect(read.detail).toContain('no 2× up-day')
+    expect(read.detail).toContain('best up-day 1×')
+  })
+
+  it('…and when the volume baseline is unknowable the run leg cannot stand in for it', () => {
+    const read = classifyVelocity(unpaidRunNoVolume())!
+    expect(read.confirmationTriggered).toBe(false)
+    expect(read.door).toBeNull()
+    expect(read.detail).toContain('no 2× up-day')
+    expect(read.detail).toContain('best up-day unknown') // never a fabricated 0×
+  })
+
+  it('3-of-5 up-days inside a −6% five-session slide opens nothing — bounces are not a run', () => {
+    const read = classifyVelocity(netDownRun())!
+    expect(read.confirmationTriggered).toBe(false)
+    expect(read.door).toBeNull()
+    expect(read.detail).toContain('−6%')
+  })
+
   it('the fifth consecutive green day is never bought — by either door', () => {
     const read = classifyVelocity(fifthGreenDay())!
     expect(read.greenStreak).toBe(5)
@@ -166,11 +215,37 @@ describe('velocityCall', () => {
     expect(call.composite).toBe(30.3) // 25 + |158/150 − 1| = 25 + 5.33%
   })
 
+  it('a net-DOWN five-session window scores the floor, not the mirror of a run', () => {
+    // The lane's own doors can no longer reach this shape (the breadth leg requires
+    // move5 > 0, and a bar cannot break its own 20-session high while closing under
+    // a close inside that window), so the read is synthesized: the guard exists so
+    // that no future door — or direct caller — can score a −7% slide like a +7% run.
+    const cs = [...flat(56, 100), mk(50), mk(55), mk(60), mk(92), mk(93)]
+    const read = { ...classifyVelocity(cs)!, door: 'confirmation' as const }
+    const call = velocityCall('NVDA', cs, read, 35_000)!
+    expect(call.composite).toBe(25) // 25 + max(0, −7%) — abs() would have said 32
+  })
+
   it('the composite clamps at 55 on a violent move', () => {
     const cs = [...flat(55), mk(120), mk(140), mk(160), mk(150), mk(190, 4_000_000)]
     const read = classifyVelocity(cs)!
     expect(read.door).toBe('early')
     expect(velocityCall('NVDA', cs, read, 35_000)!.composite).toBe(55) // 25 + 90% clamped
+  })
+
+  it('null when the trail is nearer than 1% of entry — a 4p stop is not a stop', () => {
+    const cs = noRiskDistance()
+    const read = classifyVelocity(cs)!
+    expect(read.door).toBe('confirmation') // the door is genuinely open
+    expect(velocityTrail(cs)).toBe(107.36) // 4p under the 107.40 entry
+    expect(velocityCall('NVDA', cs, read, 35_000)).toBeNull()
+  })
+
+  it('…but a trail 2%+ away still constructs the call', () => {
+    const cs = bothDoors()
+    const call = velocityCall('NVDA', cs, classifyVelocity(cs)!, 35_000)!
+    expect((call.entry - call.stop) / call.entry).toBeGreaterThan(0.02)
+    expect(call.stop).toBe(109.99)
   })
 
   it('null when the trail sits at or above entry — no risk distance to size against', () => {
