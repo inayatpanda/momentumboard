@@ -713,8 +713,10 @@ export async function buildBoard(
   }
   // 180, not 110: the sleeve adds up to 40 permanent candidates, the losers
   // screen another slice and the gainers screen is read 50 deep rather than 25,
-  // and none of them may crowd out discovery. Worst case is +95 candle fetches,
-  // bounded by the mapLimit(8) below — noted, accepted. [R16]
+  // and none of them may crowd out discovery. Candle fetches stay bounded by the
+  // 180 cap itself — worst case +70 vs the old 110, unchanged by the deeper
+  // gainers read (a bigger POOL binds the cap more often; it never raises it).
+  // Bounded by the mapLimit(8) below — noted, accepted. [R16]
   const candidateSyms = [...sources.keys()]
     .sort((a, b) => candidatePriority(a) - candidatePriority(b) || a.localeCompare(b))
     .slice(0, 180)

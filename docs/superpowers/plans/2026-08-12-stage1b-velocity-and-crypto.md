@@ -114,7 +114,7 @@ The spec's falsifier ("first close below the 8-EMA or the 5-session low") must a
 
 ### Task 7: replay gate — the named runners [C15]
 
-**Files:** extend `scripts/replay-window.ts` (a `--velocity-probe` mode) + `docs/superpowers/plans/2026-08-11-stage1-replay-results.md` §12.
+**Files:** extend `scripts/replay-window.ts` (a `--velocity-probe` mode) + `docs/superpowers/plans/2026-08-11-stage1-replay-results.md` §12. Also from the Task-3 review: `synthScreens` must mirror production's per-kind depths (gainers 50, others 25) and its stale 25-row comment (~line 110) corrected — the harness must measure the engine that ships.
 
 **Design (strengthened per C15):**
 - **Named probes with named windows [codex-v2 #3]** — SEVEN runners, fixed before any result is seen: AAOI (search window 2026-01-01→2026-08-01), RKLB, LUNR, ASTS (the 2026 space cluster, same window), IONQ, RGTI, QBTS (the 2025 quantum trio, 2025-01-01→2025-12-31). The run inside each search window = the largest low→high advance ≥40% within it, located from the candles and PRINTED with its dates. No other probe selection.
