@@ -27,6 +27,7 @@ import { emaLast, swingCapacity } from '../indicators'
 import { SMALL_CAP_MAX_USD_M } from './capClass'
 import { DEFAULT_WEIGHTS } from './composite'
 import { clamp, round1, round2, type CallEvidence, type EngineCall, type FactorName, type FactorScore } from './types'
+import { dipThesis } from './voice'
 
 /** Below this the price signature simply isn't readable — no dip verdict at all. */
 export const MIN_CANDLES = 30
@@ -263,5 +264,10 @@ export function dipCall(sym: string, candles: Candle[], read: DipRead, capUsdM: 
     earningsRisk: false, // overridden from the live earnings calendar at integration
     stage: 'early-reversal',
     note: read.detail,
+    // The lane's own voice (voice.ts). No news clause here on purpose: this
+    // module is pure and the dip's ONE news question (dipNews.ts) is asked by
+    // buildBoard, which re-composes the thesis with the verdict before it
+    // publishes. A dip that never reaches that path still says what it believes.
+    ...dipThesis({ sym, dropPct: read.dropPct, stop }),
   }
 }

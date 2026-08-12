@@ -50,6 +50,13 @@ export function journalistBoardRows(board: readonly Prediction[]) {
     capacityPct: p.capacityPct,
     stage: p.stage,
     note: p.note,
+    // The engine's own thesis and falsifier (voice.ts) — the journalist's BASE,
+    // not decoration. The ideas brief tells the model to polish the thesis and
+    // never to invent a different one, and it can only obey that if the sentence
+    // is in front of it. Absent on a near miss, which is the one row kind the
+    // model must not write up at all.
+    thesis: p.thesis,
+    falsifier: p.falsifier,
     smallCap: p.smallCap,
     earningsRisk: p.earningsRisk,
     riskPct: p.riskPct,

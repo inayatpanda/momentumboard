@@ -3,6 +3,7 @@ import type { Stage } from '../technicals'
 import { MODERATE_GATES, type CatalystTag, type Gates } from './catalyst'
 import { SMALL_CAP_MAX_USD_M } from './capClass'
 import { clamp, round1, round2, type CallEvidence, type EngineCall, type FactorName, type FactorScore, type SetupFamily } from './types'
+import { composeThesis, factorPhrase } from './voice'
 
 /** THE OWNER'S ORDER: the charts speak first. Technical and momentum are the
  * two things measured directly off price, every session, for every name — they
@@ -232,10 +233,10 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   if (side === 'long' && input.entryQuality === 'chase') return null
   if (side === 'short' && (input.stage === 'early-reversal' || input.stage === 'pullback')) return null
 
-  const contributors = (Object.entries(input.factors) as [FactorName, FactorScore][])
+  const ranked = (Object.entries(input.factors) as [FactorName, FactorScore][])
     .filter(([, f]) => f.score != null && f.score !== 0)
     .sort((a, b) => Math.abs((input.weights[b[0]] ?? 0) * b[1].score!) - Math.abs((input.weights[a[0]] ?? 0) * a[1].score!))
-    .slice(0, 2)
+  const contributors = ranked.slice(0, 2)
   const note = contributors.map(([name, f]) => `${name}: ${f.detail}`).join(' · ') || 'composite only'
 
   const withWeights = Object.fromEntries(
@@ -269,6 +270,28 @@ export function composeCall(input: ComposeInput): EngineCall | null {
     detail: `core coverage ${Math.round(coverage * 100)}% · ${famAgree} core famil${famAgree === 1 ? 'y' : 'ies'} agree · context ${ctxPts >= 0 ? '+' : ''}${round1(ctxPts)}pt`,
   }
 
+  // THE VOICE (voice.ts). The same |weight × score| ordering `note` is built from,
+  // filtered two ways: to the factors arguing FOR this side, because a thesis
+  // states what the engine believes (the note keeps the top two whichever way they
+  // point), and to the ones that actually have something a reader would recognise
+  // as a reason — a factor whose detail humanises to nothing is skipped rather
+  // than printed hollow. Context is quoted only when the capped context layer
+  // genuinely moved the number.
+  const spokesman = (family: 'core' | 'context') =>
+    ranked
+      .filter(([name, f]) => FACTOR_FAMILY[name] === family && Math.sign(f.score!) === dir)
+      .map(([name, factor]) => ({ name, factor }))
+      .find(c => factorPhrase(c.name, c.factor) != null) ?? null
+  const { thesis, falsifier } = composeThesis({
+    sym: input.sym,
+    side,
+    stage: input.stage,
+    stop,
+    core: spokesman('core'),
+    context: spokesman('context'),
+    contextPts: evidence.contextPts,
+  })
+
   return {
     sym: input.sym,
     side,
@@ -285,5 +308,7 @@ export function composeCall(input: ComposeInput): EngineCall | null {
     earningsRisk: input.earningsWithinHorizon,
     stage: input.stage,
     note,
+    thesis,
+    falsifier,
   }
 }

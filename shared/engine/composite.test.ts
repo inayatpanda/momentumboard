@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CONTEXT_MAX_PTS, DEFAULT_WEIGHTS, LONG_REGIME_MULT, composeCall, coreCompositeOf, setupFamilyOf, type ComposeInput } from './composite'
 import { AGGRESSIVE_GATES, MODERATE_GATES } from './catalyst'
 import { catalystFactor } from './factors'
+import { bannedTokensIn } from './voice'
 import type { FactorName, FactorScore } from './types'
 
 const nullFactors = (): Record<FactorName, FactorScore> => ({
@@ -340,5 +341,52 @@ describe('two-layer composite: core decides, context colours', () => {
     expect(setupFamilyOf('long', null)).toBeNull()
     const call = composeCall(base({ factors: longFactors() }))!
     expect(call.setup).toBe('reversal') // base stage is early-reversal
+  })
+})
+
+// THE VOICE (voice.ts). The board's narration used to be `${factorName}:
+// ${detail}` — the machine's own field names, in front of a reader. Every
+// composite call now carries two plain-English sentences instead, and `note`
+// keeps the breakdown as the evidence line beneath.
+describe('composeCall — every call says what it believes and what would prove it wrong', () => {
+  it('leads with the stage and the strongest contributor arguing FOR the side', () => {
+    const call = composeCall(base({ factors: longFactors() }))!
+    expect(call.thesis).toBe('Long TEST — the chart is turning up off its low with volume behind it. Wrong if it closes below 97.')
+    expect(call.falsifier).toBe('Wrong if it closes below 97.')
+    expect(call.falsifier).toContain(String(call.stop)) // the level it actually published
+    expect(bannedTokensIn(call.thesis!)).toEqual([])
+  })
+
+  it('…while `note` is untouched: the evidence line still names the factors', () => {
+    const call = composeCall(base({ factors: longFactors() }))!
+    expect(call.note).toBe('technical: early-reversal volume-confirmed · momentum: +10pp')
+  })
+
+  it('a short is falsified ABOVE its stop', () => {
+    const call = composeCall(
+      base({ stage: 'weak', entryQuality: 'neutral', factors: { ...nullFactors(), technical: { score: -84, detail: 'below every average' }, momentum: { score: -40, detail: '-10pp' } } }),
+    )!
+    expect(call.side).toBe('short')
+    expect(call.thesis).toBe(`Short TEST — the chart is broken with 10 points of underperformance against the S&P over the last month. Wrong if it closes above ${call.stop}.`)
+  })
+
+  it('context is quoted only when the capped context layer actually moved the number', () => {
+    // news 50 × weight 0.5 over a 1.9 core denominator = +13.2pt, capped at 12
+    const loud = composeCall(base({ factors: { ...longFactors(), news: { score: 50, detail: '3 headline(s), polarity +2' } } }))!
+    expect(loud.evidence.contextPts).toBe(CONTEXT_MAX_PTS)
+    expect(loud.thesis).toContain(', and 3 headlines on it reading positive.')
+    // …and a whisper (seasonality is CORE, insiders at 0.4 × 8 = 3.2pt / 1.9 = 1.7pt) is not
+    const quiet = composeCall(base({ factors: { ...longFactors(), insiders: { score: 8, detail: 'insider buying' } } }))!
+    expect(Math.abs(quiet.evidence.contextPts)).toBeLessThan(4)
+    expect(quiet.thesis).not.toContain('director')
+  })
+
+  it('a contributor whose detail humanises to nothing is skipped, never printed hollow', () => {
+    // technical outranks momentum, but 'basing' alone carries no confirmation to
+    // report — so the sentence takes momentum's clause rather than an empty one
+    const call = composeCall(
+      base({ stage: 'basing', factors: { ...nullFactors(), technical: { score: 84, detail: 'basing' }, momentum: { score: 40, detail: '21d RS vs SPY +10pp' } } }),
+    )!
+    expect(call.thesis).toBe('Long TEST — the chart has built a base with 10 points of outperformance against the S&P over the last month. Wrong if it closes below 97.')
   })
 })

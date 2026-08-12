@@ -1829,6 +1829,15 @@ a.menu-row { text-decoration: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* the thesis LEADS: full text, wrapped, in the reading colour — the note below it
+   is the evidence line and stays muted and clipped */
+.calls-row .calls-thesis {
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+  min-width: 0;
+}
 .empty-line.calls-foot { font-size: 12px; }
 
 /* ---------- Movers: eyebrow strips + rail cards ---------- */

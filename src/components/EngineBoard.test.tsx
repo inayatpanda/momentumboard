@@ -117,4 +117,21 @@ describe('EngineBoard', () => {
     expect(screen.queryByText(/no ISA route/)).toBeNull()
     delete data.board!.emptySides
   })
+  // THE VOICE (voice.ts). The board used to lead with `note` — the machine's own
+  // factor names in front of a reader. The thesis leads now; the note survives
+  // as the evidence line, one tap down, exactly where the breakdown belongs.
+  it('leads with the thesis, and keeps the factor line behind the evidence toggle', async () => {
+    data.board!.board = [{ ...prediction, thesis: 'Short NVDA — the chart is broken. Wrong if it closes above 178.2.', falsifier: 'Wrong if it closes above 178.2.' }]
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument())
+    expect(screen.getByText('Short NVDA — the chart is broken. Wrong if it closes above 178.2.')).toBeInTheDocument()
+    expect(screen.queryByText(/technical: weak/)).toBeNull() // still behind the toggle
+    data.board!.board = [prediction]
+  })
+
+  it('a row with no thesis renders exactly as it did — near misses have none', async () => {
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument())
+    expect(screen.getByText(/stop 178.2/)).toBeInTheDocument()
+  })
 })

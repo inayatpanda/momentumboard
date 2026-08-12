@@ -354,6 +354,13 @@ export interface EnginePrediction {
   earningsRisk: boolean
   stage: string | null
   note: string
+  // What this call believes, in one plain-English sentence, and what would prove
+  // it wrong (shared/engine/voice.ts). The card LEADS with the thesis; `note`
+  // survives beneath it as the evidence line. Optional: a near miss has neither
+  // (it cleared no gate, so there is no belief to state), and neither does any
+  // row published before the engine had a voice.
+  thesis?: string
+  falsifier?: string
   riskRung: number
   riskPct: number
   instrument: { ticker: string; leverage: number } | null
@@ -426,6 +433,10 @@ export interface LedgerPrediction {
   // (a near miss needs no equivalent: they never enter the ledger at all)
   observation?: boolean
   note: string
+  // the engine's two sentences, carried into the ledger so a historical card can
+  // still be read against what price then did (optional — see EnginePrediction)
+  thesis?: string
+  falsifier?: string
 }
 
 export interface LedgerDay {

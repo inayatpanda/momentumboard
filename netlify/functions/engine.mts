@@ -17,6 +17,63 @@ const json = (data: unknown, status = 200) =>
     headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' },
   })
 
+/** THE LEDGER PROJECTION: one stored Prediction, slimmed to what the
+ * accountability pane needs — every id, level, flag and outcome, but NOT the
+ * heavy per-factor breakdown (that stays behind the daily board's evidence
+ * toggle). PURE + exported so the projection can be tested without a blob
+ * store: a field dropped here is a field the reader's history loses forever,
+ * and that has happened before (recon §6.5). */
+export function ledgerRow(p: Prediction) {
+  return {
+    id: p.id,
+    date: p.date,
+    sym: p.sym,
+    side: p.side,
+    grade: p.grade,
+    probability: p.probability,
+    provisional: p.provisional,
+    shadow: p.shadow ?? false,
+    composite: p.composite,
+    capUsdM: p.capUsdM ?? null,
+    entry: p.entry,
+    stop: p.stop,
+    target: p.target,
+    expectedMovePct: p.expectedMovePct,
+    stage: p.stage,
+    regime: p.regime,
+    // The factor vector behind `composite`. Without it a conviction
+    // inversion can only be RECONSTRUCTED from the note text — which is
+    // how the short-side inversion (2026-07-28) had to be diagnosed.
+    // score+weight only: `detail` is prose and would bloat 30 days of rows.
+    factors: p.factors
+      ? Object.fromEntries(Object.entries(p.factors).map(([k, f]) => [k, { score: f.score, weight: f.weight }]))
+      : undefined,
+    worldTape: p.worldTape,
+    earningsRisk: p.earningsRisk,
+    overlay: p.overlay,
+    outcome5: p.outcome5,
+    outcome10: p.outcome10,
+    instrument: p.instrument,
+    paperOnly: p.paperOnly,
+    // The row KIND, carried so a historical row keeps the containment its
+    // board day gave it. An observation cleared every gate and an ISA could
+    // never place it, so it is not a second opinion on a position anybody
+    // took — and the Journal's "engine disagrees" flag must go on respecting
+    // that after the row has aged out of today's board into this projection.
+    // (nearMiss deliberately absent: a near miss never enters the ledger.)
+    observation: p.observation ?? false,
+    note: p.note,
+    // The engine's own two sentences (voice.ts). They ride the slim
+    // projection for the same reason `note` does: this is the ONLY
+    // narration a historical row keeps, and a ledger card that can no
+    // longer say what the call believed cannot be audited against what
+    // then happened. Undefined on near misses and on every row published
+    // before the fields existed — the UI reads them as optional.
+    thesis: p.thesis,
+    falsifier: p.falsifier,
+  }
+}
+
 export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
   if (!auth) return new Response(JSON.stringify({ ok: false, error: 'unauthorised' }), { status: 401 })
@@ -66,57 +123,13 @@ export default async (req: Request) => {
   const { patternScorecard } = await import('../../shared/engine/patternScore')
   const patternScore = patternSightings?.length ? patternScorecard(patternSightings) : []
 
-  // The LEDGER: the last 30 dates of predictions, SLIMMED — every id, level and
-  // outcome the accountability pane needs, but NOT the heavy per-factor
-  // breakdown (that stays behind the daily board's evidence toggle). Newest
-  // date first. Each date reads one blob; fail-soft to an empty day.
+  // The LEDGER: the last 30 dates of predictions, SLIMMED (ledgerRow above).
+  // Newest date first. Each date reads one blob; fail-soft to an empty day.
   const ledgerDates = ((predIndex ?? []).slice(-30)).reverse()
   const ledger = await Promise.all(
     ledgerDates.map(async date => {
       const preds = (await blobAppStore.read<Prediction[]>(`predictions:${date}`)) ?? []
-      return {
-        date,
-        predictions: preds.map(p => ({
-          id: p.id,
-          date: p.date,
-          sym: p.sym,
-          side: p.side,
-          grade: p.grade,
-          probability: p.probability,
-          provisional: p.provisional,
-          shadow: p.shadow ?? false,
-          composite: p.composite,
-          capUsdM: p.capUsdM ?? null,
-          entry: p.entry,
-          stop: p.stop,
-          target: p.target,
-          expectedMovePct: p.expectedMovePct,
-          stage: p.stage,
-          regime: p.regime,
-          // The factor vector behind `composite`. Without it a conviction
-          // inversion can only be RECONSTRUCTED from the note text — which is
-          // how the short-side inversion (2026-07-28) had to be diagnosed.
-          // score+weight only: `detail` is prose and would bloat 30 days of rows.
-          factors: p.factors
-            ? Object.fromEntries(Object.entries(p.factors).map(([k, f]) => [k, { score: f.score, weight: f.weight }]))
-            : undefined,
-          worldTape: p.worldTape,
-          earningsRisk: p.earningsRisk,
-          overlay: p.overlay,
-          outcome5: p.outcome5,
-          outcome10: p.outcome10,
-          instrument: p.instrument,
-          paperOnly: p.paperOnly,
-          // The row KIND, carried so a historical row keeps the containment its
-          // board day gave it. An observation cleared every gate and an ISA could
-          // never place it, so it is not a second opinion on a position anybody
-          // took — and the Journal's "engine disagrees" flag must go on respecting
-          // that after the row has aged out of today's board into this projection.
-          // (nearMiss deliberately absent: a near miss never enters the ledger.)
-          observation: p.observation ?? false,
-          note: p.note,
-        })),
-      }
+      return { date, predictions: preds.map(ledgerRow) }
     }),
   )
 

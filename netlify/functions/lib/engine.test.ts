@@ -8,6 +8,7 @@ import { CALIB_DEF_VERSION, initWeights, type CalibrationState, type WeightsStat
 import { RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
 import { VELOCITY_DOOR_CAP, classifyVelocity } from '../../../shared/engine/velocityLane'
 import { classifyDip } from '../../../shared/engine/dipLane'
+import { bannedTokensIn } from '../../../shared/engine/voice'
 import { worldMult } from '../../../shared/engine/worldTape'
 import type { TrendDay } from '../../../shared/engine/hypeCluster'
 import type { EmptySideReason } from '../../../shared/engine/types'
@@ -1879,6 +1880,28 @@ describe('buildBoard', () => {
     expect(call.catalyst!.reason).toContain('holding')
   })
 
+  // THE VOICE (voice.ts). dipLane.ts is pure and cannot ask the news question, so
+  // it writes the thesis without a clause; buildBoard — the only place the verdict
+  // exists — re-composes it with the SAME builder, so the falsifier can never
+  // drift from the stop the row published.
+  it("the dip's thesis carries the news read the lane itself could not ask", async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    const d = dipDeps({ dipNews: async () => ({ verdict: 'transient', reason: 'sector sympathy, guidance intact' }) })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call.thesis).toContain('Long GLW — hit ')
+    expect(call.thesis).toContain('and holding, and the story behind the fall reads like an overreaction')
+    expect(call.falsifier).toBe(`Wrong if it closes below ${call.stop}.`)
+    expect(call.thesis!.endsWith(call.falsifier!)).toBe(true)
+    expect(bannedTokensIn(call.thesis!)).toEqual([]) // …and no field name reaches the reader
+    // the machine-voiced line survives beneath it, unchanged
+    expect(call.note).toBe(call.evidence.detail)
+    expect(call.note).toContain('holding')
+  })
+
   it('a dip-news lookup that fails never blocks the lane — the dip trades, labelled "news unchecked"', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
@@ -3275,5 +3298,56 @@ describe('traceOpenIdeas', () => {
     expect(viaObservation.requalified).toBe(false)
     expect(viaObservation.verdict).not.toBe('still-on')
     expect(viaObservation.note).not.toContain('re-qualified')
+  })
+})
+
+// THE VOICE, at the two construction sites that BYPASS the ordinary producers
+// (recon §6.5). Both were where fields have gone missing before, and they want
+// opposite answers — which is exactly why they are asserted together.
+describe('thesis + falsifier — who gets a voice and who does not', () => {
+  // the same tape both rows come off: NVDA is a gate-clearing unroutable short
+  // (→ an observation) and RISE is the long side's nearest miss
+  const bothKinds = () =>
+    deps({
+      mediaTitles: async () => [],
+      candles: async sym =>
+        sym === 'NVDA' ? shorty : sym === 'RISE' ? deadClimb : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
+    })
+
+  it('a NEAR MISS carries neither: it cleared no gate, so there is no belief to state', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [{ symbol: 'RISE' }], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
+    const { board } = await buildBoard(store, bothKinds(), NOW)
+    const misses = board.filter(b => b.nearMiss)
+    expect(misses.length).toBeGreaterThan(0)
+    for (const m of misses) {
+      expect(m.thesis).toBeUndefined()
+      expect(m.falsifier).toBeUndefined()
+      expect(m.note).toContain('nearest miss') // …its own honest sentence is untouched
+    }
+  })
+
+  it('a promoted OBSERVATION keeps the thesis it published with — it is a real call nobody can place', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [{ symbol: 'RISE' }], rules: [], ytChannels: [], levMap: {} }) // NVDA has NO inverse ETP
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
+    const { board } = await buildBoard(store, bothKinds(), NOW)
+
+    const nvda = board.find(b => b.sym === 'NVDA')!
+    expect(nvda.observation).toBe(true)
+    // The row cleared EVERY gate; the only thing wrong with it is that an ISA
+    // cannot place it. Its belief is still the engine's belief and its stop is
+    // still the level that would end it, so both sentences stand…
+    expect(nvda.thesis).toContain('Short NVDA — ')
+    expect(nvda.falsifier).toBe(`Wrong if it closes above ${nvda.stop}.`)
+    expect(bannedTokensIn(nvda.thesis!)).toEqual([])
+    // …and what it must never carry is an OFFER, which the row's own flags and the
+    // label appended to `note` (not to the thesis) go on making impossible.
+    expect(nvda.riskPct).toBe(0)
+    expect(nvda.instrument).toBeNull()
+    expect(nvda.watchOnly).toBe(true)
+    expect(nvda.note).toContain('no ISA route — observation only')
+    expect(nvda.thesis).not.toContain('no ISA route')
   })
 })

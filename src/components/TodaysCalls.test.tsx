@@ -113,3 +113,31 @@ describe('TodaysCalls — what the footer counts and what the copy claims', () =
     expect(screen.queryByText(/Nothing cleared the gates/)).toBeNull()
   })
 })
+
+// THE VOICE (voice.ts). The card leads with what the engine believes and what
+// would end it; the machine-voiced factor line stays beneath it as the evidence.
+describe('TodaysCalls — the thesis leads, the evidence line survives', () => {
+  it('shows the thesis above the note when the row has one', async () => {
+    const spoken = row({
+      sym: 'ABBV',
+      note: 'technical: pullback · momentum: +6.4pp',
+      thesis: 'Long ABBV — it has pulled back into support with volume behind it. Wrong if it closes below 178.2.',
+    })
+    board.board = [spoken]
+    board.emptySides = undefined
+    render(<TodaysCalls onOpen={() => {}} />)
+    await waitFor(() => expect(screen.getByText('ABBV')).toBeInTheDocument())
+    expect(screen.getByText(spoken.thesis!)).toBeInTheDocument()
+    expect(screen.getByText(spoken.note)).toBeInTheDocument() // …and the evidence line is still there
+  })
+
+  it('a row with no thesis still shows its note — a near miss has no belief to state', async () => {
+    const miss = row({ sym: 'MISS', nearMiss: true, watchOnly: true, riskPct: 0, note: 'nearest miss — the engine looked and said no' })
+    board.board = [miss]
+    board.emptySides = undefined
+    render(<TodaysCalls onOpen={() => {}} />)
+    await waitFor(() => expect(screen.getByText('MISS')).toBeInTheDocument())
+    expect(screen.getByText(miss.note)).toBeInTheDocument()
+    expect(screen.queryByText(/Wrong if it closes/)).toBeNull()
+  })
+})

@@ -100,6 +100,11 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
                 {p.earningsRisk && <span className="badge bad">earnings ≤10d</span>}
               </span>
             )}
+            {/* THE LEAD LINE is what the engine believes and what would end it
+                (voice.ts). The machine-voiced factor line survives beneath it as
+                the evidence, unchanged — and is the whole line on a near miss,
+                which has no thesis because it cleared no gate. */}
+            {p.thesis && <span className="calls-thesis">{p.thesis}</span>}
             <span className="calls-note">{p.note}</span>
           </div>
         )

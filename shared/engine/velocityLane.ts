@@ -48,6 +48,7 @@ import { emaLast, swingCapacity } from '../indicators'
 import { SMALL_CAP_MAX_USD_M } from './capClass'
 import { DEFAULT_WEIGHTS } from './composite'
 import { clamp, round1, round2, type CallEvidence, type EngineCall, type FactorName, type FactorScore } from './types'
+import { velocityThesis } from './voice'
 
 /** Below this the price signature simply isn't readable — no velocity verdict at all. */
 export const MIN_CANDLES = 30
@@ -91,6 +92,12 @@ export interface VelocityRead {
   /** Consecutive up-closes ending today. The entry-timing rule reads this. */
   greenStreak: number
   detail: string
+  /** What the OPEN door was actually paid at, as a multiple of the trailing
+   * baseline: today's print for the early door, the best qualifying up-day for
+   * the confirmation door. Null when no door opened or the baseline was
+   * unknowable. Carried as a NUMBER because the lane's voice (voice.ts) must not
+   * have to parse it back out of `detail` — a prose format is not an interface. */
+  paidMult?: number | null
 }
 
 /** Mean volume of the BREAKOUT_WINDOW sessions before today. Today is excluded
@@ -276,7 +283,16 @@ export function classifyVelocity(candles: Candle[]): VelocityRead | null {
     detail = `no velocity · early: ${earlyWhy.join(', ')} · confirmation: ${confWhy.join(', ')}`
   }
 
-  return { door, earlyTriggered, confirmationTriggered, greenStreak, detail }
+  return {
+    door,
+    earlyTriggered,
+    confirmationTriggered,
+    greenStreak,
+    detail,
+    // baseVol == null means no multiple was ever measured; 0× would state a
+    // measurement that was never taken, exactly as the prose above refuses to.
+    paidMult: door === 'early' ? volMult : door === 'confirmation' && baseVol != null ? round1(bestUpMult) : null,
+  }
 }
 
 /** The velocity lane's own long call. Only an open door earns one.
@@ -359,6 +375,9 @@ export function velocityCall(
     earningsRisk: false, // overridden from the live earnings calendar at integration
     stage: 'trending',
     note: read.detail,
+    // The lane's own voice (voice.ts) — and the ONE falsifier sentence that has to
+    // say the level moves: this stop is a trail the books re-read every session.
+    ...velocityThesis({ sym, door: read.door, stop, paidMult: read.paidMult }),
     // No catalyst here on purpose: a price signature is not news. buildBoard
     // attaches the narration tag when a real catalyst exists (Task 2).
   }

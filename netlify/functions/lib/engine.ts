@@ -21,6 +21,7 @@ import {
 import { composeCall, coreCompositeOf, DEFAULT_WEIGHTS, levelsFor, setupFamilyOf } from '../../../shared/engine/composite'
 import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleeve'
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
+import { dipThesis } from '../../../shared/engine/voice'
 import { classifyVelocity, velocityCall, VELOCITY_DOOR_CAP } from '../../../shared/engine/velocityLane'
 import { clusterCandidates, detectClusters, TREND_DAY_SYMS, TREND_HISTORY_DAYS, type TrendDay } from '../../../shared/engine/hypeCluster'
 import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, VELOCITY_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
@@ -1364,7 +1365,17 @@ export async function buildBoard(
     }
     // Structural → the row publishes as a SHADOW: off the reader's board, still
     // graded, so the ledger can eventually answer whether standing down was right.
-    publishCall(call, capUsdM, { kind: DIP_CATALYST_KIND, side: 'long', reason: `${read.detail} · ${note}`, strength: 40 }, v.verdict === 'structural')
+    //
+    // …and the thesis is re-composed HERE, because this is the first place the
+    // dip's news read exists: dipLane.ts is pure and wrote the sentence without a
+    // clause. Same builder, same falsifier — the only thing that changes is
+    // whether the story behind the fall gets named (voice.ts).
+    publishCall(
+      { ...call, ...dipThesis({ sym, dropPct: read.dropPct, stop: call.stop, news: v.verdict }) },
+      capUsdM,
+      { kind: DIP_CATALYST_KIND, side: 'long', reason: `${read.detail} · ${note}`, strength: 40 },
+      v.verdict === 'structural',
+    )
   }
 
   // ---- the velocity lane's own calls, merged into the same board ----
@@ -1705,6 +1716,14 @@ export async function buildBoard(
       observation.paperOnly = false // a watch row is nobody's position
       observation.horizon = horizonOf({ watchOnly: true, stage: observation.stage, setup: observation.setup, evidence: observation.evidence })
       observation.note = `${observation.note} · no ISA route — observation only`
+      // `thesis`/`falsifier` are deliberately NOT rewritten or cleared. This row
+      // is a real, fully-graded composite call — the only thing wrong with it is
+      // that an ISA cannot place it — so the belief it published with is still
+      // exactly what the engine believes, and the level that would falsify it is
+      // still that level. What it must never carry is an OFFER, and it carries
+      // none: zero size, no instrument, watch-only, and the label above. (A near
+      // miss is the opposite case and has neither field — it cleared no gate, so
+      // there was never a belief to state.)
       observation.evidence = { ...observation.evidence, detail: `${observation.evidence.detail} · no ISA route — observation only` }
       liveCalls.push(observation)
       console.log(`BOARD: ${observation.sym} cleared every gate with no ISA route — shown as an observation on the empty ${side} side`)
@@ -1783,6 +1802,10 @@ export async function buildBoard(
         earningsRisk: false, // earnings names are never recorded as near misses
         stage: n.stage,
         note: `nearest miss — the engine looked and said no; shown so the day is not blank${routeNote}`,
+        // No `thesis` and no `falsifier`, on purpose: this row cleared no gate, so
+        // there is no belief to state and its levels are a printed comparison
+        // rather than a plan. Giving it the engine's voice would make the one row
+        // that is NOT a call read exactly like the ones that are.
         probability: round2(engineBaseRate),
         provisional: true,
         grade: 'C',

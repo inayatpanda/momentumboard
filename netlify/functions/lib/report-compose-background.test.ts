@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { journalistBoardRows } from '../report-compose-background.mts'
+import { ledgerRow } from '../engine.mts'
 import { SECTIONS, boardExportRows, buildNewspaperHtml, constrainIdeasToBoard, fallbackIdeasFromBoard, type ComposedReport, type Idea } from './newspaper'
 import type { FactorName, FactorScore, Prediction } from '../../../shared/engine/types'
 
@@ -165,5 +166,95 @@ describe('journalistBoardRows — the board the paper is written from', () => {
     const many = Array.from({ length: 20 }, (_, i) => ({ ...observation, id: `2026-08-12:S${i}:short`, sym: `S${i}` }))
     expect(journalistBoardRows(many)).toHaveLength(16)
     expect(journalistBoardRows(many).at(-1)!.sym).toBe('S15')
+  })
+})
+
+// THE VOICE, THROUGH EVERY PROJECTION (voice.ts). A thesis stored on a row is
+// worth nothing if the hop into the paper drops it — which is exactly how
+// `nearMiss` and `observation` were each lost once (see boardExportRows' own
+// docblock). Presence is asserted on trade rows; near misses legitimately carry
+// neither field, and every projection has to survive that too.
+describe('thesis + falsifier — the two sentences reach the paper', () => {
+  const spoken: Prediction = {
+    ...observation,
+    id: '2026-08-12:ABBV:long',
+    sym: 'ABBV',
+    side: 'long',
+    stage: 'pullback',
+    watchOnly: undefined,
+    observation: undefined,
+    riskPct: 1,
+    note: 'technical: pullback, every timeframe pointing up · momentum: 21d RS vs SPY +6.4pp',
+    thesis: 'Long ABBV — it has pulled back into support with volume behind it. Wrong if it closes below 178.2.',
+    falsifier: 'Wrong if it closes below 178.2.',
+  }
+
+  it('journalistBoardRows carries both — the journalist cannot polish what it cannot see', () => {
+    const [row] = journalistBoardRows([spoken])
+    expect(row.thesis).toBe(spoken.thesis)
+    expect(row.falsifier).toBe(spoken.falsifier)
+    expect(row.note).toBe(spoken.note) // …and the evidence line is untouched beneath it
+  })
+
+  it('boardExportRows carries both — the second hop, where fields have gone missing before', () => {
+    const [row] = boardExportRows(journalistBoardRows([spoken]))
+    expect(row.thesis).toBe(spoken.thesis)
+    expect(row.falsifier).toBe(spoken.falsifier)
+  })
+
+  it('the ideas brief tells the model the thesis is its BASE, not a suggestion', () => {
+    const brief = SECTIONS.find(s => s.key === 'ideas')!.brief
+    expect(brief).toContain('thesis')
+    expect(brief).toContain('POLISH, NEVER INVENT')
+    expect(brief).toContain('falsifier')
+  })
+
+  it('the printed invalidation cell is the stored falsifier, VERBATIM', () => {
+    const { ideas } = constrainIdeasToBoard(
+      [{ ...shortIdea({ ticker: 'ABBV', side: 'long', invalidation: 'a level the model made up' }) }],
+      journalistBoardRows([spoken]),
+    )
+    expect(ideas[0].falsifier).toBe(spoken.falsifier) // the model's paraphrase is overwritten, like the numbers
+    expect(ideas[0].invalidation).toBe('178.2') // …and the bare level survives for callStrip's live read
+    const composed: ComposedReport = {
+      headline: 'H', standfirst: 'S', lead: 'L', portfolioDesk: 'p', tape: 't', ideas,
+      shortDesk: 's', rotation: 'r', crypto: 'c', channels: 'ch', editorial: 'e', honestClose: 'h',
+      regime: 'amber', fedStance: 'neutral', macroNotes: [],
+    }
+    const html = buildNewspaperHtml(composed, 'Wednesday, 12 August 2026', {})
+    expect(html).toContain('Wrong if it closes below 178.2.')
+    expect(html).not.toContain('a level the model made up')
+  })
+
+  it('…and the desk\'s own fallback writes the case FROM the thesis, not from the factor line', () => {
+    const [idea] = fallbackIdeasFromBoard(journalistBoardRows([spoken]))
+    expect(idea.caseText).toBe(spoken.thesis)
+    expect(idea.caseText).not.toContain('technical:')
+    expect(idea.falsifier).toBe(spoken.falsifier)
+  })
+
+  it('a near miss has neither, and every projection handles that cleanly', () => {
+    const miss: Prediction = { ...spoken, id: '2026-08-12:MISS:long', sym: 'MISS', nearMiss: true, watchOnly: true, thesis: undefined, falsifier: undefined }
+    const [row] = journalistBoardRows([miss])
+    expect(row.thesis).toBeUndefined()
+    expect(row.falsifier).toBeUndefined()
+    const [exported] = boardExportRows(journalistBoardRows([miss]))
+    expect(exported.thesis).toBeUndefined()
+    expect(exported.falsifier).toBeUndefined()
+    // …and the fixed level is still what the invalidation cell shows
+    const { ideas } = constrainIdeasToBoard([shortIdea({ ticker: 'MISS', side: 'long' })], journalistBoardRows([{ ...miss, watchOnly: undefined }]))
+    expect(ideas[0].falsifier).toBeUndefined()
+    const composed: ComposedReport = {
+      headline: 'H', standfirst: 'S', lead: 'L', portfolioDesk: 'p', tape: 't', ideas,
+      shortDesk: 's', rotation: 'r', crypto: 'c', channels: 'ch', editorial: 'e', honestClose: 'h',
+      regime: 'amber', fedStance: 'neutral', macroNotes: [],
+    }
+    expect(buildNewspaperHtml(composed, 'Wednesday, 12 August 2026', {})).toContain('>178.2<')
+  })
+
+  it('the ledger projection carries them too — a historical call can still be audited', () => {
+    expect(ledgerRow(spoken).thesis).toBe(spoken.thesis)
+    expect(ledgerRow(spoken).falsifier).toBe(spoken.falsifier)
+    expect(ledgerRow({ ...spoken, thesis: undefined, falsifier: undefined }).thesis).toBeUndefined()
   })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { VELOCITY_DOOR_CAP, classifyVelocity, effectiveVelocityStop, velocityCall, velocityTrail } from './velocityLane'
+import { bannedTokensIn } from './voice'
 import type { Candle } from '../types'
 
 const mk = (c: number, v = 1_000_000, o = c, h = c, l = c): Candle => ({ t: 0, o, h, l, c, v })
@@ -326,5 +327,45 @@ describe('the 15% gate is exact', () => {
     const cs = [...flat(56), mk(96), mk(110, 2_500_000), mk(108), mk(107), mk(115)]
     const read = classifyVelocity(cs)!
     expect(read.confirmationTriggered).toBe(true)
+  })
+})
+
+// The lane's voice (voice.ts). This is the ONE call whose falsifier is not a
+// fixed number, so its sentence has to say so — a reader who writes "98.40" in
+// their journal and forgets the trail has copied the wrong falsifier.
+describe('velocityCall — the thesis and the MOVING falsifier travel with the call', () => {
+  it('the early door names the break and what paid for it', () => {
+    const cs = breakout(3_500_000)
+    const read = classifyVelocity(cs)!
+    const call = velocityCall('NVDA', cs, read, 35_000)!
+    expect(read.door).toBe('early')
+    expect(read.paidMult).toBeCloseTo(3.5, 1) // the number the sentence uses, carried as a NUMBER
+    expect(call.thesis).toBe(`Long NVDA — the first paid break of its 20-session high on 3.5x its usual volume. Wrong on the first close below the trail (${call.stop} today, and it ratchets).`)
+    expect(call.falsifier).toBe(`Wrong on the first close below the trail (${call.stop} today, and it ratchets).`)
+    expect(bannedTokensIn(call.thesis!)).toEqual([])
+  })
+
+  it('the confirmation door names the run and the up-day that paid for it', () => {
+    const cs = pauseAfterRun()
+    const read = classifyVelocity(cs)!
+    const call = velocityCall('NVDA', cs, read, 35_000)!
+    expect(read.door).toBe('confirmation')
+    expect(call.thesis).toContain('an established run that has paused without breaking on a 2.3x up-day')
+    expect(call.thesis!.endsWith(call.falsifier!)).toBe(true)
+    expect(bannedTokensIn(call.thesis!)).toEqual([])
+  })
+
+  it('the falsifier says the level RATCHETS — the published stop is only today\'s', () => {
+    const cs = breakout(3_500_000)
+    const call = velocityCall('NVDA', cs, classifyVelocity(cs)!, 35_000)!
+    expect(call.falsifier).toContain('and it ratchets')
+    expect(call.falsifier).toContain(String(call.stop))
+    // …and the note is untouched beneath it
+    expect(call.note).toBe(classifyVelocity(cs)!.detail)
+  })
+
+  it('no door, no multiple: the read never reports a measurement it did not take', () => {
+    expect(classifyVelocity(calm())!.paidMult).toBeNull()
+    expect(classifyVelocity(unpaidRunNoVolume())!.paidMult).toBeNull()
   })
 })

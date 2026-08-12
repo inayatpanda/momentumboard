@@ -96,6 +96,10 @@ function Call({ p }: { p: EnginePrediction }) {
           {p.earningsRisk && <span className="badge bad">earnings ≤10d</span>}
         </div>
       )}
+      {/* What the row believes and what would end it (voice.ts) — in the open,
+          above the levels it is about. The machine-voiced factor line is still
+          `note`, and it stays where it was: inside the evidence toggle below. */}
+      {p.thesis && <div style={{ fontSize: 12.5, lineHeight: 1.45 }}>{p.thesis}</div>}
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--muted)' }}>
         <span>in {p.entry} · stop {p.stop} · tgt {p.target}</span>
         <span>

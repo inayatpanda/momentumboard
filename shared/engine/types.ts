@@ -52,6 +52,20 @@ export interface EngineCall {
   earningsRisk: boolean
   stage: string | null
   note: string
+  // WHAT THIS CALL BELIEVES, in one plain-English sentence, and WHAT WOULD PROVE
+  // IT WRONG in another (shared/engine/voice.ts). Deterministic and stored: the
+  // paper's journalist may polish the thesis, never invent one, and reproduces
+  // the falsifier verbatim in the invalidation cell. `note` is unchanged and goes
+  // on carrying the factor breakdown — it survives as the evidence line beneath.
+  //
+  // OPTIONAL because two published row kinds legitimately have neither: a near
+  // miss (engine.ts) cleared no gate at all, so there is no belief to state, and
+  // any row built before this field existed. Every projection must handle
+  // undefined rather than assume the sentence is there.
+  thesis?: string
+  // The last sentence of `thesis`, and identical to it — carried separately so a
+  // level the reader is told to act on can be copied rather than paraphrased.
+  falsifier?: string
 }
 
 export interface GradedCall extends EngineCall {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { classifyDip, dipCall } from './dipLane'
+import { round1 } from './types'
+import { bannedTokensIn, dipThesis } from './voice'
 import type { Candle } from '../types'
 
 const mk = (c: number, v = 1_000_000, o = c, h = c, l = c): Candle => ({ t: 0, o, h, l, c, v })
@@ -213,5 +215,36 @@ describe('dipCall', () => {
     expect(read.triggered).toBe(true)
     expect(read.holding).toBe(true)
     expect(dipCall('GLW', closedAtHigh, read, 35_000)).toBeNull()
+  })
+})
+
+// The lane's voice (voice.ts). A dip long is the one call whose reason a reader
+// cannot see on the chart — "it fell a long way and stopped" — so it above all
+// must say what it believes and what would end it, in words, on the row.
+describe('dipCall — the thesis and the falsifier travel WITH the call', () => {
+  const holdingTape = [...base(), ...slide(), mk(88, 1_600_000)]
+
+  it('states the depth, the hold, and the level that ends it', () => {
+    const read = classifyDip(holdingTape)!
+    const call = dipCall('GLW', holdingTape, read, 35_000)!
+    expect(call.thesis).toBe(`Long GLW — hit ${round1(read.dropPct)}% and holding. Wrong if it closes below ${call.stop}.`)
+    expect(call.falsifier).toBe(`Wrong if it closes below ${call.stop}.`)
+    // the falsifier names the stop the call actually published, never a second number
+    expect(call.thesis!.endsWith(call.falsifier!)).toBe(true)
+    expect(bannedTokensIn(call.thesis!)).toEqual([])
+  })
+
+  it('…and the note is UNCHANGED beneath it — the evidence line survives', () => {
+    const read = classifyDip(holdingTape)!
+    const call = dipCall('GLW', holdingTape, read, 35_000)!
+    expect(call.note).toBe(read.detail)
+    expect(call.evidence.detail).toBe(read.detail)
+  })
+
+  it('no news clause here: this module is pure and never asked the question', () => {
+    const call = dipCall('GLW', holdingTape, classifyDip(holdingTape)!, 35_000)!
+    expect(call.thesis).not.toContain('the story behind the fall')
+    // buildBoard re-composes with the verdict; the same builder, so the same falsifier
+    expect(dipThesis({ sym: 'GLW', dropPct: classifyDip(holdingTape)!.dropPct, stop: call.stop, news: 'transient' }).falsifier).toBe(call.falsifier)
   })
 })

@@ -14,6 +14,11 @@ export interface Idea {
   caseText: string
   entry: string
   invalidation: string
+  // The engine's own falsifier sentence (voice.ts), copied onto the idea by
+  // constrainIdeasToBoard. It is a SEPARATE field from `invalidation` on purpose:
+  // `invalidation` stays the bare number that callStrip.ts parses to place the
+  // live "X% from its stop" strip, and this is the sentence the reader is shown.
+  falsifier?: string
   target: string
   conviction: 'A' | 'B' | 'C'
   strength?: 'strong'
@@ -39,6 +44,11 @@ export interface BoardIdeaSlim {
   instrument: { ticker: string; leverage: number } | null
   paperOnly: boolean
   watchOnly?: boolean // observation, not a trade — may never become an idea
+  // What the engine believes and what would prove it wrong (voice.ts). The
+  // journalist polishes the thesis and may never replace it; the falsifier is
+  // reproduced verbatim, exactly as the numbers are.
+  thesis?: string
+  falsifier?: string
 }
 
 /** The journalist writes the case; the engine wrote the numbers. Ideas not on
@@ -69,6 +79,10 @@ export function constrainIdeasToBoard(
       ticker: b.sym,
       entry: String(b.entry),
       invalidation: String(b.stop),
+      // …and the engine's own sentence about that number, carried alongside it so
+      // the paper prints the falsifier the board published rather than the
+      // model's paraphrase of it.
+      falsifier: b.falsifier,
       target: String(b.target),
       conviction: b.grade,
       predictionId: b.id,
@@ -236,6 +250,11 @@ export interface BoardRow {
   observation?: boolean // cleared EVERY gate and an ISA cannot route it: fully graded, never placeable
   earningsRisk: boolean
   instrument: { ticker: string; leverage: number } | null
+  // The engine's two sentences (voice.ts), carried so the typeset board and the
+  // print edition can say what a row believes without re-deriving it from prose
+  // the projection deliberately drops. Undefined on near misses.
+  thesis?: string
+  falsifier?: string
 }
 
 /** The ONE projection of the engine's board into the rows every export renders
@@ -275,6 +294,8 @@ export function boardExportRows(board: readonly BoardExportSource[]): BoardRow[]
     observation: b.observation,
     earningsRisk: b.earningsRisk,
     instrument: b.instrument,
+    thesis: b.thesis, // what the row believes, and what would end it — verbatim, both hops
+    falsifier: b.falsifier,
   }))
 }
 
@@ -304,9 +325,14 @@ export function fallbackIdeasFromBoard(board: (BoardIdeaSlim & { note?: string; 
     ticker: b.sym,
     side: b.side,
     playbook: (b.side === 'short' ? 'S' : 'B') as Idea['playbook'],
-    caseText: `${b.note ?? `Engine call at composite conviction`}${b.paperOnly ? ' Paper-only until the risk ladder unlocks the route.' : ''}`,
+    // The thesis IS the desk's one-line case when the journalist files nothing —
+    // it is the sentence written for a reader, where `note` is the factor
+    // breakdown written for an audit. The note stays as the fallback's fallback
+    // for rows published before the engine had a voice.
+    caseText: `${b.thesis ?? b.note ?? `Engine call at composite conviction`}${b.paperOnly ? ' Paper-only until the risk ladder unlocks the route.' : ''}`,
     entry: String(b.entry),
     invalidation: String(b.stop),
+    falsifier: b.falsifier,
     target: String(b.target),
     conviction: b.grade,
     predictionId: b.id,
@@ -503,6 +529,7 @@ IF engineBoard IS PRESENT in the data (the quant engine's scored calls, each wit
 - Entries with observation:true cleared EVERY gate and are fully graded — but no ISA route exists to place them, so they are analysis and never a trade to take. Write them up as a read ("the engine is short X and cannot place it"), never with an entry, a size or a route.
 - Entries with nearMiss:true cleared NO gate at all: the engine looked and said no, and they are shown only so a side with nothing on it is not blank. At most one clause — "nothing cleared the gates; the closest was X" — and never a level, a size or a case.
 - Copy entry, invalidation (the stop), target and conviction (the grade) VERBATIM from the board entry. You write the caseText, chartRead (from its stage/note), streetCheck (channels by name, then Reddit/Stocktwits), and 2-4 numbered reasons from the factor details.
+- EVERY board entry carries the engine's own one-sentence thesis and its falsifier. The thesis is your caseText's BASE: keep its claim and its direction exactly, then polish the wording and add the company, the story and the context around it. POLISH, NEVER INVENT — if you find yourself writing a different reason for the trade than the thesis states, you are writing about a call the engine did not make. The falsifier is printed verbatim by the desk; never contradict it, and never offer a different invalidation level in your prose.
 - You get ONE qualitative power per idea: an optional overlay {"flag":"boost|caution|veto","reason":"<grounded in a REAL headline or event in the data>"}. veto = the idea is dropped from the paper (say why in shortDesk if a short, lead if a long). Use it sparingly — every overlay is logged and graded against what price then did.
 - paperOnly:true board shorts are analysis, not executable — present them as "fade/avoid" and say the ETP route is locked until the risk ladder earns it. Board entries with an instrument: name the ETP ticker and its leverage, warn on daily-rebalance decay, max hold 10 sessions.
 - The ideas array must NEVER be empty while engineBoard has entries: if the board offers no longs, promote its best 1-2 shorts into ideas (side:"short", playbook "S", framed as fade/avoid with the executable route or paper-only status stated). An empty ideas table on a day the engine spoke is a failure.
@@ -705,10 +732,15 @@ export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: Pape
   // Today's Ideas — a full-width STACKED block per idea (was a 7-column table
   // that crushed the prose into a skinny column, making 1500px-tall rows).
   // Email-safe: tables + inline styles only, no flex/grid (Gmail strips both).
-  const levelCell = (label: string, value: string, last = false) =>
+  // `prose` is the invalidation cell's exception: when the engine published a
+  // falsifier sentence the cell shows THAT, verbatim, instead of a bare number —
+  // so it has to wrap and drop the tabular numerals a level uses.
+  const levelCell = (label: string, value: string, last = false, prose = false) =>
     `<td style="padding:5px 16px 5px 14px;${last ? '' : 'border-right:1px solid #e6e0d2;'}vertical-align:top">` +
     `<div style="font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#6b6257;margin-bottom:1px">${label}</div>` +
-    `<div style="font-variant-numeric:tabular-nums;font-size:14.5px;font-weight:600;color:#191713;white-space:nowrap">${value}</div></td>`
+    (prose
+      ? `<div style="font-size:12.5px;font-weight:500;line-height:1.4;color:#191713;max-width:30ch">${value}</div></td>`
+      : `<div style="font-variant-numeric:tabular-nums;font-size:14.5px;font-weight:600;color:#191713;white-space:nowrap">${value}</div></td>`)
 
   const ideaBlock = (i: Idea) => {
     const isShort = i.side === 'short'
@@ -727,7 +759,11 @@ export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: Pape
     const levels =
       `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 11px;background:rgba(25,23,19,.03);border:1px solid #e6e0d2"><tbody><tr>` +
       levelCell('Entry', esc(i.entry)) +
-      levelCell('Invalidation', esc(i.invalidation)) +
+      // THE FALSIFIER, VERBATIM. The engine wrote one sentence about what would
+      // end this call; the paper prints that sentence rather than a number the
+      // reader has to interpret, or the model's rewording of it. The bare level
+      // stays the fallback for rows published before the engine had a voice.
+      levelCell('Invalidation', esc(i.falsifier ?? i.invalidation), false, !!i.falsifier) +
       levelCell('Target', esc(i.target)) +
       levelCell('Potential', i.expectedMove ? esc(i.expectedMove) : '&middot;', true) +
       `</tr></tbody></table>` +

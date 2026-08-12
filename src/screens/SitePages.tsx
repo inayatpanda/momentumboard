@@ -163,6 +163,12 @@ export function PaperPage() {
         composed. It gets exactly one qualitative power — flagging an idea with a boost, a caution or a veto grounded in a real
         headline — and every use of that power is logged and graded against what price then did.
       </p>
+      <p>
+        The words are on a leash too. Every call reaches the paper already carrying its own one-sentence thesis — what the engine
+        believes and why, written by the engine, in English rather than in its own field names — and the sentence that would prove
+        it wrong. The journalist polishes the first and may never replace it; the second is printed exactly as the engine wrote it,
+        in the invalidation line. You should never have to guess what a call is claiming, or what would end it.
+      </p>
       <h2>Intel that outlives the day</h2>
       <ul>
         <li>Congress trading — disclosed buys and sells, rolled up by politician and sector, scored against the S&amp;P.</li>
