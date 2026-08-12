@@ -138,11 +138,15 @@ const laplace = (b: BucketStat) => (b.hits + 2) / (b.n + 4)
  * evidence is now treated as sitting at the CENTRE of the band it was booked
  * into, and everything between two midpoints is interpolated. */
 const BAND_MID: Record<Band, number> = { '25-40': 32.5, '40-55': 47.5, '55-70': 62.5, '70+': 77.5 }
-const BANDS = Object.keys(BAND_MID) as Band[]
+/** Sorted by midpoint STRUCTURALLY, not by the literal order above. Everything
+ * downstream — PAVA's notion of "adjacent", the running max, the piecewise read —
+ * is only correct on an x-ordered list, and that correctness must not rest on how
+ * someone happens to type the object literal. */
+const BANDS = (Object.keys(BAND_MID) as Band[]).sort((a, b) => BAND_MID[a] - BAND_MID[b])
 
 /** Hierarchical shrinkage strength: a band speaks for itself with weight
- * n/(n + SHRINK_K), so at 25 observations a band's own evidence and its rung's
- * pooled evidence carry equal weight. NOT MIN_BUCKET_N (15) — that is the grade
+ * n/(n + SHRINK_K), so at 25 observations a band's own evidence and its parent
+ * rung's evidence carry equal weight. NOT MIN_BUCKET_N (15) — that is the grade
  * gate, a different question with a different answer; conflating them would
  * quietly tie how much we believe a number to how much we are willing to bet. */
 const SHRINK_K = 25
@@ -172,7 +176,8 @@ export function isotonicFit(bands: { band: Band; p: number; n: number }[]): Curv
 }
 
 /** ONE RUNG's curve: the per-band Laplace estimates for a (side, cohort, regime)
- * slice, made monotone, then shrunk toward the rung's own pooled rate.
+ * slice, made monotone, then shrunk toward the PARENT rung's read at the same
+ * conviction.
  *
  * A band with NO evidence contributes NO point. An empty bucket is not a 0.5
  * observation, and letting the Laplace prior stand in for one would put a
@@ -180,36 +185,48 @@ export function isotonicFit(bands: { band: Band; p: number; n: number }[]): Curv
  * a 70+ call would interpolate toward an invented number instead of inheriting
  * the best-evidenced band below it.
  *
- * Shrinkage is hierarchical partial pooling: band-level children shrink toward
- * their rung-level parent. Not circular — the parent pools SIBLING bands too, so
- * a band that dominates its rung shrinks ~toward itself (the identity) while
- * thin siblings borrow strength, which is exactly the intent.
+ * `parentAt(mid)` IS the hierarchy, and it is the whole reason the ladder below
+ * is a ladder: rung 1's target is rung 2's read at that midpoint, rung 2's is
+ * rung 3's, and rung 4's is the engine base rate (the default here, for a caller
+ * that names no parent). It replaces shrinking toward the rung's OWN pooled rate
+ * — which was circular where it mattered most: a rung holding one populated band
+ * pooled to exactly that band, so the shrinkage was the identity and a single
+ * lucky observation read its raw 0.60 and graded a sized C. A parent must be a
+ * DIFFERENT, broader population, and the rung below is precisely that.
+ *
+ * Note what the target is NOT: the rung below read at the CALL's conviction. Each
+ * band shrinks toward the parent at its OWN midpoint, so the curve stays a
+ * function of x alone, and a band is only ever compared with the same conviction
+ * measured on more data.
+ *
+ * The weight is the band's ORIGINAL n over n + SHRINK_K — the PAVA block's n is
+ * never used, so a pooled block of 178 cannot make an 8-observation band speak
+ * with 178 observations' confidence.
  *
  * The final running-max is a guard, and it earns its place on the committed
  * seed. Shrinkage is applied per band with a weight that RISES with n, while n
  * FALLS as conviction rises — so the thin top of a curve is pulled harder toward
- * the (low-conviction-dominated) parent than the thick band under it, and can
- * land below it. The seed's long/green rung does exactly this: the fit is
- * 0.3920 / 0.4400 / 0.5000, and shrinkage turns it into 0.3930 / 0.4262 /
- * 0.4082 — a curve that says a 62 composite is worse than a 47 one, which is
- * the very pathology stage 2 exists to end. PAVA guarantees monotonicity of the
- * FIT; this restores it after the pooling, at the cost of flattening the thin
- * top onto its neighbour (whose nEff still says how thin it is). */
+ * the parent than the thick band under it, and can land below it. The seed's
+ * long/green rung does exactly this: the fit is 0.3920 / 0.4400 / 0.5000, and
+ * shrinkage turns it into 0.3929 / 0.4310 / 0.4206 — a curve that says a 62
+ * composite is worse than a 47 one, which is the very pathology stage 2 exists
+ * to end. PAVA guarantees monotonicity of the FIT; this restores it after the
+ * pooling, at the cost of flattening the thin top onto its neighbour (whose nEff
+ * still says how thin it is). */
 export function curveFor(
   state: CalibrationState,
   side: 'long' | 'short',
   cohort: CapCohort | 'any',
   regime: string | null,
+  parentAt: (mid: number) => number = () => baseHitRate(state).rate,
 ): CurvePoint[] {
   const seen = BANDS.map(band => ({ band, stat: poolBuckets(state, side, band, cohort, regime) })).filter(b => b.stat.n > 0)
   if (!seen.length) return []
-  const pooled = seen.reduce((a, b) => ({ n: a.n + b.stat.n, hits: a.hits + b.stat.hits }), { n: 0, hits: 0 })
-  const parent = laplace(pooled)
   const fitted = isotonicFit(seen.map(b => ({ band: b.band, p: laplace(b.stat), n: b.stat.n })))
   let floor = -Infinity
   return fitted.map(pt => {
     const w = pt.n / (pt.n + SHRINK_K)
-    floor = Math.max(floor, w * pt.p + (1 - w) * parent)
+    floor = Math.max(floor, w * pt.p + (1 - w) * parentAt(pt.mid))
     return { mid: pt.mid, p: floor, n: pt.n }
   })
 }
@@ -225,19 +242,27 @@ export function curveFor(
  * nEff is the MINIMUM of the two straddling bands' ORIGINAL n (the single band's
  * n at or beyond the edges). Pooling can never inflate it: a read that leans on
  * an 8-observation band is an 8-observation read, whatever the band next door
- * has seen. */
-function readCurve(pts: CurvePoint[], x: number): { p: number; nEff: number } {
+ * has seen.
+ *
+ * `belowEvidence` marks the DOWNWARD extension specifically. The two extensions
+ * are not the same act: extending upward inherits the best-evidenced band under
+ * the call (§4.2's floor — a 70+ call reads the 55-70 number, which is a claim
+ * the evidence supports), while extending downward hands a high-conviction
+ * number to a call the engine has never watched at that conviction. The read is
+ * still the best available answer, so p is unchanged; what changes is what may
+ * be CLAIMED from it — see gradeFor. */
+function readCurve(pts: CurvePoint[], x: number): { p: number; nEff: number; belowEvidence: boolean } {
   const first = pts[0], last = pts[pts.length - 1]
-  if (x <= first.mid) return { p: first.p, nEff: first.n }
-  if (x >= last.mid) return { p: last.p, nEff: last.n }
+  if (x <= first.mid) return { p: first.p, nEff: first.n, belowEvidence: x < first.mid }
+  if (x >= last.mid) return { p: last.p, nEff: last.n, belowEvidence: false }
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1]
     if (x <= b.mid) {
       const t = (x - a.mid) / (b.mid - a.mid)
-      return { p: a.p + t * (b.p - a.p), nEff: Math.min(a.n, b.n) }
+      return { p: a.p + t * (b.p - a.p), nEff: Math.min(a.n, b.n), belowEvidence: false }
     }
   }
-  return { p: last.p, nEff: last.n }
+  return { p: last.p, nEff: last.n, belowEvidence: false }
 }
 
 /** Calibrated probability: a CONTINUOUS, monotone read at the call's own
@@ -260,30 +285,56 @@ function readCurve(pts: CurvePoint[], x: number): { p: number; nEff: number } {
  * `nEff` reports — honestly, per read — how many observations actually straddle
  * this call. Grades then price that directly (gradeFor below).
  *
- * Returns `{ p, provisional, nEff }`. `provisional` survives for display only
- * (nEff < MIN_BUCKET_N); the grade reads nEff itself. */
+ * The ladder is also the SHRINKAGE hierarchy, not just a fallback order: rung r's
+ * curve is shrunk toward rung r+1's read at the same conviction (curveFor above),
+ * recursively, with the base rate at the bottom. Built lazily and memoised — only
+ * the rungs a read actually needs are ever constructed — and a rung with no
+ * evidence is not a parent, so the chain skips it and asks the next one down.
+ *
+ * Returns `{ p, provisional, nEff, belowEvidence }`. `provisional` is DISPLAY
+ * ONLY (nEff < MIN_BUCKET_N); the grade reads nEff and belowEvidence itself. */
 export function probabilityFor(
   state: CalibrationState,
   side: 'long' | 'short',
   regime: string,
   absComposite: number,
   cohort: CapCohortOrUnknown = 'unknown',
-): { p: number; provisional: boolean; nEff: number } {
+): { p: number; provisional: boolean; nEff: number; belowEvidence: boolean } {
   const rungs: { cohort: CapCohort | 'any'; regime: string | null }[] =
     cohort === 'unknown'
       ? [{ cohort: 'any', regime }, { cohort: 'any', regime: null }]
       : [{ cohort, regime }, { cohort, regime: null }, { cohort: 'any', regime }, { cohort: 'any', regime: null }]
 
-  for (const rung of rungs) {
-    const curve = curveFor(state, side, rung.cohort, rung.regime)
+  const curves: CurvePoint[][] = []
+  const curveAtRung = (i: number): CurvePoint[] => {
+    if (i >= rungs.length) return []
+    // an empty array is truthy, so a rung that HAS been built and holds nothing
+    // is never rebuilt: the memo is on the slot, not on the contents
+    if (!curves[i]) curves[i] = curveFor(state, side, rungs[i].cohort, rungs[i].regime, mid => parentRead(i + 1, mid))
+    return curves[i]
+  }
+  /** The shrinkage target for the rung ABOVE i: the first rung from i down that
+   * has any evidence, read at this midpoint — and the engine's base rate if none
+   * of them do. Only ever recurses downward, so it terminates. */
+  const parentRead = (i: number, mid: number): number => {
+    for (let j = i; j < rungs.length; j++) {
+      const curve = curveAtRung(j)
+      if (curve.length) return readCurve(curve, mid).p
+    }
+    return baseHitRate(state).rate
+  }
+
+  for (let i = 0; i < rungs.length; i++) {
+    const curve = curveAtRung(i)
     if (!curve.length) continue
-    const { p, nEff } = readCurve(curve, absComposite)
-    return { p, provisional: nEff < MIN_BUCKET_N, nEff }
+    const { p, nEff, belowEvidence } = readCurve(curve, absComposite)
+    return { p, provisional: nEff < MIN_BUCKET_N, nEff, belowEvidence }
   }
 
   // rung 5: nothing for this side anywhere → the engine's own base rate
-  // (baseHitRate is a hoisted declaration below)
-  return { p: baseHitRate(state).rate, provisional: true, nEff: 0 }
+  // (baseHitRate is a hoisted declaration below). Not a curve read at all, so
+  // there is no evidence for it to sit below — a C at most either way.
+  return { p: baseHitRate(state).rate, provisional: true, nEff: 0, belowEvidence: false }
 }
 
 /** Pooled hit rate across every bucket — the engine's own base rate under the
@@ -314,6 +365,13 @@ export function baseHitRate(state: CalibrationState): { rate: number; n: number 
  *   C  ≥ base                            (no evidence floor — C carries half size at most)
  *   null below base — no edge over the engine's own rate; suppress, don't dress it up.
  *
+ * `belowEvidence` (probabilityFor) caps the result at C: the read was handed
+ * DOWN from the lowest band this rung has ever graded, so the engine has watched
+ * nothing at or below this conviction and an A or a B would be a claim about
+ * evidence that does not exist. A CAP, not a floor — a below-base read is still
+ * suppressed. Deliberately the last thing checked, so the reason a call is a C
+ * is always "one of p / nEff / evidence-at-this-conviction was short".
+ *
  * The nEff test on B is the change that matters. The old B rung tested neither
  * provisionality nor capacity, so the seed's 55-70 short bucket — EIGHT
  * observations reading a flat 0.5 — graded B and carried full size (spec §2.4).
@@ -326,11 +384,12 @@ export function baseHitRate(state: CalibrationState): { rate: number; n: number 
  * eligibility floor in composite.ts, where it belongs. [R6]
  *
  * A is unreachable on a cold store, by construction — see baseHitRate. */
-export function gradeFor(p: number, nEff: number, baseRate = 0.5): 'A' | 'B' | 'C' | null {
+export function gradeFor(p: number, nEff: number, baseRate = 0.5, belowEvidence = false): 'A' | 'B' | 'C' | null {
+  if (p < baseRate) return null
+  if (belowEvidence) return 'C'
   if (p >= baseRate + 0.10 && nEff >= MIN_GRADE_A_N) return 'A'
   if (p >= baseRate + 0.05 && nEff >= MIN_BUCKET_N) return 'B'
-  if (p >= baseRate) return 'C'
-  return null
+  return 'C'
 }
 
 /** Outcome vs what price actually did: excess return over SPY, side-adjusted;

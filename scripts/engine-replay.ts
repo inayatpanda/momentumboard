@@ -263,7 +263,9 @@ for (const pd of predictionDates) {
     // it defaulted this harness to 0.5 while production graded against 0.367, so
     // its byGrade histogram was never production's — the numbers it printed could
     // not be compared with anything. [recon §3.1]
-    const grade = gradeFor(p.p, p.nEff, replayBaseRate)
+    // …and `belowEvidence` likewise: a read handed down from a band the replay
+    // never graded at this conviction caps at C in production, so it must cap here.
+    const grade = gradeFor(p.p, p.nEff, replayBaseRate, p.belowEvidence)
     const isShadow = grade === null
     if (isShadow) shadow++
     else live++

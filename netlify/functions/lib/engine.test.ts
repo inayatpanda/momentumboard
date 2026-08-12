@@ -128,13 +128,18 @@ const breakTapeMatured = (() => {
 const NOW_240 = Math.floor(breakTape240[breakTape240.length - 1].t + 86_400)
 
 // The early door again, on a tape that actually GOES somewhere: a ±10% swinger, so
-// swing-capacity is 8.2 rather than breakTape240's flat 0. Under v2 that was what
-// let it reach grade A — `capacityPct ≥ 8` was a hard condition on the A rung. It
-// no longer is: v3's gradeFor asks only how far the read beats the base rate and
-// how many observations are under it (p ≥ base+0.10 AND nEff ≥ 30), and capacity
-// went back to being a sizing question. What keeps this the leverage fixture is now
-// the capacity FLOOR in composite.ts: breakTape240's flat 0 never clears it, so
-// this is still the only early-door tape that publishes a routable row at all.
+// swing-capacity is 8.2 rather than breakTape240's flat 0. Under v2 that number was
+// what let it reach grade A — `capacityPct ≥ 8` was a hard condition on the A rung.
+// Nothing reads it as a gate any more, and it is worth being exact about why, since
+// the obvious answer is wrong: this row is built by velocityCall, which constructs
+// its own EngineCall and never goes near composeCall, so composite.ts's capacity
+// FLOOR cannot be what admits it either. The lane's gates are its own — an early
+// door, an 8-EMA trail that leaves real risk distance — and `capacityPct` is merely
+// stamped onto the row from swingCapacity for display and the holdings read.
+// What makes this the leverage fixture is the pair of things leverage actually
+// keys on: the row grades A (p 0.6346 on nEff 32, read at |composite| 38.3 — above
+// the 25-40 band's 32.5 midpoint, so nothing is claimed below its evidence) and it
+// carries a levMap long route. The move to 120 is what buys the 38.3.
 const richBreakTape = (() => {
   const bars = mk(i => Math.round(100 * (1 + 0.1 * Math.sin(i / 11)) * 100) / 100, 240)
   append(bars, 120, 3_000_000)
@@ -308,11 +313,20 @@ const riskOffReads = async () => [
 // Calibration where this band has PROVEN itself — so the call grades. 32 and 22,
 // not the old 20 and 14, because v3 redefined what "proven" means: grade A now
 // needs nEff ≥ 30 observations straddling the read as well as p ≥ base+0.10, and
-// grade B needs nEff ≥ 15. The probability is deliberately unmoved — (22+2)/(32+4)
-// = 24/36 = 2/3, exactly the old (14+2)/(20+4) = 16/24 — so every `probability`
-// expectation below still reads 0.67 and only the DEPTH of the evidence changed.
-// One band of evidence makes a one-point curve, flat at every |composite|, and
-// the rung's pooled rate is that same band, so the shrinkage is the identity.
+// grade B needs nEff ≥ 15.
+//
+// One band of evidence makes a one-point curve, flat at every |composite|, and it
+// reads 0.63 rather than the raw (22+2)/(32+4) = 0.6667: a rung's shrinkage target
+// is the rung BELOW it, not itself, and here that is rung 4 (the same 32
+// observations pooled across regimes) and then the cold base rate 0.5 (n=32 < 50).
+// With w = 32/(32+25) = 0.5614035 at each step:
+//   rung 4 = 0.5614035×0.6666667 + 0.4385965×0.5        = 0.5935673
+//   rung 3 = 0.5614035×0.6666667 + 0.4385965×0.5935673  = 0.6346055
+// Still ≥ base+0.10 on nEff 32, so a call reading it AT OR ABOVE the band's
+// midpoint grades A. A call BELOW that midpoint reads the same 0.63 but caps at C
+// — the number was handed down from a conviction the engine HAS graded to one it
+// has not. Which of the two a fixture gets is decided by its |composite|, and each
+// such case below carries the comparison in a comment.
 const calWith = (key: string): CalibrationState => ({ buckets: { [key]: { n: 32, hits: 22 } }, brier: [], defVersion: CALIB_DEF_VERSION })
 
 describe('buildBoard', () => {
@@ -331,8 +345,10 @@ describe('buildBoard', () => {
     const call = board.find(b => b.sym === 'NVDA')!
     expect(call).toBeDefined()
     expect(call.side).toBe('short')
-    expect(call.grade).toBe('A') // p = (22+2)/(32+4) = 0.6667 ≥ 0.5+0.10, nEff 32 ≥ 30
-    expect(call.probability).toBeCloseTo(0.67, 2)
+    // |composite| 64.8 sits ABOVE the 55-70 band's 62.5 midpoint, so this is a read
+    // on evidence at-or-below the conviction: 0.6346055 ≥ 0.5+0.10, nEff 32 ≥ 30 → A.
+    expect(call.grade).toBe('A')
+    expect(call.probability).toBeCloseTo(0.63, 2)
     expect(call.provisional).toBe(false)
     expect(call.watchOnly).toBeUndefined() // A + contract passed → a trade, not an observation
     expect(call.setup).toBe('continuation') // shorting confirmed weakness = downtrend continuation
@@ -797,12 +813,16 @@ describe('buildBoard', () => {
     expect(nvda.nearMiss).toBeUndefined() // it cleared the gates — it is not a near miss
     expect(nvda.observation).toBe(true) // …and it is stamped, so every surface can contain it without parsing prose
     expect(nvda.evidence.contract).toBe(true)
-    // v3: the short/amber rung holds ONE band (55-70, 32/22 → 24/36 = 0.6667), so
-    // its curve is a single point read flat at every conviction, nEff 32. Base 0.5,
-    // so p ≥ 0.60 and nEff ≥ 30 → A. (Under v2 this same fixture read the EMPTY
-    // 25-40 band, fell to rung 5 and graded C off the bare base rate — the comment
-    // above it has said "it grades A" all along, and now it does.)
-    expect(nvda.grade).toBe('A') // graded on the full contract — a full-size trade in every respect but the route
+    // The short/amber rung holds ONE band — 55-70, 32/22 — so its curve is a single
+    // point at midpoint 62.5, read flat at every conviction: p 0.6346055, nEff 32.
+    // On p and evidence DEPTH alone that is an A (base 0.5 cold). But this call's
+    // |composite| is 52.8: the engine has never graded a 52.8-conviction short in
+    // amber, and the only reason there is a number at all is that the 62.5 reading
+    // was extended DOWNWARD to meet it. No grade is born below its evidence, so it
+    // caps at C. Everything else about the row is unchanged — which is the point:
+    // the cap moves the grade, not the row's status.
+    expect(nvda.grade).toBe('C')
+    expect(nvda.probability).toBeCloseTo(0.63, 2) // …the read itself is untouched by the cap
     expect(nvda.watchOnly).toBe(true) // …and still carries nothing tradeable
     expect(nvda.riskPct).toBe(0)
     expect(nvda.instrument).toBeNull()
@@ -1531,9 +1551,13 @@ describe('buildBoard', () => {
     expect(short.riskPct).toBe(0)
     expect(short.instrument).toBeNull()
     expect(short.watchOnly).toBeUndefined() // shadow and watch stay mutually exclusive
-    // …and nothing ELSE could have shadowed it: it graded A on a passing contract,
+    // …and nothing ELSE could have shadowed it: it graded on a passing contract,
     // no earnings print, and a routable inverse ETP. Only the dip read did this.
-    expect(short.grade).toBe('A')
+    // The grade is C, not A: this rung's only band is 40-55 (32/22, midpoint 47.5)
+    // and GLW's short composite is −41.5, so the 0.63 read was handed DOWN to a
+    // conviction the engine has never graded. p and nEff would both have carried an
+    // A; the missing evidence at-or-below 41.5 is what caps it.
+    expect(short.grade).toBe('C')
     expect(short.evidence.contract).toBe(true)
     expect(short.earningsRisk).toBe(false)
   })
@@ -1551,8 +1575,12 @@ describe('buildBoard', () => {
     expect(shown).toHaveLength(1)
     expect(shown[0].side).toBe('short') // the opposite row from the transient case above
     expect(shown[0].shadow).toBeUndefined()
-    expect(shown[0].riskPct).toBeGreaterThan(0) // fully live and sized, not a survivor of a demotion
-    expect(shown[0].grade).toBe('A')
+    expect(shown[0].riskPct).toBeGreaterThan(0) // live and sized, not a survivor of a demotion
+    // C, capped by the born-below-evidence rule (composite −41.5 under a 47.5
+    // midpoint — see the transient case above), and C WITH the contract is the HALF
+    // tier: the row is sized at half the rung it would have carried as an A.
+    expect(shown[0].grade).toBe('C')
+    expect(shown[0].riskPct).toBe(0.5) // R0 rung risk 1.0, halved
 
     const rows = (await ledgerOf(store))!.filter(p => p.sym === 'GLW')
     expect(rows).toHaveLength(2) // both lanes still publish and still grade
@@ -1603,7 +1631,7 @@ describe('buildBoard', () => {
     // rule (keyed on dipReads) demoted the short beside it. But dipCall declined
     // the shape on the 1:1 reward-to-risk gate, so the dip long never published:
     // demoting the short left the reader with NO live call at all on a name the
-    // engine had a perfectly good, routable, grade-A short on.
+    // engine had a perfectly good, routable, sized short on.
     const asked: string[] = []
     const d = collisionDeps({
       candles: async sym => (sym === 'GLW' ? dipNoRewardTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
@@ -1624,7 +1652,7 @@ describe('buildBoard', () => {
     expect(shown[0].side).toBe('short')
     expect(shown[0].shadow).toBeUndefined() // NOT demoted — nothing opposed it
     expect(shown[0].riskPct).toBeGreaterThan(0)
-    expect(shown[0].grade).toBe('A')
+    expect(shown[0].grade).toBe('C') // capped below its evidence (composite −41.5, midpoint 47.5)
     expect(shown[0].evidence.contract).toBe(true)
   })
 
@@ -1730,7 +1758,7 @@ describe('buildBoard', () => {
     expect(short.shadow).toBeUndefined()
     expect(short.watchOnly).toBeUndefined()
     expect(short.riskPct).toBeGreaterThan(0)
-    expect(short.grade).toBe('A')
+    expect(short.grade).toBe('C') // capped below its evidence (composite −41.5, midpoint 47.5)
     // …and the side is not described as empty, because it isn't
     const blob = (await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!
     expect(blob.emptySides?.short).toBeUndefined()
@@ -2198,7 +2226,13 @@ describe('buildBoard', () => {
     expect(call.target).toBeGreaterThan(call.entry)
     expect(call.composite).toBe(30) // 25 + the five-session move, inside the calibrated bands
     expect(call.evidence.contract).toBe(true) // the lane's own gates ARE its contract
-    expect(call.grade).toBe('B') // graded on the ordinary calibration path like any call — shadows grade
+    // Graded on the ordinary calibration path like any call — shadows grade too.
+    // The read is 0.6152263 (20/14 → 16/24 = 0.6667 at w = 20/45, shrunk toward rung
+    // 4's 0.5740741, itself shrunk toward the cold 0.5 base) on nEff 20: a B on both
+    // p and depth. It caps at C because composite 30 sits BELOW the 25-40 band's
+    // 32.5 midpoint — the lane's fresh break is a conviction this rung has never
+    // graded, and the number was extended down to reach it.
+    expect(call.grade).toBe('C')
     expect(call.watchOnly).toBeUndefined() // never a watch row: shadow and watch are exclusive, and this cleared its gates
 
     if (VELOCITY_SHADOW_FIRST) {
@@ -2210,8 +2244,9 @@ describe('buildBoard', () => {
       expect(board.some(b => b.sym === 'VELO')).toBe(false)
     } else {
       // …and the day the flag flips, this is the row again: a real, takeable trade
-      // at a QUARTER of the rung. Grade B on a passing contract is a FULL tier, so
-      // the only thing shrinking it is the early door's own cap.
+      // at a QUARTER of the rung. C on a passing contract is the HALF tier and the
+      // early door caps at a quarter, and sizedFraction is the MIN of the two — so
+      // the door is still what sets the size, exactly as when this graded B.
       expect(call.shadow).toBeUndefined()
       expect(call.riskPct).toBe(RUNG_RISK_PCT[call.riskRung] * VELOCITY_DOOR_CAP.early)
       expect(call.riskPct).toBe(0.25)
@@ -2424,7 +2459,13 @@ describe('buildBoard', () => {
     expect(probe.catalyst).toEqual({ kind: 'velocity', reason: expect.stringContaining('early door') })
     expect(probe.grade).toBe('A') // the FULL tier — nothing about its evidence is short
     expect(probe.evidence.contract).toBe(true)
-    expect(probe.capacityPct).toBeGreaterThanOrEqual(8) // …the gate that lets an A exist at all
+    // Capacity is recorded, not required: it left gradeFor entirely in v3 [R6] and
+    // the lane never consulted composite.ts's floor. What lets this A exist is p
+    // 0.6346 ≥ 0.5+0.10 on nEff 32 ≥ 30, read at |composite| 38.3 — above the 25-40
+    // band's 32.5 midpoint, so the grade is not born below its evidence.
+    expect(probe.capacityPct).toBeGreaterThanOrEqual(8) // still true, and still only a sizing input
+    expect(probe.composite).toBeGreaterThanOrEqual(32.5)
+    expect(probe.probability).toBeCloseTo(0.63, 2)
     expect(probe.instrument).toBeNull() // no ETP, however good the grade
     if (VELOCITY_SHADOW_FIRST) {
       // An unsized row cannot be leveraged either — but that is the shadow doing it,

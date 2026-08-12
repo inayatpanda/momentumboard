@@ -31,6 +31,25 @@ const calOf = (rows: Record<string, [number, number]>): CalibrationState => ({
   brier: [],
 })
 
+/** The committed seed's buckets verbatim (shared/engine/seed.json @ 01a6549):
+ *  778 observations, 285 hits, baseHitRate (285+2)/(778+4) = 0.3670077. Shared by
+ *  the curve tests and the SHIP GATE below — the point of both is that they are
+ *  read off the shape production actually carries, not a contrived one. */
+const seedShape = (): CalibrationState =>
+  calOf({
+    'long:green:25-40': [195, 76],
+    'long:amber:25-40': [88, 38],
+    'long:red:25-40': [18, 7],
+    'long:green:40-55': [46, 20],
+    'long:green:55-70': [2, 1],
+    'short:green:25-40': [116, 47],
+    'short:amber:25-40': [108, 33],
+    'short:red:25-40': [147, 48],
+    'short:amber:40-55': [19, 4],
+    'short:red:40-55': [31, 7],
+    'short:red:55-70': [8, 4],
+  })
+
 // 30 sessions of candles, one per day starting 2026-01-05, close ramps by `slope`/day
 const mkCandles = (startClose: number, slope: number, days = 30, lowOffset = 1, highOffset = 1): Candle[] =>
   Array.from({ length: days }, (_, i) => {
@@ -123,17 +142,39 @@ describe('isotonicFit — weighted PAVA over the ORIGINAL band midpoints', () =>
 })
 
 describe('curveFor — one rung’s monotone, shrunk curve', () => {
-  it('shrinks each band toward the rung’s POOLED rate by n/(n+25) — a thin band barely speaks', () => {
+  it('shrinks each band toward the PARENT’s read AT THAT MIDPOINT — the target is a curve, not a number', () => {
+    // The mechanism, isolated: the parent is supplied as a function of the
+    // midpoint, and it DISAGREES with this rung in opposite directions at the two
+    // ends — 0.20 under the 25-40 band, 0.80 over the 55-70 one. A rung's own
+    // pooled rate is a single number and could never do that, so this arithmetic
+    // is only reachable if the target really is the rung below's read at the same
+    // conviction.
+    //   25-40: n=100 hits=30 → 32/104 = 0.3076923, w = 100/125 = 0.8
+    //          0.8×0.3076923 + 0.2×0.20 = 0.2461538 + 0.04 = 0.2861538
+    //   55-70: n=5 hits=4    → 6/9     = 0.6666667, w = 5/30 = 0.1666667
+    //          0.1666667×0.6666667 + 0.8333333×0.80 = 0.1111111 + 0.6666667 = 0.7777778
+    const c = curveFor(
+      calOf({ 'long:green:25-40': [100, 30], 'long:green:55-70': [5, 4] }),
+      'long', 'any', 'green',
+      mid => (mid < 50 ? 0.2 : 0.8),
+    )
+    expect(c).toHaveLength(2)
+    expect(c[0]).toMatchObject({ mid: 32.5, n: 100 })
+    expect(c[0].p).toBeCloseTo(0.2861538, 6)
+    expect(c[1]).toMatchObject({ mid: 62.5, n: 5 })
+    expect(c[1].p).toBeCloseTo(0.7777778, 6)
+  })
+
+  it('with NO parent supplied the target is the engine’s own base rate — the bottom of the ladder', () => {
     // 25-40: n=100 hits=30 → (30+2)/104 = 0.3076923
     // 55-70: n=5   hits=4  → (4+2)/9     = 0.6666667   (already monotone: PAVA is the identity)
-    // rung pool: n=105 hits=34 → 36/109 = 0.3302752
+    // baseHitRate over the whole store: n=105 hits=34 → 36/109 = 0.3302752. (It
+    // coincides with this rung's own pool ONLY because the store holds nothing
+    // else — which is exactly why the test above, not this one, is the mechanism.)
     //   25-40 w = 100/125 = 0.8       → 0.8×0.3076923      + 0.2×0.3302752       = 0.3122089
     //   55-70 w = 5/30   = 0.1666667  → 0.1666667×0.6666667 + 0.8333333×0.3302752 = 0.3863405
     const c = curveFor(calOf({ 'long:green:25-40': [100, 30], 'long:green:55-70': [5, 4] }), 'long', 'any', 'green')
-    expect(c).toHaveLength(2)
-    expect(c[0]).toMatchObject({ mid: 32.5, n: 100 })
     expect(c[0].p).toBeCloseTo(0.3122089, 6)
-    expect(c[1]).toMatchObject({ mid: 62.5, n: 5 })
     expect(c[1].p).toBeCloseTo(0.3863405, 6) // NOT 0.667 — five observations do not get to claim 0.67
   })
 
@@ -149,7 +190,8 @@ describe('curveFor — one rung’s monotone, shrunk curve', () => {
   it('the curve is re-projected MONOTONE after shrinkage — partial pooling may not undo the fit', () => {
     // The committed seed's long/green rung, exactly: 25-40 195/76, 40-55 46/20,
     // 55-70 2/1. Laplace 0.3919598 / 0.44 / 0.5 — already increasing, so PAVA is
-    // the identity. Rung pool n=243 hits=97 → 99/247 = 0.4008097.
+    // the identity. Nothing else is in this store, so the default parent (the
+    // base rate) is n=243 hits=97 → 99/247 = 0.4008097.
     //   25-40 w = 195/220 = 0.8863636 → 0.8863636×0.3919598 + 0.1136364×0.4008097 = 0.3929655
     //   40-55 w = 46/71   = 0.6478873 → 0.6478873×0.44      + 0.3521127×0.4008097 = 0.4262006
     //   55-70 w = 2/27    = 0.0740741 → 0.0740741×0.5       + 0.9259259×0.4008097 = 0.4081571
@@ -164,18 +206,50 @@ describe('curveFor — one rung’s monotone, shrunk curve', () => {
     expect(c[2].p).toBeCloseTo(0.4262006, 6) // lifted from 0.4081571 to its neighbour
     expect(c[2].n).toBe(2) // …and it still declares that it rests on TWO observations
   })
+
+  it('…and the guard still fires when the parent is a real rung, not the base rate', () => {
+    // The same long/green bands, but now read off the WHOLE committed seed, so the
+    // parent is rung 4 (long, every regime) rather than a flat number:
+    //   rung 4: 25-40 301/121 → 123/305 = 0.4032787, 40-55 46/20 → 0.44, 55-70 2/1 → 0.5
+    //           shrunk toward base 0.3670077: 0.4004972 / 0.4142985 / 0.3768590
+    //           …the last one is BELOW its neighbour, so the guard already fires here
+    //           and rung 4's 62.5 point is republished at 0.4142985.
+    //   rung 3 (long/green) toward that parent, band by band:
+    //     32.5 w=195/220=0.8863636 → 0.8863636×0.3919598 + 0.1136364×0.4004972 = 0.3929300
+    //     47.5 w= 46/71 =0.6478873 → 0.6478873×0.44      + 0.3521127×0.4142985 = 0.4309502
+    //     62.5 w=  2/27 =0.0740741 → 0.0740741×0.5       + 0.9259259×0.4142985 = 0.4206467
+    //   ← still below 47.5. The thin-top pathology is a property of the WEIGHTS
+    //   (w rises with n, n falls with conviction), so changing what the target is
+    //   does not remove it. The guard lifts 62.5 back onto 0.4309502.
+    const rung4 = curveFor(seedShape(), 'long', 'any', null) // its own parent is the base rate
+    expect(rung4.map(p => p.p)).toEqual([expect.closeTo(0.4004972, 6), expect.closeTo(0.4142985, 6), expect.closeTo(0.4142985, 6)])
+    // the parent is only ever asked at the midpoints it already has, so an exact
+    // lookup is the same thing readCurve would return, with no interpolation
+    const c = curveFor(seedShape(), 'long', 'any', 'green', mid => rung4.find(p => p.mid === mid)!.p)
+    expect(c[0].p).toBeCloseTo(0.3929300, 6)
+    expect(c[1].p).toBeCloseTo(0.4309502, 6)
+    expect(c[2].p).toBeCloseTo(0.4309502, 6)
+    // and end to end, through the ladder that builds that parent for itself
+    expect(probabilityFor(seedShape(), 'long', 'green', 62.5).p).toBeCloseTo(0.4309502, 6)
+    expect(probabilityFor(seedShape(), 'long', 'green', 47.5).p).toBeCloseTo(0.4309502, 6)
+  })
 })
 
 describe('probabilityFor — a continuous read over the band midpoints', () => {
   // The fixture for the geometry tests:
   //   25-40 n=100 hits=30 → 32/104 = 0.3076923
   //   55-70 n=100 hits=60 → 62/104 = 0.5961538
-  //   rung pool n=200 hits=90 → 92/204 = 0.4509804 ; both w = 100/125 = 0.8
-  //   shrunk 32.5 → 0.8×0.3076923 + 0.2×0.4509804 = 0.3363499
-  //   shrunk 62.5 → 0.8×0.5961538 + 0.2×0.4509804 = 0.5671192
+  //   base rate n=200 hits=90 → 92/204 = 0.4509804 ; every w = 100/125 = 0.8
+  // The read is rung 3 (all cohorts, this regime) and its parent is rung 4 (all
+  // cohorts, every regime) — which here holds the SAME two buckets, so the shrink
+  // happens twice, once toward the base rate and once toward the result:
+  //   rung 4:  0.8×0.3076923 + 0.2×0.4509804 = 0.3363499
+  //            0.8×0.5961538 + 0.2×0.4509804 = 0.5671192
+  //   rung 3:  0.8×0.3076923 + 0.2×0.3363499 = 0.3134238
+  //            0.8×0.5961538 + 0.2×0.5671192 = 0.5903469
   const twoBand = () => calOf({ 'long:green:25-40': [100, 30], 'long:green:55-70': [100, 60] })
-  const LO = 0.3363499
-  const HI = 0.5671192
+  const LO = 0.3134238
+  const HI = 0.5903469
 
   it('no data → the engine base rate (0.5 cold), provisional, nEff 0', () => {
     const { p, provisional, nEff } = probabilityFor(emptyCal(), 'long', 'green', 30)
@@ -207,11 +281,13 @@ describe('probabilityFor — a continuous read over the band midpoints', () => {
   })
 
   it('the flat extension carries the SHRUNK value, not the raw fitted one', () => {
-    // 25-40 n=100 hits=30 (0.3076923) + 55-70 n=5 hits=4 (0.6666667): the outer
-    // point shrinks to 0.3863405, so 75 — beyond every midpoint — reads THAT,
-    // not the five-observation 0.667 the band on its own would claim.
+    // 25-40 n=100 hits=30 (0.3076923) + 55-70 n=5 hits=4 (0.6666667). Base rate
+    // 36/109 = 0.3302752; rung 4 shrinks 62.5 to 0.3863405 and rung 3 then shrinks
+    // toward THAT: 0.1666667×0.6666667 + 0.8333333×0.3863405 = 0.4330615. So 75 —
+    // beyond every midpoint — reads that, not the five-observation 0.667 the band
+    // on its own would claim.
     const cal = calOf({ 'long:green:25-40': [100, 30], 'long:green:55-70': [5, 4] })
-    expect(probabilityFor(cal, 'long', 'green', 75).p).toBeCloseTo(0.3863405, 6)
+    expect(probabilityFor(cal, 'long', 'green', 75).p).toBeCloseTo(0.4330615, 6)
   })
 
   it('nEff is the MINIMUM of the two straddling bands’ ORIGINAL n — pooling can never inflate it', () => {
@@ -225,6 +301,28 @@ describe('probabilityFor — a continuous read over the band midpoints', () => {
     expect(probabilityFor(cal, 'long', 'green', 30).nEff).toBe(96)
     expect(probabilityFor(cal, 'long', 'green', 30).provisional).toBe(false)
     expect(probabilityFor(cal, 'long', 'green', 60).nEff).toBe(8)
+  })
+
+  it('a read arrived at by extending DOWNWARD says so — belowEvidence marks the two extensions apart', () => {
+    // A rung whose only evidence sits at 62.5. Reading it at 30 is not a
+    // measurement of a 30-composite call: it is the 55-70 number, handed
+    // downward because there is nothing else to hand. Upward extension is the
+    // opposite case — §4.2's floor, where a higher-conviction call inherits the
+    // best-evidenced band BELOW it — and is not flagged.
+    const cal = calOf({ 'long:green:55-70': [40, 30] })
+    expect(probabilityFor(cal, 'long', 'green', 30).belowEvidence).toBe(true)
+    expect(probabilityFor(cal, 'long', 'green', 62.4999).belowEvidence).toBe(true)
+    expect(probabilityFor(cal, 'long', 'green', 62.5).belowEvidence).toBe(false) // ON the evidence, not below it
+    expect(probabilityFor(cal, 'long', 'green', 70).belowEvidence).toBe(false) // upward: the floor, not a guess
+    // …and the p is identical in all three: the flag prices the read, it does not move it
+    const ps = [30, 62.5, 70].map(x => probabilityFor(cal, 'long', 'green', x).p)
+    expect(new Set(ps).size).toBe(1)
+    // interpolation between two evidenced bands is never below either of them
+    const two = calOf({ 'long:green:25-40': [40, 30], 'long:green:55-70': [40, 30] })
+    expect(probabilityFor(two, 'long', 'green', 45).belowEvidence).toBe(false)
+    expect(probabilityFor(two, 'long', 'green', 25).belowEvidence).toBe(true) // …below the FIRST midpoint, still flagged
+    // the base-rate rung is not a curve read at all, so it is not flagged
+    expect(probabilityFor(emptyCal(), 'long', 'green', 30).belowEvidence).toBe(false)
   })
 
   it('is NON-DECREASING in conviction for every bucket shape — the property, not an example', () => {
@@ -257,10 +355,13 @@ describe('probabilityFor — cap-class fallback ladder', () => {
   it('rung 1 — the cohort+regime rung is taken as soon as it has ANY evidence', () => {
     const cal = emptyCal()
     cal.buckets['large:long:green:25-40'] = { n: 20, hits: 14 } // (14+2)/(20+4) = 0.6666667
-    const r = probabilityFor(cal, 'long', 'green', 30, 'large')
-    // one band → a one-point curve, flat everywhere; the rung's pooled rate IS
-    // that band, so the shrinkage toward it is the identity.
-    expect(r.p).toBeCloseTo(16 / 24, 6)
+    const r = probabilityFor(cal, 'long', 'green', 32.5, 'large')
+    // One band → a one-point curve, flat everywhere. Its shrinkage target is NOT
+    // itself: rung 1 shrinks toward rung 2's read, rung 2 toward rung 3's, rung 3
+    // toward rung 4's and rung 4 toward the base rate (0.5 cold, n=20 < 50). Every
+    // rung here is the same twenty observations, so with w = 20/45 = 0.4444444 at
+    // each step: 0.5740741 → 0.6152263 → 0.6380887 → 0.6507900.
+    expect(r.p).toBeCloseTo(0.6507900, 6)
     expect(r.provisional).toBe(false)
     expect(r.nEff).toBe(20)
   })
@@ -268,8 +369,12 @@ describe('probabilityFor — cap-class fallback ladder', () => {
   it('rung 2 — an EMPTY cohort+regime rung falls through to the cohort pooled across regimes', () => {
     const cal = emptyCal()
     cal.buckets['large:long:red:25-40'] = { n: 20, hits: 12 } // (12+2)/(20+4) = 0.5833333
-    const r = probabilityFor(cal, 'long', 'green', 30, 'large') // nothing green at all
-    expect(r.p).toBeCloseTo(14 / 24, 6)
+    const r = probabilityFor(cal, 'long', 'green', 32.5, 'large') // nothing green at all
+    // rung 1 (large/green) is empty, so rung 2 is the read. Its parent chain skips
+    // rung 3 (all cohorts/green — also empty) and lands on rung 4, which holds the
+    // same twenty observations: 0.4444444×0.5833333 + 0.5555556×0.5 = 0.5370370,
+    // then rung 2 = 0.4444444×0.5833333 + 0.5555556×0.5370370 = 0.5576132.
+    expect(r.p).toBeCloseTo(0.5576132, 6)
     expect(r.provisional).toBe(false)
     expect(r.nEff).toBe(20)
   })
@@ -277,15 +382,24 @@ describe('probabilityFor — cap-class fallback ladder', () => {
   it('THE RULE CHANGE — a thin rung is still the rung; thinness is reported by nEff, not fixed by borrowing another population', () => {
     // Before: a bucket under MIN_BUCKET_N was skipped and the read silently came
     // from a DIFFERENT population (all regimes pooled), arriving non-provisional.
-    // Now the read stays where its evidence is and declares how much there is.
+    // Now the read stays where its evidence is, borrows from the rung below in
+    // PROPORTION to how thin it is, and declares how much there is.
+    //   base rate: n=30 < 50 → 0.5
+    //   rung 4 (long, every regime) 25-40: 18/34 = 0.5294118, w = 30/55 = 0.5454545
+    //     → 0.5454545×0.5294118 + 0.4545455×0.5 = 0.5160428
+    //   red  (10 obs, 4/14 = 0.2857143, w = 10/35 = 0.2857143)
+    //     → 0.2857143×0.2857143 + 0.7142857×0.5160428 = 0.4502346
+    //   green (20 obs, 16/24 = 0.6666667, w = 20/45 = 0.4444444)
+    //     → 0.4444444×0.6666667 + 0.5555556×0.5160428 = 0.5829867
     const cal = calOf({ 'long:green:25-40': [20, 14], 'long:red:25-40': [10, 2] })
-    const red = probabilityFor(cal, 'long', 'red', 30)
-    expect(red.p).toBeCloseTo(4 / 14, 6) // (2+2)/(10+4) — red's own ten observations…
+    const red = probabilityFor(cal, 'long', 'red', 32.5)
+    expect(red.p).toBeCloseTo(0.4502346, 6) // red's own ten observations, heavily borrowed against…
     expect(red.nEff).toBe(10)
     expect(red.provisional).toBe(true) // …and they are declared thin (was: 18/34, non-provisional)
-    const green = probabilityFor(cal, 'long', 'green', 30)
-    expect(green.p).toBeCloseTo(16 / 24, 6)
+    const green = probabilityFor(cal, 'long', 'green', 32.5)
+    expect(green.p).toBeCloseTo(0.5829867, 6)
     expect(green.provisional).toBe(false)
+    expect(green.p).toBeGreaterThan(red.p) // the two populations still say different things
   })
 
   it('rung 3 — empty cohort buckets fall through to the cohortless/seed pool (the NORMAL early path)', () => {
@@ -327,9 +441,12 @@ describe('probabilityFor — cap-class fallback ladder', () => {
     // highest-conviction call the engine can make fell all the way to the global
     // base rate — a number computed from the OTHER side's losses as much as its
     // own. Now it flat-extends the side's own best-evidenced band.
+    //   long/green 25-40: 32/104 = 0.3076923, w = 100/125 = 0.8, base 0.3725490
+    //   rung 4 (long, every regime) = the same band → 0.8×0.3076923 + 0.2×0.3725490 = 0.3206636
+    //   rung 3 = 0.8×0.3076923 + 0.2×0.3206636 = 0.3102866
     const cal = calOf({ 'long:green:25-40': [100, 30], 'short:red:25-40': [100, 44] })
     const r = probabilityFor(cal, 'long', 'green', 75, 'large')
-    expect(r.p).toBeCloseTo(32 / 104, 6) // (30+2)/(100+4), the long/green band itself
+    expect(r.p).toBeCloseTo(0.3102866, 6) // the long/green band itself, shrunk down the ladder
     expect(r.nEff).toBe(100)
     expect(r.provisional).toBe(false)
     expect(r.p).not.toBeCloseTo(baseHitRate(cal).rate, 3) // …and NOT the base rate it used to return
@@ -339,20 +456,28 @@ describe('probabilityFor — cap-class fallback ladder', () => {
     const cal = emptyCal()
     cal.buckets['large:long:green:25-40'] = { n: 20, hits: 20 } // large cohort: strong
     cal.buckets['long:green:25-40'] = { n: 20, hits: 4 } // cohortless: weak
-    // large call reads its own bucket (0.9166667), NOT the weak cohortless one
-    expect(probabilityFor(cal, 'long', 'green', 30, 'large').p).toBeCloseTo(22 / 24, 6)
+    // The large call reads its OWN bucket (22/24 = 0.9166667) and shrinks it down
+    // the ladder — rungs 3/4 pool both buckets (26/44 = 0.5909091, w = 40/65) and
+    // pull it toward the weak cohortless evidence, which is the point of a
+    // hierarchy: 0.5559441 → 0.5774610 → 0.7282191 → 0.8119736.
+    expect(probabilityFor(cal, 'long', 'green', 32.5, 'large').p).toBeCloseTo(0.8119736, 6)
     // unknown-cap call was never guessed into large → pools all (large+cohortless)
-    const u = probabilityFor(cal, 'long', 'green', 30, 'unknown')
-    expect(u.p).toBeCloseTo((24 + 2) / (40 + 4), 6) // (20+4)/(20+20) hits over n
+    const u = probabilityFor(cal, 'long', 'green', 32.5, 'unknown')
+    expect(u.p).toBeCloseTo(0.5774610, 6) // 0.6153846×0.5909091 + 0.3846154×0.5559441
     expect(u.provisional).toBe(false)
     expect(u.nEff).toBe(40)
+    expect(u.p).toBeLessThan(probabilityFor(cal, 'long', 'green', 32.5, 'large').p) // the cohort still wins where it is known
   })
 
-  it('the default cohort arg is unknown → behaves like the old regime-pool for legacy callers', () => {
+  it('the default cohort arg is unknown → the two pooled rungs, exactly as a legacy caller got', () => {
     const cal = emptyCal()
     cal.buckets['long:green:25-40'] = { n: 20, hits: 14 }
-    // no cohort passed → unknown → rung 3 pools the cohortless bucket, same p as before
-    expect(probabilityFor(cal, 'long', 'green', 30).p).toBeCloseTo(16 / 24, 3)
+    // no cohort passed → unknown → rungs 3 and 4 only: 0.5740741 then 0.6152263
+    expect(probabilityFor(cal, 'long', 'green', 32.5).p).toBeCloseTo(0.6152263, 6)
+    // …and that is genuinely fewer shrinkage steps than a known cohort gets
+    expect(probabilityFor(cal, 'long', 'green', 32.5).p).toBeLessThan(
+      probabilityFor(calOf({ 'large:long:green:25-40': [20, 14] }), 'long', 'green', 32.5, 'large').p,
+    )
   })
 
   it('updateCalibration books into the cohort bucket by cap; unknown cap → the legacy cohortless key', () => {
@@ -364,6 +489,90 @@ describe('probabilityFor — cap-class fallback ladder', () => {
     expect(cal.buckets['large:long:green:25-40']).toEqual({ n: 1, hits: 1 })
     expect(cal.buckets['small:long:green:25-40']).toEqual({ n: 1, hits: 0 })
     expect(cal.buckets['long:green:25-40']).toEqual({ n: 2, hits: 2 }) // both unknowns pooled here
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE LADDER IS A HIERARCHY. Every rung's curve shrinks toward the rung BELOW it
+// read at the same conviction — never toward its own pooled rate, which for a
+// rung with one populated band is the band itself, i.e. no shrinkage at all.
+// ---------------------------------------------------------------------------
+describe('the parent is the rung BELOW, read at the same conviction', () => {
+  it('ONE lucky observation in a fresh cohort bucket no longer reads its own 0.60', () => {
+    // The demo that ratified this: the committed seed, plus a single graded
+    // large-cap short in amber that happened to win.
+    //   band: large:short:amber:25-40 n=1 hits=1 → (1+2)/(1+4) = 0.60, w = 1/26 = 0.0384615
+    //   base rate now (285+1+2)/(779+4) = 0.3678161
+    //   rung 4 (short, every regime, all cohorts) at 32.5:
+    //     25-40 n=372 hits=129 → 131/376 = 0.3484043, 40-55 50/11 → 13/54 = 0.2407407
+    //     PAVA pools the pair → 0.3356479 ; w = 372/397 = 0.9370277
+    //     → 0.9370277×0.3356479 + 0.0629723×0.3678161 = 0.3376736
+    //   rung 3 (short/amber, all cohorts) at 32.5: 25-40 109/34 → 36/113 = 0.3185841,
+    //     40-55 19/4 → 0.2608696, PAVA pools → 0.3100171 ; w = 109/134 = 0.8134328
+    //     → 0.8134328×0.3100171 + 0.1865672×0.3376736 = 0.3151769
+    //   rung 2 (large/short, every regime): 0.0384615×0.60 + 0.9615385×0.3151769 = 0.3261316
+    //   rung 1 (large/short/amber):         0.0384615×0.60 + 0.9615385×0.3261316 = 0.3366650
+    const cal = seedShape()
+    cal.buckets['large:short:amber:25-40'] = { n: 1, hits: 1 }
+    const r = probabilityFor(cal, 'short', 'amber', 32.5, 'large')
+    expect(r.p).toBeCloseTo(0.3366650, 6)
+    expect(r.nEff).toBe(1)
+    expect(r.provisional).toBe(true)
+    // …and the whole point: it is a shadow, not a sized C. Under the old own-rung
+    // parent this rung's pool WAS the band, shrinkage was the identity, and one
+    // observation read 0.60 — comfortably over base 0.3678 → C → half the rung.
+    expect(gradeFor(r.p, r.nEff, baseHitRate(cal).rate)).toBeNull()
+    expect(gradeFor(0.6, 1, baseHitRate(cal).rate)).toBe('C') // what it used to be worth
+  })
+
+  it('the parent is the rung below AT THE SAME CONVICTION, not the rung’s own cross-band pool', () => {
+    // short/red on the seed at 62.5 is the cleanest separation of the two rules.
+    //   this rung's OWN pool: n=186 hits=59 → 61/190 = 0.3210526  (the old target)
+    //   the rung below at 62.5: rung 4's 55-70 point = 0.2424242×0.5 + 0.7575758×0.3670077
+    //                         = 0.3992482                          (the new target)
+    //   with w = 8/33 = 0.2424242: old → 0.3644338, new → 0.4236729
+    const r = probabilityFor(seedShape(), 'short', 'red', 62.5, 'large')
+    expect(r.p).toBeCloseTo(0.4236729, 6)
+    expect(r.p).not.toBeCloseTo(0.3644338, 4)
+  })
+
+  it('an empty rung is not a parent — the chain falls through to the next one that has evidence', () => {
+    // large-cap long in GREEN, evidence only in red: rungs 1 and 3 are both empty.
+    // Rung 2 is the read and its parent is rung 4 (see the rung-2 case above).
+    const cal = calOf({ 'large:long:red:25-40': [20, 12] })
+    expect(probabilityFor(cal, 'long', 'green', 32.5, 'large').p).toBeCloseTo(0.5576132, 6)
+  })
+
+  it('the bottom of the chain is the ENGINE base rate — a long is pulled toward a number the shorts helped set', () => {
+    //   long/green 25-40 n=100 hits=40 → 42/104 = 0.4038462, w = 100/125 = 0.8
+    //   base rate over BOTH sides: (60+2)/(200+4) = 0.3039216
+    //   rung 4 = 0.8×0.4038462 + 0.2×0.3039216 = 0.3838612
+    //   rung 3 = 0.8×0.4038462 + 0.2×0.3838612 = 0.3998492
+    const cal = calOf({ 'long:green:25-40': [100, 40], 'short:red:25-40': [100, 20] })
+    expect(probabilityFor(cal, 'long', 'green', 32.5).p).toBeCloseTo(0.3998492, 6)
+  })
+
+  it('is still NON-DECREASING in conviction with the parent chain in place', () => {
+    // The property that stage 2 exists for, re-run against a two-cohort store so
+    // every rung of the ladder is populated and the parent chain is four deep.
+    let s = 987654
+    const rnd = (m: number) => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648) * m
+    for (let t = 0; t < 200; t++) {
+      const rows: Record<string, [number, number]> = {}
+      for (const prefix of ['large:long:green', 'large:long:red', 'long:green', 'long:red']) {
+        for (const band of ['25-40', '40-55', '55-70', '70+']) {
+          const n = Math.floor(rnd(120))
+          if (n) rows[`${prefix}:${band}`] = [n, Math.floor(rnd(n + 1))]
+        }
+      }
+      const cal = calOf(rows)
+      let prev = -Infinity
+      for (let x = 20; x <= 100; x += 2.5) {
+        const { p } = probabilityFor(cal, 'long', 'green', x, 'large')
+        expect(p).toBeGreaterThanOrEqual(prev - 1e-12)
+        prev = p
+      }
+    }
   })
 })
 
@@ -388,6 +597,35 @@ describe('gradeFor', () => {
     expect(gradeFor(0.36, 500, 0.37)).toBeNull()
   })
 
+  it('NO GRADE IS BORN BELOW ITS EVIDENCE — a downward-extended read caps at C', () => {
+    // A and B are claims about a conviction the engine has actually watched. When
+    // the read came from extending the lowest evidenced band DOWNWARD, it has
+    // watched nothing at or under this conviction, so the claim is not available
+    // — however good p looks and however deep the band it was borrowed from is.
+    expect(gradeFor(0.9, 999, 0.5, true)).toBe('C')
+    expect(gradeFor(0.9, 999, 0.5, false)).toBe('A') // …the same read, on evidence at-or-below it
+    expect(gradeFor(0.56, 15, 0.5, true)).toBe('C') // the B it would otherwise be
+    // It is a CAP, not a floor: below base is still no edge at all, and is still
+    // suppressed rather than dressed up as a C.
+    expect(gradeFor(0.4, 999, 0.5, true)).toBeNull()
+    // …and the flag is off by default, so every legacy caller is unaffected
+    expect(gradeFor(0.65, 30, 0.5)).toBe('A')
+  })
+
+  it('…end to end: a 40-observation 55-70 rung read at a 30-composite is a C, not an A', () => {
+    // base 0.5 (cold, n=40 < 50); 55-70 40/30 → 32/44 = 0.7272727, w = 40/65 = 0.6153846
+    //   rung 4: 0.6153846×0.7272727 + 0.3846154×0.5 = 0.6398601
+    //   rung 3: 0.6153846×0.7272727 + 0.3846154×0.6398601 = 0.6936525
+    // p clears base+0.10 and nEff 40 clears MIN_GRADE_A_N — the ONLY thing between
+    // this and an A is that the engine has never graded a 30-composite long here.
+    const cal = calOf({ 'long:green:55-70': [40, 30] })
+    const low = probabilityFor(cal, 'long', 'green', 30)
+    expect(low.p).toBeCloseTo(0.6936525, 6)
+    expect(gradeFor(low.p, low.nEff, baseHitRate(cal).rate, low.belowEvidence)).toBe('C')
+    const high = probabilityFor(cal, 'long', 'green', 62.5)
+    expect(gradeFor(high.p, high.nEff, baseHitRate(cal).rate, high.belowEvidence)).toBe('A')
+  })
+
   it('grade A is UNREACHABLE in cold start, and that is the design', () => {
     // baseHitRate returns a hard 0.5 until 50 observations exist (the cliff is
     // deliberately unchanged), so A needs p ≥ 0.60 from a bucket that cannot yet
@@ -406,46 +644,50 @@ describe('gradeFor', () => {
 // that says it cannot happen again.
 // ---------------------------------------------------------------------------
 describe('SHIP GATE — the thin 55-70 short can no longer buy a B', () => {
-  /** The committed seed's buckets verbatim (shared/engine/seed.json @ 01a6549):
-   *  778 observations, 285 hits, baseHitRate (285+2)/(778+4) = 0.3670077. */
-  const seedShape = (): CalibrationState =>
-    calOf({
-      'long:green:25-40': [195, 76],
-      'long:amber:25-40': [88, 38],
-      'long:red:25-40': [18, 7],
-      'long:green:40-55': [46, 20],
-      'long:green:55-70': [2, 1],
-      'short:green:25-40': [116, 47],
-      'short:amber:25-40': [108, 33],
-      'short:red:25-40': [147, 48],
-      'short:amber:40-55': [19, 4],
-      'short:red:40-55': [31, 7],
-      'short:red:55-70': [8, 4],
-    })
-
   it('the seed’s base rate is unchanged — the gate is about evidence, not about moving the bar', () => {
     expect(baseHitRate(seedShape()).rate).toBeCloseTo(287 / 782, 7) // 0.3670077
     expect(baseHitRate(seedShape()).n).toBe(778)
   })
 
   it('a 55-70 SHORT in red — the band that actually holds the eight observations — is not a B', () => {
+    // rung 4 (all cohorts, every regime) is the parent, and it is built first:
+    //   25-40 371/128 → 130/375 = 0.3466667 ; 40-55 50/11 → 13/54 = 0.2407407 ← inversion
+    //   PAVA pools the pair: (0.3466667×371 + 0.2407407×50)/421 = 0.3340864
+    //   55-70 8/4 → 6/12 = 0.5 (no violation above)
+    //   shrunk toward base 0.3670077:
+    //     32.5 w=371/396=0.9368687 → 0.3361648
+    //     47.5 w= 50/75 =0.6666667 → 0.3450602
+    //     62.5 w=  8/33 =0.2424242 → 0.3992482
     // rung 3 (all cohorts, regime red): 25-40 147/48 → 50/151 = 0.3311258
     //                                   40-55  31/7  → 9/35   = 0.2571429   ← inversion
     //                                   55-70   8/4  → 6/12   = 0.5
     // PAVA pools the first two: (0.3311258×147 + 0.2571429×31)/178 = 0.3182412
-    // rung pool n=186 hits=59 → 61/190 = 0.3210526
-    //   32.5 w=147/172=0.8546512 → 0.3186500
-    //   47.5 w= 31/56 =0.5535714 → 0.3194964
-    //   62.5 w=  8/33 =0.2424242 → 0.3644337
+    // each band shrinks toward rung 4's read AT ITS OWN MIDPOINT:
+    //   32.5 w=147/172=0.8546512 → 0.8546512×0.3182412 + 0.1453488×0.3361648 = 0.3208463
+    //   47.5 w= 31/56 =0.5535714 → 0.5535714×0.3182412 + 0.4464286×0.3450602 = 0.3302139
+    //   62.5 w=  8/33 =0.2424242 → 0.2424242×0.5       + 0.7575758×0.3992482 = 0.4236729
     // read at |composite| 60: t = (60−47.5)/15 = 0.8333333
-    //   p = 0.3194964 + 0.8333333×(0.3644337 − 0.3194964) = 0.3569441
+    //   p = 0.3302139 + 0.8333333×(0.4236729 − 0.3302139) = 0.4080964
     //   nEff = min(31, 8) = 8
     const r = probabilityFor(seedShape(), 'short', 'red', 60, 'large')
-    expect(r.p).toBeCloseTo(0.3569441, 6)
+    expect(r.p).toBeCloseTo(0.4080964, 6)
     expect(r.nEff).toBe(8) // …and NOT the 178 the pooled PAVA block would have claimed
     expect(r.provisional).toBe(true)
-    const g = gradeFor(r.p, r.nEff, baseHitRate(seedShape()).rate)
-    expect(g).toBeNull() // 0.357 < base 0.367: below the engine's own rate → a shadow
+    expect(r.belowEvidence).toBe(false) // 60 sits between two evidenced midpoints
+    const g = gradeFor(r.p, r.nEff, baseHitRate(seedShape()).rate, r.belowEvidence)
+    // THE GATE, and it holds: eight observations may not buy a B, whatever p is.
+    expect(g === 'A' || g === 'B').toBe(false)
+    expect(g).toBe('C') // half the rung at most, and only with the full contract
+    // …and this is a RATIFIED behaviour change to record, not an accident. Under
+    // the own-rung parent this read was 0.3569442 — below base 0.3670077, i.e. a
+    // shadow. The hierarchy raised it because at 62.5 the ONLY evidence anywhere
+    // in the store is these same eight observations: the rung below cannot
+    // contradict them, so the cross-band dilution that produced the shadow (the
+    // rung's own pool, 0.3210526, dominated by 147 low-conviction observations)
+    // is gone and the target is 0.3992482 instead. The 8 therefore speak with a
+    // net weight of 1 − (1 − 0.2424242)² = 0.4260 rather than 0.2424 [carried
+    // forward in the task-3 report as the double-count concern].
+    expect(gradeFor(0.3569442, 8, baseHitRate(seedShape()).rate)).toBeNull() // what it read before
   })
 
   it('…and even at the OLD read of 0.5, eight observations grade C — nEff is the thing that kills the B', () => {
@@ -456,11 +698,15 @@ describe('SHIP GATE — the thin 55-70 short can no longer buy a B', () => {
   })
 
   it('no regime lets a 55-70 short reach B — green and amber are checked too', () => {
+    // green reads 0.3955375 on 116 observations (C), amber 0.3276646 on 19 (below
+    // base → shadow), red 0.3831740 → 0.4236729 on EIGHT (C). Not one is A or B,
+    // and the binding constraint differs in each: p in green, p in amber, nEff in
+    // red. That is three independent reasons, which is what makes this a gate.
     const base = baseHitRate(seedShape()).rate
     for (const regime of ['green', 'amber', 'red']) {
       for (const x of [56, 60, 65, 69.9]) {
         const r = probabilityFor(seedShape(), 'short', regime, x, 'large')
-        const g = gradeFor(r.p, r.nEff, base)
+        const g = gradeFor(r.p, r.nEff, base, r.belowEvidence)
         expect(g === 'A' || g === 'B').toBe(false)
       }
     }
@@ -468,11 +714,28 @@ describe('SHIP GATE — the thin 55-70 short can no longer buy a B', () => {
 
   it('the 70+ short — the very top of the engine’s conviction — is honest rather than flattering', () => {
     // Flat extension from 55-70, so it can never fall below it, and it is still
-    // the eight-observation read: C at most, and here below base → shadow.
+    // the eight-observation read: C at most, whatever else changes around it.
+    const base = baseHitRate(seedShape()).rate
     const r = probabilityFor(seedShape(), 'short', 'red', 80, 'large')
-    expect(r.p).toBeCloseTo(0.3644337, 6)
+    expect(r.p).toBeCloseTo(0.4236729, 6)
     expect(r.p).toBeGreaterThanOrEqual(probabilityFor(seedShape(), 'short', 'red', 69.9, 'large').p)
     expect(r.nEff).toBe(8)
+    expect(gradeFor(r.p, r.nEff, base, r.belowEvidence)).toBe('C')
+  })
+
+  it('the LOW end of the same seed is capped by its evidence: a 30-composite long in amber is a C', () => {
+    // long/amber holds ONE band, 25-40 88/38 → 40/92 = 0.4347826, w = 88/113 =
+    // 0.7787611, parent rung 4 at 32.5 = 0.4004972 → 0.4271973 flat everywhere.
+    // At 32.5 that is a B (base 0.3670077 + 0.05 = 0.4170077, nEff 88). At 30 the
+    // number is identical — but it was handed DOWN from a band centred at 32.5,
+    // and no long under 32.5 has ever been graded in amber, so it caps at C.
+    const base = baseHitRate(seedShape()).rate
+    const at30 = probabilityFor(seedShape(), 'long', 'amber', 30)
+    const at325 = probabilityFor(seedShape(), 'long', 'amber', 32.5)
+    expect(at30.p).toBeCloseTo(0.4271973, 6)
+    expect(at30.p).toBeCloseTo(at325.p, 12) // the same number…
+    expect(gradeFor(at30.p, at30.nEff, base, at30.belowEvidence)).toBe('C') // …two different grades
+    expect(gradeFor(at325.p, at325.nEff, base, at325.belowEvidence)).toBe('B')
   })
 })
 
