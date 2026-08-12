@@ -1024,3 +1024,41 @@ directory; all are regenerable from the commands above against `./.replay-cache`
 helpers (`findRun`, `entryPosition`, `median`, `simulateTrailExit`, `bestUpDayMult`,
 `velocityRefusal`, the runner list and the per-kind screen depths) are covered by
 `scripts/replay-window.test.ts` — 34 tests, part of `npm test` (1,075 passing).
+
+### 13.10 Owner decision — 2026-08-12
+
+**Gate criterion 3 failed as written, and the owner did not revise it after seeing the result.**
+39% of in-run entries exited green against a 60% bar; the same 67 entries were +5.25% per entry in
+expectation (median −5.0%, 40 small trail deaths at −7.1% against 17 targets at +34.2%). A hit-rate
+test is the wrong yardstick for a small-losses/ridden-winners design, but moving a threshold after
+reading its verdict is exactly the move this document exists to prevent. So the lane ships instead
+on the repo's own **earn-influence** rule: **SHADOW-FIRST — graded, unsized, earning its size on
+the live tape.** `VELOCITY_SHADOW_FIRST = true` (`netlify/functions/lib/engine.ts`) passes
+`forceShadow` on the velocity `publishCall`, so every velocity row publishes as a shadow: zero
+`riskPct`, no instrument, absent from the reader's board, present in `predictions:${date}`, still
+carrying `catalyst.kind 'velocity'`, `setup 'velocity'` and `trail 'velocity'`, and still graded —
+so calibration, the setup family and the Brier trail all learn from it while the reader risks
+nothing. The risk ladder deliberately does **not** learn from it: a rung is earned on calls the
+reader could have taken. **Flip condition:** the flag goes to `false` only on the owner's explicit
+word, once the shadow ledger says what the lane is worth on the live tape (the `velocity:long:*`
+setup buckets and the scorecard's shadow lane are where that answer accumulates). Nothing else in
+the lane was tuned; the door caps (0.25 / 0.5) are untouched and revive with the flag.
+
+Two consequences were decided with it, both coherent with shadow-first rather than incidental:
+
+- **An unknown cap is admitted while the lane is shadowed** (`capUsdM == null ? !VELOCITY_SHADOW_FIRST : capUsdM < VELOCITY_MIN_CAP_USD_M`).
+  §13.8 is the reason: a point-in-time replay knows no caps, so the floor refused every name — 85
+  name-days of open doors and **77 would-be calls that never entered the record at all**. A shadow
+  carries no money, and starving the learning record was the costlier failure. This admits an
+  *unknown* cap, never a *small* one: a known sub-$20M name is still refused in both modes, and
+  the moment the lane is sized, unknown-never-passes returns with it.
+- **An unsized row never costs the reader a sized one** [F3]. A shadowed velocity long does **not**
+  demote the opposing composite short and does **not** suppress the same-symbol short near miss.
+  Both cures exist to stop the board contradicting itself over a row the reader can take; a shadow
+  says nothing to the reader, so there is no contradiction to cure, and applying them anyway would
+  hand back an empty side in exchange for nothing.
+
+The suite specifies **both** modes: the velocity tests import `VELOCITY_SHADOW_FIRST` and branch,
+with real assertions on each side, so the sized behaviour cannot rot while the lane is shadowed.
+Verified by running the full suite with the flag `true` and again with it `false` — 1,078 passing
+either way.

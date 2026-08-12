@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBoard, gradeOutstanding, traceOpenIdeas, type EngineDeps } from './engine'
+import { VELOCITY_SHADOW_FIRST, buildBoard, gradeOutstanding, traceOpenIdeas, type EngineDeps } from './engine'
 import type { OpenTraceEntry } from '../../../shared/engine/openTrace'
 import { memoryStore } from './store'
 import type { Candle } from '../../../shared/types'
@@ -144,6 +144,16 @@ const richBreakTape = (() => {
 const bullTape = (() => {
   const bars = mk(i => (100 + i * 0.8) * (1 + 0.05 * Math.sin(i / 3)), 240)
   append(bars, Math.round(bars[bars.length - 1].c * 0.995 * 100) / 100, 2_000_000)
+  return bars
+})()
+
+// The same grind, but today is a 3×-volume break clean through the 20-session high
+// instead of a quiet pullback: a name the COMPOSITE publishes an ordinary long on
+// whose tape ALSO opens a velocity door. The one fixture where the lane's
+// one-row-per-sym+side skip (`longRows`) can actually be observed.
+const bullBreakTape = (() => {
+  const bars = mk(i => (100 + i * 0.8) * (1 + 0.05 * Math.sin(i / 3)), 240)
+  append(bars, Math.round(bars[bars.length - 1].c * 1.08 * 100) / 100, 3_000_000)
   return bars
 })()
 
@@ -1260,6 +1270,11 @@ describe('buildBoard', () => {
 
   const todayOf = () => new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
   const ledgerOf = (store: ReturnType<typeof memoryStore>) => store.read<Prediction[]>(`predictions:${todayOf()}`)
+  /** The same ledger read on a board built at some OTHER instant — the velocity
+   * fixtures below run at NOW_240. The ledger, not the board, is where a SHADOW
+   * row lives: `engine-board` carries live calls only. */
+  const ledgerAt = (store: ReturnType<typeof memoryStore>, nowSec: number) =>
+    store.read<Prediction[]>(`predictions:${new Date(nowSec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })}`)
 
   it('a sleeve mover reaches evaluation even when no screen and no roster carry it', async () => {
     const store = memoryStore()
@@ -2084,6 +2099,21 @@ describe('buildBoard', () => {
   })
 
   // ---- the velocity lane ----
+  //
+  // SHADOW-FIRST (owner decision, 2026-08-12). The lane ships GRADED BUT UNSIZED:
+  // `VELOCITY_SHADOW_FIRST` makes every velocity call publish as a shadow, so it
+  // feeds calibration and its own setup family while carrying no reader money. The
+  // tests below therefore specify BOTH modes and branch on the flag — the sized
+  // branch is not commented-out history, it is the behaviour the day the owner
+  // flips the flag to false, and it must not rot while the lane earns its size.
+  //
+  // Two rules run through every branch:
+  //   · a shadow lives in the LEDGER, never on the reader's board (`engine-board`
+  //     carries live calls only) — so a shadow-mode assertion reads `ledgerAt`.
+  //   · an UNSIZED row must never cost the reader a SIZED one. A shadow velocity
+  //     long does not demote the opposing composite short and does not suppress a
+  //     short near miss; both of those cures exist to stop the board contradicting
+  //     itself over a row the reader can take, and a shadow is not such a row [F3].
 
   const velocityStore = async (buckets: Record<string, { n: number; hits: number }>) => {
     const store = memoryStore()
@@ -2120,11 +2150,14 @@ describe('buildBoard', () => {
       NOW_240,
     )
 
-  it('a paid break of the 20-session high publishes a QUARTER-SIZE velocity long — and the row records the lane that made it', async () => {
+  it('a paid break of the 20-session high publishes a velocity long — shadowed while it earns its size, quarter-size once it has', async () => {
     const store = await velocityStore({ 'long:amber:25-40': { n: 20, hits: 14 }, 'short:amber:25-40': { n: 20, hits: 14 } })
     const { board } = await breakoutBoard(store)
 
-    const call = board.find(b => b.sym === 'VELO')!
+    // Read from the LEDGER, which holds the row in both modes: a sized velocity
+    // long is a live call (and therefore also on the board, asserted below), a
+    // shadowed one is in the ledger only.
+    const call = (await ledgerAt(store, NOW_240))!.find(p => p.sym === 'VELO')!
     expect(call).toBeDefined()
     expect(call.side).toBe('long')
     expect(call.setup).toBe('velocity') // its own calibration family, never pooled with continuations
@@ -2132,12 +2165,25 @@ describe('buildBoard', () => {
     expect(call.target).toBeGreaterThan(call.entry)
     expect(call.composite).toBe(30) // 25 + the five-session move, inside the calibrated bands
     expect(call.evidence.contract).toBe(true) // the lane's own gates ARE its contract
-    expect(call.grade).toBe('B') // graded on the ordinary calibration path like any call
-    expect(call.watchOnly).toBeUndefined() // a real, takeable trade…
-    // …at a QUARTER of the rung. Grade B on a passing contract is a FULL tier, so
-    // the only thing shrinking this row is the early door's own cap.
-    expect(call.riskPct).toBe(RUNG_RISK_PCT[call.riskRung] * VELOCITY_DOOR_CAP.early)
-    expect(call.riskPct).toBe(0.25)
+    expect(call.grade).toBe('B') // graded on the ordinary calibration path like any call — shadows grade
+    expect(call.watchOnly).toBeUndefined() // never a watch row: shadow and watch are exclusive, and this cleared its gates
+
+    if (VELOCITY_SHADOW_FIRST) {
+      // SHADOW-FIRST: the whole read is published and graded, and none of it is
+      // offered to the reader. Zero size, no route, off the board.
+      expect(call.shadow).toBe(true)
+      expect(call.riskPct).toBe(0)
+      expect(call.instrument).toBeNull()
+      expect(board.some(b => b.sym === 'VELO')).toBe(false)
+    } else {
+      // …and the day the flag flips, this is the row again: a real, takeable trade
+      // at a QUARTER of the rung. Grade B on a passing contract is a FULL tier, so
+      // the only thing shrinking it is the early door's own cap.
+      expect(call.shadow).toBeUndefined()
+      expect(call.riskPct).toBe(RUNG_RISK_PCT[call.riskRung] * VELOCITY_DOOR_CAP.early)
+      expect(call.riskPct).toBe(0.25)
+      expect(board.find(b => b.sym === 'VELO')).toEqual(call)
+    }
 
     // the producer-side triad [T2-review]. (1) the tag the whole lane family is
     // keyed off — a typo here silently trains the technical factor on lane P&L:
@@ -2173,7 +2219,7 @@ describe('buildBoard', () => {
     expect(sameSide.trail).toBeUndefined()
   })
 
-  it('(3) …and nineteen sessions on, the graded break teaches calibration, its own setup family and the ladder — but never the technical factor', async () => {
+  it('(3) …and nineteen sessions on, the graded break teaches calibration and its own setup family — never the technical factor, and never the ladder while it is shadowed', async () => {
     const store = await velocityStore({ 'long:amber:25-40': { n: 20, hits: 14 }, 'short:amber:25-40': { n: 20, hits: 14 } })
     await breakoutBoard(store)
     const date = new Date(NOW_240 * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
@@ -2196,18 +2242,39 @@ describe('buildBoard', () => {
     expect(w.ic.technical).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
     expect(w.gradedSinceNudge).toBe(0)
 
-    // …while everything a graded long IS evidence about accrues as normal: the
-    // shared cohort/side/regime/band bucket (a long in this band is evidence about
-    // longs in this band, whatever lane found it), the family's own setup bucket,
-    // the Brier trail, and the risk ladder's graded-at-rung counters.
+    // …while everything a graded long IS evidence about accrues as normal, and
+    // THIS IS THE POINT OF SHADOW-FIRST: the learning loop eats the row whether or
+    // not the reader was offered it. The shared cohort/side/regime/band bucket (a
+    // long in this band is evidence about longs in this band, whatever lane found
+    // it), the family's own setup bucket and the Brier trail all move — identically
+    // in both modes.
     const cal = (await store.read<CalibrationState>('engine-calibration'))!
     expect(cal.buckets['large:long:amber:25-40']).toEqual({ n: 1, hits: 1 })
     expect(cal.buckets['long:amber:25-40']).toEqual({ n: 20, hits: 14 }) // the seeded bucket is untouched
     expect(cal.setupBuckets!['velocity:long:25-40']).toEqual({ n: 1, hits: 1 })
     expect(cal.brier.at(-1)).toMatchObject({ n: 1 })
+
+    // The RISK LADDER is the one learner that must NOT move on a shadow: the rung
+    // is earned on calls the reader could actually take, and a shadow was never on
+    // offer. Same for the evidence provenance split, which is how the scorecard
+    // keeps "what the engine risked" apart from "what it was auditioning".
     const risk = (await store.read<RiskState>('risk-state'))!
-    expect(risk.gradedAtRung).toBe(1)
-    expect(risk.cohorts!.large.gradedAtRung).toBe(1)
+    // velocityStore seeds two 20/14 buckets on a blob with no `seeded` flag, so the
+    // provenance migration books them as prior LIVE evidence. That is the baseline
+    // both branches move from — the question is WHICH counter takes today's grade.
+    const seededAsLive = { n: 40, hits: 28 }
+    if (VELOCITY_SHADOW_FIRST) {
+      expect(risk.gradedAtRung).toBe(0)
+      expect(risk.cohorts!.large.gradedAtRung).toBe(0)
+      expect(cal.evidence!.shadow).toEqual({ n: 1, hits: 1 })
+      expect(cal.evidence!.live).toEqual(seededAsLive) // untouched: nothing was risked
+    } else {
+      // flip the flag and the ladder counts it, exactly like any other sized call
+      expect(risk.gradedAtRung).toBe(1)
+      expect(risk.cohorts!.large.gradedAtRung).toBe(1)
+      expect(cal.evidence!.live).toEqual({ n: seededAsLive.n + 1, hits: seededAsLive.hits + 1 })
+      expect(cal.evidence!.shadow).toEqual({ n: 0, hits: 0 })
+    }
   })
 
   it('the confirmation door carries twice the size — and a HALF-graded row is capped at the door, never discounted twice', async () => {
@@ -2224,14 +2291,69 @@ describe('buildBoard', () => {
       NOW,
     )
 
-    const call = board.find(b => b.sym === 'CONF')!
+    const call = (await ledgerOf(store))!.find(p => p.sym === 'CONF')!
     expect(call).toBeDefined()
     expect(call.catalyst).toEqual({ kind: 'velocity', reason: expect.stringContaining('confirmation door') })
     expect(call.grade).toBe('C')
     expect(call.provisional).toBe(false)
     expect(call.evidence.contract).toBe(true) // C WITH the contract = the half tier
-    expect(call.riskPct).toBe(RUNG_RISK_PCT[call.riskRung] * VELOCITY_DOOR_CAP.confirmation)
-    expect(call.riskPct).toBe(0.5) // the CAP, not 0.25 — one haircut, the smaller one
+    if (VELOCITY_SHADOW_FIRST) {
+      // The tier arithmetic is still computed and still correct — it simply has
+      // nothing to size. What this branch pins is that a HALF-tier row shadows the
+      // same as a full one: no size, no route, off the board, still graded C.
+      expect(call.shadow).toBe(true)
+      expect(call.riskPct).toBe(0)
+      expect(call.instrument).toBeNull()
+      expect(board.some(b => b.sym === 'CONF')).toBe(false)
+    } else {
+      // flip the flag and the door's own ceiling is the only haircut: tier 0.5 and
+      // door cap 0.5 resolve to a HALF-size row, never a quartered one
+      expect(call.riskPct).toBe(RUNG_RISK_PCT[call.riskRung] * VELOCITY_DOOR_CAP.confirmation)
+      expect(call.riskPct).toBe(0.5) // the CAP, not 0.25 — one haircut, the smaller one
+    }
+  })
+
+  // THE CAP FLOOR UNDER SHADOW-FIRST. The Stage-1 window replay (§13) found the lane
+  // firing on nothing at all: `capUsdM` is null for every name in a point-in-time
+  // replay, `VELOCITY_MIN_CAP_USD_M` refused an unknown cap outright, and 85 name-days
+  // of open doors produced 77 would-be calls that never entered the record. A shadow
+  // carries no money, so while the lane is shadowed an unknown cap is admitted and the
+  // learning record fills; the moment the lane is sized, unknown-never-passes returns.
+  it('an UNKNOWN cap passes the liquidity floor only while the lane is shadowed — a KNOWN small cap never passes at all', async () => {
+    const store = await velocityStore({ 'long:amber:25-40': { n: 20, hits: 14 } })
+    const { board } = await buildBoard(
+      store,
+      deps({
+        // ONE tape, two names: the cap is the only difference between them
+        candles: async s => (s === 'NOCAP' || s === 'TINY' ? breakTape240 : s === 'SPY' || s === 'QQQ' ? flat.slice(0, 241) : null),
+        screens: async () => [
+          { row: { sym: 'NOCAP', price: 105, capUsdM: null, changePct: 5, name: null }, source: 'screener:gainers' },
+          { row: { sym: 'TINY', price: 105, capUsdM: 10, changePct: 5, name: null }, source: 'screener:gainers' },
+        ],
+        capUsdM: async () => null, // …and no enrichment pass rescues NOCAP's cap either
+      }),
+      NOW_240,
+    )
+    const ledger = (await ledgerAt(store, NOW_240))!
+
+    // $10M is a KNOWN cap under the floor, and it is refused in BOTH modes. The
+    // admission is about an UNKNOWN cap; it never loosened the floor itself.
+    expect(ledger.some(p => p.sym === 'TINY')).toBe(false)
+    expect(board.some(b => b.sym === 'TINY')).toBe(false)
+
+    const nocap = ledger.find(p => p.sym === 'NOCAP')
+    if (VELOCITY_SHADOW_FIRST) {
+      expect(nocap).toBeDefined() // one of the replay's 77 blocked calls, now on the record
+      expect(nocap!.catalyst!.kind).toBe('velocity')
+      expect(nocap!.capUsdM).toBeNull() // recorded as unknown, never guessed into a cohort
+      expect(nocap!.shadow).toBe(true)
+      expect(nocap!.riskPct).toBe(0)
+      expect(board.some(b => b.sym === 'NOCAP')).toBe(false)
+    } else {
+      // sized, an unknown cap is unknown liquidity — the floor cannot be checked, so
+      // the call is not made, and the replay's blocked-call gap comes back with it
+      expect(nocap).toBeUndefined()
+    }
   })
 
   // The door cap and the ETP route were asking two different questions about the same
@@ -2241,7 +2363,7 @@ describe('buildBoard', () => {
   // half the rung's exposure with daily-rebalance decay attached, on the youngest and
   // most slippage-prone entry the engine makes. Leverage now reads the size the row
   // actually carries. [R14]
-  it('a QUARTER-SIZE velocity row is a plain share row: the door cap withholds the ETP an A would otherwise route', async () => {
+  it('a velocity row is never leveraged: shadowed it has no route at all, sized the door cap withholds the ETP an A would otherwise get', async () => {
     const store = await velocityStore({ 'long:amber:25-40': { n: 20, hits: 14 } })
     // both names carry a LONG route, and the rung is high enough to unlock 2× for an
     // A — so the ONLY thing that can withhold an instrument here is the door cap
@@ -2262,16 +2384,30 @@ describe('buildBoard', () => {
       NOW_240,
     )
 
-    const probe = board.find(b => b.sym === 'RICH')!
+    const probe = (await ledgerAt(store, NOW_240))!.find(p => p.sym === 'RICH')!
     expect(probe).toBeDefined()
     expect(probe.catalyst).toEqual({ kind: 'velocity', reason: expect.stringContaining('early door') })
     expect(probe.grade).toBe('A') // the FULL tier — nothing about its evidence is short
     expect(probe.evidence.contract).toBe(true)
     expect(probe.capacityPct).toBeGreaterThanOrEqual(8) // …the gate that lets an A exist at all
-    expect(probe.riskPct).toBe(RUNG_RISK_PCT[probe.riskRung] * VELOCITY_DOOR_CAP.early)
-    expect(probe.riskPct).toBe(0.3125) // rung 1, quartered by the early door
-    expect(probe.instrument).toBeNull() // …and therefore no ETP, however good the grade
-    expect(probe.paperOnly).toBe(false) // a quarter-size long is a plain, placeable share buy
+    expect(probe.instrument).toBeNull() // no ETP, however good the grade
+    if (VELOCITY_SHADOW_FIRST) {
+      // An unsized row cannot be leveraged either — but that is the shadow doing it,
+      // not the door cap, so the door-cap claim itself is pinned in the branch below
+      // and revives with the flag. What this branch adds: grade A buys a shadow
+      // nothing, and the ETP the control below still gets proves leverage is alive.
+      expect(probe.shadow).toBe(true)
+      expect(probe.riskPct).toBe(0)
+      expect(board.some(b => b.sym === 'RICH' && b.side === 'long')).toBe(false)
+      // …and [F3] again, from the other end of the board: with the long shadowed,
+      // the short near miss on this same chart is NOT suppressed. An unsized row
+      // takes nothing away from the reader, including the day's only word on RICH.
+      expect(board.find(b => b.sym === 'RICH' && b.side === 'short')!.nearMiss).toBe(true)
+    } else {
+      expect(probe.riskPct).toBe(RUNG_RISK_PCT[probe.riskRung] * VELOCITY_DOOR_CAP.early)
+      expect(probe.riskPct).toBe(0.3125) // rung 1, quartered by the early door
+      expect(probe.paperOnly).toBe(false) // a quarter-size long is a plain, placeable share buy
+    }
 
     // THE CONTROL, and it is the whole test: an ordinary grade-A long at the FULL rung,
     // same board, same rung, same kind of levMap route — it still gets its instrument.
@@ -2305,13 +2441,52 @@ describe('buildBoard', () => {
     const rows = (await ledgerOf(store))!.filter(p => p.sym === 'SHOK')
     expect(rows).toHaveLength(1) // one long, not two — and the dip's is the one missing
     expect(rows[0].catalyst!.kind).toBe('velocity')
-    expect(board.find(b => b.sym === 'SHOK' && b.riskPct > 0)).toBeDefined()
     // keying the skip on dipReads instead of the CONSTRUCTED call would leave the
-    // reader nothing at all on a name both lanes could see moving
+    // record nothing at all on a name both lanes could see moving
     expect(rows.some(p => p.catalyst?.kind === 'dip')).toBe(false)
+    if (VELOCITY_SHADOW_FIRST) {
+      // the call the refused dip would have blocked still exists — as the shadow
+      // the whole lane currently publishes, in the ledger where it can be learned from
+      expect(rows[0].shadow).toBe(true)
+      expect(rows[0].riskPct).toBe(0)
+      expect(board.some(b => b.sym === 'SHOK' && b.side === 'long')).toBe(false)
+    } else {
+      expect(board.find(b => b.sym === 'SHOK' && b.riskPct > 0)).toBeDefined()
+    }
   })
 
-  it('a velocity long demotes the opposing composite SHORT to a shadow — and the empty side names the lane that did it', async () => {
+  // The OTHER skip, and the one shadow-first could most easily have broken: the
+  // ledger holds ONE ROW PER SYM+SIDE, and `longRows` is read off every published
+  // long — shadows included. It would have been easy to reason "a shadow costs the
+  // reader nothing, so let it publish beside the composite's long"; that would put
+  // two long rows for one chart into `predictions:${date}`, double-count the name in
+  // every calibration bucket it lands in, and hand the open book two positions.
+  it('a name that already carries a long gets no velocity row beside it — one row per sym+side, shadows included', async () => {
+    // the fixture is not vacuous in either direction: the door really is open…
+    expect(classifyVelocity(bullBreakTape)!.door).toBe('early')
+
+    const store = await velocityStore({ 'long:amber:25-40': { n: 20, hits: 14 }, 'long:amber:40-55': { n: 20, hits: 14 } })
+    const { board } = await buildBoard(
+      store,
+      deps({
+        candles: async s => (s === 'BOTH' ? bullBreakTape : s === 'SPY' || s === 'QQQ' ? flat.slice(0, 241) : null),
+        screens: async () => [{ row: { sym: 'BOTH', price: 300, capUsdM: 50_000, changePct: 3, name: null }, source: 'screener:gainers' }],
+      }),
+      NOW_240,
+    )
+
+    const longs = (await ledgerAt(store, NOW_240))!.filter(p => p.sym === 'BOTH' && p.side === 'long')
+    expect(longs).toHaveLength(1)
+    // …and the row that survived is the COMPOSITE's, which got there first — no lane
+    // tag, no trail marker, and therefore no velocity shadow hiding behind it
+    expect(longs[0].catalyst).toBeUndefined()
+    expect(longs[0].trail).toBeUndefined()
+    expect(longs[0].shadow).toBeUndefined()
+    expect(longs[0].riskPct).toBeGreaterThan(0) // …a live, sized composite long, untouched by any of this
+    expect(board.filter(b => b.sym === 'BOTH' && b.side === 'long')).toHaveLength(1)
+  })
+
+  it('a SIZED velocity long demotes the opposing composite short and the empty side names the lane — a shadowed one leaves that short alone [F3]', async () => {
     const collide = async (paidVol: number) => {
       const store = memoryStore()
       await store.write('config', { watchlist: [{ symbol: 'NVDA' }], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' } } })
@@ -2343,27 +2518,50 @@ describe('buildBoard', () => {
     expect(liveShort.evidence.contract).toBe(true)
     expect(liveShort.shadow).toBeUndefined()
 
-    // Now the up-day is PAID for. Same chart, same composite — and the reader gets
-    // one row, on the lane's side.
+    // Now the up-day is PAID for. Same chart, same composite, and the velocity lane
+    // reads a long on it — but whether that long may take the reader's row away from
+    // the short depends entirely on whether the lane is SIZED.
     const paid = await collide(2_500_000)
-    const shown = paid.board.filter(b => b.sym === 'NVDA')
-    expect(shown).toHaveLength(1)
-    expect(shown[0].side).toBe('long')
-    expect(shown[0].catalyst!.kind).toBe('velocity')
-    expect(shown[0].riskPct).toBeGreaterThan(0)
-
+    const velo = paid.ledger.find(p => p.sym === 'NVDA' && p.side === 'long')!
+    expect(velo).toBeDefined()
+    expect(velo.catalyst!.kind).toBe('velocity') // the lane fired either way — the branch is about consequences
     const short = paid.ledger.find(p => p.sym === 'NVDA' && p.side === 'short')!
-    expect(short).toBeDefined() // demotion, not deletion — the ledger still learns
-    expect(short.shadow).toBe(true)
-    expect(short.riskPct).toBe(0)
-    expect(short.instrument).toBeNull()
-    expect(short.watchOnly).toBeUndefined() // shadow and watch stay mutually exclusive
-    expect(short.composite).toBe(liveShort.composite) // …and nothing about the short itself changed
-    // the copy must not blame the gates, nor blame the DIP lane for a breakout
-    expect(paid.emptySides!.short).toBe('velocity-lane')
+    expect(short).toBeDefined() // the short is in the ledger in both modes — demotion is never deletion
+    expect(short.composite).toBe(liveShort.composite) // …and nothing about the short's own read ever changed
+
+    if (VELOCITY_SHADOW_FIRST) {
+      // [F3] An UNSIZED row must not cost the reader a SIZED one. The clash the
+      // demotion cures is "the board tells me to buy the break AND sell the chart on
+      // one morning" — a shadow tells the reader nothing at all, so there is no clash
+      // to cure, and taking the short away would hand back an empty side for free.
+      expect(velo.shadow).toBe(true)
+      expect(velo.riskPct).toBe(0)
+      expect(paid.board.filter(b => b.sym === 'NVDA')).toHaveLength(1)
+      const stillShown = paid.board.find(b => b.sym === 'NVDA')!
+      expect(stillShown.side).toBe('short')
+      expect(stillShown.riskPct).toBeGreaterThan(0) // the same live, sized row the control published
+      expect(short.shadow).toBeUndefined()
+      expect(short.riskPct).toBe(liveShort.riskPct)
+      expect(short.instrument).toEqual(liveShort.instrument)
+      // …and with a live short on the side, no empty-side copy is owed at all
+      expect(paid.emptySides?.short).toBeUndefined()
+    } else {
+      // Sized, the lane owns the chart: the reader gets one row, on the lane's side.
+      const shown = paid.board.filter(b => b.sym === 'NVDA')
+      expect(shown).toHaveLength(1)
+      expect(shown[0].side).toBe('long')
+      expect(shown[0].catalyst!.kind).toBe('velocity')
+      expect(shown[0].riskPct).toBeGreaterThan(0)
+      expect(short.shadow).toBe(true)
+      expect(short.riskPct).toBe(0)
+      expect(short.instrument).toBeNull()
+      expect(short.watchOnly).toBeUndefined() // shadow and watch stay mutually exclusive
+      // the copy must not blame the gates, nor blame the DIP lane for a breakout
+      expect(paid.emptySides!.short).toBe('velocity-lane')
+    }
   })
 
-  it('a live velocity long suppresses the same-sym short NEAR MISS — one direction per chart [C10]', async () => {
+  it('a SIZED velocity long suppresses the same-sym short NEAR MISS — a shadowed one leaves it standing [C10, F3]', async () => {
     // A watchlist name is evaluated whatever it looks like, so the composite really
     // does read this chart: its −21.3 core dies in the dead zone and the name lands
     // in the near-miss list as the closest thing to a short.
@@ -2383,27 +2581,45 @@ describe('buildBoard', () => {
         }),
         NOW,
       )
-      return board
+      return { board, ledger: (await ledgerOf(store))! }
     }
 
-    // CONTROL: $10M is under the lane's liquidity floor, so no velocity call exists
-    // — and the near-miss short is published exactly as it always was.
+    // CONTROL: $10M is a KNOWN cap under the lane's liquidity floor, so no velocity
+    // call exists in either mode — and the near-miss short is published exactly as it
+    // always was. (Shadow-first admits an UNKNOWN cap, never a small one.)
     const tiny = await run(10)
-    const miss = tiny.find(b => b.sym === 'BNC')!
+    const miss = tiny.board.find(b => b.sym === 'BNC')!
     expect(miss).toBeDefined()
     expect(miss.side).toBe('short')
     expect(miss.nearMiss).toBe(true)
+    expect(tiny.ledger.some(p => p.sym === 'BNC')).toBe(false)
 
-    // Over the floor the lane publishes, and the short observation on the same chart
-    // goes away: a sized long beside "the closest thing to a short" is the board
-    // contradicting itself over a row that cleared no gate at all.
-    const sized = await run(5_000)
-    const rows = sized.filter(b => b.sym === 'BNC')
-    expect(rows).toHaveLength(1)
-    expect(rows[0].side).toBe('long')
-    expect(rows[0].catalyst!.kind).toBe('velocity')
-    expect(rows[0].riskPct).toBeGreaterThan(0)
-    expect(sized.some(b => b.nearMiss)).toBe(false)
+    const over = await run(5_000)
+    const velo = over.ledger.find(p => p.sym === 'BNC' && p.side === 'long')!
+    expect(velo).toBeDefined()
+    expect(velo.catalyst!.kind).toBe('velocity') // over the floor the lane publishes in both modes
+
+    if (VELOCITY_SHADOW_FIRST) {
+      // [F3] The near miss survives. It is the only thing the reader is shown on this
+      // chart, and a shadow contradicts nothing — suppressing the observation would
+      // blank the name for a row the reader was never offered.
+      expect(velo.shadow).toBe(true)
+      expect(velo.riskPct).toBe(0)
+      const shown = over.board.filter(b => b.sym === 'BNC')
+      expect(shown).toHaveLength(1)
+      expect(shown[0].side).toBe('short')
+      expect(shown[0].nearMiss).toBe(true)
+    } else {
+      // Sized, the short observation on the same chart goes away: a sized long beside
+      // "the closest thing to a short" is the board contradicting itself over a row
+      // that cleared no gate at all.
+      const rows = over.board.filter(b => b.sym === 'BNC')
+      expect(rows).toHaveLength(1)
+      expect(rows[0].side).toBe('long')
+      expect(rows[0].catalyst!.kind).toBe('velocity')
+      expect(rows[0].riskPct).toBeGreaterThan(0)
+      expect(over.board.some(b => b.nearMiss)).toBe(false)
+    }
   })
 
   it('a hype-cluster member survives the 180-candidate cut it would otherwise lose, and its row names the crowd', async () => {
@@ -2431,21 +2647,32 @@ describe('buildBoard', () => {
         }),
         NOW,
       )
-      return { board, askedFor: (sym: string) => asked.filter(s => s === sym).length }
+      // the LEDGER, not the board: under shadow-first the elevated row is a shadow,
+      // and "it survived the cut" has to be readable in both modes
+      return { board, ledger: (await ledgerOf(store))!, askedFor: (sym: string) => asked.filter(s => s === sym).length }
     }
 
     const cut = await run(null)
-    expect(cut.board.find(b => b.sym === 'ZCLU')).toBeUndefined() // never even evaluated
+    expect(cut.ledger.some(p => p.sym === 'ZCLU')).toBe(false) // never even evaluated
+    expect(cut.board.find(b => b.sym === 'ZCLU')).toBeUndefined()
     expect(cut.askedFor('ZCLU')).toBe(0) // …and with no record, not one candle was fetched for it
 
     const elevated = await run(clusterHistory(8))
-    const call = elevated.board.find(b => b.sym === 'ZCLU')!
+    const call = elevated.ledger.find(p => p.sym === 'ZCLU')!
     expect(call).toBeDefined()
-    expect(call.riskPct).toBe(0.25) // an ordinary quarter-size early-door probe
     // the cluster is narration, stamped where the paper can read it
     expect(call.catalyst!.reason).toContain('hype cluster with ZCLA, ZCLB')
+    if (VELOCITY_SHADOW_FIRST) {
+      expect(call.shadow).toBe(true) // elevated into the RECORD, not onto the board
+      expect(call.riskPct).toBe(0)
+      expect(elevated.board.some(b => b.sym === 'ZCLU')).toBe(false)
+    } else {
+      expect(call.riskPct).toBe(0.25) // an ordinary quarter-size early-door probe
+      expect(elevated.board.some(b => b.sym === 'ZCLU')).toBe(true)
+    }
     // …and elevation is never eligibility: the partners were in the pool too and
     // published nothing, because neither of them opened a door
+    expect(elevated.ledger.some(p => p.sym === 'ZCLA' || p.sym === 'ZCLB')).toBe(false)
     expect(elevated.board.some(b => b.sym === 'ZCLA' || b.sym === 'ZCLB')).toBe(false)
     expect(elevated.askedFor('ZCLA')).toBeGreaterThan(0)
   })

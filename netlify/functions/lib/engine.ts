@@ -547,6 +547,19 @@ const baseSym = (sym: string) => sym.split('.')[0].split('-')[0]
  * overwhelmingly a screener name, so the floor bites the right population. */
 export const VELOCITY_MIN_CAP_USD_M = 20
 
+/** SHADOW-FIRST (owner decision, 2026-08-12): the velocity lane's ship gate
+ * measured +5.25%/entry expectancy across all seven named runners with honest
+ * mid-run entries — but only 38.8% of entries exited green against a 60% bar
+ * written, wrongly, as a hit-rate test for a big-winner design. Rather than
+ * revise a gate after seeing its results, the lane ships GRADED BUT UNSIZED:
+ * every velocity call publishes as a shadow, feeding calibration and its own
+ * setup family, and earns sizing only from its live record (the repo's
+ * earn-influence rule). Flip to false ONLY with the owner's explicit word once
+ * the ledger shows what the lane is worth. While shadowed, an unknown cap may
+ * pass the liquidity floor — a shadow carries no money, and starving the
+ * learning record was the replay's other lesson (77 blocked would-be calls). */
+export const VELOCITY_SHADOW_FIRST = true
+
 /** How many trending names one run may fetch candles for to check clusters.
  * clusterCandidates has already narrowed the record to symbols sitting in a
  * co-appearing pair — and returns [] outright under its 7-day warm-up, so a young
@@ -1368,7 +1381,9 @@ export async function buildBoard(
     const key = sym.toUpperCase()
     if (longRows.has(key) || constructedDipLongs.has(key)) continue // constructedDipLongs is inside longRows; both stated, because they are two rules
     const capUsdM = sources.get(sym)?.capUsdM ?? null
-    if (capUsdM == null || capUsdM < VELOCITY_MIN_CAP_USD_M) continue
+    // Shadow mode admits unknown caps (no money at risk, the record is the point);
+    // sized mode reverts to unknown-never-passes.
+    if (capUsdM == null ? !VELOCITY_SHADOW_FIRST : capUsdM < VELOCITY_MIN_CAP_USD_M) continue
     // Per-SYMBOL fail-soft: one unreadable tape must cost that name its call and
     // nothing else. A try around the whole lane would let one symbol silence a
     // lane that had already found three other real breakouts.
@@ -1388,8 +1403,8 @@ export async function buildBoard(
         { ...raw, earningsRisk: earningsSet.has(baseSym(sym)) },
         capUsdM,
         { kind: VELOCITY_CATALYST_KIND, side: 'long', reason, strength: 50 },
-        false,
-        VELOCITY_DOOR_CAP[read.door], // early 0.25, confirmation 0.5 — the door's own ceiling
+        VELOCITY_SHADOW_FIRST, // shadow-first: graded and learning, zero reader money until the live record earns sizing
+        VELOCITY_DOOR_CAP[read.door], // early 0.25, confirmation 0.5 — the door's own ceiling (bites when sizing is earned)
         // …and this row's stop IS the trail (velocityLane.ts): the books re-read it
         // every day from here on, so a momentum call that loses its falsifier is
         // reported dead the day it dies rather than at a stale printed level.

@@ -179,6 +179,26 @@ describe('traceOpenCall — the velocity trail is enforced daily', () => {
     expect(e.trailStop).toBe(100.56)
     expect(e.note).toContain('trail at 100.56')
   })
+
+  // SHADOW-FIRST (2026-08-12): the velocity lane now publishes UNSIZED rows —
+  // `shadow: true`, `riskPct: 0`, no instrument — that still carry `trail:
+  // 'velocity'`. The walk must read the marker, never the size. It does today
+  // because it reads neither field, and this pins that: the day the £10k book, the
+  // paper or a shadow-aware open book hands one of these rows in, the trail is
+  // enforced on it exactly as on a sized call. (`traceOpenIdeas` still keeps
+  // shadows OUT of the open book by design — a shadow is not a position — so this
+  // is a claim about the walk, not about what the reader is shown.)
+  it('a ZERO-SIZE shadow row is walked identically: the trail is read off the marker, never off the size', () => {
+    const cs = riseThenFallTape()
+    const sized = { ...call({ entry: 113, stop: 96.56, target: 130, trail: 'velocity' }), shadow: undefined, riskPct: 0.25 }
+    const shadowed = { ...call({ entry: 113, stop: 96.56, target: 130, trail: 'velocity' }), shadow: true, riskPct: 0, instrument: null }
+    expect(traceOpenCall(shadowed, cs, none)).toEqual(traceOpenCall(sized, cs, none))
+    // …and not vacuously "both null": the shared result is the real ratcheted exit
+    const e = traceOpenCall(shadowed, cs, none)!
+    expect(e.status).toBe('stopped')
+    expect(e.trailStop).toBe(110.5)
+    expect(e.note).toContain('trail hit')
+  })
 })
 
 describe('verdictFor — the opinion layer', () => {

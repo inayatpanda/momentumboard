@@ -25,7 +25,7 @@ vi.mock('../../../shared/engine/velocityLane', async importOriginal => {
   }
 })
 
-import { buildBoard, type EngineDeps } from './engine'
+import { VELOCITY_SHADOW_FIRST, buildBoard, type EngineDeps } from './engine'
 import { memoryStore } from './store'
 import { CALIB_DEF_VERSION } from '../../../shared/engine/calibration'
 import type { Candle } from '../../../shared/types'
@@ -102,20 +102,32 @@ const run = async (poisonSym: string | null) => {
   return { board, ledger: (await store.read<Prediction[]>(`predictions:${today}`))! }
 }
 
+// The fail-soft rule itself is mode-independent — one symbol's blow-up costs that
+// symbol its call and nothing else — so the assertions below live in the LEDGER,
+// which carries the lane's rows whether they are sized or shadowed. Only the
+// reader-facing consequence branches on VELOCITY_SHADOW_FIRST (the lane ships
+// shadow-first, so its rows are graded and unsized; engine.ts).
 describe('the velocity lane fails soft per SYMBOL', () => {
   it('a read that throws costs that symbol its call and nothing else', async () => {
     const healthy = await run(null)
     expect(healthy.ledger.map(p => p.sym).sort()).toEqual(['RUNR', 'VELO']) // both lanes published
     const cleanVelo = healthy.ledger.find(p => p.sym === 'VELO')!
     expect(cleanVelo.catalyst!.kind).toBe('velocity')
-    expect(cleanVelo.riskPct).toBeGreaterThan(0)
+    if (VELOCITY_SHADOW_FIRST) {
+      expect(cleanVelo.shadow).toBe(true)
+      expect(cleanVelo.riskPct).toBe(0)
+    } else {
+      expect(cleanVelo.riskPct).toBeGreaterThan(0)
+    }
 
     const broken = await run('RUNR')
     expect(broken.ledger.some(p => p.sym === 'RUNR')).toBe(false) // the thrower is skipped…
     // …and the OTHER name's row is byte-identical: same grade, size, levels, flags.
-    // A try around the whole pass would have lost this row too.
+    // A try around the whole pass would have lost this row too. This is the claim,
+    // and it holds in both modes because the ledger holds shadows.
     expect(broken.ledger.find(p => p.sym === 'VELO')).toEqual(cleanVelo)
-    expect(broken.board.filter(b => b.riskPct > 0).map(b => b.sym)).toEqual(['VELO'])
+    if (VELOCITY_SHADOW_FIRST) expect(broken.board.filter(b => b.riskPct > 0)).toEqual([]) // no sized rows exist at all while shadowed
+    else expect(broken.board.filter(b => b.riskPct > 0).map(b => b.sym)).toEqual(['VELO'])
   })
 })
 
@@ -147,6 +159,7 @@ describe('the candle fill fails soft per SYMBOL', () => {
     const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
     expect(ledger.some(p => p.sym === 'RUNR')).toBe(false)
     expect(ledger.find(p => p.sym === 'VELO')).toEqual(cleanVelo)
-    expect(board.filter(b => b.riskPct > 0).map(b => b.sym)).toEqual(['VELO'])
+    if (VELOCITY_SHADOW_FIRST) expect(board.filter(b => b.riskPct > 0)).toEqual([])
+    else expect(board.filter(b => b.riskPct > 0).map(b => b.sym)).toEqual(['VELO'])
   })
 })
