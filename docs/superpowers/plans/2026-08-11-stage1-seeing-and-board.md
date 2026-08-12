@@ -743,6 +743,12 @@ git commit -m "test(replay): stage 1 acceptance evidence over the mirrored windo
 
 ---
 
+## Closing wave (2026-08-12, owner decision + final whole-branch review)
+
+Owner ruling: **refine the dip holding rule, re-replay, then ship.** The volume leg becomes turn-scoped: holding's volume condition is satisfied if volume ≥ 1.5× the 20-day average printed on ANY of the last 5 sessions (today included) — a grinding recovery that confirmed its turn on volume once stays valid; all other holding legs (no new 5-session low today, close > 50-EMA OR ≥3% above dip-window low) unchanged. Acceptance: re-run the replay window and show GLW's dip call constructing during its August recovery leg, plus the full-window numbers re-reported.
+
+Controller rulings on the final review's coherence findings: **(F1)** the empty-side copy must say what is true — "nothing tradeable on this side today" when routing emptied it, gates language only when gates did; **(F2)** an unroutable short that cleared every gate outranks a near-miss: it may surface as a watch-only observation ("no ISA route — observation only") when its side would otherwise be nameless, and stays shadow otherwise (anti-clutter per the 2026-07-24 decision, which governs sized calls); **(F3)** the dip-over-short demotion additionally requires the dip long to publish as a NON-watch row (a zero-size observation must never cost the reader the only sized row). Plus: distinguish "couldn't fetch news" from "no recent headlines"; repo-relative replay cache default; Desk/TodaysCalls/boardSize counters exclude near-misses; fix the swapped JSDoc; un-vacuous the `if (asNearMiss)` test guard.
+
 ## Review-Response Log (v1 → v2)
 
 Accepted: codex #1-#18 (all), gpt-oss B6 (slide-case reclaim), B2 (classifyDip contract documented: null only for short series).
