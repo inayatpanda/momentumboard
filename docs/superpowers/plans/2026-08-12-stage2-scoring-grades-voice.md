@@ -107,6 +107,8 @@ Also: `ENGINE_MODEL_VERSION = 3` (stamp only — recon §7.1); `probability` sta
 
 ---
 
+Ratified at Task-3 landing (2026-08-12): **the running-max re-projection is part of the curve** — shrinkage's n-varying weights re-break monotonicity on the real seed (fit 0.393/0.426/0.408 across rising bands), so the final step re-projects with a running max: additive, identity where already monotone, never exceeding an evidenced lower-band value (the D2 prior applied to the FINAL read, not just the fit). The shrink-before-fit alternative was correctly rejected for changing the DeepSeek-gated isotonicFit contract.
+
 ### Task 4: expected-move eligibility replaces the capacity floors
 
 **Files:** `shared/engine/composite.ts` (+test), `shared/engine/catalyst.ts` (gates), `netlify/functions/lib/engine.ts` (sleeve flag removal), SitePages/FAQ copy.
