@@ -1772,7 +1772,7 @@ export async function buildBoard(
           famAgree: 0,
           contract: false,
           contextPts: 0,
-          detail: `core read ${n.core} — short of the gates (dead zone ${gates.deadZone}, expected move ${gates.minExpectedMovePct}%, entry timing); no evidence contract was ever assessed${routeNote}`,
+          detail: `core read ${n.core} — short of the gates (dead zone ${gates.deadZone}, needs ~${gates.minExpectedMovePct}% expected move before relaxations, entry timing); no evidence contract was ever assessed${routeNote}`,
         },
         expectedMovePct,
         entry,

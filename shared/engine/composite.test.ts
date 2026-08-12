@@ -167,15 +167,19 @@ describe('composeCall', () => {
     ).not.toBeNull() // same chart, live catalyst → gets a look
   })
 
-  it('the floor is the retired flat one re-expressed at the dead zone — the change only ever admits MORE', () => {
+  it('the floor is the retired flat one re-expressed at the dead zone — admit-only vs the THREE ordinary floors', () => {
     // The three numbers are not free-hand. AT THE DEAD ZONE the expected-move
     // floor reproduces the flat capacity floors it replaces, exactly:
     //   moderate            0.25 × 6 = 1.5
     //   moderate + catalyst 0.25 × 4 = 1.0
     //   aggressive          0.20 × 5 = 1.0
     // Above the dead zone it loosens monotonically with conviction, so no name
-    // the flat floor ever admitted is rejected now — the widening is one-way,
-    // which is what makes this safe to ship without re-seeding.
+    // those three flat floors admitted is rejected now. THE SLEEVE IS THE
+    // EXCEPTION, deliberately: its retired floor of 3 admitted any conviction,
+    // so a capacity-4.9 megacap now needs composite ≥ ~31 (150/4.9) instead of
+    // 25 — a marginal-conviction calm name must justify a real expected move.
+    // That tightening is D5's principle, the near-miss machinery covers the
+    // empty-day risk, and the Stage-2 gate replay measures BOTH directions.
     const at = (score: number) => ({ ...nullFactors(), technical: { score, detail: 'pullback' } })
     const call = (score: number, capacityPct: number, over: Partial<ComposeInput> = {}) =>
       composeCall(base({ factors: at(score), capacityPct, stage: 'pullback', ...over }))
@@ -198,7 +202,7 @@ describe('composeCall', () => {
   it('a catalyst vote can NOT carry a marginal core over the dead zone — a headline is never a thesis', () => {
     // a quiet chart on its own makes no call; under the two-layer composite a
     // strong long catalyst (context) no longer rescues it — the core must
-    // clear the gate alone. The catalyst still relaxes the CAPACITY floor and
+    // clear the gate alone. The catalyst still relaxes the expected-move floor and
     // still tilts conviction on an already-valid call (tested elsewhere).
     const quiet = { ...nullFactors(), technical: { score: 15, detail: 'trending' } }
     expect(composeCall(base({ factors: quiet, stage: 'trending', entryQuality: 'neutral' }))).toBeNull() // 15 < 25
