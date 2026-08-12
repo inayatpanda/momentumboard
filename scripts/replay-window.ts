@@ -27,6 +27,8 @@
 // Run:
 //   npx vite-node scripts/replay-window.ts -- --from 2026-07-14 --to 2026-08-11 --out /tmp/new.json
 //   npx vite-node scripts/replay-window.ts -- --baseline --out /tmp/base.json
+// Candles are cached in ./.replay-cache (gitignored); REPLAY_CACHE_DIR overrides
+// it, which is how the baseline worktree reads the SAME bars as the new run.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -204,7 +206,11 @@ export function summariseBoard(board: Pick<Prediction, 'side' | 'watchOnly' | 'n
 
 // ------------------------------------------------------------ candle cache --
 
-const DEFAULT_CACHE_DIR = '/private/tmp/claude-501/-Users-inayat/edcdb551-00c6-4269-bddc-228e5ea3c822/scratchpad/replay-candles'
+// Repo-relative by default (gitignored) so the harness is runnable by anyone on
+// any machine — a hard-coded session scratch path made it a one-laptop script.
+// REPLAY_CACHE_DIR still overrides, which is how a baseline worktree shares the
+// SAME candles as the new run (a comparison across two caches is not a comparison).
+const DEFAULT_CACHE_DIR = join(process.cwd(), '.replay-cache')
 const CACHE_DIR = process.env.REPLAY_CACHE_DIR ?? DEFAULT_CACHE_DIR
 /** How many bars a live `cachedCandles` call returns (Yahoo range=1y). The
  * cache holds 5y so `candles5y` can serve seasonality, but `candles` is trimmed

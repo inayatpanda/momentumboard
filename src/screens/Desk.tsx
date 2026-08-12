@@ -198,8 +198,13 @@ export function Desk({ onStandard, onQuant, onOpen }: { onStandard: () => void; 
 
   const boardData = data?.board ?? null
   const board = boardData?.board ?? []
-  const large = board.filter(p => !p.smallCap)
-  const small = board.filter(p => p.smallCap)
+  // "every call · N large · N small" counts CALLS. A near miss cleared no gate and
+  // is not one — it still gets charted, at the end, under its own count (and the
+  // watchdog's "live calls" excludes them the same way).
+  const calls = board.filter(p => !p.nearMiss)
+  const large = calls.filter(p => !p.smallCap)
+  const small = calls.filter(p => p.smallCap)
+  const nearMisses = board.filter(p => p.nearMiss)
 
   const cohorts = capClassBreakdown(flattenLedger(data?.ledger ?? []))
   const catalysts = board.filter(p => p.catalyst)
@@ -258,12 +263,13 @@ export function Desk({ onStandard, onQuant, onOpen }: { onStandard: () => void; 
           <section className="chart-wall-head">
             <h3 className="section-title" style={{ margin: 0 }}>
               The board — every call, charted <span className="badge">{large.length} large</span> <span className="badge">{small.length} small</span>
+              {nearMisses.length > 0 && <span className="badge warn"> {nearMisses.length} near miss</span>}
             </h3>
             <span className="empty-line">MA20/50/200 · engine levels · classical patterns flagged when the shape is really there · click a card to expand</span>
           </section>
           {board.length === 0 && <p className="empty-line">No calls on the board today — an honest empty wall beats a forced one.</p>}
           <div className="chart-wall">
-            {[...large, ...small].map(p => (
+            {[...large, ...small, ...nearMisses].map(p => (
               <ChartCard key={p.id} p={p} expanded={focus === p.sym} onToggle={sym => setFocus(f => (f === sym ? null : sym))} onOpen={onOpen} />
             ))}
           </div>

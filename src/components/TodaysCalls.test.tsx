@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { visibleCalls } from './TodaysCalls'
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import { TodaysCalls, visibleCalls } from './TodaysCalls'
 import { fmtRiskPct } from '../lib/format'
 import type { EnginePrediction } from '../lib/api'
 
@@ -76,5 +77,39 @@ describe('fmtRiskPct', () => {
     expect(fmtRiskPct(1)).toBe('1')
     expect(fmtRiskPct(1.5)).toBe('1.5')
     expect(fmtRiskPct(0)).toBe('0')
+  })
+})
+
+// ---- the rendered card: counters and empty-side copy ----
+
+const board: { date: string; generatedAt: number; regime: string; board: EnginePrediction[]; emptySides?: Record<string, string> } = {
+  date: new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' }),
+  generatedAt: 1,
+  regime: 'amber',
+  board: [],
+}
+vi.mock('../lib/api', () => ({ getEngine: () => Promise.resolve({ board }) }))
+
+describe('TodaysCalls — what the footer counts and what the copy claims', () => {
+  it('"+N more" counts CALLS: a near miss cleared no gate and is not one', async () => {
+    board.board = [
+      ...Array.from({ length: 6 }, (_, i) => row({ sym: `L${i}` })),
+      row({ sym: 'WATCHED', watchOnly: true }),
+      row({ sym: 'NM1', nearMiss: true, watchOnly: true, riskPct: 0 }),
+      row({ sym: 'NM2', nearMiss: true, watchOnly: true, riskPct: 0 }),
+    ]
+    board.emptySides = undefined
+    render(<TodaysCalls onOpen={() => {}} />)
+    // nine rows, six shown — but only ONE of the three unshown rows is a call
+    await waitFor(() => expect(screen.getByText(/\+1 more on the full board/)).toBeInTheDocument())
+  })
+
+  it('names the ISA route when routing is what emptied a side, not the gates', async () => {
+    board.board = [row({ sym: 'L0' })]
+    board.emptySides = { short: 'no-route' }
+    render(<TodaysCalls onOpen={() => {}} />)
+    await waitFor(() => expect(screen.getByText(/Nothing tradeable on the short side today/)).toBeInTheDocument())
+    expect(screen.getByText(/no ISA route/)).toBeInTheDocument()
+    expect(screen.queryByText(/Nothing cleared the gates/)).toBeNull()
   })
 })

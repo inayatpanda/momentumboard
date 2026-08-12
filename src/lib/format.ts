@@ -12,13 +12,13 @@ export function fmtPct(p: number): string {
   return `${sign}${Math.abs(p).toFixed(2)}%`
 }
 
-/** Market-cap band from $M — identification chip for engine calls. */
 /** Risk percentages are HALVED for demoted rows, so the ladder's 1.25% becomes
  * 0.625% — a number no UI should print raw. Two places, trailing zeros dropped. */
 export function fmtRiskPct(p: number): string {
   return String(Math.round(p * 100) / 100)
 }
 
+/** Market-cap band from $M — identification chip for engine calls. */
 export function capBand(capUsdM: number | null | undefined): string | null {
   if (capUsdM == null) return null
   if (capUsdM < 300) return 'micro cap'
@@ -32,6 +32,17 @@ export function capBand(capUsdM: number | null | undefined): string | null {
  * cohorts use the SAME $2B boundary and can't drift apart. */
 export function capCohort(capUsdM: number | null | undefined): 'Large-cap' | 'Small-cap' | 'Unknown' {
   return CAP_COHORT_LABEL[capCohortOf(capUsdM)]
+}
+
+/** Why a side of the board carries nothing tradeable, in the reader's words.
+ * The engine records the reason (buildBoard's assembly) because "nothing cleared
+ * the gates" is simply false when the truth is "something did, and an ISA cannot
+ * place it" — and a card that says the wrong one teaches the reader to distrust
+ * the right one. */
+export function emptySideLine(side: 'long' | 'short', reason: 'gates' | 'no-route'): string {
+  return reason === 'no-route'
+    ? `Nothing tradeable on the ${side} side today — the candidates have no ISA route.`
+    : `Nothing cleared the gates on the ${side} side today.`
 }
 
 /** Raw fetch/parse exceptions must never reach the screen — "SyntaxError:

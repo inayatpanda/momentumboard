@@ -36,7 +36,9 @@ export default async (req: Request) => {
     graded = (await gradeOutstanding(blobAppStore, deps, nowSec, cfg)).graded
     await writeStatus('building-board', { graded })
     const built = await buildBoard(blobAppStore, deps, nowSec)
-    boardSize = built.board.length
+    // CALLS, not rows: a near miss cleared no gate and is not a call the run produced.
+    // The watchdog's "N live calls" counts the same way — the two must not disagree.
+    boardSize = built.board.filter(b => !b.nearMiss).length
     rosterSize = built.rosterSize
     holdingsCount = built.holdingsCount
     // the £10k mock book trades the board it just built — fail-soft

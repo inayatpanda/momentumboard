@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData, type EnginePrediction, type IntradayFlag } from '../lib/api'
-import { capBand, fmtRiskPct } from '../lib/format'
+import { capBand, emptySideLine, fmtRiskPct } from '../lib/format'
 import { RUNG_RISK_PCT } from '../../shared/engine/riskLadder'
 import { GradeChip } from './GradeChip'
 
@@ -240,6 +240,16 @@ export function EngineBoard() {
             {trades.length === 0 && b.board.length > 0 && (
               <p className="empty-line">No sized trades this week — nothing reached even half size. What follows is what the engine is tracking.</p>
             )}
+            {/* WHY a side is empty, in the engine's own words. A side emptied by
+                routing has candidates that cleared every gate — saying "nothing
+                cleared the gates" there is false, and the reader can check it. */}
+            {(['long', 'short'] as const).map(side =>
+              b.emptySides?.[side] ? (
+                <p key={side} className="empty-line" style={{ fontSize: 11, marginTop: -2, marginBottom: 4 }}>
+                  {emptySideLine(side, b.emptySides[side]!)}
+                </p>
+              ) : null,
+            )}
             {developing.length > 0 && (
               <>
                 <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Developing — building over 2–4 weeks</h4>
@@ -264,8 +274,10 @@ export function EngineBoard() {
                 <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>
                   Nearest misses{nearMisses.some(p => p.side === 'long') && nearMisses.some(p => p.side === 'short') ? '' : ` — ${nearMisses[0].side} side`}
                 </h4>
+                {/* the CAUSE is stated once, above, from what the engine recorded —
+                    this line says only what these rows are */}
                 <p className="empty-line" style={{ fontSize: 11, marginTop: -2, marginBottom: 4 }}>
-                  Nothing cleared the gates on {nearMisses.some(p => p.side === 'long') && nearMisses.some(p => p.side === 'short') ? 'either side' : `the ${nearMisses[0].side} side`} today — these came closest.
+                  What came closest on {nearMisses.some(p => p.side === 'long') && nearMisses.some(p => p.side === 'short') ? 'either side' : `the ${nearMisses[0].side} side`} today.
                   Named, not called: no evidence read, no calibrated grade, no size, and they never enter the ledger.
                 </p>
               </>

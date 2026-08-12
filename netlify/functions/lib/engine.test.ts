@@ -250,14 +250,25 @@ describe('buildBoard', () => {
 
   it('a SHORT with no inverse-ETP route is forced to SHADOW — off the board, still graded', async () => {
     const store = memoryStore()
-    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} }) // no route for NVDA
+    // BIG is routable and shorts live, so the short side is NOT empty — the
+    // 2026-08-12 observation rank (which only rescues a nameless side) stays out
+    // of the way and the anti-clutter rule governs, exactly as it always has.
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { BIG: { short2x: 'INV' } } }) // no route for NVDA
     await store.write('engine-calibration', calWith('short:amber:55-70')) // would otherwise grade an A live short
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
     // NVDA priced as a small-cap ($800M < $2B): an ISA can't route a short on it
-    const smallCapScreen = async () => [{ row: { sym: 'NVDA', price: 162, capUsdM: 800, changePct: null, name: null }, source: 'screener:gainers' }]
-    const { board } = await buildBoard(store, deps({ screens: smallCapScreen }), NOW)
+    const smallCapScreen = async () => [
+      { row: { sym: 'NVDA', price: 162, capUsdM: 800, changePct: null, name: null }, source: 'screener:gainers' as const },
+      { row: { sym: 'BIG', price: 162, capUsdM: 50_000, changePct: null, name: null }, source: 'screener:gainers' as const },
+    ]
+    const withBig = deps({
+      screens: smallCapScreen,
+      candles: async sym =>
+        sym === 'NVDA' || sym === 'BIG' || sym === 'XLK' ? shorty : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : null,
+    })
+    const { board } = await buildBoard(store, withBig, NOW)
     expect(board.find(b => b.sym === 'NVDA')).toBeUndefined() // never on the reader-facing board
     const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
     const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
@@ -585,6 +596,71 @@ describe('buildBoard', () => {
     expect(board.find(b => b.sym === 'NVDA' && !b.watchOnly)).toBeDefined() // the short side has a real trade
     expect(board.some(b => b.side === 'short' && b.nearMiss)).toBe(false) // …so no short near miss is invented
     expect(board.find(b => b.sym === 'RISE')?.nearMiss).toBe(true) // the empty long side still gets named
+  })
+
+  // ---- the observation rank: a gate-clearing unroutable short beats a near miss ----
+  // Ratified 2026-08-12. The 2026-07-24 anti-clutter rule ("only show shorts I can
+  // place") governs SIZED calls, and still does: nothing below carries size, route
+  // or an offer to trade. But when the side would otherwise be nameless, a graded,
+  // fully-evidenced short is a far better answer than a row that cleared nothing.
+  it('an unroutable short that cleared EVERY gate is shown as a labelled observation, and near misses are not used', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [{ symbol: 'RISE' }], rules: [], ytChannels: [], levMap: {} }) // NVDA has NO inverse ETP
+    await store.write('engine-calibration', calWith('short:amber:55-70')) // …but it grades A
+    const d = deps({
+      mediaTitles: async () => [],
+      candles: async sym =>
+        sym === 'NVDA' ? shorty : sym === 'RISE' ? calmClimb : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const nvda = board.find(b => b.sym === 'NVDA')!
+    expect(nvda).toBeDefined()
+    expect(nvda.side).toBe('short')
+    expect(nvda.nearMiss).toBeUndefined() // it cleared the gates — it is not a near miss
+    expect(nvda.evidence.contract).toBe(true)
+    expect(nvda.grade).toBe('C') // graded on the full contract — a half-size trade in every respect but the route
+    expect(nvda.watchOnly).toBe(true) // …and still carries nothing tradeable
+    expect(nvda.riskPct).toBe(0)
+    expect(nvda.instrument).toBeNull()
+    expect(nvda.paperOnly).toBe(false) // an observation is nobody's position
+    expect(nvda.shadow).toBeUndefined()
+    expect(nvda.note).toContain('no ISA route — observation only')
+    expect(nvda.evidence.detail).toContain('no ISA route — observation only')
+    // the near-miss machinery stands down on that side entirely
+    expect(board.some(b => b.side === 'short' && b.nearMiss)).toBe(false)
+    // and the board says WHY the side has nothing tradeable, in a field the copy reads
+    const blob = (await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!
+    expect(blob.emptySides?.short).toBe('no-route')
+    // unlike a near miss, this is a real call with a real evidence read — it belongs
+    // in the ledger and must go on teaching the buckets
+    expect((await ledgerOf(store))!.some(p => p.sym === 'NVDA' && p.side === 'short')).toBe(true)
+  })
+
+  it('…but a side WITH a live short leaves the unroutable one exactly where it was: a shadow', async () => {
+    const store = memoryStore()
+    await store.write('config', {
+      watchlist: [{ symbol: 'SHRT' }],
+      rules: [],
+      ytChannels: [],
+      levMap: { NVDA: { short2x: 'SNVD' } }, // NVDA routable, SHRT not
+    })
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
+    const d = deps({
+      mediaTitles: async () => [],
+      candles: async sym =>
+        sym === 'NVDA' || sym === 'SHRT' || sym === 'XLK' ? shorty : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : null,
+    })
+    const { board } = await buildBoard(store, d, NOW)
+
+    expect(board.some(b => b.sym === 'NVDA' && b.side === 'short' && !b.watchOnly)).toBe(true) // the side has a real trade
+    expect(board.some(b => b.sym === 'SHRT')).toBe(false) // …so the unroutable one stays off the board
+    const shrt = (await ledgerOf(store))!.find(p => p.sym === 'SHRT')!
+    expect(shrt).toBeDefined()
+    expect(shrt.shadow).toBe(true) // graded in the dark, exactly as before
+    expect(shrt.note).not.toContain('no ISA route — observation only') // and never labelled as an observation
+    const blob = (await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!
+    expect(blob.emptySides?.short).toBeUndefined() // nothing empty about the short side
   })
 
   it('an AI nomination joins the roster as a scored candidate (source ai-nomination); an expired one is ignored', async () => {
@@ -1178,6 +1254,37 @@ describe('buildBoard', () => {
     expect(shown[0].evidence.contract).toBe(true)
   })
 
+  it('a WATCH-ONLY dip long demotes nothing: a zero-size observation never costs the reader the only sized row', async () => {
+    // Ratified 2026-08-12. Same collision tape, but the LONG bucket has no history,
+    // so the dip long publishes below the engine's base rate: visible, graded,
+    // carrying no size. Trading it is not on offer — and demoting a live, routable,
+    // fully-evidenced short in its favour would leave the reader an observation
+    // where a sized call used to be. The disagreement is real; the cure was worse.
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' } } })
+    // the long bucket exists and is BAD: the dip long is rated below the engine's
+    // own base rate, which is exactly the belowBase → watch-only path
+    await store.write('engine-calibration', {
+      buckets: { 'short:amber:40-55': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 4 } },
+      brier: [],
+      defVersion: CALIB_DEF_VERSION,
+    })
+    const d = collisionDeps({ dipNews: async () => ({ verdict: 'transient', reason: 'sector sympathy, guidance intact' }) })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const long = board.find(b => b.sym === 'GLW' && b.side === 'long')!
+    expect(long).toBeDefined()
+    expect(long.catalyst?.kind).toBe('dip') // the dip really did construct and publish…
+    expect(long.watchOnly).toBe(true) // …as an observation nobody can take
+    expect(long.riskPct).toBe(0)
+
+    const short = board.find(b => b.sym === 'GLW' && b.side === 'short')!
+    expect(short).toBeDefined()
+    expect(short.shadow).toBeUndefined() // NOT demoted
+    expect(short.riskPct).toBeGreaterThan(0) // the day's only sized row survives
+    expect(short.watchOnly).toBeUndefined()
+  })
+
   it('the dip lane never receives the world-tape nudge, so its row records the multiplier it actually ran at', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
@@ -1224,13 +1331,16 @@ describe('buildBoard', () => {
     // bearish, so the empty short side may still name it as a nearest miss — a
     // different statement entirely: no size, no grade, and no dip thesis.)
     expect(board.find(b => b.sym === 'GLW' && b.side === 'long')).toBeUndefined()
-    const asNearMiss = board.find(b => b.sym === 'GLW')
-    if (asNearMiss) {
-      expect(asNearMiss.side).toBe('short')
-      expect(asNearMiss.nearMiss).toBe(true)
-      expect(asNearMiss.riskPct).toBe(0)
-      expect(asNearMiss.catalyst).toBeUndefined() // it carries no dip catalyst/thesis
-    }
+    // …and what the reader DOES see on GLW is the near miss on the empty short
+    // side: a different statement entirely — no size, no grade, no dip thesis.
+    // (Asserted unconditionally on purpose: wrapped in `if (row)` this block
+    // passed whether or not the row existed, which is not a test.)
+    const asNearMiss = board.find(b => b.sym === 'GLW')!
+    expect(asNearMiss).toBeDefined()
+    expect(asNearMiss.side).toBe('short')
+    expect(asNearMiss.nearMiss).toBe(true)
+    expect(asNearMiss.riskPct).toBe(0)
+    expect(asNearMiss.catalyst).toBeUndefined() // it carries no dip catalyst/thesis
 
     const row = (await ledgerOf(store))!.find(p => p.sym === 'GLW')!
     expect(row).toBeDefined() // …but it still publishes and still grades

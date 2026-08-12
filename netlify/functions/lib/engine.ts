@@ -841,6 +841,10 @@ export async function buildBoard(
   ]
 
   const board: Prediction[] = []
+  /** Row ids of shorts shadowed ONLY for want of an ISA route, having cleared
+   * every other gate. Read by the assembly below (empty-side reason + the
+   * observation rank), never written to a row or to the ledger. */
+  const routeBlockedShorts = new Set<string>()
   // The ONE publication path. Both the composite loop and the dip-lane merge below
   // push through here, so calibration, grading, the shadow/watch/belowBase flags,
   // routing and sizing can never drift between the two lanes.
@@ -902,12 +906,23 @@ export async function buildBoard(
     const halfTrade = !shadow && !fullTrade && grade != null && (grade !== 'C' || call.evidence.contract)
     const watchOnly = !shadow && !fullTrade && !halfTrade
 
+    // A short that cleared EVERY gate — graded, evidenced, no print in the way —
+    // and is a shadow for ONE reason: an ISA cannot place it. That is a different
+    // sentence from "nothing cleared the gates", and the assembly below needs to
+    // be able to tell the reader which one is true (and to rank such a row above
+    // a near miss, which cleared nothing at all). Recorded by id, not on the row:
+    // the ledger must not grow a field that means "why we hid it".
+    const routeBlocked =
+      unshortable && !call.earningsRisk && !forceShadow && grade != null && (grade !== 'C' || call.evidence.contract)
+
     const rung = cohortRungOf(risk, cohort)
     const instrument = fullTrade ? mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {}) : null
     const callThemes = themesOf(call.sym)
+    const id = `${today}:${call.sym}:${call.side}`
+    if (routeBlocked) routeBlockedShorts.add(id)
     board.push({
       ...call,
-      id: `${today}:${call.sym}:${call.side}`,
+      id,
       date: today,
       modelVersion: ENGINE_MODEL_VERSION,
       regime,
@@ -1153,8 +1168,18 @@ export async function buildBoard(
   // itself refused to trade is no evidence against anything. Keying on dipReads
   // silently deleted the day's only call on such a name: the dip published nothing
   // and the perfectly good composite short was demoted beside it.
+  //
+  // And the dip long has to be a row the reader can actually TAKE (ratified
+  // 2026-08-12). A dip that published below its base rate, or graded C on thin
+  // evidence, lands watch-only at zero size: trading it is not on offer. Letting
+  // that row demote a live, routable, fully-graded short costs the reader the
+  // day's only sized call on the name and hands back an observation in its place
+  // — the disagreement is real, but the cure must not be worse than the clash.
+  const sizedDipLongs = new Set(
+    board.filter(b => b.side === 'long' && !b.shadow && !b.watchOnly && constructedDipLongs.has(b.sym.toUpperCase())).map(b => b.sym.toUpperCase()),
+  )
   for (const row of board) {
-    if (row.side !== 'short' || row.shadow || !constructedDipLongs.has(row.sym.toUpperCase())) continue
+    if (row.side !== 'short' || row.shadow || !sizedDipLongs.has(row.sym.toUpperCase())) continue
     if (structuralVetoes.has(row.sym.toUpperCase())) {
       console.log(`BOARD: structural news on ${row.sym} frees the composite short — both lanes now read the same way`)
       continue
@@ -1263,8 +1288,41 @@ export async function buildBoard(
     return !!(m?.short2x || m?.short3x)
   }
   const nearMissRows: Prediction[] = []
+  /** Why a side carries nothing tradeable — 'gates' (nothing cleared them) or
+   * 'no-route' (something did, and an ISA cannot place it). Rides the board blob
+   * so the copy on the card can say which; a lie here reads as a broken engine. */
+  const emptySides: { long?: 'gates' | 'no-route'; short?: 'gates' | 'no-route' } = {}
   for (const side of ['long', 'short'] as const) {
     if (liveCalls.some(b => b.side === side)) continue
+
+    // ---- an unroutable row that cleared EVERY gate outranks a near miss ----
+    // Ratified 2026-08-12. The anti-clutter rule (2026-07-24, "only show shorts I
+    // can place") governs SIZED CALLS, and it still does: this row carries no size,
+    // no route and no offer to trade. But a graded, evidenced short is a far better
+    // answer to an empty side than a near miss, which cleared nothing at all — so
+    // when the side would otherwise be nameless, the best of them is promoted out
+    // of the shadow set into a labelled watch-only observation. A side WITH live
+    // rows never sees it: it stays a shadow, exactly as before.
+    const observation = board
+      .filter(b => b.side === side && b.shadow && routeBlockedShorts.has(b.id))
+      .sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))[0]
+    if (observation) {
+      emptySides[side] = 'no-route'
+      observation.shadow = undefined
+      observation.watchOnly = true
+      observation.belowBase = undefined
+      observation.riskPct = 0
+      observation.instrument = null
+      observation.paperOnly = false // a watch row is nobody's position
+      observation.horizon = horizonOf({ watchOnly: true, stage: observation.stage, setup: observation.setup, evidence: observation.evidence })
+      observation.note = `${observation.note} · no ISA route — observation only`
+      observation.evidence = { ...observation.evidence, detail: `${observation.evidence.detail} · no ISA route — observation only` }
+      liveCalls.push(observation)
+      console.log(`BOARD: ${observation.sym} cleared every gate with no ISA route — shown as an observation on the empty ${side} side`)
+      continue
+    }
+    emptySides[side] = 'gates'
+
     const candidates = nearMisses
       .filter(n => (n.core >= 0 ? 'long' : 'short') === side)
       .filter(n => !publishedKeys.has(`${n.sym.toUpperCase()}:${side}`))
@@ -1324,6 +1382,8 @@ export async function buildBoard(
     }
   }
   if (nearMissRows.length) console.log('BOARD: nearest misses named —', nearMissRows.map(n => `${n.sym} ${n.side} ${n.composite}`).join(', '))
+  // a promoted observation joins the ranking rather than trailing the array
+  liveCalls.sort((a, b) => (a.watchOnly ? 1 : 0) - (b.watchOnly ? 1 : 0) || Math.abs(b.composite) - Math.abs(a.composite))
 
   const live = [...liveCalls, ...nearMissRows]
   const shadows = [...pickShadow('long', 5), ...pickShadow('short', 5)]
@@ -1365,6 +1425,8 @@ export async function buildBoard(
     generatedAt: nowSec,
     regime,
     board: live,
+    // additive + optional: why a side carries nothing tradeable, when one doesn't
+    emptySides: Object.keys(emptySides).length ? emptySides : undefined,
     worldTape: { tone: tone.tone, votes: tone.votes, detail: tone.detail },
     newsTone: globalNews,
     // focus themes ranked by headline heat — identification for the UI, never a score

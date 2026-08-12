@@ -115,9 +115,11 @@ export function EnginePage() {
         the row publish watch-only: visible, graded, learning, carrying no size.
       </p>
       <p>
-        On a morning when nothing clears the gates at all, the board still refuses to go blank: it names the <b>nearest misses</b>,
-        the reads that came closest, for exactly what they are. No letter grade, no probability, no size, and they never enter the
-        ledger — they are the engine's "no", said out loud. "No qualified trades" is a result, not a failure.
+        On a morning when a side carries nothing tradeable, the board still refuses to go blank — and it says which of the two
+        reasons is true. When nothing cleared the gates, it names the <b>nearest misses</b>, the reads that came closest, for exactly
+        what they are: no letter grade, no probability, no size, and they never enter the ledger. When something did clear every gate
+        and simply cannot be routed inside an ISA — the usual fate of a short with no inverse ETP — it says that instead, and shows
+        the call as an observation. Either way it is the engine's "no", said out loud. "No qualified trades" is a result, not a failure.
       </p>
       <p>
         Calls are also stamped by setup family — trend continuation, pullback/reversal, exhaustion fade — because a breakout long and
@@ -207,8 +209,9 @@ export function LedgerPage() {
         The board is small by design: at most three full-size trades per side, and only grades that beat the engine's own base rate
         on full evidence. A call short of one of those two — grade C with the full evidence, or an A/B whose evidence is thin — trades
         at half size and says which half is missing. Setups short of both are shown as watch-only observations with no size attached,
-        and on a day nothing clears the gates the board names the nearest misses instead of pretending it has a call. An honest empty
-        board beats seven forced ones — and the ledger is what keeps that promise checkable.
+        and on a day nothing clears the gates the board names the nearest misses instead of pretending it has a call — while a side
+        emptied by routing rather than by the gates is labelled as exactly that. An honest empty board beats seven forced ones — and
+        the ledger is what keeps that promise checkable.
       </p>
     </SiteShell>
   )

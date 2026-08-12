@@ -18,7 +18,10 @@ describe('the public pages describe the real sizing policy', () => {
     expect(t).toContain('with the gap it is missing named on the card')
     expect(t).toMatch(/Only when conviction and evidence are both short .* does the row publish watch-only/)
     expect(t).toContain('nearest misses')
-    expect(t).toContain('No letter grade, no probability, no size')
+    expect(t).toMatch(/no letter grade, no probability, no size/i)
+    // and the OTHER reason a side goes quiet is named too — "nothing cleared the
+    // gates" is false when a graded call simply cannot be routed inside an ISA
+    expect(t).toContain('cannot be routed inside an ISA')
     // the old claim, in either of its forms, is gone
     expect(t).not.toMatch(/C grades and thin-evidence calls publish as watch-only/)
     expect(t).not.toMatch(/stays watch-only, labelled as such/)
@@ -29,6 +32,7 @@ describe('the public pages describe the real sizing policy', () => {
     expect(t).toContain('at most three full-size trades per side')
     expect(t).toContain('trades at half size and says which half is missing')
     expect(t).toContain('the board names the nearest misses')
+    expect(t).toContain('a side emptied by routing rather than by the gates is labelled as exactly that')
   })
 
   it('the FAQ answer on "no qualified trades" matches', () => {

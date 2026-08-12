@@ -176,21 +176,26 @@ describe('fetchCompanyNews', () => {
     expect(url).toContain('to=2026-08-11')
   })
 
-  it('never calls out without a key', async () => {
+  it('never calls out without a key — and reports that as UNAVAILABLE, not as empty', async () => {
     const fetchFn = vi.fn(async (_url: string) => new Response(body))
-    expect(await fetchCompanyNews('ACME', '2026-08-04', '2026-08-11', '', fetchFn as unknown as typeof fetch)).toEqual([])
+    expect(await fetchCompanyNews('ACME', '2026-08-04', '2026-08-11', '', fetchFn as unknown as typeof fetch)).toBeNull()
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('fails soft on a dead endpoint, a non-2xx and a shape it did not expect', async () => {
+  it('an answering wire with no stories is [] — a genuine, reportable emptiness', async () => {
+    const empty = async () => new Response('[]')
+    expect(await fetchCompanyNews('ACME', 'a', 'b', 'key', empty as unknown as typeof fetch)).toEqual([])
+  })
+
+  it('fails soft to NULL on a dead endpoint, a non-2xx and a shape it did not expect', async () => {
     const dead = async () => {
       throw new Error('ECONNRESET')
     }
-    expect(await fetchCompanyNews('ACME', 'a', 'b', 'key', dead as unknown as typeof fetch)).toEqual([])
+    expect(await fetchCompanyNews('ACME', 'a', 'b', 'key', dead as unknown as typeof fetch)).toBeNull()
     const rateLimited = async () => new Response('{"error":"limit"}', { status: 429 })
-    expect(await fetchCompanyNews('ACME', 'a', 'b', 'key', rateLimited as unknown as typeof fetch)).toEqual([])
+    expect(await fetchCompanyNews('ACME', 'a', 'b', 'key', rateLimited as unknown as typeof fetch)).toBeNull()
     const wrongShape = async () => new Response('{"s":"no_data"}')
-    expect(await fetchCompanyNews('ACME', 'a', 'b', 'key', wrongShape as unknown as typeof fetch)).toEqual([])
+    expect(await fetchCompanyNews('ACME', 'a', 'b', 'key', wrongShape as unknown as typeof fetch)).toBeNull()
   })
 })
 
@@ -198,6 +203,22 @@ describe('readDipNews', () => {
   it('reads the tape and classifies it — no key means unclear, never a wrong verdict', async () => {
     const v = await readDipNews('ACME', '', 1_800_000_000, (async () => new Response('[]')) as unknown as typeof fetch, {})
     expect(v.verdict).toBe('unclear')
+  })
+
+  // The two 'unclear's the card must never confuse: one is a fact about the NAME,
+  // the other is a fact about our plumbing.
+  it('a 429 says the LOOKUP was unavailable — not that the name had no headlines', async () => {
+    const rateLimited = async () => new Response('{"error":"limit"}', { status: 429 })
+    const v = await readDipNews('ACME', 'key', 1_800_000_000, rateLimited as unknown as typeof fetch, { strict: true })
+    expect(v).toEqual({ verdict: 'unclear', reason: 'news lookup unavailable' })
+    expect(v.via).toBeUndefined() // nothing decided it, so nothing caches it
+  })
+
+  it('a wire that answers with no stories says NO RECENT HEADLINES', async () => {
+    const quiet = async () => new Response('[]')
+    const v = await readDipNews('ACME', 'key', 1_800_000_000, quiet as unknown as typeof fetch, { strict: true })
+    expect(v.verdict).toBe('unclear')
+    expect(v.reason).toBe('no recent headlines')
   })
 
   it('classifies the fetched headlines with the heuristic when no LLM provider is configured', async () => {

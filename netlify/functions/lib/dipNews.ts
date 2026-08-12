@@ -32,6 +32,12 @@ export interface DipNewsVerdict {
   via?: 'llm' | 'heuristic'
 }
 
+/** The lookup could not be made at all: no key, a 429, a dead endpoint. Trades
+ * exactly like any other 'unclear' — but the card must not claim the name had no
+ * headlines when the truth is that nobody asked. No `via`: nothing decided this,
+ * so it is never cached and tomorrow's run asks again. */
+export const NEWS_UNAVAILABLE: DipNewsVerdict = { verdict: 'unclear', reason: 'news lookup unavailable' }
+
 /** Fresh news reads per run. The engine spends them on the DEEPEST dips first. */
 export const DIP_NEWS_BUDGET = 5
 /** A decisive LLM verdict holds for three days: a fraud probe is not yesterday's news. */
@@ -200,24 +206,31 @@ export async function classifyDipNews(
   }
 }
 
-/** Finnhub company-news headlines for one symbol over a date window. Fail-soft
- * to [] on every path — no key, a dead endpoint, a 429, a shape we didn't
- * expect. De-duplicated, because the wire repeats the same story across
- * syndicators and twelve copies of one headline is not twelve pieces of news. */
+/** Finnhub company-news headlines for one symbol over a date window.
+ *
+ * NULL means the lookup could not be MADE — no key, a dead endpoint, a 429, a
+ * shape we didn't expect. `[]` means the wire answered and the name has no
+ * recent headlines. Those are different facts and the card says which: "no
+ * recent headlines" is a small piece of evidence about the name, while "news
+ * lookup unavailable" is evidence about our own plumbing, and printing the first
+ * when the second is true tells the reader the drop was quiet when nobody asked.
+ *
+ * De-duplicated, because the wire repeats the same story across syndicators and
+ * twelve copies of one headline is not twelve pieces of news. Never throws. */
 export async function fetchCompanyNews(
   sym: string,
   fromISO: string,
   toISO: string,
   key: string,
   fetchFn: typeof fetch = fetch,
-): Promise<string[]> {
-  if (!key) return []
+): Promise<string[] | null> {
+  if (!key) return null
   try {
     const url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(sym)}&from=${fromISO}&to=${toISO}&token=${key}`
     const res = await fetchFn(url)
-    if (res.ok === false) return []
+    if (res.ok === false) return null // a 429 or a 5xx is a lookup we did not get to make
     const j = (await res.json()) as unknown
-    if (!Array.isArray(j)) return []
+    if (!Array.isArray(j)) return null // an answer we cannot read is not an empty answer
     const seen = new Set<string>()
     const out: string[] = []
     for (const item of j as { headline?: unknown }[]) {
@@ -229,7 +242,7 @@ export async function fetchCompanyNews(
     }
     return out
   } catch {
-    return []
+    return null
   }
 }
 
@@ -245,6 +258,9 @@ export async function readDipNews(
 ): Promise<DipNewsVerdict> {
   const iso = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10)
   const headlines = await fetchCompanyNews(sym, iso(nowSec - DIP_NEWS_WINDOW_DAYS * 86_400), iso(nowSec), finnhubKey, fetchFn)
+  // The lookup itself failed — say so. Both answers are 'unclear' and both trade,
+  // but only one of them is a fact about the NAME.
+  if (headlines === null) return { ...NEWS_UNAVAILABLE }
   // maxTokens is deliberately small: the answer is two fields. callLlm throws
   // 'no-llm-provider-configured' when the deployment has no key at all, which
   // classifyDipNews turns into the heuristic read — the lane still works.

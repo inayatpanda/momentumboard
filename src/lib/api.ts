@@ -547,6 +547,10 @@ export interface EngineData {
     generatedAt: number
     regime: string
     board: EnginePrediction[]
+    // why a side carries nothing tradeable today: 'gates' = nothing cleared them,
+    // 'no-route' = something did and an ISA cannot place it. Absent on a board
+    // where both sides carry live rows (and on every board written before 2026-08-12).
+    emptySides?: { long?: 'gates' | 'no-route'; short?: 'gates' | 'no-route' }
     worldTape?: { tone: string; votes: { on: number; off: number }; detail: string }
     newsTone?: { score: number; label: string; hits: number }
     themes?: { key: string; name: string; hits: number }[]

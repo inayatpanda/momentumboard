@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData, type EnginePrediction } from '../lib/api'
-import { capBand, fmtRiskPct } from '../lib/format'
+import { capBand, emptySideLine, fmtRiskPct } from '../lib/format'
 import { RUNG_RISK_PCT } from '../../shared/engine/riskLadder'
 import { GradeChip } from './GradeChip'
 
@@ -45,6 +45,8 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
   // side is ever cut away entirely while it has a row (visibleCalls)
   const trades = b.board.filter(p => !p.watchOnly)
   const calls = visibleCalls(b.board)
+  const shownIds = new Set(calls.map(p => p.id))
+  const moreCalls = b.board.filter(p => !p.nearMiss && !shownIds.has(p.id)).length
   return (
     <section className="digest-section" style={{ marginBottom: 14 }}>
       <h3 className="section-title">
@@ -57,7 +59,14 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
         <p className="empty-line">Nothing reached even half size today — these are watch-only observations, not calls.</p>
       )}
       {calls.length > 0 && calls.every(p => p.nearMiss) && (
-        <p className="empty-line">Nothing cleared the gates today — these are the nearest misses, named so the board is never blank. No grade, no size.</p>
+        <p className="empty-line">These are the nearest misses, named so the board is never blank. No grade, no size.</p>
+      )}
+      {/* the engine's own reason a side has nothing tradeable — "nothing cleared the
+          gates" is false when a graded, evidenced call simply cannot be routed */}
+      {(['long', 'short'] as const).map(side =>
+        b.emptySides?.[side] ? (
+          <p key={side} className="empty-line">{emptySideLine(side, b.emptySides[side]!)}</p>
+        ) : null,
       )}
       {calls.map(p => {
         const band = capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)
@@ -96,9 +105,9 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
           </div>
         )
       })}
-      {b.board.length > MAX_SHOWN && (
-        <p className="empty-line calls-foot">+{b.board.length - MAX_SHOWN} more on the full board — Intel → Markets.</p>
-      )}
+      {/* "+N more" counts CALLS, not near misses — a row that cleared no gate is not
+          a call waiting on the full board, and the watchdog counts the same way */}
+      {moreCalls > 0 && <p className="empty-line calls-foot">+{moreCalls} more on the full board — Intel → Markets.</p>}
       {calls.length > 0 && (
         <p className="empty-line calls-foot">Tap a call for the chart and full factor evidence. Calibrated analysis, not advice.</p>
       )}

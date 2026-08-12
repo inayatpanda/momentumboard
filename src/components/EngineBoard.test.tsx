@@ -71,4 +71,24 @@ describe('EngineBoard', () => {
     expect(screen.getByText(/world tape risk-off/)).toBeInTheDocument()
     expect(screen.getByText(/news cautious/)).toBeInTheDocument()
   })
+
+  // The copy has to match the REASON the engine recorded. "Nothing cleared the
+  // gates" on a side emptied by routing is simply false, and the reader can see
+  // the graded observation sitting right underneath it.
+  it('says the side has no ISA route when that is what emptied it', async () => {
+    data.board!.emptySides = { short: 'no-route' }
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText(/no ISA route/)).toBeInTheDocument())
+    expect(screen.getByText(/Nothing tradeable on the short side today/)).toBeInTheDocument()
+    expect(screen.queryByText(/Nothing cleared the gates/)).toBeNull()
+    delete data.board!.emptySides
+  })
+
+  it('keeps the gates wording when the gates really are what emptied the side', async () => {
+    data.board!.emptySides = { long: 'gates' }
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText(/Nothing cleared the gates on the long side today/)).toBeInTheDocument())
+    expect(screen.queryByText(/no ISA route/)).toBeNull()
+    delete data.board!.emptySides
+  })
 })
