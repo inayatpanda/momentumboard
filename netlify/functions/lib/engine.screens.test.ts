@@ -15,4 +15,13 @@ describe('screens dep', () => {
     expect(kinds).toContain('day_losers')
     expect(kinds).toHaveLength(4)
   })
+  it('digs 50 deep for gainers only — the other three stay 25', async () => {
+    ;(fetchScreen as ReturnType<typeof vi.fn>).mockClear()
+    await defaultDeps({}).screens()
+    const depth = new Map((fetchScreen as ReturnType<typeof vi.fn>).mock.calls.map(c => [c[0], c[2]]))
+    expect(depth.get('day_gainers')).toBe(50)
+    expect(depth.get('day_losers')).toBe(25)
+    expect(depth.get('most_actives')).toBe(25)
+    expect(depth.get('small_cap_gainers')).toBe(25)
+  })
 })

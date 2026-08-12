@@ -191,13 +191,19 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
     },
     screens: async () => {
       const { fetchScreen, fetchTrending } = await import('./screener')
+      // Gainers is read 50 deep: the top 25 of that list is mostly sub-$5 penny
+      // rockets on a given day, so the mid-caps worth trading only appear once
+      // the read goes past them. The other three stay 25 — nothing there is
+      // being crowded out.
       const kinds = [
-        ['day_gainers', 'screener:gainers'],
-        ['day_losers', 'screener:losers'],
-        ['most_actives', 'screener:actives'],
-        ['small_cap_gainers', 'screener:smallcap'],
+        ['day_gainers', 'screener:gainers', 50],
+        ['day_losers', 'screener:losers', 25],
+        ['most_actives', 'screener:actives', 25],
+        ['small_cap_gainers', 'screener:smallcap', 25],
       ] as const
-      const results = await Promise.all(kinds.map(async ([kind, source]) => (await fetchScreen(kind)).map(row => ({ row, source }))))
+      const results = await Promise.all(
+        kinds.map(async ([kind, source, count]) => (await fetchScreen(kind, undefined, count)).map(row => ({ row, source }))),
+      )
       const flat = results.flat()
       if (flat.length) return flat
       return (await fetchTrending()).map(row => ({ row, source: 'trending' })) // screeners refused — fall back
@@ -705,9 +711,10 @@ export async function buildBoard(
     if (sources.get(sym)?.source === 'social') return 7
     return 8
   }
-  // 180, not 110: the sleeve adds up to 40 permanent candidates and the losers
-  // screen another slice, and neither may crowd out discovery. Worst case is
-  // +70 candle fetches, bounded by the mapLimit(8) below — noted, accepted. [R16]
+  // 180, not 110: the sleeve adds up to 40 permanent candidates, the losers
+  // screen another slice and the gainers screen is read 50 deep rather than 25,
+  // and none of them may crowd out discovery. Worst case is +95 candle fetches,
+  // bounded by the mapLimit(8) below — noted, accepted. [R16]
   const candidateSyms = [...sources.keys()]
     .sort((a, b) => candidatePriority(a) - candidatePriority(b) || a.localeCompare(b))
     .slice(0, 180)
