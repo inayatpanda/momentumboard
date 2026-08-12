@@ -3,9 +3,10 @@
 // see candle bars that closed STRICTLY BEFORE D (the live 05:20 run sees the
 // same thing — D's bar does not exist yet).
 //
-// This is NOT scripts/engine-replay.ts. That one drives `composeCall` over a
-// fixed 50-name universe on 5 Mondays and cannot see the sleeve, the dip lane,
-// the roster, the near-miss rows or the sizing tiers — i.e. it cannot measure
+// (Its predecessor, scripts/engine-replay.ts — retired 2026-08-12 — drove
+// `composeCall` over a fixed 50-name universe on 5 Mondays and could not see
+// the sleeve, the dip lane, the roster, the near-miss rows or the sizing
+// tiers — i.e. it could not measure
 // Stage 1 at all. This script runs the whole daily brain: gradeOutstanding →
 // buildBoard, against an in-memory AppStore whose blobs CARRY across days, so
 // the roster, calibration, risk ladder and prediction ledger all evolve exactly
