@@ -1,4 +1,4 @@
-import type { Stage } from '../technicals'
+import type { EmaStack, Stage } from '../technicals'
 import type { SeasonalitySummary } from '../seasonality'
 import type { CatalystTag } from './catalyst'
 import { clamp, round1, type FactorScore } from './types'
@@ -18,13 +18,72 @@ const STAGE_SCORE: Record<Stage, number> = {
   'falling-knife': 0, // wait — no edge either side until the turn confirms
 }
 
-export function technicalFactor(read: { stage: Stage; volumeConfirmed: boolean; rvol: number | null } | null): FactorScore {
+/** How much an aligned stack is worth. Big enough to separate two charts at the
+ * same stage — a pullback where every horizon agrees (70) from one where they
+ * don't (55) — and small enough that it can never outvote the stage itself. */
+const STACK_BONUS = 15
+const THRUST_HIGH = 1.5 // a week of the crowd arriving
+const THRUST_LOW = 0.6 // a week of the crowd leaving
+const THRUST_AMPLIFY = 1.15
+const THRUST_DAMP = 0.85
+
+const STACK_WORDS: Record<'bull' | 'bear' | 'mixed', string> = {
+  bull: 'every timeframe pointing up',
+  bear: 'every timeframe pointing down',
+  mixed: 'timeframes disagree',
+}
+
+/** THE PIPELINE, in this order and for these reasons:
+ *
+ *   1. stage score          — where the chart is (the enum lookup, unchanged)
+ *   2. × 0.7 unconfirmed-turn damp, early-reversal only
+ *   3. ± STACK_BONUS        — do the timeframes agree with the stage?
+ *   4. × thrust             — has the crowd been arriving all week?
+ *   5. × 1.2 long-only volume amplifier
+ *   6. clamp ±100
+ *
+ * The damp stays at (2), BEFORE the stack, because it qualifies the STAGE claim
+ * and nothing else: "a turn with no volume behind it is a guess" is a statement
+ * about today's tape, and letting it also shrink the stack bonus would be one
+ * quiet session discounting a fact about the last fifty.
+ *
+ * The thrust sits at (4), applied to the SIGNED score in both directions, because
+ * participation is not a side: a week of heavy volume into weakness confirms the
+ * weakness exactly as it confirms strength. That is the opposite of the ×1.2 at
+ * (5), which is deliberately long-only on measured evidence and stays that way —
+ * the two multipliers are different claims and both are kept.
+ *
+ * (4) and (5) commute (both are sign-preserving multiplies), so the only thing
+ * their order decides is what (5) tests, and it now tests the COMPOSED score
+ * rather than the bare stage — which is why a bull stack that lifts a stage above
+ * zero also earns the long amplifier, and a bear stack that pushes one below zero
+ * loses it. With both new legs unknown the bonus is 0 and the multiplier is 1, so
+ * every v2 score is preserved to the digit. */
+export function technicalFactor(
+  read: { stage: Stage; volumeConfirmed: boolean; rvol: number | null; emaStack: Pick<EmaStack, 'aligned'> | null; volThrust: number | null } | null,
+): FactorScore {
   if (!read) return { score: null, detail: 'no chart data' }
   let base = STAGE_SCORE[read.stage]
   // a turn with no volume behind it is a guess, not a reversal — damp it.
   // Confirmed reversals keep the full score plus the ×1.2 volume boost below.
   const dampedReversal = read.stage === 'early-reversal' && !read.volumeConfirmed
   if (dampedReversal) base *= 0.7
+  // Timeframe agreement: price > 8 > 21 > 50 (or the mirror) is a stronger
+  // statement than any single horizon's opinion. 'mixed' is worth nothing —
+  // disorder is the absence of a vote, not a vote against — and so is null,
+  // which is an absence of evidence rather than evidence of disorder.
+  const aligned = read.emaStack?.aligned ?? null
+  base += aligned === 'bull' ? STACK_BONUS : aligned === 'bear' ? -STACK_BONUS : 0
+  // Multi-day participation. Unlike rvol (one session) this asks whether the
+  // crowd has been arriving all week, and it scales conviction whichever way the
+  // score already points. It can never CREATE a score: 0 × anything is 0.
+  const thrust = read.volThrust
+  const thrusting =
+    base === 0 || thrust == null ? null // 0 × anything is still 0, and an unknown week says nothing
+    : thrust >= THRUST_HIGH ? 'building'
+    : thrust <= THRUST_LOW ? 'thinning'
+    : null
+  if (thrusting) base *= thrusting === 'building' ? THRUST_AMPLIFY : THRUST_DAMP
   // The confirmation boost is LONG-ONLY. Measured over 96 live shorts
   // (2026-07-28): weakness without volume confirmation hit 65.3% for +4.31%
   // average excess; weakness WITH it hit 47.6% for -1.97% — yet the x1.2 was
@@ -34,8 +93,12 @@ export function technicalFactor(read: { stage: Stage; volumeConfirmed: boolean; 
   // reported so the reader sees what the engine saw.
   const amplify = read.volumeConfirmed && base > 0
   const score = clamp(amplify ? base * 1.2 : base, -100, 100)
-  const suffix = read.volumeConfirmed ? ` volume-confirmed (RVOL ${read.rvol})` : dampedReversal ? ' unconfirmed turn (damped)' : ''
-  return { score: round1(score), detail: `${read.stage}${suffix}` }
+  const parts: string[] = [read.stage]
+  if (aligned) parts.push(STACK_WORDS[aligned])
+  if (thrusting) parts.push(`a week of ${thrusting} participation`)
+  if (read.volumeConfirmed) parts.push(`volume-confirmed (RVOL ${read.rvol})`)
+  else if (dampedReversal) parts.push('unconfirmed turn (damped)')
+  return { score: round1(score), detail: parts.join(', ') }
 }
 
 export function momentumFactor(closes: number[] | null, spyCloses: number[] | null): FactorScore {

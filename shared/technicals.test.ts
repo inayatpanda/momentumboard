@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { technicalStage } from './technicals'
+import { emaLast } from './indicators'
 import type { Candle } from './types'
 
 const mk = (closes: number[], vols?: number[]): Candle[] =>
@@ -91,6 +92,31 @@ describe('technicalStage — the EMA stack', () => {
     expect(t.emaStack.e21).toBe(129)
     expect(t.emaStack.e50).toBeNull()
     expect(t.emaStack.aligned).toBeNull() // NOT 'mixed' — an unknown is not a verdict
+  })
+
+  it('the price leg is judged on the PRINTED price — a sub-cent edge is not an alignment', () => {
+    // The last leg of the chain used to compare the RAW close against a rounded
+    // e8, so a close a fifth of a cent above the printed EMA read as 'bull' while
+    // the card showed the two numbers as equal. Build exactly that tape: adding a
+    // close moves the EMA by k(c − e) with k = 2/9, so raw e8 − close =
+    // (1 − k)(prevE8 − close) — solve for the close that leaves the gap at 0.004,
+    // then shift the whole series (an EMA is affine: every leg and every gap
+    // survives a shift) until that close lands 0.0005 above a whole cent.
+    const K = 2 / 9
+    const closeFor = (head: number[]) => emaLast(head, 8)! - 0.004 / (1 - K)
+    const head = Array.from({ length: 79 }, (_, i) => 50 + i * 0.4)
+    const rawClose = closeFor(head)
+    const shift = Math.floor(rawClose * 100) / 100 + 0.0005 - rawClose
+    const shifted = head.map(c => c + shift)
+    const price = closeFor(shifted)
+
+    const t = technicalStage('HAIR', mk([...shifted, price]))!
+    expect(t.price).toBe(price)
+    expect(t.emaStack.e8).toBe(Math.round(price * 100) / 100) // price and e8 print the SAME number
+    expect(price).toBeGreaterThan(t.emaStack.e8!) // …while the raw close is a whisker above it
+    expect(t.emaStack.e8!).toBeGreaterThan(t.emaStack.e21!) // every other link of the chain holds
+    expect(t.emaStack.e21!).toBeGreaterThan(t.emaStack.e50!)
+    expect(t.emaStack.aligned).toBe('mixed') // so only the invisible leg could have made it 'bull'
   })
 })
 

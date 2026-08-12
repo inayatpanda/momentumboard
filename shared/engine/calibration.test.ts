@@ -10,6 +10,7 @@ import {
   migrateCalibration,
   migrateWeights,
   probabilityFor,
+  rebaseWeights,
   updateCalibration,
   updateIcStats,
   type CalibrationState,
@@ -351,6 +352,123 @@ describe('migrateWeights', () => {
     const twice = migrateWeights(once)
     expect(twice.current.smartMoney).toBe(0.3)
     expect(twice.current.technical).toBe(0.92)
+  })
+})
+
+// migrateWeights only ever fills nulls — deliberately, so a learned value is
+// never clobbered — which is exactly why re-ordering DEFAULT_WEIGHTS would
+// otherwise move the tests and the seed and NOTHING in production. This is the
+// one path allowed to overwrite a stored vector, and the price of that power is
+// that it throws away the evidence gathered under the old one.
+describe('rebaseWeights', () => {
+  const NEW = { technical: 1, momentum: 0.9, sector: 0.3, social: 0.5, channels: 0.5, insiders: 0.4, news: 0.5, seasonality: 0.3, smartMoney: 0.3, catalyst: 0.6 } as Record<FactorName, number>
+  /** The v2-shaped blob production is actually carrying: the old base vector,
+   *  a slightly drifted `current` from ~778 graded observations, and IC state. */
+  const v2Blob = (): WeightsState => ({
+    base: { technical: 1, momentum: 0.8, sector: 0.6, social: 0.5, channels: 0.6, insiders: 0.4, news: 0.4, seasonality: 0.3, smartMoney: 0.3, catalyst: 0.5 } as Record<FactorName, number>,
+    current: { technical: 0.99312, momentum: 0.79587, sector: 0.6, social: 0.5, channels: 0.6, insiders: 0.4, news: 0.4, seasonality: 0.3, smartMoney: 0.3, catalyst: 0.5 } as Record<FactorName, number>,
+    ic: {
+      technical: { nAgree: 778, sumAgree: 240, nDisagree: 0, sumDisagree: 0 },
+      momentum: { nAgree: 695, sumAgree: 180, nDisagree: 83, sumDisagree: -40 },
+      sector: { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 },
+      social: { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 },
+      channels: { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 },
+      insiders: { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 },
+      news: { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 },
+      seasonality: { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 },
+      smartMoney: { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 },
+      catalyst: { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 },
+    } as WeightsState['ic'],
+    gradedSinceNudge: 7,
+    history: [{ date: '2026-08-01', changes: {}, evidence: '15 predictions graded since last nudge' }],
+  })
+
+  it('re-bases base AND current onto the new vector — the stored blob is what scores', () => {
+    const w = rebaseWeights(v2Blob(), NEW, '2026-08-12')
+    expect(w.base).toEqual(NEW)
+    expect(w.current).toEqual(NEW) // the 0.99312 drift belonged to the retired model
+  })
+
+  it('zeroes the IC state — evidence measured under the old vector cannot steer the new one', () => {
+    const w = rebaseWeights(v2Blob(), NEW, '2026-08-12')
+    for (const st of Object.values(w.ic)) expect(st).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+    expect(w.gradedSinceNudge).toBe(0) // …and the nudge cadence restarts with the evidence
+  })
+
+  it('records what moved, keeping the earlier history', () => {
+    const w = rebaseWeights(v2Blob(), NEW, '2026-08-12')
+    expect(w.history).toHaveLength(2)
+    const entry = w.history[1]
+    expect(entry.date).toBe('2026-08-12')
+    expect(entry.evidence).toBe('stage-2 re-base to the owner-ordered vector')
+    // from = what was actually scoring (current), to = the new vector
+    expect(entry.changes.momentum).toEqual({ from: 0.796, to: 0.9, ic: 0 })
+    expect(entry.changes.sector).toEqual({ from: 0.6, to: 0.3, ic: 0 })
+    expect(entry.changes.technical).toEqual({ from: 0.993, to: 1, ic: 0 }) // drifted, so it moved
+    expect(entry.changes.insiders).toBeUndefined() // 0.4 → 0.4 is not a change
+  })
+
+  it('fires EXACTLY ONCE against a v2 blob, then is a no-op forever', () => {
+    let w = rebaseWeights(v2Blob(), NEW, '2026-08-12')
+    // real evidence accrues under the NEW vector…
+    w.ic.technical = { nAgree: 5, sumAgree: 12, nDisagree: 1, sumDisagree: -2 }
+    w.current.technical = 1.04
+    w.gradedSinceNudge = 3
+    // …and two further loads must not touch a single field of it
+    w = rebaseWeights(w, NEW, '2026-08-13')
+    w = rebaseWeights(w, NEW, '2026-08-14')
+    expect(w.ic.technical).toEqual({ nAgree: 5, sumAgree: 12, nDisagree: 1, sumDisagree: -2 })
+    expect(w.current.technical).toBe(1.04)
+    expect(w.gradedSinceNudge).toBe(3)
+    expect(w.history).toHaveLength(2) // still just the one re-base entry
+  })
+
+  it('an identical base is untouched — a fresh install never loses its learning', () => {
+    const fresh = initWeights(NEW)
+    fresh.current.technical = 1.11
+    fresh.ic.technical = { nAgree: 40, sumAgree: 90, nDisagree: 8, sumDisagree: -10 }
+    const w = rebaseWeights(fresh, NEW, '2026-08-12')
+    expect(w.current.technical).toBe(1.11)
+    expect(w.ic.technical.nAgree).toBe(40)
+    expect(w.history).toHaveLength(0)
+  })
+
+  it('a single changed key is enough, and a key the vector no longer has is dropped', () => {
+    const one = initWeights(NEW)
+    one.base.catalyst = 0.5 // one factor re-weighted
+    const w = rebaseWeights(one, NEW, '2026-08-12')
+    expect(w.base.catalyst).toBe(0.6)
+    expect(w.history).toHaveLength(1)
+
+    const stale = initWeights(NEW) as WeightsState & { base: Record<string, number>; current: Record<string, number> }
+    stale.base.retired = 0.2
+    stale.current.retired = 0.2
+    const dropped = rebaseWeights(stale, NEW, '2026-08-12')
+    expect(dropped.base).toEqual(NEW)
+    expect('retired' in dropped.current).toBe(false)
+  })
+
+  it('survives a blob with no history array — this runs against state no test wrote', () => {
+    const headless = { ...v2Blob(), history: undefined } as unknown as WeightsState
+    const w = rebaseWeights(headless, NEW, '2026-08-12')
+    expect(w.history).toHaveLength(1)
+    expect(w.base).toEqual(NEW)
+  })
+
+  it('composes with migrateWeights: backfill first, then re-base the whole vector', () => {
+    const eight = { technical: 1, momentum: 0.8, sector: 0.6, social: 0.5, channels: 0.6, insiders: 0.4, news: 0.4, seasonality: 0.3 }
+    const ancient = {
+      base: { ...eight } as Record<FactorName, number>,
+      current: { ...eight } as Record<FactorName, number>,
+      ic: Object.fromEntries(Object.keys(eight).map(k => [k, { nAgree: 3, sumAgree: 1, nDisagree: 0, sumDisagree: 0 }])) as WeightsState['ic'],
+      gradedSinceNudge: 4,
+      history: [],
+    }
+    const w = rebaseWeights(migrateWeights(ancient, NEW), NEW, '2026-08-12')
+    expect(w.base).toEqual(NEW)
+    expect(w.current).toEqual(NEW)
+    expect(w.ic.smartMoney).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+    expect(w.ic.technical.nAgree).toBe(0)
   })
 })
 

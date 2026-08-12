@@ -4,17 +4,31 @@ import { MODERATE_GATES, type CatalystTag, type Gates } from './catalyst'
 import { SMALL_CAP_MAX_USD_M } from './capClass'
 import { clamp, round1, round2, type CallEvidence, type EngineCall, type FactorName, type FactorScore, type SetupFamily } from './types'
 
+/** THE OWNER'S ORDER: the charts speak first. Technical and momentum are the
+ * two things measured directly off price, every session, for every name — they
+ * lead. Catalyst and news come next because a live, dated event is the strongest
+ * thing that is NOT price. Channels and social sit where they were: real, small,
+ * still on trial. Sector drops to the back because a sector rank is the most
+ * derivative read in the table — a name's own chart already contains most of
+ * what its sector was going to say — but it STAYS in the core family: demoting
+ * it out of `core` would change coreDen, coverage, famAgree and the evidence
+ * contract, which is a different edit with a different blast radius.
+ *
+ * Changing these numbers alone would be cosmetic: `migrateWeights` only fills
+ * nulls and the stored blob wins on every load, so production would keep
+ * scoring the old vector. `rebaseWeights` (calibration.ts) is what makes a
+ * re-order real, and it is wired into loadState. */
 export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
   technical: 1.0,
-  momentum: 0.8,
-  sector: 0.6,
+  momentum: 0.9,
+  catalyst: 0.6, // a live, dated event — the strongest thing that isn't price
+  news: 0.5,
+  channels: 0.5,
   social: 0.5,
-  channels: 0.6,
   insiders: 0.4,
-  news: 0.4,
   seasonality: 0.3,
   smartMoney: 0.3, // small on purpose: 13F is stale, so we EXPECT the IC loop to decay it
-  catalyst: 0.5, // a live news/event vote — seeded moderate, left to the IC loop to keep or decay
+  sector: 0.3, // last: the most derivative read in the table, still core
 }
 
 // Two-layer composite. CORE factors are repeatable, point-in-time market data —

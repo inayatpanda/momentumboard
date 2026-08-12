@@ -3052,6 +3052,63 @@ describe('gradeOutstanding', () => {
     expect(risk.cohorts!.small.gradedAtRung).toBe(0) // small sleeve untouched
     expect(risk.gradedAtRung).toBe(1) // combined counter still advances (back-compat)
   })
+
+  // THE MIGRATION, end to end. Re-ordering DEFAULT_WEIGHTS is cosmetic on its
+  // own: the stored blob is preferred over the seed on every load and only the
+  // nudge loop ever writes it, so without this the live engine would keep
+  // scoring the retired vector while every test in the repo showed the new one.
+  describe('the weights re-base reaches production', () => {
+    const v2Blob = (): WeightsState => ({
+      base: { technical: 1, momentum: 0.8, sector: 0.6, social: 0.5, channels: 0.6, insiders: 0.4, news: 0.4, seasonality: 0.3, smartMoney: 0.3, catalyst: 0.5 } as WeightsState['base'],
+      current: { technical: 0.99312, momentum: 0.79587, sector: 0.6, social: 0.5, channels: 0.6, insiders: 0.4, news: 0.4, seasonality: 0.3, smartMoney: 0.3, catalyst: 0.5 } as WeightsState['current'],
+      ic: { ...initWeights().ic, technical: { nAgree: 778, sumAgree: 240, nDisagree: 0, sumDisagree: 0 } },
+      gradedSinceNudge: 7,
+      history: [],
+    })
+    const zero = { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }
+
+    it('re-bases a v2-shaped blob on load and persists it — exactly once, however many runs', async () => {
+      const store = memoryStore()
+      await store.write('engine-weights', v2Blob())
+      const d = deps({ candles: async sym => (sym === 'SPY' ? flat : null) })
+
+      await gradeOutstanding(store, d, NOW, null) // nothing outstanding — the LOAD is the point
+      const w = (await store.read<WeightsState>('engine-weights'))!
+      expect(w.base.momentum).toBe(0.9)
+      expect(w.base.sector).toBe(0.3)
+      expect(w.current.momentum).toBe(0.9) // …and what SCORES moved, not just the base
+      expect(w.current.technical).toBe(1) // the 0.99312 drift belonged to the retired model
+      expect(w.ic.technical).toEqual(zero) // 778 old-vector observations, correctly dropped
+      expect(w.history).toHaveLength(1)
+      expect(w.history[0].evidence).toBe('stage-2 re-base to the owner-ordered vector')
+      expect(w.history[0].date).toBe(new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }))
+      expect(w.history[0].changes.sector).toEqual({ from: 0.6, to: 0.3, ic: 0 })
+
+      // a second and third run must be no-ops: real evidence gathered under the
+      // NEW vector survives, and no second history entry is written
+      w.ic.technical = { nAgree: 4, sumAgree: 9, nDisagree: 1, sumDisagree: -2 }
+      await store.write('engine-weights', w)
+      await gradeOutstanding(store, d, NOW, null)
+      await gradeOutstanding(store, d, NOW, null)
+      const after = (await store.read<WeightsState>('engine-weights'))!
+      expect(after.ic.technical).toEqual({ nAgree: 4, sumAgree: 9, nDisagree: 1, sumDisagree: -2 })
+      expect(after.history).toHaveLength(1)
+    })
+
+    it('leaves a blob already on the current vector completely alone', async () => {
+      const store = memoryStore()
+      const fresh = initWeights()
+      fresh.current.technical = 1.07 // a learned drift under the CURRENT vector
+      fresh.ic.momentum = { nAgree: 30, sumAgree: 60, nDisagree: 5, sumDisagree: -8 }
+      await store.write('engine-weights', fresh)
+
+      await gradeOutstanding(store, deps({ candles: async sym => (sym === 'SPY' ? flat : null) }), NOW, null)
+      const w = (await store.read<WeightsState>('engine-weights'))!
+      expect(w.current.technical).toBe(1.07) // learning is never collateral damage
+      expect(w.ic.momentum.nAgree).toBe(30)
+      expect(w.history).toHaveLength(0)
+    })
+  })
 })
 
 describe('traceOpenIdeas', () => {

@@ -55,17 +55,21 @@ const round2 = (x: number) => Math.round(x * 100) / 100
 
 /** The stack is read off the ROUNDED EMAs, not the raw ones, so the verdict and
  * the three numbers printed beside it can never disagree — a reader must never
- * see `e8 100, e21 100, aligned bull`. */
+ * see `e8 100, e21 100, aligned bull`. The PRICE leg is rounded for the same
+ * reason and no other: a close a fifth of a cent above the printed 8-EMA is not
+ * a fourth timeframe agreeing, it is a rounding artefact, and the card would
+ * have shown the two numbers as equal while the verdict claimed a chain. */
 function emaStackOf(closes: number[], price: number): EmaStack {
   const at = (p: number) => {
     const e = emaLast(closes, p)
     return e == null ? null : round2(e)
   }
   const [e8, e21, e50] = [at(8), at(21), at(50)]
+  const p = round2(price)
   const aligned =
     e8 == null || e21 == null || e50 == null ? null // an unknown is not a verdict
-    : price > e8 && e8 > e21 && e21 > e50 ? 'bull'
-    : price < e8 && e8 < e21 && e21 < e50 ? 'bear'
+    : p > e8 && e8 > e21 && e21 > e50 ? 'bull'
+    : p < e8 && e8 < e21 && e21 < e50 ? 'bear'
     : 'mixed'
   return { e8, e21, e50, aligned }
 }

@@ -18,7 +18,7 @@ import {
   technicalFactor,
   type SmartMoneyInput,
 } from '../../../shared/engine/factors'
-import { composeCall, coreCompositeOf, levelsFor, setupFamilyOf } from '../../../shared/engine/composite'
+import { composeCall, coreCompositeOf, DEFAULT_WEIGHTS, levelsFor, setupFamilyOf } from '../../../shared/engine/composite'
 import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleeve'
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
 import { classifyVelocity, velocityCall, VELOCITY_DOOR_CAP } from '../../../shared/engine/velocityLane'
@@ -38,6 +38,7 @@ import {
   maybeNudgeWeights,
   migrateWeights,
   probabilityFor,
+  rebaseWeights,
   updateCalibration,
   updateIcStats,
   type CalibrationState,
@@ -303,10 +304,20 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T
 
-async function loadState(store: AppStore) {
+async function loadState(store: AppStore, today: string) {
   // migrateWeights backfills factors added after a snapshot was stored/seeded
   // (seed.json predates smartMoney) so an old blob never silently zeroes them.
-  const weights = migrateWeights((await store.read<WeightsState>('engine-weights')) ?? clone(seed.weights as unknown as WeightsState))
+  // rebaseWeights then handles the case migrateWeights must NOT: the owner
+  // re-ordering the model. It only fires when the stored base disagrees with
+  // DEFAULT_WEIGHTS, and when it does it re-bases current too and drops the IC
+  // evidence gathered under the retired vector. Idempotent, so this runs on
+  // every load and re-heals a blob written by an older deploy. The result is
+  // persisted by gradeOutstanding's write of `engine-weights`.
+  const weights = rebaseWeights(
+    migrateWeights((await store.read<WeightsState>('engine-weights')) ?? clone(seed.weights as unknown as WeightsState)),
+    DEFAULT_WEIGHTS,
+    today,
+  )
   let calibration = (await store.read<CalibrationState>('engine-calibration')) ?? clone(seed.calibration as unknown as CalibrationState)
   // the outcome definition changed → stored buckets counted a different thing
   // and their hit rates aren't probabilities anymore. Swap in the reseeded
@@ -333,7 +344,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   const today = londonDate(nowSec)
   const spy = await deps.candles('SPY')
   if (!spy) return { graded: 0 }
-  const { weights, calibration, channelCred } = await loadState(store)
+  const { weights, calibration, channelCred } = await loadState(store, today)
   let w = weights
 
   const fullIndex = (await store.read<string[]>('predictions-index')) ?? []
@@ -667,7 +678,7 @@ export async function buildBoard(
   // per-channel credibility gate is available; the SAME stancesBySym + credOf are
   // reused for the channels factor later, so there is one read and no regression.
   // Fail-soft: missing extracts → empty map → no injection.
-  const { weights, calibration, channelCred } = await loadState(store)
+  const { weights, calibration, channelCred } = await loadState(store, today)
   const weekAgo = nowSec - 7 * 86_400
   const extracts = ((await store.read<ExtractLike[]>('video-extracts')) ?? []).filter(e => e.at > weekAgo)
   const stancesBySym = new Map<string, { channel: string; stance: 'bull' | 'bear' | 'neutral' }[]>()

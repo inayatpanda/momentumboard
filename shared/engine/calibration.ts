@@ -275,11 +275,13 @@ export interface WeightsState {
 
 const FACTOR_NAMES = Object.keys(DEFAULT_WEIGHTS) as FactorName[]
 
+const zeroIc = (): IcStat => ({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+
 export function initWeights(base: Record<FactorName, number> = DEFAULT_WEIGHTS): WeightsState {
   return {
     base: { ...base },
     current: { ...base },
-    ic: Object.fromEntries(FACTOR_NAMES.map(f => [f, { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }])) as Record<FactorName, IcStat>,
+    ic: Object.fromEntries(Object.keys(base).map(f => [f, zeroIc()])) as Record<FactorName, IcStat>,
     gradedSinceNudge: 0,
     history: [],
   }
@@ -293,8 +295,59 @@ export function migrateWeights(state: WeightsState, base: Record<FactorName, num
   for (const name of Object.keys(base) as FactorName[]) {
     if (state.base[name] == null) state.base[name] = base[name]
     if (state.current[name] == null) state.current[name] = base[name]
-    if (!state.ic[name]) state.ic[name] = { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }
+    if (!state.ic[name]) state.ic[name] = zeroIc()
   }
+  return state
+}
+
+/** THE RE-BASE — the one path allowed to overwrite a stored weights vector.
+ *
+ * `migrateWeights` above only ever fills nulls, deliberately, so that a learned
+ * value is never clobbered by a default. The consequence is that re-ordering
+ * DEFAULT_WEIGHTS moves the seed and the tests and NOTHING in production: the
+ * stored blob is preferred over the seed on every load, and the only writer is
+ * the nudge loop, so the live engine would keep scoring on the retired vector
+ * forever while every test in the repo showed the new one.
+ *
+ * So: when the stored base differs from `base` on any key, base AND current are
+ * set to the new vector and the IC state is ZEROED. The zeroing is the whole
+ * argument, not housekeeping — every agreement and disagreement in `ic` was
+ * measured on calls the OLD vector composed, so feeding it to the nudge loop
+ * would let a retired model steer its replacement. (It also carries no real
+ * signal: the live blob's technical IC is nAgree 778 / nDisagree 0, an
+ * all-agree column that can compute no information coefficient at all.)
+ *
+ * Idempotent by construction — once the stored base IS the vector, this is a
+ * no-op — so it is safe to run on every load, which is where it runs.
+ *
+ * `changes` records what was actually SCORING before (`current`) against the new
+ * value, because that is the number that moved. `ic: 0` is not a measurement:
+ * a re-base has no IC behind it, and the `evidence` string says what did it. */
+export function rebaseWeights(
+  state: WeightsState,
+  base: Record<FactorName, number> = DEFAULT_WEIGHTS,
+  dateISO: string = new Date().toISOString().slice(0, 10),
+): WeightsState {
+  const names = [...new Set([...Object.keys(base), ...Object.keys(state.base ?? {})])] as FactorName[]
+  if (!names.some(n => state.base?.[n] !== base[n])) return state // fingerprint match → nothing to do
+  const changes: Record<string, { from: number; to: number; ic: number }> = {}
+  const r3 = (x: number) => Math.round(x * 1000) / 1000
+  for (const n of names) {
+    const from = r3(state.current?.[n] ?? 0)
+    const to = base[n] ?? 0 // absent from the new vector → the factor is retired, and drops out below
+    if (from !== to) changes[n] = { from, to, ic: 0 }
+  }
+  state.base = { ...base }
+  state.current = { ...base }
+  state.ic = Object.fromEntries((Object.keys(base) as FactorName[]).map(n => [n, zeroIc()])) as Record<FactorName, IcStat>
+  state.gradedSinceNudge = 0 // the cadence counts evidence, and the evidence just went
+  // maybeNudgeWeights can assume `history` exists because it only ever pushes
+  // after 15 graded predictions have already flowed through this state. This
+  // runs on the FIRST load of a blob written by who-knows-which deploy, and the
+  // live blob is not inspectable from a dev machine — so it asserts nothing.
+  if (!Array.isArray(state.history)) state.history = []
+  state.history.push({ date: dateISO, changes, evidence: 'stage-2 re-base to the owner-ordered vector' })
+  if (state.history.length > 100) state.history = state.history.slice(-100)
   return state
 }
 

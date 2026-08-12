@@ -46,14 +46,20 @@ describe('composeCall', () => {
   it('strong long in green regime: side, sane levels, expected move', () => {
     const call = composeCall(base({ factors: longFactors() }))!
     expect(call.side).toBe('long')
-    // (84·1 + 40·0.8) / 1.8 = 64.4, ×1.0 green
-    expect(call.composite).toBeCloseTo(64.4, 1)
+    // owner-ordered vector: technical 1.0, momentum 0.9.
+    //   coreNum = 1.0×84 + 0.9×40 = 84 + 36 = 120
+    //   coreDen = 1.0 + 0.9 = 1.9
+    //   120 / 1.9 = 63.1578…, ×1.0 (green, long) → 63.2
+    // (was 64.4 when momentum weighed 0.8: 120 − 4 over 1.8)
+    expect(call.composite).toBeCloseTo(63.2, 1)
     expect(call.stop).toBeLessThan(call.entry)
     expect(call.target).toBeGreaterThan(call.entry)
     expect(call.stop).toBe(97) // 100 − 1.5×2 (large cap)
-    expect(call.expectedMovePct).toBeCloseTo(6.4, 1) // 0.644 × 10
+    expect(call.expectedMovePct).toBeCloseTo(6.3, 1) // 0.6316 × 10 = 6.3158 → 6.3
   })
 
+  // Unchanged by the re-base BY CONSTRUCTION, not by luck: one core factor means
+  // the composite is coreNum/coreDen = w·s/w = s, so its weight cancels entirely.
   it('regime multiplier can push a modest long into the dead zone', () => {
     const modest = { ...nullFactors(), technical: { score: 40, detail: 'pullback' } }
     expect(composeCall(base({ factors: modest, entryQuality: 'early', stage: 'pullback' }))!.composite).toBeCloseTo(40, 1)
@@ -71,7 +77,9 @@ describe('composeCall', () => {
     const shortF = { ...nullFactors(), technical: { score: -84, detail: 'exhausted' }, momentum: { score: -40, detail: '' } }
     const call = composeCall(base({ factors: shortF, regime: 'red', entryQuality: 'chase', stage: 'exhausted' }))!
     expect(call.side).toBe('short')
-    expect(call.composite).toBeCloseTo(-70.9, 1) // −64.44 × 1.1
+    //   coreNum = 1.0×(−84) + 0.9×(−40) = −120; coreDen 1.9 → −63.1578…
+    //   short in red: ×1.1 → −69.4736… → −69.5 (was −70.9 off the −64.44 core)
+    expect(call.composite).toBeCloseTo(-69.5, 1)
     expect(call.stop).toBeGreaterThan(call.entry)
     expect(call.target).toBeLessThan(call.entry)
   })
@@ -101,7 +109,8 @@ describe('composeCall', () => {
   })
 
   it('worldMult 0.85 pushes a marginal long under the dead zone → suppressed', () => {
-    // single technical factor → composite == score; green regime ×1.0. Score 28
+    // single technical factor → composite == score (the weight cancels, so the
+    // re-base cannot move this); green regime ×1.0. Score 28
     // clears the 25 dead zone on its own, but the risk-off long nudge kills it.
     const marginal = { ...nullFactors(), technical: { score: 28, detail: 'basing' } }
     const bull = base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' })
@@ -208,7 +217,9 @@ describe('two-layer composite: core decides, context colours', () => {
   it('context contribution is capped at CONTEXT_MAX_PTS on a valid core', () => {
     const core = composeCall(base({ factors: longFactors() }))!
     const withCtx = composeCall(base({ factors: { ...longFactors(), ...({} as object), social: { score: 60, detail: '' }, channels: { score: 70, detail: '' }, news: { score: 50, detail: '' }, catalyst: { score: 90, detail: '' } } }))!
-    // ctx vote mass (0.5·60+0.6·70+0.4·50+0.5·90)/1.8 = 76 → clamped to +12
+    // ctx vote mass (0.5·60 + 0.5·70 + 0.5·50 + 0.6·90)/1.9
+    //             = (30 + 35 + 25 + 54)/1.9 = 144/1.9 = 75.8 → clamped to +12
+    // (was 76 under the old vector — the cap is what makes this pin re-base-proof)
     expect(withCtx.composite).toBeCloseTo(core.composite + CONTEXT_MAX_PTS, 1)
     expect(withCtx.evidence.contextPts).toBe(CONTEXT_MAX_PTS)
   })
@@ -224,7 +235,7 @@ describe('two-layer composite: core decides, context colours', () => {
     const marginal = { ...nullFactors(), technical: { score: 26, detail: 'basing' } }
     expect(composeCall(base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' }))!.side).toBe('long') // 26 ≥ 25 alone
     const hostile = { ...marginal, channels: { score: -70, detail: 'bears' }, news: { score: -50, detail: 'sour' } }
-    // ctx (−0.6·70 −0.4·50)/1 = −62 → clamped −12 → 26−12 = 14 < 25 → suppressed, NOT shorted
+    // ctx (−0.5·70 − 0.5·50)/1 = −60 → clamped −12 → 26−12 = 14 < 25 → suppressed, NOT shorted
     expect(composeCall(base({ factors: hostile, stage: 'basing', entryQuality: 'neutral' }))).toBeNull()
   })
 
@@ -251,8 +262,11 @@ describe('two-layer composite: core decides, context colours', () => {
   })
 
   it('coverage reports the core weight actually present', () => {
-    // technical+momentum = 1.8 of the 2.7 core weight → 0.67
-    expect(composeCall(base({ factors: longFactors() }))!.evidence.coverage).toBeCloseTo(0.67, 2)
+    // technical 1.0 + momentum 0.9 = 1.9 present, of the core total
+    // 1.0 + 0.9 + sector 0.3 + seasonality 0.3 = 2.5 → 1.9/2.5 = 0.76.
+    // Sector's demotion RAISES coverage on a two-factor read: the same two
+    // factors now account for more of what the core could have been.
+    expect(composeCall(base({ factors: longFactors() }))!.evidence.coverage).toBeCloseTo(0.76, 2)
   })
 
   it('coreCompositeOf is composeCall\'s core read with every gate removed', () => {
@@ -260,7 +274,9 @@ describe('two-layer composite: core decides, context colours', () => {
     // no context, no dead zone, no capacity floor, no entry gate.
     const factors = longFactors()
     const core = coreCompositeOf(factors, DEFAULT_WEIGHTS, 'green')!
-    expect(core).toBeCloseTo((1.0 * 84 + 0.8 * 40) / 1.8 * LONG_REGIME_MULT.green, 1)
+    // (1.0×84 + 0.9×40) / 1.9 × 1.0 = 120/1.9 = 63.157… — the literal vector,
+    // spelled out, so a future re-base fails this test instead of following it
+    expect(core).toBeCloseTo(((1.0 * 84 + 0.9 * 40) / 1.9) * LONG_REGIME_MULT.green, 1)
     // a call that clears every gate reports the same core, plus the capped context
     const call = composeCall(base({ factors }))!
     expect(Math.abs(call.composite - core)).toBeLessThanOrEqual(CONTEXT_MAX_PTS)

@@ -12,24 +12,135 @@ import {
   technicalFactor,
 } from './factors'
 import type { SeasonalitySummary } from '../seasonality'
+import type { Stage } from '../technicals'
+
+/** v2 shape: neither of the two new legs is known. Every one of these numbers is
+ *  the number the factor printed before the stack and the thrust existed — a
+ *  chart the engine cannot read the timeframes on must score exactly as it did. */
+const v2 = (stage: Stage, volumeConfirmed: boolean, rvol: number | null) => ({ stage, volumeConfirmed, rvol, emaStack: null, volThrust: null })
 
 describe('technicalFactor', () => {
   it('scores early-reversal high and boosts volume confirmation', () => {
-    expect(technicalFactor({ stage: 'early-reversal', volumeConfirmed: true, rvol: 2.1 }).score).toBe(84) // 70 × 1.2
+    expect(technicalFactor(v2('early-reversal', true, 2.1)).score).toBe(84) // 70 × 1.2
   })
   it('damps an UNCONFIRMED early reversal — a turn with no volume behind it is a guess', () => {
-    const f = technicalFactor({ stage: 'early-reversal', volumeConfirmed: false, rvol: 0.8 })
+    const f = technicalFactor(v2('early-reversal', false, 0.8))
     expect(f.score).toBe(49) // 70 × 0.7
     expect(f.detail).toContain('unconfirmed')
     // other stages are NOT damped by missing volume
-    expect(technicalFactor({ stage: 'pullback', volumeConfirmed: false, rvol: null }).score).toBe(55)
+    expect(technicalFactor(v2('pullback', false, null)).score).toBe(55)
   })
   it('scores exhausted deeply negative and knife as wait (0)', () => {
-    expect(technicalFactor({ stage: 'exhausted', volumeConfirmed: false, rvol: null }).score).toBe(-70)
-    expect(technicalFactor({ stage: 'falling-knife', volumeConfirmed: true, rvol: 3 }).score).toBe(0)
+    expect(technicalFactor(v2('exhausted', false, null)).score).toBe(-70)
+    expect(technicalFactor(v2('falling-knife', true, 3)).score).toBe(0)
   })
   it('null read → null score', () => {
     expect(technicalFactor(null).score).toBeNull()
+  })
+  it('unknown legs leave the v2 score untouched, stage by stage', () => {
+    // the whole enum, so the widening can never silently move a single stage
+    const stages: Stage[] = ['early-reversal', 'pullback', 'basing', 'trending', 'weak', 'extended', 'exhausted', 'falling-knife']
+    const v2Scores = [49, 55, 25, 15, -30, -45, -70, 0] // early-reversal is 70 × 0.7 — unconfirmed here
+    stages.forEach((stage, i) => {
+      expect(technicalFactor(v2(stage, false, null)).score).toBe(v2Scores[i])
+      // a stack object whose verdict is unknown is still an absence of evidence
+      expect(technicalFactor({ ...v2(stage, false, null), emaStack: { aligned: null } }).score).toBe(v2Scores[i])
+    })
+  })
+})
+
+// The stage says where the chart is; the stack says whether every horizon agrees
+// about it, and the thrust says whether the crowd has been arriving all week.
+// Both are read AFTER the stage and BEFORE the long-only volume amplifier —
+// see the pipeline docblock on technicalFactor.
+describe('technicalFactor v3 — the EMA stack bonus', () => {
+  const read = (stage: Stage, aligned: 'bull' | 'bear' | 'mixed' | null) => technicalFactor({ stage, volumeConfirmed: false, rvol: null, emaStack: { aligned }, volThrust: null })
+
+  it('an aligned bull stack adds 15, an aligned bear stack subtracts 15', () => {
+    expect(read('pullback', 'bull').score).toBe(70) // 55 + 15
+    expect(read('pullback', 'bear').score).toBe(40) // 55 − 15
+    expect(read('weak', 'bear').score).toBe(-45) // −30 − 15: agreement DEEPENS a short
+    expect(read('weak', 'bull').score).toBe(-15) // …and disagreement lifts it toward no-edge
+  })
+
+  it('mixed and unknown are both worth nothing — disorder is not a vote, and neither is an absence', () => {
+    expect(read('pullback', 'mixed').score).toBe(55)
+    expect(read('pullback', null).score).toBe(55)
+  })
+
+  it('the bonus is applied AFTER the unconfirmed-turn damp — the volume of one session cannot discount fifty', () => {
+    // 70 × 0.7 = 49, then +15 = 64. Damping the bonus too would give 59.5, i.e.
+    // today's quiet tape shrinking a statement about the last fifty sessions.
+    expect(technicalFactor({ stage: 'early-reversal', volumeConfirmed: false, rvol: 0.8, emaStack: { aligned: 'bull' }, volThrust: null }).score).toBe(64)
+  })
+
+  it('a bull stack under a bearish stage can neutralise it, and 0 is not amplified into anything', () => {
+    const f = technicalFactor({ stage: 'trending', volumeConfirmed: true, rvol: 2, emaStack: { aligned: 'bear' }, volThrust: 3 })
+    expect(f.score).toBe(0) // 15 − 15: the chart says up, every horizon says down → no edge
+  })
+})
+
+describe('technicalFactor v3 — the volume thrust modifier', () => {
+  const read = (stage: Stage, volThrust: number | null) => technicalFactor({ stage, volumeConfirmed: false, rvol: null, emaStack: null, volThrust })
+
+  it('scales conviction in BOTH directions — thrust is participation, not a side', () => {
+    // 55 × 1.15 is 63.2499…93 in doubles, not 63.25 — round1 works on the real
+    // product, so the printed number is 63.2. Pinned as it actually computes.
+    expect(read('pullback', 2).score).toBe(63.2)
+    expect(read('exhausted', 2).score).toBe(-80.5) // −70 × 1.15: a short gets deeper, not weaker
+    expect(read('pullback', 0.4).score).toBe(46.8) // 55 × 0.85 = 46.75 → 46.8
+    expect(read('exhausted', 0.4).score).toBe(-59.5) // −70 × 0.85
+  })
+
+  it('the boundaries are inclusive, and the middle does nothing', () => {
+    expect(read('pullback', 1.5).score).toBe(63.2)
+    expect(read('pullback', 0.6).score).toBe(46.8)
+    expect(read('pullback', 1.49).score).toBe(55)
+    expect(read('pullback', 0.61).score).toBe(55)
+    expect(read('pullback', 1).score).toBe(55)
+    expect(read('pullback', null).score).toBe(55)
+  })
+
+  it('cannot conjure a score out of nothing — a knife is 0 however loud the week', () => {
+    expect(read('falling-knife', 3).score).toBe(0)
+    expect(read('falling-knife', 0.1).score).toBe(0)
+  })
+})
+
+describe('technicalFactor v3 — the whole pipeline', () => {
+  it('stacks stage → damp → stack → thrust → long-only amplify, and clamps at 100', () => {
+    // 70 (early-reversal) + 15 (bull) = 85 → ×1.15 (thrust) = 97.75 → ×1.2
+    // (confirmed long) = 117.3 → clamped. The clamp is now REACHABLE; under v2
+    // the ceiling was 84.
+    expect(technicalFactor({ stage: 'early-reversal', volumeConfirmed: true, rvol: 2.1, emaStack: { aligned: 'bull' }, volThrust: 2.2 }).score).toBe(100)
+    // 55 + 15 = 70 → ×1.2 = 84
+    expect(technicalFactor({ stage: 'pullback', volumeConfirmed: true, rvol: 1.4, emaStack: { aligned: 'bull' }, volThrust: null }).score).toBe(84)
+    // and the floor: −70 − 15 = −85 → ×1.15 = −97.7499…9 in doubles, still inside the clamp
+    expect(technicalFactor({ stage: 'exhausted', volumeConfirmed: false, rvol: null, emaStack: { aligned: 'bear' }, volThrust: 1.8 }).score).toBe(-97.7)
+  })
+
+  it('the amplifier stays long-only even when the stack has flipped the sign', () => {
+    // trending +15 with a bear stack = 0; weak −30 with a bull stack = −15 — a
+    // negative score never gets the ×1.2, whatever built it.
+    const short = (volumeConfirmed: boolean) => technicalFactor({ stage: 'weak', volumeConfirmed, rvol: volumeConfirmed ? 1.8 : null, emaStack: { aligned: 'bull' }, volThrust: null }).score
+    expect(short(true)).toBe(short(false))
+    expect(short(true)).toBe(-15)
+  })
+
+  it('names the stack and the thrust in plain words — no field names reach the reader', () => {
+    const bull = technicalFactor({ stage: 'pullback', volumeConfirmed: true, rvol: 1.9, emaStack: { aligned: 'bull' }, volThrust: 2 })
+    expect(bull.detail).toContain('every timeframe pointing up')
+    expect(bull.detail).toContain('a week of building participation')
+    expect(bull.detail).toContain('RVOL 1.9')
+    expect(bull.detail).not.toMatch(/emaStack|volThrust|aligned|ema\d/i)
+    const bear = technicalFactor({ stage: 'weak', volumeConfirmed: false, rvol: null, emaStack: { aligned: 'bear' }, volThrust: 0.3 })
+    expect(bear.detail).toContain('every timeframe pointing down')
+    expect(bear.detail).toContain('a week of thinning participation')
+    const mixed = technicalFactor({ stage: 'basing', volumeConfirmed: false, rvol: null, emaStack: { aligned: 'mixed' }, volThrust: 1 })
+    expect(mixed.detail).toContain('timeframes disagree')
+    // an unknown stack says NOTHING — silence, not a claim of disorder
+    const quiet = technicalFactor(v2('basing', false, null))
+    expect(quiet.detail).toBe('basing')
   })
 })
 
@@ -164,8 +275,7 @@ describe('catalystFactor', () => {
 // weakness is usually capitulation — a bounce setup — not continuation, so the
 // confirmation boost is long-only. Bearish stages keep their base score.
 describe('volume confirmation is a LONG-side amplifier', () => {
-  const read = (stage: Parameters<typeof technicalFactor>[0] extends null ? never : NonNullable<Parameters<typeof technicalFactor>[0]>['stage'], vol: boolean) =>
-    technicalFactor({ stage, volumeConfirmed: vol, rvol: vol ? 1.8 : null })
+  const read = (stage: Stage, vol: boolean) => technicalFactor({ stage, volumeConfirmed: vol, rvol: vol ? 1.8 : null, emaStack: null, volThrust: null })
 
   it('still boosts a confirmed bullish stage', () => {
     expect(read('pullback', true).score!).toBeGreaterThan(read('pullback', false).score!)
