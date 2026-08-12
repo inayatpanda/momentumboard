@@ -118,3 +118,35 @@ describe('the velocity lane fails soft per SYMBOL', () => {
     expect(broken.board.filter(b => b.riskPct > 0).map(b => b.sym)).toEqual(['VELO'])
   })
 })
+
+describe('the candle fill fails soft per SYMBOL', () => {
+  it('a candidate whose candle read REJECTS costs one candidate, never the board', async () => {
+    // Task-5 re-review gap: the fill's .catch(() => null) had no test — deleting
+    // it survived the suite. This pins it: an outright rejection (not a null)
+    // from deps.candles on one screener name must skip that name and leave the
+    // other row byte-identical. Without the catch, mapLimit's Promise.all
+    // rejects and the whole board build throws.
+    const healthy = await run(null)
+    const cleanVelo = healthy.ledger.find(p => p.sym === 'VELO')!
+
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', {
+      buckets: { 'long:amber:25-40': { n: 20, hits: 14 }, 'long:amber:40-55': { n: 20, hits: 14 } },
+      brier: [],
+      defVersion: CALIB_DEF_VERSION,
+    })
+    const rejecting = deps()
+    const base = rejecting.candles
+    rejecting.candles = async sym => {
+      if (sym === 'RUNR') throw new Error('blob replica refused the read')
+      return base(sym)
+    }
+    const { board } = await buildBoard(store, rejecting, NOW)
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const ledger = (await store.read<Prediction[]>(`predictions:${today}`))!
+    expect(ledger.some(p => p.sym === 'RUNR')).toBe(false)
+    expect(ledger.find(p => p.sym === 'VELO')).toEqual(cleanVelo)
+    expect(board.filter(b => b.riskPct > 0).map(b => b.sym)).toEqual(['VELO'])
+  })
+})
