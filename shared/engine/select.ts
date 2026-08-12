@@ -4,13 +4,20 @@
 // lockstep with a name already picked on the same side — twelve correlated
 // bets are one bet with extra commission.
 
+import { pearson } from './types'
+
 export const MAX_PER_SECTOR = 3
 export const CORR_CAP = 0.75
 const CORR_DAYS = 60
 const CORR_MIN_OVERLAP = 30
 
-/** Pearson correlation of the last CORR_DAYS daily returns. Null when the
- * overlapping history is too short to mean anything. */
+/** Pearson correlation of the last CORR_DAYS daily returns, paired by TAIL
+ * POSITION — right for this job (two candle series pulled in the same batch, same
+ * venue, same session count) and wrong for hypeCluster.ts, which pairs by date
+ * because its series arrive from separate bounded fetches. The correlation kernel
+ * itself is shared (types.ts); only the pairing differs.
+ *
+ * Null when the overlapping history is too short to mean anything. */
 export function returnCorrelation(closesA: number[], closesB: number[]): number | null {
   const rets = (closes: number[]) => {
     const tail = closes.slice(-(CORR_DAYS + 1))
@@ -24,23 +31,7 @@ export function returnCorrelation(closesA: number[], closesB: number[]): number 
   const b = rets(closesB)
   const n = Math.min(a.length, b.length)
   if (n < CORR_MIN_OVERLAP) return null
-  const xa = a.slice(-n)
-  const xb = b.slice(-n)
-  const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length
-  const ma = mean(xa)
-  const mb = mean(xb)
-  let cov = 0
-  let va = 0
-  let vb = 0
-  for (let i = 0; i < n; i++) {
-    const da = xa[i] - ma
-    const db = xb[i] - mb
-    cov += da * db
-    va += da * da
-    vb += db * db
-  }
-  if (!va || !vb) return null
-  return cov / Math.sqrt(va * vb)
+  return pearson(a.slice(-n), b.slice(-n))
 }
 
 export interface DiverseCandidate {

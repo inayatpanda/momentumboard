@@ -21,6 +21,7 @@ import {
 import { composeCall, coreCompositeOf, levelsFor, setupFamilyOf } from '../../../shared/engine/composite'
 import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleeve'
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
+import { TREND_DAY_SYMS, TREND_HISTORY_DAYS, type TrendDay } from '../../../shared/engine/hypeCluster'
 import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
 import { DIP_NEWS_BUDGET, unservedVenue, type DipNewsVerdict } from './dipNews'
@@ -534,6 +535,35 @@ const symToSector = (() => {
 
 const baseSym = (sym: string) => sym.split('.')[0].split('-')[0]
 
+/** Bank one day of the trending record — the ONLY thing that makes co-appearance
+ * measurable later (hypeCluster.ts). Append-if-new-date: the first run of the day
+ * owns the day, so the afternoon run cannot overwrite the morning's crowd with a
+ * quieter one, nor stack two rows for one date and let the co-appearance count read
+ * a stutter as evidence.
+ *
+ * A day the feed said NOTHING is not recorded at all. Recording an empty day would
+ * be dishonest in a way that costs real evidence: the co-appearance window is the
+ * last five RECORDED days, so an ApeWisdom outage would otherwise shove a genuine
+ * day of crowd behaviour out of the window and replace it with a hole.
+ *
+ * Fail-soft in full: nothing downstream requires this blob to exist. */
+async function recordTrendDay(store: AppStore, today: string, social: SocialPulseRow[]): Promise<void> {
+  try {
+    // The feed arrives rank-ordered, so the top TREND_DAY_SYMS names ARE the day's
+    // crowd. (Deliberately wider than the 12 that become candidates: a cluster is
+    // read off the whole trending set, not off the slice the engine chose to score.)
+    // Normalised BEFORE the dedupe, or two spellings of one name eat two of the
+    // day's slots and land in the record as two members of tomorrow's cluster.
+    const syms = [...new Set(social.map(s => (typeof s?.sym === 'string' ? s.sym.trim().toUpperCase() : '')).filter(Boolean))].slice(0, TREND_DAY_SYMS)
+    if (!syms.length) return
+    const prior = ((await store.read<TrendDay[]>('social-history')) ?? []).filter(d => d && typeof d.date === 'string' && Array.isArray(d.syms))
+    if (prior.some(d => d.date === today)) return
+    await store.write('social-history', [...prior, { date: today, syms }].slice(-TREND_HISTORY_DAYS))
+  } catch {
+    // a blob hiccup costs the record, never the board
+  }
+}
+
 export async function buildBoard(
   store: AppStore,
   deps: EngineDeps,
@@ -564,6 +594,15 @@ export async function buildBoard(
     deps.mediaTitles(),
     deps.sparkCloses(sleeveSyms).catch(() => new Map<string, number[]>()),
   ])
+  // …and today's trending set is RECORDED, because a hype cluster can only be
+  // detected from a record nobody kept yet: combineSocialPulse returns one day's
+  // independent ranks, so co-appearance across days has to be accumulated a day at
+  // a time [C8]. Written here, right after the fetch, so the day is banked before
+  // any of the work below can fail. Fail-soft and consequence-free: the blob only
+  // ever ELEVATES priority later (hypeCluster.ts), so a missing day costs a little
+  // future evidence and nothing else.
+  await recordTrendDay(store, today, social)
+
   const sleeveActive = sleeveCloses.size > 0
   const sleeveTop = sleeveActive ? rankSleeve(sleeveCloses, 40) : []
   // Sleeve membership is what the batch actually RETURNED, not what was asked

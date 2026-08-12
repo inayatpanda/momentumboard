@@ -122,3 +122,31 @@ export interface Prediction extends GradedCall {
 export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x))
 export const round1 = (x: number): number => Math.round(x * 10) / 10
 export const round2 = (x: number): number => Math.round(x * 100) / 100
+
+/** Pearson correlation of two ALREADY-PAIRED samples — observation i of xs belongs
+ * with observation i of ys, and whoever pairs them owns that decision (select.ts
+ * pairs by tail position, hypeCluster.ts pairs by date).
+ *
+ * null when the samples cannot be compared at all: mismatched lengths, fewer than
+ * two points, or a flat series. A zero-variance series has no correlation to
+ * report, and reporting one anyway is how a constant tape ends up "moving in
+ * lockstep" with everything. */
+export const pearson = (xs: number[], ys: number[]): number | null => {
+  const n = xs.length
+  if (n < 2 || ys.length !== n) return null
+  const mean = (v: number[]) => v.reduce((s, x) => s + x, 0) / n
+  const mx = mean(xs)
+  const my = mean(ys)
+  let cov = 0
+  let vx = 0
+  let vy = 0
+  for (let i = 0; i < n; i++) {
+    const a = xs[i] - mx
+    const b = ys[i] - my
+    cov += a * b
+    vx += a * a
+    vy += b * b
+  }
+  if (!vx || !vy) return null
+  return cov / Math.sqrt(vx * vy)
+}
