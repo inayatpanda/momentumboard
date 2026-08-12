@@ -2488,7 +2488,10 @@ describe('buildBoard', () => {
     // The comparison is not vacuous in the other direction: a record that DOES
     // support a cluster changes the run — by exactly one clause of narration.
     const full = await run(clusterHistory(8))
-    expect(full.fetches).toBe(2) // the bounded cluster fetch, then the candidate fetch
+    // ONE fetch: the bounded cluster prefetch is kept and reused by the candle
+    // fill — a second read here would mean the reuse broke (and with it the
+    // fail-soft guarantee the reuse exists for; codex salvage, 2026-08-12)
+    expect(full.fetches).toBe(1)
     const stamped = full.ledger.find(p => p.sym === 'ZCLU')!
     expect(stamped.catalyst!.reason).toContain('hype cluster')
     expect({ ...stamped, catalyst: undefined }).toEqual({ ...none.ledger.find(p => p.sym === 'ZCLU')!, catalyst: undefined })

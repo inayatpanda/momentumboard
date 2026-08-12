@@ -786,11 +786,15 @@ export async function buildBoard(
   // the cut cost anything at all. Fail-soft in full: any fault → no clusters →
   // exactly the run this engine had before clusters existed.
   const clusterPeers = new Map<string, string[]>()
+  // Prefetched cluster tapes are KEPT and reused by the candle fill below —
+  // fetching them twice wasted up to 25 calls, and worse, a symbol that read
+  // fine here could fail the uncaught second read and abort the whole board
+  // (codex cross-check, salvaged 2026-08-12).
+  const clusterTapes = new Map<string, Candle[]>()
   try {
     const history = await store.read<TrendDay[]>('social-history')
     const wanted = clusterCandidates(history).slice(0, CLUSTER_CANDLE_CAP)
     if (wanted.length) {
-      const clusterTapes = new Map<string, Candle[]>()
       await mapLimit(wanted, 8, async sym => {
         const c = await deps.candles(sym).catch(() => null)
         if (c?.length) clusterTapes.set(sym, c)
@@ -842,7 +846,8 @@ export async function buildBoard(
     .slice(0, 180)
   const candleMap = new Map<string, Candle[]>()
   await mapLimit(candidateSyms, 8, async sym => {
-    const c = await deps.candles(sym)
+    // fail-soft per symbol: one refused read costs one candidate, never the board
+    const c = clusterTapes.get(sym) ?? (await deps.candles(sym).catch(() => null))
     if (c && c.length >= 30) candleMap.set(sym, c)
   })
 
