@@ -140,10 +140,16 @@ export function velocityTrail(candles: Candle[]): number | null {
  * the published stop.
  *
  * `candlesAsOfDay` must END on the session being judged and `entrySessionIdx` is
- * that same array's index for the entry session — the basis `velocityCall`
- * published from. On the entry session itself the walk is one step long and
- * returns the published stop EXACTLY: same candles, same function, same rounding.
- * The daily check is therefore continuous with the call, never a second opinion.
+ * that same array's index for the entry session. HONESTY NOTE (Task-6 review):
+ * in production the paper publishes PRE-OPEN, so the published stop was drawn
+ * from the session BEFORE `pred.date` — the walk here starts one session later
+ * than the publication basis. The enforced level is still never below the
+ * published stop (trail(publication basis) IS the published stop, and it is the
+ * floor), but "day one returns the published stop exactly" holds only when the
+ * last candle is the publication basis, as in the unit fixtures — not live.
+ *
+ * LONG-ONLY BY CONSTRUCTION: for a short, max() would loosen forever — a future
+ * short lane must add a side and invert, never reuse this as-is.
  *
  * A RUNNING MAX, not a per-day max, and the difference is the whole point. Reading
  * only today's trail meant a falsifier that rose then rolled over quietly LOWERED
