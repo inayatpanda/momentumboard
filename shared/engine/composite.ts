@@ -57,12 +57,6 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
  * and — since a gated core is ≥ the dead zone — can never flip the side. */
 export const CONTEXT_MAX_PTS = 12
 
-/** Capacity floor for a core-sleeve name. Below every other floor on purpose:
- * these are household, liquid names whose 10-session travel is genuinely modest,
- * and the point of the sleeve is that they get looked at every day. Still a
- * floor — a name that cannot move at all is still no trade. */
-export const SLEEVE_CAPACITY_FLOOR = 3
-
 /** The setup shape of a call, from its side and technical stage. Longs riding
  * strength are continuation; longs buying a dip/turn are reversal; shorting
  * a stretched chart is a fade, shorting confirmed weakness is continuation
@@ -101,18 +95,13 @@ export interface ComposeInput {
   // never derived from it. Default 1 = no nudge.
   worldMult?: number
   // Risk-appetite gates (catalyst.ts). Default MODERATE. Aggressive lowers the
-  // dead zone and capacity floors so more ideas reach scoring — grading is untouched.
+  // dead zone and the expected-move floor so more ideas reach scoring — grading
+  // is untouched.
   gates?: Gates
   // A live market-moving catalyst on this name (catalyst.ts). When present the
-  // relaxed catalystCapacityFloor is used instead of the ordinary capacity floor,
-  // because swing-capacity is trailing and lags the day the news actually breaks.
+  // expected-move floor is relaxed by 0.5pp, because swing capacity is trailing
+  // and lags the day the news actually breaks.
   catalyst?: CatalystTag | null
-  // This name is in the CORE SLEEVE (coreSleeve.ts) — a famous, liquid name the
-  // engine watches every day. It earns the lowest capacity floor: a megacap's
-  // trailing swing-capacity is honestly small, and the ordinary floor would
-  // exclude the entire sleeve from ever making a call. Everything else (dead
-  // zone, entry gates, calibration, grading) is unchanged.
-  sleeve?: boolean
   // Evidence-contract inputs (default false — an unknown never passes a gate):
   // was the technical read's volume confirmation present, and did the run know
   // market breadth? Both feed the "at least one of sector/breadth/volume" leg.
@@ -149,7 +138,7 @@ function tallyFactors(
 
 /** The GATE-FREE core read, UNROUNDED: the weighted core composite after regime
  * scaling, and nothing else — no context nudge, no world tape, no dead zone, no
- * capacity floor, no entry gate. This is literally composeCall's own first half,
+ * expected-move floor, no entry gate. This is literally composeCall's own first half,
  * extracted so the published call and the named near miss can never fork. Null
  * when the name has no core data at all. Callers that DISPLAY the number take
  * coreCompositeOf (rounded); callers that keep computing take this. */
@@ -203,9 +192,9 @@ export function levelsFor(
 
 /** Weighted composite over the CORE factors that have data, plus a capped
  * context nudge → a concrete call, or null. Most tickers most days are a "no":
- * dead zone, capacity gate, and side-aware entry gates all have to clear
- * before a number reaches the paper. Direction and eligibility come from the
- * core alone; context can only tilt conviction by ≤ CONTEXT_MAX_PTS. */
+ * dead zone, the expected-move floor, and side-aware entry gates all have to
+ * clear before a number reaches the paper. Direction and eligibility come from
+ * the core alone; context can only tilt conviction by ≤ CONTEXT_MAX_PTS. */
 export function composeCall(input: ComposeInput): EngineCall | null {
   const { coreNum, coreDen, ctxNum, coreWeightTotal } = tallyFactors(input.factors, input.weights)
   if (!coreDen) return null // no market-derived signal at all — context alone is never a call
@@ -223,20 +212,25 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   const ctxPts = clamp(ctxNum / coreDen, -CONTEXT_MAX_PTS, CONTEXT_MAX_PTS)
   const adj = coreAdj + ctxPts
   if (Math.abs(adj) < gates.deadZone) return null
-  // a live catalyst earns the lower floor — the name is in play TODAY even if its
-  // trailing swing-capacity hasn't caught up to the news yet. A sleeve name earns
-  // the lowest floor of all: its capacity is small because it is a megacap, not
-  // because it is going nowhere.
-  const capacityFloor = input.sleeve ? SLEEVE_CAPACITY_FLOOR : input.catalyst ? gates.catalystCapacityFloor : gates.capacityFloor
-  if (input.capacityPct == null || input.capacityPct < capacityFloor) return null
-  if (input.atr == null || input.lastClose == null) return null
+  if (input.capacityPct == null || input.atr == null || input.lastClose == null) return null
+
+  const smallCap = input.capUsdM != null && input.capUsdM < SMALL_CAP_MAX_USD_M
+  // THE LEVELS COME FIRST NOW, because the eligibility test IS one of them.
+  // Eligibility used to be a flat capacity floor — "is this name volatile
+  // enough?" — which sorted names by volatility CLASS and so excluded every
+  // megacap that travels 5%, however much the engine liked it. The floor is the
+  // move THIS call expects instead (conviction × the name's own ten-session
+  // travel): a 6%-mover with real conviction is a smaller trade, not a
+  // forbidden one, and a name that can only ever hand you 0.8% is no trade at
+  // any conviction. Same arithmetic as the published target, computed once.
+  const { expectedMovePct, entry, stop, target } = levelsFor(adj, input.capacityPct, input.atr, input.lastClose, smallCap)
+  // a live catalyst earns 0.5pp of relief — the name is in play TODAY even if
+  // its trailing swing capacity hasn't caught up to the news yet.
+  if (expectedMovePct < gates.minExpectedMovePct - (input.catalyst ? 0.5 : 0)) return null
   // side-aware entry gates: never chase a long, never short fresh strength, knives wait
   if (input.entryQuality === 'wait') return null
   if (side === 'long' && input.entryQuality === 'chase') return null
   if (side === 'short' && (input.stage === 'early-reversal' || input.stage === 'pullback')) return null
-
-  const smallCap = input.capUsdM != null && input.capUsdM < SMALL_CAP_MAX_USD_M
-  const { expectedMovePct, entry, stop, target } = levelsFor(adj, input.capacityPct, input.atr, input.lastClose, smallCap)
 
   const contributors = (Object.entries(input.factors) as [FactorName, FactorScore][])
     .filter(([, f]) => f.score != null && f.score !== 0)

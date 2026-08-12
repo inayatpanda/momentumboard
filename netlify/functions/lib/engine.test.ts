@@ -33,16 +33,27 @@ const flat = mk(() => 500)
 const NOW = Math.floor(shorty[shorty.length - 1].t + 86_400) // day after the last bar
 
 // A CALM megacap bleed: −0.5%/day. Capacity 4.9% — under the roster's join gate
-// (8) AND under the ordinary composite capacity floor (6), but over the sleeve
-// floor (3). Exactly the shape the sleeve exists for: a famous name that moved
-// meaningfully for itself without ever being volatile enough to be "a mover".
+// (8), so it is never enrolled and only the sleeve can carry it to evaluation.
+// It TRADES: an amber core of −38.4 expects 0.384 × 4.9 = 1.9% over ten
+// sessions, clear of the 1.5 eligibility floor. Exactly the shape the sleeve
+// exists for — a famous name that moved meaningfully FOR ITSELF without ever
+// being volatile enough to be called "a mover".
 const calmSlide = mk(i => 100 * Math.pow(0.995, i))
 
-// The mirror image: a calm +0.5%/day grind higher. Same ~4.9% capacity, so the
-// core read is strong and the CAPACITY gate is what kills it — a candidate that
-// dies at the gates with a real, nameable core composite. The never-blank
-// board's long-side near miss.
-const calmClimb = mk(i => 100 * Math.pow(1.005, i))
+// DEAD MONEY, in both directions: a real, nameable core read on a name that
+// still cannot hand the reader a trade, because the move the call expects of it
+// is under the 1.5% floor. The never-blank board's near-miss fixture — and what
+// kills it is arithmetic about THIS name, not the volatility class it belongs to:
+//   deadClimb  +0.40%/day → capacity 4.1, amber core +25.9 (past the 25 dead
+//              zone), expects 0.259 × 4.1 = 1.1% → no trade
+//   deadSlide  −0.30%/day → capacity 3.0, amber core −31.8, expects
+//              0.318 × 3.0 = 1.0% → no trade
+// Both cleared the dead zone and both die at the expected-move floor. calmSlide
+// above has capacity just as far under the retired flat floor (6) and TRADES,
+// because its conviction earns a real move out of a small traveller — which is
+// the whole reason the flat floor went.
+const deadClimb = mk(i => 100 * Math.pow(1.004, i))
+const deadSlide = mk(i => 100 * Math.pow(0.997, i))
 
 // GLW's dip tape: 60 calm sessions at 100, a slide to 85, then a volume-paid
 // reclaim to 88 — dipLane's 'holding' signature (−12% off the 20-session high,
@@ -132,8 +143,8 @@ const NOW_240 = Math.floor(breakTape240[breakTape240.length - 1].t + 86_400)
 // what let it reach grade A — `capacityPct ≥ 8` was a hard condition on the A rung.
 // Nothing reads it as a gate any more, and it is worth being exact about why, since
 // the obvious answer is wrong: this row is built by velocityCall, which constructs
-// its own EngineCall and never goes near composeCall, so composite.ts's capacity
-// FLOOR cannot be what admits it either. The lane's gates are its own — an early
+// its own EngineCall and never goes near composeCall, so composite.ts's
+// eligibility FLOOR cannot be what admits it either. The lane's gates are its own — an early
 // door, an 8-EMA trail that leaves real risk distance — and `capacityPct` is merely
 // stamped onto the row from swingCapacity for display and the holdings read.
 // What makes this the leverage fixture is the pair of things leverage actually
@@ -697,7 +708,7 @@ describe('buildBoard', () => {
       screens: async () => [],
       mediaTitles: async () => [],
       candles: async sym =>
-        sym === 'CALM' || sym === 'DROP' ? calmSlide : sym === 'RISE' ? calmClimb : sym === 'SPY' || sym === 'QQQ' ? flat : null,
+        sym === 'CALM' || sym === 'DROP' ? deadSlide : sym === 'RISE' ? deadClimb : sym === 'SPY' || sym === 'QQQ' ? flat : null,
     })
     const { board } = await buildBoard(store, d, NOW)
     expect(board.length).toBeGreaterThan(0) // NEVER blank
@@ -752,7 +763,7 @@ describe('buildBoard', () => {
       screens: async () => [],
       mediaTitles: async () => [],
       // every candidate bleeds → every core read is negative → no long side at all
-      candles: async sym => (sym === 'CALM' || sym === 'DROP' ? calmSlide : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      candles: async sym => (sym === 'CALM' || sym === 'DROP' ? deadSlide : sym === 'SPY' || sym === 'QQQ' ? flat : null),
     })
     const { board } = await buildBoard(store, d, NOW)
 
@@ -783,7 +794,7 @@ describe('buildBoard', () => {
     const d = deps({
       mediaTitles: async () => [],
       candles: async sym =>
-        sym === 'NVDA' ? shorty : sym === 'RISE' ? calmClimb : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
+        sym === 'NVDA' ? shorty : sym === 'RISE' ? deadClimb : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
     })
     const { board } = await buildBoard(store, d, NOW)
     expect(board.find(b => b.sym === 'NVDA' && !b.watchOnly)).toBeDefined() // the short side has a real trade
@@ -803,7 +814,7 @@ describe('buildBoard', () => {
     const d = deps({
       mediaTitles: async () => [],
       candles: async sym =>
-        sym === 'NVDA' ? shorty : sym === 'RISE' ? calmClimb : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
+        sym === 'NVDA' ? shorty : sym === 'RISE' ? deadClimb : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
     })
     const { board } = await buildBoard(store, d, NOW)
 
@@ -852,7 +863,7 @@ describe('buildBoard', () => {
   describe('the observation rank never re-promotes a name the ledger has not graded yet', () => {
     const dedupStore = async (priorRow: Partial<Prediction> | null) => {
       const store = memoryStore()
-      // DROP dies at the capacity gate → a real short near miss for the fallback
+      // DROP dies at the expected-move floor → a real short near miss for the fallback
       await store.write('config', { watchlist: [{ symbol: 'RISE' }, { symbol: 'DROP' }], rules: [], ytChannels: [], levMap: {} })
       await store.write('engine-calibration', calWith('short:amber:55-70'))
       if (priorRow) {
@@ -865,7 +876,7 @@ describe('buildBoard', () => {
     const dedupDeps = deps({
       mediaTitles: async () => [],
       candles: async sym =>
-        sym === 'NVDA' ? shorty : sym === 'RISE' ? calmClimb : sym === 'DROP' ? calmSlide : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
+        sym === 'NVDA' ? shorty : sym === 'RISE' ? deadClimb : sym === 'DROP' ? deadSlide : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
     })
 
     it('the control: with no prior row at all, NVDA is promoted exactly as before', async () => {
@@ -1415,12 +1426,13 @@ describe('buildBoard', () => {
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' }, MMM: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:25-40'))
     // GLW and MMM are both configured sleeve members riding the SAME calm tape:
-    // capacity 4.9%, under the ordinary composite floor (6) and over the sleeve
-    // floor (3). fetchSparkCloses fails soft per 20-name chunk, and here GLW's
-    // chunk died: the batch came back with MMM and without GLW. The sleeve floor,
-    // the dip-lane quality grant and priority 4 are all privileges paid for by
-    // having the data — so GLW must be read exactly as it was pre-sleeve, while
-    // MMM, whose closes really did arrive, keeps every one of them.
+    // capacity 4.9%, under the roster's join gate (8), so NEITHER is enrolled and
+    // the sleeve's append to evalRows is the only thing that can carry a name of
+    // this shape to scoring at all. fetchSparkCloses fails soft per 20-name chunk,
+    // and here GLW's chunk died: the batch came back with MMM and without GLW.
+    // That append, the dip-lane quality grant and priority 4 are all privileges
+    // paid for by having the data — so GLW must be read exactly as it was
+    // pre-sleeve, while MMM, whose closes really did arrive, keeps every one.
     const base = {
       screens: async () => [
         { row: { sym: 'GLW', price: 27, capUsdM: 35_000, changePct: -9, name: null }, source: 'screener:losers' },
@@ -1434,7 +1446,7 @@ describe('buildBoard', () => {
 
     const ledger = (await ledgerOf(store))!
     expect(ledger.find(p => p.sym === 'MMM')).toBeDefined() // fetched → a real sleeve member
-    expect(ledger.find(p => p.sym === 'GLW')).toBeUndefined() // no closes behind it → no sleeve floor
+    expect(ledger.find(p => p.sym === 'GLW')).toBeUndefined() // no closes behind it → never appended to evalRows
 
     // the control: when GLW's chunk DOES come back, the identical row publishes —
     // so the assertion above is about the missing data and nothing else

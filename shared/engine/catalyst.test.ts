@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, VELOCITY_CATALYST_KIND, type CatalystTag } from './catalyst'
+import { AGGRESSIVE_GATES, DIP_CATALYST_KIND, LANE_CATALYST_KINDS, MODERATE_GATES, VELOCITY_CATALYST_KIND, gatesFor, type CatalystTag } from './catalyst'
 
 // The LANE FAMILY is the engine's one answer to "is this row's composite a
 // structural lane construction rather than a measured factor vote?". Two
@@ -25,5 +25,23 @@ describe('lane catalyst kinds', () => {
     expect(LANE_CATALYST_KINDS.has('news')).toBe(false)
     expect(LANE_CATALYST_KINDS.has('ipo')).toBe(false)
     expect(LANE_CATALYST_KINDS.has('')).toBe(false) // the `?? ''` fallback of an untagged row
+  })
+})
+
+// Two numbers per appetite, and no third: the flat capacity floors are gone, so
+// there is nothing left in Gates that asks what volatility CLASS a name belongs
+// to. Eligibility is the move a call expects of the name in front of it.
+describe('gates', () => {
+  it('moderate asks for 1.5% of expected move, aggressive for 1.0%', () => {
+    expect(MODERATE_GATES).toEqual({ deadZone: 25, minExpectedMovePct: 1.5 })
+    expect(AGGRESSIVE_GATES).toEqual({ deadZone: 20, minExpectedMovePct: 1.0 })
+    expect(AGGRESSIVE_GATES.minExpectedMovePct).toBeLessThan(MODERATE_GATES.minExpectedMovePct)
+  })
+
+  it('gatesFor: only the literal "aggressive" widens the funnel', () => {
+    expect(gatesFor('aggressive')).toBe(AGGRESSIVE_GATES)
+    expect(gatesFor('moderate')).toBe(MODERATE_GATES)
+    expect(gatesFor(null)).toBe(MODERATE_GATES)
+    expect(gatesFor(undefined)).toBe(MODERATE_GATES)
   })
 })

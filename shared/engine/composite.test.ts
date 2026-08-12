@@ -91,9 +91,27 @@ describe('composeCall', () => {
     expect(composeCall(base({ factors: longFactors(), entryQuality: 'wait', stage: 'falling-knife' }))).toBeNull()
   })
 
-  it('capacity gate: can-not-move names never make calls', () => {
-    expect(composeCall(base({ factors: longFactors(), capacityPct: 4 }))).toBeNull()
-    expect(composeCall(base({ factors: longFactors(), capacityPct: null }))).toBeNull()
+  it('dead money never makes a call: the expected move is the whole eligibility test', () => {
+    // capacity 2 at composite 40 expects 0.4 × 2 = 0.8% over ten sessions. That
+    // is inside the spread and the noise — no conviction rescues arithmetic that
+    // small, and the flat floor used to admit exactly this name at capacity 6.
+    const forty = { ...nullFactors(), technical: { score: 40, detail: 'pullback' } }
+    expect(composeCall(base({ factors: forty, capacityPct: 2, stage: 'pullback' }))).toBeNull()
+    expect(composeCall(base({ factors: longFactors(), capacityPct: null }))).toBeNull() // capacity unknown → nothing to expect
+  })
+
+  it('the floor is the move THIS call expects, not the volatility class the name belongs to', () => {
+    // ONE name, capacity 5, three convictions. Under the old flat floor (6) the
+    // name was ineligible at every conviction; now its own arithmetic decides.
+    const at = (score: number) => ({ ...nullFactors(), technical: { score, detail: 'pullback' } })
+    const cap5 = (score: number) => composeCall(base({ factors: at(score), capacityPct: 5, stage: 'pullback' }))
+    expect(cap5(45)!.expectedMovePct).toBeCloseTo(2.3, 1) // 0.45 × 5 = 2.25 ≥ 1.5 → a trade
+    expect(cap5(30)).not.toBeNull() // 0.30 × 5 = 1.5 — the boundary is inclusive
+    expect(cap5(26)).toBeNull() // 0.26 × 5 = 1.3 < 1.5 — same name, thinner conviction, no trade
+    // …and the reversal the rethink exists for: a GLW-class 6%-mover with real
+    // conviction expects 2.4% and trades, where the flat floor admitted it only
+    // by the accident of clearing a volatility threshold.
+    expect(composeCall(base({ factors: at(40), capacityPct: 6, stage: 'pullback' }))!.expectedMovePct).toBeCloseTo(2.4, 1)
   })
 
   it('small caps get the wider stop', () => {
@@ -137,34 +155,44 @@ describe('composeCall', () => {
     expect(Math.abs(boosted.composite)).toBeGreaterThan(Math.abs(plain.composite))
   })
 
-  it('catalyst relaxes the capacity floor: a low-vol big name in the news gets a look', () => {
-    // capacity 4 fails the ordinary floor (6) but clears the catalyst floor (4).
-    const f = longFactors()
-    const noCat = base({ factors: f, capacityPct: 4 })
-    expect(composeCall(noCat)).toBeNull() // ordinary name, can't move → suppressed
-    const withCat = base({
-      factors: f,
-      capacityPct: 4,
-      catalyst: { kind: 'news', side: 'long', reason: 'oil spike', strength: 80 },
-    })
-    expect(composeCall(withCat)).not.toBeNull() // same chart, live catalyst → gets a look
-  })
-
-  it('sleeve names clear a lower capacity floor; non-sleeve keep floor 6', () => {
-    // The core sleeve is famous, liquid, permanently-watched names. Their
-    // trailing swing-capacity is genuinely small (a megacap does not travel
-    // like a small cap) — the ordinary floor would silently exclude the whole
-    // sleeve from ever making a call, which is the opposite of the point.
-    const input = { ...base({ factors: longFactors(), capacityPct: 4 }), sleeve: true }
-    expect(composeCall(input)).not.toBeNull() // 4 ≥ SLEEVE_CAPACITY_FLOOR (3)
-    expect(composeCall({ ...input, sleeve: false })).toBeNull() // 4 < the ordinary floor (6)
-    expect(composeCall({ ...input, capacityPct: 2 })).toBeNull() // still gated: 2 < 3
-  })
-
-  it('catalyst is still gated: below the catalyst floor it is suppressed', () => {
+  it('catalyst relaxes the floor by 0.5pp: swing capacity is trailing, the news is today', () => {
+    // capacity 5 at composite 26 expects 1.3% — short of the ordinary 1.5 floor,
+    // but the name is in play TODAY and its trailing ten-session travel has not
+    // caught up to that fact yet. 1.3 ≥ 1.5 − 0.5.
+    const marginal = { ...nullFactors(), technical: { score: 26, detail: 'pullback' } }
+    const quiet = base({ factors: marginal, capacityPct: 5, stage: 'pullback' })
+    expect(composeCall(quiet)).toBeNull() // ordinary name, too little to expect → suppressed
     expect(
-      composeCall(base({ factors: longFactors(), capacityPct: 2, catalyst: { kind: 'news', side: 'long', reason: 'x', strength: 90 } })),
-    ).toBeNull() // capacity 2 < catalystCapacityFloor 4
+      composeCall({ ...quiet, catalyst: { kind: 'news', side: 'long', reason: 'oil spike', strength: 80 } }),
+    ).not.toBeNull() // same chart, live catalyst → gets a look
+  })
+
+  it('the floor is the retired flat one re-expressed at the dead zone — the change only ever admits MORE', () => {
+    // The three numbers are not free-hand. AT THE DEAD ZONE the expected-move
+    // floor reproduces the flat capacity floors it replaces, exactly:
+    //   moderate            0.25 × 6 = 1.5
+    //   moderate + catalyst 0.25 × 4 = 1.0
+    //   aggressive          0.20 × 5 = 1.0
+    // Above the dead zone it loosens monotonically with conviction, so no name
+    // the flat floor ever admitted is rejected now — the widening is one-way,
+    // which is what makes this safe to ship without re-seeding.
+    const at = (score: number) => ({ ...nullFactors(), technical: { score, detail: 'pullback' } })
+    const call = (score: number, capacityPct: number, over: Partial<ComposeInput> = {}) =>
+      composeCall(base({ factors: at(score), capacityPct, stage: 'pullback', ...over }))
+    expect(call(25, 6)).not.toBeNull() // the old moderate floor, at the dead zone
+    expect(call(25, 5.5)).toBeNull() // …and under it, the verdict is the old verdict
+    expect(call(25, 4, { catalyst: { kind: 'news', side: 'long', reason: 'x', strength: 80 } })).not.toBeNull() // old catalyst floor 4
+    expect(call(20, 5, { gates: AGGRESSIVE_GATES })).not.toBeNull() // old aggressive floor 5, at its own dead zone
+    // …and the widening: conviction buys travel. At composite 50 the same 3%
+    // traveller expects 1.5% and trades, where the flat 6 rejected it outright.
+    expect(call(50, 3)).not.toBeNull()
+  })
+
+  it('catalyst buys relief, never a pass: below the relaxed floor it is still suppressed', () => {
+    const forty = { ...nullFactors(), technical: { score: 40, detail: 'pullback' } }
+    expect(
+      composeCall(base({ factors: forty, capacityPct: 2, stage: 'pullback', catalyst: { kind: 'news', side: 'long', reason: 'x', strength: 90 } })),
+    ).toBeNull() // 0.4 × 2 = 0.8 < the relaxed floor 1.0
   })
 
   it('a catalyst vote can NOT carry a marginal core over the dead zone — a headline is never a thesis', () => {
@@ -188,11 +216,16 @@ describe('composeCall', () => {
     expect(composeCall(base({ factors: bull, catalyst: { kind: 'news', side: 'short', reason: 'sanctioned', strength: 70 } }))!.side).toBe('long')
   })
 
-  it('aggressive gates lower the dead zone and capacity floors vs moderate', () => {
+  it('aggressive gates lower the dead zone and the expected-move floor vs moderate', () => {
     const marginal = { ...nullFactors(), technical: { score: 22, detail: 'basing' } }
     const b = { factors: marginal, stage: 'basing' as const, entryQuality: 'neutral' as const, capacityPct: 5 }
-    expect(composeCall(base({ ...b, gates: MODERATE_GATES }))).toBeNull() // 22 < 25 and cap 5 < 6
-    expect(composeCall(base({ ...b, gates: AGGRESSIVE_GATES }))).not.toBeNull() // 22 ≥ 20 and cap 5 ≥ 5
+    expect(composeCall(base({ ...b, gates: MODERATE_GATES }))).toBeNull() // 22 < the 25 dead zone
+    expect(composeCall(base({ ...b, gates: AGGRESSIVE_GATES }))).not.toBeNull() // 22 ≥ 20, and 0.22 × 5 = 1.1 ≥ 1.0
+    // the floor on its own, with the dead zone out of the way: 1.3 clears 1.0, not 1.5
+    const clears = { ...nullFactors(), technical: { score: 26, detail: 'basing' } }
+    const c = { factors: clears, stage: 'basing' as const, entryQuality: 'neutral' as const, capacityPct: 5 }
+    expect(composeCall(base({ ...c, gates: MODERATE_GATES }))).toBeNull() // 1.3 < 1.5
+    expect(composeCall(base({ ...c, gates: AGGRESSIVE_GATES }))).not.toBeNull() // 1.3 ≥ 1.0
   })
 })
 
@@ -271,7 +304,7 @@ describe('two-layer composite: core decides, context colours', () => {
 
   it('coreCompositeOf is composeCall\'s core read with every gate removed', () => {
     // the SAME arithmetic the published call stands on: core-only, regime-scaled,
-    // no context, no dead zone, no capacity floor, no entry gate.
+    // no context, no dead zone, no expected-move floor, no entry gate.
     const factors = longFactors()
     const core = coreCompositeOf(factors, DEFAULT_WEIGHTS, 'green')!
     // (1.0×84 + 0.9×40) / 1.9 × 1.0 = 120/1.9 = 63.157… — the literal vector,

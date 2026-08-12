@@ -628,7 +628,7 @@ export async function buildBoard(
   const cfg = validateConfig(await store.read('config')) ?? { watchlist: [], rules: [], ytChannels: [], capital: 5000 }
   const watchSyms = cfg.watchlist.map(w => w.symbol)
   const favourites = cfg.favouriteChannels ?? ['Stocks with Josh']
-  const gates = gatesFor(cfg.riskAppetite) // 'aggressive' widens the dead zone / capacity floors (catalyst.ts)
+  const gates = gatesFor(cfg.riskAppetite) // 'aggressive' lowers the dead zone / expected-move floor (catalyst.ts)
 
   const [spy, qqq] = await Promise.all([deps.candles('SPY'), deps.candles('QQQ')])
   if (!spy) throw new Error('no SPY candles — engine cannot run')
@@ -663,7 +663,7 @@ export async function buildBoard(
   // Sleeve membership is what the batch actually RETURNED, not what was asked
   // for. fetchSparkCloses fails soft per 20-name chunk, so one refused chunk
   // leaves twenty configured names with no closes at all — and granting those
-  // names the sleeve's capacity floor, its dip-lane quality admission and
+  // names the sleeve's discovery door, its dip-lane quality admission and
   // priority 4 would be handing out privileges with no data behind them. The
   // intersection means a name whose chunk died is read exactly as it was before
   // the sleeve existed, which is the only honest reading of "we don't know".
@@ -712,7 +712,7 @@ export async function buildBoard(
   // (geopolitics, rates, oil, a major listing, M&A). They join the pool as one more
   // GATED candidate source — never a call by fiat — and each carries a CatalystTag
   // that (a) casts a strength-scaled catalyst-factor vote and (b) relaxes the
-  // trailing capacity gate, so a big liquid name in the news gets a fair look on
+  // expected-move floor, so a big liquid name in the news gets a fair look on
   // the very day it breaks. Fail-soft: no LLM provider → [] → engine is unchanged.
   const newsCats = await deps.newsCatalysts(mediaTitles).catch(() => [] as NewsCatalyst[])
   const catalystBySym = new Map<string, CatalystTag>()
@@ -724,7 +724,7 @@ export async function buildBoard(
   // Fresh listings: a company that just debuted on a US exchange (SK Hynix, say)
   // has no price history the momentum scanner could find it on. The IPO calendar
   // nominates recently-priced names as one more GATED candidate source, each with
-  // an 'ipo' catalyst carrying side:null — the relaxed capacity gate, but NO free
+  // an 'ipo' catalyst carrying side:null — the relaxed expected-move floor, but NO free
   // directional vote (catalystFactor casts nothing when side is null). Names
   // younger than ~30 sessions still fail the 30-candle floor below, and that is
   // correct: the engine will not call a name it cannot yet read. Fail-soft: no
@@ -1182,7 +1182,7 @@ export async function buildBoard(
   }
 
   // Every name that produced a real core read and STILL published nothing — the
-  // dead zone, the capacity floor or an entry gate turned it down. Kept so a day
+  // dead zone, the expected-move floor or an entry gate turned it down. Kept so a day
   // on which nothing at all qualifies can still name what came closest instead of
   // showing the reader an empty card (assembly below). [R11]
   const nearMisses: {
@@ -1236,9 +1236,6 @@ export async function buildBoard(
       capUsdM: entry.capUsdM,
       gates,
       catalyst: cat,
-      // a core-sleeve name earns the lowest capacity floor (composite.ts). Gated on
-      // sleeveActive so a failed spark fetch changes nothing about this call. [R7]
-      sleeve: sleeveActive && sleeveSet.has(entry.sym.toUpperCase()),
       volumeConfirmed: read.volumeConfirmed,
       breadthKnown: breadth != null,
     }
@@ -1775,7 +1772,7 @@ export async function buildBoard(
           famAgree: 0,
           contract: false,
           contextPts: 0,
-          detail: `core read ${n.core} — short of the gates (dead zone ${gates.deadZone}, capacity floor, entry timing); no evidence contract was ever assessed${routeNote}`,
+          detail: `core read ${n.core} — short of the gates (dead zone ${gates.deadZone}, expected move ${gates.minExpectedMovePct}%, entry timing); no evidence contract was ever assessed${routeNote}`,
         },
         expectedMovePct,
         entry,

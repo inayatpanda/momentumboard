@@ -27,6 +27,17 @@ import { round1, type FactorName, type FactorScore, type Prediction } from './ty
 // The replay regime matches the live engine's: SPY+QQQ slope, refined by
 // universe breadth and the VIX level (both optional — omitted, the base
 // SPY-slope read stands alone, as before).
+//
+// GATES: this replay passes no `gates`, so composeCall applies MODERATE_GATES —
+// whatever those are on the day the seeder runs. The eligibility floor became
+// the EXPECTED MOVE (catalyst.ts `minExpectedMovePct`) rather than a flat
+// capacity threshold, so every FUTURE regeneration samples a different
+// population from the committed `seed.json`, which was replayed under the old
+// flat capacity floors. That is a scoring-epoch difference, not a hit-definition
+// one: CALIB_DEF_VERSION stays 3 (the seed's buckets still measure the same
+// 10-session excess) and the two epochs are distinguished by
+// ENGINE_MODEL_VERSION on the rows they produce. Do not mix a regenerated seed
+// with the committed one — regenerate whole.
 
 const STEP = 5
 const WARMUP = 80

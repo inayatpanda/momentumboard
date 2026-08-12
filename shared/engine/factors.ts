@@ -196,7 +196,7 @@ export function newsFactor(headlinesForSym: string[]): FactorScore {
 
 /** A market-moving catalyst's directional vote (catalyst.ts). null when there is
  * no catalyst; also null when the catalyst has no clean side — an "in play" name
- * earns the relaxed capacity gate in composeCall but no free conviction. When
+ * earns the relaxed expected-move floor in composeCall but no free conviction. When
  * sided, the score is the side times a strength-scaled magnitude, capped ±90 so
  * a single loud headline can never single-handedly max the composite. */
 export function catalystFactor(tag: CatalystTag | null | undefined): FactorScore {
