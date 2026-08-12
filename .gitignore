@@ -4,6 +4,8 @@ dist/
 .netlify/
 dev.log
 .replay-cache/
+# local D1 (scripts/migrate-blobs-to-d1.ts writes here by default) — 41MB
+.d1/
 .playwright-mcp/
 desktop/node_modules/
 desktop/dist/
