@@ -59,7 +59,11 @@ export interface GradedCall extends EngineCall {
   provisional: boolean
   grade: 'A' | 'B' | 'C'
   riskRung: number
-  riskPct: number // suggested % of capital at risk; 0 when watch-only, HALF the rung's for a half-size trade
+  // suggested % of capital at risk: 0 when watch-only, otherwise the rung's risk
+  // times the row's own fraction of it — 1 full, 0.5 for a half-size trade or a
+  // velocity confirmation door, 0.25 for a velocity early door. Never a product of
+  // two haircuts: the row carries the SMALLER of its tier and its lane cap.
+  riskPct: number
   instrument: { ticker: string; leverage: number } | null
   paperOnly: boolean // a short with no executable mapping at the current rung
   // Published and graded but NOT a trade: grade C on thin evidence, a below-base

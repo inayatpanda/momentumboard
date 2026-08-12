@@ -16,7 +16,7 @@ import type { Prediction } from '../../shared/engine/types'
 const SITE = process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'
 
 /** What the JOURNALIST is shown of the engine's board: the top 16 rows, slimmed
- * to the fields the prose may lean on. Two of those fields are the whole reason
+ * to the fields the prose may lean on. Three of those fields are the whole reason
  * this is a named, tested function rather than a literal inside the handler:
  *
  *  - `watchOnly` is the row's licence to be traded. constrainIdeasToBoard refuses
@@ -27,8 +27,13 @@ const SITE = process.env.URL ?? 'https://thestreetsignal.rqai.co.uk'
  *    Dropping it would hand the model a graded short with no hint that it is an
  *    observation, which is exactly how a paper starts telling people to sell
  *    something they were never offered a way to sell.
+ *  - `setup` is what the prompt's door-cap rule keys on. This projection does NOT
+ *    carry `catalyst`, so 'velocity' reaches the journalist through the setup
+ *    family and nowhere else — and without it the reduced size of a quarter- or
+ *    half-size momentum probe reads as the evidence deficiency the sentence above
+ *    describes, i.e. exactly backwards.
  *
- * PURE + exported so both can be tested without running the compose pipe. */
+ * PURE + exported so all three can be tested without running the compose pipe. */
 export function journalistBoardRows(board: readonly Prediction[]) {
   return board.slice(0, 16).map(p => ({
     id: p.id,

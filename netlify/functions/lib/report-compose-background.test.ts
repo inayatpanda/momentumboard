@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { journalistBoardRows } from '../report-compose-background.mts'
-import { boardExportRows, buildNewspaperHtml, constrainIdeasToBoard, fallbackIdeasFromBoard, type ComposedReport, type Idea } from './newspaper'
+import { SECTIONS, boardExportRows, buildNewspaperHtml, constrainIdeasToBoard, fallbackIdeasFromBoard, type ComposedReport, type Idea } from './newspaper'
 import type { FactorName, FactorScore, Prediction } from '../../../shared/engine/types'
 
 const factors = Object.fromEntries(
@@ -128,6 +128,37 @@ describe('journalistBoardRows — the board the paper is written from', () => {
     expect(html).toContain('no ISA route — observation only')
     expect(html).toContain('Observation rows cleared every gate')
     expect(html).not.toContain('grade C, thin evidence')
+  })
+
+  // The prompt carries an EXCEPTION for the velocity lane: a quarter- or half-size
+  // momentum probe is deliberate sizing, so it must not be written up as the
+  // half-conviction, evidence-short call a reduced riskPct otherwise means. That rule
+  // keyed on catalyst.kind — a field this projection has never carried — so it could
+  // never fire once, and every velocity probe reached the reader as the exact sentence
+  // the exception exists to forbid. The field the rule keys on and the field the
+  // projection carries are asserted TOGETHER: separately, either can drift silently.
+  it('the door-cap rule keys on a field the journalist can actually see', () => {
+    const velocity: Prediction = {
+      ...observation,
+      id: '2026-08-12:VELO:long',
+      sym: 'VELO',
+      side: 'long',
+      setup: 'velocity',
+      catalyst: { kind: 'velocity', reason: 'velocity (early door): 105 broke the 100 20-session high on 3× volume' },
+      note: 'velocity (early door): 105 broke the 100 20-session high on 3× volume',
+      riskPct: 0.25,
+      watchOnly: undefined,
+      observation: undefined,
+    }
+    const [row] = journalistBoardRows([velocity])
+    expect(row.setup).toBe('velocity')
+    expect(row.riskPct).toBe(0.25) // the reduced number the rule has to explain away
+    expect(row).not.toHaveProperty('catalyst') // …and the field the rule used to key on
+
+    const ideas = SECTIONS.find(s => s.key === 'ideas')!.brief
+    expect(ideas).toContain('setup is "velocity"')
+    expect(ideas).not.toContain('catalyst.kind')
+    expect(ideas).toContain('door cap, NOT an evidence deficiency') // the sentence itself
   })
 
   it('only the top 16 rows are shown — the prompt budget is finite', () => {

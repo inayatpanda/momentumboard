@@ -6,6 +6,7 @@ import { capBand, fmtPct, humanError } from '../lib/format'
 import { capClassBreakdown, flattenLedger } from '../lib/ledgerStats'
 import { engineLevelLines } from '../lib/engineLevels'
 import { callStatus, type CallState } from '../../shared/engine/callStatus'
+import { LANE_CATALYST_KINDS } from '../../shared/engine/catalyst'
 import { PriceChart } from '../components/PriceChart'
 import { RsiChart } from '../components/RsiChart'
 import { RegimeBanner } from '../components/RegimeBanner'
@@ -211,7 +212,12 @@ export function Desk({ onStandard, onQuant, onOpen }: { onStandard: () => void; 
   const nearMisses = board.filter(p => p.nearMiss)
 
   const cohorts = capClassBreakdown(flattenLedger(data?.ledger ?? []))
-  const catalysts = board.filter(p => p.catalyst)
+  // "In the news today" means NEWS. A lane tag (LANE_CATALYST_KINDS — dip,
+  // velocity) rides in the same `catalyst` field, but its reason is a reading of
+  // the name's own chart ("broke the 20-session high on 3× volume"), not an event
+  // anybody reported. Filing those under a news heading invents a catalyst the
+  // engine never claimed, and on a quiet tape it hides the honest empty line.
+  const catalysts = board.filter(p => p.catalyst && !LANE_CATALYST_KINDS.has(p.catalyst.kind))
   const radar = data?.eventRadar ?? null
 
   if (loading && !data) {

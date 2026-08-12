@@ -127,6 +127,26 @@ const breakTapeMatured = (() => {
 })()
 const NOW_240 = Math.floor(breakTape240[breakTape240.length - 1].t + 86_400)
 
+// The early door again, on a tape that actually GOES somewhere: a ±10% swinger, so
+// swing-capacity is 8.2 rather than breakTape240's flat 0. That matters because
+// gradeFor withholds an A under capacity 8 — this is the only early-door fixture
+// that can reach grade A, i.e. the only one whose leverage question is live at all.
+const richBreakTape = (() => {
+  const bars = mk(i => Math.round(100 * (1 + 0.1 * Math.sin(i / 11)) * 100) / 100, 240)
+  append(bars, 120, 3_000_000)
+  return bars
+})()
+
+// An ORDINARY composite long, and the control for every "the lane did this" claim:
+// a name grinding +0.8/session with a 5% oscillation, today pulling back a touch on
+// double volume. Stage 'pullback', capacity 12.7, the full evidence contract — a
+// grade-A row at the FULL rung, carrying no lane tag of any kind.
+const bullTape = (() => {
+  const bars = mk(i => (100 + i * 0.8) * (1 + 0.05 * Math.sin(i / 3)), 240)
+  append(bars, Math.round(bars[bars.length - 1].c * 0.995 * 100) / 100, 2_000_000)
+  return bars
+})()
+
 // The CONFIRMATION door: +16% over five sessions, PAID for by a 2.3× up-day, then
 // a pause that holds the 8-EMA. Today prints 1× on a DOWN close, so the early door
 // is shut on both price and volume and only the later, larger-size door is open.
@@ -2075,18 +2095,24 @@ describe('buildBoard', () => {
     return store
   }
 
-  // The board as it stood on the day of the break: VELO's paid breakout beside an
-  // ordinary composite short carrying a NEWS catalyst — the control that keeps the
-  // world-tape rule honest in both directions.
+  // The board as it stood on the day of the break: VELO's paid breakout beside TWO
+  // untagged controls that keep the world-tape rule honest in both directions — an
+  // ordinary composite SHORT carrying a NEWS catalyst, and an ordinary composite
+  // LONG carrying no catalyst at all, on the same risk-ON tape.
   const breakoutBoard = async (store: ReturnType<typeof memoryStore>) =>
     buildBoard(
       store,
       deps({
         candles: async s =>
-          s === 'VELO' ? breakTape240 : s === 'NVDA' ? shorty.slice(0, 241) : s === 'SPY' || s === 'QQQ' ? flat.slice(0, 241) : null,
+          s === 'VELO' ? breakTape240
+          : s === 'NVDA' ? shorty.slice(0, 241)
+          : s === 'BULL' ? bullTape
+          : s === 'SPY' || s === 'QQQ' ? flat.slice(0, 241)
+          : null,
         screens: async () => [
           { row: { sym: 'VELO', price: 105, capUsdM: 5_000, changePct: 5, name: null }, source: 'screener:gainers' },
           { row: { sym: 'NVDA', price: 200, capUsdM: 50_000, changePct: -3, name: null }, source: 'screener:losers' },
+          { row: { sym: 'BULL', price: 290, capUsdM: 50_000, changePct: 1, name: null }, source: 'screener:gainers' },
         ],
         newsCatalysts: async () => [{ sym: 'NVDA', side: 'short' as const, reason: 'guidance cut', strength: 80 }],
         worldReads: riskOnReads,
@@ -2128,6 +2154,15 @@ describe('buildBoard', () => {
     expect(ordinary.catalyst!.kind).toBe('news')
     expect(ordinary.worldTape).toEqual({ tone: 'risk-on', mult: worldMult('risk-on', ordinary.side) })
     expect(ordinary.worldTape!.mult).not.toBe(1) // the comparison has real content in it
+    // …and once more with the SIDE held constant, because NVDA is a short and the
+    // pair above is therefore also satisfied by "print 1 for longs" — a rule keyed on
+    // the side rather than the lane. BULL is an untagged LONG on this same risk-on
+    // board: it must take the 1.1 nudge the velocity long above does not.
+    const sameSide = board.find(b => b.sym === 'BULL')!
+    expect(sameSide).toBeDefined()
+    expect(sameSide.side).toBe('long')
+    expect(sameSide.catalyst).toBeUndefined()
+    expect(sameSide.worldTape).toEqual({ tone: 'risk-on', mult: 1.1 })
   })
 
   it('(3) …and nineteen sessions on, the graded break teaches calibration, its own setup family and the ladder — but never the technical factor', async () => {
@@ -2189,6 +2224,57 @@ describe('buildBoard', () => {
     expect(call.evidence.contract).toBe(true) // C WITH the contract = the half tier
     expect(call.riskPct).toBe(RUNG_RISK_PCT[call.riskRung] * VELOCITY_DOOR_CAP.confirmation)
     expect(call.riskPct).toBe(0.5) // the CAP, not 0.25 — one haircut, the smaller one
+  })
+
+  // The door cap and the ETP route were asking two different questions about the same
+  // row. `fullTrade` (grade + contract) unlocked leverage while `sizedFraction` (the
+  // smaller of tier and door cap) set the size — so a grade-A early-door probe with a
+  // long route published at a QUARTER of the rung and a 2× ETP on top of it, which is
+  // half the rung's exposure with daily-rebalance decay attached, on the youngest and
+  // most slippage-prone entry the engine makes. Leverage now reads the size the row
+  // actually carries. [R14]
+  it('a QUARTER-SIZE velocity row is a plain share row: the door cap withholds the ETP an A would otherwise route', async () => {
+    const store = await velocityStore({ 'long:amber:25-40': { n: 20, hits: 14 } })
+    // both names carry a LONG route, and the rung is high enough to unlock 2× for an
+    // A — so the ONLY thing that can withhold an instrument here is the door cap
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { RICH: { long2x: 'RICH2' }, BULL: { long2x: 'BULL2' } } })
+    await store.write('risk-state', { rung: 1, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
+    const { board } = await buildBoard(
+      store,
+      deps({
+        candles: async s =>
+          s === 'RICH' ? richBreakTape : s === 'BULL' ? bullTape : s === 'SPY' || s === 'QQQ' ? flat.slice(0, 241) : null,
+        screens: async () => [
+          { row: { sym: 'RICH', price: 120, capUsdM: 5_000, changePct: 5, name: null }, source: 'screener:gainers' },
+          { row: { sym: 'BULL', price: 290, capUsdM: 50_000, changePct: 1, name: null }, source: 'screener:gainers' },
+        ],
+        mediaTitles: async () => [],
+        worldReads: riskOnReads,
+      }),
+      NOW_240,
+    )
+
+    const probe = board.find(b => b.sym === 'RICH')!
+    expect(probe).toBeDefined()
+    expect(probe.catalyst).toEqual({ kind: 'velocity', reason: expect.stringContaining('early door') })
+    expect(probe.grade).toBe('A') // the FULL tier — nothing about its evidence is short
+    expect(probe.evidence.contract).toBe(true)
+    expect(probe.capacityPct).toBeGreaterThanOrEqual(8) // …the gate that lets an A exist at all
+    expect(probe.riskPct).toBe(RUNG_RISK_PCT[probe.riskRung] * VELOCITY_DOOR_CAP.early)
+    expect(probe.riskPct).toBe(0.3125) // rung 1, quartered by the early door
+    expect(probe.instrument).toBeNull() // …and therefore no ETP, however good the grade
+    expect(probe.paperOnly).toBe(false) // a quarter-size long is a plain, placeable share buy
+
+    // THE CONTROL, and it is the whole test: an ordinary grade-A long at the FULL rung,
+    // same board, same rung, same kind of levMap route — it still gets its instrument.
+    // Without this, "instrument null" could just be leverage broken for longs.
+    const full = board.find(b => b.sym === 'BULL')!
+    expect(full).toBeDefined()
+    expect(full.grade).toBe('A')
+    expect(full.evidence.contract).toBe(true)
+    expect(full.catalyst).toBeUndefined() // no lane, no cap
+    expect(full.riskPct).toBe(RUNG_RISK_PCT[full.riskRung])
+    expect(full.instrument).toEqual({ ticker: 'BULL2', leverage: 2 })
   })
 
   it('a dip READ the dip lane refused to trade never blocks the velocity lane [C9]', async () => {
@@ -2385,7 +2471,11 @@ describe('buildBoard', () => {
 
     const none = await run(undefined) // no record at all
     const young = await run(clusterHistory(6)) // inside the seven-day warm-up
-    const junk = await run({ nope: true }) // a blob of the wrong shape — detectClusters throws
+    // a blob of the wrong shape. The throw comes from clusterCandidates, which runs
+    // FIRST and hands the non-array straight to normaliseHistory's for…of —
+    // detectClusters is never even reached, so the fail-soft this pins is the try's,
+    // not that function's.
+    const junk = await run({ nope: true })
     expect(none.ledger.some(p => p.sym === 'ZCLU' && p.catalyst?.kind === 'velocity')).toBe(true) // not a vacuous comparison
     expect(young.ledger).toEqual(none.ledger) // every row, size, grade and flag identical
     expect(junk.ledger).toEqual(none.ledger)
@@ -2402,6 +2492,50 @@ describe('buildBoard', () => {
     const stamped = full.ledger.find(p => p.sym === 'ZCLU')!
     expect(stamped.catalyst!.reason).toContain('hype cluster')
     expect({ ...stamped, catalyst: undefined }).toEqual({ ...none.ledger.find(p => p.sym === 'ZCLU')!, catalyst: undefined })
+  })
+
+  // Tier 4 lifted cluster members past the 180-CANDIDATE cut (ratified). It was never
+  // a claim on the 15-slot CAP budget, and the deprioritisation there only knew about
+  // the sleeve — so one wide cluster of unpriced names took every slot and the day's
+  // discovery names went unpriced: no cap cohort, no >$10B dip-lane quality read, no
+  // small-cap stop widening. Elevation queues behind discovery here too. [R17]
+  it('a wide hype cluster never spends the cap budget the discovery names need', async () => {
+    // twenty peers whose ONLY door is the crowd's record: named together every day and
+    // moving on one shared tape, so they form a single 20-name cluster
+    const peers = Array.from({ length: 20 }, (_, i) => `ZP${String(i).padStart(2, '0')}`)
+    const peerTape = clusterTape(1, 1_000_000)
+    const history: TrendDay[] = Array.from({ length: 8 }, (_, i) => ({
+      date: new Date((T0 + (252 + i) * 86_400) * 1000).toISOString().slice(0, 10),
+      syms: peers,
+    }))
+    // …and three discovery names the screener found with NO cap of their own: exactly
+    // the rows this budget exists to price
+    const discovery = ['DIS1', 'DIS2', 'DIS3']
+
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', calWith('long:amber:25-40'))
+    await store.write('social-history', history)
+    const priced: string[] = []
+    await buildBoard(
+      store,
+      deps({
+        candles: async s => (peers.includes(s) ? peerTape : discovery.includes(s) || s === 'SPY' || s === 'QQQ' ? flat : null),
+        screens: async () =>
+          discovery.map(sym => ({ row: { sym, price: 100, capUsdM: null, changePct: 1, name: null }, source: 'screener:gainers' as const })),
+        mediaTitles: async () => [],
+        capUsdM: async sym => {
+          priced.push(sym)
+          return 50_000
+        },
+      }),
+      NOW,
+    )
+
+    for (const sym of discovery) expect(priced).toContain(sym)
+    // the budget itself is untouched — 15 slots, and the cluster takes the remainder
+    expect(priced).toHaveLength(15)
+    expect(priced.filter(s => peers.includes(s))).toHaveLength(12)
   })
 })
 

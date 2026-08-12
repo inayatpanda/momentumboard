@@ -847,17 +847,31 @@ export async function buildBoard(
   })
 
   // cap lookups are budgeted: screener caps ride along free, the rest rotate.
-  // The sleeve must not EAT the budget. Sleeve names always start capUsdM null
-  // (the spark batch carries closes, not fundamentals) and they sort ahead of
-  // discovery in candidatePriority, so a full sleeve would take all 15 slots and
-  // every discovery name would go the day unpriced — no cap cohort, no >$10B
-  // quality read, no small-cap stop widening. Non-sleeve names therefore fill the
-  // budget FIRST (keeping their own priority order among themselves) and sleeve-only
-  // names take whatever is left. A sleeve name needs the cap least: its dip-lane
-  // quality is already granted by sleeveSet, never by its cap. [R17]
+  // ELEVATION must not EAT the budget. Both elevation-only doors — the sleeve and
+  // the hype cluster — put names in the pool with capUsdM null (the spark batch
+  // carries closes, not fundamentals; a cluster carries nothing but the crowd's
+  // record) and both sort AHEAD of discovery in candidatePriority, so a full sleeve
+  // or one big cluster would take all 15 slots and every discovery name would go the
+  // day unpriced — no cap cohort, no >$10B quality read, no small-cap stop widening.
+  // Elevated names therefore queue BEHIND discovery: everything else fills the budget
+  // FIRST (keeping its own priority order among themselves) and they take whatever is
+  // left. Neither needs the cap: a sleeve name's dip-lane quality is granted by
+  // sleeveSet, never by its cap, and a cluster is priority and narration, never
+  // eligibility. Tier 4 elevated them past the CANDIDATE cut (ratified); it was never
+  // a claim on this budget. [R17]
   const noCapAll = candidateSyms.filter(s => sources.get(s)!.capUsdM == null && candleMap.has(s))
-  const sleeveOnly = (s: string) => sources.get(s)?.source === 'sleeve' // exact test — the sleeve door is stamped LAST
-  const noCap = [...noCapAll.filter(s => !sleeveOnly(s)), ...noCapAll.filter(sleeveOnly)].slice(0, 15)
+  // Two different tests, deliberately. The sleeve reads the SOURCE STRING, because
+  // its door is stamped after every ordinary door and before the cluster's, making
+  // 'sleeve' an exact test for "the sleeve was its only way in". A cluster member is
+  // stamped 'hype-cluster' under the same rule, but membership ALSO elevates a name
+  // some other discovery feed found (social, a theme) to the cluster's tier-4 slot —
+  // so the cluster is read as the SET, exactly as candidatePriority reads it, and
+  // narrowed to tier 4 so that a HOLDING or a watchlist name the crowd happens to be
+  // naming keeps the higher door it earned on its own.
+  const sleeveOnly = (s: string) => sources.get(s)?.source === 'sleeve'
+  const clusterElevated = (s: string) => clusterPeers.has(s) && candidatePriority(s) === 4
+  const elevatedOnly = (s: string) => sleeveOnly(s) || clusterElevated(s)
+  const noCap = [...noCapAll.filter(s => !elevatedOnly(s)), ...noCapAll.filter(elevatedOnly)].slice(0, 15)
   await mapLimit(noCap, 5, async sym => {
     const cap = await deps.capUsdM(sym)
     if (cap != null) sources.get(sym)!.capUsdM = cap
@@ -1040,9 +1054,15 @@ export async function buildBoard(
     //           taken smaller, with the gap named in evidence.detail. [R12]
     //   watch = everything else: an ungraded (below-base) call, or C on thin
     //           evidence — where conviction AND evidence are both short.
-    // Leverage is a separate, stricter question: an ETP is only ever routed for a
-    // FULL trade, so a half-size call is a plain share/paper position. Grade C
-    // never unlocks leverage anyway (riskLadder.leverageAllowed) — untouched. [R14]
+    // Leverage is a separate, stricter question, and it is keyed on the size the row
+    // ACTUALLY carries: an ETP is only ever routed for a row published at the FULL
+    // rung (sizedFraction === 1, below). A half tier is a plain share/paper position
+    // — and so is a full-tier row whose LANE door capped it to a quarter or a half.
+    // The door cap is the engine saying "small here, this move is young"; handing
+    // that row a 2× ETP would give the reader back the exposure the cap just took
+    // away, and at daily-rebalance decay on the most slippage-prone entry the engine
+    // makes. Grade C never unlocks leverage anyway (riskLadder.leverageAllowed) —
+    // untouched. [R14]
     const fullTrade = !shadow && (grade === 'A' || grade === 'B') && call.evidence.contract
     const halfTrade = !shadow && !fullTrade && grade != null && (grade !== 'C' || call.evidence.contract)
     const watchOnly = !shadow && !fullTrade && !halfTrade
@@ -1069,7 +1089,9 @@ export async function buildBoard(
     const routeBlocked = routeShadowed && grade != null && (grade !== 'C' || call.evidence.contract)
 
     const rung = cohortRungOf(risk, cohort)
-    const instrument = fullTrade ? mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {}) : null
+    // sizedFraction === 1 implies tierFraction === 1, i.e. fullTrade, so `grade` is
+    // non-null here for exactly the reason it was under the old `fullTrade` test.
+    const instrument = sizedFraction === 1 ? mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {}) : null
     const callThemes = themesOf(call.sym)
     const id = `${today}:${call.sym}:${call.side}`
     if (routeBlocked) routeBlockedShorts.add(id)
