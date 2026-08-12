@@ -52,6 +52,7 @@ export function journalistBoardRows(board: readonly Prediction[]) {
     paperOnly: p.paperOnly,
     watchOnly: p.watchOnly, // an observation, not a trade — may never become an idea
     nearMiss: p.nearMiss, // a row that cleared no gate — the journalist must not write it up
+    observation: p.observation, // cleared every gate, no ISA route — analysis, never a trade to take
     setup: p.setup,
     evidence: p.evidence?.detail,
     factorDetails: Object.fromEntries(Object.entries(p.factors).filter(([, f]) => f.score != null).map(([k, f]) => [k, `${f.score} — ${f.detail}`])),

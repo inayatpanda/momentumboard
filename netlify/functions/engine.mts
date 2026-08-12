@@ -107,6 +107,13 @@ export default async (req: Request) => {
           outcome10: p.outcome10,
           instrument: p.instrument,
           paperOnly: p.paperOnly,
+          // The row KIND, carried so a historical row keeps the containment its
+          // board day gave it. An observation cleared every gate and an ISA could
+          // never place it, so it is not a second opinion on a position anybody
+          // took — and the Journal's "engine disagrees" flag must go on respecting
+          // that after the row has aged out of today's board into this projection.
+          // (nearMiss deliberately absent: a near miss never enters the ledger.)
+          observation: p.observation ?? false,
           note: p.note,
         })),
       }

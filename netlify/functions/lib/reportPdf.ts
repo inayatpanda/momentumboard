@@ -608,9 +608,21 @@ export type PrintBoardRow = NonNullable<PaperExtras['engineBoard']>[number]
  * printed only so a side with nothing on it is not blank. Its grade C and its
  * probability are placeholders it never earned — a letter and a percentage
  * printed beside it would be fictions dressed as measurements — so it gets
- * neither, and says what it is instead. Its levels stay as orientation. */
+ * neither, and says what it is instead. Its levels stay as orientation.
+ *
+ * An observation is the mirror image: it cleared EVERY gate, so its grade and its
+ * probability are real and both print. What it has no route to is the market — an
+ * ISA cannot place it — so it says that where a placeable row prints its ETP, and
+ * its chip reads 'observation' rather than 'watch' (the footer explains watch rows
+ * as thin evidence, which this row is the opposite of). */
 export function boardPrintRow(b: PrintBoardRow): { chip: string; route: string; probability: string | null } {
   if (b.nearMiss) return { chip: 'nearest miss — did not clear the gates', route: 'no size', probability: null }
+  if (b.observation)
+    return {
+      chip: `${b.grade}${b.provisional ? ' prov' : ''} observation`,
+      route: 'no ISA route - observation only',
+      probability: `${Math.round((b.probability || 0) * 100)}%`,
+    }
   return {
     chip: `${b.grade}${b.provisional ? ' prov' : ''}${b.watchOnly ? ' watch' : ''}`,
     route: b.watchOnly ? 'watch - no size' : b.instrument ? `${b.instrument.ticker} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash',

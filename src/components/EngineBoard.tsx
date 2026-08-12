@@ -102,7 +102,11 @@ function Call({ p }: { p: EnginePrediction }) {
           {p.watchOnly
             ? p.nearMiss
               ? 'nearest miss — no size'
-              : 'watch — no size'
+              : // an observation is unsized because an ISA cannot route it, not
+                // because it fell short of anything — the card says which
+                p.observation
+                ? 'no ISA route — observation only'
+                : 'watch — no size'
             : `risk ${fmtRiskPct(p.riskPct)}%${halfSize ? ' (half size)' : ''}${p.instrument ? ` · ${p.instrument.ticker} ${p.instrument.leverage}x` : p.paperOnly ? ' · paper-only' : ''}`}
         </span>
       </div>
@@ -225,11 +229,18 @@ export function EngineBoard() {
       {(() => {
         // the new taxonomy: this-week trades, developing 2-4 week builds, then the
         // remaining short-horizon watch observations (horizon stamped by the engine),
-        // and last of all the nearest misses — rows that cleared no gate at all and
-        // exist only so a side with nothing on it still says what came closest.
+        // then the route-blocked observations, and last of all the nearest misses —
+        // rows that cleared no gate at all and exist only so a side with nothing on
+        // it still says what came closest.
+        //
+        // A promoted observation gets its OWN section rather than falling into the
+        // watch list: that section's line explains its rows as reads "below the
+        // sizing bar", and this row cleared the bar and every gate above it. It is
+        // unsized for one reason only, and it is not a reason about the evidence.
         const trades = b.board.filter(p => !p.watchOnly)
-        const developing = b.board.filter(p => p.watchOnly && !p.nearMiss && p.horizon === 'developing')
-        const watch = b.board.filter(p => p.watchOnly && !p.nearMiss && p.horizon !== 'developing')
+        const developing = b.board.filter(p => p.watchOnly && !p.nearMiss && !p.observation && p.horizon === 'developing')
+        const watch = b.board.filter(p => p.watchOnly && !p.nearMiss && !p.observation && p.horizon !== 'developing')
+        const observations = b.board.filter(p => p.observation && !p.nearMiss)
         const nearMisses = b.board.filter(p => p.nearMiss)
         return (
           <>
@@ -267,6 +278,17 @@ export function EngineBoard() {
               </>
             )}
             {watch.map(p => (
+              <Call key={p.id} p={p} />
+            ))}
+            {observations.length > 0 && (
+              <>
+                <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Observations — no ISA route</h4>
+                <p className="empty-line" style={{ fontSize: 11, marginTop: -2, marginBottom: 4 }}>
+                  Cleared every gate and fully graded — but nothing in an ISA can place them, so they are shown as reads, not offers.
+                </p>
+              </>
+            )}
+            {observations.map(p => (
               <Call key={p.id} p={p} />
             ))}
             {nearMisses.length > 0 && (

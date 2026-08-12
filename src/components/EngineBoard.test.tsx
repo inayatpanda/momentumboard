@@ -84,6 +84,32 @@ describe('EngineBoard', () => {
     delete data.board!.emptySides
   })
 
+  // A promoted observation is watch-only, so it fell into "Watch — short-term
+  // observations", whose line says its rows sit "below the sizing bar". This row
+  // cleared the sizing bar and every gate above it; the only thing it lacks is a
+  // route. Filed under that heading, the board explained it with someone else's
+  // reason — the same leak the paper and the PDF had.
+  it('gives a route-blocked observation its own section instead of filing it under thin-evidence watch rows', async () => {
+    data.board!.board = [
+      { ...prediction, id: 'obs', sym: 'OBS', watchOnly: true, riskPct: 0, paperOnly: false, observation: true, horizon: 'week' as const },
+      { ...prediction, id: 'wtch', sym: 'WTCH', watchOnly: true, riskPct: 0, paperOnly: false, horizon: 'week' as const },
+    ]
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText('Observations — no ISA route')).toBeInTheDocument())
+    expect(screen.getByText(/Cleared every gate and fully graded/)).toBeInTheDocument()
+    expect(screen.getByText('no ISA route — observation only')).toBeInTheDocument()
+    // the ordinary watch row still gets its own heading and its own honest reason
+    expect(screen.getByText('Watch — short-term observations')).toBeInTheDocument()
+    expect(screen.getByText('watch — no size')).toBeInTheDocument()
+    data.board!.board = [prediction]
+  })
+
+  it('names no observation section when the board has none', async () => {
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument())
+    expect(screen.queryByText('Observations — no ISA route')).toBeNull()
+  })
+
   it('keeps the gates wording when the gates really are what emptied the side', async () => {
     data.board!.emptySides = { long: 'gates' }
     render(<EngineBoard />)

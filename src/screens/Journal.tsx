@@ -38,9 +38,9 @@ interface EngineView {
   // A promoted observation: the engine's read is real and fully graded, but the
   // row carries no route and no size — the reader could never have taken it. It
   // is therefore not a second opinion on a position they DID take: "engine
-  // disagrees" on a row nobody could place is a conflict with nothing. Only
-  // TODAY'S board can raise this flag: the slimmed ledger payload carries no row
-  // kinds at all, so the fallback branch reads a stale row exactly as before.
+  // disagrees" on a row nobody could place is a conflict with nothing. Raised by
+  // BOTH branches: the slimmed ledger projection carries the flag too, so a
+  // historical observation cannot regain, by ageing, an authority it never had.
   observation: boolean
 }
 
@@ -53,7 +53,7 @@ function engineViewFor(sym: string, engine: EngineData | null): EngineView | nul
   const days = [...(engine.ledger ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10)
   for (const d of days) {
     const p = d.predictions.find(pr => pr.sym === sym && !pr.shadow)
-    if (p) return { grade: p.grade, provisional: p.provisional, side: p.side, entry: p.entry, stop: p.stop, target: p.target, stage: p.stage, source: 'ledger', nearMiss: false, observation: false }
+    if (p) return { grade: p.grade, provisional: p.provisional, side: p.side, entry: p.entry, stop: p.stop, target: p.target, stage: p.stage, source: 'ledger', nearMiss: false, observation: p.observation === true }
   }
   return null
 }

@@ -233,6 +233,7 @@ export interface BoardRow {
   paperOnly: boolean
   watchOnly?: boolean // unsized: C on thin evidence, below-base, or an unpicked overflow row — printed as an observation
   nearMiss?: boolean // cleared NO gate; named only so a side with nothing on it is not blank — never an idea
+  observation?: boolean // cleared EVERY gate and an ISA cannot route it: fully graded, never placeable
   earningsRisk: boolean
   instrument: { ticker: string; leverage: number } | null
 }
@@ -247,6 +248,11 @@ export interface BoardRow {
  * grown — saw a graded call where the engine had said no. A near miss carries a
  * placeholder grade C and a base-rate probability precisely BECAUSE nothing else
  * would typecheck; losing the flag turns both placeholders into measurements.
+ * `observation` was dropped the same way and cost the same thing in reverse: that
+ * row's grade and probability are REAL, so it printed as an ordinary watch row
+ * under a footer explaining watch rows as "grade C or thin evidence" — a true
+ * sentence about a different row. Nothing in the numbers says an ISA cannot place
+ * it; only the flag does.
  *
  * PURE + exported so the projection is testable without running the compose pipe.
  * `name` is intentionally left undefined: the compose function enriches it from
@@ -265,7 +271,8 @@ export function boardExportRows(board: readonly BoardExportSource[]): BoardRow[]
     expectedMovePct: b.expectedMovePct,
     paperOnly: b.paperOnly,
     watchOnly: b.watchOnly,
-    nearMiss: b.nearMiss, // the row kind the renderers key their honesty off
+    nearMiss: b.nearMiss, // the row kinds the renderers key their honesty off
+    observation: b.observation,
     earningsRisk: b.earningsRisk,
     instrument: b.instrument,
   }))
@@ -492,6 +499,7 @@ export const SECTIONS: SectionSpec[] = [
 IF engineBoard IS PRESENT in the data (the quant engine's scored calls, each with probability/grade/entry/stop/target): you are the JOURNALIST, not the analyst. HARD RULES:
 - Select ideas ONLY from engineBoard entries — ticker and side copied exactly; you may NOT introduce any other ticker as an idea.
 - Entries with watchOnly:true are OBSERVATIONS (grade C on thin evidence, a below-base read, or a row the diversity gates did not pick), never ideas — you may mention them as "the engine is watching X" colour, but they get no entry/size framing. Sized entries carry riskPct > 0; a HALVED riskPct means the engine took a real setup smaller because either its grade or its evidence was short — never write those up as full-conviction calls.
+- Entries with observation:true cleared EVERY gate and are fully graded — but no ISA route exists to place them, so they are analysis and never a trade to take. Write them up as a read ("the engine is short X and cannot place it"), never with an entry, a size or a route.
 - Entries with nearMiss:true cleared NO gate at all: the engine looked and said no, and they are shown only so a side with nothing on it is not blank. At most one clause — "nothing cleared the gates; the closest was X" — and never a level, a size or a case.
 - Copy entry, invalidation (the stop), target and conviction (the grade) VERBATIM from the board entry. You write the caseText, chartRead (from its stage/note), streetCheck (channels by name, then Reddit/Stocktwits), and 2-4 numbered reasons from the factor details.
 - You get ONE qualitative power per idea: an optional overlay {"flag":"boost|caution|veto","reason":"<grounded in a REAL headline or event in the data>"}. veto = the idea is dropped from the paper (say why in shortDesk if a short, lead if a long). Use it sparingly — every overlay is logged and graded against what price then did.
@@ -658,9 +666,16 @@ const num = (v: number | null | undefined, dp = 1) => (v == null ? '·' : v.toFi
  * as the one it exists to prevent. Exported so the tests can read it directly. */
 export function boardFootnote(board: readonly BoardRow[]): string {
   const parts = ["Calibrated on the engine's own graded history, excess vs S&amp;P."]
-  if (board.some(b => b.watchOnly && !b.nearMiss))
+  // An observation is NOT one of these: it cleared everything and is fully graded,
+  // so explaining it as "grade C or thin evidence" would be a true sentence about
+  // a different row — the one dishonesty this footer exists to avoid.
+  if (board.some(b => b.watchOnly && !b.nearMiss && !b.observation))
     parts.push(
       'Watch rows are observations — grade C, thin evidence, or a row the diversity gates left unpicked — no size until they earn A/B.',
+    )
+  if (board.some(b => b.observation))
+    parts.push(
+      'Observation rows cleared every gate and carry a real grade and probability — but no ISA route exists to place them, so they carry no size and are not an offer to trade.',
     )
   if (board.some(b => b.nearMiss))
     parts.push(
@@ -934,14 +949,29 @@ ${
           `${x.engineBoard
             .map(b => {
               const isShort = b.side === 'short'
-              const route = b.nearMiss ? 'no size' : b.watchOnly ? 'watch — no size' : b.instrument ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash'
+              const route = b.nearMiss
+                ? 'no size'
+                : b.observation
+                  ? 'no ISA route — observation only'
+                  : b.watchOnly
+                    ? 'watch — no size'
+                    : b.instrument
+                      ? `${esc(b.instrument.ticker)} ${b.instrument.leverage}x`
+                      : b.paperOnly
+                        ? 'paper-only'
+                        : 'cash'
               // A near miss cleared NO gate, so it gets no letter grade and no
               // probability: both would be fictions dressed as measurements (the
               // stored C and the base rate are placeholders it never earned). It
               // says what it is instead, and its levels stay as orientation only.
+              //
+              // An observation is the opposite row and keeps both numbers — they
+              // are real — but its chip says 'observation' rather than 'watch': it
+              // is unsized because an ISA cannot route it, not because the evidence
+              // was thin, and 'watch' is where the paper explains the other thing.
               const chip = b.nearMiss
                 ? `nearest miss &mdash; did not clear the gates`
-                : `${b.grade}${b.provisional ? '&middot;prov' : ''}${b.watchOnly ? '&middot;watch' : ''}`
+                : `${b.grade}${b.provisional ? '&middot;prov' : ''}${b.observation ? '&middot;observation' : b.watchOnly ? '&middot;watch' : ''}`
               return (
                 `<div style="padding:7px 0;border-bottom:1px solid #e6e0d2">` +
                 `<div style="line-height:1.45"><span style="font-weight:700;font-size:14.5px">${esc(b.sym)}</span>` +

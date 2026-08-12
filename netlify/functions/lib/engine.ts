@@ -1155,24 +1155,35 @@ export async function buildBoard(
   // a recent prior date — three correlated CEG shorts teach nothing while starving
   // the tiny shadow budget of fresh names. Gated on outcome10 (not outcome5) so a
   // slot frees only once its evidence has actually fed the learning loop, at 10d.
-  // Live (non-shadow) calls are never deduped — on EITHER side of the comparison.
-  // The set is built from prior SHADOW rows only: an ungraded LIVE call from
-  // yesterday holds no shadow slot, and counting it used to make today's shadow of
-  // that name vanish from the ledger entirely — which silently swallowed exactly
-  // the rows the shadow budget exists to collect (a structural-news veto on a name
-  // the engine called live the day before).
+  // Ordinary live (non-shadow) calls are never deduped — on EITHER side of the
+  // comparison. An ungraded LIVE call from yesterday holds no shadow slot, and
+  // counting it used to make today's shadow of that name vanish from the ledger
+  // entirely — which silently swallowed exactly the rows the shadow budget exists
+  // to collect (a structural-news veto on a name the engine called live the day
+  // before).
+  //
+  // A promoted OBSERVATION is the one live row that does hold the slot, because it
+  // is the SAME row: an observation is a route-blocked shadow the board pulled into
+  // the light for a day. If yesterday's promotion has not graded yet and today's
+  // copy enters as a shadow, both mature into the calibration buckets and one
+  // signal is counted twice. The promotion's own rank already refuses to re-promote
+  // such a name (outstandingObservationKeys, below); the shadow path has to refuse
+  // it for the same reason, or the double-count simply moves one lane over.
   const priorDates = ((await store.read<string[]>('predictions-index')) ?? []).filter(d => d !== today).slice(-10)
   const outstandingShadowKeys = new Set<string>()
   /** The same idea one lane over: a PROMOTED OBSERVATION from a recent day that
    * has not graded yet. A promoted row is a live ledger row, not a shadow, so it
    * never lands in the set above — and without its own set a name the route
    * blocks every morning would be promoted again every morning, each day's copy
-   * entering the ledger as fresh live evidence. Read ONLY by the observation
-   * rank below; the shadow budget's own dedup is deliberately left alone. */
+   * entering the ledger as fresh live evidence. Read by the observation rank
+   * below. Such a row now also holds a SHADOW slot (above), so this set is
+   * strictly contained in that one — kept separate on purpose: the two rules
+   * answer different questions ("may this be promoted?" and "may this be
+   * shadowed?") and must not start depending on each other's membership. */
   const outstandingObservationKeys = new Set<string>()
   for (const date of priorDates) {
     for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
-      if (p.shadow && !p.outcome10) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
+      if ((p.shadow || p.observation) && !p.outcome10) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
       if (p.observation && !p.outcome10) outstandingObservationKeys.add(`${p.sym}:${p.side}`)
     }
   }
@@ -1363,13 +1374,22 @@ export async function buildBoard(
     //     would be re-promoted every morning and every copy graded as fresh live
     //     evidence — the shadow budget's dedup rule (above) exists for exactly
     //     this failure, and an observation is no more entitled to skip it.
-    //   · a name the DIP LANE is long today. A sized dip long beside a short
-    //     observation on the same chart is a board telling the reader both
-    //     things at once; the dip lane already owns that name for the day.
+    //   · a name the FINAL BOARD already shows a live row on — in practice the dip
+    //     lane's long. A sized long beside a short observation on the same chart is
+    //     a board telling the reader both things at once, and the dip lane owns
+    //     that name for the day. The test is what the reader can SEE, not what the
+    //     dip lane attempted: a dip long that a structural news read shadowed, or
+    //     that lost its slot to the 3-per-side cut, contradicts nothing because it
+    //     is not on the board. Keying on the attempt (constructedDipLongs) suppressed
+    //     the observation in exactly those cases and showed the reader nothing at
+    //     all on either side — the contradiction this rule prevents needs a visible
+    //     long to be a contradiction. liveCalls is final for the opposite side here:
+    //     both sides' trades and watch rows are cut above, and this loop only runs
+    //     for a side that has none.
     const observation = board
       .filter(b => b.side === side && b.shadow && routeBlockedShorts.has(b.id))
       .filter(b => !outstandingShadowKeys.has(`${b.sym}:${b.side}`) && !outstandingObservationKeys.has(`${b.sym}:${b.side}`))
-      .filter(b => !constructedDipLongs.has(b.sym.toUpperCase()))
+      .filter(b => !liveCalls.some(l => l.sym.toUpperCase() === b.sym.toUpperCase()))
       .sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))[0]
     if (observation) {
       emptySides[side] = 'no-route'

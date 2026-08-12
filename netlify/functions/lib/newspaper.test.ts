@@ -319,16 +319,52 @@ describe('deterministic board table in the paper', () => {
     expect(html).toContain('grade C, thin evidence')
   })
 
+  // The near miss's mirror image: this row cleared EVERY gate, so its grade and
+  // probability are real and stay. What it cannot do is be bought — no ISA route
+  // exists — and printing it as an ordinary watch row under a footer explaining
+  // watch rows as "grade C, thin evidence" tells the reader a true sentence about
+  // a different row, which is the one thing this board is not allowed to do.
+  const observationRow = {
+    ...nearMissRow, sym: 'OBS', grade: 'B' as const, provisional: false, probability: 0.62,
+    nearMiss: false, observation: true,
+  }
+
+  it('an observation row keeps its real numbers but says the route is what stops it', () => {
+    const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [observationRow] })
+    expect(html).toContain('OBS')
+    expect(html).toContain('62%') // the probability is earned, unlike a near miss's
+    expect(html).toContain('B&middot;observation')
+    expect(html).toContain('no ISA route — observation only')
+    expect(html).not.toContain('&middot;watch') // …and it is not filed as thin evidence
+    expect(html).not.toContain('nearest miss')
+  })
+
+  it('the footer explains the observation instead of miscasting it as a thin-evidence watch row', () => {
+    const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [observationRow] })
+    expect(html).toContain('Observation rows cleared every gate')
+    expect(html).not.toContain('grade C, thin evidence')
+    expect(html).not.toContain('Nearest-miss rows cleared NO gate')
+
+    // …and a board with BOTH kinds earns both clauses, each about its own rows
+    const mixed = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', {
+      engineBoard: [observationRow, { ...nearMissRow, sym: 'WTCH', nearMiss: false }],
+    })
+    expect(mixed).toContain('Observation rows cleared every gate')
+    expect(mixed).toContain('grade C, thin evidence')
+  })
+
   // The projection the compose pipe hands BOTH exports (email HTML + print PDF).
   // It used to be a hand-written literal that silently dropped nearMiss, so the
   // containment above was dead code in production: every renderer downstream saw
   // a graded call where the engine had said no.
   describe('boardExportRows — the projection every export renders from', () => {
-    it('carries the row kinds through — nearMiss included', () => {
-      const rows = boardExportRows([nearMissRow, { ...board[0], watchOnly: false }])
+    it('carries the row kinds through — nearMiss and observation included', () => {
+      const rows = boardExportRows([nearMissRow, { ...board[0], watchOnly: false }, observationRow])
       expect(rows[0].nearMiss).toBe(true)
       expect(rows[0].watchOnly).toBe(true)
       expect(rows[1].nearMiss).toBeUndefined()
+      expect(rows[2].observation).toBe(true)
+      expect(rows[0].observation).toBeUndefined()
       // and the numbers ride through untouched
       expect(rows[1]).toMatchObject({ sym: 'IREN', side: 'short', grade: 'C', probability: 0.5, entry: 38.82, stop: 46.16, target: 29.03, paperOnly: true, instrument: null })
     })
@@ -341,6 +377,12 @@ describe('deterministic board table in the paper', () => {
       const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: boardExportRows([nearMissRow]) })
       expect(html).toContain('nearest miss &mdash; did not clear the gates')
       expect(html).not.toContain('50%')
+    })
+
+    it('the projected observation still prints as an observation in the paper', () => {
+      const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: boardExportRows([observationRow]) })
+      expect(html).toContain('no ISA route — observation only')
+      expect(html).toContain('Observation rows cleared every gate')
     })
   })
 })

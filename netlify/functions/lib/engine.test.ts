@@ -693,6 +693,32 @@ describe('buildBoard', () => {
       expect(board.some(b => b.side === 'short' && b.nearMiss)).toBe(true)
     })
 
+    // …and blocking the promotion is only half of it. The very same row publishes
+    // as a SHADOW when it is not promoted, so a rule that stopped at the promotion
+    // let yesterday's ungraded observation and today's shadow of the identical
+    // signal both mature into the calibration buckets — one read, counted twice.
+    it('…and the SHADOW path is deduped by it too, so one signal is never graded twice', async () => {
+      const store = await dedupStore({ observation: true, watchOnly: true })
+      await buildBoard(store, dedupDeps, NOW)
+
+      // nothing about NVDA enters today's ledger: not promoted, and not shadowed
+      // behind yesterday's copy either
+      expect((await ledgerOf(store))!.some(p => p.sym === 'NVDA')).toBe(false)
+      // the control: the prior day still carries exactly one ungraded NVDA short —
+      // the row the buckets are waiting on
+      expect((await store.read<Prediction[]>('predictions:2026-06-01'))!.filter(p => p.sym === 'NVDA')).toHaveLength(1)
+    })
+
+    it('…and once that observation has graded, the shadow slot frees with the promotion', async () => {
+      const store = await dedupStore({
+        observation: true,
+        watchOnly: true,
+        outcome10: { excessPct: -3, rawPct: -3, spyPct: 0, stopped: false, hit: true },
+      })
+      await buildBoard(store, dedupDeps, NOW)
+      expect((await ledgerOf(store))!.some(p => p.sym === 'NVDA')).toBe(true)
+    })
+
     it('…but once it has GRADED, the slot is free again', async () => {
       const store = await dedupStore({ observation: true, watchOnly: true, outcome10: { excessPct: -3, rawPct: -3, spyPct: 0, stopped: false, hit: true } })
       const { board } = await buildBoard(store, dedupDeps, NOW)
@@ -731,6 +757,38 @@ describe('buildBoard', () => {
     expect(short.shadow).toBe(true)
     expect(short.observation).toBeUndefined()
     // and the empty-side copy still refuses to blame the gates
+    expect((await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!.emptySides?.short).toBe('no-route')
+  })
+
+  // ---- …but only a VISIBLE long is a contradiction ----
+  // Same tape, one difference: the news reads the dip as a broken thesis, so the
+  // dip long publishes as a shadow and never reaches the reader's board. Keying
+  // the refusal on the dip lane's ATTEMPT then suppressed the short observation
+  // too — and the reader was shown nothing whatever on a name both lanes had a
+  // fully-graded read on. Nothing can contradict a row that is not on the board.
+  it('a dip long the news SHADOWED no longer suppresses the short observation — the board would otherwise show nothing at all', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} }) // no inverse ETP: the short is route-blocked
+    await store.write('engine-calibration', {
+      buckets: { 'short:amber:40-55': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 14 } },
+      brier: [],
+      defVersion: CALIB_DEF_VERSION,
+    })
+    const d = collisionDeps({ dipNews: async () => ({ verdict: 'structural', reason: 'SEC probe into revenue recognition' }) })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const shown = board.filter(b => b.sym === 'GLW' && !b.nearMiss)
+    expect(shown).toHaveLength(1) // still exactly one GLW row — no contradiction was created
+    expect(shown[0].side).toBe('short')
+    expect(shown[0].observation).toBe(true)
+    expect(shown[0].watchOnly).toBe(true)
+    expect(shown[0].riskPct).toBe(0) // an observation is never sized
+    expect(shown[0].instrument).toBeNull()
+    expect(shown[0].note).toContain('no ISA route — observation only')
+    // the vetoed dip long is nowhere near the reader's board — which is precisely
+    // why the short may speak
+    expect(board.some(b => b.sym === 'GLW' && b.side === 'long')).toBe(false)
+    expect((await ledgerOf(store))!.find(p => p.sym === 'GLW' && p.side === 'long')!.shadow).toBe(true)
     expect((await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!.emptySides?.short).toBe('no-route')
   })
 

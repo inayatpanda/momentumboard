@@ -260,4 +260,29 @@ describe('the printed board tells the truth about a near miss', () => {
   it('a board of nothing but near misses still renders a valid PDF', async () => {
     expect(pdfMagic(await composeReportPdf({ html: '', print: { engineBoard: [nearMiss] } }))).toBe('%PDF-')
   })
+
+  // The opposite row, and the opposite failure: an observation cleared every gate,
+  // so its grade and probability are real and stay — but it printed with a 'watch'
+  // chip under a footer explaining watch rows as thin evidence, which is a true
+  // sentence about somebody else. The reason it carries no size is the route.
+  describe('…and about an observation', () => {
+    const observation: PrintBoardRow = { ...nearMiss, sym: 'OBS', grade: 'B', provisional: false, probability: 0.62, nearMiss: false, observation: true }
+
+    it('keeps the earned grade and probability, and names the ROUTE as what stops it', () => {
+      expect(boardPrintRow(observation)).toEqual({ chip: 'B observation', route: 'no ISA route - observation only', probability: '62%' })
+      expect(boardPrintRow(observation).chip).not.toContain('watch')
+    })
+
+    it('the footer explains it in its own words, not the watch row’s', () => {
+      const foot = boardPrintFootline([observation])
+      expect(foot).toContain('Observation rows cleared every gate')
+      expect(foot).not.toContain('Watch rows are observations')
+      expect(foot).not.toContain('Nearest-miss rows cleared NO gate')
+      expect(foot).not.toContain('&amp;')
+    })
+
+    it('a board of nothing but observations still renders a valid PDF', async () => {
+      expect(pdfMagic(await composeReportPdf({ html: '', print: { engineBoard: [observation] } }))).toBe('%PDF-')
+    })
+  })
 })

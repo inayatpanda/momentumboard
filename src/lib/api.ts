@@ -420,6 +420,10 @@ export interface LedgerPrediction {
   outcome10?: PredOutcome
   instrument: { ticker: string; leverage: number } | null
   paperOnly: boolean
+  // a promoted route-blocked row: graded, real, and never placeable — the flag
+  // rides the slim projection so a historical observation keeps its containment
+  // (a near miss needs no equivalent: they never enter the ledger at all)
+  observation?: boolean
   note: string
 }
 

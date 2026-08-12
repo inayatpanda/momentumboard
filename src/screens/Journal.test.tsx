@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 import type { Trade } from '../../shared/journal'
-import type { EngineData, EnginePrediction } from '../lib/api'
+import type { EngineData, EnginePrediction, LedgerPrediction } from '../lib/api'
 import type { Quote } from '../../shared/types'
 
 const mkTrade = (o: Partial<Trade>): Trade => ({
@@ -20,6 +20,11 @@ const trades: Trade[] = [
   // held long, while the board's only row for the name is a promoted OBSERVATION
   // on the short side: fully graded, and a row an ISA could never have placed
   mkTrade({ id: 't5', symbol: 'OBS', direction: 'long', openedAt: 40 }),
+  // the same thing one day later: nothing on TODAY'S board, and the most recent
+  // live ledger row for the name is that observation, now history
+  mkTrade({ id: 't6', symbol: 'OLD', direction: 'long', openedAt: 30 }),
+  // the control beside it: an ordinary historical short, which DOES disagree
+  mkTrade({ id: 't7', symbol: 'LDG', direction: 'long', openedAt: 20 }),
 ]
 
 const mkCall = (o: Partial<EnginePrediction>): EnginePrediction => ({
@@ -27,6 +32,13 @@ const mkCall = (o: Partial<EnginePrediction>): EnginePrediction => ({
   grade: o.grade ?? 'B', expectedMovePct: 8, entry: 100, stop: 95, target: 112, capacityPct: 10,
   smallCap: false, earningsRisk: false, stage: o.stage ?? null, note: '', riskRung: 1, riskPct: 1.25,
   instrument: null, paperOnly: false, factors: {}, ...o,
+})
+
+const mkLedgerRow = (o: Partial<LedgerPrediction>): LedgerPrediction => ({
+  id: o.id!, date: '2026-07-01', sym: o.sym!, side: o.side ?? 'long', grade: 'B', probability: 0.6,
+  provisional: false, shadow: false, composite: -40, entry: 100, stop: 95, target: 112,
+  expectedMovePct: 8, stage: 'extended', regime: 'green', earningsRisk: false, instrument: null,
+  paperOnly: false, note: '', ...o,
 })
 
 const engine: EngineData = {
@@ -41,7 +53,16 @@ const engine: EngineData = {
       mkCall({ id: 'c4', sym: 'OBS', side: 'short', grade: 'B', stage: 'extended', watchOnly: true, riskPct: 0, observation: true }),
     ],
   },
-  ledger: [],
+  ledger: [
+    {
+      date: '2026-07-01',
+      predictions: [
+        // yesterday's promoted observation, seen through the SLIM ledger projection
+        mkLedgerRow({ id: 'l1', sym: 'OLD', side: 'short', observation: true, note: 'weak · no ISA route — observation only' }),
+        mkLedgerRow({ id: 'l2', sym: 'LDG', side: 'short' }), // an ordinary historical call
+      ],
+    },
+  ],
   holdingsReads: [
     { sym: 'TSLA', stage: 'extended', entryQuality: 'chase', note: 'Extended above the 20-day', capacityPct: 12, pplPct: 24.5, quantity: 3 },
     { sym: 'AAPL', stage: 'pullback', entryQuality: 'early', note: 'Healthy dip', capacityPct: 6, pplPct: -8.1, quantity: 10 },
@@ -58,6 +79,8 @@ const quoteMap: Record<string, Quote> = {
   XYZ: { symbol: 'XYZ', price: 101, prevClose: 100, changePct: 1, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
   NMS: { symbol: 'NMS', price: 100, prevClose: 100, changePct: 0, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
   OBS: { symbol: 'OBS', price: 100, prevClose: 100, changePct: 0, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
+  OLD: { symbol: 'OLD', price: 100, prevClose: 100, changePct: 0, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
+  LDG: { symbol: 'LDG', price: 100, prevClose: 100, changePct: 0, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
 }
 
 vi.mock('../lib/api', () => ({
@@ -133,6 +156,20 @@ describe('Journal — positions joined to the ledger', () => {
     // the control lives one card over: TSLA is the same opposite-side read on a
     // takeable row, and it DOES flag
     expect(cardFor(container, 'TSLA').querySelector('.engine-conflict')).toBeTruthy()
+  })
+
+  // Ageing is not a promotion. Once the observation drops off today's board the
+  // fallback reads it from the slim ledger projection — which used to carry no row
+  // kind at all, so the row silently regained the conflict authority it never had.
+  it('a HISTORICAL observation from the ledger still cannot disagree with a held position', async () => {
+    const { container } = render(<Journal />)
+    await waitFor(() => expect(cardFor(container, 'OLD')?.querySelector('.engine-read')).toBeTruthy())
+    const card = cardFor(container, 'OLD')
+    expect(card.querySelector('.engine-read')!.textContent).toContain('engine ▼ short') // the read is still shown
+    expect(card.querySelector('.engine-conflict')).toBeNull()
+    // the control one card over: the same ledger day, the same opposite side, an
+    // ordinary call — and it DOES flag
+    expect(cardFor(container, 'LDG').querySelector('.engine-conflict')?.textContent).toBe('engine disagrees — extended')
   })
 
   it('renders a muted "no engine read" when the engine has no view of the name', async () => {

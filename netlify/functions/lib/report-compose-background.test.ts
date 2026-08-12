@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { journalistBoardRows } from '../report-compose-background.mts'
-import { constrainIdeasToBoard, fallbackIdeasFromBoard, type Idea } from './newspaper'
+import { boardExportRows, buildNewspaperHtml, constrainIdeasToBoard, fallbackIdeasFromBoard, type ComposedReport, type Idea } from './newspaper'
 import type { FactorName, FactorScore, Prediction } from '../../../shared/engine/types'
 
 const factors = Object.fromEntries(
@@ -41,6 +41,7 @@ const observation: Prediction = {
   instrument: null,
   paperOnly: false,
   watchOnly: true,
+  observation: true, // the machine-readable stamp buildBoard writes beside the label
 }
 
 const shortIdea = (over: Partial<Idea> = {}): Idea => ({
@@ -64,7 +65,10 @@ describe('journalistBoardRows — the board the paper is written from', () => {
     const [row] = journalistBoardRows([observation])
     expect(row.note).toContain('no ISA route — observation only')
     expect(row.evidence).toContain('no ISA route — observation only')
-    // and the flags that say it is not a position, carried through unchanged
+    // and the flags that say it is not a position, carried through unchanged.
+    // `observation` rides with them so the prompt's own rule about these rows has
+    // something to key on — prose in `note` is a hint, a flag is a contract.
+    expect(row.observation).toBe(true)
     expect(row.watchOnly).toBe(true)
     expect(row.riskPct).toBe(0)
     expect(row.instrument).toBeNull()
@@ -96,14 +100,34 @@ describe('journalistBoardRows — the board the paper is written from', () => {
       riskPct: 1,
       instrument: { ticker: 'SAMD', leverage: 2 },
       watchOnly: undefined,
+      observation: undefined,
     }
     const rows = journalistBoardRows([placeable])
     expect(rows[0].note).not.toContain('observation only')
+    expect(rows[0].observation).toBeUndefined()
     const { ideas, rejected } = constrainIdeasToBoard([shortIdea({ ticker: 'AMD' })], rows)
     expect(rejected).toEqual([])
     expect(ideas).toHaveLength(1)
     expect(ideas[0].predictionId).toBe('2026-08-12:AMD:short')
     expect(fallbackIdeasFromBoard(rows)).toHaveLength(1)
+  })
+
+  // The wiring the exports actually use: the emailed paper and the print edition
+  // are rendered from boardExportRows(journalistBoardRows(board)), so a flag has to
+  // survive BOTH hops. It survived neither, and the paper printed the observation
+  // as an ordinary watch row under a footer explaining thin evidence.
+  it('the flag survives the whole chain into the printed paper', () => {
+    const composed: ComposedReport = {
+      headline: 'H', standfirst: 'S', lead: 'L', portfolioDesk: 'p', tape: 't', ideas: [],
+      shortDesk: 's', rotation: 'r', crypto: 'c', channels: 'ch', editorial: 'e', honestClose: 'h',
+      regime: 'amber', fedStance: 'neutral', macroNotes: [],
+    }
+    const html = buildNewspaperHtml(composed, 'Wednesday, 12 August 2026', {
+      engineBoard: boardExportRows(journalistBoardRows([observation])),
+    })
+    expect(html).toContain('no ISA route — observation only')
+    expect(html).toContain('Observation rows cleared every gate')
+    expect(html).not.toContain('grade C, thin evidence')
   })
 
   it('only the top 16 rows are shown — the prompt budget is finite', () => {
