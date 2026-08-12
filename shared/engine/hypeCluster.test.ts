@@ -21,10 +21,34 @@ const tape = (rets: number[], from = 0, start = 100): Candle[] => {
   return bars
 }
 
-// SPY: 41 flat bars (days 0-40), so every planted return has a same-DATE index
+// SPY: 25 flat bars (days 0-24), so every planted return has a same-DATE index
 // return to subtract and excess === raw. The vs-SPY subtraction gets its own test
 // at the bottom, where the index actually moves and the raw agreement is a lie.
-const SPY = tape(new Array(40).fill(0))
+// The index tape is also the CLOCK: its newest session (day 24 — the last day the
+// tapes below print) is "now", and every co-move sample has to reach it.
+const SPY = tape(new Array(24).fill(0))
+
+// The same tape on a real market calendar: bars on successive weekdays with one
+// Monday holiday dropped, so the series carries three-day Friday→Monday gaps and
+// one four-day Friday→Tuesday gap — the routine breaks the gap guard must NOT read
+// as missing bars. T0 is a Wednesday, so offset 5 is the following Monday.
+const HOLIDAY_OFFSET = 5
+const sessionOffsets = (n: number): number[] => {
+  const out: number[] = []
+  for (let i = 0; out.length < n; i++) {
+    const w = new Date((T0 + i * DAY) * 1000).getUTCDay()
+    if (w >= 1 && w <= 5 && i !== HOLIDAY_OFFSET) out.push(i)
+  }
+  return out
+}
+const sessionTape = (rets: number[], start = 100): Candle[] => {
+  let c = start
+  return sessionOffsets(rets.length + 1).map((off, i) => {
+    if (i > 0) c *= 1 + rets[i - 1]
+    return { t: T0 + off * DAY, o: c, h: c, l: c, c, v: 1_000_000 }
+  })
+}
+const dayIndexOf = (c: Candle) => Math.round((c.t - T0) / DAY)
 
 const N = 24
 const ix = Array.from({ length: N }, (_, i) => i)
@@ -68,39 +92,43 @@ describe('detectClusters — the two legs', () => {
   })
 
   it('needs fifteen truly overlapping observations — fourteen correlated sessions buy nothing', () => {
+    // Both fixtures END on day 24, the index's newest session, so the ONLY thing
+    // separating them is the length of the sample (the freshness bound has its own
+    // tests below and must not be what decides these two).
     const short = new Map<string, Candle[]>([
-      ['AAA', tape(RA.slice(-14))], // 15 bars → 14 dated returns
-      ['BBB', tape(RB.slice(-14))],
-      ['CCC', tape(RC.slice(-14))],
+      ['AAA', tape(RA.slice(-14), 10)], // 15 bars, days 10-24 → 14 dated returns
+      ['BBB', tape(RB.slice(-14), 10)],
+      ['CCC', tape(RC.slice(-14), 10)],
     ])
     // the correlations are all still there (AB .970, AC .990, BC .961) — only the
     // sample is short, and a short sample is not evidence
     expect(detectClusters(history(repeat(8, ABC)), short, SPY)).toEqual([])
 
     const justEnough = new Map<string, Candle[]>([
-      ['AAA', tape(RA.slice(-15))], // 16 bars → 15 dated returns
-      ['BBB', tape(RB.slice(-15))],
-      ['CCC', tape(RC.slice(-15))],
+      ['AAA', tape(RA.slice(-15), 9)], // 16 bars, days 9-24 → 15 dated returns
+      ['BBB', tape(RB.slice(-15), 9)],
+      ['CCC', tape(RC.slice(-15), 9)],
     ])
     expect(detectClusters(history(repeat(8, ABC)), justEnough, SPY)).toEqual([['AAA', 'BBB', 'CCC']])
   })
 
   it('counts OVERLAPPING sessions, not positions: two tapes on different dates never pair up', () => {
-    // AAA and CCC print days 0-20; BBB prints the SAME twenty returns ten days later.
+    // AAA and CCC print days 4-24; BBB prints the SAME twenty returns ten days later.
     // Tail-position pairing would hand BBB twenty pairs at r .959 and call it a
     // cluster member; dated pairing finds ten shared dates and refuses the edge.
+    // (AAA and CCC still reach day 24, so freshness is not what refuses it.)
     expect(pearson(RA.slice(0, 20), RB.slice(0, 20))!).toBeGreaterThan(0.9)
     const shifted = new Map<string, Candle[]>([
-      ['AAA', tape(RA.slice(0, 20))],
-      ['BBB', tape(RB.slice(0, 20), 10)],
-      ['CCC', tape(RC.slice(0, 20))],
+      ['AAA', tape(RA.slice(0, 20), 4)],
+      ['BBB', tape(RB.slice(0, 20), 14)],
+      ['CCC', tape(RC.slice(0, 20), 4)],
     ])
     expect(detectClusters(history(repeat(8, ABC)), shifted, SPY)).toEqual([])
     // and unshifted, the very same three series are the cluster
     const aligned = new Map<string, Candle[]>([
-      ['AAA', tape(RA.slice(0, 20))],
-      ['BBB', tape(RB.slice(0, 20))],
-      ['CCC', tape(RC.slice(0, 20))],
+      ['AAA', tape(RA.slice(0, 20), 4)],
+      ['BBB', tape(RB.slice(0, 20), 4)],
+      ['CCC', tape(RC.slice(0, 20), 4)],
     ])
     expect(detectClusters(history(repeat(8, ABC)), aligned, SPY)).toEqual([['AAA', 'BBB', 'CCC']])
   })
@@ -134,6 +162,75 @@ describe('detectClusters — the two legs', () => {
     ])
     expect(detectClusters(history(repeat(8, ABC)), noC, SPY)).toEqual([])
     expect(detectClusters(history(repeat(8, ABC)), trio(), [])).toEqual([])
+  })
+})
+
+describe('detectClusters — the sample has to be FRESH', () => {
+  // The index tape spans May to today (day 24), so an OLD session still has an index
+  // return to subtract — the stale samples below are refused for being stale, not for
+  // being unpriced.
+  const LONG_SPY = tape(new Array(79).fill(0), -55) // 80 flat bars, days -55 to 24
+  const endingOn = (lastDay: number): Map<string, Candle[]> =>
+    new Map([
+      ['AAA', tape(RA, lastDay - N)],
+      ['BBB', tape(RB, lastDay - N)],
+      ['CCC', tape(RC, lastDay - N)],
+    ])
+
+  it('refuses a cluster whose tapes stopped printing two months before the trending week', () => {
+    // Twenty overlapping sessions, r .966 — and every one of them from June. The
+    // crowd is naming these three names THIS week; a correlation measured in a
+    // different market is not the tape agreeing with the crowd, it is two unrelated
+    // facts stapled together.
+    expect(detectClusters(history(repeat(8, ABC)), endingOn(-16), LONG_SPY)).toEqual([])
+    // the same fixture flipped: the identical returns, moved onto the current
+    // fortnight, ARE the cluster — so staleness is the only thing that refused it
+    expect(detectClusters(history(repeat(8, ABC)), endingOn(24), LONG_SPY)).toEqual([['AAA', 'BBB', 'CCC']])
+  })
+
+  it('allows five sessions of lag and not a sixth — a name can be quiet, not absent', () => {
+    // day 19: sessions 20, 21, 22, 23, 24 have printed since — five, the bound
+    expect(detectClusters(history(repeat(8, ABC)), endingOn(19), LONG_SPY)).toEqual([['AAA', 'BBB', 'CCC']])
+    // day 18: six sessions behind the index, and no longer this week's tape
+    expect(detectClusters(history(repeat(8, ABC)), endingOn(18), LONG_SPY)).toEqual([])
+  })
+})
+
+describe('detectClusters — one honest return per session', () => {
+  it('drops the compounded return a name emits after going dark, and the edge goes with it', () => {
+    // AAA prints from day 5, goes dark for days 10-13, and prints again on day 14.
+    // That day-14 bar carries FIVE calendar days of move; keyed to one date it gets
+    // weighed against SPY's ONE-day return, and it counts toward the fifteen.
+    const gappy = new Map<string, Candle[]>([
+      ['AAA', tape(RA).filter(c => dayIndexOf(c) >= 5 && (dayIndexOf(c) < 10 || dayIndexOf(c) > 13))],
+      ['BBB', tape(RB)],
+      ['CCC', tape(RC)],
+    ])
+    // counted, the bogus session is AAA's FIFTEENTH observation and the correlations
+    // still clear the bar (AB .710, AC .792) — this fixture was a cluster until the
+    // guard dropped that one observation and left fourteen
+    expect(detectClusters(history(repeat(8, ABC)), gappy, SPY)).toEqual([])
+    // and the honest fourteen are not short by accident: hand AAA the four missing
+    // bars back and the very same three tapes are the cluster
+    const whole = new Map(gappy).set('AAA', tape(RA).filter(c => dayIndexOf(c) >= 5))
+    expect(detectClusters(history(repeat(8, ABC)), whole, SPY)).toEqual([['AAA', 'BBB', 'CCC']])
+  })
+
+  it('keeps the weekend and the holiday: a Friday-to-Tuesday return is a session, not a gap', () => {
+    // A real market calendar — weekdays only, one Monday holiday — so these fifteen
+    // observations include two Friday→Monday returns (three calendar days) and one
+    // Friday→Tuesday (four). A guard tight enough to call those "missing bars" would
+    // drop them from all three names and the sample would fall under fifteen.
+    const calSpy = sessionTape(new Array(15).fill(0))
+    const gaps = calSpy.slice(1).map((c, i) => dayIndexOf(c) - dayIndexOf(calSpy[i]))
+    expect(Math.max(...gaps)).toBe(4) // the fixture really does carry a holiday break
+    expect(gaps.filter(g => g === 3)).toHaveLength(2) // and two ordinary weekends
+    const cal = new Map<string, Candle[]>([
+      ['AAA', sessionTape(RA.slice(-15))],
+      ['BBB', sessionTape(RB.slice(-15))],
+      ['CCC', sessionTape(RC.slice(-15))],
+    ])
+    expect(detectClusters(history(repeat(8, ABC)), cal, calSpy)).toEqual([['AAA', 'BBB', 'CCC']])
   })
 })
 
@@ -179,6 +276,17 @@ describe('detectClusters — the record itself', () => {
   it('reads the trending record case- and whitespace-blind', () => {
     const hist = history(repeat(8, [' aaa ', 'bbb', 'Ccc']))
     expect(detectClusters(hist, trio(), SPY)).toEqual([['AAA', 'BBB', 'CCC']])
+  })
+
+  it('reads the tape MAP KEYS the same way — a caller keying off a raw feed loses no tape', () => {
+    // the record is already normalised above; this pins the OTHER side of the join,
+    // the candle map's own keys, which a caller may hand over exactly as fetched
+    const rawKeys = new Map<string, Candle[]>([
+      [' aaa ', tape(RA)],
+      ['bbb', tape(RB)],
+      ['Ccc', tape(RC)],
+    ])
+    expect(detectClusters(history(repeat(8, ABC)), rawKeys, SPY)).toEqual([['AAA', 'BBB', 'CCC']])
   })
 
   it('does not care what order the days were stored in', () => {

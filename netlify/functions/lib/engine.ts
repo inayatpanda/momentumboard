@@ -536,10 +536,16 @@ const symToSector = (() => {
 const baseSym = (sym: string) => sym.split('.')[0].split('-')[0]
 
 /** Bank one day of the trending record — the ONLY thing that makes co-appearance
- * measurable later (hypeCluster.ts). Append-if-new-date: the first run of the day
- * owns the day, so the afternoon run cannot overwrite the morning's crowd with a
+ * measurable later (hypeCluster.ts). Append-if-new-date: the FIRST run to record a
+ * date owns it, so the afternoon run cannot overwrite the morning's crowd with a
  * quieter one, nor stack two rows for one date and let the co-appearance count read
  * a stutter as evidence.
+ *
+ * That ownership lives HERE and nowhere else. The reader (normaliseHistory) dedupes
+ * by date LAST-writer-wins, so it does not enforce first-run ownership — it merely
+ * never sees a second row, because this function does not write one. Should two rows
+ * for one date reach the blob anyway (concurrent runs, a hand-edit, a restored
+ * snapshot), the record read back is the LAST of them [review].
  *
  * A day the feed said NOTHING is not recorded at all. Recording an empty day would
  * be dishonest in a way that costs real evidence: the co-appearance window is the
@@ -550,13 +556,20 @@ const baseSym = (sym: string) => sym.split('.')[0].split('-')[0]
 async function recordTrendDay(store: AppStore, today: string, social: SocialPulseRow[]): Promise<void> {
   try {
     // The feed arrives rank-ordered, so the top TREND_DAY_SYMS names ARE the day's
-    // crowd. (Deliberately wider than the 12 that become candidates: a cluster is
-    // read off the whole trending set, not off the slice the engine chose to score.)
+    // crowd — wider than the 12 that become candidates, because a cluster is read off
+    // the whole trending set, not off the slice the engine chose to score. Note the
+    // coupling: combineSocialPulse already returns its own top 15 (social.ts, the
+    // closing `.slice(0, 15)`), so TREND_DAY_SYMS = 15 records the feed ENTIRE and
+    // raising it alone would record nothing extra until that slice moves too.
     // Normalised BEFORE the dedupe, or two spellings of one name eat two of the
     // day's slots and land in the record as two members of tomorrow's cluster.
     const syms = [...new Set(social.map(s => (typeof s?.sym === 'string' ? s.sym.trim().toUpperCase() : '')).filter(Boolean))].slice(0, TREND_DAY_SYMS)
     if (!syms.length) return
-    const prior = ((await store.read<TrendDay[]>('social-history')) ?? []).filter(d => d && typeof d.date === 'string' && Array.isArray(d.syms))
+    // Anything that is not a LIST is no record: a blob of the wrong shape (a partial
+    // restore, a hand-edit) would otherwise throw on .filter into the catch below on
+    // this run and every run after it, and the record would never restart [review].
+    const raw = await store.read<TrendDay[]>('social-history')
+    const prior = (Array.isArray(raw) ? raw : []).filter(d => d && typeof d.date === 'string' && Array.isArray(d.syms))
     if (prior.some(d => d.date === today)) return
     await store.write('social-history', [...prior, { date: today, syms }].slice(-TREND_HISTORY_DAYS))
   } catch {

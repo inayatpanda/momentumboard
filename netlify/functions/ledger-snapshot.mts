@@ -32,6 +32,7 @@ export default async (req: Request) => {
     paperMonths: await read('paper-months'),
     riskState: await read('risk-state'),
     roster: await read('engine-roster'),
+    socialHistory: await read('social-history'), // restoring without it costs a fresh 7-day hype-cluster warm-up
     reportPicks: await read('report-picks'),
     reportIndex: await read('report-index'),
     bulletinIndex: await read('bulletin-index'),

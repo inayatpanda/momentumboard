@@ -109,6 +109,17 @@ describe('the social-history blob', () => {
     expect(hist[0].date).toBe(old[1].date) // the oldest day fell off the back
   })
 
+  it('heals a blob of the wrong SHAPE — a record that is not a list is no record, not a permanent fault', async () => {
+    const store = await seeded()
+    // what a hand-edit or a half-restored snapshot leaves behind: an object, not a
+    // list. Read blindly it throws on .filter into the fail-soft catch — on this run
+    // and on every run after it, so the record never starts again and the cluster
+    // warm-up never ends.
+    await store.write('social-history', { [TODAY]: ['OLD'] } as unknown as TrendDay[])
+    await buildBoard(store, deps(), NOW)
+    expect(await historyOf(store)).toEqual([{ date: TODAY, syms: Array.from({ length: TREND_DAY_SYMS }, (_, i) => `S${i}`) }])
+  })
+
   it('records nothing on a day the social feed said nothing — an empty day is not a day', async () => {
     const store = await seeded()
     await buildBoard(store, deps({ social: async () => [] }), NOW)

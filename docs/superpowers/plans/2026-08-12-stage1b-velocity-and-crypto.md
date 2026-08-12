@@ -80,6 +80,7 @@ The spec's cluster inputs don't exist yet: `combineSocialPulse` returns one day'
 
 - [ ] Failing tests: warm-up (<7 days → []); a genuine 3-name cluster (planted co-appearing days + correlated tapes) detected; a pair failing the co-move leg (uncorrelated tapes) excluded despite co-appearing; the degree-≥2 rule rejecting a 3-chain; <15 overlapping returns → no edge; blob writer appends once per date.
 - [ ] RED → implement → GREEN → commit `feat(engine): hype clusters are detected from the tape's own record — no theme is ever hard-coded`
+- **Ratified deviation (reviewed):** the degree-≥2 rule is applied as an iterative **2-core prune**, not as a literal filter over the whole component — a triangle with a pendant keeps the triangle and sheds the pendant, where the literal reading would reject all four names because of the outsider. Strictly more permissive than the literal filter and never less; the A–B–C chain the rule exists to reject still dissolves entirely. Both cases tested.
 
 ---
 
