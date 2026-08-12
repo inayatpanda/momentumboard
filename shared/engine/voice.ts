@@ -83,7 +83,12 @@ export function bannedTokensIn(text: string): string[] {
  * point of the rewrite, and the invariant "no thesis ever leaks a field name"
  * has to hold BY CONSTRUCTION rather than by hoping about upstream strings. */
 function safe(text: string | null | undefined, maxLen = 90): string | null {
-  const t = (text ?? '').trim().replace(/\s+/g, ' ')
+  // Markup and prompt-steering characters are stripped, not escaped: a thesis
+  // travels into the journalist's LLM prompt as well as the DOM, and the only
+  // characters a headline legitimately needs are words and prices. (The catalyst
+  // reason was already an LLM-payload passenger before the thesis existed — this
+  // hardens the whole class, it doesn't close a new hole.)
+  const t = (text ?? '').replace(/[<>`"{}\[\]]/g, ' ').trim().replace(/\s+/g, ' ')
   if (!t) return null
   const cut = t.length > maxLen ? `${t.slice(0, maxLen).replace(/[\s,;:.-]+\S*$/, '')}…` : t
   return bannedTokensIn(cut).length ? null : cut

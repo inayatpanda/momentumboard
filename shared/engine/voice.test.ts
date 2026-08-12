@@ -313,3 +313,13 @@ describe('velocityThesis — the door, what paid for it, and a falsifier that MO
     }
   })
 })
+
+describe('safe() strips markup and prompt-steering characters', () => {
+  it('a hostile catalyst reason reaches the thesis as words, never as markup', () => {
+    // The thesis rides into the journalist LLM prompt as well as the DOM —
+    // angle brackets, backticks, quotes and braces have no legitimate place in
+    // a headline-derived reason (DeepSeek cross-check, 2026-08-12).
+    const phrase = factorPhrase('catalyst', { score: 60, detail: 'news: "><script>alert(1)</script> beats `guidance` (60)' }, 'long')
+    expect(phrase ?? '').not.toMatch(/[<>`"{}]/)
+  })
+})
