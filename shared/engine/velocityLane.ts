@@ -171,7 +171,9 @@ export function classifyVelocity(candles: Candle[]): VelocityRead | null {
   // --- the confirmation door ---
   // A RUN, in one of two shapes: large, or broad. Rounded before the comparison so
   // float noise on an exact 15.0% cannot flip the verdict (the dip lane's convention).
-  const bigRun = round1(move5Pct) >= RUN_TRIGGER_PCT
+  // raw at the gate, rounded only in prose — round1 here let a 14.95% move
+  // through a 15% door (codex cross-check, 2026-08-12)
+  const bigRun = move5Pct >= RUN_TRIGGER_PCT
 
   // PAID: at least one of the up-days inside the window printed >= 2× the baseline.
   // The volume evidence has to sit on an up-day [C7]: a 3× DOWN day inside a mixed

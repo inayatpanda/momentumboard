@@ -267,3 +267,20 @@ describe('VELOCITY_DOOR_CAP', () => {
     expect(VELOCITY_DOOR_CAP.early).toBeLessThan(VELOCITY_DOOR_CAP.confirmation)
   })
 })
+
+describe('the 15% gate is exact', () => {
+  it('a 14.95% five-session move does not open the confirmation door', () => {
+    // round1 at the gate would read 14.95 as 15.0 — the comparison must be raw
+    // (codex cross-check, 2026-08-12). Paid up-day present so only the run
+    // threshold separates this from a qualifying tape; two up-days keep the
+    // 3-of-5 leg shut.
+    const cs = [...flat(56), mk(96), mk(110, 2_500_000), mk(108), mk(107), mk(114.95)]
+    const read = classifyVelocity(cs)!
+    expect(read.confirmationTriggered).toBe(false)
+  })
+  it('a 15.00% move does', () => {
+    const cs = [...flat(56), mk(96), mk(110, 2_500_000), mk(108), mk(107), mk(115)]
+    const read = classifyVelocity(cs)!
+    expect(read.confirmationTriggered).toBe(true)
+  })
+})
