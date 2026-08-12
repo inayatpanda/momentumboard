@@ -134,26 +134,41 @@ export function velocityTrail(candles: Candle[]): number | null {
   return round2(Math.max(ema, Math.min(...window.map(c => c.l))))
 }
 
-/** THE TRAIL, ENFORCED. The level a LIVE velocity row is judged against on the
- * session ending at the last candle handed in: the higher of the published stop
- * and the trail as the tape has since redrawn it.
+/** THE TRAIL, ENFORCED — AND IT RATCHETS. The level a LIVE velocity row is judged
+ * against on the session ending at the last candle handed in: the highest the
+ * trail has EVER been drawn between the entry session and that day, floored at
+ * the published stop.
  *
- * `candlesAsOfDay` must END on the session being judged — the same basis
- * `velocityCall` published from — so on the entry session itself this returns the
- * published stop EXACTLY: same candles, same function, same rounding. The daily
- * check is therefore continuous with the call, never a second opinion about it.
+ * `candlesAsOfDay` must END on the session being judged and `entrySessionIdx` is
+ * that same array's index for the entry session — the basis `velocityCall`
+ * published from. On the entry session itself the walk is one step long and
+ * returns the published stop EXACTLY: same candles, same function, same rounding.
+ * The daily check is therefore continuous with the call, never a second opinion.
  *
- * max(), and only max(). The trail may TIGHTEN the exit as the move carries the
- * 8-EMA and the five-session low up behind it, and it may never loosen it: a tape
- * rolling over drags both legs back down, and a "trail" that followed them down
- * would widen the stop on precisely the day the position was failing — the same
- * mistake velocityTrail refuses inside a single bar [C3], one timeframe up.
+ * A RUNNING MAX, not a per-day max, and the difference is the whole point. Reading
+ * only today's trail meant a falsifier that rose then rolled over quietly LOWERED
+ * itself: a name that carried the trail to 110 and then let the 8-EMA sag back to
+ * 106 was judged against 106, so a 107 close — a close through the level the
+ * position had actually earned — read as still alive. That is the same mistake
+ * velocityTrail refuses inside a single bar [C3], two timeframes up: a stop that
+ * retreats with the tape it is meant to falsify can never fire against it. Once
+ * the tape has drawn the falsifier at a level, that level stands for the life of
+ * the position; the trail may only ever tighten.
  *
- * No history, no trail, no move: an unreadable trail leaves the published stop
- * standing, because an unknown is never a level. */
-export function effectiveVelocityStop(publishedStop: number, candlesAsOfDay: Candle[]): number {
-  const trail = velocityTrail(candlesAsOfDay)
-  return trail == null ? publishedStop : Math.max(publishedStop, trail)
+ * Stateless by construction — nothing is persisted. Both consumers already know
+ * the entry session (the prediction's date, the position's openedDate), so the
+ * ratchet is recomputed from the tape on every run rather than remembered.
+ *
+ * No history, no trail, no move: an unreadable session contributes nothing, and a
+ * row with no readable session at all keeps the published stop, because an unknown
+ * is never a level. */
+export function effectiveVelocityStop(publishedStop: number, candlesAsOfDay: Candle[], entrySessionIdx: number): number {
+  let stop = publishedStop
+  for (let i = Math.max(0, entrySessionIdx); i < candlesAsOfDay.length; i++) {
+    const trail = velocityTrail(candlesAsOfDay.slice(0, i + 1))
+    if (trail != null && trail > stop) stop = trail
+  }
+  return stop
 }
 
 /** Read the velocity signature off the tape. null iff the history is too short. */

@@ -68,10 +68,20 @@ describe('manageOpenPositions', () => {
  *  then the tape closes 99 — still 2.5 points ABOVE the published stop. */
 const runningTape = () => mkCandles('2026-06-23', [92, 93, 94, 95, 96, 97, 98, 99, 100, 103, 104, 105, 99])
 
-/** The mirror: a shelf sets the published stop at 98, then a fade drags both legs
- *  of the trail under it (97.9 on the last bar) while the close sits at 97.95 —
- *  above the live trail, below the published stop. */
-const fadingTape = () => mkCandles('2026-06-21', [80, 80, 80, 80, 80, 99, 99, 99, 99, 99, 100, 99.5, 99.2, 99.1, 99.3, 98.9, 97.95])
+/** The mirror: a shelf sets the published stop at 98 and holds the trail flat AT it
+ *  for the whole hold — nothing is ever raised — then a fade drags both legs under
+ *  it (97.9 on the last bar) while the close sits at 97.95: above the live trail,
+ *  below the published stop. */
+const fadingTape = () => mkCandles('2026-06-21', [80, 80, 80, 80, 80, 99, 99, 99, 99, 99, 100, 99.5, 99.2, 99, 99.3, 98.9, 97.95])
+
+/** RISE THEN FALL. Opened 2026-07-01 off a 113 close with a 96.56 published stop;
+ *  the trail climbs to 110 by 07-04 and the tape then rolls it back to 105.68 by
+ *  07-05, where the close is 107 — inside the live trail, through the earned one. */
+const riseThenFallTape = (): Candle[] => {
+  const cs = mkCandles('2026-06-20', [70, 70, 70, 70, 70, 70, 70, 70, 110.5, 111, 112, 113, 114, 115, 111, 107])
+  cs[14] = { ...cs[14], l: 100 } // the washout wick that drops the low leg
+  return cs
+}
 
 describe('manageOpenPositions — the velocity trail', () => {
   it('exits a velocity position on the RISEN trail, and leaves the identical non-velocity position alone', () => {
@@ -98,6 +108,27 @@ describe('manageOpenPositions — the velocity trail', () => {
     const book: PaperBook = { ...freshBook('2026-07'), cash: 9000, positions: [pos({ stop: 98, target: 104, trail: 'velocity' })] }
     manageOpenPositions(book, new Map([['AAA', cs]]), '2026-07-07')
     expect(book.closed[0]).toMatchObject({ reason: 'stop', exit: 97.95, closedDate: '2026-07-07' })
+  })
+
+  it('the trail RATCHETS: the book exits on the highest level the tape ever drew, not the one it sits at', () => {
+    const cs = riseThenFallTape()
+    // stated rather than assumed: the trail reached 110 on 07-04 and then the 8-EMA
+    // rolled it back to 105.68 — under the 107 close the book is judging.
+    expect(velocityTrail(cs.slice(0, 15))).toBe(110)
+    expect(velocityTrail(cs)).toBe(105.68)
+    const book: PaperBook = {
+      ...freshBook('2026-07'),
+      cash: 8000,
+      positions: [
+        pos({ sym: 'VELO', entry: 113, stop: 96.56, target: 130, costGBP: 1130, trail: 'velocity' }),
+        pos({ sym: 'DIPR', entry: 113, stop: 96.56, target: 130, costGBP: 1130 }), // same levels, same tape, no trail
+      ],
+    }
+    manageOpenPositions(book, new Map([['VELO', cs], ['DIPR', cs]]), '2026-07-05')
+
+    expect(book.closed).toHaveLength(1)
+    expect(book.closed[0]).toMatchObject({ sym: 'VELO', reason: 'trail', exit: 107, closedDate: '2026-07-05' })
+    expect(book.positions.map(p => p.sym)).toEqual(['DIPR'])
   })
 })
 

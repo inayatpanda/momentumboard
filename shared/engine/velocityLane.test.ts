@@ -182,18 +182,33 @@ describe('velocityTrail', () => {
 })
 
 describe('effectiveVelocityStop — the trail as the daily consumers enforce it', () => {
+  /** bothDoors() is the publication basis, so its last index is the entry session. */
+  const ENTRY = bothDoors().length - 1
+
   it('on the publication basis it IS the published stop — the daily check is continuous with the call', () => {
     const cs = bothDoors()
     const published = velocityCall('NVDA', cs, classifyVelocity(cs)!, 35_000)!.stop
     expect(published).toBe(109.99)
-    // same candles, same function, same rounding: day one moves nothing
-    expect(effectiveVelocityStop(published, cs)).toBe(published)
+    // same candles, same function, same rounding: day one moves nothing, and the
+    // ratchet's walk is one session long because entry IS the session being judged
+    expect(effectiveVelocityStop(published, cs, ENTRY)).toBe(published)
   })
 
   it('RAISES the exit as the tape carries the trail up behind it', () => {
     const cs = [...bothDoors(), mk(126), mk(130), mk(134)]
     expect(velocityTrail(cs)!).toBeGreaterThan(109.99)
-    expect(effectiveVelocityStop(109.99, cs)).toBe(velocityTrail(cs))
+    expect(effectiveVelocityStop(109.99, cs, ENTRY)).toBe(velocityTrail(cs))
+  })
+
+  it('RATCHETS: a trail that rose then rolled over keeps the highest level it reached', () => {
+    // The same run, carried on and then given back. The trail is drawn at 120.93 on
+    // the 134 close and the 8-EMA then sags with the tape to 114.66 — and a stop
+    // read only as of today would hand this position back 6.27 points of room on
+    // the way DOWN, which is the one direction a falsifier may never move.
+    const cs = [...bothDoors(), mk(126), mk(130), mk(134), mk(118), mk(112), mk(110), mk(108)]
+    expect(velocityTrail(cs.slice(0, 63))).toBe(120.93) // the high-water mark, three sessions ago
+    expect(velocityTrail(cs)).toBe(114.66) // …where the live trail sits today
+    expect(effectiveVelocityStop(109.99, cs, ENTRY)).toBe(120.93)
   })
 
   it('never LOWERS it: a trail under the published stop leaves the published stop standing', () => {
@@ -201,12 +216,12 @@ describe('effectiveVelocityStop — the trail as the daily consumers enforce it'
     // the call was published at, and the published stop is the floor
     const cs = [...bothDoors(), mk(100), mk(98), mk(96), mk(95), mk(94), mk(93)]
     expect(velocityTrail(cs)!).toBeLessThan(109.99)
-    expect(effectiveVelocityStop(109.99, cs)).toBe(109.99)
+    expect(effectiveVelocityStop(109.99, cs, ENTRY)).toBe(109.99)
   })
 
   it('an unreadable trail moves nothing — an unknown is never a level', () => {
     expect(velocityTrail(flat(5))).toBeNull()
-    expect(effectiveVelocityStop(94.5, flat(5))).toBe(94.5)
+    expect(effectiveVelocityStop(94.5, flat(5), 0)).toBe(94.5)
   })
 })
 

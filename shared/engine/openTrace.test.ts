@@ -100,10 +100,22 @@ describe('traceOpenCall — the walk', () => {
  *  1.21 BELOW the trail. Only a live trail can fire here. */
 const runningTape = () => series([92, 93, 94, 95, 96, 97, 98, 99, 100, 103, 104, 105, 99], -8)
 
-/** The mirror: a shelf whose five prior lows set the published stop at 98.5, then
- *  a slow fade that drags BOTH legs of the trail under it (98.4 by the last bar).
- *  The 98.45 close is above the live trail and below the published stop. */
-const fadingTape = () => series([80, 80, 80, 80, 80, 99, 99, 99, 99, 99, 100, 99.5, 99.2, 99.1, 99.3, 98.9, 98.45], -10)
+/** The mirror: a shelf whose five prior lows set the published stop at 98.5 and
+ *  hold the trail flat AT it for the whole hold — no ratchet, nothing raised —
+ *  then a fade that drags BOTH legs under it (98.4 by the last bar). The 98.45
+ *  close is above the live trail and below the published stop. */
+const fadingTape = () => series([80, 80, 80, 80, 80, 99, 99, 99, 99, 99, 100, 99.5, 99.2, 99, 99.3, 98.9, 98.45], -10)
+
+/** RISE THEN FALL, the shape the ratchet exists for. Entry on 07-01 at 113 with the
+ *  trail published at 96.56; the run carries it to 110 by day 3 and 110.5 on day 4
+ *  (a wide bar that closes 111 but wicks to 100), and then the 8-EMA rolls the live
+ *  trail back to 105.68 by day 5. The 107 close on day 5 is BELOW the 110.5 the tape
+ *  earned and ABOVE where the trail happens to sit that morning. */
+const riseThenFallTape = (): Candle[] => {
+  const cs = series([70, 70, 70, 70, 70, 70, 70, 70, 110.5, 111, 112, 113, 114, 115, 111, 107], -11)
+  cs[14] = { ...cs[14], l: 100 } // day 4's washout wick, which drops the low leg
+  return cs
+}
 
 describe('traceOpenCall — the velocity trail is enforced daily', () => {
   it('a close under the RISEN trail (but above the published stop) reads as a trail hit', () => {
@@ -114,8 +126,33 @@ describe('traceOpenCall — the velocity trail is enforced daily', () => {
     expect(e.status).toBe('stopped')
     expect(e.crossedDate).toBe('2026-07-05')
     expect(e.note).toContain('trail hit')
-    expect(e.trailStop).toBe(100.21) // the level that actually fired, not the published 96.5
+    // …and 100.56 is the level that fired, not the published 96.5 and not the 100.21
+    // the trail had already sagged to by the closing bar: the falsifier ratchets.
+    expect(velocityTrail(cs)).toBe(100.21)
+    expect(e.trailStop).toBe(100.56)
     expect(e.stop).toBe(96.5) // …and the published stop is reported unchanged: grading reads THAT
+  })
+
+  it('the trail RATCHETS: a falsifier that rose then rolled over still fires', () => {
+    const cs = riseThenFallTape()
+    // the scenario: 110 drawn on day 3, 110.5 on day 4, and by day 5 the live trail
+    // has rolled back to 105.68 — BELOW the 107 close. Read as of today alone, this
+    // position is comfortably alive; read against what the tape earned, it is dead.
+    expect(velocityTrail(cs.slice(0, 14))).toBe(110)
+    expect(velocityTrail(cs.slice(0, 15))).toBe(110.5)
+    expect(velocityTrail(cs)).toBe(105.68)
+    const e = traceOpenCall(call({ entry: 113, stop: 96.56, target: 130, trail: 'velocity' }), cs, none)!
+    expect(e.status).toBe('stopped')
+    expect(e.crossedDate).toBe('2026-07-05')
+    expect(e.trailStop).toBe(110.5) // the high-water mark, not the 105.68 of the day
+    expect(e.note).toContain('trail hit')
+  })
+
+  it('…and the identical tape without the marker is untouched — the ratchet is velocity-only', () => {
+    const e = traceOpenCall(call({ entry: 113, stop: 96.56, target: 130 }), riseThenFallTape(), none)!
+    expect(e.status).toBe('in-play') // a fixed stop is a fixed stop; 96.56 was never near
+    expect(e.trailStop).toBeUndefined()
+    expect(e.note).not.toContain('trail')
   })
 
   it('the SAME tape without the marker is untouched — one byte of difference on a dip row is a regression', () => {

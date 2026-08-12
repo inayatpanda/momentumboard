@@ -16,9 +16,11 @@ import { round1 } from './types'
 // `trail: 'velocity'` was published with a stop that is a FALSIFIER, not a level:
 // the velocity lane's max(8-EMA, prior-five low), which moves with the tape. For
 // those rows the walk re-reads that trail against the tape as of each session and
-// compares the close to max(published stop, trail) — so a momentum call that loses
-// its trail is reported dead on the day it died, not a fortnight later when a much
-// lower published number finally gives way.
+// compares the close to max(published stop, the HIGHEST the trail has been drawn
+// since the call) — so a momentum call that loses its trail is reported dead on the
+// day it died, not a fortnight later when a much lower published number finally
+// gives way, and not never because the 8-EMA rolled the falsifier back down behind
+// it. The trail ratchets: what the tape once earned it does not un-earn.
 //
 // THE SPLIT, STATED HONESTLY, because two different numbers now describe one row:
 //   • GRADING measures the ORIGINAL THESIS. gradePrediction reads the published
@@ -139,9 +141,12 @@ export function traceOpenCall(
     const close = candles[i].c
     // "as of that day" = the tape through this session's close, the same basis the
     // lane published from — so on the entry session the trail IS the published stop.
-    // No rounding needed on the way out: the helper returns one of its two inputs
-    // verbatim, and both were rounded to the penny where they were made.
-    exitLevel = trailed ? effectiveVelocityStop(pred.stop, candles.slice(0, i + 1)) : pred.stop
+    // `entryIdx` makes it a RATCHET: the highest the trail has been drawn since the
+    // call, not merely where it sits today, so a falsifier that rose and then sagged
+    // back cannot quietly hand the position a looser exit.
+    // No rounding needed on the way out: the helper returns one of its inputs
+    // verbatim, and all of them were rounded to the penny where they were made.
+    exitLevel = trailed ? effectiveVelocityStop(pred.stop, candles.slice(0, i + 1), entryIdx) : pred.stop
     if (long ? close <= exitLevel : close >= exitLevel) {
       status = 'stopped'
       crossedDate = isoDay(candles[i].t)

@@ -17,9 +17,11 @@ import type { AppStore } from './store'
 //
 // …with ONE exit that is not a fixed number: a position opened from a row stamped
 // `trail: 'velocity'` carries that stamp (below), and its stop is re-read from the
-// tape every run — max(published stop, the lane's live trail). A momentum position
-// is closed by losing its trail, so a book that held it to a stale printed level
-// would be reporting a discipline no reader was told to follow.
+// tape every run — max(published stop, the highest the lane's trail has been drawn
+// since entry). A momentum position is closed by losing its trail, so a book that
+// held it to a stale printed level would be reporting a discipline no reader was
+// told to follow — and a trail read only as of today would do the same thing more
+// quietly, sliding the exit back down behind a rolling 8-EMA. It ratchets.
 //
 // THE SPLIT, STATED HONESTLY (the same one openTrace.ts documents): GRADING is
 // untouched — gradePrediction measures the PUBLISHED stop, so the calibration
@@ -105,11 +107,11 @@ export function sizePaperPosition(equity: number, cash: number, call: { entry: n
  * close on the first event: stop / target / the 10-session horizon.
  * Close-based on purpose — identical yardstick to the grading.
  *
- * A `trail: 'velocity'` position is walked against its LIVE stop: the trail as the
- * tape had drawn it by each session, floored at the published stop, so it can only
- * ever tighten (`effectiveVelocityStop`). Every other position is compared to the
- * published stop exactly as before — an untrailed row's stop is a fixed number and
- * moving it by so much as a penny would be inventing an exit the call never made. */
+ * A `trail: 'velocity'` position is walked against its LIVE stop: the highest the
+ * trail has been drawn on any session since entry, floored at the published stop,
+ * so it can only ever tighten (`effectiveVelocityStop`). Every other position is
+ * compared to the published stop exactly as before — an untrailed row's stop is a
+ * fixed number and moving it by a penny would invent an exit the call never made. */
 export function manageOpenPositions(book: PaperBook, candlesBySym: Map<string, Candle[]>, todayISO: string): void {
   const still: PaperPosition[] = []
   for (const p of book.positions) {
@@ -119,13 +121,18 @@ export function manageOpenPositions(book: PaperBook, candlesBySym: Map<string, C
     // the history BEFORE it too — so the walk keeps the index into the full series.
     const startIdx = candles.findIndex(c => c.t > opened)
     const since = startIdx === -1 ? [] : candles.slice(startIdx)
+    // The entry session — the last bar at or before the open, i.e. the close the
+    // position was marked at and the basis the published stop was drawn from. The
+    // trail RATCHETS from here, so it is where the running max starts.
+    const entryIdx = Math.max(0, startIdx - 1)
     let exit: { price: number; date: string; reason: ClosedTrade['reason'] } | null = null
     for (let i = 0; i < since.length; i++) {
       const c = since[i]
       const date = new Date(c.t * 1000).toISOString().slice(0, 10)
       // The stop as it stands on THIS session — the published number for everything
-      // that isn't trailed, and never below it for everything that is.
-      const stopNow = p.trail === 'velocity' ? effectiveVelocityStop(p.stop, candles.slice(0, startIdx + i + 1)) : p.stop
+      // that isn't trailed, and for everything that is, the highest the trail has
+      // been drawn since entry, never below the published stop.
+      const stopNow = p.trail === 'velocity' ? effectiveVelocityStop(p.stop, candles.slice(0, startIdx + i + 1), entryIdx) : p.stop
       if (p.side === 'long' ? c.c <= stopNow : c.c >= stopNow) { exit = { price: c.c, date, reason: stopNow === p.stop ? 'stop' : 'trail' }; break }
       if (p.side === 'long' ? c.c >= p.target : c.c <= p.target) { exit = { price: c.c, date, reason: 'target' }; break }
       if (i + 1 >= HORIZON_SESSIONS) { exit = { price: c.c, date, reason: 'horizon' }; break }
