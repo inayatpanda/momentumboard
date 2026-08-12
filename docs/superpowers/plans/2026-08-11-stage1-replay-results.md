@@ -1062,3 +1062,356 @@ The suite specifies **both** modes: the velocity tests import `VELOCITY_SHADOW_F
 with real assertions on each side, so the sized behaviour cannot rot while the lane is shadowed.
 Verified by running the full suite with the flag `true` and again with it `false` — 1,078 passing
 either way.
+
+---
+
+## 15. Stage 2 — the curve, the grades, and the voice, measured
+
+(§12 and §14 were never written; the numbering follows the plan's task numbers, not this
+document's own sequence.)
+
+**Verdict: the gate PASSES on all eight criteria.** The numbers are below, followed by three
+things the gate did not ask about and the owner should see anyway — the 2 dp rounding, the risk
+ladder, and how little the new eligibility floor actually did.
+
+### 15.1 What was run
+
+Four replays over the same 21 trading days and the **same candle cache**, so no bar differs
+between them. The cache (`./.replay-cache`, 187 symbols) was refetched on 2026-08-12; 185 of the
+187 series carry a bar for 2026-08-12, which is what makes 10-session outcomes gradable through
+2026-07-29. **These are not the §1/§7 numbers and are not meant to be** — that run used a cache
+whose last bar was 2026-08-11. Both arms of every comparison below were re-run against this cache.
+
+```bash
+# 1. the new engine, at HEAD
+npx vite-node scripts/replay-window.ts -- --from 2026-07-14 --to 2026-08-11 \
+  --watch GLW,TSLA,NVDA --out $S/replay-new.json                                    # d1d7dd6
+
+# 2. the A-reachability probe: the SAME code path, with the calibration blob replaced
+#    every morning by aReachableState() immediately before buildBoard
+npx vite-node scripts/replay-window.ts -- --plant-a --from 2026-07-14 --to 2026-08-11 \
+  --out $S/replay-aprobe.json                                                       # d1d7dd6
+
+# 3. the baseline — a worktree of the pre-stage-2 commit with THIS script copied in
+git worktree add $S/wt-baseline 2ae4484 --detach
+ln -s "$PWD/node_modules" $S/wt-baseline/node_modules
+cp scripts/replay-window.ts $S/wt-baseline/scripts/replay-window.ts
+cd $S/wt-baseline && REPLAY_CACHE_DIR="$PWD/.replay-cache" npx vite-node scripts/replay-window.ts -- \
+  --baseline --from 2026-07-14 --to 2026-08-11 --watch GLW,TSLA,NVDA --out $S/replay-baseline.json
+
+# 4. …and a SECOND worktree at the commit immediately BEFORE the expected-move floor,
+#    which is the only way the floor's own effect can be attributed rather than assumed
+git worktree add $S/wt-mid b1f1a01 --detach   # everything of stage 2 except Task 4 and the voice
+cd $S/wt-mid && REPLAY_CACHE_DIR="$PWD/.replay-cache" npx vite-node scripts/replay-window.ts -- \
+  --from 2026-07-14 --to 2026-08-11 --watch GLW,TSLA,NVDA --out $S/replay-mid.json
+
+# 5. the gate itself — pure aggregation over the four JSONs
+npx vite-node scripts/replay-window.ts -- --aggregate \
+  --new $S/replay-new.json --base $S/replay-baseline.json \
+  --mid $S/replay-mid.json --aprobe $S/replay-aprobe.json --out $S/stage2-gate.json
+```
+
+| run | commit | `modelVersion` | what it is |
+|---|---|---|---|
+| baseline | `2ae4484` | 2 | the engine as it shipped after stage 1b |
+| pre-floor | `b1f1a01` | 3 | EMA stack + owner-ordered weights + the probability curve + the born-below cap |
+| **new** | `d1d7dd6` | 3 | …plus the expected-move floor (T4) and the voice (T5) |
+| A-probe | `d1d7dd6` | 3 | the new engine with a planted calibration |
+
+Total runtime for all five commands: **under 90 seconds**, cache warm.
+
+### 15.2 The eight criteria
+
+| # | criterion | measured | verdict |
+|---|---|---|---|
+| 1 | zero-trade days 0, blank sides 0 | 0/21 blank boards, 0/21 zero-trade days, 0 blank sides — in **all three** runs | **PASS** |
+| 2 | B ≤ 75% of graded board trade rows | **57.1%** (36 B of 63), against 90.5% baseline | **PASS** |
+| 3a | ≥ 15 distinct probabilities | **16** across 503 scored rows (132 before the 2 dp round — §15.5) | **PASS** |
+| 3b | monotone in every probed context | **0 violations**, 20 contexts × 27 samples, 4 states | **PASS** |
+| 4 | an A is reachable end-to-end | **157** grade-A board rows on the synthetic probe (61 of them sized) | **PASS** |
+| 5a | win5/avg5 within noise | avg5 **t = −0.346**; win5 t = +0.088 | **PASS** |
+| 5b | Brier(new) ≤ Brier(old) + 0.02 | **0.2552** vs **0.2663** — an improvement of 0.011 | **PASS** |
+| 6 | thesis + falsifier, zero banned tokens | 63/63 trade rows, **0 defects** | **PASS** |
+
+### 15.3 Criterion 2 — grades
+
+| | baseline `2ae4484` | pre-floor `b1f1a01` | new `d1d7dd6` |
+|---|---|---|---|
+| board **trade** rows | 63 | 63 | 63 |
+| A | 0 | 0 | 0 |
+| B | 57 (**90.5%**) | 36 (**57.1%**) | 36 (**57.1%**) |
+| C | 6 (9.5%) | 27 (42.9%) | 27 (42.9%) |
+| board graded rows (trades + watch) | 192 — B 75.0% | 195 — B 43.6% | 195 — B 43.6% |
+| ledger rows | 308 — B 53.2%, 96 null-graded | 310 — B 30.3%, 106 null | 308 — B 30.5%, 104 null |
+| `riskPct` values seen | {0, 0.5, 1, **1.25**} | {0, 0.5, 1} | {0, 0.5, 1} |
+
+The criterion is read on **trade rows**, which is the population the 100% → 83% lineage was
+measured on. Every other cut is printed beside it so the denominator cannot be chosen after the
+fact; the criterion passes on all of them.
+
+**What moved the number is the B rung's new evidence floor, not the curve's shape.** A B now
+requires `nEff ≥ 15` as well as `p ≥ base + 0.05`, and 27 rows that were full-size Bs are half-size
+Cs because the evidence under them was thin. That is the tightening doing exactly what it was
+built for — and it is *reader-visible*: 27 rows of the window carry half the size they used to.
+
+`grade C` is doing two jobs on the row and the histogram separates them: a null grade is stored as
+`'C'` (`engine.ts`, `grade ?? 'C'`), recoverable only through `shadow`/`belowBase`. On the board no
+row was null-graded in any run (`belowBase` never fired once in 21 days — the "below our base rate,
+tape-dependent" watch row is unexercised code in this window). In the ledger, 104 of the new run's
+214 Cs are suppressed rows, i.e. shadows.
+
+### 15.4 Criterion 3 — the probability, and what "the step function is dead" actually means
+
+| | baseline | new |
+|---|---|---|
+| every scored row | n=500, **17 distinct**, 0.260 → 0.570, sd 0.0534 | n=503, **16 distinct**, 0.310 → 0.460, sd 0.0385 |
+| band 25-40 | n=377, 12 distinct | n=307, 12 distinct |
+| band 40-55 | n=97, 6 distinct | n=163, 10 distinct |
+| band 55-70 | n=26, 3 distinct | n=33, 8 distinct |
+| band 70+ | — never sampled | — never sampled |
+
+**The distinct-value criterion passes, and it is a weak test.** The baseline scores *higher* on it
+(17 vs 16). That is not a paradox: a four-step staircase, read across 21 days, two sides and three
+regimes, while the buckets underneath it fill, produces plenty of distinct values. The count cannot
+tell a curve from a staircase, so the harness measures the thing the criterion was reaching for:
+
+> **within one day and one (side, regime), what share of row pairs at DIFFERENT convictions read
+> DIFFERENT probabilities?**
+
+|  | baseline | new (stored 2 dp) | new (unrounded curve read) |
+|---|---|---|---|
+| all pairs | 1328/3610 = 36.8% | 1165/3622 = 32.2% | — |
+| pairs inside the evidenced interior (32.5 ≤ \|composite\| ≤ 62.5) | 930/1776 = **52.4%** | 941/2467 = **38.1%** | 1364/2467 = **55.3%** |
+| distinct values | 17 | 16 | **132** (0.3107 → 0.4591) |
+
+Read those three columns together and the honest sentence falls out: **the read path is a genuine
+curve — 132 distinct values where the staircase had 17 — and `engine.ts`'s 2 dp rounding quantises
+it back down to 16 before the number is stored.** The curve over this window spans only 0.31→0.46,
+so two hundredths of probability is a wide step relative to the slope; the rounding costs more
+resolution than the banding used to. That is the display decision recon §3.3 flagged
+(`engine.ts:1148`) and it is **not tuned here** — it is reported, and it is the owner's call.
+
+**Monotonicity is asserted on the synthetic probe**, not on the window, because the window never
+produced a 70+ composite and a monotonicity claim over bands nothing landed in is a claim about a
+fixture. Four states, each walked 26 → 78 in steps of 2, in every (side, regime, cohort) that state
+carries evidence for:
+
+| state | contexts | violations |
+|---|---|---|
+| the committed seed's own shape (recon §3.2 — the documented inversion) | 6 | **0** |
+| a thin-and-lucky top band (the shrinkage inversion the running-max guard exists for) | 2 | **0** |
+| the A-reachable plant | 6 | **0** |
+| the window's own final calibration blob | 6 | **0** |
+
+The probe is not vacuous, and the tests say so two ways: an injected decreasing read is caught
+(`monotonicityViolations` finds it), and the seed shape's **raw** per-band Laplace values are
+asserted to be non-monotone before the shipped read path is asserted to repair them — so the second
+assertion is measuring a repair, not an absence of damage.
+
+**Bands the window itself sampled:** 25-40 (n=307), 40-55 (n=163), 55-70 (n=33). Nothing reached
+70+. The 70+ read is therefore exercised by the probe alone.
+
+### 15.5 Criterion 4 — A-reachability
+
+**Organic As in this window: ZERO — in all three runs, on the board and in the ledger.** The
+committed seed cannot produce one and this window did not build enough evidence to change that: its
+best read tops out at 0.4591 against a base rate of ~0.379, a gap of 0.08 where an A needs 0.10 on
+`nEff ≥ 30`. **The seed does not support an A, and 21 days of live tape does not fix that.** Stage
+2 made A *reachable*; it did not make it *reached*.
+
+The synthetic probe answers the reachable half. `aReachableState()` plants six long buckets
+(n=200 each, rising hit rates) and three 1,000-observation short buckets at a 0.20 rate whose only
+job is to hold the base rate DOWN — an A is a claim about a gap, and a plant that lifts both sides
+of the gap proves nothing. Base rate 2042/4804 = **0.4251**; a long at composite 40 reads **0.766**
+on `nEff = 200`. Through the real `buildBoard`, every day, with the blob re-planted each morning:
+
+- **157 grade-A board rows** over 21 days (173 in the ledger)
+- **61 of them sized** at the full rung (`riskPct` 1.0). The other 96 are grade-A rows the board's
+  own **3-trades-per-side cap** demoted to watch — the cap, not the grade, is what limits them.
+- the born-below cap is **not** bypassed by the plant: a long at composite 26 still reads
+  `belowEvidence` and still grades C. Pinned in the tests.
+- the poisoned short side suppresses, as designed.
+
+### 15.6 Criterion 5 — outcomes and Brier
+
+Sized trade rows only. 5-session outcomes are gradable through 2026-08-05, 10-session through
+2026-07-29.
+
+| | n graded | win | avg excess | Welch t |
+|---|---|---|---|---|
+| **5d** baseline | 48 | 56.3% | **+2.294%** | |
+| **5d** new | 49 | 57.1% | **+1.610%** | **t = −0.346** (df 92.4) on the average; t = +0.088 on the win rate |
+| **10d** baseline | 33 | 51.5% | +3.836% | |
+| **10d** new | 33 | 48.5% | +3.591% | t = −0.124; win t = −0.243 |
+
+**This window still cannot tell the two engines apart on outcomes** — the same conclusion §7
+reached, on a different cache and a different engine. Every t is inside ±0.35.
+
+**Brier, by scoring epoch** (the `modelVersion` stamp is the only thing separating them, which is
+the whole reason the 2 → 3 bump exists):
+
+| epoch | rows with a 10d outcome | mean (p − hit)² |
+|---|---|---|
+| `modelVersion: 2` — the baseline ledger | 165 | **0.2663** |
+| `modelVersion: 3` — the new ledger | 164 | **0.2552** |
+
+**Δ = −0.0111.** The continuous read is *better* calibrated than the staircase on this window, by
+about a hundredth. Well inside the +0.02 the gate allowed, and in the right direction — though on
+164 rows this is a hint, not a proof.
+
+### 15.7 The per-day table
+
+`T/W/NM` = sized trades / watch rows / near misses. `(B·C)` = the grade split of the trade rows.
+
+| date | regime | base T/W/NM (B·C) | new T/W/NM (B·C) | new base rate | new ledger |
+|---|---|---|---|---|---|
+| 2026-07-14 | amber | 3/6/2 (3·0) | 3/6/2 (1·2) | 0.3670 | 17 |
+| 2026-07-15 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 14 |
+| 2026-07-16 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 16 |
+| 2026-07-17 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 14 |
+| 2026-07-20 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 14 |
+| 2026-07-21 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 14 |
+| 2026-07-22 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 14 |
+| 2026-07-23 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 14 |
+| 2026-07-24 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 14 |
+| 2026-07-27 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 14 |
+| 2026-07-28 | amber | 3/6/2 (3·0) | 3/6/2 (3·0) | 0.3670 | 14 |
+| 2026-07-29 | amber | 3/7/0 (0·3) | 3/7/0 (0·3) | 0.3692 | 15 |
+| 2026-07-30 | amber | 3/6/2 (0·3) | 3/7/0 (0·3) | 0.3702 | 15 |
+| 2026-07-31 | **red** | 3/6/2 (3·0) | 3/7/0 (0·3) | 0.3691 | 17 |
+| 2026-08-03 | amber | 3/7/0 (3·0) | 3/7/0 (0·3) | 0.3677 | 16 |
+| 2026-08-04 | amber | 3/6/2 (3·0) | 3/6/2 (0·3) | 0.3711 | 14 |
+| 2026-08-05 | amber | 3/6/2 (3·0) | 3/6/2 (0·3) | 0.3731 | 13 |
+| 2026-08-06 | amber | 3/6/2 (3·0) | 3/6/2 (2·1) | 0.3774 | 17 |
+| 2026-08-07 | amber | 3/6/2 (3·0) | 3/7/0 (2·1) | 0.3793 | 16 |
+| 2026-08-10 | amber | 3/6/2 (3·0) | 3/6/2 (1·2) | 0.3790 | 15 |
+| 2026-08-11 | **green** | 3/7/0 (3·0) | 3/7/0 (0·3) | 0.3786 | 11 |
+
+Three sized trades every day in every run, because the board caps the actionable list at **3 per
+side** and the short side never carries a sized trade at all (`levMap` is empty by design — an
+unroutable short is a shadow). `tradelessSides` is therefore 21/21 in all three runs, exactly as it
+was in §3, and it is a property of the harness's config, not of stage 2.
+
+### 15.8 The floor-change census — both directions, attributed
+
+Comparing the pre-floor tree `b1f1a01` with `d1d7dd6` isolates **Task 4 alone** (the only other
+thing in between is the voice, which cannot change what publishes):
+
+| direction | board rows | ledger rows |
+|---|---|---|
+| **admitted** (the old floors rejected, the new one accepts) | **0** | **0** |
+| **suppressed** (the old floors accepted, the new one rejects) | **0** | **2** |
+
+The two suppressed rows, named:
+
+| row | \|composite\| | `capacityPct` | expected move | old floor | new floor |
+|---|---|---|---|---|---|
+| **MCD short, 2026-08-04** | 21.8 | 4.1 | **0.9%** | sleeve floor 3 → admitted | needs ≥ 1.0% → **refused** |
+| **PG short, 2026-08-10** | 20.6 | 4.2 | **0.9%** | sleeve floor 3 → admitted | needs ≥ 1.0% → **refused** |
+
+**Both are core-sleeve names, and that is the whole story of this census.** The commit that shipped
+the floor claimed the change is one-way looser ("no name the flat floor admitted can be rejected
+now"), and for *ordinary* names it is: at the aggressive dead zone the new test reproduces the old
+one exactly (0.20 × 5 = 1.0) and loosens above it. **The claim does not cover the sleeve**, which
+lost `SLEEVE_CAPACITY_FLOOR = 3` in the same commit and now has to clear the ordinary bar. These
+two rows are that trade-off, measured.
+
+Two mitigations, both real and neither a defence:
+- both were **unshortable shorts published as shadows** — the reader never saw either, and both now
+  appear as near misses instead, so the day is no blanker than it was;
+- the loosening had nothing to admit on this window. Exactly **one** of the 503 published rows has
+  `capacityPct < 5` (MCD long-side read, 2026-07-20: cap 4.0, |composite| 28.3, expected move 1.1%)
+  and it is *itself* a sleeve name, so the retired sleeve floor of 3 already admitted it. Every
+  other published row clears cap ≥ 5 and was never near either floor.
+
+**The full stage-2 diff**, for scale — this is everything, not the floor:
+
+| baseline `2ae4484` → new `d1d7dd6`, board graded rows | count |
+|---|---|
+| shared (same date, symbol, side) | 142 |
+| new-only | 53 |
+| baseline-only | 50 |
+| …of the new-only, core-sleeve names | 37 (SHOP, APP, META, PANW, NET, ZS, SNOW, ABBV, PM, RTX, SHEL.L, CVX, VOD.L, LMT, NOW, TMO, BP.L, LCID, PYPL, AAOI, TSLA…) |
+| …of the baseline-only, core-sleeve names | 38 (AMD, GS, RR.L, GE, LCID, ADBE, JNJ, LLOY.L, ZS, BP.L, SNOW, UNH, COP, MSTR, OXY, BLK, SBUX, SLB, DOW, MU, COIN, AAPL, AZN.L…) |
+
+The board churned ~35% of its rows across stage 2 and the sleeve gained and lost in almost equal
+measure. The re-based weights and the EMA stack own that churn, not the floor — the floor moved two
+shadows.
+
+### 15.9 The born-below cap, and what it cost in leverage
+
+| | count |
+|---|---|
+| reads extended DOWNWARD off the bottom of the evidence (`belowEvidence`) | **117** of 503 |
+| …of which the cap actually demoted (uncapped grade was A or B) | **56** |
+| …demoted rows still carrying size (a full trade became a half) | **4** |
+| …rows that lost **ETP eligibility** | **0** |
+| …rows carrying an actually routed instrument, anywhere in the window | **0** |
+
+The de-leveraging effect of the born-below cap on this window is **nil, for two independent
+reasons, and both need saying because only one of them is about the cap:**
+
+1. `levMap` is `{}` in this harness on purpose (§1), so **no row is routed to an ETP in any run**
+   and none can lose one. The eligibility line above is a counterfactual and the harness measures
+   the zero rather than assuming it.
+2. Even as a counterfactual it is zero, because the **new run never leaves risk rung 0**, and
+   `leverageAllowed` routes nothing at rung 0 for any grade. The cap withheld 56 grades; it
+   withheld no leverage, because there was none to withhold.
+
+The cap is nonetheless the single largest behavioural change in stage 2: 117 rows — nearly a
+quarter of everything scored — are reads the engine extended downward off the bottom of its own
+evidence, and 56 of them would otherwise have claimed a B. Every composite below **32.5** (the
+lowest band midpoint) is in that region by construction, and this window's composites start at
+15.8. **A call under 32.5 conviction can never be graded above C, whatever the calibration says.**
+That is the rule working as designed, and it is worth the owner knowing how much of the board it
+touches.
+
+### 15.10 Two things the gate did not ask about
+
+**The risk ladder did not promote.** The baseline promoted R0 → R1 on 2026-08-10
+(*"earned: 27 graded at R0, hit rate 60%, calibration improving"*); the new engine finished the
+window still at **rung 0**, with 30 graded at R0. The rung multiplies every published `riskPct`, so
+the baseline's last two days carry 1.25% where the new engine carries 1.0%. The cause is the
+ladder's own 55% promotion bar applied to a noisy statistic: the new engine's sized stream hit
+48.5% at 10 sessions against the baseline's 51.5% — a difference whose own t is **−0.24**, i.e.
+indistinguishable from zero, sitting either side of a hard threshold. Not a defect; a threshold
+effect on 33 observations. Worth watching in the live ledger rather than acted on here.
+
+**The 2 dp rounding is now the resolution bottleneck.** §15.4 has the numbers. The curve reads 132
+distinct probabilities and the row stores 16. Spec §4.2 asks for the raw probability printed beside
+every grade; at two decimals, on a curve spanning 0.31–0.46, "raw" is coarser than the bands it
+replaced. **No threshold was tuned to accommodate this and none should be** — it is a display
+decision for the owner.
+
+### 15.11 What this evidence shows, and what it does not
+
+**It shows:** the staircase is gone from the read path and the curve is monotone under three
+adversarial calibrations and the window's own; grade B has stopped being the default (90.5% → 57.1%
+of trade rows) and the rows it stopped covering became half-size Cs rather than disappearing; an A
+is now *architecturally* reachable, proven end to end through the real `buildBoard` on planted
+evidence; the continuous read is slightly better calibrated than the staircase it replaced
+(Brier −0.011); outcomes are unchanged inside a wide noise band; and every one of 503 scored rows
+carries a thesis and a falsifier in the reader's language with zero internal names leaking — near
+misses correctly carrying neither.
+
+**It does not show:** that the engine will ever emit an A on real evidence (it emitted none in 21
+days, and the seed arithmetically cannot); that the new engine is *better* than the baseline at
+picking (every outcome t is under 0.35 — this window cannot tell them apart, and says so for the
+second time); that the expected-move floor is an improvement (it changed two shadow rows, both in
+the tightening direction, both sleeve names); that the 70+ band behaves in production (nothing
+reached it, so only the probe has ever exercised it); or that any of this holds outside 21 amber
+days in one summer, in a price-only replay with no news, no social, no insiders and no market caps
+(§2 — every approximation there still applies, identically, to all four runs).
+
+### 15.12 Reproducing
+
+Raw output (`replay-new.json`, `replay-baseline.json`, `replay-mid.json`, `replay-aprobe.json` and
+the aggregated `stage2-gate.json`) lives in the session scratch directory; all five are regenerable
+from the commands in §15.1 in under 90 seconds against the committed candle cache.
+
+The harness's pure helpers — `sliceBefore`, `tradingDays`, `synthScreens`, `sparkClosesFrom`,
+`summariseBoard`, `doorsFor`, the velocity-probe helpers, and now the whole stage-2 aggregation
+(`gradeHistogram`, `spreadOf`/`spreadByBand`, `withinContextResolution`, `brierOf`, `welch`,
+`diffKeys`/`sleeveKeys`, `voiceDefects`, `probeGrid`/`contextsIn`/`monotonicityViolations`, the
+three planted states and `bornBelowCensus`) — are covered by `scripts/replay-window.test.ts`:
+**67 tests**, part of `npm test` (**1,242 passing**).

@@ -35,6 +35,20 @@
 // reports every velocity door firing, every constructed call, and the paper
 // book's own forward exit walk for each. Evidence: results doc §13.
 //   npx vite-node scripts/replay-window.ts -- --velocity-probe --out /tmp/probe.json
+//
+// THIRD MODE — `--aggregate`: the Stage-2 gate. Pure counters over the JSONs the
+// window mode wrote — grade histogram, probability spread, the monotonicity probe,
+// A-reachability, Brier by scoring epoch, the attributed baseline↔new diff, the
+// born-below census and the banned-token sweep — printed with a PASS/FAIL per
+// criterion. Evidence: results doc §15.
+//   npx vite-node scripts/replay-window.ts -- --aggregate --new … --base … --mid … --aprobe …
+//
+// FOURTH MODE — `--plant-a`: the window mode with ONE substitution, the calibration
+// blob replaced each morning by `aReachableState()`. It is a flag on `main` rather
+// than a fourth loop because an A-reachability claim proved by a copy of the
+// pipeline proves something about the copy.
+//   npx vite-node scripts/replay-window.ts -- --plant-a --out /tmp/aprobe.json
+//
 // Candles are cached in ./.replay-cache (gitignored); REPLAY_CACHE_DIR overrides
 // it, which is how the baseline worktree reads the SAME bars as the new run.
 
@@ -48,7 +62,22 @@ import type { ScreenRow } from '../netlify/functions/lib/screener'
 import { fetchYahooChart } from '../netlify/functions/lib/yahoo'
 import { SECTOR_MEMBERS } from '../netlify/functions/lib/sectors'
 import { VIX_SYMBOL, WORLD_SYMBOLS } from '../shared/engine/worldTape'
-import { gradePrediction } from '../shared/engine/calibration'
+// Every one of these exists in the pre-Stage-1 worktree too, so the static import
+// is safe there — what differs is `probabilityFor`'s RETURN SHAPE (no nEff, no
+// belowEvidence before stage 2) and `gradeFor`'s SIGNATURE. The enrichment below
+// feature-detects the shape rather than the tree.
+import {
+  type Band,
+  type CalibrationState,
+  CALIB_DEF_VERSION,
+  ENGINE_MODEL_VERSION,
+  bandFor,
+  baseHitRate,
+  gradeFor,
+  gradePrediction,
+  probabilityFor,
+} from '../shared/engine/calibration'
+import { leverageAllowed } from '../shared/engine/riskLadder'
 import { buildBoard, gradeOutstanding } from '../netlify/functions/lib/engine'
 
 // ---------------------------------------------------------------- universe --
@@ -627,7 +656,7 @@ function makeDeps(ctx: { current: DayCtx }) {
 
 // -------------------------------------------------------------------- main --
 
-interface Row {
+export interface Row {
   sym: string
   side: 'long' | 'short'
   grade: string
@@ -637,6 +666,11 @@ interface Row {
   entry: number
   stop: number
   target: number
+  /** The name's own ten-session travel, and the move THIS call expects of it —
+   * the two numbers Task 4's expected-move floor is computed from, carried so the
+   * floor census can show its arithmetic instead of asserting it. */
+  capacityPct: number
+  expectedMovePct: number
   watchOnly: boolean
   nearMiss: boolean
   shadow: boolean
@@ -645,11 +679,40 @@ interface Row {
   catalyst: string | null
   setup: string | null
   where: 'board' | 'ledger'
+  // ---- stage-2 additions, all read off the row the engine actually published ----
+  /** The regime the row was scored in — the calibration context, per row rather
+   * than per day, because a ledger row is graded against the tape it was born on. */
+  regime: string
+  /** The scoring-epoch stamp. Two epochs in one ledger are separable ONLY by this
+   * (calibration.ts, ENGINE_MODEL_VERSION) — the Brier comparison is keyed on it. */
+  modelVersion: number | null
+  riskRung: number
+  provisional: boolean
+  /** The routed ETP, if any. Always null in this harness (levMap is empty on
+   * purpose) — carried so the census can say so from the data, not from memory. */
+  instrument: string | null
+  /** THE VOICE (stage 2 T5). Absent on a near miss BY DESIGN — that row cleared no
+   * gate, so it has no belief to state. */
+  thesis: string | null
+  falsifier: string | null
+  // ---- recomputed post-publication from the SAME calibration blob (HEAD only) ----
+  /** The UNROUNDED curve read. `probability` on the row is this quantised to 2dp
+   * (engine.ts), and the two are reported side by side on purpose: the curve can
+   * be perfectly continuous while the STORED number is a staircase with finer
+   * steps, and only the pair says which of those is true. */
+  pRaw?: number
+  /** Observations straddling this read. Undefined in a pre-stage-2 tree. */
+  nEff?: number
+  /** The read was handed DOWN from the lowest band this rung has ever graded. */
+  belowEvidence?: boolean
+  /** What gradeFor would have said WITHOUT the born-below cap — the counterfactual
+   * the de-leveraging census is measured against. */
+  gradeUncapped?: string | null
   outcome5?: { hit: boolean; excessPct: number; stopped: boolean } | null
   outcome10?: { hit: boolean; excessPct: number; stopped: boolean } | null
 }
 
-interface DayOut {
+export interface DayOut {
   date: string
   regime: string
   rosterSize: number
@@ -684,6 +747,9 @@ interface DayOut {
   /** per-name candidacy trace for the --watch list (criterion 2) */
   watched: { sym: string; doors: string[]; evaluated: boolean }[]
   candidatesAsked: number
+  /** The engine's own base rate on the day the board was built — every grade
+   * threshold is relative to it, so a grade histogram without it is unreadable. */
+  baseRate: number
 }
 
 const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
@@ -696,6 +762,8 @@ const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
   entry: p.entry,
   stop: p.stop,
   target: p.target,
+  capacityPct: p.capacityPct,
+  expectedMovePct: p.expectedMovePct,
   watchOnly: !!p.watchOnly,
   nearMiss: !!p.nearMiss,
   shadow: !!p.shadow,
@@ -704,7 +772,50 @@ const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
   catalyst: p.catalyst?.kind ?? null,
   setup: p.setup ?? null,
   where,
+  regime: p.regime,
+  modelVersion: p.modelVersion ?? null,
+  riskRung: p.riskRung,
+  provisional: !!p.provisional,
+  instrument: p.instrument?.ticker ?? null,
+  thesis: (p as { thesis?: string }).thesis ?? null,
+  falsifier: (p as { falsifier?: string }).falsifier ?? null,
 })
+
+/** Recompute, from the SAME calibration blob the day's board was built against,
+ * the two numbers the published row does not carry: how many observations
+ * straddled the read (`nEff`) and whether the read was handed DOWN from the
+ * lowest band the rung has ever graded (`belowEvidence`) — plus the grade the row
+ * would have carried had the born-below cap not applied.
+ *
+ * FEATURE-DETECTED, not tree-detected: in the pre-stage-2 baseline `probabilityFor`
+ * returns `{p, provisional, n}` and `gradeFor` takes a different signature, so the
+ * absence of `nEff` on the first read is the signal to leave every row unenriched.
+ * A harness that guessed from the file system would enrich a tree whose calibration
+ * module had moved on underneath it. */
+function enrichFromCalibration(rows: Row[], cal: CalibrationState | null, baseRate: number): void {
+  if (!cal) return
+  for (const r of rows) {
+    if (r.nearMiss) continue // a near miss never went through the read path at all
+    // cohort 'unknown' is not a simplification here: `capUsdM` is null for every
+    // name in a price-only replay (approximation #4), so publishCall's own
+    // capCohortOf returned exactly this on the row being reproduced.
+    const read = probabilityFor(cal, r.side, r.regime, Math.abs(r.composite), 'unknown') as unknown as {
+      p: number
+      nEff?: number
+      belowEvidence?: boolean
+    }
+    if (read.nEff == null) return // pre-stage-2 read path — no curve to report on
+    r.pRaw = read.p
+    r.nEff = read.nEff
+    r.belowEvidence = !!read.belowEvidence
+    r.gradeUncapped = (gradeFor as unknown as (p: number, nEff: number, base: number, below: boolean) => string | null)(
+      read.p,
+      read.nEff,
+      baseRate,
+      false,
+    )
+  }
+}
 
 const arg = (name: string, fallback: string): string => {
   const i = process.argv.indexOf(`--${name}`)
@@ -713,6 +824,16 @@ const arg = (name: string, fallback: string): string => {
 
 async function main() {
   const baseline = process.argv.includes('--baseline')
+  // A-REACHABILITY PROBE (§15 criterion 4). The same window, the same board code,
+  // the same everything — with ONE substitution: the calibration blob is replaced
+  // by `aReachableState()` every morning, immediately before buildBoard. It is a
+  // parameter of `main` rather than a second loop on purpose: an A-reachability
+  // claim proved by a copy of the pipeline proves something about the copy. The
+  // re-plant is per-day because gradeOutstanding legitimately books outcomes into
+  // the blob as the window runs, and the probe's question is "given a calibration
+  // that supports an A, does an A reach the reader's board", not "does one survive
+  // twenty-one days of drift".
+  const plantA = process.argv.includes('--plant-a')
   const from = arg('from', '2026-07-14')
   const to = arg('to', '2026-08-11')
   const appetite = arg('appetite', 'aggressive') as 'moderate' | 'aggressive'
@@ -731,7 +852,7 @@ async function main() {
   }
 
   mkdirSync(CACHE_DIR, { recursive: true })
-  console.log(`replay-window: mode=${baseline ? 'BASELINE' : 'NEW'} commit=${commit} window=${from}..${to} appetite=${appetite} gainers=${gainersDepth}`)
+  console.log(`replay-window: mode=${baseline ? 'BASELINE' : plantA ? 'A-PROBE' : 'NEW'} commit=${commit} window=${from}..${to} appetite=${appetite} gainers=${gainersDepth}`)
   console.log(`cache: ${CACHE_DIR}`)
 
   // ---- warm the cache: the replay universe + the index/world series ----
@@ -829,9 +950,16 @@ async function main() {
 
     const nowSec = Date.parse(`${date}T05:20:00Z`) / 1000
     await gradeOutstanding(store, deps as never, nowSec, cfg)
+    if (plantA) await store.write('engine-calibration', aReachableState())
     const built = await buildBoard(store, deps as never, nowSec)
     const ledger = ((await store.read<Prediction[]>(`predictions:${date}`)) ?? []).map(p => rowOf(p, 'ledger'))
     const board = built.board.map(p => rowOf(p, 'board'))
+    // gradeOutstanding writes `engine-calibration`; buildBoard only reads it. So
+    // the blob standing here IS the one every grade above was struck against.
+    const calNow = await store.read<CalibrationState>('engine-calibration')
+    const baseRate = calNow ? baseHitRate(calNow).rate : 0.5
+    enrichFromCalibration(board, calNow, baseRate)
+    enrichFromCalibration(ledger, calNow, baseRate)
     // velocity diagnostics — over the names buildBoard actually evaluated (`asked`
     // minus the index/sector tapes it reads for context), from the same bars.
     const velocity: DayOut['velocity'] = []
@@ -882,6 +1010,7 @@ async function main() {
       velocity,
       watched,
       candidatesAsked: ctx.current.asked.size,
+      baseRate,
     })
     console.log(
       `${date} regime=${String(built.regime).padEnd(7)} roster=${String(built.rosterSize).padStart(3)} ` +
@@ -904,10 +1033,32 @@ async function main() {
     }
   }
 
+  // The calibration blob as it stood after the last graded day — the state the
+  // monotonicity probe samples, so the curve the gate asserts on is the one this
+  // window actually built rather than a fixture that resembles it.
+  const calibrationFinal = await store.read<CalibrationState>('engine-calibration')
+  // …and the risk ladder, with its own history of promotions and the evidence
+  // string each one was booked on. The rung multiplies every published riskPct
+  // (engine.ts RUNG_RISK_PCT), so two runs that differ in rung differ in the size
+  // the reader is told to take — a difference no grade histogram would show.
+  const riskFinal = await store.read<unknown>('risk-state')
   writeFileSync(
     outPath,
     JSON.stringify(
-      { mode: baseline ? 'baseline' : 'new', commit, from, to, appetite, gainersDepth, universe: REPLAY_UNIVERSE.length, missing, days: out },
+      {
+        mode: baseline ? 'baseline' : plantA ? 'a-probe' : 'new',
+        commit,
+        from,
+        to,
+        appetite,
+        gainersDepth,
+        universe: REPLAY_UNIVERSE.length,
+        modelVersion: ENGINE_MODEL_VERSION,
+        missing,
+        days: out,
+        calibrationFinal,
+        riskFinal,
+      },
       null,
       1,
     ),
@@ -1130,5 +1281,721 @@ async function probeMain() {
   if (missing.length) console.log(`missing symbols (never synthesised): ${missing.map(m => `${m.sym}(${m.error})`).join(' ')}`)
 }
 
+// ============================ STAGE-2 AGGREGATION — the gate (§15) ==============
+// The window replay above WRITES the evidence; none of it READ the evidence back.
+// `grade` and `probability` were captured per row and then never counted, so spec
+// §5's grade-distribution criterion had no implementation at all (recon §8.2).
+// Everything below is that missing half: pure counters over the same JSON, plus
+// two probes that ask questions the window on its own cannot answer.
+//
+// PURE, AND SEPARATELY TESTED. Every helper here takes plain data and returns
+// plain data — no store, no network, no engine — so `replay-window.test.ts` pins
+// the arithmetic without a replay. The two functions that must touch the engine
+// (the monotonicity read and the banned-token sweep) take it as an INJECTED
+// argument for the same reason.
+//
+//   npx vite-node scripts/replay-window.ts -- --aggregate \
+//     --new /tmp/replay-new.json --base /tmp/replay-baseline.json \
+//     --mid /tmp/replay-mid.json --aprobe /tmp/replay-aprobe.json
+
+/** The shape `main` writes. Declared structurally rather than imported so the
+ * aggregation can read a JSON produced by an OLDER copy of this script — the
+ * baseline run is exactly that, and its rows legitimately lack `nEff`. */
+export interface RunFile {
+  mode: string
+  commit: string
+  from: string
+  to: string
+  modelVersion?: number
+  days: DayOut[]
+  calibrationFinal?: CalibrationState | null
+  riskFinal?: { rung?: number; history?: { date: string; from: number; to: number; evidence: string }[] } | null
+}
+
+export type Keyed = Row & { date: string }
+
+/** date+symbol+side — the identity of a call across two runs. A row is "the same
+ * row" in baseline and new only if all three match; the same name on a different
+ * day is a different decision. */
+export const keyOf = (r: Keyed): string => `${r.date}:${r.sym}:${r.side}`
+
+export function flatten(run: RunFile, where: 'board' | 'ledger'): Keyed[] {
+  return run.days.flatMap(d => (where === 'board' ? d.board : d.ledger).map(r => ({ ...r, date: d.date })))
+}
+
+// ---------------------------------------------------------- grade histogram --
+
+export interface GradeHistogram {
+  n: number
+  A: number
+  B: number
+  C: number
+  /** Rows whose grade was NULL and stored as 'C' (engine.ts stamps `grade ?? 'C'`).
+   * Counted separately because "the calibration saw no edge" and "the calibration
+   * saw a small edge" are the same letter on the row and different facts. */
+  suppressed: number
+  pctA: number | null
+  pctB: number | null
+}
+
+/** A grade histogram over any row set. `suppressed` is inferred the only way a
+ * consumer of the ledger can infer it: a null grade is stamped 'C' and is
+ * recoverable ONLY through `shadow`/`belowBase` (recon §10) — so a 'C' row
+ * carrying either flag had no grade at all. */
+export function gradeHistogram(rows: Pick<Row, 'grade' | 'shadow' | 'belowBase'>[]): GradeHistogram {
+  const count = (g: string) => rows.filter(r => r.grade === g).length
+  const A = count('A')
+  const B = count('B')
+  const C = count('C')
+  return {
+    n: rows.length,
+    A,
+    B,
+    C,
+    suppressed: rows.filter(r => r.grade === 'C' && (r.shadow || r.belowBase)).length,
+    pctA: rows.length ? A / rows.length : null,
+    pctB: rows.length ? B / rows.length : null,
+  }
+}
+
+// ------------------------------------------------------- probability spread --
+
+export interface Spread {
+  n: number
+  distinct: number
+  min: number | null
+  max: number | null
+  mean: number | null
+  sd: number | null
+}
+
+export function meanOf(xs: number[]): number | null {
+  return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null
+}
+
+/** SAMPLE standard deviation (n−1). A window is a sample of the engine's
+ * behaviour, not the population of it. Null below two observations, because one
+ * number has no spread and reporting 0 would say it did. */
+export function sdOf(xs: number[]): number | null {
+  if (xs.length < 2) return null
+  const m = meanOf(xs)!
+  return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / (xs.length - 1))
+}
+
+export function spreadOf(xs: number[]): Spread {
+  return {
+    n: xs.length,
+    distinct: new Set(xs).size,
+    min: xs.length ? Math.min(...xs) : null,
+    max: xs.length ? Math.max(...xs) : null,
+    mean: meanOf(xs),
+    sd: sdOf(xs),
+  }
+}
+
+/** Spread per calibration BAND, keyed by the row's own |composite| through the
+ * production `bandFor`. This is what says whether the window ever sampled the top
+ * of the curve at all — a monotonicity claim over bands nothing landed in is a
+ * claim about a fixture. */
+export function spreadByBand(rows: Pick<Row, 'probability' | 'composite'>[]): Partial<Record<Band, Spread>> {
+  const out: Partial<Record<Band, Spread>> = {}
+  for (const band of ['25-40', '40-55', '55-70', '70+'] as Band[]) {
+    const hits = rows.filter(r => bandFor(Math.abs(r.composite)) === band)
+    if (hits.length) out[band] = spreadOf(hits.map(r => r.probability))
+  }
+  return out
+}
+
+/** The sharper question behind "the step function is dead", and the one a raw
+ * distinct-value count cannot answer: WITHIN one day and one calibration context,
+ * do two different convictions read two different probabilities? A staircase
+ * still produces many distinct values across 21 days and six contexts — the
+ * buckets fill, so every step moves — which is precisely why the count alone is
+ * not evidence. Returns the share of same-day same-context row PAIRS that differ
+ * in |composite| AND differ in probability. */
+export function withinContextResolution(rows: Keyed[]): { pairs: number; separated: number; pct: number | null } {
+  const groups = new Map<string, Keyed[]>()
+  for (const r of rows) {
+    const k = `${r.date}|${r.side}|${r.regime}`
+    groups.set(k, [...(groups.get(k) ?? []), r])
+  }
+  let pairs = 0
+  let separated = 0
+  for (const g of groups.values())
+    for (let i = 0; i < g.length; i++)
+      for (let j = i + 1; j < g.length; j++) {
+        if (Math.abs(g[i].composite) === Math.abs(g[j].composite)) continue
+        pairs++
+        if (g[i].probability !== g[j].probability) separated++
+      }
+  return { pairs, separated, pct: pairs ? separated / pairs : null }
+}
+
+// ------------------------------------------------------------ outcomes, Brier --
+
+/** Mean Brier over rows carrying a 10-session outcome. Deliberately a local
+ * implementation rather than a call into `brierPoint`: the harness's `outcome10`
+ * is a three-field projection, not a full `PredOutcome`. `replay-window.test.ts`
+ * pins this against the production `brierPoint` on a shared fixture, so the two
+ * cannot drift into two different definitions of the same score. */
+export function brierOf(rows: Pick<Row, 'probability' | 'outcome10'>[]): { n: number; mean: number | null } {
+  const graded = rows.filter(r => r.outcome10)
+  if (!graded.length) return { n: 0, mean: null }
+  return { n: graded.length, mean: graded.reduce((s, r) => s + (r.probability - (r.outcome10!.hit ? 1 : 0)) ** 2, 0) / graded.length }
+}
+
+export interface Welch {
+  nA: number
+  nB: number
+  meanA: number | null
+  meanB: number | null
+  t: number | null
+  df: number | null
+}
+
+/** Welch's t (unequal variances) — the right test for two runs whose row counts
+ * and dispersions both differ. Returns nulls rather than NaN when either arm is
+ * too small or has no variance at all: "cannot be tested" is an answer and
+ * `NaN` is not. */
+export function welch(a: number[], b: number[]): Welch {
+  const [mA, mB] = [meanOf(a), meanOf(b)]
+  const [sA, sB] = [sdOf(a), sdOf(b)]
+  if (mA == null || mB == null || sA == null || sB == null) return { nA: a.length, nB: b.length, meanA: mA, meanB: mB, t: null, df: null }
+  const vA = sA ** 2 / a.length
+  const vB = sB ** 2 / b.length
+  if (vA + vB === 0) return { nA: a.length, nB: b.length, meanA: mA, meanB: mB, t: null, df: null }
+  return {
+    nA: a.length,
+    nB: b.length,
+    meanA: mA,
+    meanB: mB,
+    t: (mA - mB) / Math.sqrt(vA + vB),
+    df: (vA + vB) ** 2 / (vA ** 2 / (a.length - 1) + vB ** 2 / (b.length - 1)),
+  }
+}
+
+// ------------------------------------------------------------- the diff table --
+
+export interface DiffSets {
+  shared: string[]
+  /** In the NEW run and not in the reference — names the change admitted. */
+  newOnly: string[]
+  /** In the reference and not in the new run — names the change suppressed. */
+  refOnly: string[]
+}
+
+export function diffKeys(ref: string[], neu: string[]): DiffSets {
+  const R = new Set(ref)
+  const N = new Set(neu)
+  return {
+    shared: [...N].filter(k => R.has(k)).sort(),
+    newOnly: [...N].filter(k => !R.has(k)).sort(),
+    refOnly: [...R].filter(k => !N.has(k)).sort(),
+  }
+}
+
+/** Which of a set of `date:sym:side` keys name a CORE SLEEVE member. The floor
+ * census turns on this: the sleeve is the population that LOST a floor of its own
+ * in Task 4 (SLEEVE_CAPACITY_FLOOR is gone), so a sleeve name the change
+ * suppressed is the one direction of that trade the commit message cannot claim
+ * away. */
+export function sleeveKeys(keys: string[]): string[] {
+  const sleeve = new Set(SLEEVE_MIRROR.map(s => s.toUpperCase()))
+  return keys.filter(k => sleeve.has((k.split(':')[1] ?? '').toUpperCase()))
+}
+
+// ------------------------------------------------------------------ the voice --
+
+export interface VoiceDefect {
+  key: string
+  /** 'thesis' | 'falsifier' | 'falsifier-not-in-thesis' */
+  faults: string[]
+  banned: string[]
+}
+
+/** Every board TRADE row must state what it believes and what would prove it
+ * wrong, in the reader's language. `scan` is injected (the production
+ * `bannedTokensIn`) so this helper stays pure and so the sweep can never quietly
+ * become a different, weaker regex than the one the engine enforces. */
+export function voiceDefects(rows: Keyed[], scan: (t: string) => string[]): VoiceDefect[] {
+  const out: VoiceDefect[] = []
+  for (const r of rows) {
+    const faults: string[] = []
+    if (!r.thesis?.trim()) faults.push('thesis')
+    if (!r.falsifier?.trim()) faults.push('falsifier')
+    // the paper reproduces the falsifier VERBATIM in the invalidation cell, so the
+    // two must be one sentence and not two that agree (voice.ts)
+    if (r.thesis && r.falsifier && !r.thesis.trim().endsWith(r.falsifier.trim())) faults.push('falsifier-not-in-thesis')
+    const banned = [...new Set([...scan(r.thesis ?? ''), ...scan(r.falsifier ?? '')])]
+    if (faults.length || banned.length) out.push({ key: keyOf(r), faults, banned })
+  }
+  return out
+}
+
+// --------------------------------------------------- monotonicity, on a probe --
+
+/** The conviction axis the probe walks. 26 is just inside the aggressive dead
+ * zone (20) and 78 is past the last band midpoint (77.5), so the grid crosses
+ * every band edge AND both flat extensions. Step 2 rather than 1 only because 27
+ * samples per context is already enough to catch a single-point inversion — the
+ * curve is piecewise-linear, so a violation cannot hide between two samples of
+ * the same segment. */
+export function probeGrid(from = 26, to = 78, step = 2): number[] {
+  const xs: number[] = []
+  for (let x = from; x <= to + 1e-9; x += step) xs.push(Math.round(x * 100) / 100)
+  return xs
+}
+
+export interface ProbeContext {
+  side: 'long' | 'short'
+  regime: string
+  cohort: 'large' | 'small' | 'unknown'
+}
+
+/** Every (side, regime, cohort) a state actually carries evidence for. Parsed
+ * from the bucket keys themselves — legacy cohortless keys are 3-part and read as
+ * cohort 'unknown' (which is exactly how an unknown-cap call reads them back),
+ * cohort-tagged keys are 4-part. A context nothing was ever booked into is not
+ * probed: asserting monotonicity on an empty rung tests the base-rate constant. */
+export function contextsIn(state: CalibrationState): ProbeContext[] {
+  const seen = new Map<string, ProbeContext>()
+  for (const key of Object.keys(state.buckets)) {
+    const parts = key.split(':')
+    const [cohort, side, regime] = parts.length === 4 ? parts : ['unknown', parts[0], parts[1]]
+    if (side !== 'long' && side !== 'short') continue
+    seen.set(`${cohort}:${side}:${regime}`, { side, regime, cohort: cohort as ProbeContext['cohort'] })
+  }
+  return [...seen.values()].sort((a, b) => `${a.cohort}${a.side}${a.regime}`.localeCompare(`${b.cohort}${b.side}${b.regime}`))
+}
+
+export interface MonoViolation {
+  context: string
+  prevX: number
+  prevP: number
+  x: number
+  p: number
+}
+
+/** THE D2 GUARANTEE, asserted: within one context, more conviction may never read
+ * a lower probability. Walks the grid and reports every step that goes DOWN.
+ *
+ * `read` is injected — the production `probabilityFor`, bound by the caller — so
+ * the assertion is made against the shipped read path and the test can drive the
+ * same walk over a hand-built curve. Tolerance is 1e-12: the curve is built from
+ * divisions, and a strict `<` would flag float dust as a pathology. */
+export function monotonicityViolations(
+  contexts: ProbeContext[],
+  xs: number[],
+  read: (ctx: ProbeContext, x: number) => number,
+): MonoViolation[] {
+  const out: MonoViolation[] = []
+  for (const ctx of contexts) {
+    const label = `${ctx.cohort}:${ctx.side}:${ctx.regime}`
+    let prev: { x: number; p: number } | null = null
+    for (const x of xs) {
+      const p = read(ctx, x)
+      if (prev && p < prev.p - 1e-12) out.push({ context: label, prevX: prev.x, prevP: prev.p, x, p })
+      prev = { x, p }
+    }
+  }
+  return out
+}
+
+// ------------------------------------------------- the states the probe plants --
+
+const state = (buckets: Record<string, { n: number; hits: number }>): CalibrationState => ({
+  buckets,
+  setupBuckets: {},
+  brier: [],
+  seeded: false,
+  defVersion: CALIB_DEF_VERSION,
+  modelVersion: ENGINE_MODEL_VERSION,
+})
+
+/** THE COMMITTED SEED'S OWN SHAPE, as measured in the stage-2 recon (§3.2) — the
+ * documented pathology this whole stage exists to end: shorts read 0.31–0.41 in
+ * 25-40 and 0.24–0.26 in 40-55 (more conviction, worse odds), and the 55-70 rows
+ * jump to a flat 0.50 on two and eight observations. Planted as a probe state
+ * because a monotonicity check that only ever sees well-behaved evidence proves
+ * nothing about the machinery that is supposed to repair badly-behaved evidence. */
+export function seedLikeState(): CalibrationState {
+  return state({
+    'long:green:25-40': { n: 195, hits: 74 },
+    'long:amber:25-40': { n: 88, hits: 36 },
+    'long:red:25-40': { n: 18, hits: 7 },
+    'short:green:25-40': { n: 116, hits: 45 },
+    'short:amber:25-40': { n: 108, hits: 32 },
+    'short:red:25-40': { n: 147, hits: 47 },
+    'long:green:40-55': { n: 46, hits: 18 },
+    'short:green:40-55': { n: 50, hits: 10 },
+    'short:amber:40-55': { n: 19, hits: 3 },
+    'short:red:40-55': { n: 31, hits: 6 },
+    'long:green:55-70': { n: 2, hits: 1 },
+    'short:green:55-70': { n: 8, hits: 4 },
+  })
+}
+
+/** The adversary the seed is not: a curve whose TOP band is both thin and lucky.
+ * Shrinkage weight rises with n while n falls with conviction, so the thin top is
+ * pulled harder toward the parent than the thick band beneath it and can land
+ * BELOW it — the exact mechanism the running-max guard exists to catch. */
+export function thinTopState(): CalibrationState {
+  return state({
+    'long:green:25-40': { n: 400, hits: 130 },
+    'long:green:40-55': { n: 300, hits: 150 },
+    'long:green:55-70': { n: 3, hits: 3 },
+    'long:green:70+': { n: 1, hits: 1 },
+    'short:green:25-40': { n: 5, hits: 5 },
+    'short:green:40-55': { n: 250, hits: 60 },
+  })
+}
+
+/** A CALIBRATION THAT CAN SUPPORT AN A, built rather than found (§15 criterion 4).
+ *
+ * Grade A needs three things at once (`gradeFor`): `p ≥ base + 0.10`, `nEff ≥ 30`,
+ * and a read that was not extended DOWNWARD off the bottom of the evidence. The
+ * committed seed can supply none of them — its best non-provisional read is 0.44
+ * against a 0.487 bar (recon §3.2) — so an A-reachability claim has to plant the
+ * evidence and then check the WHOLE pipeline honours it.
+ *
+ * The arithmetic, stated so it can be checked rather than trusted:
+ *  · pooled n = 4,800, hits = 2,040 → base rate = 2,042/4,804 = **0.4251**
+ *  · a long's own band reads laplace 152/204 = 0.7451 (25-40), 162/204 = 0.7941
+ *    (40-55), 172/204 = 0.8431 (55-70) — already monotone, so PAVA is the identity
+ *  · shrinkage pulls each toward the rung below, itself shrunk toward 0.4251;
+ *    with n = 200 per band the weight is 200/225 = 0.889, so the read lands
+ *    around **0.74–0.83** — a clear 0.30+ above base, on nEff = 200
+ *  · the 1,000-observation short bucket at a 0.20 hit rate is what HOLDS the base
+ *    rate down. Without it the base rate simply follows the long buckets up and
+ *    `p − base` collapses to nothing: an A is a claim about a gap, and a plant
+ *    that lifts both sides of the gap proves nothing.
+ *
+ * The shorts therefore read below base and suppress — deliberately. The probe is
+ * not "make everything an A"; it is "can an A exist at all, end to end". */
+export function aReachableState(): CalibrationState {
+  const buckets: Record<string, { n: number; hits: number }> = {}
+  for (const regime of ['green', 'amber', 'red']) {
+    buckets[`long:${regime}:25-40`] = { n: 200, hits: 150 }
+    buckets[`long:${regime}:40-55`] = { n: 200, hits: 160 }
+    buckets[`long:${regime}:55-70`] = { n: 200, hits: 170 }
+    buckets[`short:${regime}:25-40`] = { n: 1000, hits: 200 }
+  }
+  return state(buckets)
+}
+
+// ------------------------------------------- the born-below de-leveraging census --
+
+export interface BornBelowCensus {
+  /** Rows whose read was extended downward off the bottom of the evidence. */
+  capped: number
+  /** …of those, the ones the cap actually demoted (uncapped grade was A or B). */
+  demoted: number
+  demotedToHalfSize: string[]
+  /** Rows that lost ETP eligibility: they would have been FULL-tier A/B rows, and
+   * `leverageAllowed` says an A or B at their rung may route one. */
+  lostLeverageEligibility: string[]
+  /** Rows carrying a ROUTED instrument anywhere in the window. Zero by
+   * construction — `levMap` is `{}` on purpose (shorts are unroutable in both
+   * runs) — and MEASURED rather than assumed, so the census can say out loud that
+   * the eligibility number above is a counterfactual and not a loss anyone took. */
+  routedRowsInWindow: number
+}
+
+/** What the born-below cap cost, counted two ways that must not be conflated: the
+ * grades it demoted, and the LEVERAGE those demotions withheld. In this harness
+ * the second number is a counterfactual and says so — `levMap` is `{}`, so no row
+ * is routed to an ETP in either run and none can lose one. What the census CAN
+ * measure honestly is eligibility: a row that would have been a full-tier A/B at
+ * its rung is a row an equipped levMap would have levered. */
+export function bornBelowCensus(rows: Keyed[]): BornBelowCensus {
+  const capped = rows.filter(r => r.belowEvidence)
+  const demoted = capped.filter(r => r.gradeUncapped === 'A' || r.gradeUncapped === 'B')
+  // full tier = A/B on the evidence contract (engine.ts `fullTrade`), which is the
+  // only tier that can carry an instrument (`sizedFraction === 1`)
+  const wouldBeFull = demoted.filter(r => r.contract && !r.shadow)
+  return {
+    capped: capped.length,
+    demoted: demoted.length,
+    demotedToHalfSize: demoted.filter(r => r.riskPct > 0).map(keyOf).sort(),
+    lostLeverageEligibility: wouldBeFull
+      .filter(r => leverageAllowed(r.riskRung, r.gradeUncapped as 'A' | 'B') > 0)
+      .map(keyOf)
+      .sort(),
+    routedRowsInWindow: rows.filter(r => r.instrument).length,
+  }
+}
+
+// --------------------------------------------------------------- the aggregate --
+
+const pct = (x: number | null) => (x == null ? 'n/a' : `${(x * 100).toFixed(1)}%`)
+const f3 = (x: number | null) => (x == null ? 'n/a' : x.toFixed(3))
+const f4 = (x: number | null) => (x == null ? 'n/a' : x.toFixed(4))
+
+/** Trade rows = the sized calls on the reader's board. This is the population the
+ * grade criterion has always been read on (100% B baseline → 83% after stage 1b),
+ * and it is named here rather than inlined so §15 and the gate cannot quietly be
+ * computed on two different denominators. */
+const tradesOf = (board: Keyed[]) => board.filter(r => !r.nearMiss && !r.watchOnly)
+/** …and every board row that carries a REAL grade (a near miss is stamped 'C'
+ * without ever visiting the read path, so it is not a graded row). */
+const gradedBoard = (board: Keyed[]) => board.filter(r => !r.nearMiss)
+
+async function aggregateMain() {
+  const read = (p: string): RunFile => JSON.parse(readFileSync(p, 'utf8')) as RunFile
+  const newPath = arg('new', join(CACHE_DIR, 'replay-new.json'))
+  const basePath = arg('base', join(CACHE_DIR, 'replay-baseline.json'))
+  const midPath = arg('mid', '')
+  const aProbePath = arg('aprobe', '')
+  const outPath = arg('out', join(CACHE_DIR, 'stage2-gate.json'))
+
+  const runs: { label: string; run: RunFile }[] = [
+    { label: 'baseline', run: read(basePath) },
+    ...(midPath ? [{ label: 'mid', run: read(midPath) }] : []),
+    { label: 'new', run: read(newPath) },
+  ]
+  const N = runs.find(r => r.label === 'new')!.run
+  const B = runs.find(r => r.label === 'baseline')!.run
+
+  // the banned-token sweep is the ENGINE's own (voice.ts). Guarded on disk for the
+  // same reason every other stage-gated module here is: this file must still load
+  // inside the pre-stage-1 worktree, where the module does not exist.
+  const voice = existsSync(new URL('../shared/engine/voice.ts', import.meta.url))
+    ? ((await import('../shared/engine/voice')) as { bannedTokensIn: (t: string) => string[] })
+    : null
+
+  const per = runs.map(({ label, run }) => {
+    const board = flatten(run, 'board')
+    const ledger = flatten(run, 'ledger')
+    return { label, run, board, ledger, trades: tradesOf(board), graded: gradedBoard(board) }
+  })
+
+  console.log('\n================ 1. THE WINDOW ================')
+  for (const p of per)
+    console.log(
+      `${p.label.padEnd(8)} commit ${p.run.commit} modelVersion ${p.run.modelVersion ?? '?'} · ${p.run.days.length} days · ` +
+        `blank boards ${p.run.days.filter(d => d.shape.blankBoard).length} · zero-trade days ${p.run.days.filter(d => d.shape.trades === 0).length} · ` +
+        `blank sides ${p.run.days.reduce((s, d) => s + d.shape.blankSides, 0)} · tradeless sides ${p.run.days.reduce((s, d) => s + d.shape.tradelessSides, 0)}`,
+    )
+
+  console.log('\n================ 2. GRADES ================')
+  for (const p of per) {
+    const t = gradeHistogram(p.trades)
+    const g = gradeHistogram(p.graded)
+    const l = gradeHistogram(p.ledger)
+    console.log(`${p.label}:`)
+    console.log(`  board TRADE rows  n=${t.n} A=${t.A} B=${t.B} C=${t.C} → B ${pct(t.pctB)}  A ${pct(t.pctA)}`)
+    console.log(`  board graded rows n=${g.n} A=${g.A} B=${g.B} C=${g.C} (${g.suppressed} of the Cs are a NULL grade) → B ${pct(g.pctB)}`)
+    console.log(`  ledger rows       n=${l.n} A=${l.A} B=${l.B} C=${l.C} (${l.suppressed} null) → B ${pct(l.pctB)}`)
+  }
+
+  console.log('\n================ 3. PROBABILITY ================')
+  for (const p of per) {
+    const everyRow = [...p.graded, ...p.ledger]
+    console.log(`${p.label}:`)
+    for (const [what, rows] of [
+      ['board graded', p.graded],
+      ['ledger', p.ledger],
+      ['every scored row', everyRow],
+    ] as [string, Keyed[]][]) {
+      const s = spreadOf(rows.map(r => r.probability))
+      console.log(`  ${what.padEnd(16)} n=${s.n} distinct=${s.distinct} min=${f3(s.min)} max=${f3(s.max)} mean=${f3(s.mean)} sd=${f4(s.sd)}`)
+    }
+    const byBand = spreadByBand(everyRow)
+    for (const band of Object.keys(byBand) as Band[]) {
+      const s = byBand[band]!
+      console.log(`    band ${band.padEnd(6)} n=${s.n} distinct=${s.distinct} min=${f3(s.min)} max=${f3(s.max)}`)
+    }
+    const w = withinContextResolution(everyRow)
+    console.log(`    same-day same-context pairs at DIFFERENT convictions: ${w.separated}/${w.pairs} read different probabilities (${pct(w.pct)})`)
+    // …and the same measure restricted to the INTERIOR of the evidence, between
+    // the lowest and highest band midpoints. Outside it the curve is flat BY
+    // DESIGN (readCurve extends flat off both ends and never extrapolates), so
+    // counting those pairs as failures of resolution would score the engine for
+    // refusing to invent a number.
+    const interior = everyRow.filter(r => Math.abs(r.composite) >= 32.5 && Math.abs(r.composite) <= 62.5)
+    const wi = withinContextResolution(interior)
+    console.log(`    …restricted to the evidenced interior (32.5 ≤ |composite| ≤ 62.5, n=${interior.length}): ${wi.separated}/${wi.pairs} (${pct(wi.pct)})`)
+    // THE ROUNDING, isolated. `probability` on the row is the curve read through
+    // engine.ts's 2dp round; `pRaw` is the read itself. Where the two disagree in
+    // distinct-value count, the staircase the reader sees is the ROUNDING's, not
+    // the calibration's — and that is a display decision, not a model one.
+    const raw = everyRow.map(r => r.pRaw).filter((x): x is number => x != null)
+    if (raw.length) {
+      const rs = spreadOf(raw)
+      const ri = withinContextResolution(interior.filter(r => r.pRaw != null).map(r => ({ ...r, probability: r.pRaw! })))
+      console.log(`    UNROUNDED curve read: n=${rs.n} distinct=${rs.distinct} min=${f4(rs.min)} max=${f4(rs.max)} · interior pair resolution ${ri.separated}/${ri.pairs} (${pct(ri.pct)})`)
+    }
+  }
+  for (const p of per) console.log(`  ${p.label} risk ladder ended at rung ${p.run.riskFinal?.rung ?? '?'} — ${(p.run.riskFinal?.history ?? []).map(h => `${h.date} R${h.from}→R${h.to} (${h.evidence})`).join(' · ') || 'no rung change'}`)
+
+  console.log('\n================ 4. MONOTONICITY — the synthetic probe ================')
+  const xs = probeGrid()
+  const probeStates: { label: string; state: CalibrationState }[] = [
+    { label: 'seed-shape (recon §3.2, the documented inversion)', state: seedLikeState() },
+    { label: 'thin-lucky-top (the shrinkage inversion)', state: thinTopState() },
+    { label: 'A-reachable plant', state: aReachableState() },
+    ...(N.calibrationFinal ? [{ label: `window final (${N.commit})`, state: N.calibrationFinal }] : []),
+  ]
+  let monoViolations = 0
+  let monoContexts = 0
+  for (const ps of probeStates) {
+    const ctxs = contextsIn(ps.state)
+    const v = monotonicityViolations(ctxs, xs, (c, x) => probabilityFor(ps.state, c.side, c.regime, x, c.cohort).p)
+    monoViolations += v.length
+    monoContexts += ctxs.length
+    console.log(`  ${ps.label}: ${ctxs.length} contexts × ${xs.length} samples (${xs[0]}→${xs[xs.length - 1]}) — ${v.length ? `${v.length} VIOLATIONS` : 'monotone'}`)
+    for (const x of v.slice(0, 10)) console.log(`      ${x.context}: p(${x.prevX})=${f4(x.prevP)} → p(${x.x})=${f4(x.p)}`)
+  }
+  const sampled = spreadByBand([...gradedBoard(flatten(N, 'board')), ...flatten(N, 'ledger')])
+  console.log(`  bands the WINDOW itself sampled: ${(Object.keys(sampled) as Band[]).map(b => `${b}(n=${sampled[b]!.n})`).join(' ')}`)
+
+  console.log('\n================ 5. A-REACHABILITY ================')
+  const organicA = per.map(p => `${p.label} ${gradeHistogram(p.graded).A} on the board / ${gradeHistogram(p.ledger).A} in the ledger`)
+  console.log(`  ORGANIC (this window, this seed): ${organicA.join(' · ')}`)
+  let aProbe: { days: number; boardA: number; ledgerA: number; examples: string[] } | null = null
+  if (aProbePath) {
+    const P = read(aProbePath)
+    const pb = gradedBoard(flatten(P, 'board'))
+    const pl = flatten(P, 'ledger')
+    aProbe = {
+      days: P.days.length,
+      boardA: pb.filter(r => r.grade === 'A').length,
+      ledgerA: pl.filter(r => r.grade === 'A').length,
+      examples: pb.filter(r => r.grade === 'A').slice(0, 6).map(r => `${keyOf(r)} |c|=${Math.abs(r.composite)} p=${r.probability} risk=${r.riskPct}`),
+    }
+    console.log(`  SYNTHETIC PROBE (${P.commit}, calibration re-planted daily): ${aProbe.boardA} grade-A board rows over ${aProbe.days} days (${aProbe.ledgerA} in the ledger)`)
+    for (const e of aProbe.examples) console.log(`      ${e}`)
+  } else {
+    console.log('  SYNTHETIC PROBE: not supplied (--aprobe)')
+  }
+
+  console.log('\n================ 6. OUTCOMES vs BASELINE ================')
+  const excess = (rows: Keyed[], h: 5 | 10) => rows.map(r => (h === 5 ? r.outcome5 : r.outcome10)).filter(Boolean).map(o => o!.excessPct)
+  const wins = (rows: Keyed[], h: 5 | 10) => rows.map(r => (h === 5 ? r.outcome5 : r.outcome10)).filter(Boolean).map(o => (o!.hit ? 1 : 0))
+  const baseT = tradesOf(flatten(B, 'board'))
+  const newT = tradesOf(flatten(N, 'board'))
+  for (const h of [5, 10] as const) {
+    const w = welch(excess(newT, h), excess(baseT, h))
+    const hw = welch(wins(newT, h), wins(baseT, h))
+    console.log(
+      `  ${h}d avg excess — new ${f3(w.meanA)}% (n=${w.nA}) vs baseline ${f3(w.meanB)}% (n=${w.nB}) · t=${f3(w.t)} df=${f3(w.df)}`,
+    )
+    console.log(`  ${h}d win rate  — new ${pct(hw.meanA)} vs baseline ${pct(hw.meanB)} · t=${f3(hw.t)}`)
+  }
+  console.log('\n  BRIER (mean (p − hit)² on 10-session outcomes), by scoring epoch:')
+  const brierRows = (r: RunFile) => flatten(r, 'ledger')
+  const oldEpoch = brierRows(B).filter(r => (r.modelVersion ?? 2) === 2)
+  const newEpoch = brierRows(N).filter(r => (r.modelVersion ?? 0) === 3)
+  const bOld = brierOf(oldEpoch)
+  const bNew = brierOf(newEpoch)
+  console.log(`    modelVersion 2 (baseline ledger): n=${bOld.n} mean=${f4(bOld.mean)}`)
+  console.log(`    modelVersion 3 (new ledger):      n=${bNew.n} mean=${f4(bNew.mean)}`)
+  console.log(`    Δ = ${bOld.mean != null && bNew.mean != null ? f4(bNew.mean - bOld.mean) : 'n/a'} (gate: new ≤ old + 0.02)`)
+
+  console.log('\n================ 7. THE DIFF, ATTRIBUTED ================')
+  const boardKeys = (r: RunFile) => gradedBoard(flatten(r, 'board')).map(keyOf)
+  const ledgerKeys = (r: RunFile) => flatten(r, 'ledger').map(keyOf)
+  const full = diffKeys(boardKeys(B), boardKeys(N))
+  console.log(`  baseline → new (EVERYTHING stage 2 shipped): shared ${full.shared.length} · new-only ${full.newOnly.length} · baseline-only ${full.refOnly.length}`)
+  console.log(`    sleeve names newly on the board: ${sleeveKeys(full.newOnly).join(' ') || '—'}`)
+  console.log(`    sleeve names dropped:            ${sleeveKeys(full.refOnly).join(' ') || '—'}`)
+  let floor: { board: DiffSets; ledger: DiffSets } | null = null
+  const mid = runs.find(r => r.label === 'mid')?.run
+  if (mid) {
+    floor = { board: diffKeys(boardKeys(mid), boardKeys(N)), ledger: diffKeys(ledgerKeys(mid), ledgerKeys(N)) }
+    console.log(`\n  pre-floor (${mid.commit}) → new (${N.commit}) — THE EXPECTED-MOVE FLOOR ALONE:`)
+    console.log(`    board:  admitted ${floor.board.newOnly.length} ${floor.board.newOnly.join(' ')} · suppressed ${floor.board.refOnly.length} ${floor.board.refOnly.join(' ')}`)
+    console.log(`    ledger: admitted ${floor.ledger.newOnly.length} ${floor.ledger.newOnly.join(' ')} · suppressed ${floor.ledger.refOnly.length} ${floor.ledger.refOnly.join(' ')}`)
+    console.log(`    of the suppressed, SLEEVE names: ${sleeveKeys([...floor.board.refOnly, ...floor.ledger.refOnly]).join(' ') || '—'}`)
+  }
+
+  console.log('\n================ 8. THE BORN-BELOW CAP ================')
+  const census = bornBelowCensus([...gradedBoard(flatten(N, 'board')), ...flatten(N, 'ledger')])
+  console.log(`  reads extended DOWNWARD off the evidence: ${census.capped}`)
+  console.log(`  …of which the cap demoted (uncapped grade was A/B): ${census.demoted}`)
+  console.log(`  …demoted rows still carrying size (a full trade became a half): ${census.demotedToHalfSize.length}`)
+  console.log(`  …rows that lost ETP ELIGIBILITY (would have been full-tier A/B at their rung): ${census.lostLeverageEligibility.length}`)
+  console.log(`  …rows carrying an ACTUALLY ROUTED instrument anywhere in the window: ${census.routedRowsInWindow} (levMap is empty in this harness by design, so the line above is a counterfactual)`)
+
+  console.log('\n================ 9. THE VOICE ================')
+  let voiceOut: { checked: number; defects: VoiceDefect[] } | null = null
+  if (voice) {
+    const defects = voiceDefects(newT, voice.bannedTokensIn)
+    voiceOut = { checked: newT.length, defects }
+    console.log(`  board trade rows swept: ${newT.length} · defects: ${defects.length}`)
+    for (const d of defects.slice(0, 15)) console.log(`      ${d.key}: ${d.faults.join(',') || 'clean'} banned=[${d.banned.join(' ')}]`)
+  } else {
+    console.log('  voice.ts absent — no sweep')
+  }
+
+  // ------------------------------------------------------------------ the gate --
+  const t = gradeHistogram(newT)
+  const everyNewRow = [...gradedBoard(flatten(N, 'board')), ...flatten(N, 'ledger')]
+  const spreadAll = spreadOf(everyNewRow.map(r => r.probability))
+  const w5 = welch(excess(newT, 5), excess(baseT, 5))
+  const c1 =
+    N.days.every(d => d.shape.trades > 0) && N.days.every(d => d.shape.blankSides === 0)
+  const c2 = t.pctB != null && t.pctB <= 0.75
+  const c3a = spreadAll.distinct >= 15
+  const c3b = monoViolations === 0
+  const c4 = !!aProbe && aProbe.boardA > 0
+  const c5a = w5.t != null && Math.abs(w5.t) < 2
+  const c5b = bOld.mean != null && bNew.mean != null && bNew.mean <= bOld.mean + 0.02
+  const c6 = !!voiceOut && voiceOut.defects.length === 0
+  const verdict = c1 && c2 && c3a && c3b && c4 && c5a && c5b && c6
+
+  console.log('\n================ THE STAGE-2 GATE ================')
+  console.log(`1. zero-trade days 0 AND blank sides 0 — ${c1 ? 'PASS' : 'FAIL'}`)
+  console.log(`2. B ≤ 75% of graded board TRADE rows: ${pct(t.pctB)} — ${c2 ? 'PASS' : 'FAIL'}`)
+  console.log(`3a. ≥15 distinct probabilities: ${spreadAll.distinct} — ${c3a ? 'PASS' : 'FAIL'}`)
+  console.log(`3b. monotone in every probed context (${monoContexts} contexts): ${monoViolations} violations — ${c3b ? 'PASS' : 'FAIL'}`)
+  console.log(`4. an A is reachable end-to-end (synthetic probe): ${aProbe?.boardA ?? 'not run'} — ${c4 ? 'PASS' : 'FAIL'}`)
+  console.log(`5a. win5/avg5 within noise: t=${f3(w5.t)} — ${c5a ? 'PASS' : 'FAIL'}`)
+  console.log(`5b. Brier(new) ≤ Brier(old) + 0.02: ${f4(bNew.mean)} vs ${f4(bOld.mean)} — ${c5b ? 'PASS' : 'FAIL'}`)
+  console.log(`6. every board trade row has a clean thesis + falsifier: ${voiceOut?.defects.length ?? 'not run'} defects — ${c6 ? 'PASS' : 'FAIL'}`)
+  console.log(`VERDICT: ${verdict ? 'PASS' : 'FAIL'}`)
+
+  writeFileSync(
+    outPath,
+    JSON.stringify(
+      {
+        mode: 'stage2-gate',
+        runs: per.map(p => ({
+          label: p.label,
+          commit: p.run.commit,
+          modelVersion: p.run.modelVersion ?? null,
+          days: p.run.days.length,
+          trades: gradeHistogram(p.trades),
+          boardGraded: gradeHistogram(p.graded),
+          ledger: gradeHistogram(p.ledger),
+          probability: spreadOf([...p.graded, ...p.ledger].map(r => r.probability)),
+          byBand: spreadByBand([...p.graded, ...p.ledger]),
+          withinContext: withinContextResolution([...p.graded, ...p.ledger]),
+        })),
+        monotonicity: probeStates.map(ps => ({
+          label: ps.label,
+          contexts: contextsIn(ps.state).length,
+          violations: monotonicityViolations(contextsIn(ps.state), xs, (c, x) => probabilityFor(ps.state, c.side, c.regime, x, c.cohort).p),
+        })),
+        bandsSampledByWindow: sampled,
+        aProbe,
+        outcomes: {
+          d5: { excess: welch(excess(newT, 5), excess(baseT, 5)), win: welch(wins(newT, 5), wins(baseT, 5)) },
+          d10: { excess: welch(excess(newT, 10), excess(baseT, 10)), win: welch(wins(newT, 10), wins(baseT, 10)) },
+        },
+        brier: { old: bOld, new: bNew },
+        diff: { baselineToNew: full, floorOnly: floor },
+        bornBelow: census,
+        voice: voiceOut,
+        gate: { c1, c2, c3a, c3b, c4, c5a, c5b, c6, verdict },
+      },
+      null,
+      1,
+    ),
+  )
+  console.log(`\nwrote ${outPath}`)
+}
+
 // Importable for the unit test (vitest sets VITEST); executed as a script otherwise.
-if (!process.env.VITEST) await (process.argv.includes('--velocity-probe') ? probeMain() : main())
+if (!process.env.VITEST)
+  await (process.argv.includes('--velocity-probe') ? probeMain() : process.argv.includes('--aggregate') ? aggregateMain() : main())

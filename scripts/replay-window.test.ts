@@ -1,9 +1,32 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CORE_SLEEVE } from '../shared/engine/coreSleeve'
 import { classifyVelocity, effectiveVelocityStop, MIN_RISK_FRAC } from '../shared/engine/velocityLane'
+import { type Band, bandFor, baseHitRate, brierPoint, gradeFor, probabilityFor } from '../shared/engine/calibration'
+import { bannedTokensIn, composeThesis } from '../shared/engine/voice'
+import type { Keyed, ProbeContext, RunFile } from './replay-window'
 import {
   MIRROR_EXTRAS,
   PROD_GAINERS_DEPTH,
+  aReachableState,
+  bornBelowCensus,
+  brierOf,
+  contextsIn,
+  diffKeys,
+  flatten,
+  gradeHistogram,
+  keyOf,
+  meanOf,
+  monotonicityViolations,
+  probeGrid,
+  sdOf,
+  seedLikeState,
+  sleeveKeys,
+  spreadByBand,
+  spreadOf,
+  thinTopState,
+  voiceDefects,
+  welch,
+  withinContextResolution,
   PROD_OTHER_DEPTH,
   REPLAY_UNIVERSE,
   SLEEVE_MIRROR,
@@ -282,5 +305,277 @@ describe('doorsFor', () => {
   it('reports the roster door and no door at all', () => {
     expect(doorsFor('AMD', screens, [], ['AMD'])).toEqual(['roster'])
     expect(doorsFor('ZZZZ', screens, [], [])).toEqual([])
+  })
+})
+
+// ============================ STAGE-2 AGGREGATION (§15) ==========================
+// The gate's arithmetic, pinned without a replay. Every helper under test is pure,
+// so these fixtures are hand-built rows rather than a JSON someone has to regenerate
+// — and the two helpers that must talk to the engine (the monotonicity read, the
+// banned-token sweep) take it as an argument, which is what lets the tests drive
+// BOTH a healthy engine and a broken one through the same code.
+
+const row = (over: Partial<Keyed> = {}): Keyed => ({
+  date: '2026-07-14',
+  sym: 'AAA',
+  side: 'long',
+  grade: 'B',
+  riskPct: 1,
+  composite: 40,
+  probability: 0.45,
+  entry: 10,
+  stop: 9,
+  target: 12,
+  capacityPct: 8,
+  expectedMovePct: 3.2,
+  watchOnly: false,
+  nearMiss: false,
+  shadow: false,
+  belowBase: false,
+  contract: true,
+  catalyst: null,
+  setup: null,
+  where: 'board',
+  regime: 'green',
+  modelVersion: 3,
+  riskRung: 0,
+  provisional: false,
+  instrument: null,
+  thesis: 'Long AAA — the trend is intact. Wrong if it closes below 9.',
+  falsifier: 'Wrong if it closes below 9.',
+  ...over,
+})
+
+describe('gradeHistogram', () => {
+  it('counts the letters and the share that are B', () => {
+    const h = gradeHistogram([row({ grade: 'A' }), row({ grade: 'B' }), row({ grade: 'B' }), row({ grade: 'C' })])
+    expect(h).toMatchObject({ n: 4, A: 1, B: 2, C: 1, pctB: 0.5, pctA: 0.25 })
+  })
+  it('separates a real C from a NULL grade stamped as one', () => {
+    // engine.ts stores `grade ?? 'C'`, so the only way back to a null grade is the
+    // shadow/belowBase flag beside it (recon §10). A histogram that missed this
+    // would report a board full of Cs the calibration never graded at all.
+    const h = gradeHistogram([row({ grade: 'C' }), row({ grade: 'C', shadow: true }), row({ grade: 'C', belowBase: true })])
+    expect(h).toMatchObject({ C: 3, suppressed: 2 })
+  })
+  it('returns null shares rather than 0/0 on an empty set', () => {
+    expect(gradeHistogram([])).toMatchObject({ n: 0, pctB: null, pctA: null })
+  })
+})
+
+describe('spreadOf / meanOf / sdOf', () => {
+  it('reports distinct values, extremes and the SAMPLE deviation', () => {
+    const s = spreadOf([0.4, 0.4, 0.5, 0.7])
+    expect(s).toMatchObject({ n: 4, distinct: 3, min: 0.4, max: 0.7 })
+    expect(s.mean).toBeCloseTo(0.5, 12)
+    expect(s.sd).toBeCloseTo(Math.sqrt(((0.1 ** 2) * 2 + 0 + 0.2 ** 2) / 3), 12) // n−1
+  })
+  it('has no deviation to report below two observations', () => {
+    expect(sdOf([0.4])).toBeNull()
+    expect(meanOf([])).toBeNull()
+    expect(spreadOf([])).toMatchObject({ n: 0, distinct: 0, min: null, max: null, sd: null })
+  })
+})
+
+describe('spreadByBand', () => {
+  it('buckets rows by the PRODUCTION bandFor on |composite|, and omits empty bands', () => {
+    const rows = [row({ composite: 30, probability: 0.4 }), row({ composite: -45, probability: 0.5 }), row({ composite: 60, probability: 0.6 })]
+    const by = spreadByBand(rows)
+    expect(Object.keys(by).sort()).toEqual(['25-40', '40-55', '55-70'])
+    expect(by['40-55']).toMatchObject({ n: 1, min: 0.5 }) // |−45| lands long-side band
+    expect(by['70+']).toBeUndefined()
+    for (const r of rows) expect(bandFor(Math.abs(r.composite))).toBe(Object.keys(by).find(b => by[b as Band]!.min === r.probability))
+  })
+})
+
+describe('withinContextResolution', () => {
+  // The measure that actually answers "is the step function dead": a staircase
+  // still yields many distinct values across 21 days and six contexts, so a raw
+  // distinct count cannot tell a curve from a step.
+  it('scores a pair only when the convictions differ, and only within one day+side+regime', () => {
+    const same = withinContextResolution([row({ composite: 30, probability: 0.4 }), row({ composite: 35, probability: 0.42 })])
+    expect(same).toMatchObject({ pairs: 1, separated: 1, pct: 1 })
+    const flat = withinContextResolution([row({ composite: 30, probability: 0.4 }), row({ composite: 35, probability: 0.4 })])
+    expect(flat).toMatchObject({ pairs: 1, separated: 0, pct: 0 })
+  })
+  it('ignores equal convictions — two rows at the same |composite| SHOULD read the same', () => {
+    expect(withinContextResolution([row({ composite: 30 }), row({ composite: -30 })])).toMatchObject({ pairs: 0, pct: null })
+  })
+  it('never pairs across days or regimes', () => {
+    const rows = [row({ composite: 30, probability: 0.4 }), row({ date: '2026-07-15', composite: 35, probability: 0.4 }), row({ regime: 'red', composite: 50, probability: 0.4 })]
+    expect(withinContextResolution(rows)).toMatchObject({ pairs: 0 })
+  })
+})
+
+describe('brierOf', () => {
+  const o = (hit: boolean) => ({ hit, excessPct: hit ? 3 : -1, stopped: false })
+  it('agrees with the PRODUCTION brierPoint on the same rows', () => {
+    // The harness's outcome10 is a three-field projection, not a full PredOutcome,
+    // which is why brierOf exists at all — this pins the two to one definition.
+    const rows = [row({ probability: 0.6, outcome10: o(true) }), row({ probability: 0.3, outcome10: o(false) }), row({ probability: 0.5, outcome10: o(true) })]
+    const mine = brierOf(rows)
+    const theirs = brierPoint(rows.map(r => ({ probability: r.probability, outcome10: { ...r.outcome10!, rawPct: 0, spyPct: 0 } })))
+    expect(mine.n).toBe(3)
+    expect(mine.mean!).toBeCloseTo(theirs!, 12)
+    expect(mine.mean!).toBeCloseTo((0.4 ** 2 + 0.3 ** 2 + 0.5 ** 2) / 3, 12)
+  })
+  it('skips ungraded rows and reports nothing rather than zero when none are graded', () => {
+    expect(brierOf([row({ probability: 0.6 }), row({ probability: 0.6, outcome10: null })])).toEqual({ n: 0, mean: null })
+  })
+})
+
+describe('welch', () => {
+  it('computes the t-statistic and Welch degrees of freedom', () => {
+    const a = [1, 2, 3, 4, 5]
+    const b = [2, 4, 6, 8, 10]
+    const w = welch(a, b)
+    // sd(a) = √2.5, sd(b) = √10 → vA = 0.5, vB = 2 → t = (3 − 6)/√2.5
+    expect(w.t!).toBeCloseTo(-3 / Math.sqrt(2.5), 12)
+    expect(w.df!).toBeCloseTo(6.25 / (0.25 / 4 + 4 / 4), 12)
+  })
+  it('answers "cannot be tested" with nulls rather than NaN', () => {
+    expect(welch([1], [2, 3]).t).toBeNull()
+    expect(welch([2, 2, 2], [2, 2, 2]).t).toBeNull() // no variance either side
+  })
+})
+
+describe('diffKeys / sleeveKeys / keyOf', () => {
+  it('identifies a call by date, symbol AND side', () => {
+    expect(keyOf(row({ date: '2026-08-01', sym: 'NVDA', side: 'short' }))).toBe('2026-08-01:NVDA:short')
+  })
+  it('splits two runs into shared, admitted and suppressed', () => {
+    const d = diffKeys(['d:A:long', 'd:B:long'], ['d:B:long', 'd:C:long'])
+    expect(d).toEqual({ shared: ['d:B:long'], newOnly: ['d:C:long'], refOnly: ['d:A:long'] })
+  })
+  it('picks out the CORE SLEEVE names — the population Task 4 took a floor away from', () => {
+    expect(sleeveKeys(['d:AAPL:long', 'd:ZZZZ:long', 'd:rr.l:short'])).toEqual(['d:AAPL:long', 'd:rr.l:short'])
+  })
+})
+
+describe('voiceDefects', () => {
+  const scan = (t: string) => (t.includes('pullback') ? ['pullback'] : [])
+  it('passes a row that states a belief and the level that would break it', () => {
+    expect(voiceDefects([row()], scan)).toEqual([])
+  })
+  it('names a missing thesis, a missing falsifier and a falsifier that is not the thesis last sentence', () => {
+    expect(voiceDefects([row({ thesis: null })], scan)[0].faults).toContain('thesis')
+    expect(voiceDefects([row({ falsifier: '' })], scan)[0].faults).toContain('falsifier')
+    expect(voiceDefects([row({ thesis: 'Long AAA — fine. Wrong if it closes below 8.' })], scan)[0].faults).toContain('falsifier-not-in-thesis')
+  })
+  it('reports the engine s own banned tokens, from either sentence', () => {
+    const d = voiceDefects([row({ thesis: 'Long AAA — a pullback. Wrong if it closes below 9.' })], bannedTokensIn)
+    expect(d[0].banned).toContain('pullback')
+    // …and the real sweep passes the real composer's output
+    expect(voiceDefects([row({ ...composeThesis({ sym: 'AAA', side: 'long', stage: 'pullback', stop: 9 }) })], bannedTokensIn)).toEqual([])
+  })
+})
+
+describe('probeGrid / contextsIn', () => {
+  it('walks 26→78 so the grid crosses every band edge and both flat extensions', () => {
+    const xs = probeGrid()
+    expect(xs[0]).toBe(26)
+    expect(xs[xs.length - 1]).toBe(78)
+    for (const edge of [40, 56, 70]) expect(xs.some(x => x >= edge)).toBe(true)
+    expect(xs.every((x, i) => i === 0 || x > xs[i - 1])).toBe(true)
+  })
+  it('reads every context a state carries, from legacy AND cohort-tagged keys', () => {
+    const s = seedLikeState()
+    s.buckets['large:long:green:40-55'] = { n: 20, hits: 12 }
+    const ctxs = contextsIn(s)
+    expect(ctxs).toContainEqual({ side: 'long', regime: 'green', cohort: 'unknown' })
+    expect(ctxs).toContainEqual({ side: 'long', regime: 'green', cohort: 'large' })
+    // a context nothing was booked into is not probed — asserting monotonicity on
+    // an empty rung would only test the base-rate constant
+    expect(ctxs.some(c => c.regime === 'blue')).toBe(false)
+  })
+})
+
+describe('monotonicityViolations — the D2 guarantee, and the probe that could catch it failing', () => {
+  const ctxs: ProbeContext[] = [{ side: 'long', regime: 'green', cohort: 'unknown' }]
+  it('finds every downward step of an injected read — the probe is not vacuous', () => {
+    const v = monotonicityViolations(ctxs, [10, 20, 30], (_c, x) => (x === 20 ? 0.2 : 0.5))
+    expect(v).toHaveLength(1)
+    expect(v[0]).toMatchObject({ context: 'unknown:long:green', prevX: 10, prevP: 0.5, x: 20, p: 0.2 })
+  })
+  it('tolerates float dust but not a real inversion', () => {
+    expect(monotonicityViolations(ctxs, [10, 20], (_c, x) => (x === 10 ? 0.3 : 0.3 - 1e-15))).toEqual([])
+    expect(monotonicityViolations(ctxs, [10, 20], (_c, x) => (x === 10 ? 0.3 : 0.29))).toHaveLength(1)
+  })
+  it('the SEED SHAPE is genuinely non-monotone in its raw evidence…', () => {
+    // recon §3.2: shorts read better at LOW conviction than high — the pathology
+    // stage 2 exists to end. Asserted on the raw per-band Laplace so the next test
+    // is measuring a repair and not an absence of damage.
+    const b = seedLikeState().buckets
+    const lap = (k: string) => (b[k].hits + 2) / (b[k].n + 4)
+    expect(lap('short:green:40-55')).toBeLessThan(lap('short:green:25-40'))
+    expect(lap('short:amber:40-55')).toBeLessThan(lap('short:amber:25-40'))
+    expect(lap('short:green:55-70')).toBeGreaterThan(lap('short:green:40-55')) // …and jumps back up on n=8
+  })
+  it('…and the SHIPPED read path repairs it across the whole grid', () => {
+    const s = seedLikeState()
+    expect(monotonicityViolations(contextsIn(s), probeGrid(), (c, x) => probabilityFor(s, c.side, c.regime, x, c.cohort).p)).toEqual([])
+  })
+  it('…including the thin-lucky-top state, where shrinkage alone would invert the curve', () => {
+    const s = thinTopState()
+    expect(monotonicityViolations(contextsIn(s), probeGrid(), (c, x) => probabilityFor(s, c.side, c.regime, x, c.cohort).p)).toEqual([])
+  })
+})
+
+describe('aReachableState — the planted evidence criterion 4 stands on', () => {
+  const s = aReachableState()
+  const base = baseHitRate(s).rate
+  it('holds the base rate DOWN with a large losing population, so p − base is a real gap', () => {
+    expect(base).toBeCloseTo(2042 / 4804, 6) // 0.4251
+    expect(baseHitRate(s).n).toBe(4800)
+  })
+  it('reads a long above base + 0.10 on nEff ≥ 30, and therefore grades A', () => {
+    const r = probabilityFor(s, 'long', 'green', 40, 'unknown')
+    expect(r.nEff).toBeGreaterThanOrEqual(30)
+    expect(r.belowEvidence).toBe(false)
+    expect(r.p).toBeGreaterThanOrEqual(base + 0.1)
+    expect(gradeFor(r.p, r.nEff, base, r.belowEvidence)).toBe('A')
+  })
+  it('still refuses an A BELOW the evidence — the born-below cap is not bypassed by a plant', () => {
+    const low = probabilityFor(s, 'long', 'green', 26, 'unknown')
+    expect(low.belowEvidence).toBe(true)
+    expect(gradeFor(low.p, low.nEff, base, low.belowEvidence)).toBe('C')
+  })
+  it('suppresses the short side it deliberately poisoned', () => {
+    const r = probabilityFor(s, 'short', 'green', 40, 'unknown')
+    expect(gradeFor(r.p, r.nEff, base, r.belowEvidence)).toBeNull()
+  })
+})
+
+describe('bornBelowCensus', () => {
+  it('separates the cap from the demotion from the leverage it withheld', () => {
+    const rows: Keyed[] = [
+      row({ sym: 'CAP', belowEvidence: true, gradeUncapped: 'C', grade: 'C' }), // capped, nothing lost
+      row({ sym: 'DEM', belowEvidence: true, gradeUncapped: 'B', grade: 'C', riskPct: 0.5 }), // a full trade became a half
+      row({ sym: 'LEV', belowEvidence: true, gradeUncapped: 'A', grade: 'C', riskRung: 1, riskPct: 0.5 }), // …and at rung 1 an A may route
+      row({ sym: 'FINE', belowEvidence: false, gradeUncapped: 'B', grade: 'B' }),
+    ]
+    const c = bornBelowCensus(rows)
+    expect(c).toMatchObject({ capped: 3, demoted: 2, routedRowsInWindow: 0 })
+    expect(c.demotedToHalfSize).toEqual(['2026-07-14:DEM:long', '2026-07-14:LEV:long'])
+    // leverageAllowed(0,'B') is 0 — a rung-0 B was never going to route anything,
+    // so only the rung-1 A counts as leverage the cap actually withheld
+    expect(c.lostLeverageEligibility).toEqual(['2026-07-14:LEV:long'])
+  })
+  it('counts a routed instrument when one exists, so the counterfactual is never mistaken for a loss', () => {
+    expect(bornBelowCensus([row({ instrument: '3LNV.L' })]).routedRowsInWindow).toBe(1)
+  })
+})
+
+describe('flatten', () => {
+  it('stamps each row with the day it was published on', () => {
+    const run = {
+      mode: 'new',
+      commit: 'abc',
+      from: '2026-07-14',
+      to: '2026-07-15',
+      days: [{ date: '2026-07-14', board: [row()], ledger: [] }, { date: '2026-07-15', board: [], ledger: [row()] }],
+    } as unknown as RunFile
+    expect(flatten(run, 'board').map(keyOf)).toEqual(['2026-07-14:AAA:long'])
+    expect(flatten(run, 'ledger').map(keyOf)).toEqual(['2026-07-15:AAA:long'])
   })
 })
