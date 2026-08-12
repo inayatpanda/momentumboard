@@ -11,6 +11,21 @@ export function sma(values: number[], period: number): (number | null)[] {
   return out
 }
 
+/** Standard EMA: seeded with the SMA of the first `period` values. null when the
+ * history is shorter than the period — an unknown never passes a gate.
+ *
+ * THE one EMA. It lived as a byte-identical private helper in both the dip lane
+ * (period 50) and the velocity lane (period 8); the velocity trail is a published
+ * stop drawn from it, so two copies drifting apart would be two different
+ * falsifiers wearing the same name. One implementation, one number. */
+export function emaLast(values: number[], period: number): number | null {
+  if (values.length < period) return null
+  let e = values.slice(0, period).reduce((s, v) => s + v, 0) / period
+  const k = 2 / (period + 1)
+  for (let i = period; i < values.length; i++) e += k * (values[i] - e)
+  return e
+}
+
 export function rsi(closes: number[], period = 14): (number | null)[] {
   const out: (number | null)[] = closes.map(() => null)
   if (closes.length <= period) return out

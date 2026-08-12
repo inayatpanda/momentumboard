@@ -1,5 +1,5 @@
 import type { Candle } from './types'
-import { sma, rsi, atr } from './indicators'
+import { sma, rsi, atr, emaLast } from './indicators'
 import { detectSetups } from './setups'
 
 // Where is a stock IN its move? The reversal-first read: reward names that are
@@ -19,6 +19,18 @@ export type Stage =
 
 export type EntryQuality = 'early' | 'neutral' | 'chase' | 'wait'
 
+/** Do the timeframes AGREE? Price above the 20-day SMA is one horizon's opinion;
+ * price > 8 > 21 > 50 is every horizon pointing the same way, which is a
+ * different and stronger statement. `aligned` is deliberately strict — a tie is
+ * not an alignment — and deliberately null-not-mixed when a leg is unknown,
+ * because a missing 50-EMA is an absence of evidence, not evidence of disorder. */
+export interface EmaStack {
+  e8: number | null
+  e21: number | null
+  e50: number | null
+  aligned: 'bull' | 'bear' | 'mixed' | null
+}
+
 export interface TechnicalRead {
   sym: string
   price: number | null
@@ -29,6 +41,8 @@ export interface TechnicalRead {
   rangePos: number | null // 0 = at 60-day low, 1 = at 60-day high
   rvol: number | null // last session volume vs 20-day average
   volumeConfirmed: boolean // move backed by above-average volume
+  emaStack: EmaStack // 8/21/50 EMAs and whether the timeframes agree
+  volThrust: number | null // mean volume of the last 5 sessions vs the 20 before them
   setups: string[]
   stage: Stage
   entryQuality: EntryQuality
@@ -36,6 +50,44 @@ export interface TechnicalRead {
 }
 
 const lastOf = <T,>(a: T[]): T | undefined => a[a.length - 1]
+
+const round2 = (x: number) => Math.round(x * 100) / 100
+
+/** The stack is read off the ROUNDED EMAs, not the raw ones, so the verdict and
+ * the three numbers printed beside it can never disagree — a reader must never
+ * see `e8 100, e21 100, aligned bull`. */
+function emaStackOf(closes: number[], price: number): EmaStack {
+  const at = (p: number) => {
+    const e = emaLast(closes, p)
+    return e == null ? null : round2(e)
+  }
+  const [e8, e21, e50] = [at(8), at(21), at(50)]
+  const aligned =
+    e8 == null || e21 == null || e50 == null ? null // an unknown is not a verdict
+    : price > e8 && e8 > e21 && e21 > e50 ? 'bull'
+    : price < e8 && e8 < e21 && e21 < e50 ? 'bear'
+    : 'mixed'
+  return { e8, e21, e50, aligned }
+}
+
+const THRUST_RECENT = 5
+const THRUST_BASE = 20
+
+/** THE MULTI-DAY PARTICIPATION MEASURE, and the thing `rvol` is not. `rvol` asks
+ * whether TODAY was loud against a 20-day average; on a swing horizon the useful
+ * question is whether the crowd has been arriving for a WEEK. A name can print a
+ * 0.6 rvol into a 2× thrust (the loud days were Monday to Thursday) and a 3.0
+ * rvol into a flat one (one headline, nobody stayed). Today is inside the recent
+ * window on purpose — this measures the week, not a baseline to judge today by. */
+function volThrustOf(vols: number[]): number | null {
+  const recent = vols.slice(-THRUST_RECENT)
+  const base = vols.slice(-(THRUST_RECENT + THRUST_BASE), -THRUST_RECENT)
+  if (recent.length < THRUST_RECENT || base.length < THRUST_BASE) return null
+  const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length
+  const baseMean = mean(base)
+  if (baseMean <= 0) return null // a ratio on nothing is not a number
+  return round2(mean(recent) / baseMean)
+}
 
 export function technicalStage(sym: string, candles: Candle[]): TechnicalRead | null {
   if (!candles || candles.length < 30) return null
@@ -60,6 +112,12 @@ export function technicalStage(sym: string, candles: Candle[]): TechnicalRead | 
   const rvol = avgVol20 > 0 ? Math.round((lastOf(vols)! / avgVol20) * 10) / 10 : null
   const volumeConfirmed = rvol != null && rvol >= 1.3
 
+  // ADDITIVE ONLY (stage 2, task 1): computed and carried, consumed by nothing.
+  // The stage cascade, entryQuality and note below are deliberately untouched —
+  // task 2 is what teaches the score to read these.
+  const emaStack = emaStackOf(closes, price)
+  const volThrust = volThrustOf(vols)
+
   const setups = detectSetups(candles, rvol)
 
   // stage: reversal-first classification
@@ -80,7 +138,7 @@ export function technicalStage(sym: string, candles: Candle[]): TechnicalRead | 
     : 'neutral'
 
   const note = buildNote(stage, { r, pctFrom20d, rangePos, rvol, volumeConfirmed })
-  return { sym, price, rsi: r, pctFrom20d, pctFrom50d, atrMultFrom20d, rangePos, rvol, volumeConfirmed, setups, stage, entryQuality, note }
+  return { sym, price, rsi: r, pctFrom20d, pctFrom50d, atrMultFrom20d, rangePos, rvol, volumeConfirmed, emaStack, volThrust, setups, stage, entryQuality, note }
 }
 
 function buildNote(stage: Stage, m: { r: number | null; pctFrom20d: number | null; rangePos: number | null; rvol: number | null; volumeConfirmed: boolean }): string {

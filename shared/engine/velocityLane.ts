@@ -44,7 +44,7 @@
 // lane never sets one, because a price signature is not news.
 
 import type { Candle } from '../types'
-import { swingCapacity } from '../indicators'
+import { emaLast, swingCapacity } from '../indicators'
 import { SMALL_CAP_MAX_USD_M } from './capClass'
 import { DEFAULT_WEIGHTS } from './composite'
 import { clamp, round1, round2, type CallEvidence, type EngineCall, type FactorName, type FactorScore } from './types'
@@ -91,16 +91,6 @@ export interface VelocityRead {
   /** Consecutive up-closes ending today. The entry-timing rule reads this. */
   greenStreak: number
   detail: string
-}
-
-/** Standard EMA: seeded with the SMA of the first `period` values. null when the
- * history is shorter than the period — an unknown never passes a gate. */
-function emaLast(values: number[], period: number): number | null {
-  if (values.length < period) return null
-  let e = values.slice(0, period).reduce((s, v) => s + v, 0) / period
-  const k = 2 / (period + 1)
-  for (let i = period; i < values.length; i++) e += k * (values[i] - e)
-  return e
 }
 
 /** Mean volume of the BREAKOUT_WINDOW sessions before today. Today is excluded

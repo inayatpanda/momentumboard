@@ -23,7 +23,7 @@
 // (buildBoard) supplies the earnings calendar and the catalyst narration tag.
 
 import type { Candle } from '../types'
-import { swingCapacity } from '../indicators'
+import { emaLast, swingCapacity } from '../indicators'
 import { SMALL_CAP_MAX_USD_M } from './capClass'
 import { DEFAULT_WEIGHTS } from './composite'
 import { clamp, round1, round2, type CallEvidence, type EngineCall, type FactorName, type FactorScore } from './types'
@@ -55,16 +55,6 @@ export interface DipRead {
   /** Depth: % below the 20-session closing high. Drives the composite and the retrace target. */
   dropPct: number
   detail: string
-}
-
-/** Standard EMA: seeded with the SMA of the first `period` values. null when the
- * history is shorter than the period — an unknown never passes a gate. */
-function emaLast(values: number[], period: number): number | null {
-  if (values.length < period) return null
-  let e = values.slice(0, period).reduce((s, v) => s + v, 0) / period
-  const k = 2 / (period + 1)
-  for (let i = period; i < values.length; i++) e += k * (values[i] - e)
-  return e
 }
 
 /** The dip's floor: lowest intraday low of the DIP_WINDOW sessions BEFORE today.

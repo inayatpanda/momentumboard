@@ -40,3 +40,92 @@ describe('technicalStage', () => {
     expect(technicalStage('X', mk([1, 2, 3]))).toBeNull()
   })
 })
+
+// The EMA stack answers a question the SMA read cannot: are the timeframes
+// AGREEING? A price above its 20-day SMA says one thing; price > 8 > 21 > 50
+// says every horizon is pointing the same way. Nothing consumes these yet —
+// this task only makes the read see them.
+describe('technicalStage — the EMA stack', () => {
+  const rising = Array.from({ length: 80 }, (_, i) => 100 + i)
+  const falling = Array.from({ length: 80 }, (_, i) => 200 - i)
+  const flat = Array(80).fill(100) as number[]
+  /** A sharp V: the short EMAs have turned up and stacked, but the 50 has NOT —
+   *  e21 (159.82) still sits UNDER e50 (160.83). The chain breaks at the last
+   *  link, which is exactly what 'mixed' is for. */
+  const turningUp = [...Array.from({ length: 65 }, (_, i) => 200 - i), ...Array.from({ length: 15 }, (_, i) => 135 + (i + 1) * 3)]
+
+  it('reads bull when price > e8 > e21 > e50, strictly', () => {
+    const t = technicalStage('UP', mk(rising))!
+    expect(t.emaStack.e8).toBe(175.5)
+    expect(t.emaStack.e21).toBe(169)
+    expect(t.emaStack.e50).toBe(154.5)
+    expect(t.price).toBe(179)
+    expect(t.emaStack.aligned).toBe('bull')
+  })
+
+  it('reads bear when price < e8 < e21 < e50, strictly', () => {
+    const t = technicalStage('DOWN', mk(falling))!
+    expect(t.emaStack.e8).toBe(124.5)
+    expect(t.emaStack.e21).toBe(131)
+    expect(t.emaStack.e50).toBe(145.5)
+    expect(t.emaStack.aligned).toBe('bear')
+  })
+
+  it('reads mixed on a flat tape — the ordering must be STRICT, ties are not alignment', () => {
+    const t = technicalStage('FLAT', mk(flat))!
+    expect(t.emaStack).toEqual({ e8: 100, e21: 100, e50: 100, aligned: 'mixed' })
+  })
+
+  it('reads mixed when the short EMAs have stacked but the 50 has not turned', () => {
+    const t = technicalStage('TURN', mk(turningUp))!
+    expect(t.emaStack.e8).toBe(169.85)
+    expect(t.emaStack.e21).toBe(159.82)
+    expect(t.emaStack.e50).toBe(160.83)
+    expect(t.emaStack.e21!).toBeLessThan(t.emaStack.e50!) // the broken link
+    expect(t.emaStack.aligned).toBe('mixed')
+  })
+
+  it('aligned is null the moment any leg is unknown — 40 candles cannot seed the 50', () => {
+    const t = technicalStage('SHORT', mk(Array.from({ length: 40 }, (_, i) => 100 + i)))!
+    expect(t.emaStack.e8).toBe(135.5)
+    expect(t.emaStack.e21).toBe(129)
+    expect(t.emaStack.e50).toBeNull()
+    expect(t.emaStack.aligned).toBeNull() // NOT 'mixed' — an unknown is not a verdict
+  })
+})
+
+// rvol is one session against a 20-day average. volThrust is FIVE sessions
+// against the twenty before them: whether participation is building over the
+// swing horizon, not whether today was loud.
+describe('technicalStage — volume thrust', () => {
+  const closes = Array.from({ length: 40 }, () => 100)
+  /** vols laid out so the two windows are exactly controllable: the last five
+   *  sessions are `recent`, the twenty before them are the base. */
+  const withVols = (recent: number[], base: number) => mk(closes, [...Array(15).fill(1000) as number[], ...Array(20).fill(base) as number[], ...recent])
+
+  it('is > 1 when the last five sessions expand on the twenty before them', () => {
+    expect(technicalStage('X', withVols([2000, 2000, 2000, 2000, 2000], 1000))!.volThrust).toBe(2)
+  })
+
+  it('is < 1 when participation is drying up', () => {
+    expect(technicalStage('X', withVols([400, 400, 400, 400, 400], 1000))!.volThrust).toBe(0.4)
+  })
+
+  it('is a mean-over-mean ratio, rounded to 2dp', () => {
+    // (1100+1200+1300+1400+1234)/5 = 1246.8 → 1246.8/1000 = 1.2468 → 1.25
+    expect(technicalStage('X', withVols([1100, 1200, 1300, 1400, 1234], 1000))!.volThrust).toBe(1.25)
+  })
+
+  it('is null when the base window carries no volume at all — a ratio on nothing is not a number', () => {
+    expect(technicalStage('X', withVols([2000, 2000, 2000, 2000, 2000], 0))!.volThrust).toBeNull()
+  })
+
+  it('is NOT rvol: today can be quiet while the five-day thrust is loud', () => {
+    // today prints 800 against a ~1260 average (rvol 0.6) but the five-session
+    // window means 2000 against the twenty before it: (2300×4 + 800)/5 = 2000
+    const t = technicalStage('X', withVols([2300, 2300, 2300, 2300, 800], 1000))!
+    expect(t.rvol).toBeLessThan(1.3)
+    expect(t.volumeConfirmed).toBe(false)
+    expect(t.volThrust).toBe(2)
+  })
+})
