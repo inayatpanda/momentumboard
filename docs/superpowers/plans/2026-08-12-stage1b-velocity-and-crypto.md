@@ -24,12 +24,12 @@
 
 ### Task 1: `velocityLane.ts` — classify, construct, trail
 
-**Files:** Create `shared/engine/velocityLane.ts`, `shared/engine/velocityLane.test.ts`.
+**Files:** Create `shared/engine/velocityLane.ts`, `shared/engine/velocityLane.test.ts`; modify `shared/engine/types.ts` (SetupFamily union gains 'velocity' — HERE, not Task 2, or this task can't typecheck [codex-v2 #9]) and `src/lib/api.ts` (~line 378, the duplicate client union).
 
 **Interfaces:**
 - Consumes: `Candle` from `'../types'`; `EngineCall`, `clamp/round1/round2` from `'./types'`; the SMA-seeded `emaLast` pattern (copy dipLane's, or export it from a shared spot if trivial).
 - Produces:
-  - `classifyVelocity(candles: Candle[]): VelocityRead | null` — null iff < 30 candles. `VelocityRead = { door: 'early' | 'confirmation' | null; greenStreak: number; detail: string }`.
+  - `classifyVelocity(candles: Candle[]): VelocityRead | null` — null iff < 30 candles. `VelocityRead = { door: 'early' | 'confirmation' | null; earlyTriggered: boolean; confirmationTriggered: boolean; greenStreak: number; detail: string }` — both door diagnostics exposed independently so the replay can report every firing [codex-v2 #4]; `door` is the chosen one (early wins).
   - `velocityCall(sym: string, candles: Candle[], read: VelocityRead, capUsdM: number | null): EngineCall | null` — long only, null unless `read.door`.
   - `velocityTrail(candles: Candle[]): number | null` — the live falsifier level (Task 6 consumes it daily).
   - `VELOCITY_DOOR_CAP = { early: 0.25, confirmation: 0.5 } as const` (Task 5's sizing input).
@@ -49,7 +49,7 @@
 
 ### Task 2: family + kind + IC isolation
 
-**Files:** Modify `shared/engine/types.ts` (SetupFamily union + `route`-free — no other type changes), `shared/engine/composite.ts` (`setupFamilyOf` untouched — 'velocity' is stamped by the lane, verify no exhaustive switch breaks [gpt-oss #1: grep `SetupFamily` consumers]), `shared/engine/catalyst.ts` (ADD `'velocity'` to the kind union + `export const VELOCITY_CATALYST_KIND = 'velocity' as const` + `export const LANE_CATALYST_KINDS: ReadonlySet<string> = new Set([DIP_CATALYST_KIND, VELOCITY_CATALYST_KIND])`), `netlify/functions/lib/engine.ts` (the IC guard at ~line 340 becomes `!LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '')` — verify the polarity against the existing dip test), calibration setupBuckets accept the new family (verify the key template is family-agnostic — it is: `${setup}:${side}:${band}`).
+**Files:** Modify `shared/engine/types.ts` (SetupFamily union + `route`-free — no other type changes), `shared/engine/composite.ts` (`setupFamilyOf` untouched — 'velocity' is stamped by the lane, verify no exhaustive switch breaks [gpt-oss #1: grep `SetupFamily` consumers]), `shared/engine/catalyst.ts` (ADD `'velocity'` to the kind union + `export const VELOCITY_CATALYST_KIND = 'velocity' as const` + `export const LANE_CATALYST_KINDS: ReadonlySet<string> = new Set([DIP_CATALYST_KIND, VELOCITY_CATALYST_KIND])`), `netlify/functions/lib/engine.ts` (the IC guard at ~line 340 becomes `!LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '')` — verify the polarity against the existing dip test; ALSO the worldTape `mult: 1` stamp in publishCall (~line 960) generalizes from the dip literal to `LANE_CATALYST_KINDS` — lane composites are structural and never received the world-tape rescore [codex-v2 #7]), calibration setupBuckets accept the new family (verify the key template is family-agnostic — it is: `${setup}:${side}:${band}`).
 
 - [ ] Failing tests: a graded velocity prediction leaves factor-IC counts untouched but accrues its `velocity:long:{band}` setup bucket; the existing dip IC test still passes. RED → implement → GREEN → commit `feat(engine): lane calls are quarantined from factor learning as a family, not a special case`.
 
@@ -70,7 +70,8 @@ The spec's cluster inputs don't exist yet: `combineSocialPulse` returns one day'
 
 **Interfaces:**
 - `TrendDay = { date: string; syms: string[] }`; blob `social-history` = last 21 `TrendDay`s (append-if-new-date, fail-soft).
-- `detectClusters(history: TrendDay[], closesBySym: Map<string, number[]>, spyCloses: number[]): string[][]` — `[]` when history < 7 days (documented warm-up; the lane runs fine without clusters — they only elevate candidate priority).
+- `detectClusters(history: TrendDay[], candlesBySym: Map<string, Candle[]>, spyCandles: Candle[]): string[][]` — DATED alignment: excess returns are paired by candle timestamp, and the ≥15-overlapping-observations rule counts truly overlapping sessions [codex-v2 #1]. `[]` when history < 7 days (warm-up; clusters only elevate priority).
+- **Pre-cut data path [codex-v2 #1]:** cluster detection runs BEFORE candidate priority/slicing, on its own bounded fetch — only symbols appearing in a co-appearance pair (≥3 of last 5 days) get candles, via `deps.candles` (cachedCandles), cap 25 fetches, fail-soft. `candleMap` is NOT available yet at that point and must not be assumed.
 
 **Rules [C8 — every leg gets real evidence]:**
 - Co-appearance leg for a pair: BOTH names in the trending set on ≥3 of the last 5 recorded days.
@@ -90,10 +91,10 @@ The spec's cluster inputs don't exist yet: `combineSocialPulse` returns one day'
 (a) **Velocity pass** after the dip merge, same shape: candidates with candles, `capUsdM ≥ 20` ($20M liquidity floor — cluster membership is elevation, never eligibility), skip syms with a **constructed dip call** (`constructedDipLongs`, NOT `dipReads` [C9 — Stage 1 already fixed this exact bug for shorts]) and syms that already have a long row (`alreadyLong` pattern). `classifyVelocity` → `velocityCall` → `earningsRisk` override from `earningsSet` → `publishCall(call, capUsdM, { kind: VELOCITY_CATALYST_KIND, side: 'long', reason: read.detail, strength: 50 }, false, VELOCITY_DOOR_CAP[read.door])`.
 (b) **Sizing:** `publishCall` gains an optional `sizeCap = 1` (thread it through the ONE signature and update all call sites in the same commit [gpt-oss #5]); `riskPct = base × min(tierFraction, sizeCap)` where tierFraction is 1 for fullTrade and 0.5 for halfTrade — a cap, never a product [the v1 D4 rule, accepted]. UI risk strings derive the label from the fraction (`(quarter size)` / `(half size)`) — extend `fmtRiskPct`'s call sites.
 (c) **One direction per chart [C10]:** a live velocity long excludes same-sym SHORT near-misses and observations (extend the same-sym exclusion the observation promotion already has to the near-miss builder), and the dip-over-short demotion loop treats a sized velocity long exactly like a sized dip long (rename its key set to `sizedLaneLongs`, fed by both lanes).
-(d) **Cluster elevation:** read `social-history`, run `detectClusters` (fail-soft try/catch → []), `addSource(sym, 'hype-cluster')` for members, priority tier = the sleeve's (4), and stamp cluster membership into the velocity call's catalyst `reason` for narration.
-(e) **Fail-soft test:** velocity module import erroring / empty history / cluster throw → deep-compare identical board to a lane-less run.
+(d) **Cluster elevation:** read `social-history`, run `detectClusters` (fail-soft try/catch → []), `addSource(sym, 'hype-cluster')` for members, priority tier = the sleeve's (4), and stamp cluster membership into the velocity call's catalyst `reason` for narration. The journalist contract in `newspaper.ts` (~line 501) currently says every reduced riskPct means grade/evidence fell short — add the velocity rule: door caps are momentum-not-quality sizing, narrated as "quarter-size probe on a fresh breakout" / "half-size on a confirmed run", never as an evidence deficiency [codex-v2 #8].
+(e) **Fail-soft tests [codex-v2 #2]:** empty history / cluster throw → deep-compare identical to a CLUSTER-LESS velocity run (the lane keeps working; only elevation disappears); a velocity classify/call throw on one symbol → that symbol skipped, everything else identical (never suppress the whole lane).
 
-- [ ] Failing tests: breakout candidate publishes a quarter-size velocity long (riskPct = base × 0.25, grade from calibration as usual); confirmation door → half; velocity long + dip READ that failed dipCall → velocity still publishes [C9]; velocity long + composite short near-miss same sym → near-miss suppressed [C10]; cluster member gains priority (a 181st-place candidate with cluster membership makes the 180 cut); fail-soft deep-compare; graded velocity call accrues `velocity:long:*` setup bucket only.
+- [ ] Failing tests: breakout candidate publishes a quarter-size velocity long (riskPct = base × 0.25, grade from calibration as usual); confirmation door → half; velocity long + dip READ that failed dipCall → velocity still publishes [C9]; velocity long + composite short near-miss same sym → near-miss suppressed [C10]; cluster member gains priority (a 181st-place candidate with cluster membership makes the 180 cut); fail-soft deep-compares per (e); graded velocity call accrues its `velocity:long:*` setup bucket AND — ratified, the Stage-1 dip precedent — the shared cohort/side/regime/band calibration bucket, the Brier trail, and (when sized) the risk ladder: a graded long in a band is real evidence about longs in that band regardless of lane, the graded outcome uses the published stop not the trail, and the setup bucket carries the family-specific record for later blending. ONLY factor-IC is isolated [codex-v2 #6].
 - [ ] RED → implement → GREEN (+ tsc + build) → commit `feat(engine): velocity reaches the board — quarter-size probes, half-size confirmations, one direction per chart`
 
 ---
@@ -102,7 +103,7 @@ The spec's cluster inputs don't exist yet: `combineSocialPulse` returns one day'
 
 The spec's falsifier ("first close below the 8-EMA or the 5-session low") must actually move the exit. Today `openTrace`/`paperBook` compare closes against the static published `stop`.
 
-**Files:** `shared/engine/openTrace.ts`, `netlify/functions/lib/paperBook.ts`, `shared/engine/types.ts` (`Prediction.trail?: 'velocity'` — an optional marker, additive), tests for both.
+**Files:** `shared/engine/openTrace.ts`, `netlify/functions/lib/paperBook.ts`, `shared/engine/types.ts` (`Prediction.trail?: 'velocity'` — additive) AND `PaperPosition.trail?: 'velocity'` copied at entry in paperBook's projection (~line 17/170) — without it the marker is lost the day after opening and no later run can enforce the trail [codex-v2 #10]. Tests for both.
 
 **Mechanism:** velocity rows publish with `trail: 'velocity'`. Each day, for open velocity rows, both consumers recompute `velocityTrail(candles-as-of-that-day)` and use `max(published stop, trail)` as the effective stop — the trail only ever RAISES the exit [C3's directionality]. The published `stop` stays what it was (calibration's close-through grading is untouched — grading still uses the published stop; the trail governs the OPEN-BOOK exit narrative and paper-book exits, which is where the reader's discipline lives). Document this split honestly in both files: grading measures the original thesis; the book trades the trail.
 
@@ -116,10 +117,10 @@ The spec's falsifier ("first close below the 8-EMA or the 5-session low") must a
 **Files:** extend `scripts/replay-window.ts` (a `--velocity-probe` mode) + `docs/superpowers/plans/2026-08-11-stage1-replay-results.md` §12.
 
 **Design (strengthened per C15):**
-- **Named probes with named windows** — no `biggestRun` auto-detection: AAOI (2026 run — locate its actual window from the candles WITHIN a stated search range and print the dates used), the space cluster (RKLB + two peers, 2026), and the 2025 quantum trio (IONQ, RGTI, QBTS) as the out-of-sample probe. Each probe = one symbol + one date range, hardcoded in the script with a comment saying what it is.
+- **Named probes with named windows [codex-v2 #3]** — SEVEN runners, fixed before any result is seen: AAOI (search window 2026-01-01→2026-08-01), RKLB, LUNR, ASTS (the 2026 space cluster, same window), IONQ, RGTI, QBTS (the 2025 quantum trio, 2025-01-01→2025-12-31). The run inside each search window = the largest low→high advance ≥40% within it, located from the candles and PRINTED with its dates. No other probe selection.
 - For EVERY probe and BOTH doors: walk the window day-by-day, record every firing (date, door, entry), simulate the trail exit forward, and report per-runner: entries-in-run positions, exits green/red, doors that never fired.
-- **Gate (all must hold):** ≥4 of the 6 named runners fire at least one door inside their run; across all in-run entries, median position ≤ 0.6 of the run and ≤⅓ beyond 0.8; ≥60% of in-run entries exit green via the trail; AND zero entries on a run's single highest close. Report out-of-run firings honestly (they count against nothing but must be listed).
-- Also re-run the 21-day window replay (candles re-fetch if the old cache is gone) confirming the equity board is unchanged except velocity rows (the lane is additive; zero-trade days stay 0).
+- **Gate (all must hold):** ≥5 of the 7 named runners fire at least one door inside their run; across all in-run entries, median position ≤ 0.6 of the run and ≤⅓ beyond 0.8; ≥60% of in-run entries exit green via the trail; AND zero entries on a run's single highest close. Report out-of-run firings honestly (they count against nothing but must be listed).
+- Also re-run the 21-day window replay (candles re-fetch if the old cache is gone) and report an ATTRIBUTED diff vs the Stage-1 run [codex-v2 #5]: velocity rows; discovery/priority displacements from the 50-deep gainers and cluster elevation (name every displaced symbol and what displaced it); any composite-call changes those cause. Zero-trade days must stay 0; anything else changed gets explained, not asserted away.
 - **If the gate fails: STOP, write it up, the owner decides.** No threshold tuning.
 
 - [ ] Build + probe + write §12 + commit `test(replay): the velocity doors against the runners they were built for` (results committed pass or fail).
