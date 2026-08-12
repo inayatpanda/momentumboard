@@ -11,6 +11,9 @@ written up as a failure.
   last clause** — the dip lane never constructed a GLW call, for a defensible reason; criterion 5
   shows a small *negative* drift on trades that is statistically indistinguishable from noise
   (t = −0.32) on a 21-day window. **The owner decides.**
+- **Stage 1b's own ship gate is §13** (the velocity doors against seven named runners, plus the
+  attributed re-run of this window). That gate **FAILS** on its exit criterion — 39% green against
+  a 60% floor — with the other four criteria passing. **The owner decides that too.**
 
 ---
 
@@ -550,3 +553,474 @@ ladder climbed to 1.25% mid-window.
 
 Raw output: `replay-partB.json` and `replay-turnvol.json` beside the §1 files; the three-way diff
 script is `turnvol-compare.mjs` in the same directory.
+
+---
+
+## 13. Stage 1b — the velocity doors against their runners
+
+**Ship gate for `docs/superpowers/plans/2026-08-12-stage1b-velocity-and-crypto.md` (Task 7).**
+Produced 2026-08-12 at commit `53c31cf`. (Numbered §13 on the controller's instruction; this
+document has no §12.) **VERDICT: the gate FAILS.** Four of its five criteria pass; criterion 3
+— "≥60% of in-run entries exit green via the trail" — comes in at **39% (26 / 67)**. Nothing
+below has been tuned and no threshold was moved: the failure is written up and the owner decides.
+
+### 13.1 How the probe runs
+
+```bash
+# the runners (network: Yahoo 5y history, incl. 2025 for the quantum trio)
+npx vite-node scripts/replay-window.ts -- --velocity-probe --out …/velocity-probe.json
+```
+
+`--velocity-probe` is a second mode of the same harness. For each of seven named runners it:
+
+1. loads the full (5y) candle history through the shared `./.replay-cache` — 2 concurrent
+   requests, 120 ms apart, one 30 s retry on a 429, and a symbol Yahoo refuses is recorded as
+   MISSING and never synthesised. **0 symbols were missing**; 187 tapes are cached, 25 MB;
+2. finds **the run** inside the search window from the candles: the largest low→high CLOSING
+   advance, provided it clears +40% (`findRun`, a running-minimum scan, so it is the best pair
+   in the window and not the first pair that clears the floor). The run's dates are printed;
+3. walks the search window **session by session**, and on every session hands
+   `classifyVelocity` the tape up to and including that close — the same view the engine has
+   pre-open the next morning;
+4. records **every** firing (both doors independently, not just the one that won the tie-break),
+   calls `velocityCall` on it, and where an open door produced no call re-reads `velocityTrail`
+   alongside to say **which** refusal it was;
+5. simulates the exit forward with the **paper book's own walk** (`paperBook.ts`
+   `manageOpenPositions`): from the session after entry, each close against
+   `effectiveVelocityStop(publishedStop, tape-as-of-that-session, entrySessionIdx)`, then the
+   2R target, then the 10-session horizon. **The entry-session index is passed** — walking the
+   trail a session at a time without it is the defect the ratchet fix (`e0fa4f9`) exists to kill,
+   and `scripts/replay-window.test.ts` now pins the difference on a washout-wick fixture.
+
+The probe applies the LANE's gates and **not** the engine's `VELOCITY_MIN_CAP_USD_M` floor: it is
+measuring the doors, not the discovery path. Runtime with a warm cache: **under a second**; the
+cold fetch of 157 tapes is the long pole (a few minutes). Re-running is deterministic — the same
+JSON twice.
+
+### 13.2 The seven runners, and the runs the tape gave them
+
+Named in the plan before any result was seen (C15), and pinned by a unit test so they cannot
+drift. The run is found, never named:
+
+| runner | search window | run found (largest closing advance ≥40%) | sessions | in-run firings | in-run entries |
+|---|---|---|---|---|---|
+| AAOI | 2026-01-01 → 2026-08-01 | 2026-01-08 33.01 → 2026-05-13 223.10, **+575.9%** | 86 | 9 | 9 |
+| RKLB | 2026-01-01 → 2026-08-01 | 2026-03-30 57.38 → 2026-05-27 150.23, **+161.8%** | 40 | 3 | 3 |
+| LUNR | 2026-01-01 → 2026-08-01 | 2026-02-05 14.79 → 2026-05-28 45.70, **+209.0%** | 77 | 4 | 4 |
+| ASTS | 2026-01-01 → 2026-08-01 | 2026-05-05 63.87 → 2026-05-28 133.09, **+108.4%** | 16 | 1 | 1 |
+| IONQ | 2025-01-01 → 2025-12-31 | 2025-03-10 18.27 → 2025-10-13 82.09, **+349.3%** | 150 | 9 | 9 |
+| RGTI | 2025-01-01 → 2025-12-31 | 2025-01-13 6.05 → 2025-10-15 56.34, **+831.2%** | 190 | 25 | 21 |
+| QBTS | 2025-01-01 → 2025-12-31 | 2025-01-13 3.83 → 2025-10-15 44.78, **+1069.2%** | 190 | 20 | 20 |
+
+`findRun` was checked against a brute-force O(n²) scan of every pair in the window on AAOI, RGTI
+and QBTS — same three runs, same dates, same advances.
+
+**Note on criterion 4.** The maximum-advance pair makes the run's END its highest close by
+construction (any higher close inside the run would be a bigger advance from the same low), so
+"no entry on the run's single highest close" is, on this data, exactly "no entry on the run's last
+session". It is computed independently anyway (`peakIdx`), and it is 0.
+
+### 13.3 Per-runner detail
+
+Every firing, in-run and out. `door (early/conf)` shows the chosen door and then which doors were
+open — they OVERLAP, and on 10 sessions both were. `pos` is the entry's position in the run
+measured in sessions (0 = the run's low, 1 = its high). Exits are the paper book's walk.
+
+#### AAOI — run **2026-01-08 33.01 → 2026-05-13 223.10, +575.9%** (86 sessions)
+
+145 sessions walked · door firings: early 2, confirmation 9 (both on 2) · chosen: early 2, confirmation 7 · constructed 9 · in-run entries 9
+
+| date | in run | pos | door (early/conf) | streak | bestUp | entry | stop | risk | comp | exit | P&L |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-01-28 | yes | 0.15 | confirmation (n/Y) | 2 | 2.8× | 45.23 | 38.55 | 14.8% | 42.8 | trail 2026-02-04 | -11.8% |
+| 2026-01-30 | yes | 0.17 | confirmation (n/Y) | 1 | 2.5× | 43.61 | 39.85 | 8.6% | 47.1 | trail 2026-02-04 | -8.5% |
+| 2026-02-02 | yes | 0.19 | confirmation (n/Y) | 2 | 2.2× | 44.16 | 40.81 | 7.6% | 51.6 | trail 2026-02-04 | -9.6% |
+| 2026-02-27 | yes | 0.40 | early (Y/Y) | 1 | 4.6× | 84.23 | 59.3 | 29.6% | 55 | trail 2026-03-13 | +14.9% |
+| 2026-03-02 | yes | 0.41 | early (Y/Y) | 2 | 4.3× | 102.51 | 68.9 | 32.8% | 55 | trail 2026-03-13 | -5.6% |
+| 2026-03-03 | yes | 0.42 | confirmation (n/Y) | 0 | 3.9× | 95.34 | 74.77 | 21.6% | 55 | trail 2026-03-13 | +1.5% |
+| 2026-03-04 | yes | 0.43 | confirmation (n/Y) | 1 | 3.7× | 99.71 | 80.32 | 19.4% | 55 | trail 2026-03-13 | -2.9% |
+| 2026-03-05 | yes | 0.44 | confirmation (n/Y) | 2 | 3.6× | 101.14 | 84.94 | 16.0% | 55 | trail 2026-03-13 | -4.3% |
+| 2026-03-06 | yes | 0.45 | confirmation (n/Y) | 0 | 3.5× | 95.58 | 87.31 | 8.6% | 38.5 | target 2026-03-10 | +26.1% |
+
+#### RKLB — run **2026-03-30 57.38 → 2026-05-27 150.23, +161.8%** (40 sessions)
+
+145 sessions walked · door firings: early 1, confirmation 3 (both on 1) · chosen: early 1, confirmation 2 · constructed 3 · in-run entries 3
+
+| date | in run | pos | door (early/conf) | streak | bestUp | entry | stop | risk | comp | exit | P&L |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-05-08 | yes | 0.70 | early (Y/Y) | 1 | 3.7× | 105.47 | 86.06 | 18.4% | 55 | horizon 2026-05-22 | +28.7% |
+| 2026-05-11 | yes | 0.72 | confirmation (n/Y) | 2 | 3.2× | 117.35 | 93.02 | 20.7% | 55 | horizon 2026-05-26 | +22% |
+| 2026-05-15 | yes | 0.82 | confirmation (n/Y) | 0 | 2.1× | 124.77 | 113.66 | 8.9% | 43.3 | target 2026-05-27 | +20.4% |
+
+#### LUNR — run **2026-02-05 14.79 → 2026-05-28 45.70, +209%** (77 sessions)
+
+145 sessions walked · door firings: early 0, confirmation 4 (both on 0) · chosen: early 0, confirmation 4 · constructed 4 · in-run entries 4
+
+| date | in run | pos | door (early/conf) | streak | bestUp | entry | stop | risk | comp | exit | P&L |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-04-06 | yes | 0.52 | confirmation (n/Y) | 0 | 2.8× | 22.92 | 20.55 | 10.3% | 55 | horizon 2026-04-20 | +20.1% |
+| 2026-04-07 | yes | 0.53 | confirmation (n/Y) | 0 | 2.7× | 22.73 | 21.03 | 7.5% | 55 | target 2026-04-16 | +20% |
+| 2026-04-08 | yes | 0.55 | confirmation (n/Y) | 1 | 2.7× | 23.39 | 21.55 | 7.9% | 51 | target 2026-04-16 | +16.6% |
+| 2026-05-27 | yes | 0.99 | confirmation (n/Y) | 1 | 2.1× | 40.34 | 35.68 | 11.6% | 49.3 | trail 2026-06-01 | -5.3% |
+
+#### ASTS — run **2026-05-05 63.87 → 2026-05-28 133.09, +108.4%** (16 sessions)
+
+145 sessions walked · door firings: early 0, confirmation 1 (both on 0) · chosen: early 0, confirmation 1 · constructed 1 · in-run entries 1
+
+| date | in run | pos | door (early/conf) | streak | bestUp | entry | stop | risk | comp | exit | P&L |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-05-11 | yes | 0.25 | confirmation (n/Y) | 2 | 2.1× | 82.55 | 73.66 | 10.8% | 45.6 | stop 2026-05-12 | -11.6% |
+
+#### IONQ — run **2025-03-10 18.27 → 2025-10-13 82.09, +349.3%** (150 sessions)
+
+250 sessions walked · door firings: early 2, confirmation 9 (both on 2) · chosen: early 2, confirmation 7 · constructed 9 · in-run entries 9
+
+| date | in run | pos | door (early/conf) | streak | bestUp | entry | stop | risk | comp | exit | P&L |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2025-03-14 | yes | 0.03 | confirmation (n/Y) | 1 | 2.0× | 25 | 22.39 | 10.4% | 46.7 | trail 2025-03-18 | -9.3% |
+| 2025-05-08 | yes | 0.28 | confirmation (n/Y) | 1 | 2.7× | 31.84 | 29.49 | 7.4% | 41.3 | trail 2025-05-21 | +5.3% |
+| 2025-05-13 | yes | 0.30 | confirmation (n/Y) | 2 | 2.6× | 33.22 | 31.15 | 6.2% | 37.9 | trail 2025-05-21 | +1% |
+| 2025-05-22 | yes | 0.35 | early (Y/Y) | 1 | 6.4× | 45.79 | 36.3 | 20.7% | 55 | trail 2025-05-30 | -11.9% |
+| 2025-05-23 | yes | 0.35 | confirmation (n/Y) | 0 | 5.1× | 45.69 | 38.39 | 16.0% | 55 | trail 2025-05-30 | -11.7% |
+| 2025-05-27 | yes | 0.36 | confirmation (n/Y) | 1 | 4.8× | 48.04 | 40.53 | 15.6% | 55 | trail 2025-05-30 | -16% |
+| 2025-05-28 | yes | 0.37 | confirmation (n/Y) | 0 | 4.6× | 47.56 | 42.09 | 11.5% | 55 | trail 2025-05-30 | -15.2% |
+| 2025-05-29 | yes | 0.37 | confirmation (n/Y) | 0 | 4.4× | 43.2 | 42.34 | 2.0% | 53.8 | stop 2025-05-30 | -6.6% |
+| 2025-09-12 | yes | 0.86 | early (Y/Y) | 2 | 4.9× | 55.61 | 46.16 | 17.0% | 55 | target 2025-09-23 | +35.1% |
+
+#### RGTI — run **2025-01-13 6.05 → 2025-10-15 56.34, +831.2%** (190 sessions)
+
+250 sessions walked · door firings: early 3, confirmation 25 (both on 3) · chosen: early 3, confirmation 22 · constructed 21 · in-run entries 21
+
+| date | in run | pos | door (early/conf) | streak | bestUp | entry | stop | risk | comp | exit | P&L |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2025-05-05 | yes | 0.41 | confirmation (n/Y) | 0 | 2.4× | 9.69 | 9.42 | 2.8% | 30.2 | trail 2025-05-07 | -4.5% |
+| 2025-05-06 | yes | 0.41 | confirmation (n/Y) | 1 | 2.4× | 9.78 | 9.5 | 2.9% | 35.4 | stop 2025-05-07 | -5.4% |
+| 2025-05-08 | yes | 0.42 | confirmation (n/Y) | 1 | 2.7× | 10.31 | 9.64 | 6.5% | 37.8 | trail 2025-05-13 | -4.3% |
+| 2025-05-14 | yes | 0.44 | early (Y/Y) | 1 | 3.9× | 11.64 | 10.48 | 10.0% | 50.8 | trail 2025-05-21 | -5.8% |
+| 2025-05-15 | yes | 0.45 | confirmation (n/Y) | 0 | 3.4× | 11.54 | 10.71 | 7.2% | 36.9 | trail 2025-05-21 | -5% |
+| 2025-05-16 | yes | 0.45 | confirmation (n/Y) | 1 | 3.2× | 11.85 | 10.97 | 7.4% | 37 | trail 2025-05-21 | -7.5% |
+| 2025-05-19 | yes | 0.46 | confirmation (n/Y) | 2 | 3.0× | 12.05 | 11.21 | 7.0% | 29.3 | trail 2025-05-21 | -9% |
+| 2025-05-20 | yes | 0.46 | confirmation (n/Y) | 0 | 2.8× | 11.92 | 11.37 | 4.6% | 45.8 | stop 2025-05-21 | -8.1% |
+| 2025-05-22 | yes | 0.47 | early (Y/Y) | 1 | 3.1× | 13.86 | 11.85 | 14.5% | 45.1 | trail 2025-05-30 | -12.6% |
+| 2025-05-23 | yes | 0.48 | confirmation (n/Y) | 2 | 2.8× | 14.02 | 12.33 | 12.0% | 43.3 | trail 2025-05-30 | -13.6% |
+| 2025-05-28 | yes | 0.49 | confirmation (n/Y) | 0 | 2.5× | 14.16 | 13.06 | 7.8% | 43.8 | trail 2025-05-30 | -14.5% |
+| 2025-05-29 | yes | 0.49 | confirmation (n/Y) | 0 | 2.5× | — | — | — | — | **no call** — risk 0.07 under the 1% floor (0.53% of entry) | — |
+| 2025-06-11 | yes | 0.54 | confirmation (n/Y) | 1 | 2.7× | 12.52 | 11.84 | 5.4% | 30.9 | trail 2025-06-13 | -8.9% |
+| 2025-06-12 | yes | 0.55 | confirmation (n/Y) | 0 | 2.5× | 12.1 | 11.9 | 1.7% | 36.1 | stop 2025-06-13 | -5.8% |
+| 2025-07-16 | yes | 0.66 | early (Y/Y) | 1 | 5.4× | 16.56 | 13.59 | 17.9% | 47.6 | trail 2025-07-25 | -6.8% |
+| 2025-07-17 | yes | 0.67 | confirmation (n/Y) | 2 | 4.5× | 17.14 | 14.38 | 16.1% | 55 | trail 2025-07-25 | -9.9% |
+| 2025-07-21 | yes | 0.68 | confirmation (n/Y) | 0 | 4.1× | 16.08 | 15.24 | 5.2% | 50.9 | trail 2025-07-25 | -4% |
+| 2025-07-22 | yes | 0.68 | confirmation (n/Y) | 0 | 4.1× | — | — | — | — | **no call** — risk 0.15 under the 1% floor (0.97% of entry) | — |
+| 2025-08-15 | yes | 0.78 | confirmation (n/Y) | 0 | 2.3× | — | — | — | — | **no call** — risk 0.12 under the 1% floor (0.72% of entry) | — |
+| 2025-08-18 | yes | 0.78 | confirmation (n/Y) | 0 | 2.4× | — | — | — | — | **no call** — risk 0.08 under the 1% floor (0.48% of entry) | — |
+| 2025-09-12 | yes | 0.88 | confirmation (n/Y) | 2 | 2.9× | 19.09 | 16.63 | 12.9% | 51.4 | target 2025-09-18 | +29.6% |
+| 2025-09-22 | yes | 0.91 | confirmation (n/Y) | 0 | 2.4× | 28.37 | 23.38 | 17.6% | 55 | target 2025-10-03 | +41.2% |
+| 2025-09-23 | yes | 0.92 | confirmation (n/Y) | 1 | 2.3× | 31.46 | 25.18 | 20.0% | 55 | horizon 2025-10-07 | +39.6% |
+| 2025-09-24 | yes | 0.92 | confirmation (n/Y) | 2 | 2.4× | 31.64 | 26.61 | 15.9% | 55 | target 2025-10-06 | +31.8% |
+| 2025-09-26 | yes | 0.93 | confirmation (n/Y) | 0 | 2.0× | 31.18 | 28.58 | 8.3% | 34.3 | target 2025-10-03 | +28.5% |
+
+#### QBTS — run **2025-01-13 3.83 → 2025-10-15 44.78, +1069.2%** (190 sessions)
+
+250 sessions walked · door firings: early 2, confirmation 21 (both on 2) · chosen: early 2, confirmation 19 · constructed 21 · in-run entries 20
+
+| date | in run | pos | door (early/conf) | streak | bestUp | entry | stop | risk | comp | exit | P&L |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2025-03-18 | yes | 0.23 | confirmation (n/Y) | 0 | 3.3× | 10.8 | 8.4 | 22.2% | 55 | trail 2025-03-20 | -19.5% |
+| 2025-03-19 | yes | 0.24 | confirmation (n/Y) | 0 | 3.1× | 10.6 | 8.89 | 16.1% | 55 | stop 2025-03-20 | -18% |
+| 2025-05-08 | yes | 0.42 | early (Y/Y) | 1 | 8.4× | 10.42 | 7.88 | 24.4% | 55 | target 2025-05-20 | +58.9% |
+| 2025-05-09 | yes | 0.43 | early (Y/Y) | 2 | 6.3× | 11.09 | 8.59 | 22.5% | 55 | target 2025-05-20 | +49.3% |
+| 2025-05-12 | yes | 0.43 | confirmation (n/Y) | 0 | 5.4× | 10.72 | 9.07 | 15.4% | 55 | target 2025-05-20 | +54.5% |
+| 2025-05-13 | yes | 0.44 | confirmation (n/Y) | 1 | 5.1× | 10.73 | 9.44 | 12.0% | 55 | target 2025-05-20 | +54.3% |
+| 2025-05-14 | yes | 0.44 | confirmation (n/Y) | 2 | 5.0× | 11.08 | 9.8 | 11.6% | 55 | target 2025-05-20 | +49.5% |
+| 2025-05-15 | yes | 0.45 | confirmation (n/Y) | 0 | 3.3× | 11.03 | 10.07 | 8.7% | 30.9 | target 2025-05-19 | +19.2% |
+| 2025-05-16 | yes | 0.45 | confirmation (n/Y) | 1 | 2.1× | 12.25 | 10.56 | 13.8% | 35.5 | target 2025-05-20 | +35.2% |
+| 2025-05-21 | yes | 0.47 | confirmation (n/Y) | 0 | 3.9× | 15.36 | 13.01 | 15.3% | 55 | trail 2025-06-05 | +7.2% |
+| 2025-05-22 | yes | 0.47 | confirmation (n/Y) | 1 | 3.5× | 19.04 | 14.35 | 24.6% | 55 | trail 2025-06-05 | -13.5% |
+| 2025-05-23 | yes | 0.48 | confirmation (n/Y) | 0 | 3.1× | 18.8 | 15.34 | 18.4% | 55 | trail 2025-06-05 | -12.4% |
+| 2025-05-27 | yes | 0.48 | confirmation (n/Y) | 0 | 3.0× | 17.55 | 15.83 | 9.8% | 55 | trail 2025-06-05 | -6.2% |
+| 2025-07-18 | yes | 0.67 | confirmation (n/Y) | 0 | 2.3× | 18.89 | 17.24 | 8.7% | 52.5 | trail 2025-07-28 | -2.9% |
+| 2025-07-21 | yes | 0.68 | confirmation (n/Y) | 0 | 2.3× | 18.39 | 17.49 | 4.9% | 41.2 | target 2025-07-23 | +10.4% |
+| 2025-07-23 | yes | 0.69 | confirmation (n/Y) | 1 | 2.2× | 20.3 | 18.13 | 10.7% | 45 | trail 2025-07-28 | -9.6% |
+| 2025-09-22 | yes | 0.91 | confirmation (n/Y) | 0 | 3.0× | 25.67 | 22.25 | 13.3% | 55 | trail 2025-09-30 | -3.7% |
+| 2025-09-23 | yes | 0.92 | confirmation (n/Y) | 1 | 2.8× | 27.52 | 23.42 | 14.9% | 55 | trail 2025-09-30 | -10.2% |
+| 2025-09-24 | yes | 0.92 | confirmation (n/Y) | 2 | 2.2× | 27.72 | 24.38 | 12.0% | 48 | trail 2025-09-30 | -10.9% |
+| 2025-09-25 | yes | 0.93 | confirmation (n/Y) | 0 | 2.1× | 26.34 | 24.81 | 5.8% | 34.7 | trail 2025-09-30 | -6.2% |
+| 2025-12-23 | **OUT** | — | confirmation (n/Y) | 0 | 2.0× | 29.12 | 27.54 | 5.4% | 39.1 | stop 2025-12-24 | -5.5% |
+
+**Out-of-run firings (they count against nothing, and are listed because they exist):** exactly
+one — **QBTS 2025-12-23**, confirmation door, constructed at 29.12, stopped the next session at
+−5.5%. Every other firing on all seven tapes fell inside the run.
+
+### 13.4 Three quantities, counted separately
+
+They are not the same number and the report must never let them merge:
+
+| quantity | count |
+|---|---|
+| **door firings** — `earlyTriggered` | 10 |
+| **door firings** — `confirmationTriggered` | 72 |
+| …of which sessions where **both** were open | 10 |
+| sessions with **any** door open | 72 |
+| **chosen doors** (early wins the tie) — early | 10 |
+| **chosen doors** — confirmation | 62 |
+| **constructed calls** (`velocityCall` non-null) | 68 |
+| open door, **no call** | 4 |
+
+Every early firing was also a confirmation firing: the early door never opened alone on these
+seven tapes. All four refusals are the **1% risk floor**, all four on RGTI, and each is printed
+beside the read that produced it — the open-door detail reads affirmatively even on a session
+that produced nothing, so both strings travel together:
+
+| date | refusal (recomputed by calling `velocityTrail` alongside) | the read's own detail |
+|---|---|---|
+| RGTI 2025-05-29 | risk 0.07 under the 1% floor (0.53% of entry) | confirmation door: +20% over 5 sessions · holding the 8-EMA at 13.08 · 0 green days |
+| RGTI 2025-07-22 | risk 0.15 under the 1% floor (0.97% of entry) | confirmation door: +21.3% over 5 sessions · holding the 8-EMA at 15.28 · 0 green days |
+| RGTI 2025-08-15 | risk 0.12 under the 1% floor (0.72% of entry) | confirmation door: 4/5 up-days paid by a 2.3× up-day · holding the 8-EMA at 16.53 · 0 green days |
+| RGTI 2025-08-18 | risk 0.08 under the 1% floor (0.48% of entry) | confirmation door: 3/5 up-days paid by a 2.4× up-day · holding the 8-EMA at 16.55 · 0 green days |
+
+**Neither of the other two refusal branches fired once** — no `trail null`, no `trail ≥ entry`, on
+**1,330** walked sessions across the seven tapes.
+
+### 13.5 The 1% floor's calibration data, and `bestUpMult`
+
+Risk distance `(entry − stop) / entry` across all 68 constructed calls — this is the number the
+uncalibrated `MIN_RISK_FRAC = 0.01` is guessing at:
+
+| bucket | calls |
+|---|---|
+| 0–1% | 0 (the floor's own definition) |
+| 1–2% | 2 |
+| 2–3% | 2 |
+| 3–5% | 2 |
+| 5–8% | 14 |
+| 8–12% | 15 |
+| 12–20% | 24 |
+| ≥20% | 9 |
+
+**The floor is doing very little work and what it does is at the edge.** 94% of constructed calls
+sit above 5%; only 6 land in 1–5%, and the 4 refusals it produced were all between 0.48% and
+0.97% — i.e. the floor is cutting at a place where the population is almost empty, and the four
+tapes it cut were within a rounding error of passing. Whether 1% is the right number cannot be
+settled by this sample; what the sample says is that moving it inside 0–5% changes at most six
+calls out of 72.
+
+`bestUpMult` (the loudest up-day inside the run window, against the 20-session baseline) across
+constructed calls: **min 2.0×, median 3.0×, max 8.4×**. The 2× confirmation gate therefore sits
+right at the bottom of the observed distribution — half of these calls were paid for at 3× or
+better, and the door is not being carried by marginal volume.
+
+### 13.6 The gate
+
+| # | criterion | measured | verdict |
+|---|---|---|---|
+| 1 | ≥5 of the 7 runners fire at least one door inside their run | **7 / 7** | **PASS** |
+| 2a | median in-run entry position ≤ 0.6 of the run | **0.458** | **PASS** |
+| 2b | ≤ ⅓ of in-run entries beyond 0.8 | **12 / 67 = 17.9%** | **PASS** |
+| 3 | ≥60% of in-run entries exit green via the trail | **26 / 67 = 38.8%** (green *by trail exit*: 5) | **FAIL** |
+| 4 | zero entries on a run's single highest close | **0** | **PASS** |
+
+**Gate verdict: FAIL** (criterion 3).
+
+Both readings of criterion 3 fail and they fail in the same direction, so the wording does not
+decide anything: 26/67 (38.8%) of in-run entries end green under the book's walk, and only 5/67
+(7.5%) end green *because the trail fired*. Reported both ways rather than choosing the kinder one.
+
+### 13.7 What the failure is made of
+
+Exit anatomy across the 67 in-run entries:
+
+| exit | n | green | mean P&L | median sessions held |
+|---|---|---|---|---|
+| trail (the ratcheted level fired) | 40 | 5 | **−7.1%** | 5 |
+| target (2R) | 17 | 17 | **+34.2%** | 6 |
+| horizon (10 sessions) | 4 | 4 | +27.6% | 10 |
+| stop (published level, never raised) | 6 | 0 | −9.3% | 1 |
+
+- **The trail is the whole story.** 40 of 67 entries die on the ratcheted trail, at a mean of
+  −7.1%. The trail is `max(8-EMA, the lowest low of the five prior sessions)` and it RATCHETS, so
+  on a fast mover it climbs into the price within days; the first ordinary pullback then takes the
+  position out below entry. That is the lane's design working exactly as written — it is not a bug
+  in the walk (hand-verified below) — but it produces a **low hit-rate, high-payoff** distribution,
+  and criterion 3 is a hit-rate test.
+- **Expectancy is positive, the win rate is not.** Mean P&L per in-run entry **+5.25%**, median
+  **−5.0%**, sum +351.8% across 67 entries; best +58.9%, worst −19.5%. A 2R target with a fast
+  trail is *supposed* to look like this. Criterion 3 asked for something a 2R momentum system does
+  not naturally produce.
+- **It is not the 10-session horizon.** Re-walking every entry with the horizon removed (a
+  sensitivity, NOT the gate, and NOT a tuning proposal): **26/67 green, identically 39%**; 20
+  targets instead of 17, 41 trail exits instead of 40, mean +5.36%. The horizon is not what is
+  costing the green exits.
+- **The early door is the better read on this sample**: 5/10 green, mean +14.4%, versus 21/57 and
+  +3.6% for confirmation. n = 10 — worth nothing on its own, but it points the same way the plan's
+  size caps already do (and the early door is the SMALLER cap, 0.25 vs 0.5, which is backwards
+  from this evidence).
+- **Wider stops did better, not worse**: 0–5% risk 1/6 green (mean −3.3%), 5–10% 8/21 (+2.1%),
+  10–20% 12/31 (+7.5%), ≥20% 5/9 (+10.7%). A tight trail on a fast tape is a coin flip.
+- **Later entries did better, not worse** — 0–0.4 of the run: 3/15 green, mean −8.6%; 0.4–0.6:
+  13/32, +8.2%; 0.6–0.8: 3/8, +3.5%; 0.8–1.0: 7/12, **+15.8%**. Criterion 2 rewards early entries
+  and criterion 3 penalises what early entries did on this tape. The two criteria are pulling in
+  opposite directions and the owner should know that before deciding.
+- **The 67 entries are not 67 independent samples.** Consecutive sessions on one name are the same
+  move re-read: there are only **16 distinct episodes** (entries more than 10 sessions apart on one
+  name) behind the 67 entries. AAOI's 6 March-cluster entries all die on the same 2026-03-13 break;
+  RGTI's 21 entries are 6 episodes. Any percentage in this section has an effective n far below its
+  denominator.
+
+**The walk was verified by hand before this was called a failure.** AAOI 2026-01-28: entry 45.23,
+published stop 38.55 (= `velocityTrail` on the entry tape); the trail is redrawn 38.78 → 39.85 →
+40.81 → 41.99 over the next four sessions and the 2026-02-04 close of 39.90 is through the
+ratcheted 41.99 — exit −11.8%, which is what the probe reports. QBTS 2025-05-08: entry 10.42,
+stop 7.88, target 15.50, and the 2025-05-20 close of 16.56 takes the target — +58.9%, as reported.
+
+### 13.8 The 21-day window, re-run and attributed
+
+The window replay (2026-07-14 → 2026-08-11, 21 trading days) was re-run at HEAD on a **refetched**
+candle cache (`./.replay-cache`, 154 symbols warmed, **0 missing**), and — so that nothing is
+attributed by assertion — three more runs were made against **the same cache**: the §11
+turn-scoped commit and the Stage-1 ship commit in `git worktree` checkouts (each running its OWN
+copy of the harness, which is what its own production screens looked like), plus HEAD forced back
+to a 25-deep gainers screen.
+
+```bash
+REPLAY_CACHE_DIR=…/.replay-cache npx vite-node scripts/replay-window.ts -- \
+  --from 2026-07-14 --to 2026-08-11 --watch GLW,TSLA,NVDA --out …/replay-base371.json   # worktree 371e643
+… same, in a worktree of de03c26                                                        # Stage 1 as shipped
+npx vite-node scripts/replay-window.ts -- --gainers 25 …                                # HEAD, Stage-1 screens
+npx vite-node scripts/replay-window.ts -- …                                             # HEAD, production's 50
+```
+
+| | `371e643` (§11) | `de03c26` (Stage 1 shipped) | HEAD, gainers 25 | **HEAD, gainers 50** |
+|---|---|---|---|---|
+| Sized trades | 63 | 63 | 63 | **63** |
+| Watch rows | 134 | 130 | 130 | 130 |
+| Near-miss rows | 26 | 34 | 34 | 34 |
+| Ledger rows (shadows) | 288 (91) | 282 (89) | 282 (89) | 282 (89) |
+| Grade A / B / C on trades | 0 / 55 / 8 | 0 / 55 / 8 | 0 / 55 / 8 | 0 / **46** / **17** |
+| `riskPct` values seen | 0.5, 0.625, 1, 1.25 | 0.5, 0.625, 1, 1.25 | 0.5, 0.625, 1, 1.25 | 0.5, **1**, 1.25 |
+| **Zero-trade days** | **0 / 21** | **0 / 21** | **0 / 21** | **0 / 21** |
+| Blank sides | 0 / 42 | 0 / 42 | 0 / 42 | 0 / 42 |
+| Dip holding-days | 182 | 182 | 182 | 182 |
+| `dipCall` constructions | 68 | 68 | 68 | 68 |
+| Dip rows sized | 32 | 32 | 32 | **31** |
+| **Velocity rows on the board** | 0 | 0 | **0** | **0** |
+| …velocity calls the LANE would have built | — | — | 75 | **77** |
+| Lane share of trades (dip + velocity) | 50.8% | 50.8% | 50.8% | **49.2%** |
+| Trades win5 / avg5 (n=48) | 54.2% / +1.81% | 54.2% / +1.81% | 54.2% / +1.81% | 54.2% / +1.75% |
+| Trades win10 / avg10 (n=33) | 51.5% / +1.53% | 51.5% / +1.53% | 51.5% / +1.53% | **45.5% / +2.80%** |
+| Dip trades win5 | 66.7% / +2.15% (n=21) | same | same | 65.0% / +1.84% (n=20) |
+| Composite trades win5 | 44.4% / +1.54% (n=27) | same | same | 46.4% / +1.69% (n=28) |
+
+**The tape reproduces §11.** The `371e643` column is the §11 "turn-scoped" column re-run on a
+cache fetched three weeks later: trades 63, watch 134, near-miss 26, ledger 288 (91 shadow),
+grades 0/55/8, dip holding-days 182, constructions 68, 32 sized dip rows, dip win5 66.7% — all
+identical. The only differences are in the third decimal of the excess returns (avg5 +1.81% here
+vs +1.85% published, avg10 +1.53% vs +1.59%, dip avg5 +2.15% vs +2.24%), which is Yahoo's own
+revision of a few bars between the two fetches. The comparison below is therefore against a real
+baseline, not a remembered one.
+
+**Attribution, in the order the changes landed:**
+
+1. **§11 → Stage-1 ship (`371e643` → `de03c26`)** — watch 134 → 130, near-miss 26 → 34, ledger
+   288 → 282 (91 → 89 shadows). **No trade, grade, risk or outcome changed.** That is the Stage-1
+   closing containment wave (observation labelling and dedup), already reviewed, and it is
+   confined to rows the reader sees but does not size.
+2. **Stage 1b's engine, at Stage-1 screens (`de03c26` → HEAD, gainers 25)** — **every single
+   number is identical.** Trades, watch, near-miss, ledger, shadows, grades, risk values,
+   outcomes: unchanged, row for row. The velocity lane, the hype clusters and the quarter/half
+   sizing added **nothing** to this window, for two reasons that must be stated plainly:
+   - **The velocity lane cannot fire in this harness at all.** `capUsdM` is `null` for every name
+     (approximation #4 — there is no free point-in-time market-cap source), and
+     `VELOCITY_MIN_CAP_USD_M` refuses an unknown cap by design. So the 21-day window says
+     **nothing** about the lane's live behaviour; §13.1–13.7 is the only velocity evidence here.
+     The harness now measures the counterfactual instead: over the names `buildBoard` actually
+     evaluated, the lane's own gates opened on **85 name-days** and `velocityCall` would have
+     built **77 calls** across the 21 days (36 distinct names — STAN.L 6, PYPL 5, VOD.L 5, SBUX 4,
+     LMT 4, AMZN 4, PLTR 4, AAOI 4, …). Every one of them was blocked by the cap floor, not by the
+     board.
+   - **Clusters cannot fire either**, and for a cleaner reason: `social-history` is built from
+     `deps.social`, which is empty in a price-only replay, so the record never accumulates a day
+     and `clusterCandidates` returns nothing under its 7-day warm-up. No cluster elevated any name
+     in any of the four runs, so **no displacement in this window is attributable to cluster
+     elevation** — there is none to attribute.
+3. **The 50-deep gainers screen (HEAD 25 → HEAD 50)** — the only Stage-1b change with a footprint
+   on this window, and it is real. **Ten of the 21 days** see a board change. Every sized-trade
+   displacement is the same name arriving:
+
+   | day | trade displaced | by | watch-row changes |
+   |---|---|---|---|
+   | 07-14 | JACK (comp 26.0) | **PATH** (34.9) | out: GS 22.0, AMD 21.7, PYPL 21.6 · in: NET 26.4, JACK 26.0, PANW 24.1 |
+   | 07-15 | — | — | out: GE 26.0 · in: AFRM 31.8 |
+   | 07-16 | RBLX (35.6) | **PATH** (46.7) | out: LCID 28.6 · in: RBLX 35.6 |
+   | 07-17 | AFRM (36.8) | **PATH** (47.4) | out: MS 28.7 · in: AFRM 36.8 |
+   | 07-20 | — | — | out: ZS 24.6 · in: PATH 27.5 |
+   | 07-21 | ADBE (34.9) | **PATH** (55.6) | out: ETH-USD 29.5 · in: ADBE 34.9 |
+   | 07-22 | NFLX (36.6) | **PATH** (58.8) | out: JACK 33.1 · in: NFLX 36.6 |
+   | 07-23 | — | — | out: LLY 25.5 · in: TMO 27.1 |
+   | 07-30 | — | — | out: ZS 26.8 · in: SBUX 28.7 (C) |
+   | 08-03 | — | — | out: IRWD 37.5 · in: HPE 32.7 |
+
+   PATH is a mid-cap that sat between rank 26 and rank 50 of the gainers list on those days —
+   precisely the population the depth change was made for (`4597167`). It displaced five sized
+   trades, each time on a higher composite than the row it replaced, and each displaced row
+   dropped to the watch column rather than off the board.
+
+   **The composite-call changes those five rows cause, traced rather than asserted.** Nine trades
+   change grade B → C and twelve change `riskPct`, and **not one of them has a different
+   composite** — e.g. 07-30 EFOR 38.1 in both runs, 08-03 GLW 54.0 in both. What moved is the
+   *calibrated probability*: EFOR 0.44 → 0.42, GLW 0.43 → 0.41, COIN 0.45 → 0.42, RBLX 0.63 →
+   0.50. The five extra PATH rows entered the carried ledger, graded, and shifted the calibration
+   buckets those later rows are scored through; rows sitting on the B/C probability boundary
+   crossed it, and the risk ladder lost its 0.625 rung on 08-10 for the same reason. So the grade
+   distribution's 55/8 → 46/17 is **not** nine independent regrades — it is five displacements
+   plus their downstream effect on a state that carries. The window's own outcome numbers barely
+   move at 5 sessions (54.2% / +1.81% → 54.2% / +1.75%) and move at 10 (51.5% / +1.53% → 45.5% /
+   +2.80%) on n = 33 with the excess-return spread this window has: not a signal.
+4. **Zero-trade days stayed 0/21 in all four runs**, and blank sides 0/42. Nothing regressed.
+
+**Lane share of trades.** dip + velocity = **31 / 63 = 49.2%** at HEAD (32/63 = 50.8% before the
+depth change), and velocity contributes **none** of it in this harness. The Stage-1 concentration
+warning therefore stands unchanged and unmeasured for the new lane: the live board will add
+velocity rows on top of a board that is already half dip rows, and this replay cannot say how many.
+
+**How many velocity rows lost their trade slot to the 25-55 band?** On the board: **zero**, because
+no velocity row reached one — the cap floor took them first, so the band never got the chance to.
+On the counterfactual: of the 77 calls the lane would have built, **40 (51.9%)** carry a composite
+BELOW the weakest sized long the composite lane put on the board that day, and 37 (48.1%) are at or
+above it. That is the honest shape of the disadvantage — roughly half of the lane's calls would
+have to win a competition their 25-55 band caps them out of — but it is a counterfactual computed
+outside `buildBoard`, not an observed loss, and it should be re-measured live where caps are known.
+
+### 13.9 The honest read
+
+- **The doors find the runners.** 7/7 fire inside their run, the median entry sits at 0.458 of the
+  move, only 18% of entries are past 0.8, and nothing is bought on a run's highest close. The
+  thing the lane was built to do — say "this is moving" while the move is still young — it does.
+- **The exit is where it fails.** 40 of 67 entries die on the ratcheted trail at a mean of −7.1%,
+  and only 17 reach the 2R target. The system is +5.25% per entry in expectation and green on 39%
+  of entries; the gate asked for 60% green. **These are not the same question, and criterion 3
+  measured the one the lane was not designed to win.** That is a statement about the gate as much
+  as about the lane, and it is the owner's call, not the harness's: no threshold has been moved.
+- **The two criteria disagree with each other.** Criterion 2 rewards buying early; on this tape the
+  early entries are the losing ones (0–0.4 of the run: 3/15 green, −8.6%) and the late ones the
+  winners (0.8–1.0: 7/12, +15.8%). Whatever is decided about criterion 3 should be decided knowing
+  that tightening entries toward the start of a run would have made criterion 3 *worse*.
+- **The evidence is thinner than 67 sounds.** 16 distinct episodes, 7 names, two thematic clusters
+  (2026 space/optical, 2025 quantum), and the 2025 quantum trio alone supplies 50 of the 67 entries
+  — RGTI 21 and QBTS 20 of them.
+  Whatever the owner decides should not be decided as though this were 67 independent trades.
+- **The 21-day window measures none of this.** The lane is invisible there — cap-unknown fails the
+  liquidity floor — and clusters are invisible too (no social record exists in a price-only
+  replay). The only thing that window can and does say is that **nothing regressed**: 0 zero-trade
+  days, 0 blank sides, identical rows at identical screens, and one attributable, intended
+  displacement from the 50-deep gainers.
+- **Not measured, still:** the lane against real market caps, against real cluster elevation,
+  against the earnings calendar, and against slippage — every entry here is filled at the close it
+  fired on, which is the most generous possible fill for a momentum door.
+
+Raw output: `velocity-probe.json` (per-runner firings, refusals, exits, the gate object and the
+histogram), `replay-head50.json`, `replay-head25.json`, `replay-base-de03.json`,
+`replay-base371.json`, and the comparison script `compare.mjs`, all in the session scratch
+directory; all are regenerable from the commands above against `./.replay-cache`. The probe's pure
+helpers (`findRun`, `entryPosition`, `median`, `simulateTrailExit`, `bestUpDayMult`,
+`velocityRefusal`, the runner list and the per-kind screen depths) are covered by
+`scripts/replay-window.test.ts` — 34 tests, part of `npm test` (1,075 passing).
