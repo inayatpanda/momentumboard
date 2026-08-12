@@ -97,6 +97,17 @@ export interface Prediction extends GradedCall {
   // read). Board-only by design — a near miss is not a prediction, so it never
   // enters the ledger and never teaches calibration, IC or the Brier trail.
   nearMiss?: true
+  // The near miss's opposite number: a row that cleared EVERY gate — graded, on a
+  // passing evidence contract, no print in the way — and that an ISA simply cannot
+  // place. It is promoted out of the shadow set (engine.ts) only when its side
+  // would otherwise be nameless, and only ever as a watch-only, zero-size,
+  // route-less row. Unlike a near miss it IS a real call, so it stays in the
+  // ledger and goes on teaching the buckets — but it is not takeable, and this
+  // stamp is what lets every surface say so without re-deriving "no ISA route"
+  // from prose: no entry/second-chance alert, no re-qualification of an open
+  // trade, no "use engine levels", no agreement/conflict read, never counted as
+  // one of the day's live calls.
+  observation?: true
   worldTape?: { tone: string; mult: number } // overnight world-tape nudge applied to this call's conviction (bounded ±10/−15%)
   overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string }
   catalyst?: { kind: string; reason: string } // a market-moving news/event that put this name in play (catalyst.ts)

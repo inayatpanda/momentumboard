@@ -71,8 +71,14 @@ export function EngineFactors({ call, hasRead }: { call: EnginePrediction | null
   return (
     <section className="calc engine-factors">
       {/* a near miss is the engine's NO, on the board only so a side with nothing
-          on it is not blank — calling this panel a live call would invert it */}
-      <h3>Factor breakdown <span className="calc-sub">{call.nearMiss ? 'nearest miss — not a call' : 'live engine call'}</span></h3>
+          on it is not blank — calling this panel a live call would invert it.
+          An observation is the engine's YES on a row an ISA cannot place: the
+          read below is real, the trade is not on offer, and "live engine call"
+          would read as an invitation to take it. */}
+      <h3>
+        Factor breakdown{' '}
+        <span className="calc-sub">{call.nearMiss ? 'nearest miss — not a call' : call.observation ? 'observation — no route' : 'live engine call'}</span>
+      </h3>
       <div className="engine-factor-top">
         <span className="engine-factor-id">
           {/* a near miss was never scored — a letter grade would be a fiction */}

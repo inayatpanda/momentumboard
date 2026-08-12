@@ -35,18 +35,25 @@ interface EngineView {
   // when the engine declined it. Near misses never enter the ledger, so only the
   // board branch can produce one.
   nearMiss: boolean
+  // A promoted observation: the engine's read is real and fully graded, but the
+  // row carries no route and no size — the reader could never have taken it. It
+  // is therefore not a second opinion on a position they DID take: "engine
+  // disagrees" on a row nobody could place is a conflict with nothing. Only
+  // TODAY'S board can raise this flag: the slimmed ledger payload carries no row
+  // kinds at all, so the fallback branch reads a stale row exactly as before.
+  observation: boolean
 }
 
 function engineViewFor(sym: string, engine: EngineData | null): EngineView | null {
   if (!engine) return null
   const call = engine.board?.board.find(p => p.sym === sym)
   if (call) {
-    return { grade: call.grade, provisional: call.provisional, side: call.side, entry: call.entry, stop: call.stop, target: call.target, stage: call.stage, source: 'board', nearMiss: call.nearMiss === true }
+    return { grade: call.grade, provisional: call.provisional, side: call.side, entry: call.entry, stop: call.stop, target: call.target, stage: call.stage, source: 'board', nearMiss: call.nearMiss === true, observation: call.observation === true }
   }
   const days = [...(engine.ledger ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10)
   for (const d of days) {
     const p = d.predictions.find(pr => pr.sym === sym && !pr.shadow)
-    if (p) return { grade: p.grade, provisional: p.provisional, side: p.side, entry: p.entry, stop: p.stop, target: p.target, stage: p.stage, source: 'ledger', nearMiss: false }
+    if (p) return { grade: p.grade, provisional: p.provisional, side: p.side, entry: p.entry, stop: p.stop, target: p.target, stage: p.stage, source: 'ledger', nearMiss: false, observation: false }
   }
   return null
 }
@@ -292,8 +299,10 @@ export function Journal() {
           const distEngStop = ev && cur != null ? ((ev.stop - cur) / cur) * 100 : null
           const distEngTgt = ev && cur != null ? ((ev.target - cur) / cur) * 100 : null
           // a near miss is not a call, so it cannot disagree with one either —
-          // the row's own label says the engine declined the name
-          const conflict = ev != null && !ev.nearMiss && ev.side !== t.direction
+          // the row's own label says the engine declined the name. Nor can an
+          // observation: it is a call the reader was never able to place, so it
+          // is no verdict on the position they actually hold.
+          const conflict = ev != null && !ev.nearMiss && !ev.observation && ev.side !== t.direction
           return (
           <div key={t.id} className="card">
             <div className="row-top">

@@ -17,6 +17,9 @@ const trades: Trade[] = [
   // held long, while the board's only row for the name is a nearest miss on the
   // short side — the engine declined it, and said so
   mkTrade({ id: 't4', symbol: 'NMS', direction: 'long', openedAt: 50 }),
+  // held long, while the board's only row for the name is a promoted OBSERVATION
+  // on the short side: fully graded, and a row an ISA could never have placed
+  mkTrade({ id: 't5', symbol: 'OBS', direction: 'long', openedAt: 40 }),
 ]
 
 const mkCall = (o: Partial<EnginePrediction>): EnginePrediction => ({
@@ -34,6 +37,8 @@ const engine: EngineData = {
       mkCall({ id: 'c2', sym: 'TSLA', side: 'short', grade: 'B', stage: 'extended' }),
       // the last-resort row: no gate cleared, placeholder grade C, base-rate odds
       mkCall({ id: 'c3', sym: 'NMS', side: 'short', grade: 'C', provisional: true, probability: 0.5, watchOnly: true, nearMiss: true }),
+      // cleared every gate, no ISA route: a real graded read, never a takeable trade
+      mkCall({ id: 'c4', sym: 'OBS', side: 'short', grade: 'B', stage: 'extended', watchOnly: true, riskPct: 0, observation: true }),
     ],
   },
   ledger: [],
@@ -52,6 +57,7 @@ const quoteMap: Record<string, Quote> = {
   TSLA: { symbol: 'TSLA', price: 102, prevClose: 100, changePct: 2, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
   XYZ: { symbol: 'XYZ', price: 101, prevClose: 100, changePct: 1, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
   NMS: { symbol: 'NMS', price: 100, prevClose: 100, changePct: 0, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
+  OBS: { symbol: 'OBS', price: 100, prevClose: 100, changePct: 0, currency: 'USD', todayVolume: 1, asOf: 0, source: 'yahoo' },
 }
 
 vi.mock('../lib/api', () => ({
@@ -110,6 +116,23 @@ describe('Journal — positions joined to the ledger', () => {
     // levels still shown as orientation, but the row cannot "disagree" — it is not a call
     expect(read.textContent).toContain('stop 95')
     expect(card.querySelector('.engine-conflict')).toBeNull()
+  })
+
+  // The mirror case: the board row IS a call, fully graded — and one the reader
+  // could never have placed. "engine disagrees" would frame an unplaceable
+  // observation as a verdict on a position the reader actually holds.
+  it('an observation row keeps its grade but never reads as disagreeing with a held position', async () => {
+    const { container } = render(<Journal />)
+    await waitFor(() => expect(cardFor(container, 'OBS')?.querySelector('.engine-read')).toBeTruthy())
+    const card = cardFor(container, 'OBS')
+    const read = card.querySelector('.engine-read')!
+    expect(card.querySelector('.grade-chip')).toBeTruthy() // it earned its grade — unlike a near miss
+    expect(read.textContent).toContain('engine ▼ short')
+    expect(read.textContent).toContain('stop 95') // the levels still orient the reader
+    expect(card.querySelector('.engine-conflict')).toBeNull() // …but it is no conflict with the position
+    // the control lives one card over: TSLA is the same opposite-side read on a
+    // takeable row, and it DOES flag
+    expect(cardFor(container, 'TSLA').querySelector('.engine-conflict')).toBeTruthy()
   })
 
   it('renders a muted "no engine read" when the engine has no view of the name', async () => {

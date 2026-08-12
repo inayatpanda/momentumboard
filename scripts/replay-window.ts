@@ -31,7 +31,8 @@
 // it, which is how the baseline worktree reads the SAME bars as the new run.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
 import type { Candle } from '../shared/types'
 import type { Prediction } from '../shared/engine/types'
@@ -208,9 +209,15 @@ export function summariseBoard(board: Pick<Prediction, 'side' | 'watchOnly' | 'n
 
 // Repo-relative by default (gitignored) so the harness is runnable by anyone on
 // any machine — a hard-coded session scratch path made it a one-laptop script.
+// Resolved from THIS FILE, not from process.cwd(): run the script from a
+// subdirectory and a cwd-relative path silently starts a second, empty cache,
+// which re-downloads a year of bars and — worse — compares two runs against two
+// different sets of candles. In the baseline worktree the same expression
+// resolves to that worktree's own root, which is exactly what it should mean.
 // REPLAY_CACHE_DIR still overrides, which is how a baseline worktree shares the
 // SAME candles as the new run (a comparison across two caches is not a comparison).
-const DEFAULT_CACHE_DIR = join(process.cwd(), '.replay-cache')
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const DEFAULT_CACHE_DIR = join(REPO_ROOT, '.replay-cache')
 const CACHE_DIR = process.env.REPLAY_CACHE_DIR ?? DEFAULT_CACHE_DIR
 /** How many bars a live `cachedCandles` call returns (Yahoo range=1y). The
  * cache holds 5y so `candles5y` can serve seasonality, but `candles` is trimmed

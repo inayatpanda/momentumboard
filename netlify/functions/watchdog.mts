@@ -21,8 +21,11 @@ async function runChecks(nowSec: number, report: { at: number } | null): Promise
   const checks: { name: string; ok: boolean; detail: string }[] = []
   const add = (name: string, ok: boolean, detail: string) => checks.push({ name, ok, detail })
 
-  const board = await blobAppStore.read<{ date: string; board: { nearMiss?: boolean }[] }>('engine-board').catch(() => null)
-  add('engine board', !tradingDay || board?.date === today, board ? `dated ${board.date}, ${board.board?.filter(b => !b.nearMiss).length ?? 0} live calls` : 'missing')
+  // "live calls" excludes near misses (cleared no gate) and promoted observations
+  // (cleared them all, and an ISA cannot place them) — the identical arithmetic
+  // predict-background logs as boardSize, so the two readings can never disagree.
+  const board = await blobAppStore.read<{ date: string; board: { nearMiss?: boolean; observation?: boolean }[] }>('engine-board').catch(() => null)
+  add('engine board', !tradingDay || board?.date === today, board ? `dated ${board.date}, ${board.board?.filter(b => !b.nearMiss && !b.observation).length ?? 0} live calls` : 'missing')
 
   add('morning paper', !!report && londonDate(report.at) === today, report ? `published ${londonDate(report.at)}` : 'missing')
 

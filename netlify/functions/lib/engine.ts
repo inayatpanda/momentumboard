@@ -1163,9 +1163,17 @@ export async function buildBoard(
   // the engine called live the day before).
   const priorDates = ((await store.read<string[]>('predictions-index')) ?? []).filter(d => d !== today).slice(-10)
   const outstandingShadowKeys = new Set<string>()
+  /** The same idea one lane over: a PROMOTED OBSERVATION from a recent day that
+   * has not graded yet. A promoted row is a live ledger row, not a shadow, so it
+   * never lands in the set above — and without its own set a name the route
+   * blocks every morning would be promoted again every morning, each day's copy
+   * entering the ledger as fresh live evidence. Read ONLY by the observation
+   * rank below; the shadow budget's own dedup is deliberately left alone. */
+  const outstandingObservationKeys = new Set<string>()
   for (const date of priorDates) {
     for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
       if (p.shadow && !p.outcome10) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
+      if (p.observation && !p.outcome10) outstandingObservationKeys.add(`${p.sym}:${p.side}`)
     }
   }
   const pickShadow = (side: 'long' | 'short', cap: number) =>
@@ -1346,11 +1354,26 @@ export async function buildBoard(
     // when the side would otherwise be nameless, the best of them is promoted out
     // of the shadow set into a labelled watch-only observation. A side WITH live
     // rows never sees it: it stays a shadow, exactly as before.
+    //
+    // Two names are refused the promotion outright, both for the same reason —
+    // the board must not contradict itself or the ledger:
+    //   · a sym:side the ledger is ALREADY carrying ungraded, as a recent shadow
+    //     or as a recent promotion of its own. The condition that hides a row (no
+    //     ISA route) persists for weeks, so without this a single stubborn dip
+    //     would be re-promoted every morning and every copy graded as fresh live
+    //     evidence — the shadow budget's dedup rule (above) exists for exactly
+    //     this failure, and an observation is no more entitled to skip it.
+    //   · a name the DIP LANE is long today. A sized dip long beside a short
+    //     observation on the same chart is a board telling the reader both
+    //     things at once; the dip lane already owns that name for the day.
     const observation = board
       .filter(b => b.side === side && b.shadow && routeBlockedShorts.has(b.id))
+      .filter(b => !outstandingShadowKeys.has(`${b.sym}:${b.side}`) && !outstandingObservationKeys.has(`${b.sym}:${b.side}`))
+      .filter(b => !constructedDipLongs.has(b.sym.toUpperCase()))
       .sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))[0]
     if (observation) {
       emptySides[side] = 'no-route'
+      observation.observation = true // the machine-readable stamp every containment surface reads
       observation.shadow = undefined
       observation.watchOnly = true
       observation.belowBase = undefined
@@ -1610,9 +1633,11 @@ export async function traceOpenIdeas(store: AppStore, deps: EngineDeps, nowSec: 
   // "re-qualified" means the engine would TAKE this trade again today — so only
   // rows that actually cleared the gates may grant it. A near miss cleared none;
   // counting it would tell the reader an open call was re-affirmed on the very
-  // day the engine refused to make it.
+  // day the engine refused to make it. An observation cleared them all and still
+  // isn't takeable — the engine would not place it today either, so it cannot
+  // re-affirm a position the reader is holding.
   const todayLive = new Set(
-    (board?.date === today ? board.board : []).filter(b => !b.nearMiss).map(b => `${b.sym}:${b.side}`),
+    (board?.date === today ? board.board : []).filter(b => !b.nearMiss && !b.observation).map(b => `${b.sym}:${b.side}`),
   )
   const syms = [...new Set(open.map(p => p.sym))].slice(0, 80)
   const candleMap = new Map<string, Candle[] | null>()

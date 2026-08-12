@@ -366,6 +366,12 @@ export interface EnginePrediction {
   // the nearest thing to a call on a side where nothing cleared the gates at all:
   // named so the board is never blank, always watch-only, never in the ledger
   nearMiss?: boolean
+  // the mirror image: a row that cleared EVERY gate and that an ISA cannot place,
+  // shown (watch-only, zero size, no route) so its side is not nameless. A real
+  // call — it stays in the ledger — but never a takeable one, so no surface may
+  // offer its levels, count it as a live call, or read it as agreeing with a held
+  // position.
+  observation?: boolean
   // 'week' = a this-week trade/observation; 'developing' = a watch row whose shape is a
   // 2-4 week build (basing/pullback, below-base, or a thin-evidence reversal). Stamped by the engine.
   horizon?: 'week' | 'developing'

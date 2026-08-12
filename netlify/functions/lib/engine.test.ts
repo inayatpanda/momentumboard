@@ -618,6 +618,7 @@ describe('buildBoard', () => {
     expect(nvda).toBeDefined()
     expect(nvda.side).toBe('short')
     expect(nvda.nearMiss).toBeUndefined() // it cleared the gates — it is not a near miss
+    expect(nvda.observation).toBe(true) // …and it is stamped, so every surface can contain it without parsing prose
     expect(nvda.evidence.contract).toBe(true)
     expect(nvda.grade).toBe('C') // graded on the full contract — a half-size trade in every respect but the route
     expect(nvda.watchOnly).toBe(true) // …and still carries nothing tradeable
@@ -633,8 +634,104 @@ describe('buildBoard', () => {
     const blob = (await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!
     expect(blob.emptySides?.short).toBe('no-route')
     // unlike a near miss, this is a real call with a real evidence read — it belongs
-    // in the ledger and must go on teaching the buckets
-    expect((await ledgerOf(store))!.some(p => p.sym === 'NVDA' && p.side === 'short')).toBe(true)
+    // in the ledger and must go on teaching the buckets, stamp and all
+    const ledgered = (await ledgerOf(store))!.find(p => p.sym === 'NVDA' && p.side === 'short')!
+    expect(ledgered).toBeDefined()
+    expect(ledgered.observation).toBe(true)
+  })
+
+  // ---- an observation is a ONE-OFF, not a standing entry in the ledger ----
+  // The condition that hides it (no ISA route) does not expire, so nothing about
+  // today's promotion stops tomorrow's: the same name would be promoted every
+  // morning it emptied its side, and every copy graded as fresh live evidence —
+  // several rows deep on one name, beyond the budget the shadow dedup enforces.
+  // So the promotion respects that dedup: a sym:side the ledger is already
+  // carrying UNGRADED — as a shadow, or as a promotion of its own — is skipped.
+  describe('the observation rank never re-promotes a name the ledger has not graded yet', () => {
+    const dedupStore = async (priorRow: Partial<Prediction> | null) => {
+      const store = memoryStore()
+      // DROP dies at the capacity gate → a real short near miss for the fallback
+      await store.write('config', { watchlist: [{ symbol: 'RISE' }, { symbol: 'DROP' }], rules: [], ytChannels: [], levMap: {} })
+      await store.write('engine-calibration', calWith('short:amber:55-70'))
+      if (priorRow) {
+        const prior = '2026-06-01'
+        await store.write(`predictions:${prior}`, [{ date: prior, sym: 'NVDA', side: 'short', ...priorRow }])
+        await store.write('predictions-index', [prior])
+      }
+      return store
+    }
+    const dedupDeps = deps({
+      mediaTitles: async () => [],
+      candles: async sym =>
+        sym === 'NVDA' ? shorty : sym === 'RISE' ? calmClimb : sym === 'DROP' ? calmSlide : sym === 'SPY' || sym === 'QQQ' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null,
+    })
+
+    it('the control: with no prior row at all, NVDA is promoted exactly as before', async () => {
+      const { board } = await buildBoard(await dedupStore(null), dedupDeps, NOW)
+      expect(board.find(b => b.sym === 'NVDA')?.observation).toBe(true)
+    })
+
+    it('an ungraded SHADOW of the same sym:side blocks the promotion — the side falls back to near misses', async () => {
+      const store = await dedupStore({ shadow: true }) // published in the dark yesterday, still ungraded
+      const { board } = await buildBoard(store, dedupDeps, NOW)
+
+      expect(board.some(b => b.sym === 'NVDA')).toBe(false) // not promoted — it stays a shadow
+      const fallback = board.filter(b => b.side === 'short' && b.nearMiss)
+      expect(fallback.length).toBeGreaterThan(0) // …and the side is still named
+      expect(fallback.some(b => b.sym === 'DROP')).toBe(true)
+      // the copy still tells the truth about WHY: the route hid it, not the gates
+      expect((await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!.emptySides?.short).toBe('no-route')
+      // the ledger carries ONE ungraded NVDA short — today's shadow, not a second live row
+      expect((await ledgerOf(store))!.filter(p => p.sym === 'NVDA' && !p.outcome10).every(p => p.shadow === true)).toBe(true)
+    })
+
+    it('yesterday’s ungraded OBSERVATION blocks it too — a promoted row is a live ledger row, never a shadow', async () => {
+      const store = await dedupStore({ observation: true, watchOnly: true }) // promoted yesterday, still ungraded
+      const { board } = await buildBoard(store, dedupDeps, NOW)
+
+      expect(board.some(b => b.sym === 'NVDA')).toBe(false)
+      expect(board.some(b => b.side === 'short' && b.nearMiss)).toBe(true)
+    })
+
+    it('…but once it has GRADED, the slot is free again', async () => {
+      const store = await dedupStore({ observation: true, watchOnly: true, outcome10: { excessPct: -3, rawPct: -3, spyPct: 0, stopped: false, hit: true } })
+      const { board } = await buildBoard(store, dedupDeps, NOW)
+      expect(board.find(b => b.sym === 'NVDA')?.observation).toBe(true)
+    })
+  })
+
+  // ---- a name the dip lane is LONG cannot also host a short observation ----
+  // The dip lane already publishes a sized long on GLW. Promoting the composite
+  // short on the same chart would put both readings on the board at once — buy
+  // this and (do not) sell it — which is not honesty, it is a contradiction. The
+  // route-blocked short goes on grading in the dark, exactly as it did.
+  it('the dip lane owning a name blocks the opposing short observation, even on an empty short side', async () => {
+    const store = memoryStore()
+    // levMap EMPTY: the composite short on GLW is route-blocked, which is the only
+    // reason it shadows — precisely the row the observation rank promotes
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', {
+      buckets: { 'short:amber:40-55': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 14 } },
+      brier: [],
+      defVersion: CALIB_DEF_VERSION,
+    })
+    const d = collisionDeps({ dipNews: async () => ({ verdict: 'transient', reason: 'sector sympathy, guidance intact' }) })
+    const { board } = await buildBoard(store, d, NOW)
+
+    const shown = board.filter(b => b.sym === 'GLW')
+    expect(shown).toHaveLength(1) // one row on the name, not two opposing ones
+    expect(shown[0].side).toBe('long')
+    expect(shown[0].riskPct).toBeGreaterThan(0) // the dip long is sized and real
+    expect(board.some(b => b.observation)).toBe(false) // nothing was promoted anywhere
+    expect(board.some(b => b.side === 'short' && !b.nearMiss)).toBe(false)
+
+    // the short still published and still grades — containment, not suppression
+    const short = (await ledgerOf(store))!.find(p => p.sym === 'GLW' && p.side === 'short')!
+    expect(short).toBeDefined()
+    expect(short.shadow).toBe(true)
+    expect(short.observation).toBeUndefined()
+    // and the empty-side copy still refuses to blame the gates
+    expect((await store.read<{ emptySides?: Record<string, string> }>('engine-board'))!.emptySides?.short).toBe('no-route')
   })
 
   it('…but a side WITH a live short leaves the unroutable one exactly where it was: a shadow', async () => {
@@ -2065,5 +2162,14 @@ describe('traceOpenIdeas', () => {
     // the control: the SAME row without the near-miss stamp still re-qualifies
     const viaRealRow = await traceWith({ sym: 'NVDA', side: 'long' })
     expect(viaRealRow.requalified).toBe(true)
+
+    // …and an OBSERVATION cannot re-qualify one either. It cleared every gate and
+    // is still a row an ISA cannot place: the engine would not take this trade
+    // again today, so telling the holder it was re-affirmed is the same lie in
+    // the other direction.
+    const viaObservation = await traceWith({ sym: 'NVDA', side: 'long', observation: true })
+    expect(viaObservation.requalified).toBe(false)
+    expect(viaObservation.verdict).not.toBe('still-on')
+    expect(viaObservation.note).not.toContain('re-qualified')
   })
 })

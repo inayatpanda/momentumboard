@@ -108,6 +108,19 @@ describe('EngineFactors', () => {
       expect(screen.getByText(/~6.1%/)).toBeInTheDocument() // the level orientation stays
     })
 
+    // The opposite row: it cleared EVERY gate and an ISA cannot place it. The
+    // grade and the odds are real and stay — but "live engine call" over a row
+    // with no route reads as an invitation to take it.
+    it('titles a promoted observation as one, keeping the grade and probability it earned', () => {
+      const observation: EnginePrediction = { ...call, watchOnly: true, riskPct: 0, observation: true }
+      render(<EngineFactors call={observation} hasRead />)
+      expect(screen.getByText('observation — no route')).toBeInTheDocument()
+      expect(screen.queryByText('live engine call')).not.toBeInTheDocument()
+      expect(screen.queryByText('nearest miss — not a call')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Grade A')).toBeInTheDocument() // it earned the letter — unlike a near miss
+      expect(screen.getByText(/67%/)).toBeInTheDocument()
+    })
+
     it('an ordinary watch row keeps the live wording, its grade and its probability', () => {
       render(<EngineFactors call={{ ...call, watchOnly: true }} hasRead />)
       expect(screen.getByText('live engine call')).toBeInTheDocument()

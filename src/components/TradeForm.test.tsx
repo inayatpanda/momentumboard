@@ -57,6 +57,26 @@ describe('TradeForm — point-of-commitment calculator', () => {
     expect((screen.getByLabelText('Trade stop') as HTMLInputElement).value).toBe('95')
   })
 
+  // An observation cleared every gate and still cannot be placed in an ISA. Its
+  // levels are real, which is exactly why handing them over is wrong: the form
+  // would size a position, stamp fromSuggestion and credit the engine with a
+  // trade it never offered.
+  it('offers no engine levels for an observation row — the sizing falls back to the defaults', () => {
+    const observation: EnginePrediction = { ...call, watchOnly: true, riskPct: 0, observation: true }
+    const { container } = render(<TradeForm onAdd={() => {}} board={[observation]} riskState={riskState} capital={5000} />)
+    typeInto('Trade ticker', 'AAPL')
+    expect(screen.queryByRole('button', { name: /use engine levels/i })).not.toBeInTheDocument()
+    typeInto('Trade entry', '100')
+    typeInto('Trade stop', '95')
+    // the shared/risk default of 2%, not the engine's 1.25% rung — a row the
+    // reader cannot take sizes nothing (the ladder is still named, as it is on
+    // every name the board never called)
+    const line = container.querySelector('.tf-size-main')!.textContent!
+    expect(line).toContain('risk £100.00')
+    expect(line).toContain('2% default')
+    expect(line).not.toContain('risk £62.50')
+  })
+
   it('lets the user overtype the engine levels — their numbers win', () => {
     const onAdd = vi.fn()
     render(<TradeForm onAdd={onAdd} board={[call]} riskState={riskState} capital={5000} />)

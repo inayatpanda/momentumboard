@@ -31,8 +31,10 @@ export function TradeForm({
   const symbol = f.symbol.trim().toUpperCase()
   // The engine's own view of this ticker, if it made a live call today. A near
   // miss is NOT a call — offering its levels as "engine levels" would stamp
-  // fromSuggestion on a name the engine declined.
-  const call = symbol ? board?.find(p => p.sym === symbol && !p.nearMiss) ?? null : null
+  // fromSuggestion on a name the engine declined. An observation IS a call and
+  // still not a takeable one: an ISA cannot place it, so handing over its entry
+  // and stop would size a position the engine never offered.
+  const call = symbol ? board?.find(p => p.sym === symbol && !p.nearMiss && !p.observation) ?? null : null
   const riskClass = f.riskClass as 'normal' | 'speculative'
   const entryN = parseFloat(f.entry)
   const stopN = parseFloat(f.stop)

@@ -36,9 +36,11 @@ export default async (req: Request) => {
     graded = (await gradeOutstanding(blobAppStore, deps, nowSec, cfg)).graded
     await writeStatus('building-board', { graded })
     const built = await buildBoard(blobAppStore, deps, nowSec)
-    // CALLS, not rows: a near miss cleared no gate and is not a call the run produced.
-    // The watchdog's "N live calls" counts the same way — the two must not disagree.
-    boardSize = built.board.filter(b => !b.nearMiss).length
+    // CALLS, not rows: a near miss cleared no gate and is not a call the run produced,
+    // and a promoted observation is a row an ISA cannot place — neither is something
+    // the reader can act on this morning. The watchdog's "N live calls" counts the
+    // same way — the two must not disagree.
+    boardSize = built.board.filter(b => !b.nearMiss && !b.observation).length
     rosterSize = built.rosterSize
     holdingsCount = built.holdingsCount
     // the £10k mock book trades the board it just built — fail-soft

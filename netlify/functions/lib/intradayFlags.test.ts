@@ -61,6 +61,29 @@ describe('scanIntradayFlags — entry-zone', () => {
     expect(scanIntradayFlags([nm], AT)).toHaveLength(0)
     expect(scanIntradayFlags([{ ...nm, nearMiss: false }], AT)[0]?.kind).toBe('second-chance')
   })
+
+  // CONTAINMENT, the mirror case: an observation's entry IS a trigger the engine
+  // chose — and an ISA cannot place the row. "X is at its long entry" for a name
+  // the reader has no way to buy is noise at best, and at worst reads as an
+  // invitation to improvise a route the engine deliberately refused to offer.
+  it('an observation row NEVER fires an entry-zone flag, while an identical watch row does', () => {
+    const watch = base()
+    expect(scanIntradayFlags([watch], AT)[0]?.kind).toBe('entry-zone') // the control
+    expect(scanIntradayFlags([{ ...watch, observation: true }], AT)).toHaveLength(0)
+  })
+
+  it('an observation is refused a second-chance flag too — an unplaceable row was never a first chance', () => {
+    const obs = cand({ published: true, observation: true, side: 'long', entry: 100, price: 100.4, sessionHigh: 103, sessionLow: 99 })
+    expect(scanIntradayFlags([obs], AT)).toHaveLength(0)
+    expect(scanIntradayFlags([{ ...obs, observation: false }], AT)[0]?.kind).toBe('second-chance')
+  })
+
+  // …but the generic breakout rule needs no engine levels, so a name on the
+  // watchlist is not silenced just because the board also observed it.
+  it('an observation can still break out — the breakout rule reads price alone', () => {
+    const brk = cand({ observation: true, stage: 'basing', high20: 100, price: 101, rvol: 2.5 })
+    expect(scanIntradayFlags([brk], AT)[0]?.kind).toBe('breakout')
+  })
 })
 
 describe('boardFlagRows — what the runner may feed the scan', () => {
@@ -72,6 +95,11 @@ describe('boardFlagRows — what the runner may feed the scan', () => {
 
   it('a board of nothing BUT near misses feeds the scan no engine levels at all', () => {
     expect(boardFlagRows([{ sym: 'A', nearMiss: true as const }, { sym: 'B', nearMiss: true as const }], 40)).toEqual([])
+  })
+
+  it('drops promoted observations as well — a real entry nobody can place is still not alertable', () => {
+    const board = [{ sym: 'A' }, { sym: 'B', observation: true }, { sym: 'C', nearMiss: true }, { sym: 'D' }]
+    expect(boardFlagRows(board, 40).map(r => r.sym)).toEqual(['A', 'D'])
   })
 })
 
@@ -115,11 +143,14 @@ describe('isActionableRow — which board rows carry risk', () => {
     expect(isActionableRow({ watchOnly: false, shadow: false, nearMiss: false })).toBe(true)
   })
 
-  it('refuses watch rows, shadows and near misses', () => {
+  it('refuses watch rows, shadows, near misses and observations', () => {
     expect(isActionableRow({ watchOnly: true })).toBe(false)
     expect(isActionableRow({ shadow: true })).toBe(false)
     expect(isActionableRow({ nearMiss: true })).toBe(false)
     expect(isActionableRow({ watchOnly: true, nearMiss: true })).toBe(false)
+    // an observation is watch-only anyway; the stamp is the belt, so a future
+    // caller that forgets the watch flag still cannot call one risk-carrying
+    expect(isActionableRow({ observation: true })).toBe(false)
   })
 })
 

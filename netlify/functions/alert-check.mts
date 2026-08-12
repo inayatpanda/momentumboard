@@ -311,7 +311,7 @@ export default async (req: Request) => {
 
         // one candidate = live quote + daily candles + (for board rows) engine levels.
         // Quotes are 60s-cached and candles 900s-cached, so most are already warm.
-        const build = async (sym: string, lv: Partial<Pick<FlagCandidate, 'side' | 'entry' | 'stage' | 'watchOnly' | 'nearMiss' | 'published' | 'name'>> = {}): Promise<FlagCandidate | null> => {
+        const build = async (sym: string, lv: Partial<Pick<FlagCandidate, 'side' | 'entry' | 'stage' | 'watchOnly' | 'nearMiss' | 'observation' | 'published' | 'name'>> = {}): Promise<FlagCandidate | null> => {
           const exch = exchangeFor(sym)
           const snap = snapBySym.get(sym)
           const [quote, candles] = await Promise.all([cachedQuote(sym, finnhubKey), cachedCandles(sym)])
@@ -336,7 +336,10 @@ export default async (req: Request) => {
             }
             if (stage == null) stage = technicalStage(sym, candles)?.stage ?? null
           }
-          return { sym, name: lv.name ?? quote?.name ?? null, price, changePct: quote?.changePct ?? snap?.changePct ?? null, rvol, side: lv.side, entry: lv.entry, stage, watchOnly: lv.watchOnly, published: lv.published, sessionHigh, sessionLow, high20 }
+          // nearMiss/observation ride through: they are stamped as the belt behind
+          // boardFlagRows' braces, and a field dropped here would make the
+          // detectors' own guards inert (they were, until 2026-08-12)
+          return { sym, name: lv.name ?? quote?.name ?? null, price, changePct: quote?.changePct ?? snap?.changePct ?? null, rvol, side: lv.side, entry: lv.entry, stage, watchOnly: lv.watchOnly, nearMiss: lv.nearMiss, observation: lv.observation, published: lv.published, sessionHigh, sessionLow, high20 }
         }
 
         const candidates: FlagCandidate[] = []
@@ -355,6 +358,9 @@ export default async (req: Request) => {
             // stamped so the detectors' own near-miss guards are live, not inert —
             // boardFlagRows dropping the row first is the primary gate, this is the belt
             nearMiss: p.nearMiss === true,
+            // …and the same for a promoted observation: a real entry on a row the
+            // reader cannot place, so it is never flagged "at its entry" either
+            observation: p.observation === true,
             // every row the engine put risk on — full size AND half size. Asking
             // for grade A/B here predated half sizing, so a C-with-contract half
             // trade could never be offered its level back (intradayFlags).

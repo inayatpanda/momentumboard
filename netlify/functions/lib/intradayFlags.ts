@@ -41,6 +41,11 @@ export interface FlagCandidate {
   // its "entry" is only yesterday's close carried through for display. It must
   // never reach a level rule — see the guards in detectEntryZone/SecondChance.
   nearMiss?: boolean
+  // A promoted observation: the engine DID call this one, and an ISA cannot place
+  // it. Its entry is a real trigger — but there is no position to take at it, so
+  // an alert saying "at its entry" would send the reader at a row they cannot
+  // buy. Same containment as a near miss, for the opposite reason.
+  observation?: boolean
   sessionHigh?: number | null // today's high so far — how far it ranged (second-chance)
   sessionLow?: number | null // today's low so far
   high20?: number | null // 20-session high, TODAY EXCLUDED → the breakout level
@@ -62,12 +67,14 @@ const within = (price: number, level: number, frac: number) => level > 0 && Math
 /** Which board rows may lend their ENGINE LEVELS to a scan. A near miss cleared
  * no gate at all — its entry is yesterday's close, not a trigger the engine
  * chose — so pushing "X is at its entry" for one would alert the reader to a
- * name the engine explicitly refused to call. Board-level containment; the
- * level rules below refuse them a second time. PURE, so the runner's rule is
- * the tested rule. A near-miss name still on the watchlist can of course earn
+ * name the engine explicitly refused to call. An OBSERVATION is the mirror case:
+ * a real trigger on a row an ISA cannot place, so the alert would send the
+ * reader at a level they have no way to take. Board-level containment; the
+ * level rules below refuse them both a second time. PURE, so the runner's rule
+ * is the tested rule. Either name, still on the watchlist, can of course earn
  * the generic breakout flag, which needs no engine levels. */
-export function boardFlagRows<T extends { nearMiss?: boolean }>(board: readonly T[], limit: number): T[] {
-  return board.filter(p => p.nearMiss !== true).slice(0, limit)
+export function boardFlagRows<T extends { nearMiss?: boolean; observation?: boolean }>(board: readonly T[], limit: number): T[] {
+  return board.filter(p => p.nearMiss !== true && p.observation !== true).slice(0, limit)
 }
 
 /** Which board rows CARRY RISK — the rows a "second chance" can be offered on,
@@ -79,13 +86,14 @@ export function boardFlagRows<T extends { nearMiss?: boolean }>(board: readonly 
  * predates half sizing and could therefore never see a real C-with-contract
  * trade — on a board whose only sized rows were half trades, the second-chance
  * flag was unreachable. PURE + exported so the runner's rule is the tested rule. */
-export function isActionableRow(p: { watchOnly?: boolean; shadow?: boolean; nearMiss?: boolean }): boolean {
-  return p.watchOnly !== true && p.shadow !== true && p.nearMiss !== true
+export function isActionableRow(p: { watchOnly?: boolean; shadow?: boolean; nearMiss?: boolean; observation?: boolean }): boolean {
+  return p.watchOnly !== true && p.shadow !== true && p.nearMiss !== true && p.observation !== true
 }
 
 // a. the watch setup from this morning is at its entry, moving through it on volume
 function detectEntryZone(c: FlagCandidate, at: number): IntradayFlag | null {
   if (c.nearMiss) return null // the engine made no call here — there is no entry to be "at"
+  if (c.observation) return null // a real entry the reader cannot place — an alert for it is noise
   if (!c.watchOnly || c.entry == null || !c.side) return null
   if (c.rvol == null || c.rvol < ENTRY_ZONE_MIN_RVOL) return null
   if (!within(c.price, c.entry, ENTRY_PROXIMITY)) return null
@@ -102,6 +110,7 @@ function detectEntryZone(c: FlagCandidate, at: number): IntradayFlag | null {
 // b. a published A/B trade the reader may have missed at the open, back at entry
 function detectSecondChance(c: FlagCandidate, at: number): IntradayFlag | null {
   if (c.nearMiss) return null // there was never a first chance to miss
+  if (c.observation) return null // …nor here: an unplaceable row was never anyone's first chance
   if (!c.published || c.entry == null || !c.side) return null
   if (!within(c.price, c.entry, ENTRY_PROXIMITY)) return null
   if (c.sessionHigh == null || c.sessionLow == null) return null
