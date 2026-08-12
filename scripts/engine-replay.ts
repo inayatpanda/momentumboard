@@ -13,7 +13,7 @@ import { fetchYahooChart } from '../netlify/functions/lib/yahoo'
 import { SECTORS, SECTOR_MEMBERS, computeSectorRows, type SectorRow } from '../netlify/functions/lib/sectors'
 import { technicalFactor, momentumFactor, sectorFactor, seasonalityFactor } from '../shared/engine/factors'
 import { composeCall, CONTEXT_MAX_PTS, FACTOR_FAMILY, LONG_REGIME_MULT, SHORT_REGIME_MULT } from '../shared/engine/composite'
-import { probabilityFor, gradeFor, gradePrediction, type CalibrationState } from '../shared/engine/calibration'
+import { baseHitRate, probabilityFor, gradeFor, gradePrediction, type CalibrationState } from '../shared/engine/calibration'
 import type { FactorName, FactorScore, PredOutcome } from '../shared/engine/types'
 import { technicalStage } from '../shared/technicals'
 import { swingCapacity, atr } from '../shared/indicators'
@@ -132,6 +132,7 @@ function rawAdj(factors: Record<FactorName, FactorScore>, weights: Record<Factor
 // separate, harder experiment than this stress test). ----
 const weightsCurrent = seed.weights.current as unknown as Record<FactorName, number>
 const calibrationState = seed.calibration as unknown as CalibrationState
+const replayBaseRate = baseHitRate(calibrationState).rate
 
 interface CallRecord {
   date: string
@@ -258,7 +259,11 @@ for (const pd of predictionDates) {
     }
 
     const p = probabilityFor(calibrationState, call.side, regime, Math.abs(call.composite))
-    const grade = gradeFor(p.p, p.provisional, call.capacityPct)
+    // …and the base rate is PASSED, as production passes it (engine.ts). Omitting
+    // it defaulted this harness to 0.5 while production graded against 0.367, so
+    // its byGrade histogram was never production's — the numbers it printed could
+    // not be compared with anything. [recon §3.1]
+    const grade = gradeFor(p.p, p.nEff, replayBaseRate)
     const isShadow = grade === null
     if (isShadow) shadow++
     else live++

@@ -38,8 +38,17 @@ export const CALIB_DEF_VERSION = 3
  * Unlike CALIB_DEF_VERSION this does not redefine a hit; it identifies which
  * scoring model emitted a prediction.
  * v2: two-layer composite — core (price-derived) factors set direction and
- * eligibility, context factors capped at CONTEXT_MAX_PTS (composite.ts). */
-export const ENGINE_MODEL_VERSION = 2
+ * eligibility, context factors capped at CONTEXT_MAX_PTS (composite.ts).
+ * v3 (stage 2): the owner-ordered weight vector with a real re-base migration,
+ * the EMA stack in the technical read, and — the reason the stamp matters most —
+ * probability stopped being a four-step staircase and became a monotone,
+ * shrunk curve read at the call's own |composite| (probabilityFor below).
+ * A v2 row and a v3 row in the same ledger were scored by different models and
+ * the Brier trail mixes them; `modelVersion` is the ONLY thing that separates
+ * the two epochs, which is the whole reason this bump exists. It gates nothing
+ * at load time — CALIB_DEF_VERSION is untouched, so no live bucket is discarded
+ * (what counts as a hit has not changed, only what we predict about it). */
+export const ENGINE_MODEL_VERSION = 3
 
 export interface CalibrationState {
   // Keys are EITHER cohort-tagged `${cohort}:${side}:${regime}:${band}` (cohort ∈
@@ -115,56 +124,179 @@ export function bandFor(absComposite: number): Band {
   return '25-40'
 }
 
+/** The B gate, and the definition of `provisional`: below this a read has not
+ * earned the right to be sized at the full rung. */
 const MIN_BUCKET_N = 15
+/** The A gate. Twice MIN_BUCKET_N, deliberately: an A is the engine saying "this
+ * beats my own base rate by ten points AND I have watched it happen enough times
+ * to believe it", and one is worth nothing without the other. */
+const MIN_GRADE_A_N = 30
 const laplace = (b: BucketStat) => (b.hits + 2) / (b.n + 4)
 
-/** Calibrated probability with a cohort-aware fallback ladder — the cap-class
- * analogue of the regime pooling this function has always done. Each rung is used
- * only once it clears MIN_BUCKET_N; a young cohort (all cohort buckets empty for
- * MONTHS after launch) simply falls through to the pooled/cohortless rungs, which
- * INCLUDE the backtest seed — so pooling is the normal path, not the exception.
+/** Band midpoints — the READ path's x-axis. The write path's edges (bandFor, and
+ * the bucket keys they produce) are FROZEN; what changed is that a band's
+ * evidence is now treated as sitting at the CENTRE of the band it was booked
+ * into, and everything between two midpoints is interpolated. */
+const BAND_MID: Record<Band, number> = { '25-40': 32.5, '40-55': 47.5, '55-70': 62.5, '70+': 77.5 }
+const BANDS = Object.keys(BAND_MID) as Band[]
+
+/** Hierarchical shrinkage strength: a band speaks for itself with weight
+ * n/(n + SHRINK_K), so at 25 observations a band's own evidence and its rung's
+ * pooled evidence carry equal weight. NOT MIN_BUCKET_N (15) — that is the grade
+ * gate, a different question with a different answer; conflating them would
+ * quietly tie how much we believe a number to how much we are willing to bet. */
+const SHRINK_K = 25
+
+/** One point on a rung's curve: where it sits (a band midpoint), what it reads,
+ * and how many ORIGINAL observations that band carries. */
+export interface CurvePoint { mid: number; p: number; n: number }
+
+/** Weighted PAVA — standard isotonic regression. Pools adjacent violators, then
+ * ASSIGNS each ORIGINAL band its block's pooled value: interpolating over
+ * pooled-block midpoints would move the x-axis and fabricate conviction, so the
+ * x-axis stays the original band midpoints. Returns the monotone fit per
+ * original band, alongside each band's ORIGINAL n (never the block's — a pooled
+ * block of 178 observations does not make an 8-observation band trustworthy). */
+export function isotonicFit(bands: { band: Band; p: number; n: number }[]): CurvePoint[] {
+  const blocks = bands.map(b => ({ p: b.p, n: b.n, members: [b] }))
+  let i = 0
+  while (i < blocks.length - 1) {
+    if (blocks[i].p <= blocks[i + 1].p + 1e-12) { i++; continue }
+    const a = blocks[i], b = blocks[i + 1]
+    const n = a.n + b.n
+    blocks.splice(i, 2, { p: (a.p * a.n + b.p * b.n) / n, n, members: [...a.members, ...b.members] })
+    if (i > 0) i--
+  }
+  // every original band keeps its own x (midpoint) and its own n; only p is fitted
+  return blocks.flatMap(bl => bl.members.map(m => ({ mid: BAND_MID[m.band], p: bl.p, n: m.n })))
+}
+
+/** ONE RUNG's curve: the per-band Laplace estimates for a (side, cohort, regime)
+ * slice, made monotone, then shrunk toward the rung's own pooled rate.
  *
- * The ladder, most-specific first:
- *   1. this cohort, this regime      `${cohort}:${side}:${regime}:${band}`
- *   2. this cohort, pooled regimes   `${cohort}:${side}:*:${band}`
+ * A band with NO evidence contributes NO point. An empty bucket is not a 0.5
+ * observation, and letting the Laplace prior stand in for one would put a
+ * fabricated reading on the curve and — worse — make 62.5 an interior point, so
+ * a 70+ call would interpolate toward an invented number instead of inheriting
+ * the best-evidenced band below it.
+ *
+ * Shrinkage is hierarchical partial pooling: band-level children shrink toward
+ * their rung-level parent. Not circular — the parent pools SIBLING bands too, so
+ * a band that dominates its rung shrinks ~toward itself (the identity) while
+ * thin siblings borrow strength, which is exactly the intent.
+ *
+ * The final running-max is a guard, and it earns its place on the committed
+ * seed. Shrinkage is applied per band with a weight that RISES with n, while n
+ * FALLS as conviction rises — so the thin top of a curve is pulled harder toward
+ * the (low-conviction-dominated) parent than the thick band under it, and can
+ * land below it. The seed's long/green rung does exactly this: the fit is
+ * 0.3920 / 0.4400 / 0.5000, and shrinkage turns it into 0.3930 / 0.4262 /
+ * 0.4082 — a curve that says a 62 composite is worse than a 47 one, which is
+ * the very pathology stage 2 exists to end. PAVA guarantees monotonicity of the
+ * FIT; this restores it after the pooling, at the cost of flattening the thin
+ * top onto its neighbour (whose nEff still says how thin it is). */
+export function curveFor(
+  state: CalibrationState,
+  side: 'long' | 'short',
+  cohort: CapCohort | 'any',
+  regime: string | null,
+): CurvePoint[] {
+  const seen = BANDS.map(band => ({ band, stat: poolBuckets(state, side, band, cohort, regime) })).filter(b => b.stat.n > 0)
+  if (!seen.length) return []
+  const pooled = seen.reduce((a, b) => ({ n: a.n + b.stat.n, hits: a.hits + b.stat.hits }), { n: 0, hits: 0 })
+  const parent = laplace(pooled)
+  const fitted = isotonicFit(seen.map(b => ({ band: b.band, p: laplace(b.stat), n: b.stat.n })))
+  let floor = -Infinity
+  return fitted.map(pt => {
+    const w = pt.n / (pt.n + SHRINK_K)
+    floor = Math.max(floor, w * pt.p + (1 - w) * parent)
+    return { mid: pt.mid, p: floor, n: pt.n }
+  })
+}
+
+/** Read a rung's curve at a conviction: piecewise-linear between the midpoints,
+ * FLAT beyond the outer ones — nothing is extrapolated off either end. The flat
+ * extension is applied to the SHRUNK points, which is why a 70+ call reads
+ * exactly the final 55-70 value and never the raw eight-observation number that
+ * band would claim on its own (spec §4.2's floor: high conviction may read below
+ * base if the whole context does — that is a shadow, and it is intended — but it
+ * may never read below the band beneath it).
+ *
+ * nEff is the MINIMUM of the two straddling bands' ORIGINAL n (the single band's
+ * n at or beyond the edges). Pooling can never inflate it: a read that leans on
+ * an 8-observation band is an 8-observation read, whatever the band next door
+ * has seen. */
+function readCurve(pts: CurvePoint[], x: number): { p: number; nEff: number } {
+  const first = pts[0], last = pts[pts.length - 1]
+  if (x <= first.mid) return { p: first.p, nEff: first.n }
+  if (x >= last.mid) return { p: last.p, nEff: last.n }
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1]
+    if (x <= b.mid) {
+      const t = (x - a.mid) / (b.mid - a.mid)
+      return { p: a.p + t * (b.p - a.p), nEff: Math.min(a.n, b.n) }
+    }
+  }
+  return { p: last.p, nEff: last.n }
+}
+
+/** Calibrated probability: a CONTINUOUS, monotone read at the call's own
+ * |composite|, off the most specific rung that has any evidence at all.
+ *
+ * The ladder is unchanged in shape, most-specific first:
+ *   1. this cohort, this regime      `${cohort}:${side}:${regime}:*`
+ *   2. this cohort, pooled regimes   `${cohort}:${side}:*:*`
  *   3. all cohorts, this regime      (cohort-tagged + cohortless/seed) at `${regime}`
- *   4. all cohorts, pooled regimes   (everything for side+band, incl. seed) — terminal
- *   5. global base rate              (baseHitRate) when even rung 4 is empty
- * Rungs 1–3 return non-provisional once they clear MIN_BUCKET_N; rung 4 returns
- * whatever it has (provisional when thin); rung 5 anchors bands with no data at all
- * (e.g. 70+ before any 70+ call has ever been graded). Unknown-cap calls skip rungs
- * 1–2 (they were never guessed into a cohort) and start pooled at rung 3. */
+ *   4. all cohorts, pooled regimes   (everything for this side, incl. the seed)
+ *   5. global base rate              (baseHitRate) when the side has nothing anywhere
+ * Unknown-cap calls skip rungs 1–2 — they were never guessed into a cohort.
+ *
+ * What changed: a rung is now taken as soon as it holds ANY evidence, in any
+ * band, instead of only once one BAND cleared MIN_BUCKET_N. The old promotion
+ * test bought its confidence by silently answering from a different population
+ * (all regimes pooled) and returning that as non-provisional. Under a curve
+ * there is a better answer to thinness than moving the question: the rung's own
+ * curve is built, the thin bands are shrunk toward the rung's parent rate, and
+ * `nEff` reports — honestly, per read — how many observations actually straddle
+ * this call. Grades then price that directly (gradeFor below).
+ *
+ * Returns `{ p, provisional, nEff }`. `provisional` survives for display only
+ * (nEff < MIN_BUCKET_N); the grade reads nEff itself. */
 export function probabilityFor(
   state: CalibrationState,
   side: 'long' | 'short',
   regime: string,
   absComposite: number,
   cohort: CapCohortOrUnknown = 'unknown',
-): { p: number; n: number; provisional: boolean } {
-  const band = bandFor(absComposite)
+): { p: number; provisional: boolean; nEff: number } {
+  const rungs: { cohort: CapCohort | 'any'; regime: string | null }[] =
+    cohort === 'unknown'
+      ? [{ cohort: 'any', regime }, { cohort: 'any', regime: null }]
+      : [{ cohort, regime }, { cohort, regime: null }, { cohort: 'any', regime }, { cohort: 'any', regime: null }]
 
-  if (cohort !== 'unknown') {
-    const cohortRegime = poolBuckets(state, side, band, cohort, regime) // rung 1
-    if (cohortRegime.n >= MIN_BUCKET_N) return { p: laplace(cohortRegime), n: cohortRegime.n, provisional: false }
-    const cohortBand = poolBuckets(state, side, band, cohort, null) // rung 2
-    if (cohortBand.n >= MIN_BUCKET_N) return { p: laplace(cohortBand), n: cohortBand.n, provisional: false }
+  for (const rung of rungs) {
+    const curve = curveFor(state, side, rung.cohort, rung.regime)
+    if (!curve.length) continue
+    const { p, nEff } = readCurve(curve, absComposite)
+    return { p, provisional: nEff < MIN_BUCKET_N, nEff }
   }
 
-  const allRegime = poolBuckets(state, side, band, 'any', regime) // rung 3
-  if (allRegime.n >= MIN_BUCKET_N) return { p: laplace(allRegime), n: allRegime.n, provisional: false }
-
-  const allBand = poolBuckets(state, side, band, 'any', null) // rung 4
-  if (allBand.n > 0) return { p: laplace(allBand), n: allBand.n, provisional: allBand.n < MIN_BUCKET_N }
-
-  // rung 5: nothing for this side+band anywhere → the engine's own base rate
+  // rung 5: nothing for this side anywhere → the engine's own base rate
   // (baseHitRate is a hoisted declaration below)
-  return { p: baseHitRate(state).rate, n: 0, provisional: true }
+  return { p: baseHitRate(state).rate, provisional: true, nEff: 0 }
 }
 
 /** Pooled hit rate across every bucket — the engine's own base rate under the
  * CURRENT outcome definition. Grades measure edge over THIS, not over a coin
  * flip: with hits defined as ≥1pp excess the base rate sits well under 0.5,
- * and absolute 0.5-anchored thresholds would silently retire the board. */
+ * and absolute 0.5-anchored thresholds would silently retire the board.
+ *
+ * The `n ≥ 50 else a hard 0.5` cliff is deliberately unchanged, and it has a
+ * consequence worth stating out loud: on a COLD store the base is 0.5, so grade
+ * A needs p ≥ 0.60 from a bucket that cannot possibly carry 30 observations yet.
+ * A cold engine therefore hands out no As at all. That is intended — the first
+ * fifty graded calls are the engine learning what its own base rate is, and it
+ * has no business claiming an edge over a number it has not measured. */
 export function baseHitRate(state: CalibrationState): { rate: number; n: number } {
   let n = 0
   let hits = 0
@@ -175,14 +307,30 @@ export function baseHitRate(state: CalibrationState): { rate: number; n: number 
   return { rate: n >= 50 ? laplace({ n, hits }) : 0.5, n }
 }
 
-/** A/B/C = the bucket beats the engine's base rate by ≥12pp / ≥5pp / at all.
- * With the legacy epsilon-hit definition (base ≈ 0.5) these reduce to the old
- * absolute thresholds 0.62 / 0.55 / 0.50. */
-export function gradeFor(p: number, provisional: boolean, capacityPct: number, baseRate = 0.5): 'A' | 'B' | 'C' | null {
-  if (p >= baseRate + 0.12 && !provisional && capacityPct >= 8) return 'A'
-  if (p >= baseRate + 0.05) return 'B'
+/** A/B/C = how far the read beats the engine's own base rate, AND how much
+ * evidence is actually under it. Both, or the grade drops a rung:
+ *   A  ≥ base + 0.10  and  nEff ≥ 30
+ *   B  ≥ base + 0.05  and  nEff ≥ 15
+ *   C  ≥ base                            (no evidence floor — C carries half size at most)
+ *   null below base — no edge over the engine's own rate; suppress, don't dress it up.
+ *
+ * The nEff test on B is the change that matters. The old B rung tested neither
+ * provisionality nor capacity, so the seed's 55-70 short bucket — EIGHT
+ * observations reading a flat 0.5 — graded B and carried full size (spec §2.4).
+ * Eight observations may now say C and no more, whatever p looks like.
+ *
+ * `capacityPct` has left the signature. It was a hard condition on A, which put
+ * a sizing question ("does this name move enough to be worth the spread?") inside
+ * a confidence question ("does this bucket beat our base rate, and do we have
+ * enough of it?"). Capacity still drives expected move, targets and the
+ * eligibility floor in composite.ts, where it belongs. [R6]
+ *
+ * A is unreachable on a cold store, by construction — see baseHitRate. */
+export function gradeFor(p: number, nEff: number, baseRate = 0.5): 'A' | 'B' | 'C' | null {
+  if (p >= baseRate + 0.10 && nEff >= MIN_GRADE_A_N) return 'A'
+  if (p >= baseRate + 0.05 && nEff >= MIN_BUCKET_N) return 'B'
   if (p >= baseRate) return 'C'
-  return null // no edge over the engine's own base rate — suppress, don't dress up
+  return null
 }
 
 /** Outcome vs what price actually did: excess return over SPY, side-adjusted;
@@ -407,6 +555,14 @@ export function maybeNudgeWeights(state: WeightsState, dateISO: string): Weights
 // The emitted probability is calibrated on the 10-session outcome (CALIB_DEF_VERSION
 // v3), so Brier — realized vs predicted — must score against outcome10, or it would
 // grade the probability against a horizon it never predicted.
+//
+// The continuous probability flows in here unchanged, and for a while the trail
+// will MIX epochs: rows stamped modelVersion 2 carry a four-step read, rows
+// stamped 3 carry the curve. That is accepted rather than papered over — the
+// alternative is discarding a real Brier history to make a chart tidy — and the
+// stamp on each Prediction is what makes the two separable after the fact.
+// `brierImproving` gates risk-rung promotion (riskLadder.ts), so the crossover
+// window is the one place to read the trail with the epoch in mind.
 export function brierPoint(preds: { probability: number; outcome10?: PredOutcome }[]): number | null {
   const graded = preds.filter(p => p.outcome10)
   if (!graded.length) return null

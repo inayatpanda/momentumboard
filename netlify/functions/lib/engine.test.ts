@@ -128,9 +128,13 @@ const breakTapeMatured = (() => {
 const NOW_240 = Math.floor(breakTape240[breakTape240.length - 1].t + 86_400)
 
 // The early door again, on a tape that actually GOES somewhere: a ±10% swinger, so
-// swing-capacity is 8.2 rather than breakTape240's flat 0. That matters because
-// gradeFor withholds an A under capacity 8 — this is the only early-door fixture
-// that can reach grade A, i.e. the only one whose leverage question is live at all.
+// swing-capacity is 8.2 rather than breakTape240's flat 0. Under v2 that was what
+// let it reach grade A — `capacityPct ≥ 8` was a hard condition on the A rung. It
+// no longer is: v3's gradeFor asks only how far the read beats the base rate and
+// how many observations are under it (p ≥ base+0.10 AND nEff ≥ 30), and capacity
+// went back to being a sizing question. What keeps this the leverage fixture is now
+// the capacity FLOOR in composite.ts: breakTape240's flat 0 never clears it, so
+// this is still the only early-door tape that publishes a routable row at all.
 const richBreakTape = (() => {
   const bars = mk(i => Math.round(100 * (1 + 0.1 * Math.sin(i / 11)) * 100) / 100, 240)
   append(bars, 120, 3_000_000)
@@ -301,8 +305,15 @@ const riskOffReads = async () => [
   { sym: '^VIX', name: 'VIX', changePct: 8 },
 ]
 
-// calibration where this band has proven itself — so the call grades
-const calWith = (key: string): CalibrationState => ({ buckets: { [key]: { n: 20, hits: 14 } }, brier: [], defVersion: CALIB_DEF_VERSION })
+// Calibration where this band has PROVEN itself — so the call grades. 32 and 22,
+// not the old 20 and 14, because v3 redefined what "proven" means: grade A now
+// needs nEff ≥ 30 observations straddling the read as well as p ≥ base+0.10, and
+// grade B needs nEff ≥ 15. The probability is deliberately unmoved — (22+2)/(32+4)
+// = 24/36 = 2/3, exactly the old (14+2)/(20+4) = 16/24 — so every `probability`
+// expectation below still reads 0.67 and only the DEPTH of the evidence changed.
+// One band of evidence makes a one-point curve, flat at every |composite|, and
+// the rung's pooled rate is that same band, so the shrinkage is the identity.
+const calWith = (key: string): CalibrationState => ({ buckets: { [key]: { n: 32, hits: 22 } }, brier: [], defVersion: CALIB_DEF_VERSION })
 
 describe('buildBoard', () => {
   it('scores a rolled-over name as a graded short, writes every blob, paper-only at R0', async () => {
@@ -320,7 +331,7 @@ describe('buildBoard', () => {
     const call = board.find(b => b.sym === 'NVDA')!
     expect(call).toBeDefined()
     expect(call.side).toBe('short')
-    expect(call.grade).toBe('A') // p=(14+2)/(20+4)=0.667, capacity ≥8
+    expect(call.grade).toBe('A') // p = (22+2)/(32+4) = 0.6667 ≥ 0.5+0.10, nEff 32 ≥ 30
     expect(call.probability).toBeCloseTo(0.67, 2)
     expect(call.provisional).toBe(false)
     expect(call.watchOnly).toBeUndefined() // A + contract passed → a trade, not an observation
@@ -786,7 +797,12 @@ describe('buildBoard', () => {
     expect(nvda.nearMiss).toBeUndefined() // it cleared the gates — it is not a near miss
     expect(nvda.observation).toBe(true) // …and it is stamped, so every surface can contain it without parsing prose
     expect(nvda.evidence.contract).toBe(true)
-    expect(nvda.grade).toBe('C') // graded on the full contract — a half-size trade in every respect but the route
+    // v3: the short/amber rung holds ONE band (55-70, 32/22 → 24/36 = 0.6667), so
+    // its curve is a single point read flat at every conviction, nEff 32. Base 0.5,
+    // so p ≥ 0.60 and nEff ≥ 30 → A. (Under v2 this same fixture read the EMPTY
+    // 25-40 band, fell to rung 5 and graded C off the bare base rate — the comment
+    // above it has said "it grades A" all along, and now it does.)
+    expect(nvda.grade).toBe('A') // graded on the full contract — a full-size trade in every respect but the route
     expect(nvda.watchOnly).toBe(true) // …and still carries nothing tradeable
     expect(nvda.riskPct).toBe(0)
     expect(nvda.instrument).toBeNull()
@@ -1435,7 +1451,10 @@ describe('buildBoard', () => {
     expect(call.target).toBeGreaterThan(call.entry)
     expect(call.capUsdM).toBe(35_000)
     expect(call.shadow).toBeUndefined()
-    expect(call.grade).toBe('B') // graded on the ordinary calibration path like any call
+    // p = (22+2)/(32+4) = 0.6667 ≥ base 0.5 + 0.10, nEff 32 ≥ 30 → A. Under v2 this
+    // was capped at B by `capacityPct ≥ 8`, which has left gradeFor entirely: a
+    // name's typical move is a SIZING question and it is answered in composite.ts.
+    expect(call.grade).toBe('A') // graded on the ordinary calibration path like any call
   })
 
   it('dip earnings override: a dip name inside the earnings window is shadowed like any call', async () => {
@@ -1461,15 +1480,19 @@ describe('buildBoard', () => {
     expect(row.riskPct).toBe(0)
   })
 
-  // the collision harness: one tape both lanes read, opposite sides, GLW routable
-  // so 'unshortable' can never be what shadows the short. Both bands proven and
-  // total n under 50, so baseHitRate stays 0.5 and BOTH calls grade — the short is
-  // a genuine live A before anything demotes it.
+  // The collision harness: one tape both lanes read, opposite sides, GLW routable
+  // so 'unshortable' can never be what shadows the short. The two bands are sized
+  // to the v3 grade gates and to each other:
+  //   short 40-55  32/22 → (22+2)/(32+4) = 0.6667, nEff 32 → p ≥ .60 AND nEff ≥ 30 → A
+  //   long  25-40  16/11 → (11+2)/(16+4) = 0.65,   nEff 16 → p ≥ .55 AND nEff ≥ 15 → B
+  // and 32 + 16 = 48 observations, still under the 50 baseHitRate needs, so the
+  // base rate is the cold 0.5 those thresholds assume. The short is a genuine live
+  // A before anything demotes it; the long is a genuine sized B.
   const collisionStore = async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' } } })
     await store.write('engine-calibration', {
-      buckets: { 'short:amber:40-55': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 14 } },
+      buckets: { 'short:amber:40-55': { n: 32, hits: 22 }, 'long:amber:25-40': { n: 16, hits: 11 } },
       brier: [],
       defVersion: CALIB_DEF_VERSION,
     })
@@ -1649,13 +1672,18 @@ describe('buildBoard', () => {
     await store.write('engine-calibration', {
       // OXY's deeper dip composites at 41.4 (the 40-55 band), GLW's at 39.3 — both
       // bands proven, so BOTH dip longs are genuinely sized before the cut speaks.
-      // Each bucket clears MIN_BUCKET_N (15) and the three together stay under the
-      // 50 observations baseHitRate needs, so the base rate is still 0.5 and a
-      // 0.67 bucket really is an edge over it.
+      // Under v3 that costs three different depths, because the grade now prices
+      // the evidence and the base rate still has to stay cold:
+      //   short 40-55 32/22 → 0.6667, nEff 32 → A, the live sized row this test is about
+      //   long  25-40  8/6  ┐ two bands, both (6+2)/(8+4) = 0.6667; pooled parent
+      //   long  40-55  8/6  ┘ (12+2)/(16+4) = 0.7, each shrunk w = 8/33 → 0.6919,
+      //                       nEff 8 → C — and C WITH the lane's contract is a
+      //                       half-size trade, so both longs still publish sized.
+      // 32 + 8 + 8 = 48 observations, under the 50 baseHitRate needs → base 0.5.
       buckets: {
-        'short:amber:40-55': { n: 16, hits: 11 },
-        'long:amber:25-40': { n: 16, hits: 11 },
-        'long:amber:40-55': { n: 16, hits: 11 },
+        'short:amber:40-55': { n: 32, hits: 22 },
+        'long:amber:25-40': { n: 8, hits: 6 },
+        'long:amber:40-55': { n: 8, hits: 6 },
       },
       brier: [],
       defVersion: CALIB_DEF_VERSION,
@@ -1787,7 +1815,8 @@ describe('buildBoard', () => {
     expect(row.instrument).toBeNull()
     expect(row.watchOnly).toBeUndefined() // shadow and watch stay mutually exclusive
     expect(row.belowBase).toBeUndefined()
-    expect(row.grade).toBe('B') // nothing ELSE shadowed it: it graded, on a passing contract
+    // (22+2)/(32+4) = 0.6667, nEff 32, base 0.5 → A. Was B under v2's capacity gate.
+    expect(row.grade).toBe('A') // nothing ELSE shadowed it: it graded, on a passing contract
     expect(row.evidence.contract).toBe(true)
     expect(row.earningsRisk).toBe(false)
     expect(row.catalyst!.reason).toContain('SEC probe into revenue recognition')
@@ -2118,8 +2147,12 @@ describe('buildBoard', () => {
   const velocityStore = async (buckets: Record<string, { n: number; hits: number }>) => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' } } })
-    // total n stays under 50 so baseHitRate remains 0.5 and the grades below are
-    // the ones the thresholds describe (the collision harness above does the same)
+    // Total n stays under 50 so baseHitRate remains the cold 0.5 and the grades
+    // below are the ones the v3 thresholds describe: A at p ≥ 0.60 with nEff ≥ 30,
+    // B at p ≥ 0.55 with nEff ≥ 15. A single planted band is a one-point curve —
+    // flat at every |composite|, shrunk toward a parent that IS itself — so each
+    // caller picks its grade purely by how deep it makes the bucket. (The collision
+    // harness above does the same.)
     await store.write('engine-calibration', { buckets, brier: [], defVersion: CALIB_DEF_VERSION })
     await store.write('engine-weights', initWeights())
     return store
@@ -2364,7 +2397,9 @@ describe('buildBoard', () => {
   // most slippage-prone entry the engine makes. Leverage now reads the size the row
   // actually carries. [R14]
   it('a velocity row is never leveraged: shadowed it has no route at all, sized the door cap withholds the ETP an A would otherwise get', async () => {
-    const store = await velocityStore({ 'long:amber:25-40': { n: 20, hits: 14 } })
+    // 32/22 → (22+2)/(32+4) = 0.6667, nEff 32: the ONLY velocity fixture deep enough
+    // to earn an A, which is what makes the leverage question live at all.
+    const store = await velocityStore({ 'long:amber:25-40': { n: 32, hits: 22 } })
     // both names carry a LONG route, and the rung is high enough to unlock 2× for an
     // A — so the ONLY thing that can withhold an instrument here is the door cap
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { RICH: { long2x: 'RICH2' }, BULL: { long2x: 'BULL2' } } })
@@ -2856,7 +2891,7 @@ describe('gradeOutstanding', () => {
     expect(preds[1].outcome5).toBeDefined() // the watch call is graded too
 
     const cal = (await store.read<CalibrationState>('engine-calibration'))!
-    expect(cal.buckets['short:amber:25-40']).toEqual({ n: 22, hits: 16 }) // both outcomes booked
+    expect(cal.buckets['short:amber:25-40']).toEqual({ n: 34, hits: 24 }) // both outcomes booked (32/22 + 2 hits)
     expect(cal.setupBuckets!['continuation:short:25-40']).toEqual({ n: 1, hits: 1 }) // setup stats accrue
     expect(cal.brier).toHaveLength(1)
 
@@ -2904,7 +2939,7 @@ describe('gradeOutstanding', () => {
     expect(graded).toBe(1) // it IS graded — the learning loop eats everything published
 
     const cal = (await store.read<CalibrationState>('engine-calibration'))!
-    expect(cal.buckets['short:amber:25-40']!.n).toBe(21) // …and it DID teach calibration
+    expect(cal.buckets['short:amber:25-40']!.n).toBe(33) // …and it DID teach calibration (32 + 1)
 
     const risk = (await store.read<RiskState>('risk-state'))!
     expect(risk.gradedAtRung).toBe(0) // …but the ladder never counted it

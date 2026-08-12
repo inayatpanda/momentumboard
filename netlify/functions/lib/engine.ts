@@ -1056,8 +1056,14 @@ export async function buildBoard(
     // then pooled) and the risk rung below. Unknown cap pools to the cohortless
     // path and the combined rung — never guessed into a sleeve.
     const cohort = capCohortOf(capUsdM)
-    const { p, provisional } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort)
-    const grade = gradeFor(p, provisional, call.capacityPct, engineBaseRate)
+    // …and it is a CURVE now, read at this call's own |composite| rather than at
+    // the corner of the band it falls in: two calls 14 points apart no longer
+    // share a probability, and one point of conviction moves the number. `nEff`
+    // is how many observations actually straddle this read — the grade prices it
+    // directly, so a thin bucket can no longer buy a full-size B. `provisional`
+    // survives for display (nEff < MIN_BUCKET_N) and for the flags below.
+    const { p, provisional, nEff } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort)
+    const grade = gradeFor(p, nEff, engineBaseRate)
     // grade null = calibration sees no edge in this bucket. The call stays off
     // the paper — but it MUST enter the ledger as a shadow, or buckets below
     // 50% can never earn their way back up (nothing would ever get graded).
