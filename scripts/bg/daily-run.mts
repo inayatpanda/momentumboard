@@ -12,7 +12,7 @@
 // The day the plan downgrades, the Netlify path 404s and this takes over.
 
 import { isUsMarketHoliday } from '../../shared/usMarketHolidays'
-import { blobAppStore } from '../../netlify/functions/lib/store'
+import { appStore as blobAppStore, configureStoreForNodeProcess } from '../../netlify/functions/lib/storeProvider'
 
 const requireEnv = (names: string[]) => {
   const missing = names.filter(n => !process.env[n])
@@ -25,6 +25,12 @@ const adminReq = () =>
 const londonDate = (nowSec: number) => new Date(nowSec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
 
 const run = async () => {
+  // FIRST, before anything reads or writes. This process and the handlers it
+  // dynamic-imports below (predict-background, market-data, the composer) must
+  // agree on which store they are talking to — they all reach through
+  // lib/storeProvider now, and a split would have daily-run deciding "the board
+  // is fresh" from one store while the handler wrote to the other.
+  console.log(`store backend: ${configureStoreForNodeProcess()}`)
   requireEnv(['NETLIFY_SITE_ID', 'NETLIFY_AUTH_TOKEN', 'APP_TOKEN', 'FINNHUB_API_KEY'])
   const nowSec = Math.floor(Date.now() / 1000)
   const today = londonDate(nowSec)

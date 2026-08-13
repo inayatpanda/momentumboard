@@ -5,7 +5,7 @@
 // background-function HTTP kicks used to reach. Leased so overlapping runs
 // (or a manual dispatch during the cron) can't double-process.
 
-import { acquireLease, blobAppStore, releaseLease } from '../../netlify/functions/lib/store'
+import { acquireLease, appStore as blobAppStore, configureStoreForNodeProcess, releaseLease } from '../../netlify/functions/lib/storeProvider'
 
 interface WorkItem {
   id: string
@@ -56,6 +56,11 @@ const runItem = async (item: WorkItem): Promise<boolean> => {
 }
 
 const run = async () => {
+  // FIRST, before the lease or the queue read. This worker is the CONSUMER of a
+  // queue the scheduled functions produce; if the producer ever moves to D1 and
+  // this stayed on Blobs, both halves would report success over an empty list
+  // and nothing would ever drain. Explicit selection, or a throw.
+  console.log(`store backend: ${configureStoreForNodeProcess()}`)
   // fail loudly without creds — otherwise the mem-fallback store reads an
   // empty queue and the run reports success while doing nothing at all
   const missing = ['NETLIFY_SITE_ID', 'NETLIFY_AUTH_TOKEN', 'APP_TOKEN'].filter(n => !process.env[n])

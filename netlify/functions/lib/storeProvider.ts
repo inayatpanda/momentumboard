@@ -119,6 +119,44 @@ export function configureStoreFromEnv(env?: RuntimeEnvBag | null): StoreBackendK
   return 'blobs'
 }
 
+/** Choose the backend for a LONG-LIVED NODE PROCESS — the GitHub Actions
+ * workers in `scripts/bg/`. Call it once, first thing, before any store use.
+ *
+ * WHY THIS EXISTS. Those scripts used to `import { blobAppStore } from
+ * './lib/store'` directly, which looks harmless and is not: they then
+ * dynamic-import the very handlers that read through `appStore`. Once the queue
+ * PRODUCER (alert-check on the Worker) writes `work-queue` to D1 while the
+ * CONSUMER (drain-queue on Actions) reads `work-queue` from Blobs, the queue is
+ * never drained and nothing anywhere says so — both halves report success over
+ * an empty list. Same for `engine-board`: daily-run would decide "already ran
+ * today" from one store while the handler it invokes writes to the other.
+ * Routing them through the seam makes the split a decision instead of an
+ * accident, and this function makes the decision explicit and loud.
+ *
+ * There is no binding in a Node process — bindings only exist inside workerd —
+ * so `STORE_BACKEND=d1` cannot be honoured here without a REMOTE D1 client
+ * (D1's HTTP API, or an authenticated `/api/store` endpoint on the Worker).
+ * That is M3 work; the seam is here so it lands in one place.
+ *
+ * @throws on `STORE_BACKEND=d1`, and on any value that is neither backend —
+ * a typo must not quietly leave the process writing to Blobs.
+ */
+export function configureStoreForNodeProcess(): StoreBackendKind {
+  const forced = readEnv('STORE_BACKEND')?.toLowerCase()
+  if (!forced || forced === 'blobs') {
+    useBlobStore()
+    return 'blobs'
+  }
+  if (forced === 'd1') {
+    throw new Error(
+      'STORE_BACKEND=d1 is not supported in a Node process: remote D1 access lands in M3. ' +
+        'Bindings exist only inside workerd, so scripts/bg/ needs D1\'s HTTP API or an authenticated store endpoint on the Worker. ' +
+        'Until then leave STORE_BACKEND unset on the GitHub Actions runners — they talk to Netlify Blobs via NETLIFY_SITE_ID/NETLIFY_AUTH_TOKEN.',
+    )
+  }
+  throw new Error(`unknown STORE_BACKEND=${forced} (expected 'blobs' or 'd1')`)
+}
+
 /** First recognised D1 binding on the env object, else the runtime bag. */
 export function findD1Binding(env?: RuntimeEnvBag | null): D1Database | null {
   for (const name of D1_BINDING_NAMES) {

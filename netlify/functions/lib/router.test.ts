@@ -1,7 +1,7 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { EXACT_ROUTES, FN_PREFIX, HANDLERS, HANDLER_NAMES, PREFIX_ROUTES, dispatch, isHandlerName, resolveRoute } from './router'
+import { EXACT_ROUTES, FN_PREFIX, HANDLERS, HANDLER_NAMES, PREFIX_ROUTES, dispatch, isHandlerName, resolveRoute, type HandlerModule } from './router'
 import { useBlobStore, storeBackend } from './storeProvider'
 import { clearRuntimeEnv } from './runtimeEnv'
 
@@ -59,6 +59,14 @@ describe('the route table is complete', () => {
   it('claims no path netlify.toml does not', () => {
     const declared = new Set(fnRedirects().map(r => r.from))
     for (const path of Object.keys(EXACT_ROUTES)) expect(declared.has(path), path).toBe(true)
+    // Both directions, prefixes included — the test above walks netlify.toml to
+    // the router; this walks the router back. A prefix route invented here and
+    // absent from netlify.toml would be a path Pages serves and Netlify does
+    // not, which is precisely what the parallel run must not have.
+    for (const r of PREFIX_ROUTES) {
+      expect(declared.has(`${r.prefix}*`), r.prefix).toBe(true)
+      expect(fnRedirects().find(d => d.from === `${r.prefix}*`)!.fn, r.prefix).toBe(r.name)
+    }
   })
 
   it('every routed name is a real handler', () => {
@@ -88,6 +96,28 @@ describe('resolveRoute', () => {
     const hit = resolveRoute(new URL('https://x.test/download/mac'))
     expect(hit?.name).toBe('download')
     expect(hit?.url.searchParams.get('platform')).toBe('mac')
+  })
+
+  // M-3: the exact and by-name branches matched the trailing-slash-stripped
+  // path while the prefix branch matched the raw one, so `/api/engine/` was the
+  // same door as `/api/engine` but `/download/mac/` became `?platform=mac%2F`
+  // — an unknown platform, a 404, and a reader who cannot download the app.
+  it('strips the trailing slash for prefix routes too', () => {
+    const at = (p: string) => {
+      const hit = resolveRoute(new URL(`https://x.test${p}`))
+      return hit && { name: hit.name, platform: hit.url.searchParams.get('platform') }
+    }
+    expect(at('/download/mac/')).toEqual({ name: 'download', platform: 'mac' })
+    expect(at('/download/win//')).toEqual({ name: 'download', platform: 'win' })
+    // The bare prefix, with and without its slash: both mean "no platform" and
+    // both reach the handler, which answers "unknown platform — use
+    // /download/mac". Previously `/download` fell through to a JSON 404 while
+    // `/download/` reached the handler, purely by accident of the raw match.
+    expect(at('/download')).toEqual({ name: 'download', platform: null })
+    expect(at('/download/')).toEqual({ name: 'download', platform: null })
+    // Not a prefix match — the segment has to end.
+    expect(at('/downloads')).toBeNull()
+    expect(at('/download-now')).toBeNull()
   })
 
   it('returns null for anything unrouted — the SPA paths included', () => {
@@ -134,5 +164,72 @@ describe('dispatch', () => {
   it('leaves the store on Blobs when no D1 binding is handed over', async () => {
     await dispatch(new Request('https://x.test/api/nope'), { env: { APP_TOKEN: 'x' } })
     expect(storeBackend()).toBe('blobs')
+  })
+})
+
+/* ─────────────────────────────── I-4 ───────────────────────────────
+ * A thrown Error's message is an internal one. On this codebase that is a D1
+ * error naming a table, an upstream URL that may carry a key in its query, a
+ * runner path, or whatever string a dependency chose. `dispatch` used to put
+ * 300 characters of it straight into a public 500 body. The log keeps all of
+ * it; the response says nothing unless a preview asks.
+ */
+describe('a handler that throws', () => {
+  const registry = HANDLERS as unknown as Record<string, () => Promise<HandlerModule>>
+  const SECRET = 'D1_ERROR: no such table: blobs — /home/runner/work/.netlify/creds'
+  let original: () => Promise<HandlerModule>
+  let logged: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    clearRuntimeEnv()
+    useBlobStore()
+    delete process.env.DEBUG_ERRORS
+    original = registry.watchdog
+    registry.watchdog = () =>
+      Promise.resolve({
+        default: () => {
+          throw new Error(SECRET)
+        },
+      })
+    logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+  afterEach(() => {
+    registry.watchdog = original
+    delete process.env.DEBUG_ERRORS
+    logged.mockRestore()
+    clearRuntimeEnv()
+  })
+
+  it('answers opaquely by default, and keeps the real reason in the log', async () => {
+    const res = await dispatch(new Request(`https://x.test${FN_PREFIX}watchdog`))
+    expect(res!.status).toBe(500)
+    const body = await res!.text()
+    expect(JSON.parse(body)).toEqual({ ok: false, error: 'internal' })
+    expect(body).not.toContain('D1_ERROR')
+    expect(body).not.toContain('/home/runner')
+    expect(logged).toHaveBeenCalled()
+    expect(String(logged.mock.calls[0]?.[1])).toContain(SECRET)
+  })
+
+  it('puts the message back when DEBUG_ERRORS=1 — the M3 preview switch', async () => {
+    process.env.DEBUG_ERRORS = '1'
+    const res = await dispatch(new Request(`https://x.test${FN_PREFIX}watchdog`))
+    expect(res!.status).toBe(500)
+    expect(await res!.json()).toEqual({ ok: false, error: 'handler-failed', fn: 'watchdog', detail: SECRET })
+  })
+
+  it('reads the switch off the Worker env bag too, not just process.env', async () => {
+    const res = await dispatch(new Request(`https://x.test${FN_PREFIX}watchdog`), { env: { DEBUG_ERRORS: '1' } })
+    expect((await res!.json()).detail).toBe(SECRET)
+  })
+
+  // Anything other than exactly '1' is off. A leftover `DEBUG_ERRORS=false`
+  // must not read as truthy.
+  it('is off for every value that is not 1', async () => {
+    for (const v of ['0', 'false', 'true', 'yes', '']) {
+      process.env.DEBUG_ERRORS = v
+      const res = await dispatch(new Request(`https://x.test${FN_PREFIX}watchdog`))
+      expect(await res!.json(), v).toEqual({ ok: false, error: 'internal' })
+    }
   })
 })

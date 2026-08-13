@@ -2,7 +2,9 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { openSqliteD1 } from '../../../scripts/lib/sqliteD1'
 import { ensureD1Schema, type D1Database } from './d1Store'
 import { blobAppStore } from './store'
-import { appStore, configureStoreFromEnv, currentAppStore, currentCacheStore, currentD1, findD1Binding, looksLikeD1, storeBackend, useBlobStore, useD1Store, D1_BINDING_NAMES } from './storeProvider'
+import { appStore, configureStoreForNodeProcess, configureStoreFromEnv, currentAppStore, currentCacheStore, currentD1, findD1Binding, looksLikeD1, storeBackend, useBlobStore, useD1Store, D1_BINDING_NAMES } from './storeProvider'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { clearRuntimeEnv, installRuntimeEnv } from './runtimeEnv'
 import { getCached, setCached } from './cache'
 import { authenticate, generateLicenceKey } from './auth'
@@ -166,5 +168,55 @@ describe('the cache seam', () => {
     await setCached('mkt-trending', [{ sym: 'NVDA' }], 600)
     expect(await getCached('mkt-trending')).toEqual([{ sym: 'NVDA' }])
     expect(currentCacheStore()).toBeNull()
+  })
+})
+
+/* ─────────────────── the Actions side of the same seam ───────────────────
+ * scripts/bg/* are long-lived Node processes with no bindings, and they
+ * dynamic-import the very handlers that read through `appStore`. Before this,
+ * they imported `blobAppStore` from lib/store directly: the queue PRODUCER
+ * (alert-check, on the Worker) would write `work-queue` to D1 while the
+ * CONSUMER (drain-queue, on Actions) read it from Blobs, and both halves would
+ * report success over an empty list. Selection is now explicit, or it throws.
+ */
+describe('configureStoreForNodeProcess — GitHub Actions', () => {
+  it('is Blobs when STORE_BACKEND is unset — exactly what the runners do today', () => {
+    delete process.env.STORE_BACKEND
+    expect(configureStoreForNodeProcess()).toBe('blobs')
+    expect(currentAppStore()).toBe(blobAppStore)
+  })
+
+  it('is Blobs when asked for Blobs', () => {
+    process.env.STORE_BACKEND = 'blobs'
+    expect(configureStoreForNodeProcess()).toBe('blobs')
+    expect(storeBackend()).toBe('blobs')
+  })
+
+  // The seam, honestly unimplemented. A binding cannot exist in Node, so this
+  // must not silently fall back to Blobs and write the day's ledger to the
+  // store the Worker is no longer reading.
+  it('refuses D1 rather than pretending — remote D1 access is M3 work', () => {
+    process.env.STORE_BACKEND = 'd1'
+    expect(() => configureStoreForNodeProcess()).toThrow(/remote D1 access lands in M3/)
+    expect(storeBackend()).toBe('blobs') // nothing was installed on the way out
+  })
+
+  it('refuses a typo instead of quietly using Blobs', () => {
+    process.env.STORE_BACKEND = 'D1 '.trim().toLowerCase() + 'x'
+    expect(() => configureStoreForNodeProcess()).toThrow(/unknown STORE_BACKEND/)
+  })
+
+  // The drift guard. Re-introducing the direct import is the whole defect.
+  it('leaves no scripts/bg worker importing lib/store behind the seam', () => {
+    const dir = join(__dirname, '..', '..', '..', 'scripts', 'bg')
+    const files = readdirSync(dir).filter(f => f.endsWith('.mts') || f.endsWith('.ts'))
+    expect(files.length).toBeGreaterThan(0)
+    for (const f of files) {
+      const src = readFileSync(join(dir, f), 'utf8')
+      expect(/from\s+'[^']*lib\/store'/.test(src), `${f} imports lib/store directly — go through lib/storeProvider`).toBe(false)
+      if (/appStore|acquireLease|releaseLease/.test(src)) {
+        expect(src, `${f} touches the store without selecting a backend first`).toMatch(/configureStoreForNodeProcess\(\)/)
+      }
+    }
   })
 })

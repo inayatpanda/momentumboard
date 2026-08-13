@@ -9,6 +9,34 @@
 # runs `npm run build`, publishes dist/, and takes its functions from
 # netlify/functions/ (explicitly configured there).
 
+# ── THE SPA FALLBACK IS A PRECONDITION, NOT A RULE. READ BEFORE ADDING FILES ──
+#
+# netlify.toml's last two redirects (`/app/*` and `/*` -> /index.html 200) have
+# no counterpart here, deliberately. Pages does it by default:
+#
+#   "If your project does not include a top-level `404.html` file, Pages assumes
+#    that you are deploying a single-page application. [...] Pages' default
+#    single-page application behavior matches all incoming paths to the root
+#    (`/`), allowing you to capture URLs like `/about` or `/help` and respond to
+#    them from within your SPA."
+#   — developers.cloudflare.com/pages/configuration/serving-pages/
+#
+# So /engine, /paper, /ledger, /faq and /app/ (the PWA's start_url AND scope,
+# vite.config.ts:17-18) all serve index.html WITH A 200 — provided dist/ never
+# gains a top-level 404.html. Adding one silently 404s the whole client router
+# and every installed PWA. `netlify/functions/lib/hosting.test.ts` pins it.
+#
+# DO NOT "FIX" THIS WITH A `_redirects` CATCH-ALL. On Cloudflare, "redirects are
+# always followed, regardless of whether or not an asset matches the incoming
+# request", so `/* /index.html 200` would shadow /assets/*.js. And the same file
+# would be read by Netlify during the parallel run, where "rules in the
+# `_redirects` file are always processed first, followed by rules in the Netlify
+# configuration file" — out-ranking every /api/* function redirect in
+# netlify.toml. It breaks both hosts at once.
+#
+# Response headers DO need a file: public/_headers, a verbatim copy of
+# netlify.toml's three `[[headers]]` blocks. Same test guards the copy.
+
 name = "streetsignal"
 pages_build_output_dir = "dist"
 compatibility_date = "2026-08-01"

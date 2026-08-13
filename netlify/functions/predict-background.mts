@@ -1,6 +1,7 @@
 import { acquireLease, appStore as blobAppStore, releaseLease } from './lib/storeProvider'
 import { authenticate } from './lib/auth'
 import { buildBoard, defaultDeps, gradeOutstanding, traceOpenIdeas } from './lib/engine'
+import { internalFunctionUrl } from './lib/site'
 import { validateConfig } from '../../shared/config'
 
 // The engine's daily run, BEFORE the paper composes: grade what matured
@@ -75,10 +76,17 @@ export default async (req: Request) => {
       // SKIP_COMPOSE_CHAIN and runs the composer in-process instead: background
       // functions don't exist on the free plan, so this HTTP hop would 404 there.
       if (!process.env.SKIP_COMPOSE_CHAIN) {
-        await fetch(`${SITE}/.netlify/functions/report-compose-background`, {
+        // Host-aware: `/.netlify/functions/...` on Netlify, `/api/fn/...` on
+        // Pages/Workers — neither path exists on the other host (lib/site.ts).
+        const composeUrl = internalFunctionUrl(SITE, 'report-compose-background')
+        await fetch(composeUrl, {
           method: 'POST',
           headers: { 'x-app-token': process.env.APP_TOKEN ?? '' },
-        }).catch(() => {})
+          // The chain is best-effort by design — the composer degrades to legacy
+          // mode and the ledger is already written — but a kick that never lands
+          // means no paper, and swallowing it silently is how you find that out
+          // from a reader. One line, then carry on.
+        }).catch(e => console.error('PREDICT: compose kick failed —', composeUrl, e))
       }
     } finally {
       await releaseLease(blobAppStore, leaseKey, lease)

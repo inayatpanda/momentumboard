@@ -139,11 +139,20 @@ export const CRON_JOBS: readonly CronJob[] = [
   { name: 'congress-warm', schedule: '10 6,18 * * 1-5', trigger: '*/5 * * * *', auth: 'cron-body', why: 'disclosure sweep on the server clock' },
   { name: 'ledger-snapshot', schedule: '0 8 * * 0', trigger: '*/5 * * * *', auth: 'cron-body', why: 'Sunday track-record email' },
   {
+    // NETLIFY'S CADENCE, KEPT. M2 briefly moved this to the design's `*/15`
+    // (hourly after the handler's own 3600s slot claim) and it was reverted:
+    // watchdog.mts's 'morning paper' check has no `!tradingDay ||` guard, unlike
+    // the 'engine board' and 'predict run' checks either side of it
+    // (watchdog.mts:30), so it FAILS whenever today's paper does not exist yet.
+    // Hourly, that is every overnight hour plus the whole weekend — ~78 alerts a
+    // week on a perfectly healthy system, which is how a pager stops being read.
+    // At 07:15 on a weekday the paper is expected to exist, so a failure means
+    // something. The `*/15` trigger still carries it: minute 15 is a */15 minute.
     name: 'watchdog',
-    schedule: '*/15 * * * *',
+    schedule: '15 7 * * 1-5',
     trigger: '*/15 * * * *',
     auth: 'cron-body',
-    why: "the design's cadence; the handler's own 3600s slot claim collapses it to hourly, and only a FAILING check speaks",
+    why: 'the morning health sweep, once, after the paper is due',
   },
   {
     name: 'predict-background',

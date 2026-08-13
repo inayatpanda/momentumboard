@@ -30,7 +30,18 @@ export type RuntimeEnvBag = Record<string, unknown>
 let bag: RuntimeEnvBag | null = null
 
 /** Best-effort handle on a writable `process.env`, or null if the runtime has
- * no `process` at all and one cannot be fabricated. */
+ * no `process` at all and one cannot be fabricated.
+ *
+ * WHAT THE FABRICATED `process` IS NOT. When the runtime has no `process` we
+ * create `{ env: {} }` — an env bag and nothing else. It has no `versions`, no
+ * `nextTick`, no `platform`, no `cwd`, no `argv`, no `on`. That is deliberate:
+ * the only thing this module owes the handlers is `process.env.X`, and a
+ * half-built `process` that answers `versions.node` would tell every library
+ * that does `if (process.versions?.node)` that it is running on Node and send
+ * it down a filesystem path that does not exist. A missing property throws or
+ * reads undefined at the point of use, which is legible; a lying one is not.
+ * If a dependency ever genuinely needs `process.nextTick`, the answer is
+ * `nodejs_compat` (which supplies a real `process`), not another field here. */
 function processEnv(): Record<string, string | undefined> | null {
   const g = globalThis as { process?: { env?: Record<string, string | undefined> } }
   try {
@@ -58,15 +69,36 @@ export function installRuntimeEnv(env: RuntimeEnvBag | null | undefined): void {
     if (pe[k] !== undefined && pe[k] !== '') continue
     try {
       pe[k] = v
-    } catch {
-      /* a frozen process.env is survivable — readEnv still finds the bag */
+    } catch (e) {
+      // A frozen process.env is SURVIVABLE — new code reads through readEnv,
+      // which finds the bag regardless. It is not silent, though: the 23
+      // handler files still read `process.env.X` directly, so a frozen env
+      // means they see undefined for every secret and the site 401s everything
+      // (M3 verification item 2). Say it once — once per isolate, not once per
+      // key per request, or the log becomes the outage.
+      warnMirrorFailed(k, e)
     }
   }
 }
 
-/** Forget the installed bag. Tests use it; nothing in production does. */
+let mirrorWarned = false
+
+function warnMirrorFailed(key: string, e: unknown): void {
+  if (mirrorWarned) return
+  mirrorWarned = true
+  console.error(
+    `runtimeEnv: could not mirror '${key}' onto process.env — it is frozen or read-only. ` +
+      'Code using readEnv() is unaffected; handler code reading the process env directly will see undefined ' +
+      'for every var the host supplies. Further mirror failures in this isolate are not logged.',
+    e,
+  )
+}
+
+/** Forget the installed bag. Tests use it; nothing in production does. Also
+ * re-arms the one-time mirror-failure warning, so a test can drive it twice. */
 export function clearRuntimeEnv(): void {
   bag = null
+  mirrorWarned = false
 }
 
 /** The installed Worker env bag, or null under Netlify/Node. */
@@ -166,6 +198,9 @@ export const FUNCTION_ENV_VARS = [
   // M2 additions — the host seam itself
   'STORE_BACKEND',
   'WORKER_OWNS_PREDICT',
+  // Preview-only. `=1` puts the exception message back into the router's 500
+  // body (lib/router.ts). Never set on the production project.
+  'DEBUG_ERRORS',
 ] as const
 
 export type FunctionEnvVar = (typeof FUNCTION_ENV_VARS)[number]

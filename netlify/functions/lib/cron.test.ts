@@ -61,17 +61,29 @@ describe('the job table', () => {
     for (const name of scheduledOnDisk) expect(CRON_JOBS.some(j => j.name === name), name).toBe(true)
   })
 
-  // The cadence a job runs at is the thing a reader notices. Every one except
-  // the watchdog keeps Netlify's exact expression, and the watchdog's change is
-  // the design's, declared here so it cannot happen by accident.
+  // The cadence a job runs at is the thing a reader notices. EVERY scheduled
+  // job keeps Netlify's exact expression — there is no cadence delta in the
+  // migration. The watchdog is in this group on purpose: `*/15` was tried and
+  // reverted, because watchdog.mts's 'morning paper' check has no tradingDay
+  // guard and would page ~78 times a week on a healthy system.
   it("keeps each job's Netlify schedule verbatim", () => {
     const declared = (name: string) => /export const config[^=]*=\s*\{\s*schedule:\s*'([^']+)'/.exec(src(name))?.[1]
     for (const job of CRON_JOBS) {
-      if (job.name === 'watchdog' || job.name === 'predict-background') continue
+      if (job.name === 'predict-background') continue // no `export const config` — Netlify never scheduled it
       expect(job.schedule, job.name).toBe(declared(job.name))
     }
     expect(declared('watchdog')).toBe('15 7 * * 1-5')
-    expect(CRON_JOBS.find(j => j.name === 'watchdog')!.schedule).toBe('*/15 * * * *')
+  })
+
+  // The revert only works because minute 15 is a */15 minute. If someone ever
+  // moves the watchdog to :07, the trigger sleeps through it and the check
+  // silently never runs — 'never schedules a job on a minute its trigger cannot
+  // reach' below would catch it, but say it here too, where the number lives.
+  it('wakes for the watchdog on its own trigger', () => {
+    const watchdog = CRON_JOBS.find(j => j.name === 'watchdog')!
+    expect(watchdog.schedule).toBe('15 7 * * 1-5')
+    expect(watchdog.trigger).toBe('*/15 * * * *')
+    expect(cronMatches(watchdog.trigger, at('2026-08-10T07:15:00Z'))).toBe(true)
   })
 
   it('only ever asks for a trigger wrangler.toml actually declares', () => {
@@ -110,12 +122,22 @@ describe('jobsDueFor', () => {
     expect(jobsDueFor('*/5 * * * *', at('2026-08-13T12:45:00Z')).map(j => j.name)).toEqual(['alert-check', 'bulletin-premarket'])
     expect(jobsDueFor('*/5 * * * *', at('2026-08-13T18:10:00Z')).map(j => j.name)).toEqual(['alert-check', 'congress-warm'])
     expect(jobsDueFor('*/5 * * * *', at('2026-08-16T08:00:00Z')).map(j => j.name)).toEqual(['alert-check', 'ledger-snapshot'])
-    expect(jobsDueFor('*/15 * * * *', at('2026-08-13T09:15:00Z')).map(j => j.name)).toEqual(['watchdog'])
+    expect(jobsDueFor('*/15 * * * *', at('2026-08-13T07:15:00Z')).map(j => j.name)).toEqual(['watchdog'])
     expect(jobsDueFor('20 5 * * 1-5', at('2026-08-13T05:20:00Z')).map(j => j.name)).toEqual(['predict-background'])
   })
 
+  // The revert, from the dispatcher's side. The */15 trigger still wakes four
+  // times an hour (it also sweeps the cache), but the watchdog rides it exactly
+  // once a weekday morning — not 168 times a week, of which ~78 would fire on a
+  // healthy system because the 'morning paper' check has no tradingDay guard.
+  it('does not run the watchdog on every quarter hour', () => {
+    for (const t of ['2026-08-13T09:15:00Z', '2026-08-13T07:30:00Z', '2026-08-13T00:15:00Z', '2026-08-15T07:15:00Z' /* Saturday */]) {
+      expect(jobsDueFor('*/15 * * * *', at(t)).map(j => j.name), t).toEqual([])
+    }
+  })
+
   it('does not let one trigger poach another trigger&apos;s jobs', () => {
-    expect(jobsDueFor('*/15 * * * *', at('2026-08-13T09:15:00Z')).map(j => j.name)).not.toContain('alert-check')
+    expect(jobsDueFor('*/15 * * * *', at('2026-08-13T07:15:00Z')).map(j => j.name)).not.toContain('alert-check')
   })
 })
 

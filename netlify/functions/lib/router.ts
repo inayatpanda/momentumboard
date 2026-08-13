@@ -7,9 +7,18 @@
 // no equivalent for functions, so the mapping becomes code — and once it is code
 // it can be TESTED for completeness, which netlify.toml never could be.
 //
-// The table below is the netlify.toml redirect list, transcribed. `routes.test.ts`
+// The table below is the netlify.toml redirect list, transcribed. `router.test.ts`
 // parses netlify.toml and fails if the two ever disagree, so this file cannot rot
 // while the live site still runs on Netlify.
+//
+// THE TWO SPA REDIRECTS ARE NOT HERE, AND MUST NOT BE. netlify.toml's last two
+// rules (`/app/*` and `/*` -> /index.html 200) are the client router's fallback,
+// and on Pages that is the platform's own default rather than a route: with no
+// top-level 404.html in dist/, "Pages' default single-page application behavior
+// matches all incoming paths to the root (`/`)". This table therefore covers
+// FUNCTIONS only, `resolveRoute` returns null for /engine, /ledger and friends,
+// and the asset server serves index.html for them. See wrangler.toml's header
+// and `hosting.test.ts`, which pins the no-404.html precondition.
 //
 // PARITY, NOT A NEW SURFACE. Every function is reachable on Netlify today at
 // `/.netlify/functions/<name>` whether or not it has a pretty redirect — that is
@@ -20,7 +29,7 @@
 // does not widen anything: no handler's auth changes, and the escape hatch is
 // listed in the M2 report so M4 can re-register the webhook URL.
 
-import { installRuntimeEnv, type RuntimeEnvBag } from './runtimeEnv'
+import { installRuntimeEnv, readEnv, type RuntimeEnvBag } from './runtimeEnv'
 import { configureStoreFromEnv } from './storeProvider'
 
 /** The shape every `netlify/functions/*.mts` already exports.
@@ -111,13 +120,17 @@ export function resolveRoute(url: URL): Resolved | null {
   const exact = EXACT_ROUTES[path]
   if (exact) return { name: exact, url }
 
+  // Prefix routes match the STRIPPED path too, or `/api/engine/` would be the
+  // same door as `/api/engine` while `/download/mac/` quietly became
+  // `?platform=mac%2F`. `/download` and `/download/` both mean "no platform" and
+  // reach the handler's own "unknown platform — use /download/mac" 404.
   for (const r of PREFIX_ROUTES) {
-    if (url.pathname.startsWith(r.prefix)) {
-      const splat = url.pathname.slice(r.prefix.length)
-      const next = new URL(url.toString())
-      if (r.param && splat) next.searchParams.set(r.param, splat)
-      return { name: r.name, url: next }
-    }
+    const bare = r.prefix.replace(/\/$/, '')
+    if (path !== bare && !path.startsWith(r.prefix)) continue
+    const splat = path === bare ? '' : path.slice(r.prefix.length)
+    const next = new URL(url.toString())
+    if (r.param && splat) next.searchParams.set(r.param, splat)
+    return { name: r.name, url: next }
   }
 
   if (path.startsWith(FN_PREFIX)) {
@@ -149,11 +162,25 @@ export interface DispatchOptions {
   passThrough?: boolean
 }
 
+/** Should a 500 body carry the exception's message?
+ *
+ * NO by default. A thrown `Error` here is an internal one — its message is a
+ * file path, a SQL fragment, an upstream URL with a key in it, or whatever a
+ * dependency chose to put in a string, and none of that is the public's. The
+ * real error always goes to `console.error`, so nothing is lost: it is in the
+ * Worker log either way.
+ *
+ * `DEBUG_ERRORS=1` puts the message back in the response, which is what M3's
+ * preview deployments want — reading a parallel-run diff through the logs alone
+ * is miserable. It is a preview switch, never set on the production project. */
+function debugErrors(): boolean {
+  return readEnv('DEBUG_ERRORS') === '1'
+}
+
 /** THE ENTRY POINT both Pages Functions use.
  *
  * Installs the host env, picks the store backend, resolves the path and runs the
- * handler. A handler that throws becomes a 500 with the message — Netlify's own
- * behaviour, and losing the message would make M3's parallel run unreadable. */
+ * handler. A handler that throws becomes an opaque 500; see `debugErrors`. */
 export async function dispatch(req: Request, opts: DispatchOptions = {}): Promise<Response | null> {
   installRuntimeEnv(opts.env)
   configureStoreFromEnv(opts.env)
@@ -170,7 +197,10 @@ export async function dispatch(req: Request, opts: DispatchOptions = {}): Promis
     return await invokeHandler(hit.name, request, opts.ctx)
   } catch (e) {
     console.error(`ROUTER ${hit.name} failed:`, e)
-    return new Response(JSON.stringify({ ok: false, error: 'handler-failed', fn: hit.name, detail: String((e as Error)?.message ?? e).slice(0, 300) }), {
+    const body = debugErrors()
+      ? { ok: false, error: 'handler-failed', fn: hit.name, detail: String((e as Error)?.message ?? e).slice(0, 300) }
+      : { ok: false, error: 'internal' }
+    return new Response(JSON.stringify(body), {
       status: 500,
       headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
     })

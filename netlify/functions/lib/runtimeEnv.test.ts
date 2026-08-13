@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { FUNCTION_ENV_VARS, clearRuntimeEnv, installRuntimeEnv, readEnv, runtimeBinding, runtimeEnvBag, runtimeHost } from './runtimeEnv'
@@ -71,6 +71,49 @@ describe('reading the environment', () => {
     expect(runtimeHost()).toBe('node')
     installRuntimeEnv({ APP_TOKEN: 'x' })
     expect(runtimeHost()).toBe('workers')
+  })
+
+  // M-5: the mirror's catch used to be empty. A frozen process.env is
+  // survivable for code that reads through readEnv — and fatal for the 23
+  // handler files that still read process.env.X, which would see undefined for
+  // every secret and 401 the whole site. That must not be a silent condition.
+  describe('when process.env cannot be written to', () => {
+    const real = globalThis.process
+    const frozenProcess = () => ({ env: new Proxy({} as Record<string, string | undefined>, { set: () => { throw new TypeError('process.env is read-only') } }) })
+
+    afterEach(() => {
+      Object.defineProperty(globalThis, 'process', { value: real, configurable: true, writable: true })
+    })
+
+    const withFrozenEnv = (fn: () => void) => {
+      Object.defineProperty(globalThis, 'process', { value: frozenProcess(), configurable: true, writable: true })
+      try {
+        fn()
+      } finally {
+        Object.defineProperty(globalThis, 'process', { value: real, configurable: true, writable: true })
+      }
+    }
+
+    it('says so once — not once per key, per request', () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      withFrozenEnv(() => {
+        installRuntimeEnv({ APP_TOKEN: 'a', GROQ_API_KEY: 'b', RESEND_API_KEY: 'c' })
+        installRuntimeEnv({ APP_TOKEN: 'a', GROQ_API_KEY: 'b' })
+      })
+      expect(logged).toHaveBeenCalledTimes(1)
+      expect(String(logged.mock.calls[0][0])).toMatch(/frozen or read-only/)
+      logged.mockRestore()
+    })
+
+    it('still serves the bag, so readEnv and the store seam keep working', () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      withFrozenEnv(() => {
+        installRuntimeEnv({ APP_TOKEN: 'from-the-bag' })
+        expect(readEnv('APP_TOKEN')).toBe('from-the-bag')
+        expect(runtimeEnvBag()).toEqual({ APP_TOKEN: 'from-the-bag' })
+      })
+      logged.mockRestore()
+    })
   })
 })
 
