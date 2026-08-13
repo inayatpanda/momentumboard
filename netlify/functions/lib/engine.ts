@@ -306,26 +306,63 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T
 
 async function loadState(store: AppStore, today: string) {
+  // Read both learning blobs first — the stored one wins, the committed seed is
+  // the cold start — then decide whether the seed SUPERSEDES what was read
+  // (definition swap, then generation swap), and only then migrate/re-base what
+  // survived. Reading before deciding is what lets both swaps compare the two
+  // artefacts; migrating after is what keeps a swapped-in seed on the same
+  // healing path as a stored blob. gradeOutstanding persists the result.
+  let weightsBlob = (await store.read<WeightsState>('engine-weights')) ?? clone(seed.weights as unknown as WeightsState)
+  let calibration = (await store.read<CalibrationState>('engine-calibration')) ?? clone(seed.calibration as unknown as CalibrationState)
+  const seedCal = seed.calibration as unknown as CalibrationState
+  const seedWeights = seed.weights as unknown as WeightsState
+  // the outcome definition changed → stored buckets counted a different thing
+  // and their hit rates aren't probabilities anymore. Swap in the reseeded
+  // calibration — but only when the committed seed itself is on the current
+  // definition; never regress live state to a stale seed.
+  if (calibration.defVersion !== CALIB_DEF_VERSION && seedCal.defVersion === CALIB_DEF_VERSION) calibration = clone(seedCal)
+  // A regenerated seed at the SAME outcome definition announces itself by
+  // generation. The stored blob wins forever otherwise — that is correct for
+  // live accrual, but it means a better seed could never land (stage 2b).
+  // On swap the stored blob is REPLACED, not merged: "do not mix a regenerated
+  // seed with the committed one — regenerate whole" (backtest.ts header).
+  // Both halves are gated on the SEED's defVersion for the same reason the swap
+  // above is: an artefact measuring a different hit must not install, however
+  // loudly it announces itself.
+  const seedInstallable = seedCal.defVersion === CALIB_DEF_VERSION
+  const storedGen = calibration.seedGeneration ?? 1
+  const seedGen = seedCal.seedGeneration ?? 1
+  if (seedInstallable && seedGen > storedGen) {
+    console.log(
+      `CALIBRATION: seed generation ${storedGen} → ${seedGen} — replacing ` +
+        `${calibration.evidence?.live?.n ?? 0} live rows with the deeper seed (they are inside its window)`,
+    )
+    calibration = clone(seedCal)
+  }
+  // Weights swap on the same condition, keyed on the weights blobs' own
+  // generations (they are stored separately, so a load interrupted between the
+  // two writes must be able to finish the install on the next run). They still
+  // come from ONE walk: installing the seed's buckets while keeping the live IC
+  // would grade tomorrow's calls with a yardstick from a different scoring epoch.
+  const storedWeightsGen = weightsBlob.seedGeneration ?? 1
+  const seedWeightsGen = seedWeights.seedGeneration ?? 1
+  if (seedInstallable && seedWeightsGen > storedWeightsGen) {
+    console.log(`WEIGHTS: seed generation ${storedWeightsGen} → ${seedWeightsGen} — replacing the learned IC with the deeper seed's`)
+    weightsBlob = clone(seedWeights)
+  }
   // migrateWeights backfills factors added after a snapshot was stored/seeded
   // (seed.json predates smartMoney) so an old blob never silently zeroes them.
   // rebaseWeights then handles the case migrateWeights must NOT: the owner
   // re-ordering the model. It only fires when the stored base disagrees with
   // DEFAULT_WEIGHTS, and when it does it re-bases current too and drops the IC
   // evidence gathered under the retired vector. Idempotent, so this runs on
-  // every load and re-heals a blob written by an older deploy. The result is
-  // persisted by gradeOutstanding's write of `engine-weights`.
-  const weights = rebaseWeights(
-    migrateWeights((await store.read<WeightsState>('engine-weights')) ?? clone(seed.weights as unknown as WeightsState)),
-    DEFAULT_WEIGHTS,
-    today,
-  )
-  let calibration = (await store.read<CalibrationState>('engine-calibration')) ?? clone(seed.calibration as unknown as CalibrationState)
-  // the outcome definition changed → stored buckets counted a different thing
-  // and their hit rates aren't probabilities anymore. Swap in the reseeded
-  // calibration — but only when the committed seed itself is on the current
-  // definition; never regress live state to a stale seed.
-  const seedCal = seed.calibration as unknown as CalibrationState
-  if (calibration.defVersion !== CALIB_DEF_VERSION && seedCal.defVersion === CALIB_DEF_VERSION) calibration = clone(seedCal)
+  // every load and re-heals a blob written by an older deploy.
+  // It runs AFTER any generation swap above, and on a swapped-in seed it must
+  // find NOTHING to do: an emitted seed's base is DEFAULT_WEIGHTS by contract,
+  // so the IC just installed is not zeroed on the way in (§4.4 — the trap that
+  // silently deletes a seed's factor evidence). A seed that breaks that contract
+  // is not rescued here; it is stripped, loudly, in the history entry.
+  const weights = rebaseWeights(migrateWeights(weightsBlob), DEFAULT_WEIGHTS, today)
   calibration = migrateCalibration(calibration)
   const channelCred = (await store.read<ChannelCredState>('channel-credibility')) ?? {}
   return { weights, calibration, channelCred }

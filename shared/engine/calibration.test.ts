@@ -1040,6 +1040,34 @@ describe('rebaseWeights', () => {
   })
 })
 
+// A committed seed can be REGENERATED without the outcome definition changing
+// (a deeper walk over the same hit rule), and when it is, nothing in the stored
+// blob tells the loader that the artefact on disk is the newer one —
+// `defVersion` is equal on both sides by construction. `seedGeneration` is that
+// missing channel. It only works if "absent" and "1" are the same state rather
+// than two, because every blob written before the field existed — the live one
+// included — is generation 1: the committed seed of record.
+describe('seedGeneration — absence IS generation 1', () => {
+  it('migrateCalibration reads a blob written before the field existed as generation 1', () => {
+    expect(migrateCalibration({ buckets: {}, brier: [] }).seedGeneration).toBe(1)
+  })
+
+  it('migrateCalibration never overwrites a generation the artefact stamped itself', () => {
+    expect(migrateCalibration({ buckets: {}, brier: [], seedGeneration: 2 }).seedGeneration).toBe(2)
+  })
+
+  it('migrateWeights reads a legacy snapshot as generation 1 and keeps a stamped one', () => {
+    expect(migrateWeights(initWeights()).seedGeneration).toBe(1)
+    expect(migrateWeights({ ...initWeights(), seedGeneration: 2 }).seedGeneration).toBe(2)
+  })
+
+  it('is idempotent on both — a second migrate cannot advance a generation', () => {
+    const cal = migrateCalibration(migrateCalibration({ buckets: {}, brier: [], seedGeneration: 2 }))
+    expect(cal.seedGeneration).toBe(2)
+    expect(migrateWeights(migrateWeights(initWeights())).seedGeneration).toBe(1)
+  })
+})
+
 describe('updateCalibration + brier', () => {
   it('migrates legacy evidence and tracks future live/shadow/seed provenance separately', () => {
     const cal = migrateCalibration({ buckets: { 'long:green:25-40': { n: 10, hits: 4 } }, brier: [], seeded: true })

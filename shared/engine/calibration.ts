@@ -66,6 +66,15 @@ export interface CalibrationState {
   seeded?: boolean
   defVersion?: number
   modelVersion?: number
+  /** Which committed seed these buckets descend from. `defVersion` says what a
+   * hit IS; this says WHICH WALK measured it — the one thing that separates a
+   * regenerated seed from the one it replaces when the outcome definition did
+   * not move (a deeper window, a wider universe, more lanes). loadState installs
+   * a seed over the stored blob only when the seed's generation is higher, so a
+   * better artefact can land exactly once and never twice.
+   * ABSENT MEANS 1 (migrateCalibration backfills): every blob written before
+   * this field existed descends from the generation-1 seed of record. */
+  seedGeneration?: number
   evidence?: {
     seed: BucketStat
     live: BucketStat
@@ -81,6 +90,10 @@ const addEvidence = (a: BucketStat, hit: boolean) => ({ n: a.n + 1, hits: a.hits
 export function migrateCalibration(state: CalibrationState): CalibrationState {
   state.modelVersion ??= ENGINE_MODEL_VERSION
   state.setupBuckets ??= {}
+  // absence is not "unknown", it is generation 1 — the committed seed of record
+  // when the field did not exist yet. Backfilling here is what lets the install
+  // rule in loadState compare two numbers instead of three states.
+  state.seedGeneration ??= 1
   if (!state.evidence) {
     const total = Object.values(state.buckets).reduce((a, b) => ({ n: a.n + b.n, hits: a.hits + b.hits }), { n: 0, hits: 0 })
     state.evidence = {
@@ -478,6 +491,13 @@ export interface WeightsState {
   ic: Record<FactorName, IcStat>
   gradedSinceNudge: number
   history: { date: string; changes: Record<string, { from: number; to: number; ic: number }>; evidence: string }[]
+  /** Which committed seed this vector's IC descends from — the same channel as
+   * CalibrationState.seedGeneration, tracked separately because the two blobs
+   * are stored separately and a load can be interrupted between the writes.
+   * They still move together: one walk emits both, and installing one epoch's
+   * buckets beside another's factor evidence would grade tomorrow's calls with
+   * a yardstick that never measured them. ABSENT MEANS 1 (migrateWeights). */
+  seedGeneration?: number
 }
 
 const FACTOR_NAMES = Object.keys(DEFAULT_WEIGHTS) as FactorName[]
@@ -499,6 +519,7 @@ export function initWeights(base: Record<FactorName, number> = DEFAULT_WEIGHTS):
  * (zeroed) so an old blob never silently zeroes a new factor's weight. Mutates
  * and returns the same object; idempotent. */
 export function migrateWeights(state: WeightsState, base: Record<FactorName, number> = DEFAULT_WEIGHTS): WeightsState {
+  state.seedGeneration ??= 1 // absence is generation 1 — see CalibrationState.seedGeneration
   for (const name of Object.keys(base) as FactorName[]) {
     if (state.base[name] == null) state.base[name] = base[name]
     if (state.current[name] == null) state.current[name] = base[name]
