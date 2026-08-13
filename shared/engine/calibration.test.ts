@@ -20,6 +20,7 @@ import {
   type CalibrationState,
   type WeightsState,
 } from './calibration'
+import { DEFAULT_WEIGHTS } from './composite'
 import type { Candle } from '../types'
 import type { FactorName, Prediction } from './types'
 import seedJson from './seed.json'
@@ -685,12 +686,44 @@ describe('gradeBaseRate — which number a grade is measured against', () => {
   })
 
   it('the COMMITTED seed carries its swept reference — grades anchor to it, not the pool', () => {
-    // Generation 2 shipped 2026-08-13: referenceBase 0.4158 measured by the
-    // unconditional sweep over the walk's own 166-symbol universe (4,178 rows).
+    // Generation 3 shipped 2026-08-13 (the frozen-vector re-walk): referenceBase
+    // 0.4158, measured by the unconditional sweep over the walk's own 166-symbol
+    // universe (4,178 rows). The number is UNCHANGED from generation 2 on purpose
+    // and is the cleanest evidence that the anchor is what it claims to be: the
+    // sweep runs `seedFromHistory` over the raw tape, so it never touches the
+    // factor stack and cannot move when the scoring vector does. Generation 3's
+    // BUCKETS moved a great deal (long:green:70+ 1270 rows → 26); the yardstick
+    // they are read against did not budge.
     const committed = seedJson.calibration as unknown as CalibrationState
     expect(committed.referenceBase).toBe(0.4158)
     expect(gradeBaseRate(committed)).toBe(0.4158)
     expect(gradeBaseRate(committed)).not.toBe(baseHitRate(committed).rate) // pool 0.4161 — close, NOT equal
+  })
+})
+
+describe('the COMMITTED seed was measured under the vector production scores with', () => {
+  // Generation 2 shipped `current` carrying the walk's ~450 compounding nudges —
+  // technical 0.0791 against a base of 1.0, momentum pinned at the 2× cap and 73 %
+  // of a weight-normalised composite — which `loadState` installs verbatim as
+  // production's scoring vector. Nothing downstream reacts to a drifted `current`
+  // (`rebaseWeights` only ever compares BASE with DEFAULT_WEIGHTS), so this is the
+  // assertion that keeps the committed artefact honest. The emitter refuses to
+  // write an unpinned one; this refuses to commit one.
+  it('ships current === base === DEFAULT_WEIGHTS, the owner-ratified factor order', () => {
+    const w = seedJson.weights as unknown as WeightsState
+    expect(w.base).toEqual(DEFAULT_WEIGHTS)
+    expect(w.current).toEqual(DEFAULT_WEIGHTS)
+    expect(w.current).toEqual(w.base)
+    expect(w.current.technical).toBe(1) // the #1 factor, switched off at 0.0791 in generation 2
+    expect(w.current.technical).toBeGreaterThan(w.current.momentum) // charts before extension (spec §4.2)
+    expect(w.current.momentum).toBeGreaterThan(w.current.sector) // …and sector last of the core four
+  })
+  it('kept MEASURING while the applied vector was pinned — the IC is the walk’s', () => {
+    // A frozen vector that also froze the measurement would satisfy the test above
+    // vacuously and ship a seed with no factor evidence at all.
+    const w = seedJson.weights as unknown as WeightsState
+    for (const f of ['technical', 'momentum', 'sector', 'seasonality'] as const) expect(w.ic[f].nAgree + w.ic[f].nDisagree).toBeGreaterThan(0)
+    expect(w.history.length).toBeGreaterThan(0)
   })
 })
 

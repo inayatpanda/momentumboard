@@ -694,6 +694,27 @@ describe('seedArtefactFrom — guarantee 2: weights.base IS DEFAULT_WEIGHTS, or 
   })
 })
 
+describe('seedArtefactFrom — guarantee 2b: weights.current IS weights.base, or nothing ships', () => {
+  // The gen-2 seed shipped `current` carrying the walk's ~450 compounding nudges:
+  // technical 0.0791 against a base of 1.0, momentum pinned at the 2× cap and 73 % of
+  // a weight-normalised composite (recon §0.1). `base` drift is caught above because
+  // `rebaseWeights` reacts to it; `current` drift is caught by NOTHING downstream —
+  // it simply becomes production's scoring vector, silently, on install.
+  it('emits when the walk pinned its vector, and the emitted current IS the base', () => {
+    const w = emit().weights
+    expect(w.current).toEqual(w.base)
+    expect(w.current).toEqual(DEFAULT_WEIGHTS)
+  })
+  it('THROWS on a drifted current — the walk’s compounding nudges may not ride into production', () => {
+    const drifted = walkedWeights({ current: { ...DEFAULT_WEIGHTS, technical: 0.0791, momentum: 1.8 } })
+    expect(() => emit({ weights: drifted })).toThrow(/technical/)
+    expect(() => emit({ weights: drifted })).toThrow(/momentum/)
+    expect(() => emit({ weights: drifted })).toThrow(/weights\.current/)
+    // one factor is enough — the vector is the whole artefact's scorer
+    expect(() => emit({ weights: walkedWeights({ current: { ...DEFAULT_WEIGHTS, seasonality: 5.75e-5 } }) })).toThrow(/seasonality/)
+  })
+})
+
 describe('seedArtefactFrom — guarantee 4: the walk’s live rows ARE seed evidence once serialised', () => {
   it('folds aggregate live into seed and zeroes live', () => {
     const ev = emit().calibration.evidence!
@@ -908,23 +929,25 @@ describe('--seed-out: the flags refuse to guess', () => {
     }
   }
   it('refuses --seed-out with --plant-a or --baseline — a probe calibration is not a seed', async () => {
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '3', '--plant-a'])).rejects.toThrow(/probe calibration/)
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '3', '--baseline'])).rejects.toThrow(/probe calibration/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '4', '--plant-a'])).rejects.toThrow(/probe calibration/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '4', '--baseline'])).rejects.toThrow(/probe calibration/)
   })
   it('refuses a generation at or below the committed seed — the walk would warm-start from it', async () => {
-    // the committed seed is generation 2 now (shipped 2026-08-13); AT 2 must refuse
+    // the committed seed is generation 3 now (the frozen-vector re-walk, 2026-08-13);
+    // AT 3 must refuse, and so must every generation the tree has already shipped
     await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '1'])).rejects.toThrow(/not above the committed/)
     await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '2'])).rejects.toThrow(/not above the committed/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '3'])).rejects.toThrow(/not above the committed/)
   })
   it('refuses --symbols without a list', async () => {
-    await expect(runWith(['--symbols', '--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '3'])).rejects.toThrow(/--symbols needs/)
+    await expect(runWith(['--symbols', '--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '4'])).rejects.toThrow(/--symbols needs/)
   })
   it('refuses --seed-out without a generation — the artefact may not guess which walk made it', async () => {
     await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json')])).rejects.toThrow(/--seed-generation/)
     await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json'), '--seed-generation', '0'])).rejects.toThrow(/--seed-generation/)
   })
   it('refuses a --seed-out that swallowed the next flag instead of a path', async () => {
-    await expect(runWith(['--seed-out', '--seed-generation', '2'])).rejects.toThrow(/needs a path/)
+    await expect(runWith(['--seed-out', '--seed-generation', '4'])).rejects.toThrow(/needs a path/)
   })
 })
 
@@ -957,7 +980,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
     const from = iso(ts[WALK_BARS - WALK_WINDOW])
     const to = iso(ts[WALK_BARS - 1])
     const argv = process.argv
-    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', [...WALK_SYMS, 'ETH-USD'].join(','), '--seed-out', seedPath, '--seed-generation', '3', '--out', outPath]
+    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', [...WALK_SYMS, 'ETH-USD'].join(','), '--seed-out', seedPath, '--seed-generation', '4', '--out', outPath]
     // the walk narrates every day; the suite does not need to hear it — but the
     // seed-out summary IS a deliverable, so it is captured rather than discarded
     const logged: string[] = []
@@ -993,6 +1016,21 @@ describe('--seed-out: the walk serialises what it learned', () => {
     // every graded composite, so a walk that graded rows must have moved it
     const tech = art.weights.ic.technical
     expect(tech.nAgree + tech.nDisagree).toBeGreaterThan(0)
+    expect(tech.nAgree).toBeGreaterThan(0)
+
+    // THE SCORING VECTOR IS FROZEN, AND THE MEASUREMENT IS NOT. Seed mode pins
+    // `current` back to `base` after every graded day, so the whole window was scored
+    // with DEFAULT_WEIGHTS — the vector production will score with — while the factor
+    // IC beside it kept accruing. Without the pin the walk's compounding nudges
+    // (NUDGE_EVERY 15 over a two-year window ⇒ ~450 of them, unbounded below once
+    // PRUNE_MIN_N lifts the floor) become the seed's scoring vector: generation 2
+    // shipped technical at 0.0791 and momentum at the 2× cap. The nAgree assertion
+    // above is the other half of the claim — a frozen vector that stopped MEASURING
+    // would satisfy this one vacuously.
+    expect(art.weights.current).toEqual(art.weights.base)
+    expect(art.weights.current).toEqual(DEFAULT_WEIGHTS)
+    // the nudge loop DID run — it is the applied vector that was pinned, not the loop
+    expect(art.weights.history.length).toBeGreaterThan(0)
 
     // THE WALK STARTED EMPTY. The proof is in the blob as it stood at walk end,
     // BEFORE serialisation folds live into seed: `emptyLearningState` zeroes
@@ -1012,7 +1050,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
     // guarantees 1, 2, 6 on the file the next task actually copies over seed.json
     expect(art.calibration.defVersion).toBe(3)
     expect(art.calibration.modelVersion).toBe(3)
-    expect(art.calibration.seedGeneration).toBe(3) // 3: the committed seed is generation 2 since 2026-08-13, and the floor refuses ≤2
+    expect(art.calibration.seedGeneration).toBe(4) // 4: the committed seed is generation 3 since 2026-08-13, and the floor refuses ≤3
     expect(art.weights.seedGeneration).toBe(art.calibration.seedGeneration)
 
     // guarantee 7 — the grade anchor, swept over this same window and universe and

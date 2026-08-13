@@ -65,3 +65,44 @@ Option 1 preserves every deliverable of this walk AND the meaning of grades; it 
 **What this means:** grades cannot honestly separate until two Stage-3 items land: (1) provenance-partitioned bucket reads (sized evidence grades sized rows; shadow evidence prices shadow rows), (2) the 70+ inversion investigated as a MODEL question (why does maximum conviction underperform?). Both are learning-stage work, now with the data to do it.
 
 **Ship recommendation:** install generation 2 as measured (all-C at half size, honest probabilities, thesis/falsifier voice carrying conviction in words), because the alternative — keeping generation 1 — shows readers B-grades manufactured by a stale yardstick. Everything is reversible: a generation-3 seed re-installs in a 25-second walk + deploy. NOTE: the plan's Task-4 gate "grade distribution not ≥90% single-grade" fails by construction under any honest yardstick this window — shipping requires the owner to explicitly waive that gate with the evidence above in hand.
+
+---
+
+## Addendum 2 — generation 3: the seed is measured under the vector production scores with
+
+**Why generation 2 never installed.** It was committed (b029a00) and would have installed at the next 05:35 predict run; Stage 3's recon (§0.1) read the artefact before that happened and found the defect. `weights.current` carried the walk's ~450 compounding IC nudges — `next = cur·(1 + 0.15·ic)` every 15 graded rows, with no stability bound and no floor at all once `PRUNE_MIN_N` lifts it. The shipped vector was technical **0.0791** against a base of 1.0, momentum **1.8** (the hard 2× cap), sector 0.598, seasonality 5.75e-05. The composite is a weight-normalised core mean, so that is momentum **72.7%** of production scoring and technical **3.2%** — the owner's ratified factor order (spec §4.2: charts/EMAs/volume first) inverted. Worse, the buckets were accrued *under that drifting vector*: the measurement and the vector production would score with disagreed, so the calibration priced rows the live engine would never produce.
+
+**The fix (three pieces, all test-first).**
+1. `scripts/replay-window.ts` — in seed mode only, after each day's `gradeOutstanding`, `current` is pinned back to `base`. `ic`, `gradedSinceNudge` and `history` keep accruing: the IC **measurement** continues, only the **applied** vector is frozen at `DEFAULT_WEIGHTS`. Bounding the nudge itself is Stage 3c's stability work; it does not belong inside a seed.
+2. `seedArtefactFrom` throws when any factor's `current` deviates from `base` — belt over braces. `base` drift was already caught because `rebaseWeights` reacts to it on load; `current` drift is reacted to by nothing, which is exactly why it shipped.
+3. Re-walked as generation 3 (`--from 2024-08-12 --to 2026-08-11`, 0 API calls) and committed over `shared/engine/seed.json`.
+
+**What the frozen vector changed.** Same window, same universe, same 501 days — only the scorer held still.
+
+| | gen 2 (drifting vector) | gen 3 (frozen vector) |
+|---|---|---|
+| `weights.current` | technical 0.0791 · momentum 1.8 · sector 0.598 · seasonality 5.75e-05 | **= `base` = DEFAULT_WEIGHTS** (technical 1.0 · momentum 0.9 · sector 0.3 · seasonality 0.3) |
+| graded rows | 6,790 | 6,608 |
+| main buckets | 21 | **18** |
+| setup keys | 23 | 16 |
+| pooled base | 0.4161 | 0.4161 |
+| **referenceBase** | 0.4158 | **0.4158 — unchanged** |
+| symbols | 159 | 159 |
+| IC (core four) | tech 5161/552 · mom 5697/15 · seas 3724/1882 · sector 562/51 | tech 5194/49 · mom 5099/144 · seas 3579/1547 · sector 588/69 |
+| evidence | seed 4356/1866 · shadow 2434/959 | seed 4359/1841 · shadow 2249/908 |
+
+`referenceBase` not moving is the cleanest available evidence that the anchor is what it claims to be: the sweep runs `seedFromHistory` over the raw tape, so it never touches the factor stack and cannot move when the scoring vector does. The buckets moved a great deal; the yardstick they are read against did not budge. (Test-pinned in `calibration.test.ts`.)
+
+**And the 70+ inversion largely evaporates.** Recon §9 mechanism 1a predicted that under gen-2 weights the top band was being *flooded* by extension rather than earned by conviction. It was:
+
+| slice | gen 2 | gen 3 |
+|---|---|---|
+| `long:green:70+` | **1270 / 528 = 41.6%** (below the 48.3% at 55-70 — the inversion) | **26 / 13 = 50.0%** |
+| `short:amber:70+` | 46 / 19 = 41.3% | *gone* |
+| `short:red:70+` | 82 / 24 = 29.3% | 3 / 0 |
+
+Under the ratified vector only 26 long:green rows in two years reach 70+, and they hit **50.0%** — nine points above the 41.58% reference, and above every band below them (55-70 42.3% · 40-55 43.0% · 25-40 39.6%). The gen-2 top band was 1,270 rows of *most-extended name*, not *maximum conviction*, exactly as §9.1a argued from the arithmetic. **This does not close the Stage-3 70+ item** — n=26 is under `gradeFor`'s nEff ≥ 30 bar, so the honest reading is "the flood is gone and what remains is too thin to conclude from". It reframes the question from "why does maximum conviction underperform?" to "the band that underperformed was not maximum conviction".
+
+**Acceptance window (2026-07-14 → 2026-08-11, gen 3 installed as cold start):** 0/21 blank boards, 0/21 zero-trade days, 529 board+ledger rows → **518 C / 11 B** (gen 2: 531/531 C), 13 distinct probabilities spanning 0.34–0.48, composite range −54.7…+65.3. Task 4's "not ≥90% single-grade" gate still **fails** (97.9% C) — that remains Stage 3c's work, and the owner's waiver from Addendum 1 still stands. What changed is not the grade histogram; it is that the vector behind it is honest.
+
+**Still open, booked for Stage 3c.** The nudge loop is unbounded in *production* too. Generation 3 installs `current = base` and the seed's deep IC beside it, so from the first live nudge the same compounding drift starts again from DEFAULT_WEIGHTS — slower than the walk's cadence, but in the same direction and with the same absent floor. The seed is now honest about its own measurement; the loop that will move it away from that measurement is not yet bounded. Recon §5.2's candidates (a `minDisagree` floor symmetric with `nAgree`, per-factor `[0.5×, 1.5×]` bounds, calendar cadence) are the shortlist.

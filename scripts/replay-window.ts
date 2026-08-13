@@ -1080,6 +1080,19 @@ export function seedArtefactFrom(input: {
     throw new Error(
       `BLOCKED: weights.base disagrees with DEFAULT_WEIGHTS on ${drifted.join(', ')} — rebaseWeights would zero this seed's IC on the first production load. Re-run the walk on a tree whose DEFAULT_WEIGHTS is the one it scored with.`,
     )
+  // guarantee 2b — and `current` is the half that fails silently. A drifted `base`
+  // is caught above only because `rebaseWeights` reacts to it on load; a drifted
+  // `current` is reacted to by NOTHING — it simply becomes production's scoring
+  // vector. Generation 2 shipped 450 compounding nudges that way (technical 0.0791
+  // on a base of 1.0, momentum at the 2× cap, 73 % of the composite), inverting the
+  // ratified factor order and pricing buckets under a vector that was still moving.
+  // Seed mode pins `current` to `base` after every graded day, so an unpinned vector
+  // here means the pin did not run and the artefact is not what it claims to be.
+  const unpinned = names.filter(n => weights.current?.[n] !== weights.base?.[n])
+  if (unpinned.length)
+    throw new Error(
+      `BLOCKED: weights.current deviates from weights.base on ${unpinned.join(', ')} — the walk's compounding nudges are inside this artefact. A seed is only honest if it was measured under the vector production will score with; seed mode pins current to base after every graded day.`,
+    )
   weights.seedGeneration = generation
 
   calibration.defVersion = CALIB_DEF_VERSION
@@ -1334,6 +1347,23 @@ export async function main() {
 
     const nowSec = Date.parse(`${date}T05:20:00Z`) / 1000
     await gradeOutstanding(store, deps as never, nowSec, cfg)
+    // SEED MODE PINS THE SCORING VECTOR. The seed must be measured under the exact
+    // vector production will score with; the walk's compounding nudges are unbounded
+    // (recon §5: `next = cur·(1 + 0.15·ic)`, ~450 of them over two years, no floor at
+    // all once PRUNE_MIN_N lifts it) and belong to Stage 3c's stability work, not
+    // inside a seed. Generation 2 shipped what happens without this: technical 0.0791
+    // against a base of 1.0, momentum pinned at the 2× cap and 73 % of a
+    // weight-normalised composite — the owner's ratified factor order inverted, and
+    // buckets accrued under a vector that drifted underneath them as they filled.
+    // Only the APPLIED vector is pinned: `ic`, `gradedSinceNudge` and `history` keep
+    // accruing, so the artefact still carries the walk's factor measurement.
+    if (seedOut) {
+      const w = await store.read<WeightsState>('engine-weights')
+      if (w) {
+        w.current = { ...w.base }
+        await store.write('engine-weights', w)
+      }
+    }
     if (plantA) await store.write('engine-calibration', aReachableState())
     const built = await buildBoard(store, deps as never, nowSec)
     const ledger = ((await store.read<Prediction[]>(`predictions:${date}`)) ?? []).map(p => rowOf(p, 'ledger'))
