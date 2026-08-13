@@ -195,10 +195,21 @@ describe('configureStoreForNodeProcess — GitHub Actions', () => {
   // The seam, honestly unimplemented. A binding cannot exist in Node, so this
   // must not silently fall back to Blobs and write the day's ledger to the
   // store the Worker is no longer reading.
-  it('refuses D1 rather than pretending — remote D1 access is M3 work', () => {
+  it('refuses D1 without a remote client rather than pretending', () => {
     process.env.STORE_BACKEND = 'd1'
-    expect(() => configureStoreForNodeProcess()).toThrow(/remote D1 access lands in M3/)
+    expect(() => configureStoreForNodeProcess()).toThrow(/needs a remote client/)
     expect(storeBackend()).toBe('blobs') // nothing was installed on the way out
+  })
+
+  it('installs an injected remote client under STORE_BACKEND=d1', async () => {
+    process.env.STORE_BACKEND = 'd1'
+    const db = openSqliteD1(':memory:')
+    await ensureD1Schema(db)
+    expect(configureStoreForNodeProcess(db)).toBe('d1')
+    expect(storeBackend()).toBe('d1')
+    await appStore.write('probe', { via: 'injected' })
+    expect(await db.prepare(`SELECT key FROM blobs WHERE store = 'app' AND key = 'probe'`).first()).toBeTruthy()
+    db.close()
   })
 
   it('refuses a typo instead of quietly using Blobs', () => {
@@ -215,7 +226,7 @@ describe('configureStoreForNodeProcess — GitHub Actions', () => {
       const src = readFileSync(join(dir, f), 'utf8')
       expect(/from\s+'[^']*lib\/store'/.test(src), `${f} imports lib/store directly — go through lib/storeProvider`).toBe(false)
       if (/appStore|acquireLease|releaseLease/.test(src)) {
-        expect(src, `${f} touches the store without selecting a backend first`).toMatch(/configureStoreForNodeProcess\(\)/)
+        expect(src, `${f} touches the store without selecting a backend first`).toMatch(/configureStoreForScript\(\)/)
       }
     }
   })

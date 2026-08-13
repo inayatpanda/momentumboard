@@ -5,7 +5,8 @@
 // background-function HTTP kicks used to reach. Leased so overlapping runs
 // (or a manual dispatch during the cron) can't double-process.
 
-import { acquireLease, appStore as blobAppStore, configureStoreForNodeProcess, releaseLease } from '../../netlify/functions/lib/storeProvider'
+import { acquireLease, appStore as blobAppStore, releaseLease } from '../../netlify/functions/lib/storeProvider'
+import { configureStoreForScript } from '../lib/configureStore'
 
 interface WorkItem {
   id: string
@@ -60,10 +61,12 @@ const run = async () => {
   // queue the scheduled functions produce; if the producer ever moves to D1 and
   // this stayed on Blobs, both halves would report success over an empty list
   // and nothing would ever drain. Explicit selection, or a throw.
-  console.log(`store backend: ${configureStoreForNodeProcess()}`)
+  const backend = await configureStoreForScript()
+  console.log(`store backend: ${backend}`)
   // fail loudly without creds — otherwise the mem-fallback store reads an
   // empty queue and the run reports success while doing nothing at all
-  const missing = ['NETLIFY_SITE_ID', 'NETLIFY_AUTH_TOKEN', 'APP_TOKEN'].filter(n => !process.env[n])
+  const needed = backend === 'blobs' ? ['NETLIFY_SITE_ID', 'NETLIFY_AUTH_TOKEN', 'APP_TOKEN'] : ['APP_TOKEN']
+  const missing = needed.filter(n => !process.env[n])
   if (missing.length) throw new Error(`missing env: ${missing.join(', ')}`)
   const nowSec = Math.floor(Date.now() / 1000)
   const lease = await acquireLease(blobAppStore, 'lease:queue-worker', nowSec, 12 * 60)

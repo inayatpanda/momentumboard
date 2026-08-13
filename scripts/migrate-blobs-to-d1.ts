@@ -261,8 +261,20 @@ export async function migrateBlobsToD1(db: D1Database, opts: MigrateOptions = {}
     const diskDigest = digest([...planned.values()].map(p => [p.key, p.value] as [string, string]))
     const rows: Map<string, string> = new Map()
     if (live) {
-      const res = await db.prepare(`SELECT key, value FROM blobs WHERE store = ?1`).bind(store).all<{ key: string; value: string }>()
-      for (const r of res.results ?? []) rows.set(r.key, r.value)
+      // Keyset-paged: one store's values run to tens of MB, and the remote
+      // client (httpD1) answers over HTTP where a response that size won't fly.
+      const PAGE = 25
+      let after = ''
+      for (;;) {
+        const res = await db
+          .prepare(`SELECT key, value FROM blobs WHERE store = ?1 AND key > ?2 ORDER BY key LIMIT ${PAGE}`)
+          .bind(store, after)
+          .all<{ key: string; value: string }>()
+        const page = res.results ?? []
+        for (const r of page) rows.set(r.key, r.value)
+        if (page.length < PAGE) break
+        after = page[page.length - 1].key
+      }
     }
     // A dry run reports the state the import WOULD leave behind, so the manifest
     // line means the same thing whether or not anything was written.
@@ -343,12 +355,26 @@ async function main() {
   const backupDir = flag('dir') ?? DEFAULT_BACKUP_DIR
   const sqlitePath = flag('sqlite') ?? join(process.cwd(), '.d1', 'streetsignal.sqlite')
 
-  // A dry run against a database that does not exist yet must not conjure one:
-  // it reports what a first import would do, from an empty in-memory stand-in.
-  const target = dryRun && !safeExists(sqlitePath) ? ':memory:' : sqlitePath
-  if (target !== ':memory:') mkdirSync(dirname(sqlitePath), { recursive: true })
-  const { openSqliteD1 } = await import('./lib/sqliteD1')
-  const db = openSqliteD1(target)
+  // --remote targets the real D1 over the REST API (scripts/lib/httpD1.ts).
+  // The database id comes from wrangler.toml — the single place M3 wrote it —
+  // and the account id from CLOUDFLARE_ACCOUNT_ID or --account.
+  let db: (D1Database & { close(): void })
+  if (argv.includes('--remote')) {
+    const toml = readFileSync(join(process.cwd(), 'wrangler.toml'), 'utf8')
+    const databaseId = flag('database') ?? toml.match(/^database_id\s*=\s*"([^"]+)"/m)?.[1]
+    const accountId = flag('account') ?? process.env.CLOUDFLARE_ACCOUNT_ID
+    if (!databaseId) throw new Error('--remote: no database_id in wrangler.toml and no --database given')
+    if (!accountId) throw new Error('--remote: set CLOUDFLARE_ACCOUNT_ID or pass --account')
+    const { openHttpD1 } = await import('./lib/httpD1')
+    db = openHttpD1({ accountId, databaseId })
+  } else {
+    // A dry run against a database that does not exist yet must not conjure one:
+    // it reports what a first import would do, from an empty in-memory stand-in.
+    const target = dryRun && !safeExists(sqlitePath) ? ':memory:' : sqlitePath
+    if (target !== ':memory:') mkdirSync(dirname(sqlitePath), { recursive: true })
+    const { openSqliteD1 } = await import('./lib/sqliteD1')
+    db = openSqliteD1(target)
+  }
 
   const report = await migrateBlobsToD1(db, { backupDir, dryRun })
   process.stdout.write(argv.includes('--json') ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report))

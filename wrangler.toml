@@ -51,7 +51,7 @@ binding = "STREETSIGNAL_DB"
 database_name = "streetsignal"
 # M3 fills this in from `wrangler d1 create streetsignal`. Deliberately blank:
 # a plausible-looking wrong id is worse than a deploy that refuses to start.
-database_id = ""
+database_id = "2497573a-0c2a-4fc9-902c-57a062621731"
 
 [vars]
 STORE_BACKEND = "d1"

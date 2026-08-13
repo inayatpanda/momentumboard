@@ -21,7 +21,7 @@ compatibility_flags = ["nodejs_compat"]
 # which are due. Cloudflare's free plan allows five triggers; this uses three.
 crons = [
   "*/5 * * * *",   # alert-check, and the four bulletins/sweeps that land on :00/:05/:10/:45
-  "*/15 * * * *",  # watchdog (its own 3600s slot claim collapses this to hourly) + the D1 cache sweep
+  "*/15 * * * *",  # the D1 cache sweep; also reaches watchdog's 07:15 weekday slot (cron.ts decides)
   "20 5 * * 1-5",  # report-kick → predict-background, OFF unless WORKER_OWNS_PREDICT=1
 ]
 
@@ -30,7 +30,7 @@ binding = "STREETSIGNAL_DB"
 database_name = "streetsignal"
 # M3 fills this in from `wrangler d1 create streetsignal`. Left blank on purpose:
 # a placeholder id that happens to be valid is worse than a deploy that refuses.
-database_id = ""
+database_id = "2497573a-0c2a-4fc9-902c-57a062621731"
 
 [observability]
 enabled = true

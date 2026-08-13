@@ -12,7 +12,8 @@
 // The day the plan downgrades, the Netlify path 404s and this takes over.
 
 import { isUsMarketHoliday } from '../../shared/usMarketHolidays'
-import { appStore as blobAppStore, configureStoreForNodeProcess } from '../../netlify/functions/lib/storeProvider'
+import { appStore as blobAppStore } from '../../netlify/functions/lib/storeProvider'
+import { configureStoreForScript } from '../lib/configureStore'
 
 const requireEnv = (names: string[]) => {
   const missing = names.filter(n => !process.env[n])
@@ -30,8 +31,10 @@ const run = async () => {
   // agree on which store they are talking to — they all reach through
   // lib/storeProvider now, and a split would have daily-run deciding "the board
   // is fresh" from one store while the handler wrote to the other.
-  console.log(`store backend: ${configureStoreForNodeProcess()}`)
-  requireEnv(['NETLIFY_SITE_ID', 'NETLIFY_AUTH_TOKEN', 'APP_TOKEN', 'FINNHUB_API_KEY'])
+  const backend = await configureStoreForScript()
+  console.log(`store backend: ${backend}`)
+  // The Netlify creds matter only when the store IS Netlify.
+  requireEnv(backend === 'blobs' ? ['NETLIFY_SITE_ID', 'NETLIFY_AUTH_TOKEN', 'APP_TOKEN', 'FINNHUB_API_KEY'] : ['APP_TOKEN', 'FINNHUB_API_KEY'])
   const nowSec = Math.floor(Date.now() / 1000)
   const today = londonDate(nowSec)
   // audit M-2: a fixed-UTC cron publishes an hour early in GMT/winter. Hold the

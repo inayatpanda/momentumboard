@@ -141,17 +141,27 @@ export function configureStoreFromEnv(env?: RuntimeEnvBag | null): StoreBackendK
  * @throws on `STORE_BACKEND=d1`, and on any value that is neither backend —
  * a typo must not quietly leave the process writing to Blobs.
  */
-export function configureStoreForNodeProcess(): StoreBackendKind {
+export function configureStoreForNodeProcess(remoteDb?: D1Database | null): StoreBackendKind {
   const forced = readEnv('STORE_BACKEND')?.toLowerCase()
   if (!forced || forced === 'blobs') {
     useBlobStore()
     return 'blobs'
   }
   if (forced === 'd1') {
+    // Bindings exist only inside workerd, so a Node process must be HANDED a
+    // remote client (scripts/lib/httpD1.ts — D1's HTTP API wearing the same
+    // interface). The client is injected rather than imported here: this module
+    // ships in the Functions bundle, and the HTTP client's node:fs token
+    // loading has no business in workerd.
+    if (remoteDb) {
+      useD1Store(remoteDb)
+      return 'd1'
+    }
     throw new Error(
-      'STORE_BACKEND=d1 is not supported in a Node process: remote D1 access lands in M3. ' +
-        'Bindings exist only inside workerd, so scripts/bg/ needs D1\'s HTTP API or an authenticated store endpoint on the Worker. ' +
-        'Until then leave STORE_BACKEND unset on the GitHub Actions runners — they talk to Netlify Blobs via NETLIFY_SITE_ID/NETLIFY_AUTH_TOKEN.',
+      'STORE_BACKEND=d1 in a Node process needs a remote client: call through ' +
+        "scripts/lib/configureStore.ts (openHttpD1FromEnv), or pass a D1Database here. " +
+        'On GitHub Actions that means CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN secrets; ' +
+        'leave STORE_BACKEND unset to keep talking to Netlify Blobs.',
     )
   }
   throw new Error(`unknown STORE_BACKEND=${forced} (expected 'blobs' or 'd1')`)
