@@ -32,7 +32,16 @@ export type Band = '25-40' | '40-55' | '55-70' | '70+'
  * `referenceBase` uses, and the reason `migrateCalibration` deliberately does NOT
  * backfill a zero here (a stored `shadowN: 0` would be a measurement claim, and
  * the generation-3 seed's own aggregate says 2,249 of its 6,608 rows were
- * shadow). Sub-counts are only ever written where they were actually observed. */
+ * shadow). Sub-counts are only ever written where they were actually observed.
+ *
+ * PRESENT-ZERO MEANS "PARTITIONED, AND ALL OF IT SIZED" [fix wave]. Since
+ * generation 4 `updateCalibration` stamps both sub-counts on every accrual whose
+ * caller answered the sizing question, at zero when the row is sized — so a
+ * bucket that never shadowed can PROVE it is fully sized instead of being
+ * indistinguishable from a legacy one. Everything downstream reads the pair the
+ * same way it always did (`?? 0` in `sizedSlice`); the only reader that cares
+ * about the distinction is the setup blend, which asks whether the sub-counts are
+ * present at all before it will treat a family's evidence as sized. */
 export interface BucketStat { n: number; hits: number; shadowN?: number; shadowHits?: number }
 
 /** Which population a read asks about. 'pooled' is every graded row (what the
@@ -512,20 +521,25 @@ export function probabilityFor(
    * 'sized', because blending shadow-diluted family evidence into a sized grade
    * would re-import precisely the dilution the partition exists to remove.
    *
-   * AN UNPARTITIONED FAMILY BUCKET REFUSES [adjudicated, stage 3c]. Absent
-   * sub-counts are ambiguous by construction: a sized row writes no sub-count, so
-   * "never partitioned" and "partitioned, all sized" are the same bytes. It
-   * cannot be resolved at the store level either — a live blob holds the gen-3
-   * seed's unpartitioned setup buckets AND post-partition live accrual in ONE
-   * object, so "this store has written sub-counts somewhere" would license
-   * reading the seed's shadow-diluted 313-row `reversal:long:40-55` as fully
-   * sized. So: evidence that cannot PROVE it is sized adds no influence. The cost
-   * is a fully-sized family bucket that also refuses, and that is the right way
-   * round — refusing costs a blend that would mostly have agreed with the ladder;
-   * accepting would re-import the dilution into the one read the reader's money
-   * follows. The practical effect is that the blend stays dark until a
-   * partitioning walk rebuilds `setupBuckets`, which is exactly when it should
-   * turn on. */
+   * AN UNPARTITIONED FAMILY BUCKET REFUSES [adjudicated, stage 3c]. Evidence that
+   * cannot PROVE it is sized adds no influence: absent sub-counts mean the bucket
+   * was never partitioned, its rows might be anything, and reading them as sized
+   * would re-import into the one read the reader's money follows exactly the
+   * dilution the partition exists to remove. A store-level flag could not rescue
+   * it either — a live blob can hold an old seed's unpartitioned setup buckets AND
+   * post-partition accrual in ONE object, so "this store has written sub-counts
+   * somewhere" would license reading a shadow-diluted 313-row `reversal:long:40-55`
+   * as fully sized.
+   *
+   * WHAT THE REFUSAL COST, AND WHAT FIXED IT [fix wave]. Until generation 4 a sized
+   * row wrote no sub-count at all, so "never partitioned" and "partitioned, all
+   * sized" WERE the same bytes and a family that never shadowed could never earn a
+   * voice: generation 4's first cut had all sixteen families mute, including
+   * `continuation:long:40-55` at 1,668 fully-sized rows. `updateCalibration` now
+   * stamps the explicit zero (see `BucketStat`), which makes the two cases
+   * distinguishable at the bucket — where the ambiguity actually lived — without
+   * granting a legacy bucket anything. The test below the refusal is unchanged and
+   * still refuses absence; what changed is that honest evidence can now say so. */
   const blendSetup = (pLadder: number): number => {
     if (population !== 'sized' || !setup) return pLadder
     const raw = state.setupBuckets?.[`${setup}:${side}:${bandFor(absComposite)}`]
@@ -758,10 +772,12 @@ export function gradePrediction(
  * the same reason they always did: a door cap is momentum sizing, not an evidence
  * deficiency.)
  *
- * A SIZED row writes no sub-count at all, so a store that only ever books sized
- * rows stays byte-identical to what the pre-partition tree wrote. Only a shadow
- * row leaves a mark, which is what keeps "absent means never partitioned" true of
- * every bucket rather than only of legacy ones.
+ * A SIZED row STAMPS ITS ZERO [fix wave — the shape this rule had until generation
+ * 4 was "a sized row writes no sub-count at all"]. It now writes `shadowN: 0,
+ * shadowHits: 0`, so a bucket says which of "no shadows here" and "never asked"
+ * is true of it instead of leaving one reader to guess. Absence survives as the
+ * legacy signal because the only rows that produce it are the ones whose caller
+ * answered neither question (below) — and because nothing backfills it.
  *
  * LEGACY FALLBACK — an ABSENT stamp falls back to `riskPct > 0 ⇒ sized`, the rule
  * that shipped, so every row already sitting in the ledger books exactly as it
@@ -792,15 +808,41 @@ export function updateCalibration(
   // and not a truthiness test: 0 is the value that MEANS unsized under the
   // fallback, and it is the whole point of the field there.
   const unsized = pred.accrual != null ? pred.accrual === 'shadow' : pred.riskPct != null && pred.riskPct <= 0
+  /** DID THIS CALLER ANSWER THE SIZING QUESTION AT ALL? A stamp answers it; so
+   * does a riskPct under the legacy fallback. Silence on both does not, and
+   * silence is the one case that still writes no sub-count (see the header). */
+  const partitioned = pred.accrual != null || pred.riskPct != null
   /** One increment, with the sub-count carried alongside the totals. Spreading
    * `cur` first preserves any sub-count already on a bucket when a SIZED row
-   * lands in it — the two counters are independent and a bucket holds both. */
+   * lands in it — the two counters are independent and a bucket holds both.
+   *
+   * THE EXPLICIT ZERO [stage 3c task 4 fix wave, ratified]. A partition-aware
+   * SIZED row stamps `shadowN: 0, shadowHits: 0` rather than leaving them absent,
+   * so PRESENT-ZERO means "partitioned, and every row here was sized" and ABSENT
+   * keeps meaning "never partitioned". Without the stamp the two are the same
+   * bytes, and a family that never shadows can never prove it is sized: the blend
+   * refused `continuation:long:40-55` — 1,668 rows, all sized — as if it were a
+   * legacy bucket, permanently.
+   *
+   * WHY THE MIXED-BUCKET HAZARD IS RETIRED (the reason this is safe now and was
+   * not before). The danger was a bucket holding legacy rows AND stamped ones in
+   * one object — gen-3's 313 unpartitioned rows plus five new stamped ones — then
+   * claiming all 318 as provably sized. The generation swap is what closes it:
+   * `loadState` REPLACES the whole calibration blob when a deeper generation
+   * ships (never merges), so from generation 4 on every bucket in every store was
+   * accrued under the partition — walked into the seed, or booked live by
+   * engine.ts's grader, which always stamps. There is no object left in which
+   * legacy and stamped evidence can meet. A blob that somehow predates the swap
+   * still carries no sub-counts at all and still reads as legacy, byte for byte. */
   const book = (cur: BucketStat | undefined, hit: boolean): BucketStat => {
     const b = cur ?? { n: 0, hits: 0 }
     const next: BucketStat = { ...b, n: b.n + 1, hits: b.hits + (hit ? 1 : 0) }
     if (unsized) {
       next.shadowN = (b.shadowN ?? 0) + 1
       next.shadowHits = (b.shadowHits ?? 0) + (hit ? 1 : 0)
+    } else if (partitioned) {
+      next.shadowN = b.shadowN ?? 0
+      next.shadowHits = b.shadowHits ?? 0
     }
     return next
   }

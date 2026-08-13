@@ -1046,36 +1046,57 @@ describe('the provenance partition — sized rows grade against sized history', 
         expect(b.shadowHits ?? 0, k).toBeLessThanOrEqual(b.hits)
         expect(b.shadowHits ?? 0, k).toBeLessThanOrEqual(b.shadowN ?? 0)
       }
-      // the seed's own aggregate: 2,357 of 6,554 graded rows were pre-grade
+      // the seed's own aggregate: 1,982 of 8,554 graded rows were pre-grade
       // shadows (lane stand-down, earnings print, unroutable short), so a sized
-      // read is drawn from 4,197 — and reads a different base for it
+      // read is drawn from 6,572 — and reads a different base for it
       const pooled = baseHitRate(committed)
       const sized = baseHitRate(committed, 'sized')
-      expect(pooled.n).toBe(6554)
-      expect(sized.n).toBe(4197)
+      expect(pooled.n).toBe(8554)
+      expect(sized.n).toBe(6572)
       expect(sized.rate).not.toBe(pooled.rate)
       // …and the difference reaches the curve, not just the base
       const moved = PROBE_X.filter(x => probabilityFor(committed, 'long', 'green', x, 'unknown', 'sized').p !== probabilityFor(committed, 'long', 'green', x, 'unknown').p)
       expect(moved.length).toBeGreaterThan(0)
     })
 
-    // THE HARNESS'S SHORTS ARE ALL SHADOWS, and the seed says so out loud. The
-    // replay runs with an EMPTY levMap by design (replay-window.ts: shorts are
-    // unroutable in both runs), so every short row the walk published was
-    // pre-grade shadow — and a sized short read therefore finds no sized evidence
-    // anywhere and falls to the sized base. That is the honest answer to "what
-    // happened to shorts a reader could have placed?" — nothing was ever
-    // measured — and it is recorded here so it is a known property of generation
-    // 4 rather than a surprise the first routable short discovers.
-    it('generation 4 carries NO sized short evidence — the seed walk could route none', () => {
+    // THE WALK LEARNED TO SHORT [fix wave F-2]. This pin used to say the opposite —
+    // the harness ran an EMPTY levMap, so every short row was `unshortable`, one of
+    // the three pre-grade shadow causes, and generation 4's first cut carried no
+    // sized short evidence anywhere while production routes shorts daily through
+    // `3SMI.L`/`3LAL.L`-style inverse ETPs. A short read would then have fallen
+    // through every rung to the sized base at nEff 0. `LEVMAP_MIRROR`
+    // (replay-window.ts) is what fixed it: the walk now routes the names the
+    // owner's map carries, and those shorts accrue as evidence a reader could have
+    // acted on.
+    it('generation 4 carries SIZED short evidence — the walk could route shorts, as production does', () => {
       const committed = seedJson.calibration as unknown as CalibrationState
       const shorts = Object.entries(committed.buckets).filter(([k]) => k.includes('short'))
       expect(shorts.length).toBeGreaterThan(0)
-      for (const [k, b] of shorts) expect(b.shadowN, k).toBe(b.n)
-      const read = probabilityFor(committed, 'short', 'green', 47.5, 'unknown', 'sized')
-      expect(read.nEff).toBe(0)
-      expect(read.p).toBe(baseHitRate(committed, 'sized').rate)
-      expect(read.provisional).toBe(true)
+      // every short bucket holds sized rows now (it held none before)…
+      for (const [k, b] of shorts) {
+        expect(b.shadowN, k).not.toBeUndefined()
+        expect(b.n - b.shadowN!, k).toBeGreaterThan(0)
+      }
+      // …and the short side still carries a substantial shadow slice, because the
+      // mirror routes a few dozen names and not the universe: the unroutable-short
+      // cause stays MEASURED rather than legislated away by an over-generous map
+      const shortN = shorts.reduce((s, [, b]) => s + b.n, 0)
+      const shortShadow = shorts.reduce((s, [, b]) => s + b.shadowN!, 0)
+      expect(shortShadow).toBeGreaterThan(shortN * 0.2)
+      expect(shortShadow).toBeLessThan(shortN * 0.8)
+      // …and a sized short read is now a real curve read rather than the base-rate
+      // fallback the first cut of generation 4 had to give: evidence under it, in
+      // every regime, and no longer provisional
+      for (const regime of ['green', 'amber', 'red']) {
+        const read = probabilityFor(committed, 'short', regime, 32.5, 'unknown', 'sized')
+        expect(read.nEff, regime).toBeGreaterThan(15) // MIN_BUCKET_N — module-private, so the number is written out
+        expect(read.p, regime).not.toBe(baseHitRate(committed, 'sized').rate)
+        expect(read.provisional, regime).toBe(false)
+      }
+      // …while the THIN short bands stay honestly provisional — the mirror bought
+      // evidence, not a claim to have measured everywhere (green 55-70 holds five
+      // sized rows, so the read there is still flagged)
+      expect(probabilityFor(committed, 'short', 'green', 62.5, 'unknown', 'sized').provisional).toBe(true)
     })
 
     it('migrateCalibration NEVER backfills a sub-count — absence is "never partitioned", not "no shadows"', () => {
@@ -1159,13 +1180,34 @@ describe('the provenance partition — sized rows grade against sized history', 
     const hit = { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true }
     const miss = { excessPct: -2, rawPct: -2, spyPct: 0, stopped: true, hit: false }
 
+    // THE EXPLICIT ZERO [stage 3c task 4 fix wave, ratified]. A partition-aware
+    // accrual — one whose caller answered the sizing question, by stamp or by
+    // riskPct — writes BOTH sub-counts, at zero when the row is sized. Present-zero
+    // then means "partitioned, and nothing here was a shadow"; ABSENT still means
+    // "never partitioned". Without it an all-sized bucket is byte-identical to a
+    // legacy one and reads as legacy forever, which is what kept the blend dark on
+    // a 1,668-row family (see the blend suite below).
+    it('THE EXPLICIT ZERO: a partition-aware SIZED accrual stamps shadowN 0 / shadowHits 0', () => {
+      const cal = emptyCal()
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0.5, accrual: 'sized', setup: 'continuation' }, hit)
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 1, hits: 1, shadowN: 0, shadowHits: 0 })
+      expect(cal.setupBuckets!['continuation:long:25-40']).toEqual({ n: 1, hits: 1, shadowN: 0, shadowHits: 0 })
+      // …on the FIRST accrual, so a bucket never has to wait for a shadow to
+      // announce that it is partitioned
+      expect('shadowN' in cal.buckets['long:green:25-40']).toBe(true)
+      // …and the zero is a floor, not a reset: a later shadow increments it
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0, accrual: 'shadow', setup: 'continuation' }, miss)
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 2, hits: 1, shadowN: 1, shadowHits: 0 })
+      expect(baseHitRate(cal, 'sized')).toEqual({ rate: 0.5, n: 1 })
+    })
+
     it('the stamp outranks riskPct in BOTH directions — it is the shadow’s CAUSE, not the row’s size', () => {
       const cal = emptyCal()
       // A sized-stamped row at ZERO risk is the case the whole re-ratification is
       // about: a grade-null demotion carries no money and is still the band's own
-      // record of what happened to it. It books no sub-count at all.
+      // record of what happened to it. It books the explicit zero, never a shadow.
       updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0, accrual: 'sized' }, hit)
-      expect(cal.buckets['long:green:25-40']).toEqual({ n: 1, hits: 1 })
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 1, hits: 1, shadowN: 0, shadowHits: 0 })
       // …and the converse holds too, so the stamp is genuinely the discriminator
       // rather than a hint riskPct could override.
       updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 1, accrual: 'shadow' }, miss)
@@ -1177,10 +1219,11 @@ describe('the provenance partition — sized rows grade against sized history', 
       const cal = emptyCal()
       updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0.25 }, hit)
       // a door cap is momentum sizing, not an evidence deficiency: the reader
-      // could put money on it, so it is sized-but-small and NOT a shadow. No
-      // sub-count is written at all — a sized row leaves the bucket byte-identical
-      // to what the pre-partition tree wrote.
-      expect(cal.buckets['long:green:25-40']).toEqual({ n: 1, hits: 1 })
+      // could put money on it, so it is sized-but-small and NOT a shadow. The
+      // caller ANSWERED the sizing question, so the row is partition-aware and
+      // carries the explicit zero — the fallback decides which value is written,
+      // never whether the partition was applied.
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 1, hits: 1, shadowN: 0, shadowHits: 0 })
       expect(baseHitRate(cal, 'sized').n).toBe(1)
     })
 
@@ -1212,6 +1255,7 @@ describe('the provenance partition — sized rows grade against sized history', 
     it('setupBuckets get the IDENTICAL treatment — the blend reads them sized', () => {
       const cal = emptyCal()
       updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, setup: 'velocity', riskPct: 0.5 }, hit)
+      expect(cal.setupBuckets!['velocity:long:25-40']).toEqual({ n: 1, hits: 1, shadowN: 0, shadowHits: 0 })
       updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, setup: 'velocity', riskPct: 0 }, hit)
       expect(cal.setupBuckets!['velocity:long:25-40']).toEqual({ n: 2, hits: 2, shadowN: 1, shadowHits: 1 })
       expect(setupStat(cal, 'velocity', 'long', '25-40')).toEqual({ n: 2, hits: 2 })
@@ -1283,7 +1327,12 @@ describe('the provenance partition — sized rows grade against sized history', 
 
       // STAMPED SIZED: the 200 demoted rows are the band's own recovery record.
       const recovered = seal('sized')
-      expect(recovered.buckets['long:green:55-70']).toEqual({ n: 300, hits: 150 }) // no sub-count at all
+      // no SHADOW sub-count — and, since the fix wave, an explicit zero saying so.
+      // (This fixture is the mixed shape by construction: 100 legacy rows under 200
+      // stamped ones. Nothing in production can build one — the generation swap
+      // replaces the blob whole — and even here the sized READ is unaffected,
+      // because absent and zero subtract the same nothing.)
+      expect(recovered.buckets['long:green:55-70']).toEqual({ n: 300, hits: 150, shadowN: 0, shadowHits: 0 })
       const after = probabilityFor(recovered, 'long', 'green', 62.5, 'unknown', 'sized')
       expect(after.p).toBeCloseTo(152 / 304, 12) // 0.5 — back over the bar
       expect(after.nEff).toBe(300)
@@ -1413,6 +1462,25 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one', () 
     expect(read(cal, 'continuation', 32.5).p).toBeCloseTo(0.7 * read(cal, undefined, 32.5).p + 0.3 * P_SETUP, 12)
   })
 
+  // THE OTHER HALF OF THE ADJUDICATION [fix wave, ratified]. Absent sub-counts
+  // refuse; an EXPLICIT ZERO is a measurement — "this bucket was accrued under the
+  // partition and nothing in it was a shadow" — and it blends like any other proven
+  // family. `updateCalibration` now writes that zero on every partition-aware
+  // accrual, which is what turns the all-sized families on.
+  it('AN ALL-SIZED FAMILY BLENDS: an explicit shadowN 0 proves the partition a fat legacy bucket cannot', () => {
+    // the same SIZED SLICE as EARNED ({n: 40, hits: 25}), reached without a single
+    // shadow — so it must price identically: the blend reads the slice, and the
+    // zeros only say the slice is the whole bucket
+    const allSized = withSetups({ 'continuation:long:55-70': [40, 25, 0, 0] })
+    expect(read(allSized, 'continuation').p).toBeCloseTo(0.7 * read(allSized).p + 0.3 * P_SETUP, 12)
+    // …and the same bucket with the zeros STRIPPED is the legacy shape again, mute
+    const stripped = withSetups({ 'continuation:long:55-70': [40, 25] })
+    expect(read(stripped, 'continuation')).toEqual(read(stripped))
+    // …and present-zero does not buy the n ≥ 30 floor: 29 sized is still 29
+    const thin = withSetups({ 'continuation:long:55-70': [29, 20, 0, 0] })
+    expect(read(thin, 'continuation')).toEqual(read(thin))
+  })
+
   it('THE LEGACY ADJUDICATION: an unpartitioned setup bucket REFUSES to blend, however fat it is', () => {
     // Absent sub-counts are ambiguous by construction — a sized row writes no
     // sub-count, so "never partitioned" and "partitioned, all sized" are the same
@@ -1437,45 +1505,54 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one', () 
   })
 
   // ---------------------------------------------------------------------------
-  // …AND ON GENERATION 4 THE BLEND IS STILL DARK, FOR A REASON WORTH RECORDING
-  // [found by stage 3c task 4's install; a decision for the batch, not a patch].
+  // …AND ON GENERATION 4 THE BLEND IS AWAKE [fix wave F-1 — this pin recorded the
+  // opposite until the explicit zero shipped].
   //
-  // `blendSetup` refuses a family bucket that carries no sub-counts, because a
-  // fully-sized bucket and a never-partitioned one are the same bytes. `book`
-  // (updateCalibration) writes a sub-count only when an UNSIZED row lands. Put the
-  // two together and the families that can never blend are exactly the families
-  // that never shadowed — `continuation:long:40-55` at 1,668 sized rows among
-  // them — while the ones that CAN prove partition are the shadow-diluted families
-  // whose sized slice is then too thin to clear n ≥ 30. On this artefact that is
-  // every family: the four long families are all-sized (no sub-count, refused) and
-  // every short/velocity family is all-shadow (sized slice 0, refused).
-  //
-  // Neither half is wrong on its own and the naive repair is worse than the state
-  // it fixes: making `book` write `shadowN: 0` on a sized row would let a MIXED
-  // bucket — gen-3's 313 unpartitioned legacy rows plus five new stamped ones —
-  // claim all 318 as provably sized, which is precisely the hazard the refusal was
-  // adjudicated to prevent. The honest repairs are blob-level (a `partitionedSince`
-  // marker) or emitter-level (an artefact whose every row was stamped may say so),
-  // and both are design decisions with an author.
+  // The dark state was structural, not a shortage of evidence: `blendSetup` refuses
+  // a family with no sub-counts, and `book` used to write one only when an UNSIZED
+  // row landed — so a family that never shadowed could never prove it was sized.
+  // The first cut of generation 4 had every family at one extreme (all-sized ⇒ no
+  // sub-count ⇒ refused, or all-shadow ⇒ nothing to blend), `continuation:long:40-55`
+  // at 1,668 mute rows among them. The explicit zero is what separates
+  // "partitioned, all sized" from "never partitioned", and the mirror gave the
+  // short families a sized slice to blend from.
   // ---------------------------------------------------------------------------
-  it('the COMMITTED generation-4 families cannot blend — all-sized proves nothing, all-shadow has nothing', () => {
+  it('the COMMITTED generation-4 families blend where they earned it, and stay mute where they did not', () => {
     const committed = seedJson.calibration as unknown as CalibrationState
     const families = Object.entries(committed.setupBuckets ?? {})
     expect(families.length).toBeGreaterThan(0)
     const mid = { '25-40': 32.5, '40-55': 47.5, '55-70': 62.5, '70+': 77.5 }
+    const fired: string[] = []
     for (const [key, b] of families) {
       const [setup, side, band] = key.split(':') as [string, 'long' | 'short', Band]
-      // every family is at one extreme or the other, and that IS the finding
-      if (b.shadowN == null) expect(b.n, key).toBeGreaterThan(0) // all-sized: no sub-count to prove it
-      else expect(b.shadowN, key).toBe(b.n) // all-shadow: nothing sized to blend
-      expect(probabilityFor(committed, side, 'green', mid[band], 'unknown', 'sized', setup), key).toEqual(
-        probabilityFor(committed, side, 'green', mid[band], 'unknown', 'sized'),
-      )
+      // EVERY family is partitioned now — walked from a blank store under the
+      // partition, so each one says which of its rows were shadows, zero included
+      expect(b.shadowN, key).not.toBeUndefined()
+      const sized = b.n - b.shadowN!
+      const blended = probabilityFor(committed, side, 'green', mid[band], 'unknown', 'sized', setup)
+      const ladder = probabilityFor(committed, side, 'green', mid[band], 'unknown', 'sized')
+      if (sized >= 30) fired.push(key)
+      else expect(blended, key).toEqual(ladder) // under the floor: no voice, exactly as before
     }
-    // the biggest family in the file, named so the size of what is switched off is
-    // on the record rather than in a comment
-    expect(committed.setupBuckets!['continuation:long:40-55'].n).toBe(1668)
-    expect(committed.setupBuckets!['continuation:long:40-55'].shadowN).toBeUndefined()
+    // ten of the sixteen families cleared the thirty-sized-outcome floor. Named as a
+    // count rather than a list so the pin survives a re-walk, with the two extremes
+    // spelled out below.
+    expect(fired.length).toBe(10)
+    // the biggest family in the file — 1,661 rows, not one of them a shadow — is
+    // exactly the case that was mute before the explicit zero, and it now has a say
+    const big = committed.setupBuckets!['continuation:long:40-55']
+    expect(big.n).toBe(1661)
+    expect(big.shadowN).toBe(0)
+    expect(probabilityFor(committed, 'long', 'green', 47.5, 'unknown', 'sized', 'continuation').p).not.toBe(
+      probabilityFor(committed, 'long', 'green', 47.5, 'unknown', 'sized').p,
+    )
+    // …and a family that is ALL shadow still has nothing to say, which is the other
+    // half of the rule: velocity rows are lane stand-downs, never on offer
+    const velo = committed.setupBuckets!['velocity:long:25-40']
+    expect(velo.shadowN).toBe(velo.n)
+    expect(probabilityFor(committed, 'long', 'green', 32.5, 'unknown', 'sized', 'velocity')).toEqual(
+      probabilityFor(committed, 'long', 'green', 32.5, 'unknown', 'sized'),
+    )
   })
 
   it('no setup argument → byte-identical to the pre-blend read, on every existing call site', () => {

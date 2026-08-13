@@ -2549,7 +2549,9 @@ describe('buildBoard', () => {
     const cal = (await store.read<CalibrationState>('engine-calibration'))!
     const velo = (await store.read<Prediction[]>(`predictions:${date}`))!.find(p => p.sym === 'VELO')!
     expect(velo.accrual).toBe(VELOCITY_SHADOW_FIRST ? 'shadow' : 'sized')
-    const shadowSub = VELOCITY_SHADOW_FIRST ? { shadowN: 1, shadowHits: 1 } : {}
+    // the OTHER branch is the explicit zero, not an absence [fix wave]: a sized
+    // velocity row is still a partition-aware accrual and still stamps.
+    const shadowSub = VELOCITY_SHADOW_FIRST ? { shadowN: 1, shadowHits: 1 } : { shadowN: 0, shadowHits: 0 }
     expect(cal.buckets['large:long:amber:25-40']).toEqual({ n: 1, hits: 1, ...shadowSub })
     expect(cal.buckets['long:amber:25-40']).toEqual({ n: 20, hits: 14 }) // the seeded bucket is untouched
     expect(cal.setupBuckets!['velocity:long:25-40']).toEqual({ n: 1, hits: 1, ...shadowSub })

@@ -26,6 +26,7 @@ import { VIX_SYMBOL, WORLD_SYMBOLS } from '../shared/engine/worldTape'
 import { THEMES } from '../shared/engine/themes'
 import { bannedTokensIn, composeThesis } from '../shared/engine/voice'
 import { classifyLoser } from '../shared/engine/postMortem'
+import { isRouteEtp } from '../shared/engine/riskLadder'
 import type { DayTrace, Keyed, MissGateStatLike, MissLedgerLike, PostMortemLike, PrecedenceSample, ProbeContext, RegretContext, Row, RunFile, SeedArtefact } from './replay-window'
 import {
   WALK_ABSENT_FACTORS,
@@ -74,6 +75,7 @@ import {
   withinContextResolution,
   PROD_OTHER_DEPTH,
   REPLAY_UNIVERSE,
+  LEVMAP_MIRROR,
   SLEEVE_MIRROR,
   VELOCITY_RUNNERS,
   bestUpDayMult,
@@ -111,6 +113,48 @@ describe('SLEEVE_MIRROR', () => {
     expect(REPLAY_UNIVERSE.length).toBe(new Set(REPLAY_UNIVERSE).size)
     for (const s of MIRROR_EXTRAS) expect(REPLAY_UNIVERSE).toContain(s)
     expect(REPLAY_UNIVERSE).toContain('GLW')
+  })
+})
+
+describe('LEVMAP_MIRROR — the walk can route a short', () => {
+  // A REPRESENTATIVE mirror, not a copy of a source file: production's real map
+  // lives in the runtime config blob and is owner-maintained, so there is nothing
+  // in the repo to drift-guard it against. What CAN be guarded is every property
+  // the walk's measurement actually depends on, and those are guarded here.
+  it('routes only names the walk can see, inside the cap a stored config can hold', () => {
+    const keys = Object.keys(LEVMAP_MIRROR)
+    expect(keys.length).toBeGreaterThan(20) // a mirror of one name measures nothing
+    // validateConfig keeps the FIRST 40 entries of a stored levMap (shared/config.ts):
+    // a mirror production could not hold is not a mirror of production.
+    expect(keys.length).toBeLessThanOrEqual(40)
+    for (const sym of keys) {
+      expect(REPLAY_UNIVERSE, sym).toContain(sym) // a route for a name the walk never prices is dead weight
+      expect(sym).toBe(sym.toUpperCase())
+      const m = LEVMAP_MIRROR[sym]
+      expect(Object.values(m).length, sym).toBeGreaterThan(0)
+    }
+  })
+
+  it('carries real short routes — and does NOT pretend every name has one', () => {
+    const shortable = Object.entries(LEVMAP_MIRROR).filter(([, m]) => m.short2x || m.short3x)
+    // the whole point of F-2: the walk must be able to SIZE a short somewhere
+    expect(shortable.length).toBeGreaterThan(15)
+    // …and the pre-grade shadow path must stay exercised, or the walk stops
+    // measuring the dilution the partition exists to remove: the overwhelming
+    // majority of the universe still has no route at all
+    const routableShorts = new Set(shortable.map(([s]) => s))
+    expect(REPLAY_UNIVERSE.filter(s => !routableShorts.has(s)).length).toBeGreaterThan(REPLAY_UNIVERSE.length / 2)
+  })
+
+  it('no route ticker collides with a tradeable name — isRouteEtp would eat the candidate', () => {
+    const tickers = Object.values(LEVMAP_MIRROR).flatMap(m => [m.long2x, m.long3x, m.short2x, m.short3x].filter(Boolean) as string[])
+    expect(tickers.length).toBe(new Set(tickers).size) // one instrument, one underlying
+    for (const t of tickers) {
+      expect(REPLAY_UNIVERSE, t).not.toContain(t)
+      expect(isRouteEtp(t, LEVMAP_MIRROR), t).toBe(true)
+    }
+    // and the underlyings themselves are never mistaken for routes
+    for (const sym of Object.keys(LEVMAP_MIRROR)) expect(isRouteEtp(sym, LEVMAP_MIRROR), sym).toBe(false)
   })
 })
 
@@ -623,6 +667,37 @@ describe('monotonicityViolations — the D2 guarantee, and the probe that could 
     const blended = monotonicityViolations(contextsIn(s), probeGrid(), shippedRead(s))
     expect(blended.length).toBeGreaterThan(0)
     expect(blended.every(v => v.context.includes('continuation'))).toBe(true)
+  })
+
+  // …AND ON THE COMMITTED SEED IT IS NO LONGER HYPOTHETICAL [fix wave F-1].
+  //
+  // Pinned here as a KNOWN, MEASURED property rather than left for the next probe
+  // run to discover. Waking the blend put the engine's two guarantees against each
+  // other on real evidence: the ladder is isotonic by construction, but a family's
+  // read is a STEP — `laplace` of the one bucket for the call's band — so wherever
+  // a family prices its next band worse than its current one, the shipped curve
+  // falls at the boundary while the ladder under it keeps rising.
+  //
+  // It is a DESIGN DECISION, deliberately not taken inside an install: the honest
+  // repairs (fit the family's four bands isotonically and read the blend off a
+  // curve, or refuse a blend that would break the step) both change what every
+  // blended row is priced at, which is a model question with an author. The gate
+  // result and the reader-visible form of it are recorded in the task report.
+  it('THE COMMITTED SEED’S BLENDED READS BREAK D2 AT THE BAND BOUNDARIES — pinned, not accepted', () => {
+    const s = seedJson.calibration as unknown as CalibrationState
+    const ctxs = contextsIn(s)
+    // the ladder itself is still clean in BOTH populations — this is the blend's
+    // step and nothing else, which is what makes the finding actionable
+    expect(monotonicityViolations(ctxs.filter(c => c.setup == null), probeGrid(), shippedRead(s))).toEqual([])
+    const v = monotonicityViolations(ctxs, probeGrid(), shippedRead(s))
+    expect(v.length).toBe(11)
+    expect(v.every(x => x.context.includes('sized/'))).toBe(true)
+    // every one of them sits on a BAND EDGE (40 / 55 / 70 — `bandFor`), which is
+    // the mechanism stated as an assertion: the family bucket changes under the
+    // read and the new bucket prices worse
+    expect([...new Set(v.map(x => x.x))].sort((a, b) => a - b)).toEqual([40, 56, 70])
+    // …and the damage is bounded — the worst step is under 3pp of probability
+    expect(Math.max(...v.map(x => x.prevP - x.p))).toBeLessThan(0.03)
   })
 })
 

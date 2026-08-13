@@ -124,7 +124,7 @@ import {
 import { seedFromHistory } from '../shared/engine/backtest'
 import { DEFAULT_WEIGHTS } from '../shared/engine/composite'
 import { exchangeFor } from '../shared/symbols'
-import { leverageAllowed } from '../shared/engine/riskLadder'
+import { leverageAllowed, type LevMap } from '../shared/engine/riskLadder'
 import { buildBoard, gradeOutstanding } from '../netlify/functions/lib/engine'
 
 // ---------------------------------------------------------------- universe --
@@ -160,6 +160,88 @@ export const MIRROR_EXTRAS: string[] = [
 ]
 
 export const REPLAY_UNIVERSE: string[] = [...new Set([...SLEEVE_MIRROR, ...MIRROR_EXTRAS])]
+
+/** THE ROUTABLE-SHORTS MIRROR — production's `config.levMap`, as this harness has
+ * to model it [stage 3c task 4 fix wave].
+ *
+ * WHY IT EXISTS. The walk used to run `levMap: {}`, which was the right call while
+ * the question was "did stage 1 change the board?" (unroutable on both sides is a
+ * fair comparison). It is the wrong call for a SEED: an ISA cannot short stock, so
+ * a short with no inverse-ETP route is `unshortable` — one of the three pre-grade
+ * shadow causes — and an empty map therefore made EVERY short a shadow. Generation
+ * 4 shipped with zero sized short evidence anywhere in the file while production
+ * routes shorts daily, so the first routable short would have been graded against
+ * a population that had never contained one.
+ *
+ * IT IS REPRESENTATIVE, NOT AUTHORITATIVE, and cannot be otherwise: the real map
+ * lives in the runtime `config` blob, owner-maintained through the API (spec
+ * amendment 2026-07-02 (7)), and is not committed anywhere in this repo — so
+ * unlike `SLEEVE_MIRROR` and `GATE_CODE_MIRROR` there is no source file to
+ * drift-guard it against. What is modelled is the SHAPE the owner's map has: a few
+ * dozen of the most liquid names, the US megacaps carrying both directions, some
+ * UK names long-only, and the long tail of the universe carrying nothing.
+ *
+ * WHAT THE MEASUREMENT ACTUALLY DEPENDS ON is key membership, not the strings:
+ * `unshortable` asks only whether a short route EXISTS, and the ticker itself is
+ * carried as a label (`Prediction.instrument`) that nothing in this harness ever
+ * prices or fetches a candle for. The strings follow the Leverage Shares LSE
+ * convention (`3L`/`3S` + a name code, `2L`/`2S` for the doubles); `3LTS.L` is
+ * real (it is in this repo's own Yahoo fixtures), and `3LAL.L`/`3SMI.L` came from
+ * the owner's T212 catalogue — the rest are convention-shaped and NOT
+ * name-verified. Anything read off this map beyond "could the reader place this
+ * side of this name?" is reading more than it says.
+ *
+ * DRIFT NOTE: if the owner's map gains or loses names, this one does not notice.
+ * A seed walked on a stale mirror over-states routability for names dropped from
+ * the real map and under-states it for names added — both of which move sized
+ * short evidence and nothing else. Re-check it when a generation is emitted;
+ * `replay-window.test.ts` guards the properties, never the contents. */
+export const LEVMAP_MIRROR: LevMap = {
+  // US megacaps and high-beta favourites — both directions, as the liquid
+  // single-stock ETP pairs do
+  AAPL: { long2x: '2LAP.L', long3x: '3LAP.L', short2x: '2SAP.L', short3x: '3SAP.L' },
+  MSFT: { long2x: '2LMS.L', long3x: '3LMS.L', short2x: '2SMS.L', short3x: '3SMS.L' },
+  NVDA: { long2x: '2LNV.L', long3x: '3LNV.L', short2x: '2SNV.L', short3x: '3SNV.L' },
+  GOOGL: { long2x: '2LAL.L', long3x: '3LAL.L', short2x: '2SAL.L', short3x: '3SAL.L' },
+  AMZN: { long2x: '2LAZ.L', long3x: '3LAZ.L', short2x: '2SAZ.L', short3x: '3SAZ.L' },
+  META: { long2x: '2LMT.L', long3x: '3LMT.L', short2x: '2SMT.L', short3x: '3SMT.L' },
+  TSLA: { long2x: '2LTS.L', long3x: '3LTS.L', short2x: '2STS.L', short3x: '3STS.L' },
+  AVGO: { long3x: '3LAV.L', short3x: '3SAV.L' },
+  AMD: { long2x: '2LAD.L', long3x: '3LAD.L', short2x: '2SAD.L', short3x: '3SAD.L' },
+  INTC: { long3x: '3LIN.L', short3x: '3SIN.L' },
+  MU: { long3x: '3LMI.L', short3x: '3SMI.L' },
+  NFLX: { long3x: '3LNF.L', short3x: '3SNF.L' },
+  QCOM: { long3x: '3LQC.L', short3x: '3SQC.L' },
+  CRM: { long3x: '3LCR.L', short3x: '3SCR.L' },
+  ORCL: { long3x: '3LOR.L', short3x: '3SOR.L' },
+  ADBE: { long3x: '3LAB.L', short3x: '3SAB.L' },
+  PLTR: { long2x: '2LPL.L', short2x: '2SPL.L' },
+  COIN: { long3x: '3LCO.L', short3x: '3SCO.L' },
+  MSTR: { long2x: '2LMR.L', short2x: '2SMR.L' },
+  SMCI: { long2x: '2LSM.L', short2x: '2SSM.L' },
+  ARM: { long2x: '2LAR.L', short2x: '2SAR.L' },
+  UBER: { long3x: '3LUB.L', short3x: '3SUB.L' },
+  BA: { long3x: '3LBO.L', short3x: '3SBO.L' },
+  JPM: { long3x: '3LJP.L', short3x: '3SJP.L' },
+  GS: { long3x: '3LGS.L', short3x: '3SGS.L' },
+  XOM: { long3x: '3LXM.L', short3x: '3SXM.L' },
+  CVX: { long3x: '3LCX.L', short3x: '3SCX.L' },
+  LLY: { long3x: '3LLY.L', short3x: '3SLY.L' },
+  PFE: { long3x: '3LPF.L', short3x: '3SPF.L' },
+  DIS: { long3x: '3LDS.L', short3x: '3SDS.L' },
+  WMT: { long3x: '3LWM.L', short3x: '3SWM.L' },
+  IBM: { long3x: '3LIB.L', short3x: '3SIB.L' },
+  PYPL: { long3x: '3LPY.L', short3x: '3SPY.L' },
+  NKE: { long3x: '3LNK.L', short3x: '3SNK.L' },
+  // …and the UK sleeve LONG-ONLY. The single-stock inverse line-up on LSE names is
+  // thin, and a mirror that handed every name a short would delete the
+  // `unshortable` path from the walk entirely — the pre-grade shadow cause the
+  // partition is built to measure.
+  'RR.L': { long3x: '3LRR.L' },
+  'BP.L': { long3x: '3LBP.L' },
+  'HSBA.L': { long3x: '3LHS.L' },
+  'BARC.L': { long3x: '3LBC.L' },
+}
 
 /** Is this a crypto pair? Crypto is EXCLUDED from the deep-seed universe because
  * stage 1c is unbuilt: there is no crypto cohort and no crypto base rate, so a
@@ -785,8 +867,10 @@ export interface Row {
   modelVersion: number | null
   riskRung: number
   provisional: boolean
-  /** The routed ETP, if any. Always null in this harness (levMap is empty on
-   * purpose) — carried so the census can say so from the data, not from memory. */
+  /** The routed ETP, if any — `mapInstrument` against `LEVMAP_MIRROR`, so a
+   * full-tier A/B row on a mirrored name carries one. (It was null for the whole
+   * window while the mirror was `{}`; the census reads this field rather than
+   * assuming either answer, which is what let the change be noticed at all.) */
   instrument: string | null
   /** THE VOICE (stage 2 T5). Absent on a near miss BY DESIGN — that row cleared no
    * gate, so it has no belief to state. */
@@ -1935,7 +2019,12 @@ export async function main() {
     rules: [],
     ytChannels: [],
     capital: 5000,
-    levMap: {}, // empty ON PURPOSE — see the results doc: shorts are unroutable in BOTH runs
+    // The routable-shorts mirror [fix wave]. It was `{}` until generation 4 was
+    // measured, which made every short a pre-grade shadow and left the seed with
+    // no sized short evidence at all. Both sides of any A/B comparison run this
+    // same file, so a comparison stays a comparison — what changes is that the
+    // walk can now SIZE a short, exactly as production can.
+    levMap: LEVMAP_MIRROR,
     coreSleeve: [],
     riskAppetite: appetite,
   })
@@ -3046,19 +3135,20 @@ export interface BornBelowCensus {
   /** Rows that lost ETP eligibility: they would have been FULL-tier A/B rows, and
    * `leverageAllowed` says an A or B at their rung may route one. */
   lostLeverageEligibility: string[]
-  /** Rows carrying a ROUTED instrument anywhere in the window. Zero by
-   * construction — `levMap` is `{}` on purpose (shorts are unroutable in both
-   * runs) — and MEASURED rather than assumed, so the census can say out loud that
-   * the eligibility number above is a counterfactual and not a loss anyone took. */
+  /** Rows carrying a ROUTED instrument anywhere in the window. MEASURED rather
+   * than assumed, which is the point: it was zero for as long as the harness ran
+   * an empty `levMap`, and with `LEVMAP_MIRROR` it is whatever the window actually
+   * routed — so the census can say from the data whether the eligibility number
+   * above is a counterfactual or a loss someone took. */
   routedRowsInWindow: number
 }
 
 /** What the born-below cap cost, counted two ways that must not be conflated: the
- * grades it demoted, and the LEVERAGE those demotions withheld. In this harness
- * the second number is a counterfactual and says so — `levMap` is `{}`, so no row
- * is routed to an ETP in either run and none can lose one. What the census CAN
- * measure honestly is eligibility: a row that would have been a full-tier A/B at
- * its rung is a row an equipped levMap would have levered. */
+ * grades it demoted, and the LEVERAGE those demotions withheld. The second is a
+ * counterfactual for every row on a name the mirror does not carry — no route, no
+ * instrument to lose. What the census CAN measure honestly is eligibility: a row
+ * that would have been a full-tier A/B at its rung is a row an equipped levMap
+ * would have levered; `routedRowsInWindow` then says how many were. */
 export function bornBelowCensus(rows: Keyed[]): BornBelowCensus {
   const capped = rows.filter(r => r.belowEvidence)
   const demoted = capped.filter(r => r.gradeUncapped === 'A' || r.gradeUncapped === 'B')
@@ -3267,7 +3357,7 @@ async function aggregateMain() {
   console.log(`  …of which the cap demoted (uncapped grade was A/B): ${census.demoted}`)
   console.log(`  …demoted rows still carrying size (a full trade became a half): ${census.demotedToHalfSize.length}`)
   console.log(`  …rows that lost ETP ELIGIBILITY (would have been full-tier A/B at their rung): ${census.lostLeverageEligibility.length}`)
-  console.log(`  …rows carrying an ACTUALLY ROUTED instrument anywhere in the window: ${census.routedRowsInWindow} (levMap is empty in this harness by design, so the line above is a counterfactual)`)
+  console.log(`  …rows carrying an ACTUALLY ROUTED instrument anywhere in the window: ${census.routedRowsInWindow} (only LEVMAP_MIRROR names can route; for every other name the line above is a counterfactual)`)
 
   console.log('\n================ 9. THE VOICE ================')
   let voiceOut: { checked: number; defects: VoiceDefect[] } | null = null
