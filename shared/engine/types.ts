@@ -68,6 +68,80 @@ export interface EngineCall {
   falsifier?: string
 }
 
+/** THE NAME OF EVERY NO. The funnel's whole problem was that a refusal had no
+ * identity: `composeCall` alone said "no" from eight different places and every
+ * one of them was spelled `null`, so by the time the caller saw it the reason had
+ * already been thrown away. These are the gates, one code per place a candidate
+ * can die, ordered the way a name travels through the run:
+ *
+ *   not-candidate ..... never entered the day's `sources` map at all (engine.ts) —
+ *                       counted, never listed: the universe is unbounded
+ *   trimmed ........... entered, then cut by the roster trim or the 180-name budget
+ *   no-data ........... no candles, or no core factor scored (composeCall, `!coreDen`)
+ *   dead-zone-core .... the CORE composite alone sat under the dead zone
+ *   dead-zone-context . the core cleared it and the capped context layer pushed the
+ *                       call back under — DISTINCT from dead-zone-core on purpose:
+ *                       this is the only evidence of what the context cap costs
+ *   capacity-data ..... swing capacity / ATR / last close missing — no levels to publish
+ *   expected-move ..... the move this call expects fell under the floor
+ *   entry-wait ........ the entry read said wait (a knife, either side)
+ *   entry-chase ....... a long into a chase
+ *   entry-reversal .... a short into a pullback or an early reversal
+ *   evidence-fail ..... the minimum core-data contract failed
+ *   grade-watchonly ... published, but sized to zero by the grade (publishCall)
+ *   route-blocked ..... no instrument an ISA can actually place
+ *   diversity ......... the sector/correlation gate refused the slot
+ *   slot-cut .......... good enough, but the board had no room left
+ *   called-full | called-half | called-shadow | called-watch — it PUBLISHED, at that size
+ *
+ * composeCall owns eight of these (no-data … entry-reversal); the rest are the
+ * engine's own, wired in Stage 3a Task 2. Additions are allowed when a code path
+ * demands one; removals are not — a persisted trace reads these back. */
+export type GateCode =
+  | 'not-candidate'
+  | 'trimmed'
+  | 'no-data'
+  | 'dead-zone-core'
+  | 'dead-zone-context'
+  | 'capacity-data'
+  | 'expected-move'
+  | 'entry-wait'
+  | 'entry-chase'
+  | 'entry-reversal'
+  | 'evidence-fail'
+  | 'grade-watchonly'
+  | 'route-blocked'
+  | 'diversity'
+  | 'slot-cut'
+  | 'called-full'
+  | 'called-half'
+  | 'called-shadow'
+  | 'called-watch'
+
+/** A refusal that says which gate refused. `side` is the direction the core was
+ * arguing for when it died, and is null only when there was no core read to have
+ * a direction (`no-data`). `detail` is free prose for the reader of a trace — the
+ * numbers that were in scope at the rejection site, never a new computation. */
+export interface CallRejection {
+  rejected: true
+  gate: GateCode
+  side: 'long' | 'short' | null
+  detail?: string
+}
+
+/** THE SHAPE CHOSEN, and why. Three shapes were on the table: a wrapper result
+ * (`{ok: true, call} | {ok: false, gate}`), a second return value, and this — a
+ * plain union of the draft with a rejection carrying a `rejected: true` tag.
+ * The union wins on one argument: the SUCCESS arm is byte-identical to what
+ * composeCall returned before, so no published row, blob, snapshot or golden
+ * fixture can shift shape as a side effect of naming the failures. A wrapper
+ * would have made every happy-path caller unwrap, and unwrapping is exactly the
+ * kind of edit that quietly drops a field. `EngineCall` has no `rejected` key, so
+ * `isRejection` is a total, cheap discriminator in both directions. */
+export type CallOrRejection = EngineCall | CallRejection
+
+export const isRejection = (r: CallOrRejection): r is CallRejection => (r as CallRejection).rejected === true
+
 export interface GradedCall extends EngineCall {
   probability: number // 0..1 calibrated
   provisional: boolean

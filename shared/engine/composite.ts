@@ -2,7 +2,7 @@ import type { RegimeColor } from '../types'
 import type { Stage } from '../technicals'
 import { MODERATE_GATES, type CatalystTag, type Gates } from './catalyst'
 import { SMALL_CAP_MAX_USD_M } from './capClass'
-import { clamp, round1, round2, type CallEvidence, type EngineCall, type FactorName, type FactorScore, type SetupFamily } from './types'
+import { clamp, round1, round2, type CallEvidence, type CallOrRejection, type CallRejection, type GateCode, type FactorName, type FactorScore, type SetupFamily } from './types'
 import { composeThesis, factorPhrase } from './voice'
 
 /** THE OWNER'S ORDER: the charts speak first. Technical and momentum are the
@@ -191,29 +191,54 @@ export function levelsFor(
   }
 }
 
+/** A refusal with a name on it. Every `return null` in composeCall became one of
+ * these; the codes and the reasoning behind the union shape live in types.ts
+ * (GateCode, CallOrRejection). `detail` is only ever the numbers already in scope
+ * at the rejection site — a trace should be able to quote the gate arithmetic
+ * without the engine computing anything extra to say it. */
+const reject = (gate: GateCode, side: 'long' | 'short' | null, detail?: string): CallRejection =>
+  detail == null ? { rejected: true, gate, side } : { rejected: true, gate, side, detail }
+
 /** Weighted composite over the CORE factors that have data, plus a capped
- * context nudge → a concrete call, or null. Most tickers most days are a "no":
- * dead zone, the expected-move floor, and side-aware entry gates all have to
- * clear before a number reaches the paper. Direction and eligibility come from
- * the core alone; context can only tilt conviction by ≤ CONTEXT_MAX_PTS. */
-export function composeCall(input: ComposeInput): EngineCall | null {
+ * context nudge → a concrete call, or a NAMED refusal. Most tickers most days are
+ * a "no": dead zone, the expected-move floor, and side-aware entry gates all have
+ * to clear before a number reaches the paper. Direction and eligibility come from
+ * the core alone; context can only tilt conviction by ≤ CONTEXT_MAX_PTS.
+ *
+ * The eight noes below used to be eight identical `null`s, which is why the
+ * engine could count its rejections but never name them. Each now returns the
+ * gate that fired and the side the core was arguing for. Nothing about a YES
+ * changed: the success path returns the same EngineCall it always did, so callers
+ * that only ever asked "call or no call?" keep their exact behaviour by swapping
+ * `!call` for `isRejection(call)`. */
+export function composeCall(input: ComposeInput): CallOrRejection {
   const { coreNum, coreDen, ctxNum, coreWeightTotal } = tallyFactors(input.factors, input.weights)
-  if (!coreDen) return null // no market-derived signal at all — context alone is never a call
+  // no market-derived signal at all — context alone is never a call, and with no
+  // core read there is no direction to name either
+  if (!coreDen) return reject('no-data', null, 'no core factor scored')
   const side: 'long' | 'short' = coreNum / coreDen >= 0 ? 'long' : 'short'
   // regime mult first, then the overnight world-tape nudge (both scale conviction;
   // worldMult is > 0 so the side never flips). The regime STRING stays untouched —
   // world tape can move a call across the dead zone but never into another bucket.
   const coreAdj = coreAdjOf(input.factors, input.weights, input.regime)! * (input.worldMult ?? 1)
   const gates = input.gates ?? MODERATE_GATES
-  if (Math.abs(coreAdj) < gates.deadZone) return null // context can't rescue a core below the gate
+  // context can't rescue a core below the gate
+  if (Math.abs(coreAdj) < gates.deadZone) return reject('dead-zone-core', side, `core ${round1(coreAdj)} inside ±${gates.deadZone}`)
   // context measured in core-composite points (its vote mass over the core's),
   // hard-capped. Like the world-tape nudge it may push a marginal call back
-  // under the dead zone (→ null, correctly suppressed) — an eligibility veto,
+  // under the dead zone (→ suppressed, correctly) — an eligibility veto,
   // never a direction: the cap is below the dead zone, so the sign holds.
   const ctxPts = clamp(ctxNum / coreDen, -CONTEXT_MAX_PTS, CONTEXT_MAX_PTS)
   const adj = coreAdj + ctxPts
-  if (Math.abs(adj) < gates.deadZone) return null
-  if (input.capacityPct == null || input.atr == null || input.lastClose == null) return null
+  // A DISTINCT code from the one above, deliberately: the core cleared the gate
+  // here and the capped context layer is the only thing that put it back under.
+  // These rows are the sole measure of what CONTEXT_MAX_PTS costs the funnel.
+  if (Math.abs(adj) < gates.deadZone)
+    return reject('dead-zone-context', side, `core ${round1(coreAdj)} ${ctxPts >= 0 ? '+' : ''}${round1(ctxPts)} context → ${round1(adj)}, inside ±${gates.deadZone}`)
+  if (input.capacityPct == null || input.atr == null || input.lastClose == null) {
+    const missing = [input.capacityPct == null && 'capacity', input.atr == null && 'atr', input.lastClose == null && 'lastClose'].filter(Boolean)
+    return reject('capacity-data', side, `missing ${missing.join(', ')}`)
+  }
 
   const smallCap = input.capUsdM != null && input.capUsdM < SMALL_CAP_MAX_USD_M
   // THE LEVELS COME FIRST NOW, because the eligibility test IS one of them.
@@ -227,11 +252,12 @@ export function composeCall(input: ComposeInput): EngineCall | null {
   const { expectedMovePct, entry, stop, target } = levelsFor(adj, input.capacityPct, input.atr, input.lastClose, smallCap)
   // a live catalyst earns 0.5pp of relief — the name is in play TODAY even if
   // its trailing swing capacity hasn't caught up to the news yet.
-  if (expectedMovePct < gates.minExpectedMovePct - (input.catalyst ? 0.5 : 0)) return null
+  const moveFloor = gates.minExpectedMovePct - (input.catalyst ? 0.5 : 0)
+  if (expectedMovePct < moveFloor) return reject('expected-move', side, `expects ${expectedMovePct}% < floor ${round1(moveFloor)}%${input.catalyst ? ' (catalyst relief applied)' : ''}`)
   // side-aware entry gates: never chase a long, never short fresh strength, knives wait
-  if (input.entryQuality === 'wait') return null
-  if (side === 'long' && input.entryQuality === 'chase') return null
-  if (side === 'short' && (input.stage === 'early-reversal' || input.stage === 'pullback')) return null
+  if (input.entryQuality === 'wait') return reject('entry-wait', side, `stage ${input.stage ?? 'unknown'}`)
+  if (side === 'long' && input.entryQuality === 'chase') return reject('entry-chase', side, `stage ${input.stage ?? 'unknown'}`)
+  if (side === 'short' && (input.stage === 'early-reversal' || input.stage === 'pullback')) return reject('entry-reversal', side, `stage ${input.stage}`)
 
   const ranked = (Object.entries(input.factors) as [FactorName, FactorScore][])
     .filter(([, f]) => f.score != null && f.score !== 0)

@@ -16,7 +16,7 @@ import {
   type CalibrationState,
   type WeightsState,
 } from './calibration'
-import { round1, type FactorName, type FactorScore, type Prediction } from './types'
+import { isRejection, round1, type FactorName, type FactorScore, type Prediction } from './types'
 
 // Pre-seeds the engine from candle history: only the factors computable from
 // bars alone (technical, momentum, seasonality) replay; the rest start at
@@ -135,6 +135,9 @@ export function seedFromHistory(
       }
 
       const regime = regimeAt(j)
+      // composeCall now names the gate that refused (types.ts). The walk does not
+      // read gates — it is scoring outcomes, not auditing the funnel — so the only
+      // change here is `isRejection` where `!call` used to be. Same rows, same skips.
       const call = composeCall({
         sym,
         factors,
@@ -150,7 +153,7 @@ export function seedFromHistory(
         volumeConfirmed: read.volumeConfirmed,
         breadthKnown: (breadthByT.get(candles[i].t)?.total ?? 0) >= 10,
       })
-      if (!call) continue
+      if (isRejection(call)) continue
 
       // outcome: entry session is bar i+1; graded at the close of bar i+1+HORIZON.
       // grading measures the capturable move from the first tradeable print — the

@@ -3,7 +3,27 @@ import { CONTEXT_MAX_PTS, DEFAULT_WEIGHTS, LONG_REGIME_MULT, composeCall, coreCo
 import { AGGRESSIVE_GATES, MODERATE_GATES } from './catalyst'
 import { catalystFactor } from './factors'
 import { bannedTokensIn } from './voice'
-import type { FactorName, FactorScore } from './types'
+import { isRejection, type EngineCall, type FactorName, type FactorScore, type GateCode } from './types'
+
+/** THE PRE-3a SHAPE, kept for the tests written against it. composeCall now
+ * returns a named rejection instead of a bare null (types.ts, CallOrRejection);
+ * every one of those rejections means precisely what the null meant, and this
+ * adapter collapses them back so the suite below goes on asserting the OLD
+ * contract unchanged. That is the point: it is the zero-behaviour-change pin for
+ * Task 1 — if any rejection had started meaning something else, or any draft had
+ * stopped being a draft, these tests would fail. The gate codes themselves are
+ * asserted against `composeCall` directly, in their own block at the bottom. */
+const drafted = (input: ComposeInput): EngineCall | null => {
+  const r = composeCall(input)
+  return isRejection(r) ? null : r
+}
+
+/** the gate code composeCall refused with — and a loud failure if it did not refuse */
+const gateOf = (input: ComposeInput): { gate: GateCode; side: 'long' | 'short' | null; detail?: string } => {
+  const r = composeCall(input)
+  if (!isRejection(r)) throw new Error(`expected a rejection, got a ${r.side} call at composite ${r.composite}`)
+  return { gate: r.gate, side: r.side, detail: r.detail }
+}
 
 const nullFactors = (): Record<FactorName, FactorScore> => ({
   technical: { score: null, detail: '' },
@@ -41,11 +61,11 @@ const longFactors = (): Record<FactorName, FactorScore> => ({
 
 describe('composeCall', () => {
   it('all-null factors → no call', () => {
-    expect(composeCall(base())).toBeNull()
+    expect(drafted(base())).toBeNull()
   })
 
   it('strong long in green regime: side, sane levels, expected move', () => {
-    const call = composeCall(base({ factors: longFactors() }))!
+    const call = drafted(base({ factors: longFactors() }))!
     expect(call.side).toBe('long')
     // owner-ordered vector: technical 1.0, momentum 0.9.
     //   coreNum = 1.0×84 + 0.9×40 = 84 + 36 = 120
@@ -63,20 +83,20 @@ describe('composeCall', () => {
   // the composite is coreNum/coreDen = w·s/w = s, so its weight cancels entirely.
   it('regime multiplier can push a modest long into the dead zone', () => {
     const modest = { ...nullFactors(), technical: { score: 40, detail: 'pullback' } }
-    expect(composeCall(base({ factors: modest, entryQuality: 'early', stage: 'pullback' }))!.composite).toBeCloseTo(40, 1)
-    expect(composeCall(base({ factors: modest, entryQuality: 'early', stage: 'pullback', regime: 'red' }))).toBeNull() // 40×0.55 = 22 < 25
+    expect(drafted(base({ factors: modest, entryQuality: 'early', stage: 'pullback' }))!.composite).toBeCloseTo(40, 1)
+    expect(drafted(base({ factors: modest, entryQuality: 'early', stage: 'pullback', regime: 'red' }))).toBeNull() // 40×0.55 = 22 < 25
   })
 
   it('dead zone: |composite| < 25 → null; boundary 25 passes', () => {
     const weak = { ...nullFactors(), technical: { score: 20, detail: 'basing' } }
-    expect(composeCall(base({ factors: weak, stage: 'basing', entryQuality: 'neutral' }))).toBeNull()
+    expect(drafted(base({ factors: weak, stage: 'basing', entryQuality: 'neutral' }))).toBeNull()
     const boundary = { ...nullFactors(), technical: { score: 25, detail: 'basing' } }
-    expect(composeCall(base({ factors: boundary, stage: 'basing', entryQuality: 'neutral' }))).not.toBeNull()
+    expect(drafted(base({ factors: boundary, stage: 'basing', entryQuality: 'neutral' }))).not.toBeNull()
   })
 
   it('short from exhaustion in red regime: mirrored levels', () => {
     const shortF = { ...nullFactors(), technical: { score: -84, detail: 'exhausted' }, momentum: { score: -40, detail: '' } }
-    const call = composeCall(base({ factors: shortF, regime: 'red', entryQuality: 'chase', stage: 'exhausted' }))!
+    const call = drafted(base({ factors: shortF, regime: 'red', entryQuality: 'chase', stage: 'exhausted' }))!
     expect(call.side).toBe('short')
     //   coreNum = 1.0×(−84) + 0.9×(−40) = −120; coreDen 1.9 → −63.1578…
     //   short in red: ×1.1 → −69.4736… → −69.5 (was −70.9 off the −64.44 core)
@@ -86,10 +106,10 @@ describe('composeCall', () => {
   })
 
   it('side-aware gates: no chased longs, no shorts into fresh strength, knives wait', () => {
-    expect(composeCall(base({ factors: longFactors(), entryQuality: 'chase', stage: 'extended' }))).toBeNull()
+    expect(drafted(base({ factors: longFactors(), entryQuality: 'chase', stage: 'extended' }))).toBeNull()
     const shortF = { ...nullFactors(), technical: { score: -60, detail: '' }, momentum: { score: -60, detail: '' } }
-    expect(composeCall(base({ factors: shortF, stage: 'pullback', entryQuality: 'early' }))).toBeNull()
-    expect(composeCall(base({ factors: longFactors(), entryQuality: 'wait', stage: 'falling-knife' }))).toBeNull()
+    expect(drafted(base({ factors: shortF, stage: 'pullback', entryQuality: 'early' }))).toBeNull()
+    expect(drafted(base({ factors: longFactors(), entryQuality: 'wait', stage: 'falling-knife' }))).toBeNull()
   })
 
   it('dead money never makes a call: the expected move is the whole eligibility test', () => {
@@ -97,34 +117,34 @@ describe('composeCall', () => {
     // is inside the spread and the noise — no conviction rescues arithmetic that
     // small, and the flat floor used to admit exactly this name at capacity 6.
     const forty = { ...nullFactors(), technical: { score: 40, detail: 'pullback' } }
-    expect(composeCall(base({ factors: forty, capacityPct: 2, stage: 'pullback' }))).toBeNull()
-    expect(composeCall(base({ factors: longFactors(), capacityPct: null }))).toBeNull() // capacity unknown → nothing to expect
+    expect(drafted(base({ factors: forty, capacityPct: 2, stage: 'pullback' }))).toBeNull()
+    expect(drafted(base({ factors: longFactors(), capacityPct: null }))).toBeNull() // capacity unknown → nothing to expect
   })
 
   it('the floor is the move THIS call expects, not the volatility class the name belongs to', () => {
     // ONE name, capacity 5, three convictions. Under the old flat floor (6) the
     // name was ineligible at every conviction; now its own arithmetic decides.
     const at = (score: number) => ({ ...nullFactors(), technical: { score, detail: 'pullback' } })
-    const cap5 = (score: number) => composeCall(base({ factors: at(score), capacityPct: 5, stage: 'pullback' }))
+    const cap5 = (score: number) => drafted(base({ factors: at(score), capacityPct: 5, stage: 'pullback' }))
     expect(cap5(45)!.expectedMovePct).toBeCloseTo(2.3, 1) // 0.45 × 5 = 2.25 ≥ 1.5 → a trade
     expect(cap5(30)).not.toBeNull() // 0.30 × 5 = 1.5 — the boundary is inclusive
     expect(cap5(26)).toBeNull() // 0.26 × 5 = 1.3 < 1.5 — same name, thinner conviction, no trade
     // …and the reversal the rethink exists for: a GLW-class 6%-mover with real
     // conviction expects 2.4% and trades, where the flat floor admitted it only
     // by the accident of clearing a volatility threshold.
-    expect(composeCall(base({ factors: at(40), capacityPct: 6, stage: 'pullback' }))!.expectedMovePct).toBeCloseTo(2.4, 1)
+    expect(drafted(base({ factors: at(40), capacityPct: 6, stage: 'pullback' }))!.expectedMovePct).toBeCloseTo(2.4, 1)
   })
 
   it('small caps get the wider stop', () => {
-    const small = composeCall(base({ factors: longFactors(), capUsdM: 800 }))!
+    const small = drafted(base({ factors: longFactors(), capUsdM: 800 }))!
     expect(small.smallCap).toBe(true)
     expect(small.stop).toBe(96) // 100 − 2×2
   })
 
   it('missing atr or close → null; note names top factors', () => {
-    expect(composeCall(base({ factors: longFactors(), atr: null }))).toBeNull()
-    expect(composeCall(base({ factors: longFactors(), lastClose: null }))).toBeNull()
-    expect(composeCall(base({ factors: longFactors() }))!.note).toContain('technical')
+    expect(drafted(base({ factors: longFactors(), atr: null }))).toBeNull()
+    expect(drafted(base({ factors: longFactors(), lastClose: null }))).toBeNull()
+    expect(drafted(base({ factors: longFactors() }))!.note).toContain('technical')
   })
 
   it('worldMult 0.85 pushes a marginal long under the dead zone → suppressed', () => {
@@ -133,15 +153,15 @@ describe('composeCall', () => {
     // clears the 25 dead zone on its own, but the risk-off long nudge kills it.
     const marginal = { ...nullFactors(), technical: { score: 28, detail: 'basing' } }
     const bull = base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' })
-    expect(composeCall(bull)!.composite).toBeCloseTo(28, 1) // passes with no nudge
-    expect(composeCall({ ...bull, worldMult: 0.85 })).toBeNull() // 28 × 0.85 = 23.8 < 25
+    expect(drafted(bull)!.composite).toBeCloseTo(28, 1) // passes with no nudge
+    expect(drafted({ ...bull, worldMult: 0.85 })).toBeNull() // 28 × 0.85 = 23.8 < 25
   })
 
   it('worldMult 1.1 lifts a sub-threshold call over the dead zone → passes', () => {
     const under = { ...nullFactors(), technical: { score: 23, detail: 'basing' } }
     const bull = base({ factors: under, stage: 'basing', entryQuality: 'neutral' })
-    expect(composeCall(bull)).toBeNull() // 23 < 25 with no nudge
-    const lifted = composeCall({ ...bull, worldMult: 1.1 })! // 23 × 1.1 = 25.3 ≥ 25
+    expect(drafted(bull)).toBeNull() // 23 < 25 with no nudge
+    const lifted = drafted({ ...bull, worldMult: 1.1 })! // 23 × 1.1 = 25.3 ≥ 25
     expect(lifted).not.toBeNull()
     expect(lifted.composite).toBeCloseTo(25.3, 1)
     expect(lifted.side).toBe('long') // a positive mult never flips the side
@@ -150,8 +170,8 @@ describe('composeCall', () => {
   it('the world nudge scales conviction but leaves the side sign intact', () => {
     const shortF = { ...nullFactors(), technical: { score: -60, detail: 'exhausted' } }
     const bear = base({ factors: shortF, stage: 'exhausted', entryQuality: 'chase' })
-    const plain = composeCall(bear)!
-    const boosted = composeCall({ ...bear, worldMult: 1.1 })!
+    const plain = drafted(bear)!
+    const boosted = drafted({ ...bear, worldMult: 1.1 })!
     expect(boosted.side).toBe('short')
     expect(Math.abs(boosted.composite)).toBeGreaterThan(Math.abs(plain.composite))
   })
@@ -162,9 +182,9 @@ describe('composeCall', () => {
     // caught up to that fact yet. 1.3 ≥ 1.5 − 0.5.
     const marginal = { ...nullFactors(), technical: { score: 26, detail: 'pullback' } }
     const quiet = base({ factors: marginal, capacityPct: 5, stage: 'pullback' })
-    expect(composeCall(quiet)).toBeNull() // ordinary name, too little to expect → suppressed
+    expect(drafted(quiet)).toBeNull() // ordinary name, too little to expect → suppressed
     expect(
-      composeCall({ ...quiet, catalyst: { kind: 'news', side: 'long', reason: 'oil spike', strength: 80 } }),
+      drafted({ ...quiet, catalyst: { kind: 'news', side: 'long', reason: 'oil spike', strength: 80 } }),
     ).not.toBeNull() // same chart, live catalyst → gets a look
   })
 
@@ -183,7 +203,7 @@ describe('composeCall', () => {
     // empty-day risk, and the Stage-2 gate replay measures BOTH directions.
     const at = (score: number) => ({ ...nullFactors(), technical: { score, detail: 'pullback' } })
     const call = (score: number, capacityPct: number, over: Partial<ComposeInput> = {}) =>
-      composeCall(base({ factors: at(score), capacityPct, stage: 'pullback', ...over }))
+      drafted(base({ factors: at(score), capacityPct, stage: 'pullback', ...over }))
     expect(call(25, 6)).not.toBeNull() // the old moderate floor, at the dead zone
     expect(call(25, 5.5)).toBeNull() // …and under it, the verdict is the old verdict
     expect(call(25, 4, { catalyst: { kind: 'news', side: 'long', reason: 'x', strength: 80 } })).not.toBeNull() // old catalyst floor 4
@@ -196,7 +216,7 @@ describe('composeCall', () => {
   it('catalyst buys relief, never a pass: below the relaxed floor it is still suppressed', () => {
     const forty = { ...nullFactors(), technical: { score: 40, detail: 'pullback' } }
     expect(
-      composeCall(base({ factors: forty, capacityPct: 2, stage: 'pullback', catalyst: { kind: 'news', side: 'long', reason: 'x', strength: 90 } })),
+      drafted(base({ factors: forty, capacityPct: 2, stage: 'pullback', catalyst: { kind: 'news', side: 'long', reason: 'x', strength: 90 } })),
     ).toBeNull() // 0.4 × 2 = 0.8 < the relaxed floor 1.0
   })
 
@@ -206,10 +226,10 @@ describe('composeCall', () => {
     // clear the gate alone. The catalyst still relaxes the expected-move floor and
     // still tilts conviction on an already-valid call (tested elsewhere).
     const quiet = { ...nullFactors(), technical: { score: 15, detail: 'trending' } }
-    expect(composeCall(base({ factors: quiet, stage: 'trending', entryQuality: 'neutral' }))).toBeNull() // 15 < 25
+    expect(drafted(base({ factors: quiet, stage: 'trending', entryQuality: 'neutral' }))).toBeNull() // 15 < 25
     const withVote = { ...quiet, catalyst: catalystFactor({ kind: 'news', side: 'long', reason: 'beneficiary', strength: 80 }) }
     expect(
-      composeCall(base({ factors: withVote, stage: 'trending', entryQuality: 'neutral', catalyst: { kind: 'news', side: 'long', reason: 'beneficiary', strength: 80 } })),
+      drafted(base({ factors: withVote, stage: 'trending', entryQuality: 'neutral', catalyst: { kind: 'news', side: 'long', reason: 'beneficiary', strength: 80 } })),
     ).toBeNull()
   })
 
@@ -218,19 +238,19 @@ describe('composeCall', () => {
     expect(vote.score).toBeLessThan(0)
     const bull = { ...longFactors(), catalyst: vote }
     // catalyst drags conviction but the dominant technical keeps it long
-    expect(composeCall(base({ factors: bull, catalyst: { kind: 'news', side: 'short', reason: 'sanctioned', strength: 70 } }))!.side).toBe('long')
+    expect(drafted(base({ factors: bull, catalyst: { kind: 'news', side: 'short', reason: 'sanctioned', strength: 70 } }))!.side).toBe('long')
   })
 
   it('aggressive gates lower the dead zone and the expected-move floor vs moderate', () => {
     const marginal = { ...nullFactors(), technical: { score: 22, detail: 'basing' } }
     const b = { factors: marginal, stage: 'basing' as const, entryQuality: 'neutral' as const, capacityPct: 5 }
-    expect(composeCall(base({ ...b, gates: MODERATE_GATES }))).toBeNull() // 22 < the 25 dead zone
-    expect(composeCall(base({ ...b, gates: AGGRESSIVE_GATES }))).not.toBeNull() // 22 ≥ 20, and 0.22 × 5 = 1.1 ≥ 1.0
+    expect(drafted(base({ ...b, gates: MODERATE_GATES }))).toBeNull() // 22 < the 25 dead zone
+    expect(drafted(base({ ...b, gates: AGGRESSIVE_GATES }))).not.toBeNull() // 22 ≥ 20, and 0.22 × 5 = 1.1 ≥ 1.0
     // the floor on its own, with the dead zone out of the way: 1.3 clears 1.0, not 1.5
     const clears = { ...nullFactors(), technical: { score: 26, detail: 'basing' } }
     const c = { factors: clears, stage: 'basing' as const, entryQuality: 'neutral' as const, capacityPct: 5 }
-    expect(composeCall(base({ ...c, gates: MODERATE_GATES }))).toBeNull() // 1.3 < 1.5
-    expect(composeCall(base({ ...c, gates: AGGRESSIVE_GATES }))).not.toBeNull() // 1.3 ≥ 1.0
+    expect(drafted(base({ ...c, gates: MODERATE_GATES }))).toBeNull() // 1.3 < 1.5
+    expect(drafted(base({ ...c, gates: AGGRESSIVE_GATES }))).not.toBeNull() // 1.3 ≥ 1.0
   })
 })
 
@@ -249,12 +269,12 @@ describe('two-layer composite: core decides, context colours', () => {
   })
 
   it('context alone is never a call, however loud', () => {
-    expect(composeCall(base({ factors: loudContext() }))).toBeNull()
+    expect(drafted(base({ factors: loudContext() }))).toBeNull()
   })
 
   it('context contribution is capped at CONTEXT_MAX_PTS on a valid core', () => {
-    const core = composeCall(base({ factors: longFactors() }))!
-    const withCtx = composeCall(base({ factors: { ...longFactors(), ...({} as object), social: { score: 60, detail: '' }, channels: { score: 70, detail: '' }, news: { score: 50, detail: '' }, catalyst: { score: 90, detail: '' } } }))!
+    const core = drafted(base({ factors: longFactors() }))!
+    const withCtx = drafted(base({ factors: { ...longFactors(), ...({} as object), social: { score: 60, detail: '' }, channels: { score: 70, detail: '' }, news: { score: 50, detail: '' }, catalyst: { score: 90, detail: '' } } }))!
     // ctx vote mass (0.5·60 + 0.5·70 + 0.5·50 + 0.6·90)/1.9
     //             = (30 + 35 + 25 + 54)/1.9 = 144/1.9 = 75.8 → clamped to +12
     // (was 76 under the old vector — the cap is what makes this pin re-base-proof)
@@ -263,39 +283,39 @@ describe('two-layer composite: core decides, context colours', () => {
   })
 
   it('a missing context factor never changes the core read — same model for every ticker', () => {
-    const bare = composeCall(base({ factors: longFactors() }))!
+    const bare = drafted(base({ factors: longFactors() }))!
     const oneCtxNull = { ...longFactors(), news: { score: 0, detail: 'quiet tape' } }
     // news at 0 vs news missing: identical composite — context nulls don't renormalise
-    expect(composeCall(base({ factors: oneCtxNull }))!.composite).toBeCloseTo(bare.composite, 1)
+    expect(drafted(base({ factors: oneCtxNull }))!.composite).toBeCloseTo(bare.composite, 1)
   })
 
   it('hostile context can push a marginal core under the dead zone (eligibility veto) but never flips the side', () => {
     const marginal = { ...nullFactors(), technical: { score: 26, detail: 'basing' } }
-    expect(composeCall(base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' }))!.side).toBe('long') // 26 ≥ 25 alone
+    expect(drafted(base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' }))!.side).toBe('long') // 26 ≥ 25 alone
     const hostile = { ...marginal, channels: { score: -70, detail: 'bears' }, news: { score: -50, detail: 'sour' } }
     // ctx (−0.5·70 − 0.5·50)/1 = −60 → clamped −12 → 26−12 = 14 < 25 → suppressed, NOT shorted
-    expect(composeCall(base({ factors: hostile, stage: 'basing', entryQuality: 'neutral' }))).toBeNull()
+    expect(drafted(base({ factors: hostile, stage: 'basing', entryQuality: 'neutral' }))).toBeNull()
   })
 
   it('evidence contract: needs momentum, a confirming leg, and 2 agreeing core families', () => {
     // technical+momentum agree but NO confirming leg (no sector/volume/breadth)
-    const bare = composeCall(base({ factors: longFactors() }))!
+    const bare = drafted(base({ factors: longFactors() }))!
     expect(bare.evidence.contract).toBe(false)
     expect(bare.evidence.famAgree).toBe(2)
     // volume confirmation supplies the missing leg
-    const confirmed = composeCall(base({ factors: longFactors(), volumeConfirmed: true }))!
+    const confirmed = drafted(base({ factors: longFactors(), volumeConfirmed: true }))!
     expect(confirmed.evidence.contract).toBe(true)
     // sector data also supplies it
-    const withSector = composeCall(base({ factors: { ...longFactors(), sector: { score: 20, detail: 'p75' } } }))!
+    const withSector = drafted(base({ factors: { ...longFactors(), sector: { score: 20, detail: 'p75' } } }))!
     expect(withSector.evidence.contract).toBe(true)
     expect(withSector.evidence.famAgree).toBe(3)
     // momentum DISAGREES → only 1 family agrees → no contract even with the leg
     const lonely = { ...nullFactors(), technical: { score: 84, detail: '' }, momentum: { score: -20, detail: '' } }
-    const call = composeCall(base({ factors: lonely, volumeConfirmed: true }))!
+    const call = drafted(base({ factors: lonely, volumeConfirmed: true }))!
     expect(call.evidence.famAgree).toBe(1)
     expect(call.evidence.contract).toBe(false)
     // unknown regime never passes
-    const unknown = composeCall(base({ factors: longFactors(), volumeConfirmed: true, regime: 'unknown' }))!
+    const unknown = drafted(base({ factors: longFactors(), volumeConfirmed: true, regime: 'unknown' }))!
     expect(unknown.evidence.contract).toBe(false)
   })
 
@@ -304,7 +324,7 @@ describe('two-layer composite: core decides, context colours', () => {
     // 1.0 + 0.9 + sector 0.3 + seasonality 0.3 = 2.5 → 1.9/2.5 = 0.76.
     // Sector's demotion RAISES coverage on a two-factor read: the same two
     // factors now account for more of what the core could have been.
-    expect(composeCall(base({ factors: longFactors() }))!.evidence.coverage).toBeCloseTo(0.76, 2)
+    expect(drafted(base({ factors: longFactors() }))!.evidence.coverage).toBeCloseTo(0.76, 2)
   })
 
   it('coreCompositeOf is composeCall\'s core read with every gate removed', () => {
@@ -316,11 +336,11 @@ describe('two-layer composite: core decides, context colours', () => {
     // spelled out, so a future re-base fails this test instead of following it
     expect(core).toBeCloseTo(((1.0 * 84 + 0.9 * 40) / 1.9) * LONG_REGIME_MULT.green, 1)
     // a call that clears every gate reports the same core, plus the capped context
-    const call = composeCall(base({ factors }))!
+    const call = drafted(base({ factors }))!
     expect(Math.abs(call.composite - core)).toBeLessThanOrEqual(CONTEXT_MAX_PTS)
     // and it reads the names the GATES throw away — that is its whole purpose
     expect(coreCompositeOf(factors, DEFAULT_WEIGHTS, 'red')).not.toBeNull()
-    expect(composeCall(base({ factors, capacityPct: 1 }))).toBeNull()
+    expect(drafted(base({ factors, capacityPct: 1 }))).toBeNull()
     // regime scales it by side
     expect(coreCompositeOf(factors, DEFAULT_WEIGHTS, 'red')!).toBeLessThan(core)
     // no core data at all → nothing honest to say
@@ -339,7 +359,7 @@ describe('two-layer composite: core decides, context colours', () => {
     expect(setupFamilyOf('short', 'extended')).toBe('fade')
     expect(setupFamilyOf('short', 'exhausted')).toBe('fade')
     expect(setupFamilyOf('long', null)).toBeNull()
-    const call = composeCall(base({ factors: longFactors() }))!
+    const call = drafted(base({ factors: longFactors() }))!
     expect(call.setup).toBe('reversal') // base stage is early-reversal
   })
 })
@@ -350,7 +370,7 @@ describe('two-layer composite: core decides, context colours', () => {
 // keeps the breakdown as the evidence line beneath.
 describe('composeCall — every call says what it believes and what would prove it wrong', () => {
   it('leads with the stage and the strongest contributor arguing FOR the side', () => {
-    const call = composeCall(base({ factors: longFactors() }))!
+    const call = drafted(base({ factors: longFactors() }))!
     expect(call.thesis).toBe('Long TEST — the chart is turning up off its low with volume behind it. Wrong if it closes below 97.')
     expect(call.falsifier).toBe('Wrong if it closes below 97.')
     expect(call.falsifier).toContain(String(call.stop)) // the level it actually published
@@ -358,12 +378,12 @@ describe('composeCall — every call says what it believes and what would prove 
   })
 
   it('…while `note` is untouched: the evidence line still names the factors', () => {
-    const call = composeCall(base({ factors: longFactors() }))!
+    const call = drafted(base({ factors: longFactors() }))!
     expect(call.note).toBe('technical: early-reversal volume-confirmed · momentum: +10pp')
   })
 
   it('a short is falsified ABOVE its stop', () => {
-    const call = composeCall(
+    const call = drafted(
       base({ stage: 'weak', entryQuality: 'neutral', factors: { ...nullFactors(), technical: { score: -84, detail: 'below every average' }, momentum: { score: -40, detail: '-10pp' } } }),
     )!
     expect(call.side).toBe('short')
@@ -372,11 +392,11 @@ describe('composeCall — every call says what it believes and what would prove 
 
   it('context is quoted only when the capped context layer actually moved the number', () => {
     // news 50 × weight 0.5 over a 1.9 core denominator = +13.2pt, capped at 12
-    const loud = composeCall(base({ factors: { ...longFactors(), news: { score: 50, detail: '3 headline(s), polarity +2' } } }))!
+    const loud = drafted(base({ factors: { ...longFactors(), news: { score: 50, detail: '3 headline(s), polarity +2' } } }))!
     expect(loud.evidence.contextPts).toBe(CONTEXT_MAX_PTS)
     expect(loud.thesis).toContain(', and 3 headlines on it reading positive.')
     // …and a whisper (seasonality is CORE, insiders at 0.4 × 8 = 3.2pt / 1.9 = 1.7pt) is not
-    const quiet = composeCall(base({ factors: { ...longFactors(), insiders: { score: 8, detail: 'insider buying' } } }))!
+    const quiet = drafted(base({ factors: { ...longFactors(), insiders: { score: 8, detail: 'insider buying' } } }))!
     expect(Math.abs(quiet.evidence.contextPts)).toBeLessThan(4)
     expect(quiet.thesis).not.toContain('director')
   })
@@ -384,9 +404,119 @@ describe('composeCall — every call says what it believes and what would prove 
   it('a contributor whose detail humanises to nothing is skipped, never printed hollow', () => {
     // technical outranks momentum, but 'basing' alone carries no confirmation to
     // report — so the sentence takes momentum's clause rather than an empty one
-    const call = composeCall(
+    const call = drafted(
       base({ stage: 'basing', factors: { ...nullFactors(), technical: { score: 84, detail: 'basing' }, momentum: { score: 40, detail: '21d RS vs SPY +10pp' } } }),
     )!
     expect(call.thesis).toBe('Long TEST — the chart has built a base with 10 points of outperformance against the S&P over the last month. Wrong if it closes below 97.')
+  })
+})
+
+// STAGE 3a TASK 1. Eight rejection sites, eight names. Until now they were one
+// word — `null` — and the funnel could never say which gate had done the
+// refusing, so a name that died on the expected-move floor and a name that died
+// because a headline dragged it back under the dead zone were the same event in
+// the record. One test per site, driving composeCall directly at that site's own
+// condition, asserting the code AND the side the core was arguing for.
+describe('composeCall names the gate that said no', () => {
+  it('no core factor scored at all → no-data, and no side to claim', () => {
+    // context has no vote on direction, so a rejection here cannot name one
+    expect(gateOf(base())).toMatchObject({ gate: 'no-data', side: null })
+    expect(gateOf(base({ factors: { ...nullFactors(), news: { score: 90, detail: 'loud' } } }))).toMatchObject({ gate: 'no-data', side: null })
+  })
+
+  it('the core alone under the dead zone → dead-zone-core', () => {
+    const weak = { ...nullFactors(), technical: { score: 20, detail: 'basing' } }
+    expect(gateOf(base({ factors: weak, stage: 'basing', entryQuality: 'neutral' }))).toMatchObject({ gate: 'dead-zone-core', side: 'long' })
+    // …and on the short side, where the raw score clears 25 and the regime
+    // multiplier is what actually kills it: shorting a green tape stays penal.
+    const modest = { ...nullFactors(), technical: { score: -30, detail: 'weak' } }
+    expect(gateOf(base({ factors: modest, regime: 'green', stage: 'weak', entryQuality: 'neutral' }))).toMatchObject({ gate: 'dead-zone-core', side: 'short' }) // −30 × 0.7 = −21 < 25
+  })
+
+  it('the core cleared the gate and CONTEXT pushed it back under → dead-zone-context, a different code on purpose', () => {
+    const marginal = { ...nullFactors(), technical: { score: 26, detail: 'basing' } }
+    expect(drafted(base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' }))).not.toBeNull() // 26 ≥ 25 on its own
+    const hostile = { ...marginal, channels: { score: -70, detail: 'bears' }, news: { score: -50, detail: 'sour' } }
+    const r = gateOf(base({ factors: hostile, stage: 'basing', entryQuality: 'neutral' }))
+    // 26 − 12 (the capped context layer) = 14 < 25. THIS is the row that measures
+    // what CONTEXT_MAX_PTS costs — pooling it with dead-zone-core would erase it.
+    expect(r).toMatchObject({ gate: 'dead-zone-context', side: 'long' })
+    expect(r.detail).toContain('-12')
+  })
+
+  it('no levels to publish → capacity-data, whichever of the three is missing', () => {
+    expect(gateOf(base({ factors: longFactors(), atr: null }))).toMatchObject({ gate: 'capacity-data', side: 'long' })
+    expect(gateOf(base({ factors: longFactors(), lastClose: null }))).toMatchObject({ gate: 'capacity-data', side: 'long' })
+    expect(gateOf(base({ factors: longFactors(), capacityPct: null })).detail).toContain('capacity')
+  })
+
+  it('the move this call expects is under the floor → expected-move', () => {
+    const forty = { ...nullFactors(), technical: { score: 40, detail: 'pullback' } }
+    const r = gateOf(base({ factors: forty, capacityPct: 2, stage: 'pullback' }))
+    expect(r).toMatchObject({ gate: 'expected-move', side: 'long' }) // 0.4 × 2 = 0.8 < 1.5
+    expect(r.detail).toContain('0.8')
+  })
+
+  it('the entry read says wait → entry-wait, on either side', () => {
+    expect(gateOf(base({ factors: longFactors(), entryQuality: 'wait', stage: 'falling-knife' }))).toMatchObject({ gate: 'entry-wait', side: 'long' })
+    const shortF = { ...nullFactors(), technical: { score: -84, detail: '' }, momentum: { score: -40, detail: '' } }
+    expect(gateOf(base({ factors: shortF, entryQuality: 'wait', stage: 'falling-knife' }))).toMatchObject({ gate: 'entry-wait', side: 'short' })
+  })
+
+  it('a long into a chase → entry-chase (and a SHORT into a chase is not this gate)', () => {
+    expect(gateOf(base({ factors: longFactors(), entryQuality: 'chase', stage: 'extended' }))).toMatchObject({ gate: 'entry-chase', side: 'long' })
+    const shortF = { ...nullFactors(), technical: { score: -84, detail: 'exhausted' }, momentum: { score: -40, detail: '' } }
+    expect(drafted(base({ factors: shortF, regime: 'red', entryQuality: 'chase', stage: 'exhausted' }))).not.toBeNull()
+  })
+
+  it('a short into a pullback or an early reversal → entry-reversal', () => {
+    const shortF = { ...nullFactors(), technical: { score: -60, detail: '' }, momentum: { score: -60, detail: '' } }
+    expect(gateOf(base({ factors: shortF, stage: 'pullback', entryQuality: 'early' }))).toMatchObject({ gate: 'entry-reversal', side: 'short' })
+    expect(gateOf(base({ factors: shortF, stage: 'early-reversal', entryQuality: 'early' }))).toMatchObject({ gate: 'entry-reversal', side: 'short' })
+  })
+
+  it('a rejection is never mistaken for a draft, and a draft never for a rejection', () => {
+    expect(isRejection(composeCall(base()))).toBe(true)
+    expect(isRejection(composeCall(base({ factors: longFactors() })))).toBe(false)
+  })
+
+  // THE ZERO-BEHAVIOUR-CHANGE PIN. This object was captured from composeCall at
+  // 8af0bd3, BEFORE the return shape changed, and is pasted verbatim. A passing
+  // call must still hand back exactly this and nothing else — no `rejected` key,
+  // no reordered evidence, no drifted level. Naming the noes may not touch a yes.
+  it('a call that clears every gate returns the pre-3a draft, unchanged', () => {
+    const r = composeCall(base({ factors: longFactors() }))
+    expect(isRejection(r)).toBe(false)
+    expect(r).toEqual({
+      sym: 'TEST',
+      side: 'long',
+      composite: 63.2,
+      setup: 'reversal',
+      evidence: { coverage: 0.76, famAgree: 2, contract: false, contextPts: 0, detail: 'core coverage 76% · 2 core families agree · context +0pt' },
+      factors: {
+        technical: { score: 84, detail: 'early-reversal volume-confirmed', weight: 1 },
+        momentum: { score: 40, detail: '+10pp', weight: 0.9 },
+        sector: { score: null, detail: '', weight: 0.3 },
+        social: { score: null, detail: '', weight: 0.5 },
+        channels: { score: null, detail: '', weight: 0.5 },
+        insiders: { score: null, detail: '', weight: 0.4 },
+        news: { score: null, detail: '', weight: 0.5 },
+        seasonality: { score: null, detail: '', weight: 0.3 },
+        smartMoney: { score: null, detail: '', weight: 0.3 },
+        catalyst: { score: null, detail: '', weight: 0.6 },
+      },
+      expectedMovePct: 6.3,
+      entry: 100,
+      stop: 97,
+      target: 106.3,
+      capacityPct: 10,
+      smallCap: false,
+      earningsRisk: false,
+      stage: 'early-reversal',
+      note: 'technical: early-reversal volume-confirmed · momentum: +10pp',
+      thesis: 'Long TEST — the chart is turning up off its low with volume behind it. Wrong if it closes below 97.',
+      falsifier: 'Wrong if it closes below 97.',
+    })
+    expect(Object.keys(r as object)).not.toContain('rejected')
   })
 })

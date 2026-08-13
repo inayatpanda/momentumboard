@@ -53,7 +53,7 @@ import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, map
 import { capCohortOf, SMALL_CAP_MAX_USD_M, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
-import { round2, type EmptySideReason, type EngineCall, type FactorName, type FactorScore, type PredOutcome, type Prediction } from '../../../shared/engine/types'
+import { isRejection, round2, type EmptySideReason, type EngineCall, type FactorName, type FactorScore, type PredOutcome, type Prediction } from '../../../shared/engine/types'
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { primaryThemeOf, themeCandidates, themeHeat, themesOf } from '../../../shared/engine/themes'
 import { traceOpenCall, type OpenTraceEntry } from '../../../shared/engine/openTrace'
@@ -1286,8 +1286,13 @@ export async function buildBoard(
       volumeConfirmed: read.volumeConfirmed,
       breadthKnown: breadth != null,
     }
+    // composeCall answers with a draft or with the NAME of the gate that refused
+    // (shared/engine/types.ts — CallOrRejection). Nothing here reads the gate yet:
+    // `isRejection(call)` means exactly what `!call` meant, and the two-pass
+    // re-score below behaves identically — the second pass overwrites the first
+    // verdict, so a re-score that fails is the rejection that stands.
     let call = composeCall(composeInput)
-    if (call) {
+    if (!isRejection(call)) {
       // the 5y fetch is earned, not default: only names that already made a call
       const c5 = await deps.candles5y(entry.sym)
       if (c5 && c5.length >= 500) {
@@ -1296,11 +1301,11 @@ export async function buildBoard(
       }
       // now the side is known → apply the overnight world-tape nudge for it and
       // re-score. The mult is > 0 so the side never flips, but it can push a
-      // marginal call under the dead zone (→ null, correctly suppressed).
+      // marginal call under the dead zone (→ rejected, correctly suppressed).
       // seasonality (if it loaded) rides the same re-score — honest both ways.
       call = composeCall({ ...composeInput, factors, worldMult: worldMult(tone.tone, call.side) })
     }
-    if (!call) {
+    if (isRejection(call)) {
       // Nothing published. Record the gate-free core read (composite.ts — the same
       // arithmetic the call would have stood on) so the assembly can name this name
       // if the whole side comes up empty. Requires real levels: a row the reader
