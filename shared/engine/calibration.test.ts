@@ -1572,6 +1572,49 @@ describe('the IC brakes — a nudge needs BOTH columns, and the band is absolute
     expect(maybeNudgeWeights(w, '2026-08-13').current.sector).toBeCloseTo(0.3 * 1.15, 12)
   })
 
+  /** THE BOUNDARY, from both sides [fix wave]. `≥ 20 AND ≥ 20` is one line, and
+   * an off-by-one on either column would leave the exact failure this floor
+   * exists to kill (a mean read off nineteen observations) still nudgeable. 20/20
+   * above is the first pass; these two are the last two fails. */
+  it('19 agreements against 21 disagreements is mute — the floor is on EACH column, not the pair', () => {
+    const w = ready()
+    w.ic.sector = twoSided(19, 21, 1)
+    const after = maybeNudgeWeights(w, '2026-08-13')
+    expect(after.current.sector).toBe(0.3)
+    expect(after.history[0].changes.sector).toBeUndefined()
+  })
+
+  it('…and 21 against 19 is equally mute — 40 observations between them buys nothing', () => {
+    const w = ready()
+    w.ic.sector = twoSided(21, 19, 1)
+    const after = maybeNudgeWeights(w, '2026-08-13')
+    expect(after.current.sector).toBe(0.3)
+    expect(after.history[0].changes.sector).toBeUndefined()
+  })
+
+  /** WHO DECIDED THE VALUE [fix wave]. `repaired` counts the weights the CLAMP
+   * decided, not the weights the IC floor skipped. The two coincided while the
+   * only clamped weights were ineligible ones — but an ELIGIBLE factor sitting
+   * out of band is nudged out further and clamped back, and the old counter said
+   * nothing about the band on the very line that reports it. */
+  it('an ELIGIBLE factor whose nudge the band overrules is reported as clamped — the line names what actually happened', () => {
+    const w = ready()
+    w.current.momentum = 1.8 // out of band (base 0.9 → [0.45, 1.35])
+    w.ic.momentum = twoSided(40, 40, 1) // eligible, and pulling further up
+    const after = maybeNudgeWeights(w, '2026-08-13')
+    expect(after.current.momentum).toBeCloseTo(1.35, 12) // the clamp decided it, not 1.8 × 1.15
+    expect(after.history[0].changes.momentum).toEqual({ from: 1.8, to: 1.35, ic: 1 }) // a real IC, overruled
+    expect(after.history[0].evidence).toMatch(/1 weight\(s\) clamped into the \[0\.5×, 1\.5×\] band/)
+  })
+
+  it('a nudge the band did NOT touch is not reported as clamped', () => {
+    const w = ready()
+    w.ic.sector = twoSided(40, 40, 1) // 0.3 → 0.345, well inside
+    const after = maybeNudgeWeights(w, '2026-08-13')
+    expect(after.current.sector).toBeCloseTo(0.345, 12)
+    expect(after.history[0].evidence).not.toMatch(/band/)
+  })
+
   it('THE 500-NUDGE PIN: 500 compounding nudges with adversarial IC leave EVERY factor inside [0.5×, 1.5×]', () => {
     const w = ready()
     // the live blob's own out-of-band vector is the starting point, so the loop is
@@ -1675,6 +1718,39 @@ describe('zero is a READING for some factors and a silence for others', () => {
     expect(booked('social', null)).toBe(0)
   })
 
+  /** THE SILENCE SPLIT [fix wave]. `ZERO_IS_A_READING` adjudicates a FACTOR; the
+   * flag adjudicates one READING of it. news is the case that forced it: the
+   * table admits its zero because of the quiet-tape branch, but the identical 0
+   * also falls out of a polarity tie on a loud tape — an arithmetic cancellation,
+   * which is a silence by the table's own test. Only the factor knows which
+   * happened, so the factor says so and the loop obeys it. */
+  const flagged = (name: FactorName, side: 'long' | 'short' = 'long'): Prediction => {
+    const p = at(side, { [name]: 0 })
+    p.factors[name].silence = true
+    return p
+  }
+
+  it('a SILENT zero is skipped even where the table admits the factor — a tie is not a reading', () => {
+    const w = updateIcStats(initWeights(), flagged('news'), win)
+    expect(w.ic.news).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+    expect(ZERO_IS_A_READING.news).toBe(true) // the factor is still admitted — this READING is not
+  })
+
+  it('…and the unflagged zero of the same factor still accrues: the quiet tape is the reading the split protects', () => {
+    const w = updateIcStats(initWeights(), at('long', { news: 0 }), win)
+    expect(w.ic.news.nAgree + w.ic.news.nDisagree).toBe(1)
+  })
+
+  it('the flag is a zero-only veto: it never suppresses a scored reading', () => {
+    const p = at('long', { news: 40 })
+    p.factors.news.silence = true // nonsense a factor never emits — the loop must still book the score
+    expect(updateIcStats(initWeights(), p, win).ic.news.nAgree).toBe(1)
+  })
+
+  it('the cadence counter is untouched by a skipped reading — a graded row is a graded row', () => {
+    expect(updateIcStats(initWeights(), flagged('news'), win).gradedSinceNudge).toBe(1)
+  })
+
   it('an accrued zero books by the SAME side convention as any other score: not-toward-long', () => {
     // `score > 0 === (side === 'long')` is the convention the whole module uses,
     // and a zero is simply not a positive score. So a quiet tape counts AGAINST a
@@ -1714,6 +1790,69 @@ describe('migrateWeights', () => {
     const twice = migrateWeights(once)
     expect(twice.current.smartMoney).toBe(0.3)
     expect(twice.current.technical).toBe(0.92)
+  })
+
+  /** THE BAND HOLDS AT LOAD, NOT ONLY AT THE NUDGE [fix wave]. The band is an
+   * invariant on `current`, and `maybeNudgeWeights` was the only thing enforcing
+   * it — so a stored out-of-band vector went on SCORING BOARDS for up to fifteen
+   * graded predictions before the repair fired. This is the same clamp, applied
+   * on the load path that every board goes through, and it is deliberately here
+   * rather than beside the nudge: `migrateWeights` is the function whose job is
+   * "make a stored blob safe to score with". */
+  const outOfBand = (): WeightsState => {
+    const w = initWeights()
+    w.current.technical = 0.0791 // gen-2's crushed #1 factor (base 1.0 → floor 0.5)
+    w.current.momentum = 1.8 // the old 2× cap (base 0.9 → ceiling 1.35)
+    w.current.sector = 0.31 // a learned drift, in band — must not move
+    return w
+  }
+
+  it('clamps an out-of-band stored vector ON LOAD, before any board scores with it', () => {
+    const w = migrateWeights(outOfBand(), DEFAULT_WEIGHTS, '2026-08-13')
+    expect(w.current.technical).toBeCloseTo(0.5, 12)
+    expect(w.current.momentum).toBeCloseTo(1.35, 12)
+    expect(w.current.sector).toBe(0.31) // untouched
+    expect(w.base).toEqual(DEFAULT_WEIGHTS) // the ratified vector is never rewritten by a repair
+  })
+
+  it('logs the repair the way the nudge logs one: what moved, ic 0, and the band named', () => {
+    const w = migrateWeights(outOfBand(), DEFAULT_WEIGHTS, '2026-08-13')
+    expect(w.history).toHaveLength(1)
+    expect(w.history[0].date).toBe('2026-08-13')
+    expect(w.history[0].changes).toEqual({
+      technical: { from: 0.079, to: 0.5, ic: 0 }, // ic 0 — no measurement did this
+      momentum: { from: 1.8, to: 1.35, ic: 0 },
+    })
+    expect(w.history[0].evidence).toMatch(/2 weight\(s\) clamped into the \[0\.5×, 1\.5×\] band/)
+  })
+
+  it('cannot re-fire: a second load finds an in-band vector and writes no second entry', () => {
+    const once = migrateWeights(outOfBand(), DEFAULT_WEIGHTS, '2026-08-13')
+    const twice = migrateWeights(once, DEFAULT_WEIGHTS, '2026-08-14')
+    expect(twice.history).toHaveLength(1)
+    expect(twice.current.technical).toBeCloseTo(0.5, 12)
+    expect(twice.current.momentum).toBeCloseTo(1.35, 12)
+  })
+
+  it('an in-band vector is byte-identical through the load — no entry, no drift', () => {
+    const before = migrateWeights(initWeights()) // the backfill pass alone
+    const after = migrateWeights(JSON.parse(JSON.stringify(before)) as WeightsState, DEFAULT_WEIGHTS, '2026-08-13')
+    expect(after).toEqual(before)
+    expect(after.history).toEqual([])
+  })
+
+  it('the clamp reads the blob’s OWN base, and only after the backfill has filled it', () => {
+    // a legacy blob missing smartMoney entirely, with a current far outside the
+    // band of the base that is about to be backfilled for it
+    const w = legacy()
+    ;(w.current as Record<string, number>).smartMoney = 9
+    const out = migrateWeights(w, DEFAULT_WEIGHTS, '2026-08-13')
+    expect(out.base.smartMoney).toBe(0.3)
+    expect(out.current.smartMoney).toBeCloseTo(0.45, 12) // 1.5 × 0.3, not left at 9
+    // and a factor whose stored base differs from DEFAULT_WEIGHTS bands on the
+    // stored one — rebaseWeights, not this, is what re-bases a vector
+    expect(out.base.momentum).toBe(0.8)
+    expect(out.current.momentum).toBe(0.8)
   })
 })
 

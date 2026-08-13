@@ -103,9 +103,13 @@ export interface CalibrationState {
   buckets: Record<string, BucketStat>
   // Per-setup-family outcome stats, keyed `${setup}:${side}:${band}` (regime
   // deliberately pooled — three setups × the full key space would starve every
-  // cell). ACCRUAL ONLY for now: probabilityFor does not read these until the
-  // families have real sample sizes — a specialist model must earn its
-  // existence from logged evidence, exactly like a new factor.
+  // cell). READ BY `probabilityFor` since stage 3c task 2, but only where the
+  // family has EARNED it: a sized read, a caller that named the setup, a bucket
+  // that can prove it is partitioned, and thirty sized outcomes in the call's own
+  // band — then 0.3 of the price (see `blendSetup`). Anything short of all four
+  // and these stay pure accrual, which is what every blob in existence does
+  // today. A specialist model earns its existence from logged evidence, exactly
+  // like a new factor.
   setupBuckets?: Record<string, BucketStat>
   brier: { date: string; mean: number; n: number }[]
   seeded?: boolean
@@ -222,12 +226,14 @@ function poolBuckets(
 }
 
 /** One setup family's bucket, in the requested population — the read side of the
- * `setupBuckets` partition. ACCRUAL-ONLY today: `probabilityFor` still does not
- * consume these (the blend that will is stage 3c task 2, and it reads them
- * 'sized', because blending shadow-diluted family evidence into a sized grade
- * would re-import exactly the dilution this partition removes). A family with no
- * bucket reads `{ n: 0, hits: 0 }` — an absence, which every caller must gate on
- * before it treats the read as evidence. */
+ * `setupBuckets` partition, and the panel's accessor. `probabilityFor`'s blend
+ * (`blendSetup`, stage 3c task 2) does NOT come through here: it needs the raw
+ * stored bucket to see whether sub-counts were ever written, and this function has
+ * already collapsed that into a reading. Both read 'sized' for the same reason —
+ * blending shadow-diluted family evidence into a sized grade would re-import
+ * exactly the dilution this partition removes. A family with no bucket reads
+ * `{ n: 0, hits: 0 }` — an absence, which every caller must gate on before it
+ * treats the read as evidence. */
 export function setupStat(
   state: CalibrationState,
   setup: string,
@@ -807,12 +813,12 @@ export function updateCalibration(
   const tail = `${pred.side}:${pred.regime}:${band}`
   const key = cohort === 'unknown' ? tail : `${cohort}:${tail}`
   state.buckets[key] = book(state.buckets[key], outcome.hit)
-  // setup-family stats accrue in parallel (never read by probabilityFor yet —
-  // see the CalibrationState comment), and take the IDENTICAL partition: the
-  // blend that will read them must read them sized, or it would re-import into a
-  // sized grade exactly the dilution the main buckets just shed. Calls without a
-  // setup stamp simply don't book here; the main buckets above remain the source
-  // of truth.
+  // setup-family stats accrue in parallel, and take the IDENTICAL partition: the
+  // blend that reads them (`blendSetup`) reads them sized, or it would re-import
+  // into a sized grade exactly the dilution the main buckets just shed — and it
+  // refuses a bucket with no sub-counts at all, so this write is what eventually
+  // turns the blend on for a family. Calls without a setup stamp simply don't
+  // book here; the main buckets above remain the source of truth.
   if (pred.setup) {
     const sk = `${pred.setup}:${pred.side}:${band}`
     state.setupBuckets![sk] = book(state.setupBuckets![sk], outcome.hit)
@@ -845,6 +851,12 @@ const FACTOR_NAMES = Object.keys(DEFAULT_WEIGHTS) as FactorName[]
 
 const zeroIc = (): IcStat => ({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
 
+/** The precision every weight-history line is written at. One helper rather than
+ * three copies of the same expression, because the three writers (the load-time
+ * clamp, the re-base, the nudge) are all writing the SAME field and a reader
+ * comparing two entries must never be comparing two roundings. */
+const r3 = (x: number) => Math.round(x * 1000) / 1000
+
 export function initWeights(base: Record<FactorName, number> = DEFAULT_WEIGHTS): WeightsState {
   return {
     base: { ...base },
@@ -858,13 +870,61 @@ export function initWeights(base: Record<FactorName, number> = DEFAULT_WEIGHTS):
 /** Forward-migrate a stored/seeded weights snapshot that predates a newly added
  * factor: backfill any missing key into base/current (from defaults) and ic
  * (zeroed) so an old blob never silently zeroes a new factor's weight. Mutates
- * and returns the same object; idempotent. */
-export function migrateWeights(state: WeightsState, base: Record<FactorName, number> = DEFAULT_WEIGHTS): WeightsState {
+ * and returns the same object; idempotent.
+ *
+ * …AND HOLD THE BAND, BECAUSE THIS IS THE LOAD PATH [stage 3c]. `current` may
+ * never leave `[WEIGHT_BAND_LO × base, WEIGHT_BAND_HI × base]` — that is an
+ * INVARIANT on the vector, not a bound on the nudge step (see maybeNudgeWeights)
+ * — and until this clamp existed the nudge loop was the only thing enforcing it.
+ * The gap that leaves is not theoretical: a stored vector outside the band goes on
+ * SCORING BOARDS, and publishing composites, for up to `NUDGE_EVERY` graded
+ * predictions before the repair fires. So the same clamp runs here, on the one
+ * function every load goes through before anything is scored, against the blob's
+ * OWN base and after the backfill above has filled any missing one.
+ *
+ * IDEMPOTENT, and its log is: the history entry is written only when a weight
+ * actually moved, so a second load finds an in-band vector, moves nothing and
+ * writes nothing. It mirrors the nudge's entry — the same `changes` shape with
+ * `ic: 0` (no measurement made this; the `rebaseWeights` precedent) and the same
+ * `N weight(s) clamped into the […] band` phrase the panel already reads, prefixed
+ * `on load:` where the nudge's is prefixed with its cadence, because a reader of
+ * the trail must be able to tell which pass repaired the weight.
+ *
+ * It runs BEFORE `rebaseWeights` (engine.ts), which may then discard the repaired
+ * vector wholesale. That ordering is deliberate and the trail survives it: the
+ * clamp's entry records the true `from` (what production last scored with) and the
+ * re-base's records the clamped value it superseded, so the two lines chain into
+ * the whole story instead of one line hiding half of it. */
+export function migrateWeights(
+  state: WeightsState,
+  base: Record<FactorName, number> = DEFAULT_WEIGHTS,
+  dateISO: string = new Date().toISOString().slice(0, 10),
+): WeightsState {
   state.seedGeneration ??= 1 // absence is generation 1 — see CalibrationState.seedGeneration
   for (const name of Object.keys(base) as FactorName[]) {
     if (state.base[name] == null) state.base[name] = base[name]
     if (state.current[name] == null) state.current[name] = base[name]
     if (!state.ic[name]) state.ic[name] = zeroIc()
+  }
+  // the band, over every key the blob carries — including one this vector has
+  // retired, whose weight still scores until `rebaseWeights` drops it
+  const changes: Record<string, { from: number; to: number; ic: number }> = {}
+  for (const name of Object.keys(state.current ?? {}) as FactorName[]) {
+    const cur = state.current[name]
+    const anchor = state.base[name]
+    if (cur == null || anchor == null) continue
+    const next = clamp(cur, WEIGHT_BAND_LO * anchor, WEIGHT_BAND_HI * anchor)
+    if (Math.abs(next - cur) <= 1e-9) continue
+    changes[name] = { from: r3(cur), to: r3(next), ic: 0 }
+    state.current[name] = next
+  }
+  const repaired = Object.keys(changes).length
+  if (repaired) {
+    // same defensive assumption rebaseWeights makes: this runs on the first load
+    // of a blob written by who-knows-which deploy, so it asserts nothing
+    if (!Array.isArray(state.history)) state.history = []
+    state.history.push({ date: dateISO, changes, evidence: `on load: ${repaired} weight(s) clamped into the [${WEIGHT_BAND_LO}×, ${WEIGHT_BAND_HI}×] band` })
+    if (state.history.length > 100) state.history = state.history.slice(-100)
   }
   return state
 }
@@ -900,7 +960,6 @@ export function rebaseWeights(
   const names = [...new Set([...Object.keys(base), ...Object.keys(state.base ?? {})])] as FactorName[]
   if (!names.some(n => state.base?.[n] !== base[n])) return state // fingerprint match → nothing to do
   const changes: Record<string, { from: number; to: number; ic: number }> = {}
-  const r3 = (x: number) => Math.round(x * 1000) / 1000
   for (const n of names) {
     const from = r3(state.current?.[n] ?? 0)
     const to = base[n] ?? 0 // absent from the new vector → the factor is retired, and drops out below
@@ -928,6 +987,16 @@ export function rebaseWeights(
  * skipped both together, which quietly selected news IC down to loud tapes only —
  * `newsFactor` returns 0 for a quiet tape and never returns null at all.
  *
+ * …AND PER READING, where the factor says so. The table answers "does a zero from
+ * this factor mean anything?"; `FactorScore.silence` answers "did THIS zero?", and
+ * a flagged zero is skipped even where the table admits the factor. It exists for
+ * news, whose zero has two causes — the quiet-tape branch (the reading the table
+ * was admitting) and an exact polarity tie on a loud tape (an arithmetic
+ * cancellation, a silence by the table's own test). The factor is the only thing
+ * that still knows which, so it marks it; this line obeys. Absent means "not a
+ * silence", so every other factor and every legacy stored Prediction books exactly
+ * as it did before.
+ *
  * AN ACCRUED ZERO BOOKS BY THE MODULE'S ONE CONVENTION, `score > 0 === (side ===
  * 'long')`, and that convention is not symmetric about zero: a zero counts
  * AGAINST a long and WITH a short. That is deliberate rather than overlooked. The
@@ -941,7 +1010,9 @@ export function updateIcStats(state: WeightsState, pred: Prediction, outcome: Pr
   for (const name of FACTOR_NAMES) {
     const f = pred.factors[name]
     if (!f || f.score == null) continue
-    if (f.score === 0 && !ZERO_IS_A_READING[name]) continue
+    // the table, then the reading's own veto — a factor may be admitted and this
+    // particular zero still be a silence (see above)
+    if (f.score === 0 && (f.silence || !ZERO_IS_A_READING[name])) continue
     const agree = f.score > 0 === (pred.side === 'long')
     const st = state.ic[name] ?? { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }
     if (agree) {
@@ -1002,7 +1073,16 @@ const WEIGHT_BAND_HI = 1.5
  * sit there most immovably for exactly the factor whose evidence is too one-sided
  * to nudge — the failure would protect itself. A clamp with no nudge behind it is
  * recorded like any other change with `ic: 0`, because no measurement made it,
- * and the history line names it so the panel can say what happened.
+ * and the history line names it so the panel can say what happened. That line
+ * counts the weights THE CLAMP decided, which is not the same set as the ones the
+ * IC floor skipped: an eligible factor sitting out of band has a real `ic`, is
+ * nudged further out, and is clamped back — the band decided the value, so the
+ * band is what the line reports.
+ *
+ * The band is ALSO held at load (`migrateWeights`), so a stored out-of-band vector
+ * is repaired before any board scores with it rather than up to fifteen graded
+ * predictions later. This pass stays the invariant's enforcement DURING the loop;
+ * the two are the same clamp against the same base.
  *
  * Consequence worth stating: a factor is now guaranteed at least half its base
  * weight forever. The way to retire a factor is to remove it from
@@ -1020,10 +1100,19 @@ export function maybeNudgeWeights(state: WeightsState, dateISO: string): Weights
     // the phantom-zero guards stay on the means, but they are now unreachable:
     // eligibility already proved both counts are ≥ 20
     const ic = eligible ? clamp((st.sumAgree / st.nAgree - st.sumDisagree / st.nDisagree) / 10, -1, 1) : 0
-    const next = clamp(eligible ? cur * (1 + NUDGE_STEP * ic) : cur, WEIGHT_BAND_LO * state.base[name], WEIGHT_BAND_HI * state.base[name])
+    // what the nudge asked for, and then what the band allowed — kept apart so
+    // the history line can say WHICH ONE decided the value
+    const nudged = eligible ? cur * (1 + NUDGE_STEP * ic) : cur
+    const next = clamp(nudged, WEIGHT_BAND_LO * state.base[name], WEIGHT_BAND_HI * state.base[name])
     if (Math.abs(next - cur) > 1e-9) {
-      if (!eligible) repaired++
-      changes[name] = { from: Math.round(cur * 1000) / 1000, to: Math.round(next * 1000) / 1000, ic: Math.round(ic * 100) / 100 }
+      // COUNTED WHENEVER THE CLAMP DECIDED IT, not whenever the IC floor skipped
+      // the factor. The two coincided while the only clamped weights were
+      // ineligible ones, and diverge on an eligible factor sitting out of band:
+      // its nudge is computed, overruled by the band, and the line said nothing
+      // about a band. The claim "N weight(s) clamped into the band" is about the
+      // clamp, so it counts the clamp.
+      if (Math.abs(next - nudged) > 1e-9) repaired++
+      changes[name] = { from: r3(cur), to: r3(next), ic: Math.round(ic * 100) / 100 }
       state.current[name] = next
     }
   }

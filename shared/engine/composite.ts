@@ -73,7 +73,16 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
  *
  *   news        READING — `!headlines.length → 0, 'quiet tape'`, its own branch,
  *                         and this factor has NO null path: skipping zero
- *                         selected its evidence down to loud tapes only.
+ *                         selected its evidence down to loud tapes only. It is
+ *                         the one factor whose zero has TWO causes, and only the
+ *                         quiet tape is the reading admitted here: an exact
+ *                         polarity tie on a LOUD tape is the same 0 and is a
+ *                         silence by the test above. The factor tells them apart
+ *                         (`FactorScore.silence`, set on `net === 0 && hits > 0`)
+ *                         because by the time the loop sees the score, nothing
+ *                         else can. A row admitted by this table can still be
+ *                         vetoed by that flag; the flag can never admit a row
+ *                         this table refuses.
  *   seasonality READING — every "no read" case (unreliable history, no month,
  *                         n < 3) already returns NULL, so a zero is a reliable
  *                         month that measured flat. [named in the spec]
@@ -85,6 +94,17 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
  *                         (its agreements are rare, and the two-sided IC floor
  *                         holds it mute until both columns fill) — which is
  *                         exactly why it is safe to book honestly.
+ *                         THE CAVEAT THAT BELONGS BESIDE IT: the factor draws
+ *                         that line, and the FETCH LAYER can erase it. A Finnhub
+ *                         outage returns no rows, and `insiders.ts:190` maps
+ *                         "absent from results" to checked-empty — then caches it
+ *                         for the TTL, so a bad morning manufactures a day of
+ *                         confident zeros for every name in the fetch set and the
+ *                         loop books them as evidence. Recorded rather than
+ *                         patched here because the fix is at the fetch layer (a
+ *                         failed call must be `undefined`, not empty), and the
+ *                         zero table is only entitled to say what the factor's
+ *                         own semantics are.
  *   technical   silence — zero is `falling-knife` with no stack and no thrust,
  *                         and the factor's own comment says why: "wait — no edge
  *                         either side until the turn confirms".

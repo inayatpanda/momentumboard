@@ -289,6 +289,23 @@ describe('two-layer composite: core decides, context colours', () => {
     expect(drafted(base({ factors: oneCtxNull }))!.composite).toBeCloseTo(bare.composite, 1)
   })
 
+  /** THE SILENCE FLAG IS INVISIBLE TO SCORING [stage 3c task 2 fix wave].
+   * `FactorScore.silence` marks a zero the LEARNING LOOP must skip (a news
+   * polarity tie — see factors.ts). Nothing in the composite may read it: a
+   * flagged zero and a bare zero are the same 0 to every weight, every cap and
+   * every gate, and the only difference on the call is that the flag rides
+   * through onto `call.factors` so a stored Prediction still carries it. */
+  it('a flagged (silent) zero composes byte-identically to a bare zero — and the flag survives onto the call', () => {
+    const bareZero = { ...longFactors(), news: { score: 0, detail: '2 headline(s), polarity +0' } }
+    const flagged = { ...longFactors(), news: { score: 0, detail: '2 headline(s), polarity +0', silence: true as const } }
+    const a = drafted(base({ factors: bareZero }))!
+    const b = drafted(base({ factors: flagged }))!
+    expect({ ...b, factors: a.factors }).toEqual(a) // everything but the factor table is identical
+    expect(b.factors.news.silence).toBe(true)
+    expect(a.factors.news.silence).toBeUndefined()
+    expect(coreCompositeOf(flagged, DEFAULT_WEIGHTS, 'green')).toBe(coreCompositeOf(bareZero, DEFAULT_WEIGHTS, 'green'))
+  })
+
   it('hostile context can push a marginal core under the dead zone (eligibility veto) but never flips the side', () => {
     const marginal = { ...nullFactors(), technical: { score: 26, detail: 'basing' } }
     expect(drafted(base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' }))!.side).toBe('long') // 26 ≥ 25 alone

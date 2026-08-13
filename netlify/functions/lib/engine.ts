@@ -382,7 +382,11 @@ async function loadState(store: AppStore, today: string) {
   // so the IC just installed is not zeroed on the way in (§4.4 — the trap that
   // silently deletes a seed's factor evidence). A seed that breaks that contract
   // is not rescued here; it is stripped, loudly, in the history entry.
-  const weights = rebaseWeights(migrateWeights(weightsBlob), DEFAULT_WEIGHTS, today)
+  // migrateWeights also holds the [0.5×, 1.5×] band on `current` — the invariant
+  // used to be enforced only by the nudge loop, so a stored out-of-band vector
+  // scored real boards until fifteen more predictions matured. It takes `today`
+  // for the same reason rebaseWeights does: a history entry dated by the run.
+  const weights = rebaseWeights(migrateWeights(weightsBlob, DEFAULT_WEIGHTS, today), DEFAULT_WEIGHTS, today)
   calibration = migrateCalibration(calibration)
   const channelCred = (await store.read<ChannelCredState>('channel-credibility')) ?? {}
   return { weights, calibration, channelCred }

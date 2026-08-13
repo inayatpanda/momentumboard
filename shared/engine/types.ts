@@ -7,6 +7,24 @@ export type FactorName = 'technical' | 'momentum' | 'sector' | 'social' | 'chann
 export interface FactorScore {
   score: number | null // signed −100..+100 toward LONG; null = no data (weight renormalises away)
   detail: string
+  /** THIS PARTICULAR ZERO IS A SILENCE, not a reading [stage 3c].
+   *
+   * `ZERO_IS_A_READING` (composite.ts) adjudicates a FACTOR: does a zero from
+   * this factor mean "we looked and there is no signal"? That is the right
+   * question for nine of the ten. It is not enough for `news`, whose zero has TWO
+   * causes — the deliberate quiet-tape branch (a reading, and the reason the
+   * factor is in the table at all) and an exact polarity tie on a loud tape (an
+   * arithmetic cancellation, which is a silence by the table's own test). Only
+   * the factor still knows which one happened, so the factor says so here and
+   * `updateIcStats` skips a flagged zero even where the table admits the factor.
+   *
+   * OPTIONAL AND ABSENT BY DEFAULT, deliberately: every factor that never sets it
+   * emits the identical object it always did, so no stored Prediction, no seed and
+   * no scoring path moves. Nothing in the composite may read it — a flagged zero
+   * is the same 0 to every weight, cap and gate — it is evidence bookkeeping and
+   * only the learning loop is entitled to it. `true` only; a reading that is not a
+   * silence omits the field rather than writing `false`. */
+  silence?: true
 }
 
 /** The specialist shapes a call can take. Direction alone is not a setup: a

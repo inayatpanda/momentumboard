@@ -179,7 +179,26 @@ export const POS = new Set(['beat', 'beats', 'surge', 'surges', 'soar', 'soars',
 export const NEG = new Set(['miss', 'misses', 'plunge', 'plunges', 'sink', 'sinks', 'fall', 'falls', 'cut', 'cuts', 'downgrade', 'downgraded', 'probe', 'lawsuit', 'recall', 'warn', 'warns', 'slump', 'slumps'])
 
 /** Crude by design: counts polarity words in ticker-tagged titles. Nuance is
- * the LLM overlay's job — this factor only measures pressure and direction. */
+ * the LLM overlay's job — this factor only measures pressure and direction.
+ *
+ * TWO ZEROS, AND THEY ARE NOT THE SAME CLAIM [stage 3c]. `ZERO_IS_A_READING`
+ * (composite.ts) admits this factor's zero because of the FIRST one:
+ *
+ *   quiet tape — no headlines at all. A deliberate branch meaning "we looked and
+ *                nobody wrote about this name", and since this factor has no null
+ *                path it is the only way it can say so. A reading.
+ *   polarity tie — headlines exist and their polarity words cancelled exactly
+ *                (`net === 0` with `hits > 0`). That is the arithmetic
+ *                cancellation the zero table calls a SILENCE everywhere it
+ *                appears (channels' split panel, smartMoney's offsetting funds):
+ *                the factor is genuinely mute, and booking muteness as evidence
+ *                would count it against every long and for every short on no
+ *                information at all.
+ *
+ * A tie therefore sets `silence` (types.ts) and the learning loop skips it. The
+ * SCORE is untouched — both are 0, they always were, and nothing in the composite
+ * reads the flag. Headlines with no polarity word at all (`hits === 0`) are the
+ * quiet tape by another route: there were no votes to cancel, so no flag. */
 export function newsFactor(headlinesForSym: string[]): FactorScore {
   if (!headlinesForSym.length) return { score: 0, detail: 'quiet tape' }
   let net = 0
@@ -191,7 +210,10 @@ export function newsFactor(headlinesForSym: string[]): FactorScore {
     }
   }
   const score = clamp(15 * net + 5 * Math.sign(net) * hits, -50, 50)
-  return { score: round1(score), detail: `${headlinesForSym.length} headline(s), polarity ${net >= 0 ? '+' : ''}${net}` }
+  const detail = `${headlinesForSym.length} headline(s), polarity ${net >= 0 ? '+' : ''}${net}`
+  // `net === 0` with votes cast IS the zero — `15 × 0 + 5 × 0 × hits` — so the
+  // flag never travels with a scored reading.
+  return net === 0 && hits > 0 ? { score: round1(score), detail, silence: true } : { score: round1(score), detail }
 }
 
 /** A market-moving catalyst's directional vote (catalyst.ts). null when there is

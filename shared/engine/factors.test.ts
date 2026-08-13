@@ -230,6 +230,50 @@ describe('newsFactor', () => {
     expect(newsFactor(['DOJ probe widens, lawsuit filed']).score).toBe(-40)
     expect(newsFactor([]).score).toBe(0)
   })
+
+  /** THE ZERO HAS TWO CAUSES, and the learning loop must be able to tell them
+   * apart [stage 3c task 2 fix wave]. `ZERO_IS_A_READING.news` is true for the
+   * QUIET TAPE — its own deliberate branch, and the reason the flag exists — but
+   * the same 0 also comes out of a polarity TIE on a loud tape, which is the
+   * arithmetic cancellation the zero table calls a SILENCE everywhere else
+   * (channels, smartMoney). The score is identical either way; the flag is the
+   * only thing that separates them, and it is set at the factor because the
+   * factor is the only place that still knows which happened. */
+  it('a polarity TIE on a loud tape is a silence — same 0, flagged', () => {
+    const tie = newsFactor(['Nvidia beats estimates', 'Nvidia misses guidance']) // +1 then −1, hits 2
+    expect(tie.score).toBe(0)
+    expect(tie.silence).toBe(true)
+    expect(tie.detail).toBe('2 headline(s), polarity +0')
+  })
+
+  it('the quiet tape keeps its zero UNFLAGGED — it is the reading the table admits', () => {
+    const quiet = newsFactor([])
+    expect(quiet.score).toBe(0)
+    expect(quiet.silence).toBeUndefined()
+  })
+
+  it('headlines that score NOTHING are a reading too — nobody wrote a polarity word, which is the quiet tape by another route', () => {
+    const nothing = newsFactor(['Company files routine 8-K'])
+    expect(nothing.score).toBe(0)
+    expect(nothing.silence).toBeUndefined() // hits 0 — no votes to cancel
+  })
+
+  it('a scored read never carries the flag, either way', () => {
+    expect(newsFactor(['Nvidia beats estimates, shares surge']).silence).toBeUndefined()
+    expect(newsFactor(['DOJ probe widens, lawsuit filed']).silence).toBeUndefined()
+  })
+
+  it('the flag changes NO score — every headline set reads exactly what it read before', () => {
+    const pins: [string[], number][] = [
+      [[], 0],
+      [['Nvidia beats estimates, shares surge'], 40],
+      [['DOJ probe widens, lawsuit filed'], -40],
+      [['Nvidia beats estimates', 'Nvidia misses guidance'], 0],
+      [['Company files routine 8-K'], 0],
+      [['Nvidia beats estimates and tops guidance', 'Rival plunges'], 30], // net +1, hits 3
+    ]
+    for (const [headlines, score] of pins) expect(newsFactor(headlines).score).toBe(score)
+  })
 })
 
 describe('seasonalityFactor', () => {
