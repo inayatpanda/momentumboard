@@ -1287,6 +1287,38 @@ export async function buildBoard(
     // then pooled) and the risk rung below. Unknown cap pools to the cohortless
     // path and the combined rung — never guessed into a sleeve.
     const cohort = capCohortOf(capUsdM)
+    // A SHORT the reader can't ROUTE is not a takeable call (the full argument is
+    // below, where `shadow` is assembled). Read HERE because it is one of the three
+    // things that can be known about this row BEFORE the grade — and the
+    // population the grade is read from has to be one of them.
+    const shortRoute = (cfg.levMap ?? {})[call.sym]
+    const unshortable = call.side === 'short' && !(shortRoute?.short2x || shortRoute?.short3x)
+    // WHOSE HISTORY THIS ROW IS READ AGAINST [stage 3c — the provenance partition].
+    //
+    // A row that could still be sized is priced and graded on SIZED history: rows
+    // the reader could actually have taken. That is the unmasking — 26% of the
+    // seed's graded evidence is velocity shadow, pooled into the same per-band
+    // buckets a sized row reads, and a grade built on it answers a question about
+    // a population the reader was never offered.
+    //
+    // A row that CANNOT be sized whatever the grade says — an earnings print
+    // inside the horizon, an unroutable short, a lane stand-down — is priced
+    // 'pooled'. Its probability is a record of what the engine thought, not money
+    // on offer; the shadow population is the one it will itself be booked into;
+    // and pricing it against the sized read would quietly claim it was a candidate.
+    //
+    // These three are exactly the shadow conditions that do NOT depend on the
+    // grade, and that is why the test is written from them rather than from
+    // `shadow`. The fourth (`!grade && !contract`) is decided BY this read, so
+    // feeding it back in would be circular — and the sized read is the right
+    // question to have asked it anyway: "should the reader have been offered
+    // this?" is answered by what happened to rows the reader was offered. Watch
+    // rows sit on the same side of that line: unsized is the ANSWER their grade
+    // gave, not a property they had going in. (They then accrue as shadow
+    // evidence — riskPct 0 — which is the write side's rule, deliberately not
+    // this one: what a row TEACHES is settled after the fact, what it is GRADED
+    // against has to be settled before.)
+    const population = call.earningsRisk || unshortable || forceShadow ? 'pooled' : 'sized'
     // …and it is a CURVE now, read at this call's own |composite| rather than at
     // the corner of the band it falls in: two calls 14 points apart no longer
     // share a probability, and one point of conviction moves the number. `nEff`
@@ -1295,7 +1327,7 @@ export async function buildBoard(
     // says the number was handed DOWN from the lowest conviction this rung has
     // ever graded, which caps the grade at C. `provisional` is display only
     // (nEff < MIN_BUCKET_N) — nothing below branches on it.
-    const { p, provisional, nEff, belowEvidence } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort)
+    const { p, provisional, nEff, belowEvidence } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort, population)
     const grade = gradeFor(p, nEff, gradeAnchor, belowEvidence)
     // grade null = calibration sees no edge in this bucket. The call stays off
     // the paper — but it MUST enter the ledger as a shadow, or buckets below
@@ -1321,9 +1353,9 @@ export async function buildBoard(
     // reader-facing engine-board. A name WITH a route stays visible even when the
     // risk ladder hasn't unlocked it yet (that's the honest paper-only case).
     // Longs are untouched. (user 2026-07-24: only show shorts I can place.)
-    const shortRoute = (cfg.levMap ?? {})[call.sym]
-    const unshortable = call.side === 'short' && !(shortRoute?.short2x || shortRoute?.short3x)
-    const belowBase = !grade && call.evidence.contract && !call.earningsRisk && !unshortable && !forceShadow
+    // (`unshortable` itself is computed above the probability read — it is one of
+    // the three pre-grade facts that choose the population.)
+    const belowBase =!grade && call.evidence.contract && !call.earningsRisk && !unshortable && !forceShadow
     const shadow = call.earningsRisk || (!grade && !call.evidence.contract) || unshortable || forceShadow
     // Sizing, in three tiers instead of the old on/off (ratified 2026-08-11).
     // The old rule — only A/B on the FULL contract carries size — kept producing
@@ -2162,7 +2194,11 @@ export async function buildBoard(
         // that is NOT a call read exactly like the ones that are.
         // POOLED [§9]: a near miss cleared no gate, so the honest thing to print
         // beside it is the engine's own measured rate over what it does publish —
-        // a probability question, not a grading one.
+        // a probability question, not a grading one. Pooled in the STAGE-3C sense
+        // too, and for the same reason the shadows are: this row carries riskPct 0,
+        // will accrue as shadow evidence if it is ever graded, and was never a
+        // candidate for sizing — so the sized population is not the one it is drawn
+        // from and pricing it there would claim it had been.
         probability: round2(engineBaseRate),
         provisional: true,
         grade: 'C',

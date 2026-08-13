@@ -176,7 +176,14 @@ export function seedFromHistory(
       // hit rule mirrors gradePrediction(): a win must clear HIT_EXCESS_MIN
       const outcome = { excessPct, rawPct: round1(rawPct), spyPct: round1(spyPct), stopped, hit: !stopped && excessPct >= HIT_EXCESS_MIN }
 
-      updateCalibration(calibration, { side: call.side, regime, composite: call.composite, setup: call.setup, provenance: 'seed' }, outcome)
+      // `riskPct: 1` is the provenance stamp, not a size [stage 3c]: this walk has
+      // no board, no risk ladder and no shadow concept — every row it books is one
+      // the reader could have taken, so the whole population is SIZED and no shadow
+      // sub-count is written. Absent, the partition would read these rows as
+      // "never partitioned", which is the same number by accident rather than by
+      // statement; the sweep this feeds (replay-window's referenceBase) is
+      // unconditional by definition and must not acquire a shadow slice.
+      updateCalibration(calibration, { side: call.side, regime, composite: call.composite, setup: call.setup, provenance: 'seed', riskPct: 1 }, outcome)
       weights = updateIcStats(weights, { side: call.side, factors: call.factors } as Prediction, outcome)
     }
   }

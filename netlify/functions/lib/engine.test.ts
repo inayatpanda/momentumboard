@@ -4,7 +4,7 @@ import type { OpenTraceEntry } from '../../../shared/engine/openTrace'
 import { memoryStore } from './store'
 import type { Candle } from '../../../shared/types'
 import type { Prediction } from '../../../shared/engine/types'
-import { CALIB_DEF_VERSION, initWeights, type CalibrationState, type WeightsState } from '../../../shared/engine/calibration'
+import { CALIB_DEF_VERSION, baseHitRate, initWeights, setupStat, type CalibrationState, type WeightsState } from '../../../shared/engine/calibration'
 import { RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
 import { VELOCITY_DOOR_CAP, classifyVelocity } from '../../../shared/engine/velocityLane'
 import { classifyDip } from '../../../shared/engine/dipLane'
@@ -436,6 +436,61 @@ describe('buildBoard', () => {
     const store = memoryStore()
     const { board } = await buildBoard(store, deps({ screens: async () => [], mediaTitles: async () => [] }), NOW)
     expect(Array.isArray(board)).toBe(true) // seeded calibration suppresses the weak-band short
+  })
+
+  // THE PROVENANCE PARTITION, at the only place a reader ever sees it [stage 3c].
+  // Same tape, same composite, same 32/22 bucket totals as the A above — but 17 of
+  // those 32 observations came from rows nobody could take. The two tests below are
+  // one fixture read two ways, which is the whole claim: what changes is not the
+  // evidence but whose evidence it is.
+  //   pooled 32/22 → laplace 0.6667, shrunk twice → 0.6346, nEff 32 → A
+  //   sized  15/10 → laplace 0.6316, shrunk twice → 0.5802, nEff 15 → B
+  // (the grade anchor is the pooled base either way — 32 < 50, so the cold 0.5 —
+  // because `referenceBase` is an unconditional sweep with no sized slice to take.)
+  const partitionedCal = (key: string): CalibrationState => ({
+    buckets: { [key]: { n: 32, hits: 22, shadowN: 17, shadowHits: 12 } },
+    brier: [],
+    defVersion: CALIB_DEF_VERSION,
+    seedGeneration: 3,
+  })
+
+  it('a SIZED row grades against SIZED history — the seventeen shadow observations no longer buy it an A', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
+    await store.write('engine-calibration', partitionedCal('short:amber:55-70'))
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const { board } = await buildBoard(store, deps(), NOW)
+    const call = board.find(b => b.sym === 'NVDA')!
+    expect(call).toBeDefined()
+    expect(call.riskPct).toBeGreaterThan(0) // a row the reader can act on — which is WHY it reads sized
+    expect(call.grade).toBe('B') // 'A' on the same totals before the partition
+    expect(call.probability).toBeCloseTo(0.58, 2)
+    // and the row still trades: this is a demotion in what the engine CLAIMS, not
+    // a suppression — B with the contract is still the full rung
+    expect(call.watchOnly).toBeUndefined()
+  })
+
+  it('…while a row the reader could never place is PRICED against the pool — a shadow’s probability is not reader money', async () => {
+    // Identical fixture, one difference: an earnings print inside the horizon, so
+    // this row cannot be sized whatever the grade says. It is booked into the
+    // shadow population, so the shadow population is the honest one to price it
+    // against — and it reads the pooled 0.63 the sized row above was denied.
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
+    await store.write('engine-calibration', partitionedCal('short:amber:55-70'))
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const { board } = await buildBoard(store, deps({ earningsSyms: async () => new Set(['NVDA']) }), NOW)
+    expect(board.find(b => b.sym === 'NVDA')).toBeUndefined() // never on the reader-facing board
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const shadow = (await store.read<Prediction[]>(`predictions:${today}`))!.find(p => p.sym === 'NVDA')!
+    expect(shadow.shadow).toBe(true)
+    expect(shadow.riskPct).toBe(0)
+    expect(shadow.probability).toBeCloseTo(0.63, 2)
+    expect(shadow.grade).toBe('A')
   })
 
   it('an earnings print inside the horizon forces SHADOW — off the public board, still logged for the print-edge ledger', async () => {
@@ -2420,10 +2475,17 @@ describe('buildBoard', () => {
     // long in this band is evidence about longs in this band, whatever lane found
     // it), the family's own setup bucket and the Brier trail all move — identically
     // in both modes.
+    // …and the PROVENANCE PARTITION rides along [stage 3c]: the row is booked into
+    // the shared bucket AND recorded as shadow evidence inside it, so a future
+    // SIZED read of this band gets its observation count back to zero while the
+    // pooled read still sees the shadow's outcome. Sub-counts are written only for
+    // an unsized row (`riskPct > 0 ⇒ sized`), so the shape of the assertion is
+    // itself the pin: shadow-first books them, a sized velocity row would not.
     const cal = (await store.read<CalibrationState>('engine-calibration'))!
-    expect(cal.buckets['large:long:amber:25-40']).toEqual({ n: 1, hits: 1 })
+    const shadowSub = VELOCITY_SHADOW_FIRST ? { shadowN: 1, shadowHits: 1 } : {}
+    expect(cal.buckets['large:long:amber:25-40']).toEqual({ n: 1, hits: 1, ...shadowSub })
     expect(cal.buckets['long:amber:25-40']).toEqual({ n: 20, hits: 14 }) // the seeded bucket is untouched
-    expect(cal.setupBuckets!['velocity:long:25-40']).toEqual({ n: 1, hits: 1 })
+    expect(cal.setupBuckets!['velocity:long:25-40']).toEqual({ n: 1, hits: 1, ...shadowSub })
     expect(cal.brier.at(-1)).toMatchObject({ n: 1 })
 
     // The RISK LADDER is the one learner that must NOT move on a shadow: the rung
@@ -3011,6 +3073,7 @@ describe('gradeOutstanding', () => {
       stop: shorty[239].c * 1.1,
       target: shorty[239].c * 0.9,
       instrument: null,
+      riskPct: 1, // a SIZED call — the reader had money on this one [stage 3c]
       factors: { technical: { score: -30, detail: '', weight: 1 } } as never,
     }
     // a WATCH-ONLY companion call on the same tape: graded and calibrated like
@@ -3037,9 +3100,19 @@ describe('gradeOutstanding', () => {
     expect(preds[0].outcome10).toBeDefined()
     expect(preds[1].outcome5).toBeDefined() // the watch call is graded too
 
+    // BOTH outcomes are booked (32/22 + 2 hits) — the learning loop eats every
+    // published row — and the PROVENANCE PARTITION says which of them the reader
+    // could have taken: the watch row carries riskPct 0, so it accrues into the
+    // totals AND into the shadow sub-count, and a later SIZED read of this band
+    // sees 33/23 while the pooled read still sees 34/24. [stage 3c]
     const cal = (await store.read<CalibrationState>('engine-calibration'))!
-    expect(cal.buckets['short:amber:25-40']).toEqual({ n: 34, hits: 24 }) // both outcomes booked (32/22 + 2 hits)
-    expect(cal.setupBuckets!['continuation:short:25-40']).toEqual({ n: 1, hits: 1 }) // setup stats accrue
+    expect(cal.buckets['short:amber:25-40']).toEqual({ n: 34, hits: 24, shadowN: 1, shadowHits: 1 })
+    expect(baseHitRate(cal, 'sized')).toEqual({ rate: 0.5, n: 33 }) // 33 < 50 → the cold-start cliff, applied to the SIZED n
+    expect(baseHitRate(cal).n).toBe(34)
+    // the watch row's own family bucket is partitioned the same way — the blend
+    // that will read these (task 2) must not be handed an unsized row as evidence
+    expect(cal.setupBuckets!['continuation:short:25-40']).toEqual({ n: 1, hits: 1, shadowN: 1, shadowHits: 1 })
+    expect(setupStat(cal, 'continuation', 'short', '25-40', 'sized')).toEqual({ n: 0, hits: 0 })
     expect(cal.brier).toHaveLength(1)
 
     const risk = (await store.read<{ gradedAtRung: number }>('risk-state'))!

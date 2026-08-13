@@ -14,6 +14,7 @@ import {
   migrateWeights,
   probabilityFor,
   rebaseWeights,
+  setupStat,
   updateCalibration,
   updateIcStats,
   type Band,
@@ -950,6 +951,222 @@ describe('baseHitRate', () => {
     cal.buckets['short:red:25-40'] = { n: 100, hits: 44 }
     expect(baseHitRate(cal).rate).toBeCloseTo((74 + 2) / (200 + 4), 5)
     expect(baseHitRate(emptyCal()).rate).toBe(0.5)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE PROVENANCE PARTITION [stage 3c, task 1]. `BucketStat` gained optional
+// `shadowN`/`shadowHits`; the keys did not move (poolBuckets still parses 3/4
+// parts) and CALIB_DEF_VERSION is untouched — a hit still means what it meant.
+//
+// The rule these tests exist to hold: a row the reader could put money on is
+// graded against evidence from rows the reader could have put money on. And the
+// rule that makes it installable: ABSENCE of the sub-counts means "this evidence
+// was never partitioned", so the sized read IS the pooled read on every legacy
+// blob — the same absent-means-legacy pattern `referenceBase` uses.
+// ---------------------------------------------------------------------------
+
+/** `calOf` with the sub-counts: `[n, hits]` (unpartitioned) or `[n, hits, shadowN, shadowHits]`. */
+const calPart = (rows: Record<string, number[]>): CalibrationState => ({
+  buckets: Object.fromEntries(
+    Object.entries(rows).map(([k, v]) => [k, v.length === 4 ? { n: v[0], hits: v[1], shadowN: v[2], shadowHits: v[3] } : { n: v[0], hits: v[1] }]),
+  ),
+  brier: [],
+})
+
+const PROBE_X = [25, 30, 32.5, 40, 47.5, 55, 62.5, 70, 77.5, 90]
+const PROBE_SIDES = ['long', 'short'] as const
+const PROBE_REGIMES = ['green', 'amber', 'red', 'unknown'] as const
+const PROBE_COHORTS = ['large', 'small', 'unknown'] as const
+
+describe('the provenance partition — sized rows grade against sized history', () => {
+  describe('a blob with no sub-counts reads byte-identically in BOTH populations', () => {
+    it('the COMMITTED generation-3 seed: same p, same nEff, same flags, every rung', () => {
+      const committed = seedJson.calibration as unknown as CalibrationState
+      // the fixture's own premise. The gen-3 seed predates the partition, so it
+      // carries no sub-counts — and if a later generation ships some, this test
+      // must fail loudly rather than keep passing while measuring nothing.
+      expect(Object.values(committed.buckets).some(b => b.shadowN != null || b.shadowHits != null)).toBe(false)
+      let probes = 0
+      for (const side of PROBE_SIDES)
+        for (const regime of PROBE_REGIMES)
+          for (const cohort of PROBE_COHORTS)
+            for (const x of PROBE_X) {
+              // the DEFAULT is pooled (every existing call site is unchanged), and
+              // the sized read of an unpartitioned blob must equal it exactly —
+              // not close, equal, on all four returned fields
+              const pooled = probabilityFor(committed, side, regime, x, cohort)
+              expect(probabilityFor(committed, side, regime, x, cohort, 'pooled')).toEqual(pooled)
+              expect(probabilityFor(committed, side, regime, x, cohort, 'sized')).toEqual(pooled)
+              probes++
+            }
+      expect(probes).toBe(PROBE_SIDES.length * PROBE_REGIMES.length * PROBE_COHORTS.length * PROBE_X.length)
+    })
+
+    it('…and so do baseHitRate, curveFor and setupStat on that same seed', () => {
+      const committed = seedJson.calibration as unknown as CalibrationState
+      expect(baseHitRate(committed, 'sized')).toEqual(baseHitRate(committed))
+      for (const side of PROBE_SIDES)
+        for (const regime of [...PROBE_REGIMES, null])
+          expect(curveFor(committed, side, 'any', regime, undefined, 'sized')).toEqual(curveFor(committed, side, 'any', regime))
+      for (const key of Object.keys(committed.setupBuckets ?? {})) {
+        const [setup, side, band] = key.split(':') as [string, 'long' | 'short', Band]
+        expect(setupStat(committed, setup, side, band, 'sized')).toEqual(setupStat(committed, setup, side, band))
+      }
+    })
+
+    it('migrateCalibration NEVER backfills a sub-count — absence is "never partitioned", not "no shadows"', () => {
+      // The gen-3 seed's own aggregate says 2,249 of its 6,608 graded rows were
+      // shadow. Writing `shadowN: 0` into each bucket would claim the opposite,
+      // under a name no later reader could tell from a measured one — the exact
+      // argument that keeps `referenceBase` out of the migration.
+      const cal = migrateCalibration({ buckets: { 'long:green:25-40': { n: 10, hits: 4 } }, brier: [], seeded: true })
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 10, hits: 4 })
+      expect('shadowN' in cal.buckets['long:green:25-40']).toBe(false)
+    })
+  })
+
+  describe('where a partition EXISTS, the sized read excludes the shadows', () => {
+    it('a 60/40 sized/shadow bucket: the sized read is the 60, and it reads nothing like the 100', () => {
+      // One bucket, so the rung's parent (all regimes pooled) is the same bucket
+      // and the shrinkage is the identity: the curve IS the bucket, in whichever
+      // population it is read. That isolates the partition from the hierarchy.
+      const cal = calPart({ 'long:green:25-40': [100, 50, 40, 40] })
+      // pooled: laplace(100, 50) = 52/104 = 0.5 on 100 observations
+      const pooled = probabilityFor(cal, 'long', 'green', 32.5)
+      expect(pooled.p).toBeCloseTo(0.5, 12)
+      expect(pooled.nEff).toBe(100)
+      // sized: n 100−40 = 60, hits 50−40 = 10 → laplace 12/64 = 0.1875. The forty
+      // shadow rows were ALL winners; pooled they carried the bucket, sized they
+      // are exactly what a reader was never offered.
+      const sized = probabilityFor(cal, 'long', 'green', 32.5, 'unknown', 'sized')
+      expect(sized.p).toBeCloseTo(0.1875, 12)
+      expect(sized.nEff).toBe(60)
+      expect(sized.provisional).toBe(false) // 60 ≥ MIN_BUCKET_N — thin is not the finding here
+    })
+
+    it('baseHitRate gains the same mode — and the fifty-observation cliff reads the SIZED n', () => {
+      const cal = calPart({ 'long:green:25-40': [100, 50, 40, 40] })
+      expect(baseHitRate(cal)).toEqual({ rate: 0.5, n: 100 })
+      expect(baseHitRate(cal, 'sized').n).toBe(60)
+      expect(baseHitRate(cal, 'sized').rate).toBeCloseTo(12 / 64, 12)
+      // …and where the sized slice falls under fifty, the flat 0.5 applies to IT.
+      // A partition can take a store back to the cold-start anchor, and that is
+      // the honest answer: the engine has not watched fifty SIZED outcomes yet.
+      const thin = calPart({ 'long:green:25-40': [100, 50, 60, 30] })
+      expect(baseHitRate(thin).n).toBe(100)
+      expect(baseHitRate(thin, 'sized')).toEqual({ rate: 0.5, n: 40 })
+    })
+
+    it('a bucket with NO sized evidence contributes no sized curve point — the empty-bucket rule, unchanged', () => {
+      const cal = calPart({ 'long:green:25-40': [100, 40], 'long:green:55-70': [20, 18, 20, 18] })
+      expect(curveFor(cal, 'long', 'any', 'green').map(p => p.mid)).toEqual([32.5, 62.5])
+      expect(curveFor(cal, 'long', 'any', 'green', undefined, 'sized').map(p => p.mid)).toEqual([32.5])
+      // so a 62.5 sized read is the FLAT upward extension of the band below it —
+      // §4.2's floor — exactly as for a band that was never graded at all
+      const sized = probabilityFor(cal, 'long', 'green', 62.5, 'unknown', 'sized')
+      expect(sized.nEff).toBe(100)
+      expect(sized.p).toBeCloseTo(probabilityFor(cal, 'long', 'green', 32.5, 'unknown', 'sized').p, 12)
+      expect(sized.belowEvidence).toBe(false)
+      expect(probabilityFor(cal, 'long', 'green', 62.5).nEff).toBe(20) // the pooled read still sees the shadows
+    })
+
+    it('a store whose every bucket is shadow has no sized evidence anywhere — and says so', () => {
+      const cal = calPart({ 'long:green:25-40': [80, 40, 80, 40] })
+      const sized = probabilityFor(cal, 'long', 'green', 32.5, 'unknown', 'sized')
+      expect(sized.nEff).toBe(0)
+      expect(sized.p).toBe(0.5) // rung 5: the cold base rate, and provisional with it
+      expect(sized.provisional).toBe(true)
+    })
+
+    it('clamps at zero, and never lets a sub-count exceed its total', () => {
+      // a corrupt blob must degrade to "no sized evidence" — never to a negative
+      // n, and never to a hit count above the sample it came from
+      const corrupt = calPart({ 'long:green:25-40': [10, 4, 99, 99] })
+      expect(baseHitRate(corrupt, 'sized')).toEqual({ rate: 0.5, n: 0 })
+      expect(curveFor(corrupt, 'long', 'any', 'green', undefined, 'sized')).toEqual([])
+      const skewed = calPart({ 'long:green:25-40': [10, 10, 5, 0] }) // hits > the sized n
+      const c = curveFor(skewed, 'long', 'any', 'green', undefined, 'sized')
+      expect(c[0].n).toBe(5)
+      expect(c[0].p).toBeLessThanOrEqual(1)
+    })
+  })
+
+  describe('updateCalibration books the sub-counts by riskPct', () => {
+    const hit = { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true }
+    const miss = { excessPct: -2, rawPct: -2, spyPct: 0, stopped: true, hit: false }
+
+    it('riskPct > 0 is SIZED — including the velocity door’s quarter cap', () => {
+      const cal = emptyCal()
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0.25 }, hit)
+      // a door cap is momentum sizing, not an evidence deficiency: the reader
+      // could put money on it, so it is sized-but-small and NOT a shadow. No
+      // sub-count is written at all — a sized row leaves the bucket byte-identical
+      // to what the pre-partition tree wrote.
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 1, hits: 1 })
+      expect(baseHitRate(cal, 'sized').n).toBe(1)
+    })
+
+    it('riskPct === 0 is SHADOW — it still accrues, and the sized read never sees it', () => {
+      const cal = emptyCal()
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 1 }, hit)
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0, shadow: true }, miss)
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 2, hits: 1, shadowN: 1, shadowHits: 0 })
+      expect(baseHitRate(cal).n).toBe(2)
+      expect(baseHitRate(cal, 'sized').n).toBe(1)
+      // a shadow WINNER books its hit into both counters, so the sized read loses
+      // the win as well as the observation
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0, shadow: true }, hit)
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 3, hits: 2, shadowN: 2, shadowHits: 1 })
+    })
+
+    it('an ABSENT riskPct is not partitioned — the same absent-means-legacy rule the read side uses', () => {
+      // Absence is a caller that did not answer the question, and the safe answer
+      // is the pre-partition one: count it, partition nothing, and let the sized
+      // read see exactly what the pooled read sees. (Both production callers —
+      // engine.ts's grader and the seed walk — always supply it.)
+      const cal = emptyCal()
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30 }, hit)
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 1, hits: 1 })
+      expect('shadowN' in cal.buckets['long:green:25-40']).toBe(false)
+      expect(baseHitRate(cal, 'sized')).toEqual(baseHitRate(cal))
+    })
+
+    it('setupBuckets get the IDENTICAL treatment — the blend reads them sized', () => {
+      const cal = emptyCal()
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, setup: 'velocity', riskPct: 0.5 }, hit)
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, setup: 'velocity', riskPct: 0 }, hit)
+      expect(cal.setupBuckets!['velocity:long:25-40']).toEqual({ n: 2, hits: 2, shadowN: 1, shadowHits: 1 })
+      expect(setupStat(cal, 'velocity', 'long', '25-40')).toEqual({ n: 2, hits: 2 })
+      expect(setupStat(cal, 'velocity', 'long', '25-40', 'sized')).toEqual({ n: 1, hits: 1 })
+      expect(setupStat(cal, 'reversal', 'long', '25-40', 'sized')).toEqual({ n: 0, hits: 0 }) // a family with nothing
+    })
+
+    it('the invariant holds over a mixed run: 0 ≤ shadowHits ≤ shadowN ≤ n, and shadowHits ≤ hits', () => {
+      const cal = emptyCal()
+      for (let i = 0; i < 200; i++)
+        updateCalibration(
+          cal,
+          {
+            side: i % 2 ? 'long' : 'short',
+            regime: ['green', 'amber', 'red'][i % 3],
+            composite: 25 + (i % 60),
+            setup: ['velocity', 'reversal', 'continuation'][i % 3],
+            riskPct: i % 3 === 0 ? 0 : 0.5,
+          },
+          i % 4 ? hit : miss,
+        )
+      for (const b of [...Object.values(cal.buckets), ...Object.values(cal.setupBuckets!)]) {
+        expect(b.shadowN ?? 0).toBeGreaterThanOrEqual(0)
+        expect(b.shadowN ?? 0).toBeLessThanOrEqual(b.n)
+        expect(b.shadowHits ?? 0).toBeLessThanOrEqual(b.shadowN ?? 0)
+        expect(b.shadowHits ?? 0).toBeLessThanOrEqual(b.hits)
+      }
+      // …and the two populations partition the whole: sized n + shadow n = pooled n
+      const shadowN = Object.values(cal.buckets).reduce((s, b) => s + (b.shadowN ?? 0), 0)
+      expect(shadowN).toBeGreaterThan(0) // the run really did book shadows
+      expect(baseHitRate(cal, 'sized').n + shadowN).toBe(baseHitRate(cal).n)
+    })
   })
 })
 

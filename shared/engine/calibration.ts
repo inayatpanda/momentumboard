@@ -9,7 +9,47 @@ import { clamp, round1, type FactorName, type PredOutcome, type Prediction } fro
 
 export type Band = '25-40' | '40-55' | '55-70' | '70+'
 
-export interface BucketStat { n: number; hits: number }
+/** One bucket's evidence — and, since stage 3c, WHOSE evidence it is.
+ *
+ * `n`/`hits` are the pooled totals and are FROZEN in meaning: every legacy blob,
+ * every committed seed and `poolBuckets`'s key parse are unchanged, and
+ * `CALIB_DEF_VERSION` does not move (a hit still means what it meant).
+ *
+ * `shadowN`/`shadowHits` are the SUB-COUNT of those totals contributed by rows
+ * the reader was never offered — shadows, watch rows, near misses: anything the
+ * engine published at zero risk (`updateCalibration`'s `riskPct > 0 ⇒ sized`).
+ * They live inside the totals rather than beside them, so the sized read is a
+ * subtraction (`n − shadowN`) and nothing downstream of `n`/`hits` changed.
+ *
+ * ABSENT MEANS "THIS EVIDENCE WAS NEVER PARTITIONED" — not "no shadows here" —
+ * and the sized read then falls back to the pooled one, byte for byte. That is
+ * what makes the partition installable over the generation-1/2/3 seeds and every
+ * stored blob without a migration: the same absent-means-legacy contract
+ * `referenceBase` uses, and the reason `migrateCalibration` deliberately does NOT
+ * backfill a zero here (a stored `shadowN: 0` would be a measurement claim, and
+ * the generation-3 seed's own aggregate says 2,249 of its 6,608 rows were
+ * shadow). Sub-counts are only ever written where they were actually observed. */
+export interface BucketStat { n: number; hits: number; shadowN?: number; shadowHits?: number }
+
+/** Which population a read asks about. 'pooled' is every graded row (what the
+ * engine did before the partition, and what a SHADOW's own probability is still
+ * priced against — a shadow is not reader money); 'sized' is the rows the reader
+ * could have taken, which is what a sized row's grade must be measured on. */
+export type BucketPopulation = 'sized' | 'pooled'
+
+/** The sized slice of one bucket: the totals minus the shadow sub-count, with
+ * both clamps present because a stored blob is untrusted. Sub-counts can never
+ * exceed their totals when this module wrote them (see `updateCalibration`), so
+ * a blob where they do is corrupt — and the safe reading of corrupt evidence is
+ * LESS evidence, never a negative sample or a hit count above it. */
+const sizedSlice = (b: BucketStat): BucketStat => {
+  const n = Math.max(0, b.n - (b.shadowN ?? 0))
+  return { n, hits: Math.min(n, Math.max(0, b.hits - (b.shadowHits ?? 0))) }
+}
+
+/** One bucket as the requested population reads it. The pooled read returns the
+ * bucket itself — identical arithmetic to the pre-partition tree. */
+const statIn = (b: BucketStat, population: BucketPopulation): BucketStat => (population === 'sized' ? sizedSlice(b) : b)
 
 /** A "hit" must clear this much excess vs SPY (pp over the horizon). Beating
  * the benchmark by an epsilon is noise, not edge — probabilities built on
@@ -126,6 +166,12 @@ export function migrateCalibration(state: CalibrationState): CalibrationState {
   // `referenceBase` is deliberately NOT backfilled here — see its doc comment.
   // Absence is a measurement that was never taken, and `gradeBaseRate` answers it
   // with the pooled base at read time rather than writing one into the blob.
+  // `BucketStat.shadowN`/`shadowHits` are NOT backfilled for the same reason and
+  // one stronger: a stored `shadowN: 0` would assert that every row in that bucket
+  // was sized, and the generation-3 seed's own aggregate says 2,249 of its 6,608
+  // rows were shadow. Absence means "never partitioned", the sized read falls back
+  // to the pooled one, and the blob stays byte-identical until real partitioned
+  // evidence accrues on top of it.
   if (!state.evidence) {
     const total = Object.values(state.buckets).reduce((a, b) => ({ n: a.n + b.n, hits: a.hits + b.hits }), { n: 0, hits: 0 })
     state.evidence = {
@@ -140,13 +186,20 @@ export function migrateCalibration(state: CalibrationState): CalibrationState {
 /** Sum the buckets matching a side+band: a specific cohort's tagged keys (4 parts)
  * when `cohort` is 'large'/'small', or EVERY cohort AND the legacy cohortless keys
  * (3 parts) when `cohort` is 'any' (the pooled rungs, which include the seed).
- * `regime: null` matches any regime. */
+ * `regime: null` matches any regime.
+ *
+ * THE KEY PARSE IS UNTOUCHED BY THE PARTITION, deliberately: provenance lives in
+ * the VALUE (`BucketStat.shadowN`), never in the key, because a fifth key part
+ * would silently reclassify every cohort-tagged key as legacy here. Each bucket
+ * is clamped to its population BEFORE it is summed, so one corrupt bucket can
+ * never drag the accumulator negative. */
 function poolBuckets(
   state: CalibrationState,
   side: 'long' | 'short',
   band: Band,
   cohort: CapCohort | 'any',
   regime: string | null,
+  population: BucketPopulation = 'pooled',
 ): BucketStat {
   const acc: BucketStat = { n: 0, hits: 0 }
   for (const [key, b] of Object.entries(state.buckets)) {
@@ -156,10 +209,34 @@ function poolBuckets(
     if (kSide !== side || kBand !== band) continue
     if (regime !== null && kRegime !== regime) continue
     if (cohort !== 'any' && kCohort !== cohort) continue // a named cohort matches only its own tagged keys
-    acc.n += b.n
-    acc.hits += b.hits
+    const stat = statIn(b, population)
+    acc.n += stat.n
+    acc.hits += stat.hits
   }
   return acc
+}
+
+/** One setup family's bucket, in the requested population — the read side of the
+ * `setupBuckets` partition. ACCRUAL-ONLY today: `probabilityFor` still does not
+ * consume these (the blend that will is stage 3c task 2, and it reads them
+ * 'sized', because blending shadow-diluted family evidence into a sized grade
+ * would re-import exactly the dilution this partition removes). A family with no
+ * bucket reads `{ n: 0, hits: 0 }` — an absence, which every caller must gate on
+ * before it treats the read as evidence. */
+export function setupStat(
+  state: CalibrationState,
+  setup: string,
+  side: 'long' | 'short',
+  band: Band,
+  population: BucketPopulation = 'pooled',
+): BucketStat {
+  const b = state.setupBuckets?.[`${setup}:${side}:${band}`]
+  if (!b) return { n: 0, hits: 0 }
+  // a READING, never the stored object: `statIn` hands back the bucket itself on
+  // a pooled read (the accumulator loop above wants no allocation), and a caller
+  // that mutated what it got would be mutating the blob.
+  const stat = statIn(b, population)
+  return { n: stat.n, hits: stat.hits }
 }
 
 export function bandFor(absComposite: number): Band {
@@ -268,15 +345,26 @@ export function curveFor(
   // to. That population is the board's own — the buckets right here — so pulling
   // it toward a reference measured over a DIFFERENT (unconditional) population
   // would bias every published probability toward names the board never publishes.
-  parentAt: (mid: number) => number = () => baseHitRate(state).rate,
+  // Resolved inside rather than defaulted in the signature so the fallback can see
+  // `population` (a default may only reference parameters to its LEFT), and the
+  // positional signature every existing caller uses is left exactly where it was.
+  parentAt?: (mid: number) => number,
+  // …and the default base is read in the SAME population as the curve: a sized
+  // curve shrunk toward the pooled base would pull sized bands back toward the
+  // very shadow-diluted number the partition exists to get out from under.
+  population: BucketPopulation = 'pooled',
 ): CurvePoint[] {
-  const seen = BANDS.map(band => ({ band, stat: poolBuckets(state, side, band, cohort, regime) })).filter(b => b.stat.n > 0)
+  const parent = parentAt ?? (() => baseHitRate(state, population).rate)
+  // A band with no evidence IN THIS POPULATION contributes no point — the same
+  // rule, and the same line, that has always governed an empty bucket. A bucket
+  // that is entirely shadow is, to a sized read, a bucket that was never graded.
+  const seen = BANDS.map(band => ({ band, stat: poolBuckets(state, side, band, cohort, regime, population) })).filter(b => b.stat.n > 0)
   if (!seen.length) return []
   const fitted = isotonicFit(seen.map(b => ({ band: b.band, p: laplace(b.stat), n: b.stat.n })))
   let floor = -Infinity
   return fitted.map(pt => {
     const w = pt.n / (pt.n + SHRINK_K)
-    floor = Math.max(floor, w * pt.p + (1 - w) * parentAt(pt.mid))
+    floor = Math.max(floor, w * pt.p + (1 - w) * parent(pt.mid))
     return { mid: pt.mid, p: floor, n: pt.n }
   })
 }
@@ -349,6 +437,25 @@ export function probabilityFor(
   regime: string,
   absComposite: number,
   cohort: CapCohortOrUnknown = 'unknown',
+  /** WHOSE HISTORY THIS READ IS DRAWN FROM [stage 3c].
+   *
+   * 'sized' answers "what happened to rows the reader could have taken at this
+   * conviction?" and is what a SIZED row's probability and grade must be built
+   * on — the unmasking. 'pooled' answers "what happened to everything the engine
+   * graded here?" and stays the default, so every existing call site, every
+   * legacy blob and every committed seed read exactly what they read before.
+   *
+   * The engine chooses per row (engine.ts): a candidate for sizing is read
+   * 'sized'; a row that structurally cannot be sized — an earnings shadow, an
+   * unroutable short, a lane stand-down, a near miss — is PRICED 'pooled',
+   * because its probability is a record of what the engine thought, not money the
+   * reader can put down, and the pooled population is the one it belongs to.
+   *
+   * The whole ladder moves together: rungs, the shrinkage parents between them,
+   * and the base rate at the bottom are all read in this population. Mixing them
+   * would shrink sized bands toward a shadow-diluted target and undo the split
+   * one rung below where it was made. */
+  population: BucketPopulation = 'pooled',
 ): { p: number; provisional: boolean; nEff: number; belowEvidence: boolean } {
   const rungs: { cohort: CapCohort | 'any'; regime: string | null }[] =
     cohort === 'unknown'
@@ -360,7 +467,7 @@ export function probabilityFor(
     if (i >= rungs.length) return []
     // an empty array is truthy, so a rung that HAS been built and holds nothing
     // is never rebuilt: the memo is on the slot, not on the contents
-    if (!curves[i]) curves[i] = curveFor(state, side, rungs[i].cohort, rungs[i].regime, mid => parentRead(i + 1, mid))
+    if (!curves[i]) curves[i] = curveFor(state, side, rungs[i].cohort, rungs[i].regime, mid => parentRead(i + 1, mid), population)
     return curves[i]
   }
   /** The shrinkage target for the rung ABOVE i: the first rung from i down that
@@ -371,7 +478,7 @@ export function probabilityFor(
       const curve = curveAtRung(j)
       if (curve.length) return readCurve(curve, mid).p
     }
-    return baseHitRate(state).rate // POOLED [§9] — the shrinkage floor, exactly as in curveFor above
+    return baseHitRate(state, population).rate // POOLED [§9] vs the reference; read in THIS population, exactly as in curveFor above
   }
 
   for (let i = 0; i < rungs.length; i++) {
@@ -384,10 +491,14 @@ export function probabilityFor(
   // rung 5: nothing for this side anywhere → the engine's own base rate
   // (baseHitRate is a hoisted declaration below). Not a curve read at all, so
   // there is no evidence for it to sit below — a C at most either way.
-  // POOLED [§9]: this IS the emitted probability, and a probability must describe
-  // the population the row was drawn from. The reference answers a grading
-  // question about ordinary candidates, not a pricing question about this one.
-  return { p: baseHitRate(state).rate, provisional: true, nEff: 0, belowEvidence: false }
+  // POOLED [§9] as against the swept REFERENCE: this IS the emitted probability,
+  // and a probability must describe the population the row was drawn from. The
+  // reference answers a grading question about ordinary candidates, not a pricing
+  // question about this one. Within that, it is read in the caller's population —
+  // a sized read that finds no sized evidence anywhere lands on the sized base
+  // (the cold 0.5 until fifty SIZED outcomes exist), which is the honest answer
+  // rather than a quiet fallback to the pool the partition just removed.
+  return { p: baseHitRate(state, population).rate, provisional: true, nEff: 0, belowEvidence: false }
 }
 
 /** Pooled hit rate across every bucket — the engine's own base rate under the
@@ -400,13 +511,27 @@ export function probabilityFor(
  * A needs p ≥ 0.60 from a bucket that cannot possibly carry 30 observations yet.
  * A cold engine therefore hands out no As at all. That is intended — the first
  * fifty graded calls are the engine learning what its own base rate is, and it
- * has no business claiming an edge over a number it has not measured. */
-export function baseHitRate(state: CalibrationState): { rate: number; n: number } {
+ * has no business claiming an edge over a number it has not measured.
+ *
+ * `population` [stage 3c] takes the same partition as the curve, and it must:
+ * this is the SHRINKAGE FLOOR under every rung and the rung-5 answer when a side
+ * has nothing anywhere, so a sized curve read against a pooled base would pull
+ * every thin sized band back toward the shadow-diluted pool one level below where
+ * the split was made. The fifty-observation cliff then applies to the SIZED n —
+ * a store with 4,000 pooled rows and 40 sized ones is, to a sized read, a cold
+ * store, and 0.5 is the correct thing for it to say. Unchanged on any blob
+ * without sub-counts: the two populations are the same sum.
+ *
+ * NOT `gradeBaseRate`, which is untouched by the partition: `referenceBase` is an
+ * UNCONDITIONAL sweep over the raw tape (spec §9), a population with no board and
+ * therefore no sizing in it at all — there is no sized slice of it to take. */
+export function baseHitRate(state: CalibrationState, population: BucketPopulation = 'pooled'): { rate: number; n: number } {
   let n = 0
   let hits = 0
   for (const b of Object.values(state.buckets)) {
-    n += b.n
-    hits += b.hits
+    const stat = statIn(b, population)
+    n += stat.n
+    hits += stat.hits
   }
   return { rate: n >= 50 ? laplace({ n, hits }) : 0.5, n }
 }
@@ -529,12 +654,58 @@ export function gradePrediction(
   return { excessPct, rawPct: round1(rawPct), spyPct: round1(spyPct), stopped, hit: !stopped && excessPct >= HIT_EXCESS_MIN }
 }
 
+/** Add one graded outcome to a bucket, and — since stage 3c — record whether the
+ * reader could have taken it.
+ *
+ * THE DISCRIMINATOR IS `riskPct > 0`, ratified, and it is the one field that
+ * already means "money could be on this". It is not `shadow`, which misses watch
+ * rows and near misses; and it deliberately counts the velocity door's 0.25/0.5
+ * caps as SIZED — a door cap is momentum sizing ("small here, this move is
+ * young"), not an evidence deficiency, and a row the reader was offered at a
+ * quarter rung is still a row the reader was offered.
+ *
+ * A SIZED row writes no sub-count at all, so a store that only ever books sized
+ * rows stays byte-identical to what the pre-partition tree wrote. Only an unsized
+ * row leaves a mark, which is what keeps "absent means never partitioned" true of
+ * every bucket rather than only of legacy ones.
+ *
+ * An ABSENT `riskPct` is not a shadow — it is a caller that did not answer, and
+ * the safe answer is the pre-partition one: count it in the totals, partition
+ * nothing, let the sized read see exactly what the pooled read sees. Booking it
+ * as shadow would let one forgetful call site silently delete the sized history.
+ * Both production callers supply it: engine.ts's grader passes the whole
+ * `Prediction` (where `riskPct` is required and is 0 for every shadow, watch and
+ * near-miss row), and the reference sweep stamps its rows explicitly. */
 export function updateCalibration(
   state: CalibrationState,
-  pred: { side: string; regime: string; composite: number; capUsdM?: number | null; shadow?: boolean; setup?: string | null; provenance?: 'seed' | 'live' | 'shadow' },
+  pred: {
+    side: string
+    regime: string
+    composite: number
+    capUsdM?: number | null
+    shadow?: boolean
+    setup?: string | null
+    provenance?: 'seed' | 'live' | 'shadow'
+    riskPct?: number
+  },
   outcome: PredOutcome,
 ): CalibrationState {
   migrateCalibration(state)
+  // `!= null` and not a truthiness test: 0 is the value that MEANS unsized, and
+  // it is the whole point of the field here.
+  const unsized = pred.riskPct != null && pred.riskPct <= 0
+  /** One increment, with the sub-count carried alongside the totals. Spreading
+   * `cur` first preserves any sub-count already on a bucket when a SIZED row
+   * lands in it — the two counters are independent and a bucket holds both. */
+  const book = (cur: BucketStat | undefined, hit: boolean): BucketStat => {
+    const b = cur ?? { n: 0, hits: 0 }
+    const next: BucketStat = { ...b, n: b.n + 1, hits: b.hits + (hit ? 1 : 0) }
+    if (unsized) {
+      next.shadowN = (b.shadowN ?? 0) + 1
+      next.shadowHits = (b.shadowHits ?? 0) + (hit ? 1 : 0)
+    }
+    return next
+  }
   // A known cap books into its cohort bucket `${cohort}:${side}:${regime}:${band}`;
   // an unknown cap books into the LEGACY cohortless `${side}:${regime}:${band}` —
   // never guessed into a cohort. Unknown grades thus keep feeding the pooled rungs
@@ -543,15 +714,16 @@ export function updateCalibration(
   const band = bandFor(Math.abs(pred.composite))
   const tail = `${pred.side}:${pred.regime}:${band}`
   const key = cohort === 'unknown' ? tail : `${cohort}:${tail}`
-  const b = state.buckets[key] ?? { n: 0, hits: 0 }
-  state.buckets[key] = { n: b.n + 1, hits: b.hits + (outcome.hit ? 1 : 0) }
+  state.buckets[key] = book(state.buckets[key], outcome.hit)
   // setup-family stats accrue in parallel (never read by probabilityFor yet —
-  // see the CalibrationState comment). Calls without a setup stamp simply
-  // don't book here; the main buckets above remain the source of truth.
+  // see the CalibrationState comment), and take the IDENTICAL partition: the
+  // blend that will read them must read them sized, or it would re-import into a
+  // sized grade exactly the dilution the main buckets just shed. Calls without a
+  // setup stamp simply don't book here; the main buckets above remain the source
+  // of truth.
   if (pred.setup) {
     const sk = `${pred.setup}:${pred.side}:${band}`
-    const sb = state.setupBuckets![sk] ?? { n: 0, hits: 0 }
-    state.setupBuckets![sk] = { n: sb.n + 1, hits: sb.hits + (outcome.hit ? 1 : 0) }
+    state.setupBuckets![sk] = book(state.setupBuckets![sk], outcome.hit)
   }
   const source = pred.provenance ?? (pred.shadow ? 'shadow' : 'live')
   state.evidence![source] = addEvidence(state.evidence![source], outcome.hit)
