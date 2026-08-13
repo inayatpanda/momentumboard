@@ -461,18 +461,20 @@ async function accrueMissLedger(store: AppStore, spy: Candle[], cache: Map<strin
  * writes only when something actually happened: a notch, or the first time a
  * gate earned one and could not have it.
  *
- * `predictions-index.length` is the session clock. Calendar days would count the
+ * `predictions-index` is the session clock. Calendar days would count the
  * mornings the engine never ran, and the cadence rule is about how much evidence
- * has passed under a gate, not how much time.
+ * has passed under a gate, not how much time. The INDEX travels, not its length:
+ * the list is capped at 250 entries, so a length-based clock stopped ticking the
+ * day it saturated (gateState.ts, `sessionsSince`).
  *
  * Fail-soft is the caller's job (the same try/catch the miss ledger rides in):
  * every learning blob is durable by now, so a failure here costs a notch and
  * nothing else — and the board reads whatever `gate-state` last said. */
-async function advanceGates(store: AppStore, cfg: AppConfig | null | undefined, sessionCount: number, today: string): Promise<void> {
+async function advanceGates(store: AppStore, cfg: AppConfig | null | undefined, sessionIndex: readonly string[], today: string): Promise<void> {
   if (gateFeedbackDisabled()) return
   const state = normaliseGateState(await store.read(GATE_STATE_KEY))
   const eligibility = gateEligibility(gateAttribution(await store.read(MISS_LEDGER_KEY)))
-  const { state: next, moves, notes } = advanceGateState(state, eligibility, sessionCount, {
+  const { state: next, moves, notes } = advanceGateState(state, eligibility, sessionIndex, {
     date: today,
     appetite: cfg?.riskAppetite,
     overrides: cfg?.gateOverride,
@@ -766,7 +768,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // so a morning the accrual could not run still evaluates the evidence already
   // banked. Last, and least urgent: a notch must never cost this pass a grade.
   try {
-    await advanceGates(store, cfg, fullIndex.length, today)
+    await advanceGates(store, cfg, fullIndex, today)
   } catch (e) {
     console.log(`GATE: skipped — ${e instanceof Error ? e.message : String(e)}`)
   }

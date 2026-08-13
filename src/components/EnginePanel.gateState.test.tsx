@@ -11,8 +11,10 @@ import { advanceGateState, gateEligibility, gateStateSummary } from '../../share
 // sentence the runlog and the paper print.
 const state = (() => {
   const eligibility = gateEligibility([{ gate: 'dead-zone-core', cost: 190, saved: 12, n: 202, unchecked: 4, doubleBooked: false }])
-  const moved = advanceGateState(null, eligibility, 100, { date: '2026-08-13' }).state
-  return advanceGateState(moved, eligibility, 101, { date: '2026-08-14' }).state // …and one it earned and could not take
+  // the session clock is `predictions-index` itself — the dates, counted
+  const index = ['2026-08-11', '2026-08-12']
+  const moved = advanceGateState(null, eligibility, index, { date: '2026-08-13' }).state
+  return advanceGateState(moved, eligibility, [...index, '2026-08-13'], { date: '2026-08-14' }).state // …and one it earned and could not take
 })()
 
 const gateState: EngineData['gateState'] = gateStateSummary(state)

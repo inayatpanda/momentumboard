@@ -1,5 +1,6 @@
 import { CONTEXT_MAX_PTS } from './composite'
 import { gatesFor, type Gates } from './catalyst'
+import { safe as promptSafe } from './voice'
 import type { GateAttribution } from './missLedger'
 import type { GateCode } from './types'
 
@@ -22,7 +23,14 @@ import type { GateCode } from './types'
 //  2. ONE NOTCH. Never two, never a computed step size — the notch per gate is a
 //     constant here and the arithmetic cannot produce anything else.
 //  3. CADENCE. One notch per gate per GATE_CADENCE_SESSIONS sessions, clocked on
-//     `predictions-index` (the engine's only session counter).
+//     the DATES in `predictions-index` — the entries recorded AFTER the gate last
+//     moved, counted, never `index.length` minus a stored count. The index is
+//     capped at 250 (engine.ts), so a length-based clock froze the moment it
+//     saturated: the count stopped rising, the difference stopped growing, and
+//     any gate that had ever moved was held forever while the panel printed "one
+//     notch per 20 sessions" as though a clock were running. Counting entries
+//     survives the cap AND a wipe — a wiped index shows <20 sessions since, which
+//     blocks, which is the safe reading (Task-3 review, Important 1).
 //  4. HARD BOUNDS. Every gate has a floor and a ceiling it cannot be argued
 //     past, however much evidence arrives, and a stored blob from any source is
 //     clamped into them on the way out (`effectiveGateValues`) as well as on the
@@ -39,17 +47,37 @@ import type { GateCode } from './types'
 // aggressive dead zone already sits on the floor, so a loosening delta clamps
 // rather than digging under it).
 //
+// …WHICH MEANS AN APPETITE SWITCH RE-BASES EVERY EARNED DELTA. The delta is an
+// offset from whichever preset is live, so flipping moderate → aggressive moves
+// the published threshold by the preset gap PLUS the delta, in one step, without
+// a notch being earned. That is deliberate — the owner's appetite is an owner
+// decision and feedback composes with it rather than overriding it — but it means
+// the "one notch per cadence window" guarantee is FRAME-LOCAL: it bounds what
+// feedback may do inside one preset, not what the published number can do across
+// a switch. The hard bounds still hold on both sides of the switch (they are
+// clamped on the way out), so nothing can be argued past a floor or a ceiling;
+// only the path between them is not rate-limited across a re-base.
+//
 // DIRECTION, AND ONE ADJUDICATION WORTH READING. "Loosen" means "let more
 // through", which is DOWN for the dead zone and the expected-move floor. For the
-// context cap it is also DOWN, and that is the opposite of the spec's "context
-// cap 12 → ceiling 16": at HEAD the context layer is a VETO and nothing else —
-// `composeCall` applies the dead zone to the core BEFORE context is added, so
-// context can only ever push a call back under the gate, never lift one over it.
-// A bigger cap therefore refuses MORE, not less. The spec's range is kept
-// verbatim ([12, 16], notch 2) and read for what it mechanically is: the cap
+// context cap it is also DOWN, and that is the opposite of the spec's original
+// "context cap 12 → ceiling 16" — corrected in the spec itself at §9.1
+// (2026-08-13), which this comment is the code-side half of. At HEAD the context
+// layer is a VETO at its OWN gate: `composeCall` applies the dead zone to the
+// core BEFORE context is added, so at `dead-zone-context` a bigger cap can only
+// ever push more calls back under the gate, never lift one over it.
+//
+// It is not quite inert everywhere else, and §9.1 says so: the capped context
+// points ride into `adj`, and `adj` is what `levelsFor` sizes the expected move
+// from — so at the margin a bigger cap can lift a call OVER the expected-move
+// floor it would otherwise have missed. Refuses more at its own gate, loosens
+// expected-move at the margin; both are classified as a gate move in the
+// controlled diff. The spec's range is kept verbatim ([12, 16], notch 2) and read
+// for what it mechanically is at the gate whose evidence judges it: the cap
 // stands on its own floor today, so the only move its evidence can buy is a
 // TIGHTENING, and it earns that only by saving. If the context layer ever becomes
-// able to rescue a call, this comment and `loosen` flip together.
+// able to rescue a call at `dead-zone-context`, this comment and `loosen` flip
+// together.
 
 export const GATE_STATE_KEY = 'gate-state'
 /** Attributed outcomes a gate needs before it may move at all (spec §4.3). */
@@ -61,6 +89,10 @@ export const GATE_CADENCE_SESSIONS = 20
 /** Per gate. Moves are rare by construction; this is a durability bound, not a
  * display one. */
 export const GATE_HISTORY_MAX = 50
+/** The `why` clause's budget at the compose seam. Generous — the engine's own
+ * sentence is ~50 characters — because this bounds a hand-edited blob, not the
+ * template. */
+export const GATE_WHY_MAX = 140
 
 /** THE THREE GATES FEEDBACK MAY TOUCH. `famAgree` (composite.ts's evidence
  * contract, 2) is the spec's fourth named gate and is deliberately absent: the
@@ -101,9 +133,18 @@ export const jointBoundOk = (deadZone: number, contextCap: number): boolean => c
 /** One gate's earned offset from its preset. */
 export interface GateDelta {
   delta: number
-  /** The session count (predictions-index length) at the last move — the cadence
-   * clock. Absent means "never moved". */
-  lastMoveSession?: number
+  /** THE CADENCE CLOCK: the ISO date this gate last moved. Sessions since are
+   * COUNTED out of `predictions-index` (`sessionsSince`), never subtracted from
+   * its length — see rule 3 in the header for what the length-based clock did at
+   * saturation. Absent means "never moved".
+   *
+   * REPLACES `lastMoveSession` outright rather than shipping beside it: two
+   * clocks in one blob is two things to keep in step, and the count was only ever
+   * read by the rule this fix deletes. A blob written before this change carries
+   * its move dates in `history`, so `normaliseGateState` migrates from there —
+   * and a blob with neither reads as "never moved", which admits one notch early
+   * at worst, on a mechanism that has never moved a gate in production. */
+  lastMoveDate?: string
   history: { date: string; from: number; to: number; why: string }[]
   /** Recorded the FIRST time this gate was eligible and could not move, and why.
    * The panel says so once; a note repeated every morning is noise, and the
@@ -119,25 +160,65 @@ export interface GateState {
 
 export const emptyGateState = (): GateState => ({ gates: {} })
 
+const isObj = (x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? (x as Record<string, unknown>) : null)
+const isFin = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
+/** A date this module will print. ISO calendar dates only, because every date in
+ * this blob is compared with `>` against `predictions-index` entries and read
+ * back into a sentence — and both of those want the same lexicographic shape. */
+const isDate = (x: unknown): x is string => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x)
+
 /** Fail-soft read of the stored blob: anything that is not the shape becomes an
  * empty state rather than an exception inside the daily run — and an empty state
- * is byte-identically today's behaviour. */
+ * is byte-identically today's behaviour.
+ *
+ * EVERY FIELD IS TYPE-GUARDED, not just the delta (Task-3 review, Minor). This
+ * blob is small, hand-editable and — unlike the ledger — its strings are READ
+ * BACK INTO SENTENCES: the panel prints them and `gateAnnouncement` hands them to
+ * the paper's LLM. A history entry whose `from` is the string "25" would print
+ * "dead zone 25 → 22.5" indistinguishably from a real one, and a `blocked.why`
+ * outside the two known reasons would fall through the summary's ternary and be
+ * announced as a cadence hold. Malformed entries are DROPPED rather than
+ * repaired: a record nobody can audit is not evidence, and the alternative is
+ * printing a number the engine never chose. */
 export function normaliseGateState(raw: unknown): GateState {
-  const obj = (x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? (x as Record<string, unknown>) : null)
   const gates: GateState['gates'] = {}
-  const src = obj(obj(raw)?.gates)
+  const src = isObj(isObj(raw)?.gates)
   for (const g of TUNABLE_GATES) {
-    const d = obj(src?.[g])
-    if (!d || typeof d.delta !== 'number' || !Number.isFinite(d.delta)) continue
+    const d = isObj(src?.[g])
+    if (!d || !isFin(d.delta)) continue
+    const history = (Array.isArray(d.history) ? d.history : [])
+      .map(isObj)
+      .filter((h): h is Record<string, unknown> => !!h && isDate(h.date) && isFin(h.from) && isFin(h.to) && typeof h.why === 'string')
+      .map(h => ({ date: h.date as string, from: h.from as number, to: h.to as number, why: h.why as string }))
+    const blocked = isObj(d.blocked)
+    // The clock, and its migration: a blob written before `lastMoveDate` existed
+    // carries the same fact in the history it wrote at every move.
+    const lastMoveDate = isDate(d.lastMoveDate) ? d.lastMoveDate : history.reduce<string | null>((m, h) => (m == null || h.date > m ? h.date : m), null)
     gates[g] = {
       delta: d.delta,
-      ...(typeof d.lastMoveSession === 'number' && Number.isFinite(d.lastMoveSession) ? { lastMoveSession: d.lastMoveSession } : {}),
-      history: Array.isArray(d.history) ? (d.history as GateDelta['history']) : [],
-      ...(obj(d.blocked) ? { blocked: d.blocked as GateDelta['blocked'] } : {}),
+      ...(lastMoveDate != null ? { lastMoveDate } : {}),
+      history,
+      ...(blocked && (blocked.why === 'cadence' || blocked.why === 'override') && isDate(blocked.date)
+        ? { blocked: { why: blocked.why, date: blocked.date } }
+        : {}),
     }
   }
   return { gates }
 }
+
+/** THE CADENCE CLOCK ITSELF: sessions the index has recorded SINCE a gate moved.
+ *
+ * `index` is `predictions-index` — the engine's only honest session list, capped
+ * at 250 entries. Counting the entries that fall after the move is what makes the
+ * rule survive that cap (a saturated index of 250 sessions, every one of them
+ * later than an old move, reads 250 and admits the notch — correct, and simple)
+ * and survive a wipe (an emptied index reads 0 and blocks — also correct: the
+ * engine cannot prove 20 sessions passed, so it does not act as though they did).
+ *
+ * Entries are compared with `>`, so the session a gate moved ON never counts
+ * toward its own next window. */
+export const sessionsSince = (index: readonly string[], lastMoveDate: string): number =>
+  index.reduce((n, d) => (typeof d === 'string' && d > lastMoveDate ? n + 1 : n), 0)
 
 /** THE ROLLBACK LEVER, mirroring `REGRET=off` (missLedger.ts) and
  * `FUNNEL_TRACE=off` (funnelTrace.ts) down to the guard on `process`.
@@ -291,18 +372,20 @@ export interface GateAdvance {
 }
 
 const moveLine = (gate: TunableGate, from: number, to: number, why: string, date?: string): string =>
-  `${GATE_BOUNDS[gate].label} ${from} → ${to}${date ? ` on ${date}` : ''} — ${why}`
+  `${GATE_BOUNDS[gate].label} ${from} → ${to}${date ? ` on ${date}` : ''}${why ? ` — ${why}` : ''}`
 
 /** ONE EVALUATION. Pure: the caller reads the blob, the ledger and the session
- * count, and writes back what comes out — nothing here touches a store, a clock
+ * index, and writes back what comes out — nothing here touches a store, a clock
  * or the environment.
  *
- * `sessionCount` is `predictions-index.length` (engine.ts) — the engine's only
- * honest session clock, since calendar days include the ones it never ran. */
+ * `sessionIndex` is `predictions-index` itself (engine.ts) rather than its
+ * length: the engine's only honest session clock — calendar days include the
+ * mornings it never ran — and the list, not the count, because the list is capped
+ * at 250 and a count that cannot rise is not a clock (rule 3, `sessionsSince`). */
 export function advanceGateState(
   state: GateState | null | undefined,
   eligibility: readonly GateEligibility[],
-  sessionCount: number,
+  sessionIndex: readonly string[],
   opts: { date: string; appetite?: 'moderate' | 'aggressive' | null; overrides?: GateOverride | null },
 ): GateAdvance {
   const next: GateState = { gates: { ...(state?.gates ?? {}) } }
@@ -316,7 +399,7 @@ export function advanceGateState(
   const block = (gate: TunableGate, why: 'cadence' | 'override', line: string) => {
     const prev = next.gates[gate]
     if (prev?.blocked?.why === why) return
-    next.gates[gate] = { delta: prev?.delta ?? 0, ...(prev?.lastMoveSession != null ? { lastMoveSession: prev.lastMoveSession } : {}), history: prev?.history ?? [], blocked: { why, date: opts.date } }
+    next.gates[gate] = { delta: prev?.delta ?? 0, ...(prev?.lastMoveDate != null ? { lastMoveDate: prev.lastMoveDate } : {}), history: prev?.history ?? [], blocked: { why, date: opts.date } }
     notes.push({ gate, why, line })
   }
 
@@ -341,11 +424,14 @@ export function advanceGateState(
       block(e.gate, 'override', `${b.label} is eligible to ${e.direction} (${e.why}) but is pinned at ${from} by the owner's override`)
       continue
     }
-    if (cur?.lastMoveSession != null && sessionCount - cur.lastMoveSession < GATE_CADENCE_SESSIONS) {
+    // THE CLOCK. Counted, not subtracted — and the note quotes the count it
+    // actually read, so a held gate can never claim a window that is not running.
+    const since = cur?.lastMoveDate != null ? sessionsSince(sessionIndex, cur.lastMoveDate) : null
+    if (since != null && since < GATE_CADENCE_SESSIONS) {
       block(
         e.gate,
         'cadence',
-        `${b.label} is eligible to ${e.direction} (${e.why}) but held: one notch per ${GATE_CADENCE_SESSIONS} sessions, and it moved ${sessionCount - cur.lastMoveSession} ago`,
+        `${b.label} is eligible to ${e.direction} (${e.why}) but held: one notch per ${GATE_CADENCE_SESSIONS} sessions, and the index holds ${since} since it moved on ${cur!.lastMoveDate}`,
       )
       continue
     }
@@ -366,7 +452,7 @@ export function advanceGateState(
 
     const why = e.why
     const history = [...(cur?.history ?? []), { date: opts.date, from, to, why }].slice(-GATE_HISTORY_MAX)
-    next.gates[e.gate] = { delta: snap(to - baseGateValue(e.gate, opts.appetite)), lastMoveSession: sessionCount, history }
+    next.gates[e.gate] = { delta: snap(to - baseGateValue(e.gate, opts.appetite)), lastMoveDate: opts.date, history }
     moves.push({ gate: e.gate, from, to, direction: e.direction, why, line: moveLine(e.gate, from, to, why) })
   }
   return { state: next, moves, notes }
@@ -379,9 +465,15 @@ export interface GateStateSummary {
   notes: string[]
 }
 
-/** THE BOUNDED READ for the panel and the paper. Null when no gate has ever
- * moved or been held, so a surface says NOTHING rather than announcing that the
- * gates are where they started. */
+/** THE BOUNDED READ FOR THE PANEL — the engine's STATE, which is what a panel is
+ * for: the last few notches this blob holds and any gate standing eligible and
+ * unable to move. Null when no gate has ever moved or been held, so a surface
+ * says NOTHING rather than announcing that the gates are where they started.
+ *
+ * NOT the paper's read. The paper is a daily edition and this is a standing
+ * record: handing months of history to a writer told to state the move verbatim
+ * re-announced the same notch as news every morning (Task-3 review, Important 2).
+ * `gateAnnouncement` below is the compose seam, and it is date-bounded. */
 export function gateStateSummary(raw: unknown, max = 3): GateStateSummary | null {
   const state = normaliseGateState(raw)
   const moves = (Object.entries(state.gates) as [TunableGate, GateDelta][])
@@ -395,6 +487,43 @@ export function gateStateSummary(raw: unknown, max = 3): GateStateSummary | null
       d.blocked!.why === 'override'
         ? `${GATE_BOUNDS[gate].label}: eligible to move on ${d.blocked!.date}, pinned by the owner's override`
         : `${GATE_BOUNDS[gate].label}: eligible to move on ${d.blocked!.date}, held by the cadence — one notch per ${GATE_CADENCE_SESSIONS} sessions, so the evidence moves it on its own clock`,
+    )
+  return moves.length || notes.length ? { moves, notes } : null
+}
+
+/** THE PAPER'S READ — two keys, and the difference between them is the point.
+ *
+ * `moves` is NEWS: only the notches taken on `date`, so a move is announced on
+ * the morning it happened and never again. The writer's brief tells it to state
+ * that line verbatim, which is only honest about a change that just occurred —
+ * fed the standing history instead, every edition re-reported the same notch as
+ * today's development, and a gate that had merely been HELD rode the same key
+ * and read as one that moved (Task-3 review, Important 2).
+ *
+ * `notes` is STATUS: a gate eligible and unable to move has, by definition, not
+ * moved, so it travels under its own key with the threshold's unchanged-ness said
+ * out loud, and the brief tells the writer to treat it as a state of affairs.
+ *
+ * THE STRINGS ARE SCRUBBED HERE because this is the seam where they leave the
+ * engine for an LLM prompt. `why` is the only free text in the blob — everything
+ * else is a label this module owns or a number `normaliseGateState` has proved
+ * finite — and it is template-built today, but the blob is small, durable and
+ * hand-editable, and the house rule (voice.ts) is that text the engine did not
+ * author reaches a prompt only when it is clean. A `why` that fails the sweep
+ * costs its clause, not the announcement: the arithmetic in `25 → 22.5` is the
+ * engine's own and is still the reader's to see. */
+export function gateAnnouncement(raw: unknown, date: string): GateStateSummary | null {
+  const state = normaliseGateState(raw)
+  const entries = Object.entries(state.gates) as [TunableGate, GateDelta][]
+  const moves = entries.flatMap(([gate, d]) =>
+    (d.history ?? []).filter(h => h.date === date).map(h => moveLine(gate, h.from, h.to, promptSafe(h.why, GATE_WHY_MAX) ?? '', h.date)),
+  )
+  const notes = entries
+    .filter(([, d]) => d.blocked)
+    .map(([gate, d]) =>
+      d.blocked!.why === 'override'
+        ? `${GATE_BOUNDS[gate].label}: eligible to move, pinned by the owner since ${d.blocked!.date} — the threshold is unchanged`
+        : `${GATE_BOUNDS[gate].label}: eligible to move, waiting on the cadence since ${d.blocked!.date} — the threshold is unchanged`,
     )
   return moves.length || notes.length ? { moves, notes } : null
 }

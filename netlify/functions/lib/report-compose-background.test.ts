@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { journalistBoardRows } from '../report-compose-background.mts'
 import { ledgerRow } from '../engine.mts'
 import { SECTIONS, boardExportRows, buildNewspaperHtml, composePrompt, constrainIdeasToBoard, fallbackIdeasFromBoard, type ComposedReport, type Idea } from './newspaper'
@@ -288,5 +290,23 @@ describe('thesis + falsifier — the two sentences reach the paper', () => {
     expect(ledgerRow(spoken).thesis).toBe(spoken.thesis)
     expect(ledgerRow(spoken).falsifier).toBe(spoken.falsifier)
     expect(ledgerRow({ ...spoken, thesis: undefined, falsifier: undefined }).thesis).toBeUndefined()
+  })
+})
+
+// The gathering half of the handler runs inside a Netlify background function
+// against live blobs, so the seam is pinned where it lives: in the source. What
+// matters is WHICH read feeds the paper — `gateStateSummary` is the panel's
+// standing record and handing it to the writer re-announced months-old notches
+// as today's news (Task-3 review, Important 2).
+describe('the compose handler asks the gate blob for TODAY, not for everything', () => {
+  const src = readFileSync(join(process.cwd(), 'netlify', 'functions', 'report-compose-background.mts'), 'utf8')
+
+  it('reads the date-bounded announcement and carries its two keys separately', () => {
+    expect(src).toContain('gateAnnouncement(await blobAppStore.read(GATE_STATE_KEY), dateISO)')
+    expect(src).not.toContain('gateStateSummary')
+    // moves and notes travel under their own keys — never concatenated
+    expect(src).toMatch(/gateMoves = gateAnnounce\?\.moves\.length/)
+    expect(src).toMatch(/gateNotes = gateAnnounce\?\.notes\.length/)
+    expect(src).toMatch(/\n\s+gateMoves,\n\s+gateNotes,\n/)
   })
 })

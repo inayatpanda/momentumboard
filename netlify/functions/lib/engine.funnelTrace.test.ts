@@ -205,6 +205,10 @@ describe('the funnel trace', () => {
     // trace stamps MODERATE_GATES exactly. Here the blob says three gates have
     // moved, and the run must be judged against those values and record them.
     const store = await goldenStore()
+    // …written in the LEGACY shape on purpose (`lastMoveSession`, the session
+    // count the cadence clock used before it counted index dates): a blob from
+    // before that fix must still judge a run, and only the deltas decide these
+    // thresholds.
     await store.write(GATE_STATE_KEY, {
       gates: {
         deadZone: { delta: -5, lastMoveSession: 3, history: [] },

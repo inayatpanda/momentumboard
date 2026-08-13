@@ -461,7 +461,7 @@ describe('the paper is told what it lost — the two accountability keys and whe
   })
 
   it('drops LAST: the smallest keys in the document are the last things the paper loses', () => {
-    expect(COMPOSE_DROP_ORDER.slice(-4)).toEqual(['previousEditions', 'missLedger', 'postMortems', 'gateMoves'])
+    expect(COMPOSE_DROP_ORDER.slice(-5)).toEqual(['previousEditions', 'missLedger', 'postMortems', 'gateNotes', 'gateMoves'])
     // and they are really in the order the compose pipe uses: with everything
     // droppable gone, these two are still standing
     const obj = {
@@ -488,5 +488,13 @@ describe('the paper is told what it lost — the two accountability keys and whe
     expect(voice.brief).toContain('missLedger')
     expect(voice.brief).toMatch(/unchecked/)
     expect(voice.brief).toMatch(/stopless/)
+  })
+
+  it('…and told which of the two gate keys is NEWS — the other one has not moved', () => {
+    const voice = SECTIONS.find(s => s.key === 'voice')!
+    // the move is today's, and it is the only one the writer may report as one
+    expect(voice.brief).toMatch(/gateMoves is present.*VERBATIM/)
+    expect(voice.brief).toMatch(/gateNotes is STATUS and never news/)
+    expect(voice.brief).toMatch(/gateNotes[^.]*threshold is unchanged/)
   })
 })

@@ -392,10 +392,14 @@ export const COMPOSE_DROP_ORDER = [
   'previousEditions',
   'missLedger',
   'postMortems',
+  // …the standing status of a gate that is eligible and cannot move — true on
+  // any morning, so it is the one of this pair that may be lost…
+  'gateNotes',
   // …and last of all, the one key that reports a CHANGE the engine made to
-  // itself: a gate that moved. It is at most three sentences, it can never
+  // itself TODAY: a gate that moved. It is at most three sentences, it can never
   // rescue an overflow, and a move the paper failed to announce is the one thing
-  // in this document a reader could not find out any other way.
+  // in this document a reader could not find out any other way — and unlike the
+  // note beside it, tomorrow's edition will not carry it.
   'gateMoves',
 ] as const
 
@@ -672,7 +676,7 @@ NO-SIGNAL DAYS: the reader values a real explanation — signalWhy is 3-5 tight 
   {
     key: 'voice',
     fields: ['editorial', 'honestClose'],
-    brief: 'editorial (The Long View): 1-2 TIGHT paragraphs of well-established market history or a great investor\'s principle that rhymes with TODAY\'s tape — tied explicitly to current conditions, no invented statistics, and never a principle used in a recent edition (see previousEditions). honestClose: confidence grade, what proves today wrong, what was unverifiable — three crisp sentences, and at most one more IF the data earns it: when postMortems is present, spend that sentence on the most recent SIZED loss, using its `why` in plain English and never the class name verbatim; when missLedger is present you may add its misses count and worst gate, but ONLY together with that gate\'s unchecked number — an unmeasured gate must never be written as a costless one, and the excesses are stopless upper bounds, so never call one a realised profit missed; when gateMoves is present, spend one more sentence stating the move VERBATIM from that line (the engine changed one of its own thresholds on measured evidence) — never reword the numbers, never claim a result for it, and never say a gate moved that is not in that list.',
+    brief: 'editorial (The Long View): 1-2 TIGHT paragraphs of well-established market history or a great investor\'s principle that rhymes with TODAY\'s tape — tied explicitly to current conditions, no invented statistics, and never a principle used in a recent edition (see previousEditions). honestClose: confidence grade, what proves today wrong, what was unverifiable — three crisp sentences, and at most one more IF the data earns it: when postMortems is present, spend that sentence on the most recent SIZED loss, using its `why` in plain English and never the class name verbatim; when missLedger is present you may add its misses count and worst gate, but ONLY together with that gate\'s unchecked number — an unmeasured gate must never be written as a costless one, and the excesses are stopless upper bounds, so never call one a realised profit missed; when gateMoves is present, spend one more sentence stating the move VERBATIM from that line (the engine changed one of its own thresholds TODAY on measured evidence) — never reword the numbers, never claim a result for it, and never say a gate moved that is not in that list; gateNotes is STATUS and never news — a gate listed there has NOT moved and its threshold is unchanged, so never write it as a change, and mention it at most in passing.',
     shape: '{"editorial":"...","honestClose":"..."}',
   },
 ]

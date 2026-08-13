@@ -81,8 +81,13 @@ export function bannedTokensIn(text: string): string[] {
  * passed through only when it is clean. Dropping a concrete detail costs the
  * reader some colour; printing `news: momentum names bid` costs them the whole
  * point of the rewrite, and the invariant "no thesis ever leaks a field name"
- * has to hold BY CONSTRUCTION rather than by hoping about upstream strings. */
-function safe(text: string | null | undefined, maxLen = 90): string | null {
+ * has to hold BY CONSTRUCTION rather than by hoping about upstream strings.
+ *
+ * EXPORTED for the same rule one layer out: the gate-state blob's `why` strings
+ * are template-built but hand-editable and travel into the paper's prompt, so
+ * `gateState.ts` scrubs them through this exact sweep rather than a second one
+ * that could drift from it. */
+export function safe(text: string | null | undefined, maxLen = 90): string | null {
   // Markup and prompt-steering characters are stripped, not escaped: a thesis
   // travels into the journalist's LLM prompt as well as the DOM, and the only
   // characters a headline legitimately needs are words and prices. (The catalyst
@@ -306,9 +311,14 @@ export interface ThesisInput {
   contextPts?: number
 }
 
-/** Context is capped colour (±CONTEXT_MAX_PTS = 12). Below this it did not
- * change the call, and a thesis that cites it anyway is telling the reader a
- * headline bought them a trade that the chart bought them. */
+/** Context is capped colour (±the context cap — 12 by default, and gate feedback
+ * may move it anywhere in [12, 16]; gateState.ts, GATE_BOUNDS.contextCap). Below
+ * this it did not change the call, and a thesis that cites it anyway is telling
+ * the reader a headline bought them a trade that the chart bought them.
+ *
+ * The floor below is deliberately NOT tied to that cap: it asks whether the
+ * context layer moved the number enough to be worth a sentence, which is a
+ * question about the reader, not about how much room the layer was given. */
 export const CONTEXT_MIN_PTS = 4
 
 /** …and the other half of the same claim. The threshold asks whether the context

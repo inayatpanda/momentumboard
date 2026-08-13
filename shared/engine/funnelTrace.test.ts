@@ -129,6 +129,20 @@ describe('funnelTraceRecorder', () => {
     expect(built(r).rows['BBB:long']).toEqual({ gate: 'diversity', side: 'long' })
   })
 
+  it('…and only when the gate actually CHANGED — a row revised onto its own code overwrote nothing', () => {
+    // `revise` is called on every fate change, including the ones that re-state
+    // the same ending (a re-scored row that dies at the same gate). `priorGate`
+    // means "this row used to end somewhere else"; `dead-zone-core → its own
+    // priorGate dead-zone-core` is not a biography, it is noise in a blob that
+    // carries ~180 rows a day for 250 days.
+    const r = funnelTraceRecorder()
+    r.record('AAA', 'dead-zone-core', { side: 'long', core: 18 })
+    r.revise('AAA', 'dead-zone-core', { side: 'long', core: 19 })
+    const row = built(r).rows['AAA:long']
+    expect(row).toEqual({ gate: 'dead-zone-core', side: 'long', core: 19 })
+    expect(row.priorGate).toBeUndefined()
+  })
+
   it('not-candidate is a COUNT — never a list, because the universe is unbounded', () => {
     const r = funnelTraceRecorder()
     r.notCandidate(3)

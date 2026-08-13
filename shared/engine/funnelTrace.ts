@@ -60,12 +60,14 @@ export interface FunnelTraceRow {
    * levels — so exactly the rows a gate refused hardest ranked 0 and starved.
    * Absent where no core was ever computed (trimmed, no candles). */
   core?: number
-  /** WHAT `revise` OVERWROTE. A row whose fate changed after it published —
-   * a shadow the per-side budget dropped, a lane demotion, a diversity cut —
-   * destroys the code that denied it, and `shadow-capped` in particular then
-   * reads as "a sampling budget refused this" when the real denial was the gate
-   * underneath. One level deep, deliberately: the question is what this row was
-   * immediately before, not its whole biography. */
+  /** WHAT `revise` OVERWROTE, when it overwrote something ELSE. A row whose fate
+   * changed after it published — a shadow the per-side budget dropped, a lane
+   * demotion, a diversity cut — destroys the code that denied it, and
+   * `shadow-capped` in particular then reads as "a sampling budget refused this"
+   * when the real denial was the gate underneath. Absent when the revision landed
+   * on the same code (nothing was overwritten) and one level deep otherwise,
+   * deliberately: the question is what this row was immediately before, not its
+   * whole biography. */
   priorGate?: GateCode
 }
 
@@ -165,7 +167,12 @@ const rowOf = (gate: GateCode, extra?: TraceExtra, prev?: FunnelTraceRow): Funne
   const core = extra?.core
   if (typeof core === 'number' && Number.isFinite(core)) row.core = core
   else if (prev && typeof prev.core === 'number') row.core = prev.core
-  if (prev) row.priorGate = prev.gate
+  // …and only when the row's ending actually CHANGED. `revise` fires on every
+  // fate change, including the ones that re-state the same code, and
+  // `priorGate: 'dead-zone-core'` under `gate: 'dead-zone-core'` is not a
+  // biography — it is a byte in every one of ~180 rows a day, for 250 days,
+  // saying nothing.
+  if (prev && prev.gate !== gate) row.priorGate = prev.gate
   return row
 }
 
