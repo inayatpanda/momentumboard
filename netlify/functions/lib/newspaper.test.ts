@@ -460,8 +460,8 @@ describe('the paper is told what it lost — the two accountability keys and whe
     expect(paperPostMortems(days, 2).map(r => r.sym)).toEqual(['S40', 'S41'])
   })
 
-  it('drops LAST: the two smallest keys in the document are the last things the paper loses', () => {
-    expect(COMPOSE_DROP_ORDER.slice(-3)).toEqual(['previousEditions', 'missLedger', 'postMortems'])
+  it('drops LAST: the smallest keys in the document are the last things the paper loses', () => {
+    expect(COMPOSE_DROP_ORDER.slice(-4)).toEqual(['previousEditions', 'missLedger', 'postMortems', 'gateMoves'])
     // and they are really in the order the compose pipe uses: with everything
     // droppable gone, these two are still standing
     const obj = {
@@ -470,12 +470,16 @@ describe('the paper is told what it lost — the two accountability keys and whe
       previousEditions: 'p'.repeat(400),
       missLedger: { misses: 4, topGates: [{ gate: 'dead-zone-core', cost: 3, unchecked: 1 }] },
       postMortems: [{ sym: 'ACME', cls: 'stopped', why: 'It stopped out on day three.' }],
+      gateMoves: ['dead zone 25 → 22.5 on 2026-08-13 — cost 190 vs saved 12 over 202 attributed outcomes'],
     }
-    const { json, dropped } = buildDataJson(obj, [...COMPOSE_DROP_ORDER], 700)
+    const { json, dropped } = buildDataJson(obj, [...COMPOSE_DROP_ORDER], 800)
     expect(dropped).toEqual(['candidateReads', 'previousEditions'])
     const parsed = JSON.parse(json)
     expect(parsed.missLedger.topGates[0].unchecked).toBe(1)
     expect(parsed.postMortems[0].why).toContain('stopped out')
+    // the announcement outlives every other droppable key: a threshold the
+    // engine moved on itself is the one thing a reader cannot learn elsewhere
+    expect(parsed.gateMoves[0]).toContain('dead zone 25 → 22.5')
   })
 
   it('the writer is TOLD about them, with the unchecked caveat attached — data with no instruction is the same silence', () => {

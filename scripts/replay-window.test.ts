@@ -32,6 +32,7 @@ import {
   MISS_EXCESS_MIN_MIRROR,
   MISS_LEDGER_DAYS_MAX_MIRROR,
   MISS_LEDGER_KEY_MIRROR,
+  GATE_STATE_KEY_MIRROR,
   MISS_SKIP_GATE_MIRROR,
   POSTMORTEM_CLASS_MIRROR,
   expectedCalledGates,
@@ -1288,6 +1289,14 @@ describe('the walk carries the trace — and the board never noticed', () => {
     try {
       vi.resetModules()
       vi.stubEnv('REPLAY_CACHE_DIR', dir)
+      // GATE FEEDBACK OFF IN BOTH ARMS (Stage 3c, gateState.ts). The recorder is
+      // the thing under test here, and it is still a pure observer — but what it
+      // records now feeds the miss ledger, and the ledger may move a threshold.
+      // Over this window it DOES: the dead zone clears the eligibility bar and
+      // takes a notch, which changes every later day's board. That is the whole
+      // point of 3c and it has its own switch, so the parity claim is made with
+      // that switch off and remains a claim about the RECORDER.
+      vi.stubEnv('GATES', 'off')
       const fresh = (await import('./replay-window')) as typeof import('./replay-window')
       // 1) the recorder live — the walk asserts the invariant itself, day by day,
       //    and throws if it is ever false. Reaching the next line IS that assertion.
@@ -1378,6 +1387,10 @@ describe('MISS_SKIP_GATE_MIRROR / POSTMORTEM_CLASS_MIRROR — the drift guards',
     expect(src).toContain(`export const MISS_EXCESS_MIN = ${MISS_EXCESS_MIN_MIRROR}`)
     expect(src).toContain(`export const MISS_LEDGER_KEY = '${MISS_LEDGER_KEY_MIRROR}'`)
     expect(src).toContain(`export const MISS_LEDGER_DAYS_MAX = ${MISS_LEDGER_DAYS_MAX_MIRROR}`)
+  })
+  it('carries the gate-state key the artefact reads the moved gates out of', () => {
+    const src = readFileSync(join(process.cwd(), 'shared', 'engine', 'gateState.ts'), 'utf8')
+    expect(src).toContain(`export const GATE_STATE_KEY = '${GATE_STATE_KEY_MIRROR}'`)
   })
   it('carries every post-mortem class the engine declares, in precedence order', () => {
     const src = readFileSync(join(process.cwd(), 'shared', 'engine', 'postMortem.ts'), 'utf8')
@@ -1612,6 +1625,12 @@ describe('the walk measures regret — and the board still never noticed', () =>
     try {
       vi.resetModules()
       vi.stubEnv('REPLAY_CACHE_DIR', dir)
+      // …and gate feedback off in BOTH arms, for the reason given in the trace
+      // parity test above: 3c's gate move is a published change BY DESIGN and is
+      // downstream of exactly the machinery this test switches off, so leaving it
+      // armed would turn a claim about the regret machinery into a claim about
+      // the gates. (`gateStateFinal` in the artefact is null under this flag.)
+      vi.stubEnv('GATES', 'off')
       const fresh = (await import('./replay-window')) as typeof import('./replay-window')
       const runOnce = async (out: string) => {
         process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', walkSyms.join(','), '--out', out]

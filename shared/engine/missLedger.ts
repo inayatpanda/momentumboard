@@ -136,6 +136,19 @@ export interface MissGateStat {
   cost: number
   /** Sum of those excesses — positive by construction. */
   costExcessSum: number
+  /** THE HYGIENIC SUB-COUNTS (Stage 3c) — `cost`/`saved` restricted to SIDED
+   * rows. A bare row is scored both ways, so it mints one cost and one mirror
+   * save for the same gate; counting that pair as two outcomes would let a gate
+   * argue with itself. These are what `gateAttribution` reads and the ONLY
+   * numbers allowed to move a gate.
+   *
+   * OPTIONAL, and absent means ZERO rather than "same as cost": a counter written
+   * before the split cannot be un-mixed, and the mechanism must not act on
+   * evidence it cannot audit. The practical cost is that gate feedback starts
+   * from an empty evidence base on the day it ships, which is exactly the plan's
+   * "the evidence arrives on its own clock". */
+  sidedCost?: number
+  sidedSaved?: number
   /** Rows it refused that then fell ≤ −5pp on the refused side. */
   saved: number
   /** Sum of THOSE excesses — negative by construction, so `-savedExcessSum` is
@@ -216,8 +229,8 @@ export interface MissCandidate {
   /** null for a bare row: scored BOTH ways (see the header). */
   side: 'long' | 'short' | null
   gate: GateCode
-  /** |core| from the day's near-miss list where the name appears, else 0 — the
-   * only conviction number the trace actually carries. */
+  /** |core| — the row's OWN stored conviction where it has one (the 3a rider),
+   * else the day's near-miss list, else 0. */
   rank: number
 }
 
@@ -226,10 +239,16 @@ export interface MissCandidate {
  * SIDED rows first, by conviction descending: a row the composite scored and a
  * gate then turned down is a far more interesting refusal than a name that never
  * got a direction at all, and conviction is the best available proxy for "how
- * close was this to being called". The trace row itself carries no composite —
- * `nearMisses` is the only place the day's conviction survives — so the ordering
- * uses that where it exists and falls back to 0, then to the key, so two runs of
- * one day spend the budget identically. */
+ * close was this to being called".
+ *
+ * THE ROW'S OWN `core` LEADS (the Stage-3a rider, funnelTrace.ts). `nearMisses`
+ * used to be the only place a day's conviction survived, and it drops every name
+ * with an earnings print inside the horizon or without printable levels — so the
+ * refusals the ledger most wanted to price ranked 0 and starved behind the
+ * tiebreak. The near-miss list stays as the fallback for rows written before the
+ * rider (and for the side-free gates, which never had a composite), then 0, then
+ * the rotating key spin, so two runs of one day still spend the budget
+ * identically. */
 export function missCandidates(trace: FunnelTrace): MissCandidate[] {
   const rank = new Map<string, number>()
   for (const nm of trace.nearMisses ?? []) {
@@ -240,7 +259,8 @@ export function missCandidates(trace: FunnelTrace): MissCandidate[] {
   for (const [key, row] of Object.entries(trace.rows ?? {})) {
     if (!row || !missCheckable(row.gate)) continue
     const sym = key.split(':')[0]
-    out.push({ key, sym, side: row.side ?? null, gate: row.gate, rank: rank.get(sym) ?? 0 })
+    const own = typeof row.core === 'number' && Number.isFinite(row.core) ? Math.abs(row.core) : null
+    out.push({ key, sym, side: row.side ?? null, gate: row.gate, rank: own ?? rank.get(sym) ?? 0 })
   }
   // The rank-0 tiebreak rotates with the trace date: a stable alphabetical
   // order would measure the same early-alphabet names every day and starve the
@@ -264,9 +284,11 @@ export function accrueMissEvent(ledger: MissLedger, ev: MissExample): 'cost' | '
   if (kind === 'cost') {
     g.cost++
     g.costExcessSum = round1(g.costExcessSum + ev.excessPct)
+    if (!ev.bare) g.sidedCost = (g.sidedCost ?? 0) + 1
   } else {
     g.saved++
     g.savedExcessSum = round1(g.savedExcessSum + ev.excessPct)
+    if (!ev.bare) g.sidedSaved = (g.sidedSaved ?? 0) + 1
   }
   g.examples = [...g.examples, { ...ev }].slice(-MISS_EXAMPLES_PER_GATE)
   return kind
@@ -313,6 +335,23 @@ export function maturedTraceDate(index: readonly string[], spy: Candle[], horizo
   return best
 }
 
+/** THE DOUBLE-BOOKED GATES (3b entry condition (a), binding on 3c).
+ *
+ * These three publish a ZERO-SIZE row: the reader gets it, and its outcome is
+ * GRADED into calibration like any other — the Stage-3c partition deliberately
+ * accrues them as SIZED evidence, because a band under its anchor recovers
+ * through exactly these rows. They are also miss-checkable, so the same +51pp
+ * event both lifts its calibration bucket and charges its gate. One event must
+ * not move two levers, and calibration already has it, so the gate lever lets it
+ * go: their counters are REPORTED (the marker is on every summary line) and are
+ * evidence for NOTHING.
+ *
+ * The exclusion is SYMMETRIC — neither their cost nor their saves may move a
+ * gate. Letting a double-booked save tighten while its cost may not loosen would
+ * make the same population argue in one direction only, which is a bias with a
+ * rationale rather than a rule. */
+export const DOUBLE_BOOKED_GATES: ReadonlySet<GateCode> = new Set<GateCode>(['called-watch', 'called-below-base', 'called-observation'])
+
 /** One gate's line in the summary — the two columns that argue, and the one that
  * says how much of the argument is missing. */
 export interface MissGateLine {
@@ -322,6 +361,41 @@ export interface MissGateLine {
   avgCostExcessPct: number | null
   saved: number
   unchecked: number
+  /** Present (true) only on the three gates above — the marker that says "these
+   * numbers are already counted somewhere else". Absent on every other gate, so
+   * the shape of an ordinary line never changed. */
+  doubleBooked?: true
+}
+
+/** THE ELIGIBILITY READ (Stage 3c, gateState.ts consumes it). Per gate: the
+ * hygienic counts that may move it, and the marker that says they may not.
+ *
+ * Hygiene, all three rules from the plan's global constraints:
+ *  - SIDED only — bare mirror rows are excluded (see the sub-counts above);
+ *  - DOUBLE-BOOKED gates carry the marker and are refused in both directions;
+ *  - `unchecked` never counts as evidence either way. It travels anyway, because
+ *    a gate with 200 unpriced refusals and 3 priced ones is a gate nobody has
+ *    measured, and a reader of this row must be able to see that. */
+export interface GateAttribution {
+  gate: GateCode
+  cost: number
+  saved: number
+  /** cost + saved: outcomes ATTRIBUTED to this gate. Refusals whose ten-session
+   * excess landed inside the ±5pp bar were measured and attributed to neither
+   * column — the ledger has never stored them per gate, and inventing them here
+   * would loosen the ≥30 bar with numbers nobody counted. */
+  n: number
+  unchecked: number
+  doubleBooked: boolean
+}
+
+export function gateAttribution(raw: unknown): GateAttribution[] {
+  const l = normaliseMissLedger(raw)
+  return (Object.entries(l.gates) as [GateCode, MissGateStat][]).map(([gate, g]) => {
+    const cost = g?.sidedCost ?? 0
+    const saved = g?.sidedSaved ?? 0
+    return { gate, cost, saved, n: cost + saved, unchecked: g?.unchecked ?? 0, doubleBooked: DOUBLE_BOOKED_GATES.has(gate) }
+  })
 }
 
 /** THE BOUNDED READ — what a panel line and a paragraph of the paper may say
@@ -365,6 +439,8 @@ export function missLedgerSummary(raw: unknown, topN = 3): MissLedgerSummary | n
       avgCostExcessPct: g.cost ? round1((g.costExcessSum ?? 0) / g.cost) : null,
       saved: g.saved ?? 0,
       unchecked: g.unchecked ?? 0,
+      // …and whether this gate's numbers are already counted elsewhere
+      ...(DOUBLE_BOOKED_GATES.has(gate) ? { doubleBooked: true as const } : {}),
     }))
     // by cost, then by the size of what it cost, THEN by unchecked — so on a
     // day where every gate shows cost 0, the gate with 40 unpriced refusals

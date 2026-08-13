@@ -24,7 +24,7 @@ import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLa
 import { dipThesis } from '../../../shared/engine/voice'
 import { classifyVelocity, velocityCall, VELOCITY_DOOR_CAP } from '../../../shared/engine/velocityLane'
 import { clusterCandidates, detectClusters, TREND_DAY_SYMS, TREND_HISTORY_DAYS, type TrendDay } from '../../../shared/engine/hypeCluster'
-import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, VELOCITY_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
+import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, VELOCITY_CATALYST_KIND, type CatalystTag } from '../../../shared/engine/catalyst'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
 import { DIP_NEWS_BUDGET, unservedVenue, type DipNewsVerdict } from './dipNews'
 import { annotatePostMortems, POSTMORTEM_LLM_MAX_TOKENS, type PostMortemAsk } from './postMortemLlm'
@@ -49,7 +49,8 @@ import {
 } from '../../../shared/engine/calibration'
 import { pickDiverse } from '../../../shared/engine/select'
 import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder, type FunnelTrace } from '../../../shared/engine/funnelTrace'
-import { MISS_LEDGER_KEY, accrueMissDay, maturedTraceDate, normaliseMissLedger, regretDisabled, type MissLedger } from '../../../shared/engine/missLedger'
+import { MISS_LEDGER_KEY, accrueMissDay, gateAttribution, maturedTraceDate, normaliseMissLedger, regretDisabled, type MissLedger } from '../../../shared/engine/missLedger'
+import { GATE_STATE_KEY, advanceGateState, effectiveGates, gateEligibility, gateFeedbackDisabled, normaliseGateState } from '../../../shared/engine/gateState'
 import { classifyLoser, postMortemKey } from '../../../shared/engine/postMortem'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
@@ -452,6 +453,41 @@ async function accrueMissLedger(store: AppStore, spy: Candle[], cache: Map<strin
   console.log(`MISS-LEDGER: ${date} — ${next.days[date].checked} checked, ${next.days[date].unchecked} unchecked, ${next.days[date].misses} misses`)
 }
 
+/** THE GATE FEEDBACK HOOK (shared/engine/gateState.ts owns every rule).
+ *
+ * The one place in the engine where a threshold the reader's calls are judged
+ * against can change. It runs LAST, after the miss ledger has booked the day it
+ * just measured, so a gate is always judged on the freshest evidence — and it
+ * writes only when something actually happened: a notch, or the first time a
+ * gate earned one and could not have it.
+ *
+ * `predictions-index.length` is the session clock. Calendar days would count the
+ * mornings the engine never ran, and the cadence rule is about how much evidence
+ * has passed under a gate, not how much time.
+ *
+ * Fail-soft is the caller's job (the same try/catch the miss ledger rides in):
+ * every learning blob is durable by now, so a failure here costs a notch and
+ * nothing else — and the board reads whatever `gate-state` last said. */
+async function advanceGates(store: AppStore, cfg: AppConfig | null | undefined, sessionCount: number, today: string): Promise<void> {
+  if (gateFeedbackDisabled()) return
+  const state = normaliseGateState(await store.read(GATE_STATE_KEY))
+  const eligibility = gateEligibility(gateAttribution(await store.read(MISS_LEDGER_KEY)))
+  const { state: next, moves, notes } = advanceGateState(state, eligibility, sessionCount, {
+    date: today,
+    appetite: cfg?.riskAppetite,
+    overrides: cfg?.gateOverride,
+  })
+  // WROTE ONLY ON A REAL CHANGE — and the test is the STATE, not the event list:
+  // an advance that drops a stale "eligible and held" note produces neither a move
+  // nor a note, and a blob left holding that note would keep announcing it. An
+  // untouched state serialises identically and costs the run nothing.
+  if (JSON.stringify(next) === JSON.stringify(state)) return
+  await store.write(GATE_STATE_KEY, next)
+  // ONE sentence per event, and the same sentence the panel and the paper print.
+  for (const m of moves) console.log(`GATE: ${m.line}`)
+  for (const n of notes) console.log(`GATE: ${n.line}`)
+}
+
 export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec: number, cfg?: AppConfig | null): Promise<{ graded: number }> {
   const today = londonDate(nowSec)
   const spy = await deps.candles('SPY')
@@ -724,6 +760,16 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   } catch (e) {
     console.log(`MISS-LEDGER: skipped — ${e instanceof Error ? e.message : String(e)}`)
   }
+  // …and then, on what that ledger has measured, the one mechanism allowed to move
+  // a published threshold. Its OWN guard, so a gate failure is never reported as a
+  // ledger failure — and its own guard is enough: it reads the ledger blob itself,
+  // so a morning the accrual could not run still evaluates the evidence already
+  // banked. Last, and least urgent: a notch must never cost this pass a grade.
+  try {
+    await advanceGates(store, cfg, fullIndex.length, today)
+  } catch (e) {
+    console.log(`GATE: skipped — ${e instanceof Error ? e.message : String(e)}`)
+  }
   return { graded }
 }
 
@@ -818,7 +864,16 @@ export async function buildBoard(
   const cfg = validateConfig(await store.read('config')) ?? { watchlist: [], rules: [], ytChannels: [], capital: 5000 }
   const watchSyms = cfg.watchlist.map(w => w.symbol)
   const favourites = cfg.favouriteChannels ?? ['Stocks with Josh']
-  const gates = gatesFor(cfg.riskAppetite) // 'aggressive' lowers the dead zone / expected-move floor (catalyst.ts)
+  // THE RUN'S THRESHOLDS. `gatesFor(cfg.riskAppetite)` is still the base
+  // ('aggressive' lowers the dead zone / expected-move floor — catalyst.ts); the
+  // `gate-state` blob adds whatever the miss ledger's evidence has earned since,
+  // clamped to hard bounds, and hands back the preset EXACTLY while the blob is
+  // absent (shared/engine/gateState.ts). One object carries all three tunable
+  // thresholds — including the context cap, which composeCall reads off it rather
+  // than off its module constant — and the funnel trace stores it whole, so a
+  // trace read back next quarter knows which dead zone said no that morning.
+  const gateState = normaliseGateState(await store.read(GATE_STATE_KEY))
+  const gates = effectiveGates(cfg, gateState)
   // THE FUNNEL'S RECORD (shared/engine/funnelTrace.ts). Every `continue` below now
   // also says WHY, into an accumulator that costs a Map insert and decides nothing.
   // Written once at the end of the run, fail-soft, under `funnel-trace:${today}`.
@@ -1610,18 +1665,24 @@ export async function buildBoard(
       call = composeCall({ ...composeInput, factors, worldMult: worldMult(tone.tone, call.side) })
     }
     if (isRejection(call)) {
+      // The gate-free core read (composite.ts — the same arithmetic the call would
+      // have stood on), computed BEFORE the trace row so the refusal can carry its
+      // own conviction. The near-miss list below is a narrower population (real
+      // levels, no earnings print), and the miss ledger's fetch budget was ranking
+      // by it — so exactly the rows a gate refused hardest ranked 0. The row's own
+      // number is the honest proxy.
+      const core = coreCompositeOf(factors, weights.current, regime)
       trace.record(entry.sym, call.gate, {
         side: call.side,
         source: sources.get(entry.sym.toUpperCase())?.source,
         detail: draftedFirstPass ? `second-pass · ${call.detail ?? ''}` : call.detail,
+        core,
       })
-      // Nothing published. Record the gate-free core read (composite.ts — the same
-      // arithmetic the call would have stood on) so the assembly can name this name
+      // Nothing published. Record the core read so the assembly can name this name
       // if the whole side comes up empty. Requires real levels: a row the reader
       // cannot even see an entry/stop for is not worth naming. An earnings print
       // inside the horizon is excluded on the same principle that shadows the
       // trade — the engine does not point at coin flips.
-      const core = coreCompositeOf(factors, weights.current, regime)
       const lastClose = closes[closes.length - 1]
       const atrNow = atr(candles)[candles.length - 1]
       if (core != null && lastClose != null && atrNow != null && !composeInput.earningsWithinHorizon)

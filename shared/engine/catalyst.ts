@@ -63,6 +63,14 @@ export const LANE_CATALYST_KINDS: ReadonlySet<string> = new Set([DIP_CATALYST_KI
 export interface Gates {
   deadZone: number // |adj composite| below this → no call
   minExpectedMovePct: number // min expected 10-session move %; a live catalyst relaxes it by 0.5
+  // The context layer's cap, threaded through the SAME object as the other two so
+  // gate feedback (gateState.ts) has one seam to move and the funnel trace records
+  // all three thresholds a run was judged against in one place. ABSENT means the
+  // module default (composite.ts CONTEXT_MAX_PTS) — which is why the presets below
+  // are byte-identical to what they always were, and why a trace written before
+  // any gate moved reads back unchanged. composite.ts owns the joint bound: the
+  // cap must stay below the dead zone, and gateState.ts enforces it on the pair.
+  contextMaxPts?: number
 }
 
 export const MODERATE_GATES: Gates = { deadZone: 25, minExpectedMovePct: 1.5 }

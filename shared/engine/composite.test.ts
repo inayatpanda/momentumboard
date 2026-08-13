@@ -282,6 +282,16 @@ describe('two-layer composite: core decides, context colours', () => {
     expect(withCtx.evidence.contextPts).toBe(CONTEXT_MAX_PTS)
   })
 
+  it('…and the cap the RUN was judged against wins, so gate feedback moves it without touching the constant', () => {
+    const factors = { ...longFactors(), social: { score: 60, detail: '' }, channels: { score: 70, detail: '' }, news: { score: 50, detail: '' }, catalyst: { score: 90, detail: '' } }
+    const core = drafted(base({ factors: longFactors() }))!
+    const moved = drafted(base({ factors, gates: { ...MODERATE_GATES, contextMaxPts: 16 } }))!
+    expect(moved.evidence.contextPts).toBe(16)
+    expect(moved.composite).toBeCloseTo(core.composite + 16, 1)
+    // absent means the module default — the reason nothing moved before a gate did
+    expect(drafted(base({ factors, gates: { ...MODERATE_GATES } }))!.evidence.contextPts).toBe(CONTEXT_MAX_PTS)
+  })
+
   it('a missing context factor never changes the core read — same model for every ticker', () => {
     const bare = drafted(base({ factors: longFactors() }))!
     const oneCtxNull = { ...longFactors(), news: { score: 0, detail: 'quiet tape' } }

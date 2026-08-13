@@ -1,4 +1,5 @@
 import type { AlertRule } from './alerts'
+import { GATE_BOUNDS, TUNABLE_GATES, type GateOverride } from './engine/gateState'
 import type { LevMap } from './engine/riskLadder'
 
 export interface UserNote {
@@ -18,6 +19,11 @@ export interface AppConfig {
   levMap?: LevMap // underlying → ISA-eligible leveraged/inverse ETP tickers
   coreSleeve?: string[] // owner-extended additions to the standing core sleeve (union over defaults, never replace)
   riskRungOverride?: 0 | 1 | 2 | 3 | null // manual risk-ladder pin; null = engine decides
+  // Manual gate pins (shared/engine/gateState.ts), mirroring riskRungOverride: a
+  // pinned gate ignores whatever feedback earned and refuses to move, while its
+  // evidence keeps accruing and keeps being reported. Values are clamped to the
+  // gate's hard bounds here, so a stored config can never widen one.
+  gateOverride?: GateOverride | null
   favouriteChannels?: string[] // credibility prior 0.6 instead of 0.5
   riskAppetite?: 'moderate' | 'aggressive' // engine gates: aggressive widens the funnel (catalyst.ts). Default moderate.
   reportRecipients?: ReportRecipient[] // admin-managed extra recipients, per-edition, unioned with env REPORT_EMAIL_TO
@@ -72,6 +78,22 @@ export function validateConfig(raw: unknown): AppConfig | null {
       : c.riskRungOverride === undefined
         ? undefined
         : null
+  // Same absent-vs-null contract as riskRungOverride above: ABSENT stays
+  // undefined so a server-side merge preserves a stored pin, and a present
+  // object is sanitised key by key — unknown gates dropped, non-finite values
+  // dropped, every survivor clamped into that gate's hard bounds. An object with
+  // nothing valid left in it is an explicit "engine decides" → null.
+  const gateOverride: GateOverride | null | undefined = (() => {
+    if (c.gateOverride === undefined) return undefined
+    const raw = c.gateOverride && typeof c.gateOverride === 'object' ? (c.gateOverride as Record<string, unknown>) : null
+    const out: GateOverride = {}
+    for (const g of TUNABLE_GATES) {
+      const v = raw?.[g]
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue
+      out[g] = Math.min(GATE_BOUNDS[g].max, Math.max(GATE_BOUNDS[g].min, v))
+    }
+    return Object.keys(out).length ? out : null
+  })()
   const coreSleeve = Array.isArray(c.coreSleeve)
     ? c.coreSleeve
         .filter((s): s is string => typeof s === 'string')
@@ -114,6 +136,7 @@ export function validateConfig(raw: unknown): AppConfig | null {
     levMap: Object.keys(levMap).length ? levMap : undefined,
     coreSleeve: coreSleeve && coreSleeve.length ? coreSleeve : undefined,
     riskRungOverride,
+    gateOverride,
     favouriteChannels,
     riskAppetite,
     reportRecipients,

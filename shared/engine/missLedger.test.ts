@@ -15,6 +15,7 @@ import {
   accrueMissEvent,
   accrueUnchecked,
   emptyMissLedger,
+  gateAttribution,
   maturedTraceDate,
   missCandidates,
   regretDisabled,
@@ -391,6 +392,77 @@ describe('missLedgerSummary — the bounded read every surface prints', () => {
     const s = missLedgerSummary(l, 1)!
     expect(s.topGates).toEqual([{ gate: 'trimmed', cost: 2, avgCostExcessPct: 0, saved: 0, unchecked: 0 }])
     expect(s).toMatchObject({ days: 1, checked: 0, unchecked: 0, misses: 0 })
+  })
+})
+
+describe('gateAttribution — the only population allowed to move a gate', () => {
+  it('counts SIDED rows and refuses the bare ones — a mirror pair is not two outcomes', async () => {
+    const ledger = emptyMissLedger()
+    await accrueMissDay(
+      ledger,
+      traceOf({ 'RUN:long': { gate: 'dead-zone-core', side: 'long' }, RUN2: { gate: 'dead-zone-core' } }),
+      flat,
+      io({ RUN: runner, RUN2: runner }),
+    )
+    // the raw ledger has the bare row's cost AND its mirror save…
+    expect(ledger.gates['dead-zone-core']).toMatchObject({ cost: 2, saved: 1 })
+    // …and the eligibility read has only the sided one
+    const a = gateAttribution(ledger).find(x => x.gate === 'dead-zone-core')!
+    expect(a).toMatchObject({ cost: 1, saved: 0, n: 1, doubleBooked: false })
+  })
+
+  it('marks the three double-booked gates — and their evidence counts in NEITHER direction', () => {
+    const l = emptyMissLedger()
+    for (let i = 0; i < 40; i++) accrueMissEvent(l, { date: ENTRY, sym: 'A', side: 'long', excessPct: 9, gate: 'called-watch' })
+    const a = gateAttribution(l).find(x => x.gate === 'called-watch')!
+    // the counts are REPORTED — the double-booking is visible, not hidden…
+    expect(a).toMatchObject({ cost: 40, saved: 0, n: 40, doubleBooked: true })
+    // …and the summary line says so to every surface that prints it
+    expect(missLedgerSummary(l)!.topGates[0]).toMatchObject({ gate: 'called-watch', doubleBooked: true })
+    // an ordinary gate carries no marker at all (the line's shape is a pin
+    // elsewhere in this file)
+    accrueMissEvent(l, { date: ENTRY, sym: 'B', side: 'long', excessPct: 9, gate: 'dead-zone-core' })
+    expect(missLedgerSummary(l)!.topGates.find(g => g.gate === 'dead-zone-core')!.doubleBooked).toBeUndefined()
+  })
+
+  it('legacy counters are not retro-fitted: a blob written before the sided sub-counts reads as no evidence', () => {
+    const l = emptyMissLedger()
+    l.gates['dead-zone-core'] = { cost: 190, costExcessSum: 1000, saved: 12, savedExcessSum: -60, unchecked: 5, examples: [] }
+    const a = gateAttribution(l).find(x => x.gate === 'dead-zone-core')!
+    expect(a).toMatchObject({ cost: 0, saved: 0, n: 0, unchecked: 5 })
+  })
+
+  it('unchecked is never evidence either way', () => {
+    const l = emptyMissLedger()
+    for (let i = 0; i < 50; i++) accrueUnchecked(l, 'dead-zone-core')
+    const a = gateAttribution(l).find(x => x.gate === 'dead-zone-core')!
+    expect(a).toMatchObject({ cost: 0, saved: 0, n: 0, unchecked: 50 })
+  })
+
+  it('is empty on a ledger nothing has ever been written to', () => {
+    expect(gateAttribution(null)).toEqual([])
+    expect(gateAttribution('nonsense')).toEqual([])
+  })
+})
+
+describe('the trace’s own conviction — the miss-priority proxy', () => {
+  it('ranks by the row’s stored core, so a name the near-miss list dropped is still ranked', () => {
+    const trace: FunnelTrace = {
+      date: ENTRY,
+      gates: MODERATE_GATES,
+      rows: {
+        'LOW:long': { gate: 'dead-zone-core', side: 'long', core: 8 },
+        'HIGH:short': { gate: 'dead-zone-core', side: 'short', core: -41 },
+        'MID:long': { gate: 'dead-zone-core', side: 'long' },
+      },
+      counts: { notCandidate: 0 },
+      // the near-miss list knows only MID: an earnings print or a missing level
+      // keeps the other two out of it, and before `core` rode the row they
+      // ranked 0 and starved
+      nearMisses: [{ sym: 'MID', core: 20 } as unknown as FunnelTrace['nearMisses'][0]],
+      emptySides: {},
+    }
+    expect(missCandidates(trace).map(c => c.sym)).toEqual(['HIGH', 'MID', 'LOW'])
   })
 })
 

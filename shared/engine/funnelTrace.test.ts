@@ -102,6 +102,33 @@ describe('funnelTraceRecorder', () => {
     expect(built(r).rows.AAA).toEqual({ gate: 'trimmed' })
   })
 
+  it('carries the row’s own conviction, so a refusal can be ranked without the near-miss list', () => {
+    const r = funnelTraceRecorder()
+    r.record('AAA', 'dead-zone-core', { side: 'long', core: 18.4 })
+    r.record('BBB', 'dead-zone-core', { side: 'short', core: 0 })
+    r.record('CCC', 'trimmed')
+    expect(built(r).rows['AAA:long']).toEqual({ gate: 'dead-zone-core', side: 'long', core: 18.4 })
+    expect(built(r).rows['BBB:short']).toEqual({ gate: 'dead-zone-core', side: 'short', core: 0 }) // zero is a reading
+    expect(built(r).rows.CCC).toEqual({ gate: 'trimmed' }) // absent, never a null
+    r.record('DDD', 'trimmed', { core: Number.NaN })
+    expect(built(r).rows.DDD).toEqual({ gate: 'trimmed' })
+  })
+
+  it('a revise records WHAT IT OVERWROTE — the shadow-capped row’s denying gate is otherwise destroyed', () => {
+    const r = funnelTraceRecorder()
+    r.record('AAA', 'called-shadow', { side: 'long', core: 44 })
+    r.revise('AAA', 'shadow-capped', { side: 'long', detail: 'past the per-side shadow budget' })
+    const row = built(r).rows['AAA:long']
+    expect(row.gate).toBe('shadow-capped')
+    expect(row.priorGate).toBe('called-shadow')
+    // …and the conviction rides through a fate change: the number did not move
+    // because the row's ending did
+    expect(row.core).toBe(44)
+    // a revise onto an empty key overwrote nothing and says nothing
+    r.revise('BBB', 'diversity', { side: 'long' })
+    expect(built(r).rows['BBB:long']).toEqual({ gate: 'diversity', side: 'long' })
+  })
+
   it('not-candidate is a COUNT — never a list, because the universe is unbounded', () => {
     const r = funnelTraceRecorder()
     r.notCandidate(3)

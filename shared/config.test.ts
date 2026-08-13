@@ -28,6 +28,17 @@ describe('validateConfig engine fields', () => {
     // explicit null: the user cleared the pin — a real "engine decides" instruction
     expect(validateConfig({ ...minimal, riskRungOverride: null })!.riskRungOverride).toBeNull()
   })
+  it('gateOverride: keeps the known gates clamped to their hard bounds, drops the rest, mirrors absent-vs-null', () => {
+    const cfg = validateConfig({
+      ...minimal,
+      gateOverride: { deadZone: 5, minExpectedMovePct: 1.25, contextCap: 99, roster: 3, deadZoneX: 1, minExpectedMovePctBad: '1.2' },
+    })!
+    expect(cfg.gateOverride).toEqual({ deadZone: 20, minExpectedMovePct: 1.25, contextCap: 16 })
+    // absent → undefined (a merge may preserve a stored pin); nothing valid → null
+    expect(validateConfig(minimal)!.gateOverride).toBeUndefined()
+    expect(validateConfig({ ...minimal, gateOverride: null })!.gateOverride).toBeNull()
+    expect(validateConfig({ ...minimal, gateOverride: { junk: 1 } })!.gateOverride).toBeNull()
+  })
   it('coreSleeve: upper-cases entries, drops junk (bad chars/overlong), absent/empty stays undefined', () => {
     const cfg = validateConfig({ ...minimal, coreSleeve: ['spy', 'qqq.l', 'bad symbol!', 'toolongsymbolname12'] })!
     expect(cfg.coreSleeve).toEqual(['SPY', 'QQQ.L'])

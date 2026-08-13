@@ -3,6 +3,7 @@ import { authenticate, scopedToken } from './lib/auth'
 import { callLlm } from './lib/llm'
 import { composePrompt, parseComposed, buildNewspaperHtml, boardExportRows, constrainIdeasToBoard, validateNominations, mergeNominations, paperPostMortems, COMPOSE_DROP_ORDER, PAPER_POSTMORTEM_DAYS, type StoredNomination } from './lib/newspaper'
 import { missLedgerSummary, MISS_LEDGER_KEY } from '../../shared/engine/missLedger'
+import { gateStateSummary, GATE_STATE_KEY } from '../../shared/engine/gateState'
 import { cachedQuote, cachedCandles, cachedCompanyName } from './lib/marketCache'
 import { regimeFromCandles } from '../../shared/setups'
 import type { AppConfig } from '../../shared/config'
@@ -199,6 +200,14 @@ export default async (req: Request) => {
       return rows.length ? rows : null // an empty list is noise in a budgeted prompt
     })
     const missLedger = await grab(async () => missLedgerSummary(await blobAppStore.read(MISS_LEDGER_KEY)))
+    // …and the third: the thresholds the engine moved ON ITSELF because of that
+    // ledger (gateState.ts). One line per notch, already written — the paper
+    // prints the sentence, it does not compose one.
+    const gateMoves = await grab(async () => {
+      const s = gateStateSummary(await blobAppStore.read(GATE_STATE_KEY))
+      const lines = s ? [...s.moves, ...s.notes] : []
+      return lines.length ? lines : null // an empty list is noise in a budgeted prompt
+    })
 
     // ---- deterministic paper extras: rotation tables, social board, charts ----
     const { SECTOR_MEMBERS, SECTORS, returnOver } = await import('./lib/sectors')
@@ -326,6 +335,8 @@ export default async (req: Request) => {
         // down — the two keys the honest close is written from
         postMortems,
         missLedger,
+        // …and the one change the engine made to ITSELF, verbatim
+        gateMoves,
       },
       // least critical first; the tail is a promise about what the paper never
       // loses. Owned by newspaper.ts so the tail is testable — see the comment

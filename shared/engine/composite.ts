@@ -139,7 +139,13 @@ export const ZERO_IS_A_READING: Record<FactorName, boolean> = {
 
 /** Max composite points the whole context layer can add or subtract. Kept
  * BELOW every dead zone (20/25) so context alone can never cross the gate,
- * and — since a gated core is ≥ the dead zone — can never flip the side. */
+ * and — since a gated core is ≥ the dead zone — can never flip the side.
+ *
+ * THE DEFAULT, not the only value, since Stage 3c: gate feedback may raise it
+ * to 16 (gateState.ts, GATE_BOUNDS.contextCap) and passes the run's value on
+ * `gates.contextMaxPts`. The invariant above is what bounds that range — 16
+ * against the loosest reachable dead zone of 20 still leaves the margin — and
+ * `jointBoundOk` enforces it on the PAIR at every advance. */
 export const CONTEXT_MAX_PTS = 12
 
 /** The setup shape of a call, from its side and technical stage. Longs riding
@@ -312,7 +318,13 @@ export function composeCall(input: ComposeInput): CallOrRejection {
   // hard-capped. Like the world-tape nudge it may push a marginal call back
   // under the dead zone (→ suppressed, correctly) — an eligibility veto,
   // never a direction: the cap is below the dead zone, so the sign holds.
-  const ctxPts = clamp(ctxNum / coreDen, -CONTEXT_MAX_PTS, CONTEXT_MAX_PTS)
+  // The cap rides the gates object (catalyst.ts) so gate feedback moves it
+  // through the SAME seam as the dead zone rather than by mutating a module
+  // constant — a mutated constant would leak across the two-pass re-score, the
+  // dip lane and every test in the process. Absent = this constant, so nothing
+  // about a run that never moved a gate changed.
+  const capPts = gates.contextMaxPts ?? CONTEXT_MAX_PTS
+  const ctxPts = clamp(ctxNum / coreDen, -capPts, capPts)
   const adj = coreAdj + ctxPts
   // A DISTINCT code from the one above, deliberately: the core cleared the gate
   // here and the capped context layer is the only thing that put it back under.

@@ -7,6 +7,7 @@ import type { GateCode, Prediction } from '../../../shared/engine/types'
 import { CALIB_DEF_VERSION, type CalibrationState } from '../../../shared/engine/calibration'
 import { MODERATE_GATES } from '../../../shared/engine/catalyst'
 import { FUNNEL_TRACE_INDEX_KEY, TRACE_DETAIL_MAX, funnelTraceKey, type FunnelTrace } from '../../../shared/engine/funnelTrace'
+import { GATE_STATE_KEY } from '../../../shared/engine/gateState'
 
 // ---- fixtures (kept local: the golden below was captured from EXACTLY these) ----
 
@@ -197,6 +198,30 @@ describe('the funnel trace', () => {
     // the empty long side keeps its reason, beside the near-miss array verbatim
     expect(trace.emptySides.long).toBe('gates')
     expect(Array.isArray(trace.nearMisses)).toBe(true)
+  })
+
+  it('the run is judged against the gates FEEDBACK earned, and the trace records which ones they were', async () => {
+    // Nothing moves while the blob is absent — that is the golden day above, whose
+    // trace stamps MODERATE_GATES exactly. Here the blob says three gates have
+    // moved, and the run must be judged against those values and record them.
+    const store = await goldenStore()
+    await store.write(GATE_STATE_KEY, {
+      gates: {
+        deadZone: { delta: -5, lastMoveSession: 3, history: [] },
+        minExpectedMovePct: { delta: -0.25, lastMoveSession: 3, history: [] },
+        contextCap: { delta: 2, lastMoveSession: 3, history: [] },
+      },
+    })
+    await buildBoard(store, deps(), NOW)
+    const trace = (await readTrace(store))!
+    expect(trace.gates).toEqual({ deadZone: 20, minExpectedMovePct: 1.25, contextMaxPts: 14 })
+    // …and the move is VISIBLE in what published, by exactly the amount the moved
+    // gate allows and not a point more: this day's context layer sits ON the cap,
+    // so raising it 12 → 14 moves the composite −64.8 → −66.8. The grade, the
+    // rung and every level are untouched — the dead zone at 20 changes what a
+    // MARGINAL name does, and NVDA at −66.8 was never marginal.
+    const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
+    expect(projection(ledger)).toEqual(GOLDEN_ROWS.map(r => r.replace('c=-64.8', 'c=-66.8')))
   })
 
   it('a name a door offered and the pool refused is counted, never listed', async () => {

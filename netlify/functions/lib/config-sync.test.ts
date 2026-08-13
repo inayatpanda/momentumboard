@@ -46,6 +46,7 @@ describe('config-sync', () => {
       ...goodConfig,
       levMap: { TSLA: { short3x: '3STS.L', long3x: '3LTS.L' } },
       riskRungOverride: 2,
+      gateOverride: { deadZone: 22.5 },
       favouriteChannels: ['Stocks with Josh'],
     })
     // exactly what mirrorConfig() sends: no levMap, no riskRungOverride, no favouriteChannels
@@ -54,6 +55,7 @@ describe('config-sync', () => {
     const body = await (await routeConfig(new URL('http://x/api/config'), 'GET', headers, null, env, store)).json()
     expect(body.data.levMap).toEqual({ TSLA: { short3x: '3STS.L', long3x: '3LTS.L' } })
     expect(body.data.riskRungOverride).toBe(2)
+    expect(body.data.gateOverride).toEqual({ deadZone: 22.5 }) // a gate pin survives a phone sync too
     expect(body.data.favouriteChannels).toEqual(['Stocks with Josh'])
     // the phone's real fields still land
     expect(body.data.watchlist[0].symbol).toBe('AAPL')

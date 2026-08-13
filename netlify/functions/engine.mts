@@ -6,6 +6,7 @@ import type { RiskState } from '../../shared/engine/riskLadder'
 import type { RosterEntry } from '../../shared/engine/roster'
 import type { ChannelCredState } from '../../shared/engine/channelCred'
 import { MISS_LEDGER_KEY, missLedgerSummary } from '../../shared/engine/missLedger'
+import { GATE_STATE_KEY, gateStateSummary } from '../../shared/engine/gateState'
 
 // Read-only aggregation of everything the engine knows: the board, the
 // scorecard, the learning state. The app renders this; the engine writes it.
@@ -107,7 +108,7 @@ export default async (req: Request) => {
     blobAppStore.read<{ startedAt: number; updatedAt: number; phase: string; completedAt?: number; failedAt?: number; error?: string; graded?: number; boardSize?: number; rosterSize?: number; holdingsCount?: number; regime?: string }>('engine-run-status'),
   ])
 
-  const [paperBook, paperMonths, patternSightings, eventRadar, intradayFlagsBlob, missLedgerBlob] = await Promise.all([
+  const [paperBook, paperMonths, patternSightings, eventRadar, intradayFlagsBlob, missLedgerBlob, gateStateBlob] = await Promise.all([
     blobAppStore.read('paper-book'),
     blobAppStore.read('paper-months'),
     blobAppStore.read<import('../../shared/engine/patternScore').PatternSighting[]>('pattern-sightings'),
@@ -120,9 +121,14 @@ export default async (req: Request) => {
     // THE REGRET LEDGER (shared/engine/missLedger.ts): what the gates turned down
     // and what it went on to do. Served as the bounded SUMMARY, never the raw
     // blob — the blob carries per-gate example lists that grow for months and
-    // nothing on the client has a use for them. Display-only, like everything
-    // else here; no gate has ever moved because of it (that is Stage 3c).
+    // nothing on the client has a use for them. Display-only HERE; the gate
+    // feedback that reads the same blob lives in the grading pass (gateState.ts).
     blobAppStore.read(MISS_LEDGER_KEY),
+    // …and what that ledger has since MOVED (shared/engine/gateState.ts): the
+    // bounded summary of every gate notch and every gate held. Absent until a
+    // gate has actually moved or been held, so the panel says nothing rather
+    // than announcing that the gates are where they started.
+    blobAppStore.read(GATE_STATE_KEY),
   ])
 
   // pattern scorecard: rolled up at read time (pure + cheap) from the sweep's
@@ -164,6 +170,10 @@ export default async (req: Request) => {
     // …and the other half of the same honesty: what it never called. null until
     // the first trace day matures, so the panel prints nothing rather than a zero.
     missLedger: missLedgerSummary(missLedgerBlob),
+    // the gates the ledger has moved, and the ones it has earned and not been
+    // allowed to move yet — one line each, the SAME line the runlog and the
+    // paper print (gateState.ts owns the sentence)
+    gateState: gateStateSummary(gateStateBlob),
     weights: weights ? { base: weights.base, current: weights.current, history: weights.history.slice(-10) } : null,
     // `referenceBase` travels with the buckets [spec §9]: it is the bar every grade
     // on the board was measured against, and a reader looking at "42% · B" cannot

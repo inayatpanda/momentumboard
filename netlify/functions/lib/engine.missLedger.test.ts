@@ -6,6 +6,7 @@ import type { GateCode } from '../../../shared/engine/types'
 import { MODERATE_GATES } from '../../../shared/engine/catalyst'
 import { FUNNEL_TRACE_INDEX_KEY, funnelTraceKey, type FunnelTrace, type FunnelTraceRow } from '../../../shared/engine/funnelTrace'
 import { MISS_LEDGER_KEY, type MissLedger } from '../../../shared/engine/missLedger'
+import { GATE_STATE_KEY, effectiveGates, gateStateSummary, type GateState } from '../../../shared/engine/gateState'
 
 // ---- fixtures ----
 
@@ -199,5 +200,67 @@ describe('gradeOutstanding → the miss ledger', () => {
     expect([...store.keys].sort()).toEqual([...GRADING_KEYS].sort())
     expect(await store.read(MISS_LEDGER_KEY)).toBeNull()
     expect(fetched.filter(s => s !== 'SPY')).toEqual([]) // the pass's own tape, and not one refusal priced
+  })
+})
+
+// ---- …and the gate that ledger has been charging ----
+
+/** A trace day whose dead zone refused `n` names that then all ran — the shape of
+ * the evidence the live ledger has been accruing since 3a deployed. */
+const deadZoneDay = (n: number) => {
+  const rows: Record<string, FunnelTraceRow> = {}
+  for (let i = 0; i < n; i++) rows[`R${i}:long`] = { gate: 'dead-zone-core', side: 'long', core: 18 + i / 100 }
+  return traceOf({ rows })
+}
+const allRun = () => deps({ candles: async (s: string) => (s === 'SPY' ? flat : runner) })
+
+describe('gradeOutstanding → the gates move', () => {
+  it('moves the dead zone one notch on its own evidence, writes the history, and says so in the runlog', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const store = await seeded(deadZoneDay(31))
+    let logged: unknown[] = []
+    try {
+      await gradeOutstanding(store, allRun(), NOW)
+      logged = log.mock.calls.flat() // read BEFORE restoring — mockRestore drops the record
+    } finally {
+      log.mockRestore()
+    }
+    const state = (await store.read<GateState>(GATE_STATE_KEY))!
+    expect(state.gates.deadZone!.delta).toBe(-2.5)
+    expect(state.gates.deadZone!.history).toHaveLength(1)
+    expect(state.gates.deadZone!.history[0]).toMatchObject({ from: 25, to: 22.5 })
+    expect(effectiveGates({}, state).deadZone).toBe(22.5)
+    // the announcement, in the run's own log
+    expect(logged.filter(l => typeof l === 'string' && l.startsWith('GATE:')).join('|')).toContain('dead zone 25 → 22.5')
+    // …and only the ONE new key beyond the grading pass's own
+    expect([...store.keys].sort()).toEqual([...GRADING_KEYS, MISS_LEDGER_KEY, GATE_STATE_KEY].sort())
+  })
+
+  it('29 attributed outcomes move nothing, and write no blob at all', async () => {
+    const store = await seeded(deadZoneDay(29))
+    await gradeOutstanding(store, allRun(), NOW)
+    expect(store.keys.has(GATE_STATE_KEY)).toBe(false)
+    expect(await store.read(GATE_STATE_KEY)).toBeNull()
+  })
+
+  it('an owner override pins the gate, and the panel note says so once', async () => {
+    const store = await seeded(deadZoneDay(31))
+    await gradeOutstanding(store, allRun(), NOW, { watchlist: [], rules: [], ytChannels: [], capital: 5000, gateOverride: { deadZone: 25 } })
+    const state = (await store.read<GateState>(GATE_STATE_KEY))!
+    expect(state.gates.deadZone!.delta).toBe(0)
+    expect(state.gates.deadZone!.blocked).toMatchObject({ why: 'override' })
+    expect(gateStateSummary(state)!.notes[0]).toContain('override')
+  })
+
+  it('GATES=off is the rollback lever: the ledger still measures, the gate still cannot move', async () => {
+    vi.stubEnv('GATES', 'off')
+    const store = await seeded(deadZoneDay(31))
+    try {
+      await gradeOutstanding(store, allRun(), NOW)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    expect(store.keys.has(MISS_LEDGER_KEY)).toBe(true) // the measurement is untouched…
+    expect(store.keys.has(GATE_STATE_KEY)).toBe(false) // …and the lever is dead
   })
 })

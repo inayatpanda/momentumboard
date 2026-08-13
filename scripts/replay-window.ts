@@ -1073,6 +1073,8 @@ export function traceViolations(day: { date: string; board: Row[]; ledger: Row[]
 
 /** missLedger.ts `MISS_LEDGER_KEY`. */
 export const MISS_LEDGER_KEY_MIRROR = 'miss-ledger'
+/** gateState.ts `GATE_STATE_KEY`. */
+export const GATE_STATE_KEY_MIRROR = 'gate-state'
 /** missLedger.ts `MISS_EXCESS_MIN` — ±5pp, deliberately five times the hit bar.
  * A move inside it is not an opportunity the engine owes anyone an apology for,
  * so nothing inside it may ever be charged to a gate. */
@@ -2166,6 +2168,13 @@ export async function main() {
   // (engine.ts RUNG_RISK_PCT), so two runs that differ in rung differ in the size
   // the reader is told to take — a difference no grade histogram would show.
   const riskFinal = await store.read<unknown>('risk-state')
+  // …and the GATES, as feedback left them (Stage 3c, shared/engine/gateState.ts).
+  // Unlike the two observations below, this one is NOT display-only: a gate that
+  // moved mid-window changed the thresholds every later day was judged against,
+  // so an artefact that did not carry it could not explain its own diff. Null on
+  // any run with `GATES=off`, and on any window whose evidence never reached the
+  // eligibility bar.
+  const gateStateFinal = await store.read<unknown>(GATE_STATE_KEY_MIRROR)
   writeFileSync(
     outPath,
     JSON.stringify(
@@ -2184,6 +2193,7 @@ export async function main() {
         days: out,
         calibrationFinal,
         riskFinal,
+        gateStateFinal,
         // ADDITIVE (Stage 3b): the window's regret, as the engine measured it. Both
         // are OBSERVATIONS — no board, ledger, grade or size anywhere in this file
         // reads either, and a run with `REGRET=off` writes null for both.

@@ -53,6 +53,20 @@ export interface FunnelTraceRow {
    * entered the sources map under a door of its own. */
   source?: string
   detail?: string
+  /** THE ROW'S OWN CONVICTION (Stage 3b's booked rider): the gate-free core
+   * composite the refusal stood on. The miss ledger spends its fetch budget in
+   * conviction order and could previously only read `nearMisses`, which drops
+   * every name with an earnings print inside the horizon or without printable
+   * levels — so exactly the rows a gate refused hardest ranked 0 and starved.
+   * Absent where no core was ever computed (trimmed, no candles). */
+  core?: number
+  /** WHAT `revise` OVERWROTE. A row whose fate changed after it published —
+   * a shadow the per-side budget dropped, a lane demotion, a diversity cut —
+   * destroys the code that denied it, and `shadow-capped` in particular then
+   * reads as "a sampling budget refused this" when the real denial was the gate
+   * underneath. One level deep, deliberately: the question is what this row was
+   * immediately before, not its whole biography. */
+  priorGate?: GateCode
 }
 
 /** The near-miss record as buildBoard already builds it — carried into the trace
@@ -114,6 +128,10 @@ export interface TraceExtra {
   side?: 'long' | 'short' | null
   source?: string | null
   detail?: string | null
+  /** |core| is what the ledger ranks by, but the SIGNED number is what a human
+   * reading a refusal back wants; the sign is free to store and impossible to
+   * recover later. */
+  core?: number | null
 }
 
 export interface FunnelTraceRecorder {
@@ -137,11 +155,17 @@ export interface FunnelTraceRecorder {
   build(input: { date: string; gates: Gates; nearMisses: FunnelNearMiss[]; emptySides: FunnelTrace['emptySides'] }): FunnelTrace
 }
 
-const rowOf = (gate: GateCode, extra?: TraceExtra): FunnelTraceRow => {
+const rowOf = (gate: GateCode, extra?: TraceExtra, prev?: FunnelTraceRow): FunnelTraceRow => {
   const row: FunnelTraceRow = { gate }
   if (extra?.side) row.side = extra.side
   if (extra?.source) row.source = extra.source
   if (extra?.detail) row.detail = extra.detail.slice(0, TRACE_DETAIL_MAX)
+  // zero is a reading (a core of exactly 0 is a real refusal), so the test is
+  // finiteness rather than truthiness
+  const core = extra?.core
+  if (typeof core === 'number' && Number.isFinite(core)) row.core = core
+  else if (prev && typeof prev.core === 'number') row.core = prev.core
+  if (prev) row.priorGate = prev.gate
   return row
 }
 
@@ -201,7 +225,8 @@ export function funnelTraceRecorder(): FunnelTraceRecorder {
       rows.set(key, rowOf(gate, extra))
     },
     revise(sym, gate, extra) {
-      rows.set(traceRowKey(sym, extra?.side), rowOf(gate, extra))
+      const key = traceRowKey(sym, extra?.side)
+      rows.set(key, rowOf(gate, extra, rows.get(key)))
     },
     notCandidate(n) {
       notCandidateCount += Math.max(0, n)

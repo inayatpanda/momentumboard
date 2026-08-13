@@ -162,6 +162,10 @@ export async function routeConfig(
       levMap: cfg.levMap ?? stored?.levMap,
       favouriteChannels: cfg.favouriteChannels ?? stored?.favouriteChannels,
       riskRungOverride: cfg.riskRungOverride === undefined ? (stored?.riskRungOverride ?? null) : cfg.riskRungOverride,
+      // the gate pins, on exactly the riskRungOverride contract (gateState.ts):
+      // absent preserves whatever is stored, an explicit value — including an
+      // explicit null — replaces it
+      gateOverride: cfg.gateOverride === undefined ? (stored?.gateOverride ?? null) : cfg.gateOverride,
       // engine-only fields the phone mirror never carries — preserve like the above
       riskAppetite: cfg.riskAppetite ?? stored?.riskAppetite,
       reportRecipients: cfg.reportRecipients ?? stored?.reportRecipients,

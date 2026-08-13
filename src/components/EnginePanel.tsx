@@ -20,7 +20,7 @@ export function EnginePanel() {
   }, [])
   if (!data) return null
 
-  const { scorecard, weights, calibration, riskState, roster, channelCred, ledger, missLedger } = data
+  const { scorecard, weights, calibration, riskState, roster, channelCred, ledger, missLedger, gateState } = data
   // THE OTHER HALF OF THE RECEIPTS: the calls it never made. `unchecked` travels
   // with the cost on purpose — a gate whose refusals were never priced would
   // otherwise read as a gate that cost nothing, which is the exact silence this
@@ -98,7 +98,7 @@ export function EnginePanel() {
         </div>
       )}
 
-      {((scorecard && scorecard.totalGraded > 0) || missLedger) && (
+      {((scorecard && scorecard.totalGraded > 0) || missLedger || gateState) && (
         <div className="ledger-block">
           <h3 className="section-title">Scorecard — is the engine earning?</h3>
           {scorecard && scorecard.totalGraded > 0 && (
@@ -125,10 +125,26 @@ export function EnginePanel() {
               <span>Misses (10d)</span>
               <span>
                 {missLedger.misses}
-                {worstGate && ` · worst gate: ${worstGate.gate} (cost ${worstGate.cost}, unchecked ${worstGate.unchecked})`}
+                {worstGate && ` · worst gate: ${worstGate.gate} (cost ${worstGate.cost}, unchecked ${worstGate.unchecked}${worstGate.doubleBooked ? ', already graded' : ''})`}
               </span>
             </div>
           )}
+          {/* WHAT THAT EVIDENCE MOVED. One line per notch, and one for a gate
+              that earned a notch and could not have it — the machinery is built
+              and the evidence moves it on its own clock, so a held gate says so
+              once rather than staying silent. */}
+          {gateState?.moves.map(line => (
+            <div key={line} className="perf-row">
+              <span>Gate moved</span>
+              <span>{line}</span>
+            </div>
+          ))}
+          {gateState?.notes.map(line => (
+            <div key={line} className="perf-row">
+              <span>Gate held</span>
+              <span>{line}</span>
+            </div>
+          ))}
         </div>
       )}
 

@@ -2,6 +2,7 @@ import type { ApiEnvelope, Candle, Quote } from '../../shared/types'
 import type { AppConfig } from '../../shared/config'
 import type { EmptySideReason } from '../../shared/engine/types'
 import type { MissLedgerSummary } from '../../shared/engine/missLedger'
+import type { GateStateSummary } from '../../shared/engine/gateState'
 
 export const getToken = () => localStorage.getItem('mb-token')
 export const setToken = (t: string) => localStorage.setItem('mb-token', t)
@@ -639,6 +640,11 @@ export interface EngineData {
   // not yet measured a matured trace day — the panel then says nothing at all,
   // which is the only honest reading of "not measured".
   missLedger?: MissLedgerSummary | null
+  // …and what that ledger has MOVED (shared/engine/gateState.ts): one line per
+  // gate notch, plus the gates that earned a notch and were held by the cadence
+  // or the owner's pin. Absent until a gate has moved or been held — the panel
+  // says nothing rather than announcing that nothing has happened.
+  gateState?: GateStateSummary | null
   weights: { base: Record<string, number>; current: Record<string, number>; history: { date: string; changes: Record<string, { from: number; to: number; ic: number }>; evidence: string }[] } | null
   // buckets are keyed EITHER `${cohort}:${side}:${regime}:${band}` (cohort =
   // large|small, Phase 2) or the legacy cohortless `${side}:${regime}:${band}`
