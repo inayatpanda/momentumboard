@@ -58,3 +58,21 @@ STORE_BACKEND = "d1"
 
 [observability]
 enabled = true
+
+# ── PREVIEWS ARE NOT PRODUCTION (I-7) ──
+#
+# Undefined by omission is the wrong answer here. With no `[env.preview]`, a
+# preview deployment inherits the top-level configuration — the SAME D1 binding
+# and `STORE_BACKEND = "d1"` — so a branch deploy would read and write the live
+# database: the licence table, the ledger, the day's board.
+#
+# Previews must never write the production database. `blobs` without Netlify
+# credentials degrades to the in-memory store (lib/store.ts), which is exactly
+# right for a preview: it boots, it serves, it forgets. And because the D1
+# binding is absent rather than merely unused, `STORE_BACKEND=d1` slipped in by
+# hand would throw at startup instead of quietly finding the live database
+# (storeProvider.configureStoreFromEnv).
+[env.preview]
+
+[env.preview.vars]
+STORE_BACKEND = "blobs"

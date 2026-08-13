@@ -1,3 +1,27 @@
+# THIS FILE NO LONGER DEPLOYS ANYTHING (M-3).
+#
+# The Netlify site was disabled on 2026-08-12 and the Cloudflare cutover
+# completed on 2026-08-13. Nothing reads the `[build]`, `[functions]` or
+# `[[redirects]]` blocks below at deploy time any more; pushing to this repo
+# deploys nothing at all.
+#
+# PRODUCTION IS DEPLOYED BY HAND, from a clean tree, in two commands:
+#
+#     npm run deploy:pages     # npx wrangler pages deploy  → the Pages project
+#                              #   (dist/ + functions/, per ./wrangler.toml)
+#     npm run deploy:cron      # npx wrangler deploy, in workers/cron/
+#
+# Run `npm run build` first: `wrangler pages deploy` publishes whatever is in
+# dist/ and will happily ship a stale one.
+#
+# SO WHY IS THE FILE STILL HERE? Because it is still the source of truth two
+# test files parse. `router.test.ts` reads the `[[redirects]]` table and fails
+# if lib/router.ts's route map disagrees with it, and `hosting.test.ts` reads
+# the `[[headers]]` blocks and fails if public/_headers or the function-response
+# set in lib/router.ts drifts from them. Deleting it today would delete that
+# check with it. It goes when the netlify.toml-retirement task moves both
+# sources into code — not before, and not by accident.
+
 [build]
   command = "npm run build"
   publish = "dist"

@@ -35,6 +35,7 @@
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { FUNCTION_RESPONSE_HEADERS } from './router'
 
 const REPO_ROOT = join(__dirname, '..', '..', '..')
 const PUBLIC_DIR = join(REPO_ROOT, 'public')
@@ -176,4 +177,99 @@ describe('public/_headers is netlify.toml [[headers]], transcribed', () => {
       expect(new Set(names).size, b.path).toBe(names.length)
     }
   })
+
+  /* ───────────────────────────── I-5 ─────────────────────────────
+   * Neither host applies these files to a FUNCTION response — quoted in this
+   * file's header, and true on both. So /report (a full HTML edition) and every
+   * /api/* answer went out unheadered. M2 booked it forward to avoid diverging
+   * from Netlify mid-parallel-run; the cutover retired that reason, and
+   * lib/router.ts now adds the set in code. Parsed, not restated: this is the
+   * same anti-drift rule the block above applies to netlify.toml.
+   */
+  it("router.ts's function-response set IS the /* block, name for name and value for value", () => {
+    expect(Object.entries(FUNCTION_RESPONSE_HEADERS)).toEqual(cloudflare[0].values)
+  })
+})
+
+/* ───────────────────────────── M-3 ─────────────────────────────
+ * Nothing anywhere said how the site is deployed. netlify.toml still LOOKED
+ * like the deploy configuration months after it stopped being one, which is the
+ * worst possible state for a file to be in.
+ */
+describe('the deploy path is written down where someone will find it', () => {
+  const pkg = JSON.parse(read(join(REPO_ROOT, 'package.json'))) as { scripts: Record<string, string> }
+
+  it('netlify.toml says it deploys nothing, and why it is still here', () => {
+    const toml = read(join(REPO_ROOT, 'netlify.toml'))
+    expect(toml).toMatch(/NO LONGER DEPLOYS ANYTHING/)
+    expect(toml).toMatch(/router\.test\.ts/) // the reason it survives: it is a test fixture now
+    expect(toml).toMatch(/deploy:pages/)
+  })
+
+  it('both real deploy commands are npm scripts, not folklore', () => {
+    expect(pkg.scripts['deploy:pages']).toContain('wrangler pages deploy')
+    expect(pkg.scripts['deploy:cron']).toContain('wrangler deploy')
+    expect(pkg.scripts['deploy:cron']).toContain('workers/cron')
+  })
+})
+
+/* ───────────────────────────── I-7 ─────────────────────────────
+ * A preview deployment with no `[env.preview]` inherits the top-level
+ * configuration, D1 binding and all — so a branch deploy would read and write
+ * the live database. Both wrangler.tomls now say otherwise, out loud.
+ */
+
+/** The tables a wrangler.toml declares and the keys under each. Enough TOML for
+ * a config file of literal assignments, `[table]` and `[[array]]` blocks. */
+function tomlTables(path: string): Map<string, string[]> {
+  const out = new Map<string, string[]>([['', []]])
+  let cur = ''
+  for (const raw of read(path).split('\n')) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const header = /^\[\[([^\]]+)\]\]$/.exec(line) ?? /^\[([^[\]]+)\]$/.exec(line)
+    if (header) {
+      cur = header[1]
+      if (!out.has(cur)) out.set(cur, [])
+      continue
+    }
+    const key = /^([A-Za-z0-9_-]+)\s*=/.exec(line)
+    if (key) out.get(cur)!.push(key[1])
+  }
+  return out
+}
+
+describe('a preview deployment cannot reach the production database', () => {
+  for (const rel of ['wrangler.toml', 'workers/cron/wrangler.toml']) {
+    describe(rel, () => {
+      const path = join(REPO_ROOT, ...rel.split('/'))
+      const tables = tomlTables(path)
+      const names = [...tables.keys()]
+
+      it('declares the preview environment explicitly rather than by omission', () => {
+        expect(names).toContain('env.preview')
+      })
+
+      it('gives it the blobs backend, which with no Netlify creds is the in-memory store', () => {
+        expect(tables.get('env.preview.vars')).toContain('STORE_BACKEND')
+        expect(read(path)).toMatch(/\[env\.preview\.vars\][\s\S]*?STORE_BACKEND\s*=\s*"blobs"/)
+      })
+
+      // The production database IS declared at the top level. The point is that
+      // it is declared NOWHERE under env.preview, so a preview has no binding at
+      // all — which also makes a stray STORE_BACKEND=d1 throw instead of finding
+      // the live database (storeProvider.configureStoreFromEnv).
+      it('binds no D1 database under the preview environment', () => {
+        expect(names).toContain('d1_databases')
+        expect(names.filter(n => n.startsWith('env.preview') && n.includes('d1_databases'))).toEqual([])
+        const preview = read(path).slice(read(path).indexOf('[env.preview]'))
+        expect(preview).not.toContain('database_id')
+        expect(preview).not.toContain('STREETSIGNAL_DB')
+      })
+
+      it('says why, where a deployer will read it', () => {
+        expect(read(path)).toMatch(/previews must never write the production database/i)
+      })
+    })
+  }
 })

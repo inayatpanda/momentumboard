@@ -48,6 +48,12 @@ describe('nextRun', () => {
   it('gives up rather than spinning on an expression that never fires', () => {
     expect(nextRun('0 0 30 2 *', at('2026-08-13T09:00:00Z'))).toBeNull() // 30 February
   })
+
+  // M-1: it is a schedule-analysis helper and a test instrument, NOT part of
+  // building a request. Nothing reads the value of `next_run`; see below.
+  it('is not on the request-synthesis path', () => {
+    expect(readFileSync(join(__dirname, 'cron.ts'), 'utf8')).not.toMatch(/next_run:[^\n]*nextRun\(|const next = nextRun\(/)
+  })
 })
 
 describe('the job table', () => {
@@ -188,6 +194,21 @@ describe("the dispatcher's synthesised request passes each handler's real gate",
     const req = synthesiseCronRequest(predict, { at: at('2026-08-13T05:20:00Z'), appToken: 'sekrit' })
     expect(req.headers.get('x-app-token')).toBe('sekrit')
     expect(await req.text()).toContain('next_run')
+  })
+
+  // M-1. `next_run` is a MARKER, not data: every handler does
+  // `body.includes('next_run')` and not one of them parses the value (the
+  // grep is the whole story). Computing it used to walk the schedule minute by
+  // minute — up to 10,080 iterations for a weekly job — to fill a field nobody
+  // reads. One minute on is honest, constant-time, and equally unread.
+  it('stamps next_run a minute out instead of scanning the schedule for it', async () => {
+    const sunday = CRON_JOBS.find(j => j.name === 'ledger-snapshot')! // '0 8 * * 0' — days away on a Thursday
+    const now = at('2026-08-13T09:05:00Z')
+    const body = JSON.parse(await synthesiseCronRequest(sunday, { at: now }).text())
+    expect(body.next_run).toBe(new Date(now.getTime() + 60_000).toISOString())
+    for (const name of readdirSync(FUNCTIONS_DIR).filter(f => f.endsWith('.mts'))) {
+      expect(readFileSync(join(FUNCTIONS_DIR, name), 'utf8'), `${name} reads next_run's VALUE — the constant is no longer safe`).not.toMatch(/next_run['"]?\s*\]|\.next_run/)
+    }
   })
 
   it('refuses to run an admin job with no token rather than firing one that will 401', () => {

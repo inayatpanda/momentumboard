@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
+    "deploy:pages": "npx wrangler pages deploy",
+    "deploy:cron": "cd workers/cron && npx wrangler deploy",
     "seed-engine": "vite-node scripts/seed-engine.ts",
     "engine-dry-run": "vite-node scripts/engine-dry-run.ts"
   },

@@ -101,7 +101,15 @@ export function cronMatches(expr: string, at: Date): boolean {
 }
 
 /** The next instant after `after` at which `expr` fires, scanning minute by
- * minute. Bounded to eight days so a nonsense expression cannot spin. */
+ * minute. Bounded to eight days so a nonsense expression cannot spin.
+ *
+ * NOT ON THE REQUEST PATH (M-1). This used to fill the synthesised body's
+ * `next_run` field, which meant up to 10,080 iterations per cron tick for a
+ * weekly job — to produce a value that no handler parses; they all only ask
+ * `body.includes('next_run')`. It survives as what it actually is: the
+ * instrument the job table's reachability proof is written with (cron.test.ts,
+ * "never schedules a job on a minute its trigger cannot reach"), which is worth
+ * far more than the field ever was. */
 export function nextRun(expr: string, after: Date, limitMinutes = 8 * 24 * 60): Date | null {
   const t = new Date(Math.floor(after.getTime() / 60_000) * 60_000)
   for (let i = 1; i <= limitMinutes; i++) {
@@ -202,13 +210,13 @@ export function synthesiseCronRequest(job: CronJob, opts: SynthOptions): Request
     if (!token) throw new Error(`cron job ${job.name} needs APP_TOKEN and none is set`)
     headers['x-app-token'] = token
   }
-  const next = nextRun(job.schedule, opts.at)
   return new Request(`${CRON_ORIGIN}/${job.name}`, {
     method: 'POST',
     headers,
     // The exact shape Netlify's scheduler sends. `next_run` is what every
-    // scheduled handler greps the body for.
-    body: JSON.stringify({ next_run: (next ?? new Date(opts.at.getTime() + 60_000)).toISOString() }),
+    // scheduled handler greps the body for — and only greps: no handler parses
+    // the value, so the honest constant beats a schedule scan (M-1).
+    body: JSON.stringify({ next_run: new Date(opts.at.getTime() + 60_000).toISOString() }),
   })
 }
 

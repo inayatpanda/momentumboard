@@ -40,3 +40,23 @@ enabled = true
 # `wrangler secret put <NAME>` — the full list is in .superpowers/sdd/m2-report.md.
 STORE_BACKEND = "d1"
 WORKER_OWNS_PREDICT = "0"
+
+# ── PREVIEWS ARE NOT PRODUCTION (I-7) ──
+#
+# See the Pages wrangler.toml for the full reasoning; it applies twice over to a
+# cron Worker, whose whole job is to write. With no `[env.preview]` a
+# `--env preview` deploy would inherit the top-level D1 binding and
+# `STORE_BACKEND = "d1"` and start ticking against the live database.
+#
+# Previews must never write the production database. `blobs` without Netlify
+# credentials degrades to the in-memory store, which is exactly right for a
+# preview. No triggers either: a preview Worker that fires on a schedule is a
+# second scheduler nobody asked for.
+[env.preview]
+
+[env.preview.triggers]
+crons = []
+
+[env.preview.vars]
+STORE_BACKEND = "blobs"
+WORKER_OWNS_PREDICT = "0"

@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { EXACT_ROUTES, FN_PREFIX, HANDLERS, HANDLER_NAMES, PREFIX_ROUTES, dispatch, isHandlerName, resolveRoute, type HandlerModule } from './router'
+import { EXACT_ROUTES, FN_PREFIX, FUNCTION_RESPONSE_HEADERS, HANDLERS, HANDLER_NAMES, PREFIX_ROUTES, dispatch, isHandlerName, resolveRoute, type HandlerModule } from './router'
 import { useBlobStore, storeBackend } from './storeProvider'
 import { clearRuntimeEnv } from './runtimeEnv'
 
@@ -164,6 +164,81 @@ describe('dispatch', () => {
   it('leaves the store on Blobs when no D1 binding is handed over', async () => {
     await dispatch(new Request('https://x.test/api/nope'), { env: { APP_TOKEN: 'x' } })
     expect(storeBackend()).toBe('blobs')
+  })
+})
+
+/* ─────────────────────────────── I-5 ───────────────────────────────
+ * public/_headers is not applied to function responses on Pages, and
+ * netlify.toml's [[headers]] were not applied to them on Netlify either — so
+ * /report served a whole HTML edition with no X-Frame-Options, no nosniff and
+ * no CSP. hosting.test.ts pins the SET against public/_headers; these pin that
+ * dispatch actually attaches it, on every door out.
+ */
+describe('every function response carries the security set', () => {
+  const registry = HANDLERS as unknown as Record<string, () => Promise<HandlerModule>>
+  let original: () => Promise<HandlerModule>
+
+  beforeEach(() => {
+    clearRuntimeEnv()
+    useBlobStore()
+    original = registry.watchdog
+  })
+  afterEach(() => {
+    registry.watchdog = original
+    clearRuntimeEnv()
+    useBlobStore()
+  })
+
+  const assertSet = (res: Response) => {
+    for (const [name, value] of Object.entries(FUNCTION_RESPONSE_HEADERS)) expect(res.headers.get(name), name).toBe(value)
+  }
+
+  it('adds them to a real handler answer', async () => {
+    const res = await dispatch(new Request('https://x.test/api/engine'))
+    expect(res!.status).toBe(401) // the real auth refusal, still
+    assertSet(res!)
+    expect(await res!.json()).toEqual({ ok: false, error: 'unauthorised' }) // …and the body survived the re-wrap
+  })
+
+  it('adds them to the router 404 and to the opaque 500', async () => {
+    assertSet((await dispatch(new Request('https://x.test/api/nope')))!)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    registry.watchdog = () =>
+      Promise.resolve({
+        default: () => {
+          throw new Error('nope')
+        },
+      })
+    assertSet((await dispatch(new Request(`https://x.test${FN_PREFIX}watchdog`)))!)
+    logged.mockRestore()
+  })
+
+  it('keeps the handler’s own content-type and cache-control', async () => {
+    const res = await dispatch(new Request('https://x.test/api/nope'))
+    expect(res!.headers.get('content-type')).toBe('application/json')
+    expect(res!.headers.get('cache-control')).toBe('no-store')
+  })
+
+  // A handler that sets one of these knows something this layer does not.
+  // /report is the live case: an edition that ever needs to be framed, or a
+  // download that wants a looser policy, must be able to say so.
+  it('never overwrites a header the handler set itself', async () => {
+    registry.watchdog = () =>
+      Promise.resolve({
+        default: () => new Response('ok', { headers: { 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "frame-ancestors 'self'" } }),
+      })
+    const res = await dispatch(new Request(`https://x.test${FN_PREFIX}watchdog`))
+    expect(res!.headers.get('X-Frame-Options')).toBe('SAMEORIGIN')
+    expect(res!.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'self'")
+    expect(res!.headers.get('Referrer-Policy')).toBe('no-referrer') // the rest still land
+    expect(await res!.text()).toBe('ok')
+  })
+
+  // passThrough means "the asset server answers this one", and the asset server
+  // applies public/_headers itself. Manufacturing a headered empty response
+  // here would turn a pass-through into a response.
+  it('stays out of the way of a pass-through', async () => {
+    expect(await dispatch(new Request('https://x.test/ledger'), { passThrough: true })).toBeNull()
   })
 })
 
