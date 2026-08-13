@@ -86,6 +86,9 @@ export interface FunnelTrace {
   counts: { notCandidate: number }
   nearMisses: FunnelNearMiss[]
   emptySides: { long?: EmptySideReason; short?: EmptySideReason }
+  /** Present (true) ONLY when the recorder was stubbed off (FUNNEL_TRACE=off):
+   * an empty day must never masquerade as a day the engine refused nothing. */
+  disabled?: boolean
 }
 
 /** The codes that mean THE READER GOT THIS ROW — `publishCall`'s size decision,
@@ -177,7 +180,9 @@ export function noopFunnelTraceRecorder(): FunnelTraceRecorder {
     gateOf: () => null,
     hasRow: () => false,
     size: () => 0,
-    build: ({ date, gates, nearMisses, emptySides }) => ({ date, gates: { ...gates }, rows: {}, counts: { notCandidate: 0 }, nearMisses, emptySides }),
+    // `disabled: true` is the tombstone (final 3a review): an empty day from a
+    // stubbed recorder must never read as "the engine refused nothing".
+    build: ({ date, gates, nearMisses, emptySides }) => ({ date, gates: { ...gates }, rows: {}, counts: { notCandidate: 0 }, nearMisses, emptySides, disabled: true }),
   }
 }
 
