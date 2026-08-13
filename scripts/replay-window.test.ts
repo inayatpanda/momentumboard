@@ -26,8 +26,11 @@ import { VIX_SYMBOL, WORLD_SYMBOLS } from '../shared/engine/worldTape'
 import { THEMES } from '../shared/engine/themes'
 import { bannedTokensIn, composeThesis } from '../shared/engine/voice'
 import { classifyLoser } from '../shared/engine/postMortem'
-import type { DayTrace, Keyed, MissGateStatLike, MissLedgerLike, PostMortemLike, PrecedenceSample, ProbeContext, RegretContext, RunFile, SeedArtefact } from './replay-window'
+import type { DayTrace, Keyed, MissGateStatLike, MissLedgerLike, PostMortemLike, PrecedenceSample, ProbeContext, RegretContext, Row, RunFile, SeedArtefact } from './replay-window'
 import {
+  WALK_ABSENT_FACTORS,
+  enrichFromCalibration,
+  shippedRead,
   GATE_CODE_MIRROR,
   MISS_EXCESS_MIN_MIRROR,
   MISS_LEDGER_DAYS_MAX_MIRROR,
@@ -378,6 +381,7 @@ const row = (over: Partial<Keyed> = {}): Keyed => ({
   contract: true,
   catalyst: null,
   setup: null,
+  accrual: 'sized',
   where: 'board',
   regime: 'green',
   modelVersion: 3,
@@ -525,20 +529,55 @@ describe('probeGrid / contextsIn', () => {
     const s = seedLikeState()
     s.buckets['large:long:green:40-55'] = { n: 20, hits: 12 }
     const ctxs = contextsIn(s)
-    expect(ctxs).toContainEqual({ side: 'long', regime: 'green', cohort: 'unknown' })
-    expect(ctxs).toContainEqual({ side: 'long', regime: 'green', cohort: 'large' })
+    expect(ctxs).toContainEqual({ side: 'long', regime: 'green', cohort: 'unknown', population: 'pooled', setup: null })
+    expect(ctxs).toContainEqual({ side: 'long', regime: 'green', cohort: 'large', population: 'pooled', setup: null })
     // a context nothing was booked into is not probed — asserting monotonicity on
     // an empty rung would only test the base-rate constant
     expect(ctxs.some(c => c.regime === 'blue')).toBe(false)
   })
+
+  // THE GATE MUST LOOK AT WHAT SHIPS [stage 3c task 4, binding from the Task-2
+  // review]. Since the partition and the blend, one (side, regime, cohort) is no
+  // longer one curve: a sized read and a pooled read are different curves over the
+  // same buckets, and a blended family read is a THIRD — and the blend is a band
+  // step, so it is the one most able to break monotonicity. A probe that swept only
+  // the pooled, unblended ladder would assert D2 on a curve no reader is ever shown.
+  it('expands each context over BOTH populations and every setup family the state carries', () => {
+    const s = seedLikeState()
+    s.setupBuckets = {
+      'continuation:long:25-40': { n: 60, hits: 30, shadowN: 5, shadowHits: 2 },
+      'velocity:short:40-55': { n: 44, hits: 12, shadowN: 0, shadowHits: 0 },
+    }
+    const ctxs = contextsIn(s)
+    // both populations, on every context
+    for (const p of ['pooled', 'sized'] as const)
+      expect(ctxs).toContainEqual({ side: 'long', regime: 'green', cohort: 'unknown', population: p, setup: null })
+    // the family is probed on ITS OWN side only — a `continuation:long` bucket is
+    // never read by a short, so probing it there would assert on a read that cannot
+    // happen and would dilute the count with unreachable contexts
+    expect(ctxs).toContainEqual({ side: 'long', regime: 'green', cohort: 'unknown', population: 'sized', setup: 'continuation' })
+    expect(ctxs).toContainEqual({ side: 'short', regime: 'green', cohort: 'unknown', population: 'sized', setup: 'velocity' })
+    expect(ctxs.some(c => c.side === 'short' && c.setup === 'continuation')).toBe(false)
+    expect(ctxs.some(c => c.side === 'long' && c.setup === 'velocity')).toBe(false)
+    // …and never on a pooled read, where `blendSetup` returns the ladder untouched:
+    // a probe of an inert argument measures nothing and claims coverage for it
+    expect(ctxs.some(c => c.population === 'pooled' && c.setup != null)).toBe(false)
+    // a state with no families is exactly the bare ladder in two populations
+    expect(contextsIn(seedLikeState()).every(c => c.setup === null)).toBe(true)
+  })
 })
 
 describe('monotonicityViolations — the D2 guarantee, and the probe that could catch it failing', () => {
-  const ctxs: ProbeContext[] = [{ side: 'long', regime: 'green', cohort: 'unknown' }]
+  const ctxs: ProbeContext[] = [{ side: 'long', regime: 'green', cohort: 'unknown', population: 'pooled', setup: null }]
   it('finds every downward step of an injected read — the probe is not vacuous', () => {
     const v = monotonicityViolations(ctxs, [10, 20, 30], (_c, x) => (x === 20 ? 0.2 : 0.5))
     expect(v).toHaveLength(1)
-    expect(v[0]).toMatchObject({ context: 'unknown:long:green', prevX: 10, prevP: 0.5, x: 20, p: 0.2 })
+    expect(v[0]).toMatchObject({ context: 'unknown:long:green pooled', prevX: 10, prevP: 0.5, x: 20, p: 0.2 })
+  })
+  it('names the population and the family in the violation, or a failure cannot be located', () => {
+    const blended: ProbeContext[] = [{ side: 'long', regime: 'green', cohort: 'large', population: 'sized', setup: 'velocity' }]
+    const v = monotonicityViolations(blended, [10, 20], (_c, x) => (x === 10 ? 0.5 : 0.4))
+    expect(v[0].context).toBe('large:long:green sized/velocity')
   })
   it('tolerates float dust but not a real inversion', () => {
     expect(monotonicityViolations(ctxs, [10, 20], (_c, x) => (x === 10 ? 0.3 : 0.3 - 1e-15))).toEqual([])
@@ -556,11 +595,109 @@ describe('monotonicityViolations — the D2 guarantee, and the probe that could 
   })
   it('…and the SHIPPED read path repairs it across the whole grid', () => {
     const s = seedLikeState()
-    expect(monotonicityViolations(contextsIn(s), probeGrid(), (c, x) => probabilityFor(s, c.side, c.regime, x, c.cohort).p)).toEqual([])
+    expect(monotonicityViolations(contextsIn(s), probeGrid(), shippedRead(s))).toEqual([])
   })
   it('…including the thin-lucky-top state, where shrinkage alone would invert the curve', () => {
     const s = thinTopState()
-    expect(monotonicityViolations(contextsIn(s), probeGrid(), (c, x) => probabilityFor(s, c.side, c.regime, x, c.cohort).p)).toEqual([])
+    expect(monotonicityViolations(contextsIn(s), probeGrid(), shippedRead(s))).toEqual([])
+  })
+  it('shippedRead IS probabilityFor with the context’s own population and family — the read the reader got', () => {
+    const s = thinTopState()
+    s.setupBuckets = { 'continuation:long:40-55': { n: 90, hits: 81, shadowN: 0, shadowHits: 0 } }
+    const read = shippedRead(s)
+    const ctx: ProbeContext = { side: 'long', regime: 'green', cohort: 'unknown', population: 'sized', setup: 'continuation' }
+    expect(read(ctx, 47.5)).toBe(probabilityFor(s, 'long', 'green', 47.5, 'unknown', 'sized', 'continuation').p)
+    // …and the blend is doing something here, or the assertion above is a tautology
+    // over an argument the read path ignored
+    expect(read(ctx, 47.5)).not.toBe(probabilityFor(s, 'long', 'green', 47.5, 'unknown', 'sized').p)
+  })
+  it('a blend that breaks the band step IS caught — the sized/blended curve is probed, not just the ladder', () => {
+    // An earned family whose record sits far ABOVE the ladder in one band and is
+    // absent in the next pulls that band up and lets the curve fall back down at the
+    // boundary. This is the failure mode the binding exists for: the pooled ladder
+    // stays monotone throughout, and only the shipped read shows the step.
+    const s = thinTopState()
+    s.setupBuckets = { 'continuation:long:40-55': { n: 200, hits: 198, shadowN: 0, shadowHits: 0 } }
+    const bare = contextsIn(s).filter(c => c.setup == null)
+    expect(monotonicityViolations(bare, probeGrid(), shippedRead(s))).toEqual([])
+    const blended = monotonicityViolations(contextsIn(s), probeGrid(), shippedRead(s))
+    expect(blended.length).toBeGreaterThan(0)
+    expect(blended.every(v => v.context.includes('continuation'))).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE COUNTERFACTUAL IS READ IN THE POPULATION THE ROW SHIPPED IN [stage 3c task
+// 4, binding from the Task-1 review]. `enrichFromCalibration` recomputes nEff,
+// belowEvidence and the uncapped grade from the same blob the board was built
+// against — and it recomputed them POOLED, which was byte-identical to the board
+// until the partition existed. From generation 4 on it is not: a sized row's
+// nEff, its born-below flag and its uncapped grade are all read off the sized
+// curve, so a pooled recomputation would report the born-below census, the §3
+// rounding check and the monotonicity gate against a curve no row was graded on.
+// ---------------------------------------------------------------------------
+
+describe('enrichFromCalibration — the row is re-read in its own population, with its own family', () => {
+  /** Sized evidence that is genuinely better than the pool it sits in: the shadow
+   * slice is the losing half, so a sized read must come back HIGHER. */
+  const partitioned = (): CalibrationState => ({
+    buckets: {
+      'long:green:25-40': { n: 600, hits: 240, shadowN: 300, shadowHits: 60 },
+      'long:green:40-55': { n: 400, hits: 190, shadowN: 200, shadowHits: 50 },
+    },
+    setupBuckets: { 'continuation:long:40-55': { n: 120, hits: 96, shadowN: 20, shadowHits: 4 } },
+    brier: [],
+    referenceBase: 0.37,
+  })
+  const row = (over: Partial<Row>): Row =>
+    ({
+      sym: 'AAA', side: 'long', grade: 'C', riskPct: 0, composite: 47.5, probability: 0.4, entry: 10, stop: 9, target: 12,
+      capacityPct: 5, expectedMovePct: 3, watchOnly: false, nearMiss: false, shadow: false, belowBase: false, observation: false,
+      contract: true, catalyst: null, setup: null, accrual: null, where: 'board', regime: 'green', modelVersion: 3, riskRung: 1,
+      provisional: false, instrument: null, thesis: null, falsifier: null,
+      ...over,
+    }) as Row
+  const enrich = (r: Row): Row => {
+    const cal = partitioned()
+    enrichFromCalibration([r], cal, 0.37)
+    return r
+  }
+  const cal = partitioned()
+  const pooled = probabilityFor(cal, 'long', 'green', 47.5, 'unknown')
+  const sized = probabilityFor(cal, 'long', 'green', 47.5, 'unknown', 'sized')
+
+  it('the fixture is not vacuous — the two populations disagree on this bucket', () => {
+    expect(sized.p).not.toBe(pooled.p)
+    expect(sized.nEff).not.toBe(pooled.nEff)
+  })
+  it('a row stamped `sized` is re-read against SIZED history, exactly as the engine priced it', () => {
+    const r = enrich(row({ accrual: 'sized' }))
+    expect(r.pRaw).toBe(sized.p)
+    expect(r.nEff).toBe(sized.nEff)
+  })
+  it('a row stamped `shadow` is re-read POOLED — a shadow was priced against the pool it belongs to', () => {
+    const r = enrich(row({ accrual: 'shadow', shadow: true }))
+    expect(r.pRaw).toBe(pooled.p)
+    expect(r.nEff).toBe(pooled.nEff)
+  })
+  it('an UNSTAMPED row stays pooled — a pre-partition tree reads byte-for-byte what it read before', () => {
+    const r = enrich(row({ accrual: null }))
+    expect(r.pRaw).toBe(pooled.p)
+  })
+  it('carries the row’s own setup family in, so the enrichment sees the blend the reader was shown', () => {
+    const r = enrich(row({ accrual: 'sized', setup: 'continuation' }))
+    expect(r.pRaw).toBe(probabilityFor(cal, 'long', 'green', 47.5, 'unknown', 'sized', 'continuation').p)
+    expect(r.pRaw).not.toBe(sized.p) // the family earned its 0.3, and the enrichment shows it
+    // the blend moves PRICE only — the ladder's evidence mass is untouched
+    expect(r.nEff).toBe(sized.nEff)
+  })
+  it('…and a shadow’s family is inert, because the blend never fires on a pooled read', () => {
+    const r = enrich(row({ accrual: 'shadow', setup: 'continuation' }))
+    expect(r.pRaw).toBe(pooled.p)
+  })
+  it('the uncapped grade is struck from the SIZED read too — the census counts what the board did', () => {
+    const r = enrich(row({ accrual: 'sized' }))
+    expect(r.gradeUncapped).toBe(gradeFor(sized.p, sized.nEff, 0.37, false))
   })
 })
 
@@ -822,6 +959,73 @@ describe('seedArtefactFrom — guarantee 7: the grade anchor is MEASURED, and th
   })
 })
 
+// ---------------------------------------------------------------------------
+// GUARANTEE 8 — A FACTOR THE WALK NEVER FED SHIPS NO MEASUREMENT [stage 3c task
+// 4, binding from the Task-2 review].
+//
+// The replay is PRICE-ONLY: `makeDeps` returns an empty tape for media titles,
+// an empty insider map, no 13F, no YouTube stances, no catalysts. Before stage
+// 3c that cost nothing, because `updateIcStats` skipped every zero. Task 2's
+// `ZERO_IS_A_READING` admits news's zero deliberately — `newsFactor([])` is the
+// "quiet tape" reading and the factor has no null path — and the consequence
+// lands HERE: over a two-year walk the news column fills with one identical
+// fabricated observation per graded row (against every long, with every short),
+// crosses both twenty-observation floors, and ships an IC that production would
+// nudge a real weight on. A thousand readings from a factor never shown a
+// headline is an artifact, not evidence.
+// ---------------------------------------------------------------------------
+
+describe('seedArtefactFrom — guarantee 8: no IC from a factor the walk could not feed', () => {
+  const phantom = (over: Partial<Record<string, unknown>> = {}) =>
+    walkedWeights({
+      ic: {
+        ...initWeights().ic,
+        technical: { nAgree: 5194, sumAgree: 7361.7, nDisagree: 49, sumDisagree: 15.9 },
+        seasonality: { nAgree: 3579, sumAgree: 4255.3, nDisagree: 1547, sumDisagree: 2895.8 },
+        news: { nAgree: 2100, sumAgree: -410.2, nDisagree: 4300, sumDisagree: 980.4 },
+        insiders: { nAgree: 31, sumAgree: 12.5, nDisagree: 44, sumDisagree: -3.5 },
+      },
+      history: [
+        { date: '2025-06-02', changes: { technical: { from: 1, to: 0.99, ic: -0.02 }, news: { from: 0.5, to: 0.53, ic: 0.41 } }, evidence: '15 predictions graded since last nudge' },
+      ],
+      ...over,
+    })
+
+  it('names the factors the walk cannot feed — every non-price dependency in makeDeps', () => {
+    expect([...WALK_ABSENT_FACTORS].sort()).toEqual(['catalyst', 'channels', 'insiders', 'news', 'smartMoney', 'social'])
+    // …and the complement is the price-derived four the walk DOES measure
+    for (const f of ['technical', 'momentum', 'sector', 'seasonality']) expect(WALK_ABSENT_FACTORS).not.toContain(f)
+  })
+
+  it('zeroes their IC at serialisation — news above all, whose zero the loop now books', () => {
+    const ic = emit({ weights: phantom() }).weights.ic
+    for (const f of WALK_ABSENT_FACTORS) expect(ic[f], f).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+    // the pin that matters: news arrived with both columns past MIN_IC_SIDE_N, i.e.
+    // eligible to nudge a live weight on the first pass after install
+    expect(phantom().ic.news.nAgree).toBeGreaterThan(20)
+    expect(phantom().ic.news.nDisagree).toBeGreaterThan(20)
+  })
+
+  it('leaves the price-derived factors exactly as the walk measured them', () => {
+    const ic = emit({ weights: phantom() }).weights.ic
+    expect(ic.technical).toEqual({ nAgree: 5194, sumAgree: 7361.7, nDisagree: 49, sumDisagree: 15.9 })
+    expect(ic.seasonality).toEqual({ nAgree: 3579, sumAgree: 4255.3, nDisagree: 1547, sumDisagree: 2895.8 })
+  })
+
+  it('scrubs their nudges out of the history too — a panel may not report a change nobody measured', () => {
+    const h = emit({ weights: phantom() }).weights.history
+    expect(h[0].changes.news).toBeUndefined()
+    expect(h[0].changes.technical).toEqual({ from: 1, to: 0.99, ic: -0.02 })
+  })
+
+  it('never mutates the walk’s own blob — the store keeps what it measured', () => {
+    const w = phantom()
+    emit({ weights: w })
+    expect(w.ic.news.nAgree).toBe(2100)
+    expect(w.history[0].changes.news).toBeDefined()
+  })
+})
+
 // ---------------------- guarantee 3 + the whole pipe: a tiny walk ----------------------
 // A REAL walk — the same main() Task 3 runs — over a two-name fixture universe with
 // ETH-USD fed in beside them, driven off a temp candle cache so it touches no network.
@@ -944,25 +1148,24 @@ describe('--seed-out: the flags refuse to guess', () => {
     }
   }
   it('refuses --seed-out with --plant-a or --baseline — a probe calibration is not a seed', async () => {
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '4', '--plant-a'])).rejects.toThrow(/probe calibration/)
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '4', '--baseline'])).rejects.toThrow(/probe calibration/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '5', '--plant-a'])).rejects.toThrow(/probe calibration/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '5', '--baseline'])).rejects.toThrow(/probe calibration/)
   })
   it('refuses a generation at or below the committed seed — the walk would warm-start from it', async () => {
-    // the committed seed is generation 3 now (the frozen-vector re-walk, 2026-08-13);
-    // AT 3 must refuse, and so must every generation the tree has already shipped
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '1'])).rejects.toThrow(/not above the committed/)
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '2'])).rejects.toThrow(/not above the committed/)
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '3'])).rejects.toThrow(/not above the committed/)
+    // the committed seed is generation 4 now (the partitioned re-walk, 2026-08-13);
+    // AT 4 must refuse, and so must every generation the tree has already shipped
+    for (const g of ['1', '2', '3', '4'])
+      await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', g])).rejects.toThrow(/not above the committed/)
   })
   it('refuses --symbols without a list', async () => {
-    await expect(runWith(['--symbols', '--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '4'])).rejects.toThrow(/--symbols needs/)
+    await expect(runWith(['--symbols', '--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '5'])).rejects.toThrow(/--symbols needs/)
   })
   it('refuses --seed-out without a generation — the artefact may not guess which walk made it', async () => {
     await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json')])).rejects.toThrow(/--seed-generation/)
     await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json'), '--seed-generation', '0'])).rejects.toThrow(/--seed-generation/)
   })
   it('refuses a --seed-out that swallowed the next flag instead of a path', async () => {
-    await expect(runWith(['--seed-out', '--seed-generation', '4'])).rejects.toThrow(/needs a path/)
+    await expect(runWith(['--seed-out', '--seed-generation', '5'])).rejects.toThrow(/needs a path/)
   })
 })
 
@@ -995,24 +1198,42 @@ describe('--seed-out: the walk serialises what it learned', () => {
     const from = iso(ts[WALK_BARS - WALK_WINDOW])
     const to = iso(ts[WALK_BARS - 1])
     const argv = process.argv
-    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', [...WALK_SYMS, 'ETH-USD'].join(','), '--seed-out', seedPath, '--seed-generation', '4', '--out', outPath]
+    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', [...WALK_SYMS, 'ETH-USD'].join(','), '--seed-out', seedPath, '--seed-generation', '5', '--out', outPath]
     // the walk narrates every day; the suite does not need to hear it — but the
     // seed-out summary IS a deliverable, so it is captured rather than discarded
     const logged: string[] = []
     const quiet = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void logged.push(a.map(String).join(' ')))
+    // seed mode PINS `GATES=off` on itself (see below); the pin is observed here and
+    // the ambient value restored, so one walk cannot silence the gates for the rest
+    // of the suite
+    const gatesBefore = process.env.GATES
+    let gatesDuringWalk: string | undefined
     try {
       vi.resetModules() // CACHE_DIR is read at module load, so the fresh instance is what sees the temp cache
       vi.stubEnv('REPLAY_CACHE_DIR', dir)
       const fresh = (await import('./replay-window')) as typeof import('./replay-window')
       await fresh.main()
+      gatesDuringWalk = process.env.GATES
     } finally {
       quiet.mockRestore()
       vi.unstubAllEnvs()
       process.argv = argv
+      if (gatesBefore === undefined) delete process.env.GATES
+      else process.env.GATES = gatesBefore
     }
 
     const art = JSON.parse(readFileSync(seedPath, 'utf8')) as SeedArtefact
-    const run = JSON.parse(readFileSync(outPath, 'utf8')) as { universe: number; days: { board: Keyed[]; ledger: Keyed[] }[]; missing: { sym: string }[]; calibrationFinal: CalibrationState }
+    const run = JSON.parse(readFileSync(outPath, 'utf8')) as { universe: number; days: { board: Keyed[]; ledger: Keyed[] }[]; missing: { sym: string }[]; calibrationFinal: CalibrationState; gateStateFinal: unknown }
+
+    // THE SEED WALK DOES NOT ADVANCE GATE STATE [stage 3c task 4, plan decision
+    // (d)]. Gates move on LIVE evidence, on a live cadence clock. A synthetic tape
+    // that armed them would re-judge every later day of its own window under a dead
+    // zone the walk itself moved — the artefact would then be measured partly under
+    // thresholds production has never run, with nothing in the file to say which
+    // days. So seed mode pins the rollback lever on and the blob is never written.
+    expect(gatesDuringWalk).toBe('off')
+    expect(run.gateStateFinal).toBeNull()
+    expect(logged.join('\n')).toMatch(/gates: PINNED OFF/)
 
     // guarantee 3 — ETH-USD was fed in with the two equities and skipped ENTIRELY:
     // never in the universe, never fetched, never a row, never a symbol counted.
@@ -1032,6 +1253,21 @@ describe('--seed-out: the walk serialises what it learned', () => {
     const tech = art.weights.ic.technical
     expect(tech.nAgree + tech.nDisagree).toBeGreaterThan(0)
     expect(tech.nAgree).toBeGreaterThan(0)
+
+    // …AND NO IC AT ALL FROM A FACTOR THE WALK NEVER FED (guarantee 8). The blob in
+    // the carrying store books news on every graded row — `newsFactor([])` is a
+    // reading under ZERO_IS_A_READING and this walk hands it an empty tape every
+    // morning — so the two halves of this pin are what make it real: the walk DID
+    // fabricate a news column, and the artefact does not carry it.
+    for (const f of WALK_ABSENT_FACTORS) expect(art.weights.ic[f], f).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+    for (const h of art.weights.history) for (const f of WALK_ABSENT_FACTORS) expect(h.changes[f], f).toBeUndefined()
+    // the run log names what was dropped and how much of it there was — and NEWS
+    // must be in that list with a real count, or the zeroing above is passing on a
+    // column that was empty anyway and this whole guarantee is untested
+    const dropped = logged.join('\n').match(/phantom IC dropped: (.+)/)
+    expect(dropped, 'the seed-out summary must name the IC it refused to ship').not.toBeNull()
+    expect(dropped![1]).toMatch(/news \d+ obs/)
+    expect(Number(dropped![1].match(/news (\d+) obs/)![1])).toBeGreaterThan(20)
 
     // THE SCORING VECTOR IS FROZEN, AND THE MEASUREMENT IS NOT. Seed mode pins
     // `current` back to `base` after every graded day, so the whole window was scored
@@ -1065,7 +1301,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
     // guarantees 1, 2, 6 on the file the next task actually copies over seed.json
     expect(art.calibration.defVersion).toBe(3)
     expect(art.calibration.modelVersion).toBe(3)
-    expect(art.calibration.seedGeneration).toBe(4) // 4: the committed seed is generation 3 since 2026-08-13, and the floor refuses ≤3
+    expect(art.calibration.seedGeneration).toBe(5) // 5: the committed seed is generation 4 since 2026-08-13, and the floor refuses ≤4
     expect(art.weights.seedGeneration).toBe(art.calibration.seedGeneration)
 
     // guarantee 7 — the grade anchor, swept over this same window and universe and

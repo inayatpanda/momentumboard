@@ -688,18 +688,19 @@ describe('gradeBaseRate — which number a grade is measured against', () => {
   })
 
   it('the COMMITTED seed carries its swept reference — grades anchor to it, not the pool', () => {
-    // Generation 3 shipped 2026-08-13 (the frozen-vector re-walk): referenceBase
+    // Generation 4 shipped 2026-08-13 (the partitioned re-walk): referenceBase
     // 0.4158, measured by the unconditional sweep over the walk's own 166-symbol
-    // universe (4,178 rows). The number is UNCHANGED from generation 2 on purpose
-    // and is the cleanest evidence that the anchor is what it claims to be: the
+    // universe (4,178 rows). The number is UNCHANGED across generations 2, 3 AND
+    // 4, and is the cleanest evidence that the anchor is what it claims to be: the
     // sweep runs `seedFromHistory` over the raw tape, so it never touches the
-    // factor stack and cannot move when the scoring vector does. Generation 3's
-    // BUCKETS moved a great deal (long:green:70+ 1270 rows → 26); the yardstick
-    // they are read against did not budge.
+    // factor stack, the partition or the blend, and cannot move when any of them
+    // does. Generation 3's buckets moved a great deal (long:green:70+ 1270 rows →
+    // 26) and generation 4 split every one of them into sized and shadow; the
+    // yardstick they are read against has not budged through either.
     const committed = seedJson.calibration as unknown as CalibrationState
     expect(committed.referenceBase).toBe(0.4158)
     expect(gradeBaseRate(committed)).toBe(0.4158)
-    expect(gradeBaseRate(committed)).not.toBe(baseHitRate(committed).rate) // pool 0.4161 — close, NOT equal
+    expect(gradeBaseRate(committed)).not.toBe(baseHitRate(committed).rate) // pool 0.4169 — close, NOT equal
   })
 })
 
@@ -982,12 +983,20 @@ const PROBE_COHORTS = ['large', 'small', 'unknown'] as const
 
 describe('the provenance partition — sized rows grade against sized history', () => {
   describe('a blob with no sub-counts reads byte-identically in BOTH populations', () => {
-    it('the COMMITTED generation-3 seed: same p, same nEff, same flags, every rung', () => {
+    it('a LEGACY blob of the committed seed’s own shape: same p, same nEff, same flags, every rung', () => {
+      // The committed seed carries sub-counts from generation 4 on, so the legacy
+      // case is built by STRIPPING them from it rather than by hand: the fixture
+      // keeps production's real bucket shape (18 buckets, the real spread of n),
+      // which is the whole reason this pin was written off the committed file, and
+      // it is now what every blob written before 2026-08-13 still looks like in the
+      // live store.
       const committed = seedJson.calibration as unknown as CalibrationState
-      // the fixture's own premise. The gen-3 seed predates the partition, so it
-      // carries no sub-counts — and if a later generation ships some, this test
-      // must fail loudly rather than keep passing while measuring nothing.
-      expect(Object.values(committed.buckets).some(b => b.shadowN != null || b.shadowHits != null)).toBe(false)
+      const legacy: CalibrationState = {
+        ...committed,
+        buckets: Object.fromEntries(Object.entries(committed.buckets).map(([k, b]) => [k, { n: b.n, hits: b.hits }])),
+        setupBuckets: Object.fromEntries(Object.entries(committed.setupBuckets ?? {}).map(([k, b]) => [k, { n: b.n, hits: b.hits }])),
+      }
+      expect(Object.values(legacy.buckets).some(b => b.shadowN != null || b.shadowHits != null)).toBe(false)
       let probes = 0
       for (const side of PROBE_SIDES)
         for (const regime of PROBE_REGIMES)
@@ -996,24 +1005,77 @@ describe('the provenance partition — sized rows grade against sized history', 
               // the DEFAULT is pooled (every existing call site is unchanged), and
               // the sized read of an unpartitioned blob must equal it exactly —
               // not close, equal, on all four returned fields
-              const pooled = probabilityFor(committed, side, regime, x, cohort)
-              expect(probabilityFor(committed, side, regime, x, cohort, 'pooled')).toEqual(pooled)
-              expect(probabilityFor(committed, side, regime, x, cohort, 'sized')).toEqual(pooled)
+              const pooled = probabilityFor(legacy, side, regime, x, cohort)
+              expect(probabilityFor(legacy, side, regime, x, cohort, 'pooled')).toEqual(pooled)
+              expect(probabilityFor(legacy, side, regime, x, cohort, 'sized')).toEqual(pooled)
               probes++
             }
       expect(probes).toBe(PROBE_SIDES.length * PROBE_REGIMES.length * PROBE_COHORTS.length * PROBE_X.length)
     })
 
-    it('…and so do baseHitRate, curveFor and setupStat on that same seed', () => {
+    it('…and so do baseHitRate, curveFor and setupStat on that same shape', () => {
       const committed = seedJson.calibration as unknown as CalibrationState
-      expect(baseHitRate(committed, 'sized')).toEqual(baseHitRate(committed))
+      const legacy: CalibrationState = {
+        ...committed,
+        buckets: Object.fromEntries(Object.entries(committed.buckets).map(([k, b]) => [k, { n: b.n, hits: b.hits }])),
+        setupBuckets: Object.fromEntries(Object.entries(committed.setupBuckets ?? {}).map(([k, b]) => [k, { n: b.n, hits: b.hits }])),
+      }
+      expect(baseHitRate(legacy, 'sized')).toEqual(baseHitRate(legacy))
       for (const side of PROBE_SIDES)
         for (const regime of [...PROBE_REGIMES, null])
-          expect(curveFor(committed, side, 'any', regime, undefined, 'sized')).toEqual(curveFor(committed, side, 'any', regime))
-      for (const key of Object.keys(committed.setupBuckets ?? {})) {
+          expect(curveFor(legacy, side, 'any', regime, undefined, 'sized')).toEqual(curveFor(legacy, side, 'any', regime))
+      for (const key of Object.keys(legacy.setupBuckets ?? {})) {
         const [setup, side, band] = key.split(':') as [string, 'long' | 'short', Band]
-        expect(setupStat(committed, setup, side, band, 'sized')).toEqual(setupStat(committed, setup, side, band))
+        expect(setupStat(legacy, setup, side, band, 'sized')).toEqual(setupStat(legacy, setup, side, band))
       }
+    })
+
+    // …AND THE COMMITTED SEED IS NO LONGER ONE OF THOSE BLOBS [generation 4]. The
+    // pin above proves the partition is invisible on legacy evidence; this one
+    // proves it is not invisible on what SHIPS, which is the other half of the
+    // claim and the one that would fail silently — a seed emitted without
+    // sub-counts would read exactly like generation 3 and nothing would say so.
+    it('the COMMITTED generation-4 seed IS partitioned, and its sized read is a different number', () => {
+      const committed = seedJson.calibration as unknown as CalibrationState
+      expect(committed.seedGeneration).toBe(4)
+      const partitioned = Object.entries(committed.buckets).filter(([, b]) => b.shadowN != null)
+      expect(partitioned.length).toBeGreaterThan(0)
+      // every sub-count is a real slice of its bucket, never a claim beyond it
+      for (const [k, b] of Object.entries(committed.buckets)) {
+        expect(b.shadowN ?? 0, k).toBeLessThanOrEqual(b.n)
+        expect(b.shadowHits ?? 0, k).toBeLessThanOrEqual(b.hits)
+        expect(b.shadowHits ?? 0, k).toBeLessThanOrEqual(b.shadowN ?? 0)
+      }
+      // the seed's own aggregate: 2,357 of 6,554 graded rows were pre-grade
+      // shadows (lane stand-down, earnings print, unroutable short), so a sized
+      // read is drawn from 4,197 — and reads a different base for it
+      const pooled = baseHitRate(committed)
+      const sized = baseHitRate(committed, 'sized')
+      expect(pooled.n).toBe(6554)
+      expect(sized.n).toBe(4197)
+      expect(sized.rate).not.toBe(pooled.rate)
+      // …and the difference reaches the curve, not just the base
+      const moved = PROBE_X.filter(x => probabilityFor(committed, 'long', 'green', x, 'unknown', 'sized').p !== probabilityFor(committed, 'long', 'green', x, 'unknown').p)
+      expect(moved.length).toBeGreaterThan(0)
+    })
+
+    // THE HARNESS'S SHORTS ARE ALL SHADOWS, and the seed says so out loud. The
+    // replay runs with an EMPTY levMap by design (replay-window.ts: shorts are
+    // unroutable in both runs), so every short row the walk published was
+    // pre-grade shadow — and a sized short read therefore finds no sized evidence
+    // anywhere and falls to the sized base. That is the honest answer to "what
+    // happened to shorts a reader could have placed?" — nothing was ever
+    // measured — and it is recorded here so it is a known property of generation
+    // 4 rather than a surprise the first routable short discovers.
+    it('generation 4 carries NO sized short evidence — the seed walk could route none', () => {
+      const committed = seedJson.calibration as unknown as CalibrationState
+      const shorts = Object.entries(committed.buckets).filter(([k]) => k.includes('short'))
+      expect(shorts.length).toBeGreaterThan(0)
+      for (const [k, b] of shorts) expect(b.shadowN, k).toBe(b.n)
+      const read = probabilityFor(committed, 'short', 'green', 47.5, 'unknown', 'sized')
+      expect(read.nEff).toBe(0)
+      expect(read.p).toBe(baseHitRate(committed, 'sized').rate)
+      expect(read.provisional).toBe(true)
     })
 
     it('migrateCalibration NEVER backfills a sub-count — absence is "never partitioned", not "no shadows"', () => {
@@ -1361,13 +1423,59 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one', () 
     const cal = withSetups({ 'continuation:long:55-70': [4000, 3000] })
     expect(cal.setupBuckets!['continuation:long:55-70'].shadowN).toBeUndefined()
     expect(read(cal, 'continuation')).toEqual(read(cal))
-    // the committed seed is exactly that blob, for every family it carries
-    const committed = seedJson.calibration as unknown as CalibrationState
-    for (const key of Object.keys(committed.setupBuckets ?? {})) {
+    // …and the gen-3 seed was exactly that blob, which is why the blend shipped
+    // dark: `probabilityFor` could not prove a single stored family was sized
+    const legacy = withSetups({})
+    legacy.setupBuckets = Object.fromEntries(
+      Object.entries((seedJson.calibration as unknown as CalibrationState).setupBuckets ?? {}).map(([k, b]) => [k, { n: b.n, hits: b.hits }]),
+    )
+    for (const key of Object.keys(legacy.setupBuckets)) {
       const [setup, side, band] = key.split(':') as [string, 'long' | 'short', Band]
       const x = { '25-40': 32.5, '40-55': 47.5, '55-70': 62.5, '70+': 77.5 }[band]
-      expect(probabilityFor(committed, side, 'green', x, 'unknown', 'sized', setup)).toEqual(probabilityFor(committed, side, 'green', x, 'unknown', 'sized'))
+      expect(probabilityFor(legacy, side, 'green', x, 'unknown', 'sized', setup)).toEqual(probabilityFor(legacy, side, 'green', x, 'unknown', 'sized'))
     }
+  })
+
+  // ---------------------------------------------------------------------------
+  // …AND ON GENERATION 4 THE BLEND IS STILL DARK, FOR A REASON WORTH RECORDING
+  // [found by stage 3c task 4's install; a decision for the batch, not a patch].
+  //
+  // `blendSetup` refuses a family bucket that carries no sub-counts, because a
+  // fully-sized bucket and a never-partitioned one are the same bytes. `book`
+  // (updateCalibration) writes a sub-count only when an UNSIZED row lands. Put the
+  // two together and the families that can never blend are exactly the families
+  // that never shadowed — `continuation:long:40-55` at 1,668 sized rows among
+  // them — while the ones that CAN prove partition are the shadow-diluted families
+  // whose sized slice is then too thin to clear n ≥ 30. On this artefact that is
+  // every family: the four long families are all-sized (no sub-count, refused) and
+  // every short/velocity family is all-shadow (sized slice 0, refused).
+  //
+  // Neither half is wrong on its own and the naive repair is worse than the state
+  // it fixes: making `book` write `shadowN: 0` on a sized row would let a MIXED
+  // bucket — gen-3's 313 unpartitioned legacy rows plus five new stamped ones —
+  // claim all 318 as provably sized, which is precisely the hazard the refusal was
+  // adjudicated to prevent. The honest repairs are blob-level (a `partitionedSince`
+  // marker) or emitter-level (an artefact whose every row was stamped may say so),
+  // and both are design decisions with an author.
+  // ---------------------------------------------------------------------------
+  it('the COMMITTED generation-4 families cannot blend — all-sized proves nothing, all-shadow has nothing', () => {
+    const committed = seedJson.calibration as unknown as CalibrationState
+    const families = Object.entries(committed.setupBuckets ?? {})
+    expect(families.length).toBeGreaterThan(0)
+    const mid = { '25-40': 32.5, '40-55': 47.5, '55-70': 62.5, '70+': 77.5 }
+    for (const [key, b] of families) {
+      const [setup, side, band] = key.split(':') as [string, 'long' | 'short', Band]
+      // every family is at one extreme or the other, and that IS the finding
+      if (b.shadowN == null) expect(b.n, key).toBeGreaterThan(0) // all-sized: no sub-count to prove it
+      else expect(b.shadowN, key).toBe(b.n) // all-shadow: nothing sized to blend
+      expect(probabilityFor(committed, side, 'green', mid[band], 'unknown', 'sized', setup), key).toEqual(
+        probabilityFor(committed, side, 'green', mid[band], 'unknown', 'sized'),
+      )
+    }
+    // the biggest family in the file, named so the size of what is switched off is
+    // on the record rather than in a comment
+    expect(committed.setupBuckets!['continuation:long:40-55'].n).toBe(1668)
+    expect(committed.setupBuckets!['continuation:long:40-55'].shadowN).toBeUndefined()
   })
 
   it('no setup argument → byte-identical to the pre-blend read, on every existing call site', () => {

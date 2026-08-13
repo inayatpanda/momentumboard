@@ -98,7 +98,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
 import type { Candle } from '../shared/types'
-import type { Prediction } from '../shared/engine/types'
+import type { FactorName, Prediction } from '../shared/engine/types'
 import type { ScreenRow } from '../netlify/functions/lib/screener'
 import { fetchYahooChart } from '../netlify/functions/lib/yahoo'
 import { SECTOR_MEMBERS } from '../netlify/functions/lib/sectors'
@@ -109,6 +109,7 @@ import { VIX_SYMBOL, WORLD_SYMBOLS } from '../shared/engine/worldTape'
 // feature-detects the shape rather than the tree.
 import {
   type Band,
+  type BucketPopulation,
   type CalibrationState,
   type WeightsState,
   CALIB_DEF_VERSION,
@@ -767,6 +768,13 @@ export interface Row {
   contract: boolean
   catalyst: string | null
   setup: string | null
+  /** WHICH POPULATION THE ENGINE PRICED AND BOOKED THIS ROW IN (stage 3c, the
+   * provenance partition — engine.ts stamps it at publish, pre-grade). 'sized' is
+   * every candidate the reader could in principle have been offered; 'shadow' is
+   * the three pre-grade causes that were never on offer at any grade. Null in any
+   * tree older than the stamp, and null means POOLED here — the read this
+   * harness did before the partition existed. */
+  accrual: 'sized' | 'shadow' | null
   where: 'board' | 'ledger'
   // ---- stage-2 additions, all read off the row the engine actually published ----
   /** The regime the row was scored in — the calibration context, per row rather
@@ -1409,6 +1417,7 @@ const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
   contract: !!p.evidence?.contract,
   catalyst: p.catalyst?.kind ?? null,
   setup: p.setup ?? null,
+  accrual: (p as { accrual?: 'sized' | 'shadow' }).accrual ?? null,
   where,
   regime: p.regime,
   modelVersion: p.modelVersion ?? null,
@@ -1429,15 +1438,27 @@ const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
  * returns `{p, provisional, n}` and `gradeFor` takes a different signature, so the
  * absence of `nEff` on the first read is the signal to leave every row unenriched.
  * A harness that guessed from the file system would enrich a tree whose calibration
- * module had moved on underneath it. */
-function enrichFromCalibration(rows: Row[], cal: CalibrationState | null, baseRate: number): void {
+ * module had moved on underneath it.
+ *
+ * IN THE ROW'S OWN POPULATION, AND WITH ITS OWN FAMILY [stage 3c task 4, binding
+ * from the Task-1 review]. This recomputation was POOLED and unblended, which was
+ * byte-identical to the board until the partition and the blend existed. From
+ * generation 4 on it is not: engine.ts prices a candidate against SIZED history
+ * with `call.setup` in hand, and prices a pre-grade shadow against the pool. A
+ * pooled recomputation would hand the born-below census, the §3 rounding read and
+ * the monotonicity gate a curve no row was ever graded on — the gate would pass or
+ * fail on a counterfactual. The stamp travels on the row (`accrual`), so the
+ * choice is read rather than inferred; absence is a pre-stamp tree and reads
+ * pooled, exactly as this function always did. */
+export function enrichFromCalibration(rows: Row[], cal: CalibrationState | null, baseRate: number): void {
   if (!cal) return
   for (const r of rows) {
     if (r.nearMiss) continue // a near miss never went through the read path at all
     // cohort 'unknown' is not a simplification here: `capUsdM` is null for every
     // name in a price-only replay (approximation #4), so publishCall's own
     // capCohortOf returned exactly this on the row being reproduced.
-    const read = probabilityFor(cal, r.side, r.regime, Math.abs(r.composite), 'unknown') as unknown as {
+    const population: BucketPopulation = r.accrual === 'sized' ? 'sized' : 'pooled'
+    const read = probabilityFor(cal, r.side, r.regime, Math.abs(r.composite), 'unknown', population, r.setup) as unknown as {
       p: number
       nEff?: number
       belowEvidence?: boolean
@@ -1474,6 +1495,38 @@ export interface SeedArtefact {
 
 const cloneJson = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T
 const zero = () => ({ n: 0, hits: 0 })
+
+/** THE FACTORS THIS HARNESS CANNOT FEED — one entry per empty dependency in
+ * `makeDeps` above, and the complement of the four the tape alone can score
+ * (technical, momentum, sector, seasonality).
+ *
+ *   social       `social: async () => []`
+ *   insiders     `insiderCoverage: async () => new Map()`
+ *   smartMoney   `smartMoney: async () => []`
+ *   channels     no YouTube stances — the walk's config carries `ytChannels: []`
+ *   news         `mediaTitles: async () => []`
+ *   catalyst     `newsCatalysts: async () => []`
+ *
+ * WHY THE LIST HAS TO EXIST AT ALL [stage 3c task 4, binding from the Task-2
+ * review]. Until stage 3c every one of these was self-cleaning: an absent input
+ * produced a null or a zero, and `updateIcStats` skipped both, so a price-only
+ * walk simply left their IC at zero (the generation-3 artefact carries exactly
+ * that — six columns of 0/0). Task 2's `ZERO_IS_A_READING` deliberately admits
+ * news's zero, because `newsFactor` has no null path and its "quiet tape" branch
+ * is a real reading of a real tape. In production that is right. HERE the tape is
+ * empty by construction, so every graded row books the same fabricated
+ * observation — against every long, with every short — and two years of them sail
+ * past both twenty-observation floors with a mean that is pure selection. Install
+ * that and the first live nudge moves a real weight on a measurement nobody made.
+ *
+ * So the artefact drops them. Not the walk — the walk keeps its blob and its
+ * diagnostics; the SEED, at serialisation, because the seed is the thing
+ * production loads. The rule is stated as "the walk could not feed it" rather
+ * than "its column looks odd": zeroing an already-empty column is a no-op, which
+ * is what makes the list safe to state in full rather than trimmed to whichever
+ * factor happens to misbehave this generation. The day a dependency stops being
+ * empty, its name comes off this list in the same commit. */
+export const WALK_ABSENT_FACTORS: readonly FactorName[] = ['social', 'insiders', 'smartMoney', 'channels', 'news', 'catalyst']
 
 /** How many graded rows a reference sweep must carry before its reading may be
  * stored. A thin reference is WORSE than none: absence falls back to the pooled
@@ -1644,6 +1697,16 @@ export function seedArtefactFrom(input: {
     throw new Error(
       `BLOCKED: weights.current deviates from weights.base on ${unpinned.join(', ')} — the walk's compounding nudges are inside this artefact. A seed is only honest if it was measured under the vector production will score with; seed mode pins current to base after every graded day.`,
     )
+  // guarantee 8 — no IC from a factor this harness could not feed (see
+  // WALK_ABSENT_FACTORS). Both halves go: the COLUMN, which production would nudge
+  // on, and the factor's line in every `history` entry, which the weights panel
+  // would otherwise report as a measured change. `current` is already pinned to
+  // `base` by the check above, so nothing about the shipped vector moves here —
+  // what is removed is the claim that something measured it.
+  for (const f of WALK_ABSENT_FACTORS) {
+    weights.ic[f] = { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }
+    for (const h of weights.history ?? []) delete h.changes[f]
+  }
   weights.seedGeneration = generation
 
   calibration.defVersion = CALIB_DEF_VERSION
@@ -1761,12 +1824,29 @@ export async function main() {
   mkdirSync(CACHE_DIR, { recursive: true })
   console.log(`replay-window: mode=${baseline ? 'BASELINE' : plantA ? 'A-PROBE' : 'NEW'} commit=${commit} window=${from}..${to} appetite=${appetite} gainers=${gainersDepth}`)
   console.log(`cache: ${CACHE_DIR}`)
-  if (seedOut)
+  if (seedOut) {
+    // THE SEED WALK DOES NOT ADVANCE GATE STATE [stage 3c task 4, plan decision
+    // (d)]. Gate feedback is a LIVE mechanism on a live clock: it counts sessions
+    // off `predictions-index` and prices attributed outcomes the reader was really
+    // handed. A synthetic two-year tape would arm it in the first months and then
+    // re-judge every later day of its own window under a dead zone the walk itself
+    // moved — the buckets would be a blend of thresholds production has never run,
+    // with nothing in the artefact to say which day changed. Worse, it is silent:
+    // the seed carries no gate state at all, so the moved thresholds simply
+    // disappear behind numbers that look measured.
+    //
+    // Set here rather than asked of the operator, because a forgotten env var
+    // produces a plausible artefact. Set on the PROCESS because that is the seam
+    // gateState.ts reads (`GATES=off`, the rollback lever) — the walk drives the
+    // real engine, and the real engine is the thing that must stand down.
+    process.env.GATES = 'off'
     console.log(
       `seed mode: generation ${seedGeneration} → ${seedOut} · universe ${baseUniverse.length}` +
         `${askedUniverse.length - baseUniverse.length ? ` (${askedUniverse.length - baseUniverse.length} crypto excluded: ${askedUniverse.filter(isCryptoSymbol).join(' ')})` : ''}` +
-        ' · the walk starts from an EMPTY calibration, never the committed seed',
+        ' · the walk starts from an EMPTY calibration, never the committed seed' +
+        ' · gates: PINNED OFF (feedback moves on live evidence only)',
     )
+  }
 
   // ---- warm the cache: the replay universe + the index/world series ----
   const warm = [...new Set([...baseUniverse, 'SPY', 'QQQ', ...WORLD_TAPE_SYMS])]
@@ -2279,6 +2359,15 @@ export async function main() {
         .map(f => `${f} ${artefact.weights.ic[f].nAgree}/${artefact.weights.ic[f].nDisagree}`)
         .join(' · ') || 'none — no factor scored a graded call'}`,
     )
+    // …and what the emitter REFUSED to ship with it (guarantee 8). Printed from the
+    // difference between the walk's own blob and the artefact, so the line cannot
+    // drift from what was actually dropped, and printed even when the answer is
+    // "nothing" — a silent zeroing step is one nobody checks.
+    const dropped = WALK_ABSENT_FACTORS.map(f => ({ f, n: (weightsFinal?.ic?.[f]?.nAgree ?? 0) + (weightsFinal?.ic?.[f]?.nDisagree ?? 0) })).filter(d => d.n > 0)
+    console.log(
+      `  phantom IC dropped: ${dropped.map(d => `${d.f} ${d.n} obs`).join(' · ') || 'none — every absent factor was already empty'}` +
+        ` (a factor the price-only walk never fed may not ship a measurement)`,
+    )
   }
 
   const blank = out.filter(d => d.shape.blankBoard).length
@@ -2769,22 +2858,66 @@ export interface ProbeContext {
   side: 'long' | 'short'
   regime: string
   cohort: 'large' | 'small' | 'unknown'
+  /** WHICH OF THE TWO CURVES OVER THESE BUCKETS [stage 3c]. A sized read and a
+   * pooled read are different answers from the same blob once the partition has
+   * sub-counts to work with, and the reader's money follows the sized one. */
+  population: BucketPopulation
+  /** The setup family blended into the read, or null for the bare ladder. */
+  setup: string | null
 }
 
-/** Every (side, regime, cohort) a state actually carries evidence for. Parsed
- * from the bucket keys themselves — legacy cohortless keys are 3-part and read as
- * cohort 'unknown' (which is exactly how an unknown-cap call reads them back),
- * cohort-tagged keys are 4-part. A context nothing was ever booked into is not
- * probed: asserting monotonicity on an empty rung tests the base-rate constant. */
+/** The label a violation is reported under. */
+export const probeLabel = (c: ProbeContext): string =>
+  `${c.cohort}:${c.side}:${c.regime} ${c.population}${c.setup ? `/${c.setup}` : ''}`
+
+/** THE READ THE READER ACTUALLY GOT, bound to a state: `probabilityFor` with the
+ * context's own population and family. Exported because the gate and the tests
+ * must probe ONE read path, and because the pooled unblended ladder — what this
+ * probe swept before stage 3c — is now a curve nobody is shown. */
+export const shippedRead = (state: CalibrationState) => (c: ProbeContext, x: number): number =>
+  probabilityFor(state, c.side, c.regime, x, c.cohort, c.population, c.setup).p
+
+/** Every (side, regime, cohort) a state actually carries evidence for, crossed
+ * with every read that state can produce for it. Parsed from the bucket keys
+ * themselves — legacy cohortless keys are 3-part and read as cohort 'unknown'
+ * (which is exactly how an unknown-cap call reads them back), cohort-tagged keys
+ * are 4-part. A context nothing was ever booked into is not probed: asserting
+ * monotonicity on an empty rung tests the base-rate constant.
+ *
+ * THE CROSS PRODUCT [stage 3c task 4, binding from the Task-2 review]. One
+ * context is no longer one curve:
+ *   · POPULATION — both, always. A sized read is what grades a sized row; a
+ *     pooled read is what prices a shadow. On an unpartitioned blob the two are
+ *     byte-identical and the extra half of the sweep costs nothing.
+ *   · SETUP — every family the state carries evidence for ON THAT SIDE, and only
+ *     on the sized read, because `blendSetup` returns the ladder untouched on a
+ *     pooled one. This is the half that matters: the blend is a BAND step
+ *     (`setup:side:band`), so a family that earned its 0.3 in one band and not
+ *     the next can put a downward step into the published curve that the ladder
+ *     underneath is innocent of. A probe that never passed a setup would sweep a
+ *     curve no reader is ever shown and call the gate passed. */
 export function contextsIn(state: CalibrationState): ProbeContext[] {
-  const seen = new Map<string, ProbeContext>()
+  const seen = new Map<string, { side: 'long' | 'short'; regime: string; cohort: ProbeContext['cohort'] }>()
   for (const key of Object.keys(state.buckets)) {
     const parts = key.split(':')
     const [cohort, side, regime] = parts.length === 4 ? parts : ['unknown', parts[0], parts[1]]
     if (side !== 'long' && side !== 'short') continue
     seen.set(`${cohort}:${side}:${regime}`, { side, regime, cohort: cohort as ProbeContext['cohort'] })
   }
-  return [...seen.values()].sort((a, b) => `${a.cohort}${a.side}${a.regime}`.localeCompare(`${b.cohort}${b.side}${b.regime}`))
+  const setupsBySide = new Map<string, Set<string>>()
+  for (const key of Object.keys(state.setupBuckets ?? {})) {
+    const [setup, side] = key.split(':')
+    if (side !== 'long' && side !== 'short') continue
+    if (!setupsBySide.has(side)) setupsBySide.set(side, new Set())
+    setupsBySide.get(side)!.add(setup)
+  }
+  const out: ProbeContext[] = []
+  for (const base of [...seen.values()].sort((a, b) => `${a.cohort}${a.side}${a.regime}`.localeCompare(`${b.cohort}${b.side}${b.regime}`))) {
+    out.push({ ...base, population: 'pooled', setup: null })
+    out.push({ ...base, population: 'sized', setup: null })
+    for (const setup of [...(setupsBySide.get(base.side) ?? [])].sort()) out.push({ ...base, population: 'sized', setup })
+  }
+  return out
 }
 
 export interface MonoViolation {
@@ -2809,7 +2942,7 @@ export function monotonicityViolations(
 ): MonoViolation[] {
   const out: MonoViolation[] = []
   for (const ctx of contexts) {
-    const label = `${ctx.cohort}:${ctx.side}:${ctx.regime}`
+    const label = probeLabel(ctx)
     let prev: { x: number; p: number } | null = null
     for (const x of xs) {
       const p = read(ctx, x)
@@ -3059,7 +3192,7 @@ async function aggregateMain() {
   let monoContexts = 0
   for (const ps of probeStates) {
     const ctxs = contextsIn(ps.state)
-    const v = monotonicityViolations(ctxs, xs, (c, x) => probabilityFor(ps.state, c.side, c.regime, x, c.cohort).p)
+    const v = monotonicityViolations(ctxs, xs, shippedRead(ps.state))
     monoViolations += v.length
     monoContexts += ctxs.length
     console.log(`  ${ps.label}: ${ctxs.length} contexts × ${xs.length} samples (${xs[0]}→${xs[xs.length - 1]}) — ${v.length ? `${v.length} VIOLATIONS` : 'monotone'}`)
@@ -3194,7 +3327,7 @@ async function aggregateMain() {
         monotonicity: probeStates.map(ps => ({
           label: ps.label,
           contexts: contextsIn(ps.state).length,
-          violations: monotonicityViolations(contextsIn(ps.state), xs, (c, x) => probabilityFor(ps.state, c.side, c.regime, x, c.cohort).p),
+          violations: monotonicityViolations(contextsIn(ps.state), xs, shippedRead(ps.state)),
         })),
         bandsSampledByWindow: sampled,
         aProbe,

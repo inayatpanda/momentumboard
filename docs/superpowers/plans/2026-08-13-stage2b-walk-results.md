@@ -106,3 +106,115 @@ Under the ratified vector only 26 long:green rows in two years reach 70+, and th
 **Acceptance window (2026-07-14 → 2026-08-11, gen 3 installed as cold start):** 0/21 blank boards, 0/21 zero-trade days, 529 board+ledger rows → **518 C / 11 B** (gen 2: 531/531 C), 13 distinct probabilities spanning 0.34–0.48, composite range −54.7…+65.3. Task 4's "not ≥90% single-grade" gate still **fails** (97.9% C) — that remains Stage 3c's work, and the owner's waiver from Addendum 1 still stands. What changed is not the grade histogram; it is that the vector behind it is honest.
 
 **Still open, booked for Stage 3c.** The nudge loop is unbounded in *production* too. Generation 3 installs `current = base` and the seed's deep IC beside it, so from the first live nudge the same compounding drift starts again from DEFAULT_WEIGHTS — slower than the walk's cadence, but in the same direction and with the same absent floor. The seed is now honest about its own measurement; the loop that will move it away from that measurement is not yet bounded. Recon §5.2's candidates (a `minDisagree` floor symmetric with `nAgree`, per-factor `[0.5×, 1.5×]` bounds, calendar cadence) are the shortlist.
+
+---
+
+## Addendum 3 — generation 4: measured under the partition, the brakes and the blend (Stage 3c Task 4)
+
+Same instrument, same window, same universe as generation 3 — `npx tsx scripts/replay-window.ts --from 2024-08-12 --to 2026-08-11 --seed-generation 4`, 501 trading days, 36s, zero API calls. What is new is what the engine underneath it now does: it books a **provenance sub-count** on every graded row (Task 1), it measures IC under a **two-sided floor and a hard weight band** (Task 2), and it runs with **`GATES=off` pinned by the walk itself** (Task 4 decision (d) — gate feedback moves on live evidence and a live cadence clock, never on a synthetic tape it could then re-judge its own later days under).
+
+| | gen 3 | gen 4 |
+|---|---|---|
+| graded rows | 6,608 | 6,554 |
+| main buckets | 18 | 18 (**17 now carry sub-counts**) |
+| setup keys | 16 | 16 |
+| pooled base | 0.4161 | 0.4169 |
+| **sized base** | *(no partition)* | **0.4247 on 4,197 rows** |
+| **referenceBase** | 0.4158 | **0.4158 — unchanged again** |
+| symbols | 159 | 159 |
+| IC (core four) | tech 5194/49 · mom 5099/144 · seas 3579/1547 · sector 588/69 | tech 5134/47 · mom 5109/72 · seas 3590/1479 · sector 590/65 |
+| evidence | seed 4359/1841 · shadow 2249/908 | seed 4367/1844 · shadow 2187/888 |
+
+`referenceBase` has now held at **0.4158 across three consecutive generations** — through a total re-scoring of the factor stack (gen 3) and through the partition and the blend (gen 4). The sweep runs `seedFromHistory` over the raw tape; it never touches any of them.
+
+### The partition, per band
+
+`shadowN` counts the rows shadowed by the three PRE-GRADE causes (lane stand-down, earnings print inside the horizon, unroutable short). Everything else — including every watch, below-base and grade-null row — accrues SIZED, because those are the band's own recovery record (Task 1's re-ratified discriminator).
+
+| bucket | n | shadowN | sizedN | pooled | sized |
+|---|---:|---:|---:|---:|---:|
+| `long:green:40-55` | 1828 | 67 | 1761 | 0.430 | 0.428 |
+| `long:amber:25-40` | 968 | 129 | 839 | 0.442 | 0.434 |
+| `long:green:25-40` | 715 | 248 | 467 | 0.406 | **0.443** |
+| `short:green:25-40` | 688 | 688 | 0 | 0.452 | — |
+| `short:amber:25-40` | 505 | 505 | 0 | 0.392 | — |
+| `long:red:25-40` | 436 | 77 | 359 | 0.346 | 0.351 |
+| `long:amber:40-55` | 373 | 17 | 356 | 0.405 | 0.407 |
+| `short:red:25-40` | 258 | 258 | 0 | 0.333 | — |
+| `long:red:40-55` | 190 | 15 | 175 | 0.437 | **0.463** |
+| `short:red:40-55` | 126 | 126 | 0 | 0.325 | — |
+| `long:green:55-70` | 123 | 36 | 87 | 0.423 | **0.368** |
+| `short:amber:40-55` | 104 | 104 | 0 | 0.452 | — |
+| `long:red:55-70` | 89 | 4 | 85 | 0.551 | **0.565** |
+| `short:red:55-70` | 63 | 63 | 0 | 0.381 | — |
+| `long:amber:55-70` | 47 | 5 | 42 | 0.340 | 0.286 |
+| `long:green:70+` | 26 | 0 | 26 | 0.500 | 0.500 |
+| `short:green:40-55` | 12 | 12 | 0 | 0.500 | — |
+| `short:red:70+` | 3 | 3 | 0 | 0.000 | — |
+| **total** | **6554** | **2357** | **4197** | **0.4168** | **0.4246** |
+
+Two things fall out of this table and both matter more than the histogram.
+
+**1. EVERY SHORT IN THIS ARTEFACT IS A SHADOW.** The harness runs with an empty `levMap` by design (§13: shorts are unroutable in *both* runs, so the comparison is fair), which makes every short row `unshortable` — one of the three pre-grade causes. Generation 4 therefore carries **no sized short evidence at all**, and a sized short read falls through every rung to the sized base (0.4247, nEff 0, provisional). That is the honest answer to "how did shorts a reader could actually place do?" — nothing ever measured one — but it is a live behaviour change for the routable shorts production *does* have (`3SMI.L`/`3LAL.L` are in the real levMap), which under generation 3 read the pooled short curve. Test-pinned in `calibration.test.ts` so it is a known property rather than a discovery.
+
+**2. THE UNMASKING PAYOFF WAS ALREADY SPENT BY GENERATION 3.** Addendum 1 predicted this stage from gen-2 data: `long:green:55-70` sized read **57.3%** (67/117), "clears the A-bar on its own merits". Measured now: **36.8%** (32/87). The 57.3% cell was an artefact of the gen-2 nudged vector — the same vector whose inverted factor order Addendum 2 removed — and gen 3 had already collapsed that bucket to 42.3% pooled before the partition ever ran. Across the whole file the shadow dilution is worth **+0.8pp** (0.4168 pooled → 0.4246 sized), not the several points a band would need to cross `gradeFor`'s +0.05 B threshold.
+
+The decomposition that shows where the prediction went, computed off the walk's own 6,554 graded rows:
+
+| slice | rows | hit rate |
+|---|---:|---:|
+| pooled (everything) | 6,554 | 0.4168 |
+| sized by CAUSE (what ships) | 4,197 | **0.4246** |
+| …of those, rows that also carried SIZE | 1,234 | 0.4019 |
+| …of those, rows that carried none (watch / below-base / grade-null) | 2,963 | 0.4340 |
+
+Addendum 1's decomposition keyed on SIZE. Task 1's review re-ratified the discriminator to the shadow's CAUSE, and the two disagree by 2.3pp in the opposite direction to the prediction: the rows a band demotes to watch go on to do *better* than the rows it sized. Sealing them out (size-keying) would have made every sized band look worse and frozen its recovery — which is the argument the re-ratification was made on, now with a number against it.
+
+### IC under the brakes
+
+| factor | nAgree | mean agree | nDisagree | mean disagree | IC | weight |
+|---|---:|---:|---:|---:|---:|---:|
+| technical | 5134 | +1.474 | 47 | +1.023 | +0.045 | 1.0 |
+| momentum | 5109 | +1.490 | 72 | +0.050 | +0.144 | 0.9 |
+| seasonality | 3590 | +1.213 | 1479 | +2.063 | −0.085 | 0.3 |
+| sector | 590 | −0.946 | 65 | −2.657 | +0.171 | 0.3 |
+| catalyst · news · channels · social · insiders · smartMoney | 0 | — | 0 | — | ineligible | unchanged |
+
+All four measured factors clear the new two-sided floor (`nAgree ≥ 20 AND nDisagree ≥ 20`) on both columns — gen 2's momentum stood on **fifteen** disagreements. `current === base === DEFAULT_WEIGHTS` in the file, as generation 3 established.
+
+**The six zeros are now a deliberate erasure, not an accident.** Task 2's `ZERO_IS_A_READING` admits news's zero, because `newsFactor([])` is the genuine "quiet tape" reading and the factor has no null path. This harness hands it an empty tape every single morning — so the walk booked **5,181 fabricated news observations**, both columns far past the twenty-observation floor, an IC of pure selection (against every long, with every short) that production would have nudged a real weight on at the first pass after install. The emitter drops the IC *and* the history lines of every factor `makeDeps` cannot feed (`WALK_ABSENT_FACTORS`: social, insiders, smartMoney, channels, news, catalyst) and prints what it dropped in the run log. A factor never shown a headline ships no opinion about headlines.
+
+### The acceptance window, gen 3 vs gen 4 — the controlled diff
+
+Both runs at the same commit, same window (2026-07-14 → 2026-08-11), `GATES=off` on both sides so gate feedback is structurally incapable of contributing a change. The only variable is which seed `loadState` cold-starts from.
+
+| | gen 3 installed | gen 4 installed |
+|---|---|---|
+| blank boards / zero-trade days | 0/21 · 0/21 | 0/21 · 0/21 |
+| board graded rows | 200 → **197 C / 3 B** | 200 → **195 C / 5 B** |
+| sized board TRADE rows | 63 → **62 C / 1 B** | 63 → **60 C / 3 B** |
+| ledger rows | 309 → 301 C / 8 B | 309 → 299 C / 10 B |
+| board + ledger | 509 → **498 C / 11 B (97.84% C)** | 509 → **494 C / 15 B (97.05% C)** |
+| distinct published p | 9 | 10 |
+| published p range | 0.35 – 0.48 | 0.36 – 0.50 |
+| gate-state blob | none (pinned off) | none (pinned off) |
+
+**Every changed grade is attributable.** Of 309 shared ledger rows, 210 moved in grade, size or probability; **two changed grade**, both `C → B` (`2026-07-31 ARM long`, `2026-07-31 INTC long`), both with a *byte-identical composite* on both sides, both sized reversals at |c| ≈ 51 whose sized read cleared +0.05 over the anchor where the pooled read did not. Both also doubled in size (0.5 → 1.0 risk), which is the same decision travelling. Nothing else changed grade in either direction, and no row appeared or disappeared (309 keys on both sides). 44 rows carry a composite that moved by ±0.1–0.2 — the nudge loop reading the two seeds' slightly different IC — and **none of them changed grade**; that is a third path and it is reported rather than hidden.
+
+Directionally the partition made most reads *lower*, not higher: 198 of 309 ledger probabilities fell, 12 rose. The shadow slice was pulling bands UP in this window, not down.
+
+**Monotonicity, on the shipped curve.** The probe now sweeps what the reader is actually handed: every (cohort, side, regime) × **both populations** × **every setup family the state carries on that side** — 30 contexts × 27 samples = **810 reads**, on the gen-4 seed and again on the acceptance window's final blob. **Zero violations on both.** The pooled unblended ladder the probe swept before Stage 3c is now a curve nobody is shown; a test in `replay-window.test.ts` plants a family whose earned band step breaks D2 and proves the widened probe catches what the old one missed.
+
+### The verdict on the payoff gate
+
+- **(a) grade distribution no longer ≥97% single-grade — NOT MET, and recorded.** 97.05% C on board+ledger (from 97.84%), 97.5% on board-graded rows, 95.2% on the sized trade rows the reader is asked to act on. B count 11 → 15 (+36%), and 1 → 3 on sized trade rows. What holds the rest at C is neither the evidence floor nor the born-below cap (0 rows demoted by either: `nEff < 15` is empty and 118 born-below rows all graded C on their own p): it is that the bands themselves sit at 0.41–0.46 against a 0.4158 anchor, and B needs 0.4658. The remaining separation has to come from the model, not from the bookkeeping. Addendum 1's prediction that the partition would supply it was measured on a vector that no longer exists.
+- **(b) zero monotonicity violations on the shipped curve — MET.** 810 population- and setup-aware reads, twice, clean.
+- **(c) every changed grade attributes to a sanctioned path — MET.** Two grade changes, both partition, both on identical composites; gates structurally pinned off on both sides.
+- **(d) referenceBase ≈ unchanged — MET exactly.** 0.4158, third generation running.
+- **(e) suite green — MET.** 1,832 tests / 139 files, `tsc -b` clean.
+
+### Still open, found by this install
+
+**The setup blend is dark on generation 4, and cannot turn itself on.** `blendSetup` refuses a family bucket with no sub-counts (a fully-sized bucket and a never-partitioned one are the same bytes — adjudicated in Task 2). `updateCalibration.book` writes a sub-count only when an UNSIZED row lands. Together those two rules mean a family that never shadows can *never* prove it is sized: `continuation:long:40-55` carries **1,668 rows, every one of them sized, and is permanently mute**, while the families that *can* prove partition (velocity:long, continuation:short, fade:short) are 100% shadow and have no sized slice to blend. Every one of the 16 families in this artefact is at one extreme or the other, so the mechanism Task 2 shipped contributes exactly nothing to the numbers above — the two C→B moves are the partition alone.
+
+The naive repair is worse than the state it fixes: writing `shadowN: 0` on a sized accrual would let a MIXED bucket (gen-3's unpartitioned legacy rows plus a few new stamped ones) claim all of them as provably sized, which is the exact hazard the refusal was adjudicated to prevent. The honest repairs are blob-level (a `partitionedSince` marker) or emitter-level (an artefact whose every row was stamped from a blank start may say so about itself — provable here, and only here). Both are design decisions with an author, and neither belongs in an install. **Booked for the batch decision.**
