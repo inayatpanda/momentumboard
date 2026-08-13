@@ -47,7 +47,8 @@ import {
   type WeightsState,
 } from '../../../shared/engine/calibration'
 import { pickDiverse } from '../../../shared/engine/select'
-import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder } from '../../../shared/engine/funnelTrace'
+import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder, type FunnelTrace } from '../../../shared/engine/funnelTrace'
+import { MISS_LEDGER_KEY, accrueMissDay, maturedTraceDate, normaliseMissLedger, type MissLedger } from '../../../shared/engine/missLedger'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
 import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
@@ -380,6 +381,43 @@ const mapLimit = async <T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
 // ---- step 0: grade what matured, update every learning store ----
 
+/** THE MISS LEDGER'S HOOK (shared/engine/missLedger.ts owns every rule).
+ *
+ * Ten sessions after a run, that run's refusals have an answer. This reads the
+ * trace day that just matured and charges what each not-called name went on to
+ * do to the gate that refused it. It PUBLISHES NOTHING: `miss-ledger` is read by
+ * no board, no paper, no calibration and no grade — Stage 3c is what eventually
+ * consumes it, and it needs weeks of this measured before it may move a gate.
+ *
+ * Exactly ONE day per pass, and always the NEWEST matured one:
+ *  - the blob is ADDITIVE, so a day accrued twice would double-charge its gates.
+ *    `days[date]` is the guard, and it is why the engine may run ten times in an
+ *    afternoon without inflating the ledger.
+ *  - working the newest rather than catching up from the oldest bounds the cost
+ *    at one day's fetch budget forever, and keeps the 60-day prune safe: a day
+ *    old enough to be pruned can never be selected again. The honest cost is that
+ *    a day the engine was down for is never measured — an absence, not a zero,
+ *    and one nothing downstream mistakes for evidence.
+ *
+ * Fail-soft is the caller's job (see the try/catch at the call site): every
+ * learning blob is already durable by the time this runs, so a failure here costs
+ * the day's regret measurement and nothing else. */
+async function accrueMissLedger(store: AppStore, spy: Candle[], cache: Map<string, Candle[] | null>, getCandles: (sym: string) => Promise<Candle[] | null>): Promise<void> {
+  const index = (await store.read<string[]>(FUNNEL_TRACE_INDEX_KEY)) ?? []
+  const date = maturedTraceDate(index, spy)
+  if (!date) return
+  const ledger = normaliseMissLedger(await store.read<MissLedger>(MISS_LEDGER_KEY))
+  if (ledger.days[date]) return
+  const trace = await store.read<FunnelTrace>(funnelTraceKey(date))
+  // A tombstone (`disabled`) is a day the recorder was stubbed off: no data, and
+  // emphatically not a day the engine refused nothing. accrueMissDay refuses it
+  // too; it is checked here as well so no `days` entry is minted for it either.
+  if (!trace || trace.disabled) return
+  const next = await accrueMissDay(ledger, trace, spy, { isFree: sym => cache.has(sym), candles: getCandles })
+  await store.write(MISS_LEDGER_KEY, next)
+  console.log(`MISS-LEDGER: ${date} — ${next.days[date].checked} checked, ${next.days[date].unchecked} unchecked, ${next.days[date].misses} misses`)
+}
+
 export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec: number, cfg?: AppConfig | null): Promise<{ graded: number }> {
   const today = londonDate(nowSec)
   const spy = await deps.candles('SPY')
@@ -574,6 +612,16 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   await store.write('engine-calibration', calibration)
   await store.write('channel-credibility', credResult.state)
   await store.write('risk-state', nextRisk)
+
+  // LAST in the pass, and wrapped whole. Every learning blob above is durable by
+  // now, so a miss-ledger failure — a missing trace, an upstream 503 on a candle
+  // fetch, a malformed blob — costs the day's regret measurement and cannot touch
+  // a grade, a rung or a published row.
+  try {
+    await accrueMissLedger(store, spy, candleCache, getCandles)
+  } catch (e) {
+    console.log(`MISS-LEDGER: skipped — ${e instanceof Error ? e.message : String(e)}`)
+  }
   return { graded }
 }
 
