@@ -113,9 +113,10 @@ export interface CalibrationState {
   // Per-setup-family outcome stats, keyed `${setup}:${side}:${band}` (regime
   // deliberately pooled — three setups × the full key space would starve every
   // cell). READ BY `probabilityFor` since stage 3c task 2, but only where the
-  // family has EARNED it: a sized read, a caller that named the setup, a bucket
-  // that can prove it is partitioned, and thirty sized outcomes in the call's own
-  // band — then 0.3 of the price (see `blendSetup`). Anything short of all four
+  // family has EARNED it: a sized read, a caller that named the setup, bands that
+  // can prove they are partitioned, and thirty sized outcomes across the family's
+  // bands — then 0.3 of the price, off the family's own isotonic curve
+  // (`setupCurveFor`, read by `blendSetup`). Anything short of all four
   // and these stay pure accrual, which is what every blob in existence does
   // today. A specialist model earns its existence from logged evidence, exactly
   // like a new factor.
@@ -274,10 +275,12 @@ const MIN_BUCKET_N = 15
  * to believe it", and one is worth nothing without the other. */
 const MIN_GRADE_A_N = 30
 /** THE EARN-INFLUENCE BAR for a setup family [spec §4.3(c)]: a family's own
- * record starts moving probability at thirty SIZED outcomes in the call's band.
- * Numerically MIN_GRADE_A_N, deliberately NOT the same constant — that one is a
- * grade's evidence floor ("may this read claim an A?") and this one is a
- * specialist model's admission test ("has this family earned a vote at all?").
+ * record starts moving probability at thirty SIZED outcomes — summed over the
+ * family's sized bands, because since the fix wave the family answers with ONE
+ * CURVE fitted across those bands rather than four independent band steps
+ * (`setupCurveFor`). Numerically MIN_GRADE_A_N, deliberately NOT the same constant
+ * — that one is a grade's evidence floor ("may this read claim an A?") and this one
+ * is a specialist model's admission test ("has this family earned a vote at all?").
  * Tying them would make one edit answer two questions. */
 const SETUP_BLEND_MIN_N = 30
 /** …and the vote is worth 0.3 of the price. Spec §4.3(c) verbatim:
@@ -433,6 +436,64 @@ function readCurve(pts: CurvePoint[], x: number): { p: number; nEff: number; bel
   return { p: last.p, nEff: last.n, belowEvidence: false }
 }
 
+/** ONE SETUP FAMILY's curve — the specialist model the blend below reads, built
+ * out of the SAME machinery as the ladder above it and for the same reason.
+ *
+ * WHY A CURVE [fix wave 2, spec §4.3(c) re-ratified]. A family used to answer with
+ * `laplace` of the ONE bucket for the call's band: a step function of
+ * `bandFor(|composite|)`. Mixed into a ladder that rises continuously, that step
+ * put a DOWNWARD jump into the shipped price wherever a family recorded its next
+ * band worse than its current one — 11 of 810 probed reads on the generation-4
+ * seed, every one on a band edge, five of them reaching published rows where more
+ * conviction was priced lower on the same day in the same side and regime. The
+ * ladder solved this problem in stage 2 and the solution is reusable one level
+ * down: fit the bands isotonically, guard with the running max, read between
+ * midpoints. A convex combination of two monotone functions of x is monotone, so
+ * D2 becomes structural again instead of a property the blend happened to have.
+ *
+ * IT IS ALWAYS THE SIZED SLICE, and the sizing must be PROVEN per band: a bucket
+ * with no sub-counts was never partitioned, so it contributes NO point — the same
+ * rule `curveFor` applies to a bucket with no evidence in the population it is
+ * being read in, and the same adjudication that has always governed this blend
+ * (evidence that cannot prove it is sized adds no influence). A fat legacy band
+ * therefore cannot drag the curve, and cannot silence the bands that can prove
+ * themselves.
+ *
+ * THE FLOOR IS THE FAMILY'S, ACROSS ITS SIZED BANDS. `SETUP_BLEND_MIN_N` is an
+ * admission test for a specialist MODEL, and the model is one curve over the
+ * family rather than four independent band steps; a per-band floor would be the
+ * step's rule outliving the step, dropping the thin top of a family whose
+ * neighbouring band carries hundreds of outcomes — which is precisely the case the
+ * fit and the flat extension exist to price honestly. No second condition on the
+ * shape: the fit already refuses to let a thin band speak louder than its evidence
+ * (PAVA pools it into its neighbour), and a second threshold would be a number
+ * nobody could measure the effect of. An empty return means "this family has not
+ * earned a vote", and the blend leaves the ladder exactly where it found it.
+ *
+ * NO SHRINKAGE PARENT, deliberately: the family is not a rung of the ladder and has
+ * nothing broader of its own to shrink toward, and the 0.3 mix weight is already
+ * the statement of how much a family may say. The running max is therefore the
+ * identity on PAVA's own output today — it stays because it is the invariant the
+ * read depends on, it costs one comparison per band, and the ladder learned the
+ * hard way (curveFor's own note) that a step between the fit and the read is
+ * exactly where monotonicity is lost. */
+export function setupCurveFor(state: CalibrationState, setup: string, side: 'long' | 'short'): CurvePoint[] {
+  const seen: { band: Band; stat: BucketStat }[] = []
+  for (const band of BANDS) {
+    const raw = state.setupBuckets?.[`${setup}:${side}:${band}`]
+    if (!raw || (raw.shadowN == null && raw.shadowHits == null)) continue // never partitioned → cannot prove sized
+    const stat = sizedSlice(raw)
+    if (stat.n > 0) seen.push({ band, stat })
+  }
+  if (seen.reduce((a, b) => a + b.stat.n, 0) < SETUP_BLEND_MIN_N) return []
+  const fitted = isotonicFit(seen.map(b => ({ band: b.band, p: laplace(b.stat), n: b.stat.n })))
+  let floor = -Infinity
+  return fitted.map(pt => {
+    floor = Math.max(floor, pt.p)
+    return { mid: pt.mid, p: floor, n: pt.n }
+  })
+}
+
 /** Calibrated probability: a CONTINUOUS, monotone read at the call's own
  * |composite|, off the most specific rung that has any evidence at all.
  *
@@ -500,9 +561,9 @@ export function probabilityFor(
    * cohort and regime, tend to do?". The setup buckets answer a question the
    * ladder cannot see: "how does THIS SHAPE of call — a dip bought, a breakout
    * ridden, a hype spike faded — tend to do at this conviction?". Once a family
-   * has watched itself thirty sized times in the call's own band, it has earned a
-   * minority say in the price. A specialist model earns its existence from logged
-   * evidence, exactly like a new factor.
+   * has watched itself thirty sized times, it has earned a minority say in the
+   * price — read at the call's own conviction off its own curve. A specialist
+   * model earns its existence from logged evidence, exactly like a new factor.
    *
    * IT ADJUSTS PRICE, NOT EVIDENCE MASS. `nEff`, `provisional` and
    * `belowEvidence` are returned as the LADDER computed them and are never
@@ -521,7 +582,8 @@ export function probabilityFor(
    * 'sized', because blending shadow-diluted family evidence into a sized grade
    * would re-import precisely the dilution the partition exists to remove.
    *
-   * AN UNPARTITIONED FAMILY BUCKET REFUSES [adjudicated, stage 3c]. Evidence that
+   * AN UNPARTITIONED FAMILY BUCKET REFUSES [adjudicated, stage 3c] — per band, and
+   * since the curve that means it contributes no point at all. Evidence that
    * cannot PROVE it is sized adds no influence: absent sub-counts mean the bucket
    * was never partitioned, its rows might be anything, and reading them as sized
    * would re-import into the one read the reader's money follows exactly the
@@ -538,15 +600,36 @@ export function probabilityFor(
    * `continuation:long:40-55` at 1,668 fully-sized rows. `updateCalibration` now
    * stamps the explicit zero (see `BucketStat`), which makes the two cases
    * distinguishable at the bucket — where the ambiguity actually lived — without
-   * granting a legacy bucket anything. The test below the refusal is unchanged and
-   * still refuses absence; what changed is that honest evidence can now say so. */
+   * granting a legacy bucket anything. The refusal is unchanged and still refuses
+   * absence; what changed is that honest evidence can now say so.
+   *
+   * AND THE FAMILY ANSWERS WITH A CURVE, NOT A STEP [fix wave 2, ratified]. See
+   * `setupCurveFor` above for the mechanism and the finding that forced it. Here the
+   * only change is the shape of `p_setup`: it is read at the call's own
+   * |composite| off the family's isotonic fit, by the same `readCurve` the ladder
+   * uses, so `bandFor` no longer appears in this function at all — a call's band
+   * picks a POINT on the family's curve, never which bucket the family is. The mix,
+   * the sized-only rule, the partition refusal and the evidence semantics below are
+   * exactly as they were.
+   *
+   * MEMOISED PER FAMILY, PER INVOCATION — the ladder's own memo pattern, and the
+   * same reason: a curve is built from the whole blob and nothing in it depends on
+   * `absComposite`. The map is function-scoped, so it cannot leak across populations
+   * or across states; and within one invocation `population` and `setup` are fixed,
+   * which is what makes a key of `${setup}:${side}` complete. An empty curve is
+   * memoised too (the memo is on the slot, not on the contents), so a family that
+   * has not earned a vote is not rebuilt on every call that mentions it. */
+  const familyCurves = new Map<string, CurvePoint[]>()
   const blendSetup = (pLadder: number): number => {
     if (population !== 'sized' || !setup) return pLadder
-    const raw = state.setupBuckets?.[`${setup}:${side}:${bandFor(absComposite)}`]
-    if (!raw || (raw.shadowN == null && raw.shadowHits == null)) return pLadder // never partitioned → cannot prove sized
-    const sized = sizedSlice(raw)
-    if (sized.n < SETUP_BLEND_MIN_N) return pLadder
-    return (1 - SETUP_BLEND_W) * pLadder + SETUP_BLEND_W * laplace(sized)
+    const key = `${setup}:${side}`
+    let curve = familyCurves.get(key)
+    if (!curve) {
+      curve = setupCurveFor(state, setup, side)
+      familyCurves.set(key, curve)
+    }
+    if (!curve.length) return pLadder // never partitioned, no sized evidence, or under the family floor
+    return (1 - SETUP_BLEND_W) * pLadder + SETUP_BLEND_W * readCurve(curve, absComposite).p
   }
 
   const rungs: { cohort: CapCohort | 'any'; regime: string | null }[] =

@@ -583,9 +583,10 @@ describe('probeGrid / contextsIn', () => {
   // THE GATE MUST LOOK AT WHAT SHIPS [stage 3c task 4, binding from the Task-2
   // review]. Since the partition and the blend, one (side, regime, cohort) is no
   // longer one curve: a sized read and a pooled read are different curves over the
-  // same buckets, and a blended family read is a THIRD — and the blend is a band
-  // step, so it is the one most able to break monotonicity. A probe that swept only
-  // the pooled, unblended ladder would assert D2 on a curve no reader is ever shown.
+  // same buckets, and a blended family read is a THIRD — and it is the one that
+  // actually broke, on 11 of these very reads, while the blend was a band step. A
+  // probe that swept only the pooled, unblended ladder would assert D2 on a curve
+  // no reader is ever shown.
   it('expands each context over BOTH populations and every setup family the state carries', () => {
     const s = seedLikeState()
     s.setupBuckets = {
@@ -655,49 +656,78 @@ describe('monotonicityViolations — the D2 guarantee, and the probe that could 
     // over an argument the read path ignored
     expect(read(ctx, 47.5)).not.toBe(probabilityFor(s, 'long', 'green', 47.5, 'unknown', 'sized').p)
   })
-  it('a blend that breaks the band step IS caught — the sized/blended curve is probed, not just the ladder', () => {
-    // An earned family whose record sits far ABOVE the ladder in one band and is
-    // absent in the next pulls that band up and lets the curve fall back down at the
-    // boundary. This is the failure mode the binding exists for: the pooled ladder
-    // stays monotone throughout, and only the shipped read shows the step.
+  // THE FIXTURE THAT USED TO BREAK IT [fix wave 2 — this pin recorded the opposite].
+  // An earned family whose record sits far ABOVE the ladder in one band and is
+  // absent in the next used to pull that band up and let the shipped curve fall back
+  // down at the boundary: the pooled ladder stayed monotone throughout and only the
+  // blended read showed the step. The family read is a CURVE now — one fit over the
+  // family's sized bands, flat above the top populated one — so the lift it applies
+  // above 47.5 is the same lift it applied at 47.5, and there is nothing to fall off.
+  it('the fixture that used to break the band step is monotone — the family read is a curve', () => {
     const s = thinTopState()
     s.setupBuckets = { 'continuation:long:40-55': { n: 200, hits: 198, shadowN: 0, shadowHits: 0 } }
     const bare = contextsIn(s).filter(c => c.setup == null)
     expect(monotonicityViolations(bare, probeGrid(), shippedRead(s))).toEqual([])
-    const blended = monotonicityViolations(contextsIn(s), probeGrid(), shippedRead(s))
-    expect(blended.length).toBeGreaterThan(0)
-    expect(blended.every(v => v.context.includes('continuation'))).toBe(true)
+    expect(monotonicityViolations(contextsIn(s), probeGrid(), shippedRead(s))).toEqual([])
+    // …and the blend is still doing something to this state, or the line above
+    // would be asserting D2 on a read that ignored the family it was handed
+    const ctx: ProbeContext = { side: 'long', regime: 'green', cohort: 'unknown', population: 'sized', setup: 'continuation' }
+    expect(shippedRead(s)(ctx, 62.5)).not.toBe(shippedRead(s)({ ...ctx, setup: null }, 62.5))
   })
 
-  // …AND ON THE COMMITTED SEED IT IS NO LONGER HYPOTHETICAL [fix wave F-1].
+  // A DESCENDING FAMILY IS THE DIRECT PIN [fix wave 2]. The step's failure mode was
+  // not "a family that is absent above" but "a family that prices its next band
+  // WORSE": at the boundary the blend swapped to a lower bucket while the ladder
+  // under it kept rising. Planted here at 5× the worst real gap (the seed's own
+  // `continuation:long` falls 8.3pp at 55-70), because a repair that only survives
+  // the committed file is a repair fitted to one artefact.
+  it('a family whose 40-55 reads WORSE than its 25-40 stays monotone at every probe x', () => {
+    const s = thinTopState()
+    s.setupBuckets = {
+      'continuation:long:25-40': { n: 300, hits: 240, shadowN: 0, shadowHits: 0 }, // ~0.80
+      'continuation:long:40-55': { n: 300, hits: 60, shadowN: 0, shadowHits: 0 }, // ~0.21 — a 59pp fall
+    }
+    const ctxs = contextsIn(s)
+    expect(ctxs.some(c => c.setup === 'continuation')).toBe(true)
+    expect(monotonicityViolations(ctxs, probeGrid(), shippedRead(s))).toEqual([])
+    // the two bands were POOLED into one block, so the family says the SAME thing at
+    // both midpoints — recovered from the shipped read by undoing the 0.7/0.3 mix,
+    // which also proves the blend is live rather than monotone by being absent
+    const ctx: ProbeContext = { side: 'long', regime: 'green', cohort: 'unknown', population: 'sized', setup: 'continuation' }
+    const read = shippedRead(s)
+    const familyAt = (x: number) => (read(ctx, x) - 0.7 * read({ ...ctx, setup: null }, x)) / 0.3
+    // equal weights on 242/304 and 62/304 pool to exactly one half
+    expect(familyAt(32.5)).toBeCloseTo(0.5, 12)
+    expect(familyAt(47.5)).toBeCloseTo(0.5, 12)
+    expect(read(ctx, 32.5)).not.toBe(read({ ...ctx, setup: null }, 32.5))
+  })
+
+  // …AND ON THE COMMITTED SEED THE GUARANTEE HOLDS AGAIN [fix wave 2 — this pin
+  // recorded 11 violations until the family curve shipped].
   //
-  // Pinned here as a KNOWN, MEASURED property rather than left for the next probe
-  // run to discover. Waking the blend put the engine's two guarantees against each
-  // other on real evidence: the ladder is isotonic by construction, but a family's
-  // read is a STEP — `laplace` of the one bucket for the call's band — so wherever
-  // a family prices its next band worse than its current one, the shipped curve
-  // falls at the boundary while the ladder under it keeps rising.
-  //
-  // It is a DESIGN DECISION, deliberately not taken inside an install: the honest
-  // repairs (fit the family's four bands isotonically and read the blend off a
-  // curve, or refuse a blend that would break the step) both change what every
-  // blended row is priced at, which is a model question with an author. The gate
-  // result and the reader-visible form of it are recorded in the task report.
-  it('THE COMMITTED SEED’S BLENDED READS BREAK D2 AT THE BAND BOUNDARIES — pinned, not accepted', () => {
+  // What it recorded: waking the blend put the engine's two guarantees against each
+  // other on real evidence. The ladder is isotonic by construction, but a family's
+  // read was a STEP — `laplace` of the one bucket for the call's band — so wherever
+  // a family priced its next band worse than its current one, the shipped curve fell
+  // at the boundary (11 of 810 reads, all on a band edge, worst 2.9pp, five published
+  // same-day inversions). The repair is the house's own Stage-2 pattern applied one
+  // level down: PAVA over the family's sized bands, the running-max guard, read
+  // between midpoints. Two monotone curves mixed at fixed weights are monotone.
+  it('THE COMMITTED SEED’S BLENDED READS HOLD D2 — the family curve, not the family step', () => {
     const s = seedJson.calibration as unknown as CalibrationState
     const ctxs = contextsIn(s)
-    // the ladder itself is still clean in BOTH populations — this is the blend's
-    // step and nothing else, which is what makes the finding actionable
+    // the ladder alone was never the problem and still is not — asserted separately
+    // so a future regression can be located on the right side of the mix
     expect(monotonicityViolations(ctxs.filter(c => c.setup == null), probeGrid(), shippedRead(s))).toEqual([])
-    const v = monotonicityViolations(ctxs, probeGrid(), shippedRead(s))
-    expect(v.length).toBe(11)
-    expect(v.every(x => x.context.includes('sized/'))).toBe(true)
-    // every one of them sits on a BAND EDGE (40 / 55 / 70 — `bandFor`), which is
-    // the mechanism stated as an assertion: the family bucket changes under the
-    // read and the new bucket prices worse
-    expect([...new Set(v.map(x => x.x))].sort((a, b) => a - b)).toEqual([40, 56, 70])
-    // …and the damage is bounded — the worst step is under 3pp of probability
-    expect(Math.max(...v.map(x => x.prevP - x.p))).toBeLessThan(0.03)
+    expect(monotonicityViolations(ctxs, probeGrid(), shippedRead(s))).toEqual([])
+    // the sweep is the one the gate runs — 30 contexts, 18 of them blended, 27
+    // samples — so "monotone" here is the same 810 reads the acceptance run reports
+    expect(ctxs.length * probeGrid().length).toBe(810)
+    expect(ctxs.filter(c => c.setup != null).length).toBe(18)
+    // and the blend is awake on this file: the four families that cleared the floor
+    // move the price they are blended into
+    const moved = ctxs.filter(c => c.setup != null).filter(c => shippedRead(s)(c, 47.5) !== shippedRead(s)({ ...c, setup: null }, 47.5))
+    expect(moved.length).toBeGreaterThan(0)
   })
 })
 

@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-08-13T23:18:09.032Z",
+ "generatedAt": "2026-08-13T23:40:00.890Z",
  "symbols": 159,
  "weights": {
   "base": {
@@ -28,16 +28,16 @@
   },
   "ic": {
    "technical": {
-    "nAgree": 7064,
-    "sumAgree": 7071.499999999992,
+    "nAgree": 7033,
+    "sumAgree": 7054.799999999989,
     "nDisagree": 104,
-    "sumDisagree": 80.50000000000007
+    "sumDisagree": 87.5000000000001
    },
    "momentum": {
-    "nAgree": 7092,
-    "sumAgree": 7149.299999999994,
-    "nDisagree": 76,
-    "sumDisagree": 2.6999999999999975
+    "nAgree": 7076,
+    "sumAgree": 7133.499999999994,
+    "nDisagree": 61,
+    "sumDisagree": 8.800000000000006
    },
    "catalyst": {
     "nAgree": 0,
@@ -70,10 +70,10 @@
     "sumDisagree": 0
    },
    "seasonality": {
-    "nAgree": 4681,
-    "sumAgree": 4219.2000000000035,
-    "nDisagree": 2308,
-    "sumDisagree": 2692.3000000000015
+    "nAgree": 4678,
+    "sumAgree": 4122.70000000001,
+    "nDisagree": 2285,
+    "sumDisagree": 2762.100000000001
    },
    "smartMoney": {
     "nAgree": 0,
@@ -82,8 +82,8 @@
     "sumDisagree": 0
    },
    "sector": {
-    "nAgree": 1146,
-    "sumAgree": -682.7999999999997,
+    "nAgree": 1140,
+    "sumAgree": -642.3999999999996,
     "nDisagree": 167,
     "sumDisagree": -96.79999999999995
    }
@@ -100,12 +100,12 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.909,
-      "ic": 0.07
+      "to": 0.901,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.295,
+      "to": 0.294,
       "ic": -0.12
      },
      "sector": {
@@ -126,18 +126,18 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.909,
-      "ic": 0.07
+      "to": 0.901,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.295,
-      "ic": -0.12
+      "to": 0.294,
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
       "to": 0.303,
-      "ic": 0.06
+      "ic": 0.07
      }
     },
     "evidence": "18 predictions graded since last nudge"
@@ -147,18 +147,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.981,
+      "to": 0.982,
       "ic": -0.12
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.294,
-      "ic": -0.12
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
@@ -178,18 +178,18 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.08
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.294,
-      "ic": -0.12
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
-      "to": 0.302,
-      "ic": 0.05
+      "to": 0.303,
+      "ic": 0.06
      }
     },
     "evidence": "32 predictions graded since last nudge"
@@ -204,18 +204,18 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.08
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.294,
-      "ic": -0.12
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
-      "to": 0.302,
-      "ic": 0.05
+      "to": 0.303,
+      "ic": 0.06
      }
     },
     "evidence": "16 predictions graded since last nudge"
@@ -230,13 +230,13 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.08
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.294,
-      "ic": -0.12
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
@@ -251,18 +251,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.98,
+      "to": 0.981,
       "ic": -0.13
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.08
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.294,
-      "ic": -0.12
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
@@ -282,13 +282,13 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.911,
-      "ic": 0.08
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.294,
-      "ic": -0.12
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
@@ -308,13 +308,13 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.911,
-      "ic": 0.08
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.294,
-      "ic": -0.12
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
@@ -334,13 +334,13 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.08
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.294,
-      "ic": -0.12
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
@@ -360,13 +360,13 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.08
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.295,
-      "ic": -0.12
+      "to": 0.294,
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
@@ -374,7 +374,7 @@
       "ic": 0.06
      }
     },
-    "evidence": "26 predictions graded since last nudge"
+    "evidence": "27 predictions graded since last nudge"
    },
    {
     "date": "2026-03-05",
@@ -386,17 +386,17 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.295,
-      "ic": -0.12
+      "to": 0.294,
+      "ic": -0.13
      },
      "sector": {
       "from": 0.3,
-      "to": 0.302,
+      "to": 0.303,
       "ic": 0.06
      }
     },
@@ -412,18 +412,18 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.295,
+      "to": 0.294,
       "ic": -0.12
      },
      "sector": {
       "from": 0.3,
-      "to": 0.302,
-      "ic": 0.05
+      "to": 0.303,
+      "ic": 0.06
      }
     },
     "evidence": "25 predictions graded since last nudge"
@@ -438,18 +438,18 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.11
+      "ic": -0.12
      },
      "sector": {
       "from": 0.3,
-      "to": 0.302,
-      "ic": 0.05
+      "to": 0.303,
+      "ic": 0.06
      }
     },
     "evidence": "19 predictions graded since last nudge"
@@ -464,18 +464,18 @@
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.1
+      "ic": -0.11
      },
      "sector": {
       "from": 0.3,
       "to": 0.302,
-      "ic": 0.05
+      "ic": 0.06
      }
     },
     "evidence": "15 predictions graded since last nudge"
@@ -485,18 +485,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.988,
-      "ic": -0.08
+      "to": 0.983,
+      "ic": -0.11
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.296,
-      "ic": -0.1
+      "to": 0.295,
+      "ic": -0.11
      },
      "sector": {
       "from": 0.3,
@@ -504,25 +504,25 @@
       "ic": 0.05
      }
     },
-    "evidence": "15 predictions graded since last nudge"
+    "evidence": "16 predictions graded since last nudge"
    },
    {
     "date": "2026-03-13",
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.99,
-      "ic": -0.07
+      "to": 0.989,
+      "ic": -0.08
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.296,
-      "ic": -0.09
+      "to": 0.295,
+      "ic": -0.1
      },
      "sector": {
       "from": 0.3,
@@ -537,18 +537,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.99,
-      "ic": -0.07
+      "to": 0.989,
+      "ic": -0.08
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.09
+      "ic": -0.1
      },
      "sector": {
       "from": 0.3,
@@ -563,13 +563,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.909,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
@@ -589,23 +589,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.909,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
-      "to": 0.302,
-      "ic": 0.05
+      "to": 0.303,
+      "ic": 0.06
      }
     },
     "evidence": "28 predictions graded since last nudge"
@@ -615,23 +615,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
       "to": 0.303,
-      "ic": 0.06
+      "ic": 0.07
      }
     },
     "evidence": "16 predictions graded since last nudge"
@@ -641,18 +641,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
@@ -667,18 +667,44 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.01
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
+     },
+     "sector": {
+      "from": 0.3,
+      "to": 0.303,
+      "ic": 0.08
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-30",
+    "changes": {
+     "technical": {
+      "from": 1,
+      "to": 0.994,
+      "ic": -0.04
+     },
+     "momentum": {
+      "from": 0.9,
+      "to": 0.902,
+      "ic": 0.01
+     },
+     "seasonality": {
+      "from": 0.3,
+      "to": 0.296,
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
@@ -689,48 +715,22 @@
     "evidence": "25 predictions graded since last nudge"
    },
    {
-    "date": "2026-03-30",
-    "changes": {
-     "technical": {
-      "from": 1,
-      "to": 0.995,
-      "ic": -0.03
-     },
-     "momentum": {
-      "from": 0.9,
-      "to": 0.909,
-      "ic": 0.07
-     },
-     "seasonality": {
-      "from": 0.3,
-      "to": 0.296,
-      "ic": -0.08
-     },
-     "sector": {
-      "from": 0.3,
-      "to": 0.303,
-      "ic": 0.07
-     }
-    },
-    "evidence": "24 predictions graded since last nudge"
-   },
-   {
     "date": "2026-03-31",
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
@@ -745,23 +745,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
-      "to": 0.302,
-      "ic": 0.05
+      "to": 0.303,
+      "ic": 0.06
      }
     },
     "evidence": "26 predictions graded since last nudge"
@@ -771,23 +771,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
-      "to": 0.302,
-      "ic": 0.05
+      "to": 0.303,
+      "ic": 0.06
      }
     },
     "evidence": "15 predictions graded since last nudge"
@@ -797,18 +797,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.91,
-      "ic": 0.07
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
@@ -823,18 +823,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.912,
-      "ic": 0.09
+      "to": 0.905,
+      "ic": 0.04
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
@@ -849,18 +849,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
-      "ic": -0.03
+      "to": 0.994,
+      "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.912,
-      "ic": 0.09
+      "to": 0.905,
+      "ic": 0.04
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
@@ -875,18 +875,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.995,
+      "to": 0.993,
       "ic": -0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.912,
-      "ic": 0.09
+      "to": 0.905,
+      "ic": 0.04
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
@@ -901,23 +901,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.999,
-      "ic": -0.01
+      "to": 0.997,
+      "ic": -0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.911,
-      "ic": 0.08
+      "to": 0.904,
+      "ic": 0.03
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
-      "to": 0.302,
-      "ic": 0.05
+      "to": 0.303,
+      "ic": 0.06
      }
     },
     "evidence": "28 predictions graded since last nudge"
@@ -927,13 +927,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 0.998,
-      "ic": -0.01
+      "to": 0.997,
+      "ic": -0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.04
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
@@ -943,33 +943,33 @@
      "sector": {
       "from": 0.3,
       "to": 0.302,
-      "ic": 0.04
+      "ic": 0.05
      }
     },
-    "evidence": "25 predictions graded since last nudge"
+    "evidence": "26 predictions graded since last nudge"
    },
    {
     "date": "2026-04-22",
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.002,
-      "ic": 0.01
+      "to": 1.001,
+      "ic": 0
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.04
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.296,
-      "ic": -0.09
+      "to": 0.295,
+      "ic": -0.1
      },
      "sector": {
       "from": 0.3,
       "to": 0.302,
-      "ic": 0.04
+      "ic": 0.05
      }
     },
     "evidence": "32 predictions graded since last nudge"
@@ -979,18 +979,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.004,
-      "ic": 0.03
+      "to": 1.003,
+      "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.04
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.296,
-      "ic": -0.09
+      "to": 0.295,
+      "ic": -0.1
      },
      "sector": {
       "from": 0.3,
@@ -1005,18 +1005,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.001,
-      "ic": 0.01
+      "to": 1,
+      "ic": 0
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.04
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.296,
-      "ic": -0.09
+      "to": 0.295,
+      "ic": -0.1
      },
      "sector": {
       "from": 0.3,
@@ -1031,23 +1031,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.005,
-      "ic": 0.03
+      "to": 1.004,
+      "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.04
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.1
+      "ic": -0.11
      },
      "sector": {
       "from": 0.3,
       "to": 0.302,
-      "ic": 0.04
+      "ic": 0.05
      }
     },
     "evidence": "22 predictions graded since last nudge"
@@ -1057,18 +1057,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.006,
-      "ic": 0.04
+      "to": 1.005,
+      "ic": 0.03
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.905,
-      "ic": 0.04
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.1
+      "ic": -0.11
      },
      "sector": {
       "from": 0.3,
@@ -1083,18 +1083,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.006,
-      "ic": 0.04
+      "to": 1.005,
+      "ic": 0.03
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.905,
-      "ic": 0.04
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.11
+      "ic": -0.12
      },
      "sector": {
       "from": 0.3,
@@ -1109,23 +1109,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.006,
-      "ic": 0.04
+      "to": 1.005,
+      "ic": 0.03
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.04
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.11
+      "ic": -0.12
      },
      "sector": {
       "from": 0.3,
-      "to": 0.301,
-      "ic": 0.03
+      "to": 0.302,
+      "ic": 0.04
      }
     },
     "evidence": "27 predictions graded since last nudge"
@@ -1135,23 +1135,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.006,
-      "ic": 0.04
+      "to": 1.005,
+      "ic": 0.03
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.905,
-      "ic": 0.04
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.11
+      "ic": -0.12
      },
      "sector": {
       "from": 0.3,
       "to": 0.301,
-      "ic": 0.02
+      "ic": 0.03
      }
     },
     "evidence": "16 predictions graded since last nudge"
@@ -1161,23 +1161,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.006,
-      "ic": 0.04
+      "to": 1.005,
+      "ic": 0.03
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.04
+      "to": 0.902,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.11
+      "ic": -0.12
      },
      "sector": {
       "from": 0.3,
       "to": 0.301,
-      "ic": 0.01
+      "ic": 0.02
      }
     },
     "evidence": "18 predictions graded since last nudge"
@@ -1187,18 +1187,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.006,
-      "ic": 0.04
+      "to": 1.005,
+      "ic": 0.03
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.04
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.11
+      "ic": -0.12
      },
      "sector": {
       "from": 0.3,
@@ -1213,23 +1213,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.006,
-      "ic": 0.04
+      "to": 1.005,
+      "ic": 0.03
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.04
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.295,
+      "to": 0.294,
       "ic": -0.12
      },
      "sector": {
       "from": 0.3,
       "to": 0.3,
-      "ic": 0
+      "ic": 0.01
      }
     },
     "evidence": "15 predictions graded since last nudge"
@@ -1239,18 +1239,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.006,
+      "to": 1.005,
       "ic": 0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.906,
-      "ic": 0.05
+      "to": 0.903,
+      "ic": 0.02
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.11
+      "ic": -0.12
      },
      "sector": {
       "from": 0.3,
@@ -1265,13 +1265,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.007,
-      "ic": 0.05
+      "to": 1.006,
+      "ic": 0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.907,
-      "ic": 0.05
+      "to": 0.903,
+      "ic": 0.03
      },
      "seasonality": {
       "from": 0.3,
@@ -1291,18 +1291,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.007,
-      "ic": 0.05
+      "to": 1.006,
+      "ic": 0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.914,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.1
+      "ic": -0.11
      },
      "sector": {
       "from": 0.3,
@@ -1317,18 +1317,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.007,
-      "ic": 0.05
+      "to": 1.006,
+      "ic": 0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.914,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.295,
-      "ic": -0.1
+      "ic": -0.11
      },
      "sector": {
       "from": 0.3,
@@ -1343,18 +1343,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
-      "ic": 0.05
+      "to": 1.007,
+      "ic": 0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.914,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.296,
-      "ic": -0.1
+      "to": 0.295,
+      "ic": -0.11
      },
      "sector": {
       "from": 0.3,
@@ -1369,23 +1369,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.914,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.296,
+      "to": 0.295,
       "ic": -0.1
      },
      "sector": {
       "from": 0.3,
       "to": 0.298,
-      "ic": -0.04
+      "ic": -0.03
      }
     },
     "evidence": "30 predictions graded since last nudge"
@@ -1395,23 +1395,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.914,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.296,
-      "ic": -0.1
+      "to": 0.295,
+      "ic": -0.11
      },
      "sector": {
       "from": 0.3,
       "to": 0.298,
-      "ic": -0.04
+      "ic": -0.03
      }
     },
     "evidence": "29 predictions graded since last nudge"
@@ -1421,18 +1421,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.914,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.296,
-      "ic": -0.09
+      "to": 0.295,
+      "ic": -0.1
      },
      "sector": {
       "from": 0.3,
@@ -1447,13 +1447,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.009,
-      "ic": 0.06
+      "to": 1.008,
+      "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
@@ -1473,18 +1473,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.009,
-      "ic": 0.06
+      "to": 1.008,
+      "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.296,
-      "ic": -0.08
+      "ic": -0.09
      },
      "sector": {
       "from": 0.3,
@@ -1499,18 +1499,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.009,
-      "ic": 0.06
+      "to": 1.008,
+      "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.297,
-      "ic": -0.07
+      "ic": -0.08
      },
      "sector": {
       "from": 0.3,
@@ -1525,23 +1525,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.009,
-      "ic": 0.06
+      "to": 1.008,
+      "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.297,
-      "ic": -0.06
+      "ic": -0.07
      },
      "sector": {
       "from": 0.3,
       "to": 0.298,
-      "ic": -0.04
+      "ic": -0.03
      }
     },
     "evidence": "18 predictions graded since last nudge"
@@ -1551,18 +1551,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.01,
+      "to": 1.009,
       "ic": 0.06
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.298,
-      "ic": -0.05
+      "to": 0.297,
+      "ic": -0.06
      },
      "sector": {
       "from": 0.3,
@@ -1577,13 +1577,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.01,
-      "ic": 0.07
+      "to": 1.009,
+      "ic": 0.06
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
-      "ic": 0.13
+      "to": 0.916,
+      "ic": 0.12
      },
      "seasonality": {
       "from": 0.3,
@@ -1592,7 +1592,7 @@
      },
      "sector": {
       "from": 0.3,
-      "to": 0.298,
+      "to": 0.299,
       "ic": -0.03
      }
     },
@@ -1603,22 +1603,22 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.011,
-      "ic": 0.07
+      "to": 1.01,
+      "ic": 0.06
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.918,
-      "ic": 0.13
+      "to": 0.916,
+      "ic": 0.12
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
-      "to": 0.298,
+      "to": 0.299,
       "ic": -0.03
      }
     },
@@ -1629,18 +1629,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.009,
-      "ic": 0.06
+      "to": 1.008,
+      "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.918,
-      "ic": 0.13
+      "to": 0.917,
+      "ic": 0.12
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -1655,22 +1655,22 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.009,
-      "ic": 0.06
+      "to": 1.008,
+      "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
-      "ic": 0.13
+      "to": 0.916,
+      "ic": 0.12
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.298,
-      "ic": -0.03
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
-      "to": 0.298,
+      "to": 0.299,
       "ic": -0.03
      }
     },
@@ -1681,22 +1681,22 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.009,
-      "ic": 0.06
+      "to": 1.008,
+      "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
-      "ic": 0.13
+      "to": 0.916,
+      "ic": 0.12
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.298,
-      "ic": -0.03
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
-      "to": 0.298,
+      "to": 0.299,
       "ic": -0.03
      }
     },
@@ -1707,13 +1707,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.009,
-      "ic": 0.06
+      "to": 1.008,
+      "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
-      "ic": 0.13
+      "to": 0.916,
+      "ic": 0.12
      },
      "seasonality": {
       "from": 0.3,
@@ -1722,7 +1722,7 @@
      },
      "sector": {
       "from": 0.3,
-      "to": 0.298,
+      "to": 0.299,
       "ic": -0.03
      }
     },
@@ -1733,18 +1733,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
-      "ic": 0.06
+      "to": 1.007,
+      "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
-      "ic": 0.13
+      "to": 0.916,
+      "ic": 0.12
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -1759,18 +1759,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
+      "to": 0.916,
       "ic": 0.12
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -1785,18 +1785,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
+      "to": 0.916,
       "ic": 0.12
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -1811,18 +1811,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -1837,39 +1837,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
-      "ic": 0.05
+      "to": 1.007,
+      "ic": 0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
-     },
-     "seasonality": {
-      "from": 0.3,
-      "to": 0.298,
-      "ic": -0.03
-     },
-     "sector": {
-      "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
-     }
-    },
-    "evidence": "23 predictions graded since last nudge"
-   },
-   {
-    "date": "2026-06-25",
-    "changes": {
-     "technical": {
-      "from": 1,
-      "to": 1.008,
-      "ic": 0.05
-     },
-     "momentum": {
-      "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
@@ -1879,7 +1853,33 @@
      "sector": {
       "from": 0.3,
       "to": 0.299,
-      "ic": -0.03
+      "ic": -0.02
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-25",
+    "changes": {
+     "technical": {
+      "from": 1,
+      "to": 1.007,
+      "ic": 0.05
+     },
+     "momentum": {
+      "from": 0.9,
+      "to": 0.915,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0.3,
+      "to": 0.298,
+      "ic": -0.04
+     },
+     "sector": {
+      "from": 0.3,
+      "to": 0.299,
+      "ic": -0.02
      }
     },
     "evidence": "21 predictions graded since last nudge"
@@ -1889,18 +1889,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.298,
-      "ic": -0.03
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -1908,25 +1908,25 @@
       "ic": -0.02
      }
     },
-    "evidence": "17 predictions graded since last nudge"
+    "evidence": "16 predictions graded since last nudge"
    },
    {
     "date": "2026-06-29",
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -1941,18 +1941,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -1967,18 +1967,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -1986,30 +1986,30 @@
       "ic": -0.02
      }
     },
-    "evidence": "17 predictions graded since last nudge"
+    "evidence": "15 predictions graded since last nudge"
    },
    {
     "date": "2026-07-02",
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.917,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
       "to": 0.299,
-      "ic": -0.02
+      "ic": -0.01
      }
     },
     "evidence": "18 predictions graded since last nudge"
@@ -2019,18 +2019,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -2045,18 +2045,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
+      "to": 1.007,
       "ic": 0.05
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -2071,23 +2071,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
-      "ic": 0.05
+      "to": 1.007,
+      "ic": 0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
       "to": 0.3,
-      "ic": 0
+      "ic": 0.01
      }
     },
     "evidence": "21 predictions graded since last nudge"
@@ -2097,18 +2097,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
-      "ic": 0.05
+      "to": 1.007,
+      "ic": 0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -2123,22 +2123,22 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.008,
-      "ic": 0.05
+      "to": 1.007,
+      "ic": 0.04
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
-      "to": 0.3,
+      "to": 0.301,
       "ic": 0.01
      }
     },
@@ -2149,23 +2149,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.004,
-      "ic": 0.03
+      "to": 1.003,
+      "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.298,
-      "ic": -0.03
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
       "to": 0.3,
-      "ic": 0
+      "ic": 0.01
      }
     },
     "evidence": "17 predictions graded since last nudge"
@@ -2175,18 +2175,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.004,
-      "ic": 0.03
+      "to": 1.003,
+      "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.298,
-      "ic": -0.03
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -2201,23 +2201,23 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.004,
-      "ic": 0.03
+      "to": 1.003,
+      "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
-      "ic": 0.12
+      "to": 0.915,
+      "ic": 0.11
      },
      "seasonality": {
       "from": 0.3,
       "to": 0.298,
-      "ic": -0.03
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
       "to": 0.3,
-      "ic": 0
+      "ic": 0.01
      }
     },
     "evidence": "19 predictions graded since last nudge"
@@ -2227,13 +2227,117 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.004,
+      "to": 1.003,
       "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.916,
+      "to": 0.914,
       "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0.3,
+      "to": 0.298,
+      "ic": -0.04
+     },
+     "sector": {
+      "from": 0.3,
+      "to": 0.3,
+      "ic": 0.01
+     }
+    },
+    "evidence": "19 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-20",
+    "changes": {
+     "technical": {
+      "from": 1,
+      "to": 1.003,
+      "ic": 0.02
+     },
+     "momentum": {
+      "from": 0.9,
+      "to": 0.914,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0.3,
+      "to": 0.298,
+      "ic": -0.04
+     },
+     "sector": {
+      "from": 0.3,
+      "to": 0.3,
+      "ic": 0.01
+     }
+    },
+    "evidence": "21 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-21",
+    "changes": {
+     "technical": {
+      "from": 1,
+      "to": 1.002,
+      "ic": 0.02
+     },
+     "momentum": {
+      "from": 0.9,
+      "to": 0.914,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0.3,
+      "to": 0.298,
+      "ic": -0.04
+     },
+     "sector": {
+      "from": 0.3,
+      "to": 0.3,
+      "ic": 0
+     }
+    },
+    "evidence": "21 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-22",
+    "changes": {
+     "technical": {
+      "from": 1,
+      "to": 1.002,
+      "ic": 0.02
+     },
+     "momentum": {
+      "from": 0.9,
+      "to": 0.914,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0.3,
+      "to": 0.298,
+      "ic": -0.04
+     },
+     "sector": {
+      "from": 0.3,
+      "to": 0.3,
+      "ic": 0
+     }
+    },
+    "evidence": "18 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-23",
+    "changes": {
+     "technical": {
+      "from": 1,
+      "to": 1.002,
+      "ic": 0.01
+     },
+     "momentum": {
+      "from": 0.9,
+      "to": 0.914,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
@@ -2249,126 +2353,22 @@
     "evidence": "19 predictions graded since last nudge"
    },
    {
-    "date": "2026-07-20",
-    "changes": {
-     "technical": {
-      "from": 1,
-      "to": 1.004,
-      "ic": 0.02
-     },
-     "momentum": {
-      "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
-     },
-     "seasonality": {
-      "from": 0.3,
-      "to": 0.298,
-      "ic": -0.03
-     },
-     "sector": {
-      "from": 0.3,
-      "to": 0.3,
-      "ic": 0
-     }
-    },
-    "evidence": "21 predictions graded since last nudge"
-   },
-   {
-    "date": "2026-07-21",
-    "changes": {
-     "technical": {
-      "from": 1,
-      "to": 1.003,
-      "ic": 0.02
-     },
-     "momentum": {
-      "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
-     },
-     "seasonality": {
-      "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
-     },
-     "sector": {
-      "from": 0.3,
-      "to": 0.3,
-      "ic": 0
-     }
-    },
-    "evidence": "21 predictions graded since last nudge"
-   },
-   {
-    "date": "2026-07-22",
-    "changes": {
-     "technical": {
-      "from": 1,
-      "to": 1.003,
-      "ic": 0.02
-     },
-     "momentum": {
-      "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
-     },
-     "seasonality": {
-      "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
-     },
-     "sector": {
-      "from": 0.3,
-      "to": 0.3,
-      "ic": 0
-     }
-    },
-    "evidence": "18 predictions graded since last nudge"
-   },
-   {
-    "date": "2026-07-23",
-    "changes": {
-     "technical": {
-      "from": 1,
-      "to": 1.003,
-      "ic": 0.02
-     },
-     "momentum": {
-      "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
-     },
-     "seasonality": {
-      "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
-     },
-     "sector": {
-      "from": 0.3,
-      "to": 0.3,
-      "ic": 0
-     }
-    },
-    "evidence": "19 predictions graded since last nudge"
-   },
-   {
     "date": "2026-07-24",
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
-      "ic": 0.02
+      "to": 1.002,
+      "ic": 0.01
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.914,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -2383,13 +2383,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
-      "ic": 0.02
+      "to": 1.002,
+      "ic": 0.01
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.914,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
@@ -2409,13 +2409,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
-      "ic": 0.02
+      "to": 1.002,
+      "ic": 0.01
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
@@ -2435,13 +2435,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
-      "ic": 0.02
+      "to": 1.002,
+      "ic": 0.01
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
@@ -2461,13 +2461,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
-      "ic": 0.02
+      "to": 1.002,
+      "ic": 0.01
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
@@ -2487,13 +2487,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
-      "ic": 0.02
+      "to": 1.002,
+      "ic": 0.01
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.914,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
@@ -2513,13 +2513,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.004,
+      "to": 1.003,
       "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.914,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
@@ -2539,13 +2539,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
+      "to": 1.002,
       "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.914,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
@@ -2565,18 +2565,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
+      "to": 1.002,
       "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -2591,18 +2591,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
+      "to": 1.002,
       "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.915,
-      "ic": 0.11
+      "to": 0.913,
+      "ic": 0.1
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -2617,18 +2617,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.004,
+      "to": 1.003,
       "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.913,
-      "ic": 0.1
+      "to": 0.912,
+      "ic": 0.09
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -2643,18 +2643,18 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
+      "to": 1.002,
       "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.913,
-      "ic": 0.1
+      "to": 0.912,
+      "ic": 0.09
      },
      "seasonality": {
       "from": 0.3,
-      "to": 0.299,
-      "ic": -0.03
+      "to": 0.298,
+      "ic": -0.04
      },
      "sector": {
       "from": 0.3,
@@ -2669,13 +2669,13 @@
     "changes": {
      "technical": {
       "from": 1,
-      "to": 1.003,
+      "to": 1.002,
       "ic": 0.02
      },
      "momentum": {
       "from": 0.9,
-      "to": 0.913,
-      "ic": 0.1
+      "to": 0.912,
+      "ic": 0.09
      },
      "seasonality": {
       "from": 0.3,
@@ -2696,7 +2696,7 @@
  "calibration": {
   "buckets": {
    "short:red:55-70": {
-    "n": 153,
+    "n": 154,
     "hits": 48,
     "shadowN": 50,
     "shadowHits": 17
@@ -2708,44 +2708,44 @@
     "shadowHits": 1
    },
    "long:red:40-55": {
-    "n": 193,
-    "hits": 87,
+    "n": 196,
+    "hits": 90,
     "shadowN": 15,
     "shadowHits": 2
    },
    "short:red:40-55": {
-    "n": 299,
-    "hits": 86,
+    "n": 302,
+    "hits": 87,
     "shadowN": 94,
     "shadowHits": 21
    },
    "short:red:25-40": {
     "n": 514,
-    "hits": 183,
-    "shadowN": 235,
+    "hits": 184,
+    "shadowN": 234,
     "shadowHits": 80
    },
    "long:red:25-40": {
-    "n": 441,
-    "hits": 152,
+    "n": 444,
+    "hits": 153,
     "shadowN": 79,
     "shadowHits": 26
    },
    "short:amber:40-55": {
-    "n": 344,
-    "hits": 167,
+    "n": 345,
+    "hits": 169,
     "shadowN": 65,
     "shadowHits": 30
    },
    "short:amber:25-40": {
-    "n": 1071,
-    "hits": 422,
-    "shadowN": 404,
+    "n": 1066,
+    "hits": 423,
+    "shadowN": 405,
     "shadowHits": 155
    },
    "long:amber:25-40": {
-    "n": 969,
-    "hits": 430,
+    "n": 949,
+    "hits": 415,
     "shadowN": 127,
     "shadowHits": 63
    },
@@ -2756,7 +2756,7 @@
     "shadowHits": 6
    },
    "long:green:40-55": {
-    "n": 1821,
+    "n": 1823,
     "hits": 784,
     "shadowN": 66,
     "shadowHits": 31
@@ -2768,13 +2768,13 @@
     "shadowHits": 228
    },
    "long:green:25-40": {
-    "n": 732,
-    "hits": 296,
+    "n": 715,
+    "hits": 290,
     "shadowN": 250,
     "shadowHits": 84
    },
    "long:green:55-70": {
-    "n": 120,
+    "n": 121,
     "hits": 52,
     "shadowN": 36,
     "shadowHits": 21
@@ -2812,7 +2812,7 @@
   },
   "setupBuckets": {
    "continuation:short:55-70": {
-    "n": 155,
+    "n": 156,
     "hits": 50,
     "shadowN": 50,
     "shadowHits": 17
@@ -2824,32 +2824,32 @@
     "shadowHits": 0
    },
    "reversal:long:40-55": {
-    "n": 624,
-    "hits": 268,
+    "n": 627,
+    "hits": 271,
     "shadowN": 0,
     "shadowHits": 0
    },
    "continuation:short:40-55": {
-    "n": 660,
-    "hits": 261,
+    "n": 664,
+    "hits": 264,
     "shadowN": 171,
     "shadowHits": 57
    },
    "continuation:short:25-40": {
-    "n": 2822,
-    "hits": 1206,
+    "n": 2817,
+    "hits": 1208,
     "shadowN": 1110,
     "shadowHits": 442
    },
    "reversal:long:25-40": {
-    "n": 520,
-    "hits": 217,
+    "n": 500,
+    "hits": 206,
     "shadowN": 0,
     "shadowHits": 0
    },
    "continuation:long:25-40": {
-    "n": 1164,
-    "hits": 487,
+    "n": 1150,
+    "hits": 478,
     "shadowN": 0,
     "shadowHits": 0
    },
@@ -2878,13 +2878,13 @@
     "shadowHits": 21
    },
    "continuation:long:40-55": {
-    "n": 1661,
+    "n": 1663,
     "hits": 712,
     "shadowN": 0,
     "shadowHits": 0
    },
    "continuation:long:55-70": {
-    "n": 51,
+    "n": 52,
     "hits": 17,
     "shadowN": 0,
     "shadowHits": 0
@@ -2915,16 +2915,16 @@
   "seedGeneration": 4,
   "evidence": {
    "seed": {
-    "n": 6475,
-    "hits": 2770
+    "n": 6461,
+    "hits": 2764
    },
    "live": {
     "n": 0,
     "hits": 0
    },
    "shadow": {
-    "n": 2079,
-    "hits": 819
+    "n": 2065,
+    "hits": 813
    }
   },
   "referenceBase": 0.4158

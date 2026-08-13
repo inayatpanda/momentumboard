@@ -1046,13 +1046,13 @@ describe('the provenance partition — sized rows grade against sized history', 
         expect(b.shadowHits ?? 0, k).toBeLessThanOrEqual(b.hits)
         expect(b.shadowHits ?? 0, k).toBeLessThanOrEqual(b.shadowN ?? 0)
       }
-      // the seed's own aggregate: 1,982 of 8,554 graded rows were pre-grade
+      // the seed's own aggregate: 1,982 of 8,526 graded rows were pre-grade
       // shadows (lane stand-down, earnings print, unroutable short), so a sized
-      // read is drawn from 6,572 — and reads a different base for it
+      // read is drawn from 6,544 — and reads a different base for it
       const pooled = baseHitRate(committed)
       const sized = baseHitRate(committed, 'sized')
-      expect(pooled.n).toBe(8554)
-      expect(sized.n).toBe(6572)
+      expect(pooled.n).toBe(8526)
+      expect(sized.n).toBe(6544)
       expect(sized.rate).not.toBe(pooled.rate)
       // …and the difference reaches the curve, not just the base
       const moved = PROBE_X.filter(x => probabilityFor(committed, 'long', 'green', x, 'unknown', 'sized').p !== probabilityFor(committed, 'long', 'green', x, 'unknown').p)
@@ -1399,10 +1399,20 @@ describe('the provenance partition — sized rows grade against sized history', 
   })
 })
 
-/** THE SETUP BLEND [stage 3c task 2, spec §4.3(c)]. `p = 0.7·p_ladder +
- * 0.3·p_setup`, and every condition on it is a pin below: sized evidence only,
- * n ≥ 30 only, the row's OWN family only, a sized read only. */
-describe('the setup blend — a family that earned a voice gets 0.3 of one', () => {
+/** THE SETUP BLEND [stage 3c task 2, spec §4.3(c); RE-RATIFIED after the task-4
+ * fix wave]. `p = 0.7·p_ladder + 0.3·p_setup`, and every condition on it is a pin
+ * below: sized evidence only, a family total of n ≥ 30 only, the row's OWN family
+ * only, a sized read only.
+ *
+ * WHAT THE FIX WAVE CHANGED. `p_setup` was `laplace` of the ONE bucket for the
+ * call's band — a step function of `bandFor(|composite|)` — and the step broke D2
+ * on 11 of 810 shipped reads (five published same-day inversions, worst 2.9pp).
+ * It is now the family's own ISOTONIC CURVE: PAVA over its sized band records, the
+ * running-max guard, read at |composite| between band midpoints, all of it the
+ * same machinery the main ladder is built from. Two monotone curves mixed at
+ * fixed weights are monotone, so the guarantee is structural again rather than
+ * lucky. The mix, the refusals and the evidence semantics are untouched. */
+describe('the setup blend — a family that earned a voice gets 0.3 of one, off its own CURVE', () => {
   /** One main bucket, so the rung's parent is that same bucket and the shrinkage
    * is the identity: the ladder read IS laplace(bucket), which keeps every
    * assertion below about the BLEND rather than about the hierarchy. */
@@ -1419,6 +1429,9 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one', () 
     probabilityFor(cal, 'long', 'green', x, 'unknown', population, setup)
 
   it('fires at sized n ≥ 30, and moves p by EXACTLY 0.3·(p_setup − p_ladder)', () => {
+    // one populated band ⇒ a one-point curve ⇒ flat everywhere (readCurve's own
+    // rule off both ends), so p_setup here IS that band's laplace and the mix is
+    // the arithmetic the spec states verbatim
     const cal = withSetups({ 'continuation:long:55-70': EARNED })
     const ladder = read(cal)
     const blended = read(cal, 'continuation')
@@ -1440,6 +1453,26 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one', () 
     expect(read(at30, 'continuation').p).not.toBeCloseTo(read(at30).p, 6)
   })
 
+  // …AND THE THIRTY ARE THE FAMILY'S, ACROSS ITS SIZED BANDS [fix wave 2, adjudicated].
+  // The floor is an admission test for a SPECIALIST MODEL — "has this shape of call
+  // watched itself enough to have a view?" — and the model is now one curve over the
+  // family, not four independent band steps. Applying a per-band floor to a curve
+  // would be the step's rule surviving the step: it would drop the thin top of a
+  // family whose neighbour carries hundreds of outcomes, and it is exactly the thin
+  // top that PAVA and the flat extension exist to price honestly. Deliberately no
+  // second condition on the shape (no "and one band ≥ 15"): the fit already refuses
+  // to let a thin band speak louder than its evidence, and a second threshold would
+  // be a number nobody could measure the effect of.
+  it('the thirty is the FAMILY’s sized total across its bands, not one band’s', () => {
+    // two bands of twenty — neither would have cleared the old per-band floor, and
+    // together they are forty sized outcomes of one shape
+    const twenty = withSetups({ 'continuation:long:25-40': [20, 12, 0, 0], 'continuation:long:40-55': [20, 12, 0, 0] })
+    expect(read(twenty, 'continuation', 32.5).p).not.toBeCloseTo(read(twenty, undefined, 32.5).p, 6)
+    // …and twenty-nine spread over two bands is still under it
+    const under = withSetups({ 'continuation:long:25-40': [15, 9, 0, 0], 'continuation:long:40-55': [14, 8, 0, 0] })
+    expect(read(under, 'continuation', 32.5)).toEqual(read(under, undefined, 32.5))
+  })
+
   it('a shadow-diluted family stays mute: 40 booked with only 15 sized is 15, not 40', () => {
     const cal = withSetups({ 'continuation:long:55-70': [40, 25, 25, 15] })
     expect(read(cal, 'continuation').p).toBeCloseTo(read(cal).p, 12)
@@ -1457,9 +1490,72 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one', () 
     expect(read(cal, 'reversal').p).toBeCloseTo(read(cal).p, 12)
   })
 
-  it('the setup key is the CALL’s band: the same family reads a different bucket at a different conviction', () => {
+  // ---------------------------------------------------------------------------
+  // THE FAMILY READ IS A CURVE [fix wave 2 — these four pins are the repair].
+  // Same x-axis as the ladder (band midpoints), same fit (isotonicFit), same guard
+  // (the running max), same read (piecewise-linear between midpoints, flat off both
+  // ends). What the family says about the call is therefore a continuous function of
+  // the call's conviction, and the mix of two monotone functions is monotone.
+  // ---------------------------------------------------------------------------
+  it('reads its own conviction off the curve — the call’s band picks the POINT, not the bucket', () => {
     const cal = withSetups({ 'continuation:long:25-40': EARNED, 'continuation:long:55-70': [4000, 4000, 1000, 1000] }, { 'long:green:25-40': [100, 40], 'long:green:55-70': [100, 40] })
+    // at a midpoint, the read IS that band's fitted value (nothing to interpolate)
     expect(read(cal, 'continuation', 32.5).p).toBeCloseTo(0.7 * read(cal, undefined, 32.5).p + 0.3 * P_SETUP, 12)
+    const top = 3002 / 3004 // the 55-70 band's sized laplace: {n: 3000, hits: 3000}
+    expect(read(cal, 'continuation', 62.5).p).toBeCloseTo(0.7 * read(cal, undefined, 62.5).p + 0.3 * top, 12)
+    // …and BETWEEN the two midpoints it interpolates, where the step used to jump
+    // the whole distance at x = 40 and again at nothing in between
+    const mid = P_SETUP + ((47.5 - 32.5) / (62.5 - 32.5)) * (top - P_SETUP)
+    expect(read(cal, 'continuation', 47.5).p).toBeCloseTo(0.7 * read(cal, undefined, 47.5).p + 0.3 * mid, 12)
+  })
+
+  it('THE FIX: a band that reads WORSE than the one below it is POOLED by PAVA, never a step down', () => {
+    // The fix wave's finding, reduced to one family. `continuation` is fat and
+    // winning at 25-40 and worse at 40-55; the old blend swapped buckets at x = 40
+    // under a ladder that kept rising, and the shipped read fell off a cliff there.
+    const cal = withSetups(
+      { 'continuation:long:25-40': [200, 100, 0, 0], 'continuation:long:40-55': [100, 20, 0, 0] },
+      { 'long:green:25-40': [100, 40], 'long:green:40-55': [120, 55] },
+    )
+    const lo = 102 / 204, hi = 22 / 104
+    expect(hi).toBeLessThan(lo) // the inversion is real in the evidence, not manufactured by the fit
+    // weighted by the ORIGINAL n, exactly as isotonicFit pools any other violator
+    const pooled = (lo * 200 + hi * 100) / 300
+    for (const x of [32.5, 47.5]) expect(read(cal, 'continuation', x).p).toBeCloseTo(0.7 * read(cal, undefined, x).p + 0.3 * pooled, 12)
+    // …and the shipped read is monotone across every probe the gate sweeps, band
+    // edges included — the property the step could not hold
+    let prev = -Infinity
+    for (let x = 26; x <= 78; x += 2) {
+      const p = read(cal, 'continuation', x).p
+      expect(p, `x=${x}`).toBeGreaterThanOrEqual(prev - 1e-12)
+      prev = p
+    }
+    // and the blend is not inert here — a monotone read that ignored the family
+    // would pass the sweep for the wrong reason
+    expect(read(cal, 'continuation', 32.5).p).not.toBeCloseTo(read(cal, undefined, 32.5).p, 6)
+  })
+
+  it('above the family’s top band it inherits that band — the ladder’s own flat extension', () => {
+    // A DELIBERATE WIDENING [fix wave 2]. Under the step, a call in a band the
+    // family had never booked read the pure ladder; under a curve it reads the
+    // best-evidenced band below it, which is what §4.2's floor already says about
+    // the main curve and what `readCurve` does for every rung. The family is not
+    // extrapolated — the read is flat, never projected upward.
+    const cal = withSetups({ 'continuation:long:25-40': EARNED })
+    for (const x of [62.5, 77.5, 90]) expect(read(cal, 'continuation', x).p).toBeCloseTo(0.7 * read(cal, undefined, x).p + 0.3 * P_SETUP, 12)
+  })
+
+  it('an UNPARTITIONED band contributes no point — it is dropped, and the rest of the family still speaks', () => {
+    // The refusal is per band and it is the same rule the ladder applies to a bucket
+    // with no evidence in this population: evidence that cannot prove it is sized is
+    // not read AS sized, and it is not read at all. A fat legacy band therefore
+    // cannot drag the curve, and cannot silence the bands that CAN prove themselves.
+    const cal = withSetups({ 'continuation:long:25-40': [4000, 3600], 'continuation:long:55-70': EARNED })
+    expect(read(cal, 'continuation', 32.5).p).toBeCloseTo(0.7 * read(cal, undefined, 32.5).p + 0.3 * P_SETUP, 12)
+    expect(read(cal, 'continuation', 62.5).p).toBeCloseTo(0.7 * read(cal, undefined, 62.5).p + 0.3 * P_SETUP, 12)
+    // …and the dropped band does not count toward the family's thirty either
+    const thin = withSetups({ 'continuation:long:25-40': [4000, 3600], 'continuation:long:55-70': [29, 20, 0, 0] })
+    expect(read(thin, 'continuation', 62.5)).toEqual(read(thin, undefined, 62.5))
   })
 
   // THE OTHER HALF OF THE ADJUDICATION [fix wave, ratified]. Absent sub-counts
@@ -1519,29 +1615,37 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one', () 
   // ---------------------------------------------------------------------------
   it('the COMMITTED generation-4 families blend where they earned it, and stay mute where they did not', () => {
     const committed = seedJson.calibration as unknown as CalibrationState
-    const families = Object.entries(committed.setupBuckets ?? {})
-    expect(families.length).toBeGreaterThan(0)
-    const mid = { '25-40': 32.5, '40-55': 47.5, '55-70': 62.5, '70+': 77.5 }
-    const fired: string[] = []
-    for (const [key, b] of families) {
-      const [setup, side, band] = key.split(':') as [string, 'long' | 'short', Band]
-      // EVERY family is partitioned now — walked from a blank store under the
+    const keys = Object.entries(committed.setupBuckets ?? {})
+    expect(keys.length).toBe(16)
+    // THE UNIT IS THE FAMILY (setup × side), not the bucket: sixteen band records
+    // describe six families, and each family is one curve.
+    const sizedByFamily = new Map<string, number>()
+    for (const [key, b] of keys) {
+      const [setup, side] = key.split(':')
+      // EVERY band is partitioned now — walked from a blank store under the
       // partition, so each one says which of its rows were shadows, zero included
       expect(b.shadowN, key).not.toBeUndefined()
-      const sized = b.n - b.shadowN!
-      const blended = probabilityFor(committed, side, 'green', mid[band], 'unknown', 'sized', setup)
-      const ladder = probabilityFor(committed, side, 'green', mid[band], 'unknown', 'sized')
-      if (sized >= 30) fired.push(key)
-      else expect(blended, key).toEqual(ladder) // under the floor: no voice, exactly as before
+      sizedByFamily.set(`${setup}:${side}`, (sizedByFamily.get(`${setup}:${side}`) ?? 0) + (b.n - b.shadowN!))
     }
-    // ten of the sixteen families cleared the thirty-sized-outcome floor. Named as a
-    // count rather than a list so the pin survives a re-walk, with the two extremes
-    // spelled out below.
-    expect(fired.length).toBe(10)
-    // the biggest family in the file — 1,661 rows, not one of them a shadow — is
-    // exactly the case that was mute before the explicit zero, and it now has a say
+    expect([...sizedByFamily.keys()].sort()).toEqual([
+      'continuation:long', 'continuation:short', 'fade:long', 'fade:short', 'reversal:long', 'velocity:long',
+    ])
+    // four of the six clear the thirty-sized-outcome floor; the two that do not are
+    // honest refusals — `velocity:long` is 100% shadow (lane stand-downs, never on
+    // offer) and `fade:long` has two rows in the whole file
+    const fired = [...sizedByFamily].filter(([, n]) => n >= 30).map(([k]) => k).sort()
+    expect(fired).toEqual(['continuation:long', 'continuation:short', 'fade:short', 'reversal:long'])
+    for (const [key, sized] of sizedByFamily) {
+      const [setup, side] = key.split(':') as [string, 'long' | 'short']
+      const moved = [32.5, 47.5, 62.5, 77.5].some(
+        x => probabilityFor(committed, side, 'green', x, 'unknown', 'sized', setup).p !== probabilityFor(committed, side, 'green', x, 'unknown', 'sized').p,
+      )
+      expect(moved, key).toBe(sized >= 30)
+    }
+    // the biggest band record in the file — 1,663 rows, not one of them a shadow —
+    // is exactly the case that was mute before the explicit zero, and it now has a say
     const big = committed.setupBuckets!['continuation:long:40-55']
-    expect(big.n).toBe(1661)
+    expect(big.n).toBe(1663)
     expect(big.shadowN).toBe(0)
     expect(probabilityFor(committed, 'long', 'green', 47.5, 'unknown', 'sized', 'continuation').p).not.toBe(
       probabilityFor(committed, 'long', 'green', 47.5, 'unknown', 'sized').p,
@@ -1553,6 +1657,36 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one', () 
     expect(probabilityFor(committed, 'long', 'green', 32.5, 'unknown', 'sized', 'velocity')).toEqual(
       probabilityFor(committed, 'long', 'green', 32.5, 'unknown', 'sized'),
     )
+  })
+
+  // …AND THE SEED'S OWN WORST FAMILY IS WHERE THE STEP BROKE [fix wave 2].
+  // `continuation:long` reads 0.4159 / 0.4283 / 0.3393 across its three sized bands
+  // — a fall of 8.9pp at the 55-70 boundary, on 52 outcomes against 1,663. Under the
+  // step that fall went straight into the published price at x = 56; under the fit
+  // the two upper bands are one block and the curve cannot turn down.
+  it('the committed seed’s descending family is POOLED, and its blended read never falls', () => {
+    const committed = seedJson.calibration as unknown as CalibrationState
+    const lap = (k: string) => {
+      const b = committed.setupBuckets![k]
+      return (b.hits - (b.shadowHits ?? 0) + 2) / (b.n - (b.shadowN ?? 0) + 4)
+    }
+    expect(lap('continuation:long:55-70')).toBeLessThan(lap('continuation:long:40-55')) // the inversion is in the file
+    const mid = lap('continuation:long:40-55'), top = lap('continuation:long:55-70')
+    const nMid = 1663, nTop = 52
+    const pooled = (mid * nMid + top * nTop) / (nMid + nTop)
+    const ladder = (x: number) => probabilityFor(committed, 'long', 'green', x, 'unknown', 'sized').p
+    const blended = (x: number) => probabilityFor(committed, 'long', 'green', x, 'unknown', 'sized', 'continuation').p
+    // both upper bands now read the SAME pooled value, and it sits between them
+    expect(blended(47.5)).toBeCloseTo(0.7 * ladder(47.5) + 0.3 * pooled, 12)
+    expect(blended(62.5)).toBeCloseTo(0.7 * ladder(62.5) + 0.3 * pooled, 12)
+    expect(pooled).toBeGreaterThan(top)
+    expect(pooled).toBeLessThan(mid)
+    // and the shipped read holds D2 across the gate's own grid, band edges included
+    let prev = -Infinity
+    for (let x = 26; x <= 78; x += 2) {
+      expect(blended(x), `x=${x}`).toBeGreaterThanOrEqual(prev - 1e-12)
+      prev = blended(x)
+    }
   })
 
   it('no setup argument → byte-identical to the pre-blend read, on every existing call site', () => {

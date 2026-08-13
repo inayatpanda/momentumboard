@@ -2980,11 +2980,12 @@ export const shippedRead = (state: CalibrationState) => (c: ProbeContext, x: num
  *     byte-identical and the extra half of the sweep costs nothing.
  *   · SETUP — every family the state carries evidence for ON THAT SIDE, and only
  *     on the sized read, because `blendSetup` returns the ladder untouched on a
- *     pooled one. This is the half that matters: the blend is a BAND step
- *     (`setup:side:band`), so a family that earned its 0.3 in one band and not
- *     the next can put a downward step into the published curve that the ladder
- *     underneath is innocent of. A probe that never passed a setup would sweep a
- *     curve no reader is ever shown and call the gate passed. */
+ *     pooled one. This is the half that matters: a blended read is a SECOND curve
+ *     mixed into the first, and it is the half that has actually failed here — the
+ *     family read was a band step until the task-4 fix wave, and the step put 11
+ *     downward jumps into the published curve that the ladder underneath was
+ *     innocent of. A probe that never passed a setup would sweep a curve no reader
+ *     is ever shown and call the gate passed. */
 export function contextsIn(state: CalibrationState): ProbeContext[] {
   const seen = new Map<string, { side: 'long' | 'short'; regime: string; cohort: ProbeContext['cohort'] }>()
   for (const key of Object.keys(state.buckets)) {
