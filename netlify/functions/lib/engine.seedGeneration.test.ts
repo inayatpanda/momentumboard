@@ -290,4 +290,39 @@ describe('the generation-keyed seed install', () => {
       expect(cal.buckets[SEED_KEY]).toBeUndefined()
     })
   })
+
+  // The two invariants the task review found correct but UNPINNED — each of
+  // these fails if its line of engine.ts is "harmlessly" refactored.
+  describe('ordering and clone discipline', () => {
+    it('rebases the swapped-in seed on the SAME load — an off-vector base is stripped immediately, not a day later', async () => {
+      // A malformed artefact (Task 2 owes base === DEFAULT_WEIGHTS; suppose it
+      // slips): rebaseWeights must run AFTER the install so the stripping — and
+      // its history entry — happen before anything grades against these weights.
+      // With the old ordering (rebase before the swap) the bad base would sit
+      // live until the NEXT load.
+      const offVector = seedW({ seedGeneration: 2 })
+      ;(offVector as WeightsState & { base: Record<string, number> }).base = { ...(initWeights() as WeightsState & { base: Record<string, number> }).base, technical: 0.5 }
+      seedStub.calibration = seedCal({ seedGeneration: 2 })
+      seedStub.weights = offVector
+
+      const { w } = await load(storedCal({ seedGeneration: 1 }), storedW({ seedGeneration: 1 }))
+
+      const rebased = w as WeightsState & { base: Record<string, number>; history: unknown[] }
+      expect(rebased.base.technical).not.toBe(0.5) // stripped to the current vector
+      expect(rebased.history.length).toBeGreaterThan(0) // and the rebase left its record
+    })
+
+    it('installs a CLONE — grading after the install never mutates the imported seed module', async () => {
+      const cal = seedCal({ seedGeneration: 2 })
+      const snapshot = JSON.stringify(cal)
+      seedStub.calibration = cal
+      seedStub.weights = seedW({ seedGeneration: 2 })
+
+      await load(storedCal({ seedGeneration: 1 }), storedW({ seedGeneration: 1 }))
+      // load twice more — a warm container reuses the module object
+      await load(storedCal({ seedGeneration: 1 }), storedW({ seedGeneration: 1 }))
+
+      expect(JSON.stringify(seedStub.calibration)).toBe(snapshot)
+    })
+  })
 })
