@@ -14,6 +14,7 @@
 import { isUsMarketHoliday } from '../../shared/usMarketHolidays'
 import { appStore as blobAppStore } from '../../netlify/functions/lib/storeProvider'
 import { configureStoreForScript } from '../lib/configureStore'
+import { quotaAlertVerdict } from '../lib/quotaAlert'
 
 const requireEnv = (names: string[]) => {
   const missing = names.filter(n => !process.env[n])
@@ -86,21 +87,16 @@ const run = async () => {
     const body = await res.text()
     console.log(`paper: ${res.status} ${body}`)
     if (res.status >= 400) {
-      // Provider-quota mornings (Gemini prepay depleted + Groq tokens-per-day
-      // spent) fail every one of the three cron shots identically, mailing
-      // three "Run failed" alerts for ONE condition (2026-08-04). Quota does
-      // not come back between shots on its own, so only the FIRST quota
-      // failure of the day is loud; later shots still retry — a mid-morning
-      // top-up composes the paper — but exit quietly if quota is still gone.
-      // Any non-quota failure stays loud on every shot.
-      const quotaShaped = /\b429\b|rate[_ ]?limit|quota|depleted|credit/i.test(body)
-      if (quotaShaped) {
-        const alertKey = `report-quota-alerted:${today}`
-        if (await blobAppStore.read<unknown>(alertKey)) {
-          console.log('paper: providers still quota-exhausted — already alerted once today, exiting quietly (next shot retries)')
-          return
-        }
-        await blobAppStore.write(alertKey, { at: nowSec, body: body.slice(0, 500) })
+      // Provider-quota mornings fail every one of the three cron shots
+      // identically, so ONE dry account used to mail three "Run failed" alerts
+      // for one condition. Only the first quota failure of a day is loud; the
+      // later shots still retry (a top-up composes the paper) but exit quietly.
+      // Everything else stays loud on every shot. The shapes, the marker and
+      // its TTL all live in scripts/lib/quotaAlert.ts, where they are testable
+      // — this file runs `run()` on import and cannot be imported by a test.
+      if ((await quotaAlertVerdict(body, today, nowSec)) === 'quiet') {
+        console.log('paper: providers still quota-exhausted — already alerted once today, exiting quietly (next shot retries)')
+        return
       }
       process.exit(1)
     }

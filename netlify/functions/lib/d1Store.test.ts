@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { openSqliteD1 } from '../../../scripts/lib/sqliteD1'
-import { acquireLease, releaseLease } from './store'
+import { acquireLease, blobAppStore, memoryStore, releaseLease } from './store'
 import { d1AppStore, d1CacheStore, ensureD1Schema, envelopeExpiry, type D1Database } from './d1Store'
 import samples from './__fixtures__/blobSamples.json'
 
@@ -119,6 +119,86 @@ describe('d1AppStore — the AppStore contract', () => {
     await releaseLease(store, 'lease:predict-background', first!)
     expect(await acquireLease(store, 'lease:predict-background', 130, 60)).toBeTruthy()
     db.close()
+  })
+
+  /* ─────────────────────────────── I-4 ───────────────────────────────
+   * The handshake is read → check → write → read. On D1 over HTTP from an
+   * Actions runner that is four ~200ms hops with a ~780ms window between the
+   * check and the write — long enough for two runners started by the same
+   * 15-minute cron to both decide `lease:queue-worker` is free and drain the
+   * queue twice. On D1 the whole decision is one statement instead.
+   */
+  describe('the lease is a compare-and-set on D1, not a handshake', () => {
+    it('exposes the capability, so acquireLease takes the atomic path', () => {
+      expect(typeof d1AppStore(openSqliteD1(':memory:')).tryAcquireLeaseAtomic).toBe('function')
+    })
+
+    it('admits exactly one of two racing acquirers', async () => {
+      const db = await fresh()
+      const store = d1AppStore(db)
+      const [a, b] = await Promise.all([acquireLease(store, 'lease:queue-worker', 100, 60), acquireLease(store, 'lease:queue-worker', 100, 60)])
+      expect([a, b].filter(Boolean)).toHaveLength(1)
+      // …and eight more, all at once, on a lease that is already held
+      const rest = await Promise.all(Array.from({ length: 8 }, () => acquireLease(store, 'lease:queue-worker', 100, 60)))
+      expect(rest.filter(Boolean)).toEqual([])
+      db.close()
+    })
+
+    it('costs ONE statement — the whole point', async () => {
+      const db = await fresh()
+      const seen: string[] = []
+      const counted = { prepare: (sql: string) => (seen.push(sql.trim().split(/\s+/)[0]), db.prepare(sql)) }
+      expect(await acquireLease(d1AppStore(counted), 'lease:predict-background', 100, 60)).toBeTruthy()
+      expect(seen).toEqual(['INSERT'])
+      db.close()
+    })
+
+    it('hands an expired lease to the next acquirer, and never a live one', async () => {
+      const db = await fresh()
+      const store = d1AppStore(db)
+      expect(await acquireLease(store, 'lease:predict-background', 100, 60)).toBeTruthy()
+      expect(await acquireLease(store, 'lease:predict-background', 159, 60)).toBeNull() // one second to run
+      const second = await acquireLease(store, 'lease:predict-background', 160, 60) // expired to the second
+      expect(second).toBeTruthy()
+      expect(await acquireLease(store, 'lease:predict-background', 161, 60)).toBeNull() // …and the new one holds
+      await releaseLease(store, 'lease:predict-background', second!)
+      expect(await acquireLease(store, 'lease:predict-background', 162, 60)).toBeTruthy() // release frees it immediately
+      db.close()
+    })
+
+    // A key holding something that is not a lease record must not wedge the job
+    // forever: json_extract raises on malformed JSON, so the predicate checks
+    // json_valid first and treats anything unrecognisable as free.
+    it('takes a lease over a row that is not a lease record', async () => {
+      const db = await fresh()
+      const store = d1AppStore(db)
+      for (const junk of ['not json at all', '{"unrelated":1}', 'null']) {
+        await db.prepare('INSERT OR REPLACE INTO blobs (store, key, value, updated_at, expires_at) VALUES (?1,?2,?3,?4,NULL)').bind('app', 'lease:x', junk, 1).run()
+        expect(await acquireLease(store, 'lease:x', 100, 60), junk).toBeTruthy()
+      }
+      db.close()
+    })
+
+    it('leaves the token readable by releaseLease, as the handshake did', async () => {
+      const db = await fresh()
+      const store = d1AppStore(db)
+      const token = await acquireLease(store, 'lease:predict-background', 100, 60)
+      expect(await store.read<{ token: string; expiresAt: number }>('lease:predict-background')).toEqual({ token, expiresAt: 160 })
+      await releaseLease(store, 'lease:predict-background', 'somebody-else')
+      expect(await acquireLease(store, 'lease:predict-background', 101, 60)).toBeNull() // a stranger cannot release it
+      db.close()
+    })
+
+    // The capability is optional; the stores that lack it must be untouched.
+    it('leaves the Blobs and in-memory paths on the original handshake', async () => {
+      const mem = memoryStore()
+      expect(mem.tryAcquireLeaseAtomic).toBeUndefined()
+      expect(blobAppStore.tryAcquireLeaseAtomic).toBeUndefined()
+      const first = await acquireLease(mem, 'lease:test', 100, 60)
+      expect(first).toBeTruthy()
+      expect(await acquireLease(mem, 'lease:test', 120, 60)).toBeNull()
+      expect(await acquireLease(mem, 'lease:test', 161, 60)).toBeTruthy()
+    })
   })
 
   it('lists keys, filtered by prefix, and forgets what it removes', async () => {

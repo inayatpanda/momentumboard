@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ensureD1Schema, type D1Database } from '../netlify/functions/lib/d1Store'
 import { openSqliteD1 } from './lib/sqliteD1'
-import { DEFAULT_BACKUP_DIR, migrateBlobsToD1, scanBackup } from './migrate-blobs-to-d1'
+import { DEFAULT_BACKUP_DIR, formatReport, migrateBlobsToD1, scanBackup } from './migrate-blobs-to-d1'
 import samples from '../netlify/functions/lib/__fixtures__/blobSamples.json'
 
 const RAW = samples as Record<string, string>
@@ -87,6 +87,87 @@ describe('migrate-blobs-to-d1', () => {
     expect(r.changes).toBe(1)
     expect(r.stores.find(s => s.store === 'app')).toMatchObject({ inserted: 0, updated: 1, unchanged: 1 })
     db.close()
+  })
+
+  /* ─────────────────────────────── I-2 ───────────────────────────────
+   * This script was safe because the target was empty. It is not empty any
+   * more — it is production. A re-run against the same rescue folder would
+   * revert every licence minted, ledger row written and board produced since
+   * the cutover, and report it as a clean import. The per-key signal is the
+   * backup FILE's mtime against the ROW's updated_at.
+   */
+  describe('a live database is not overwritten by a week-old backup', () => {
+    /** Drift a row the way the app does: a new value, written NOW. */
+    const drift = (db: D1Database, key: string, at: number) =>
+      db.prepare('UPDATE blobs SET value = ?1, updated_at = ?2 WHERE store = ?3 AND key = ?4').bind('{"licences":["minted-since-the-rescue"]}', at, 'app', key).run()
+
+    it('refuses a row whose D1 copy is newer than the backup file, and counts it', async () => {
+      const db = await fresh()
+      const backupDir = fixtureBackup()
+      await migrateBlobsToD1(db, { backupDir, now: () => 1_000 })
+      const fileMtime = statSync(join(backupDir, 'site__app', 'intraday-flags')).mtimeMs
+      await drift(db, 'intraday-flags', fileMtime + 60_000) // a minute after the export
+
+      const r = await migrateBlobsToD1(db, { backupDir, now: () => 2_000 })
+      expect(r.protected).toBe(1)
+      expect(r.stores.find(s => s.store === 'app')).toMatchObject({ protected: 1, updated: 0, inserted: 0, unchanged: 1 })
+      expect(r.changes).toBe(0)
+      // The live value is still there — that is the whole point.
+      const row = await db.prepare('SELECT value FROM blobs WHERE store = ?1 AND key = ?2').bind('app', 'intraday-flags').first<{ value: string }>()
+      expect(row?.value).toBe('{"licences":["minted-since-the-rescue"]}')
+      // …and the run does NOT claim success: the table deliberately differs
+      // from the directory, so the manifest says so and the exit code is 1.
+      expect(r.ok).toBe(false)
+      expect(formatReport(r)).toMatch(/PROTECTED: 1 row\(s\) in D1 are NEWER/)
+      db.close()
+    })
+
+    it('overwrites a row whose D1 copy is OLDER — an ordinary drifted row still gets fixed', async () => {
+      const db = await fresh()
+      const backupDir = fixtureBackup()
+      await migrateBlobsToD1(db, { backupDir, now: () => 1_000 })
+      const fileMtime = statSync(join(backupDir, 'site__app', 'intraday-flags')).mtimeMs
+      await drift(db, 'intraday-flags', fileMtime - 60_000) // written BEFORE the export
+
+      const r = await migrateBlobsToD1(db, { backupDir, now: () => 2_000 })
+      expect(r.protected).toBe(0)
+      expect(r.stores.find(s => s.store === 'app')).toMatchObject({ updated: 1, protected: 0 })
+      expect(r.ok).toBe(true)
+      const row = await db.prepare('SELECT value FROM blobs WHERE store = ?1 AND key = ?2').bind('app', 'intraday-flags').first<{ value: string }>()
+      expect(row?.value).toBe(RAW['site__app/intraday-flags'])
+      db.close()
+    })
+
+    it('--overwrite-newer restores it anyway, because that is sometimes the job', async () => {
+      const db = await fresh()
+      const backupDir = fixtureBackup()
+      await migrateBlobsToD1(db, { backupDir, now: () => 1_000 })
+      await drift(db, 'intraday-flags', statSync(join(backupDir, 'site__app', 'intraday-flags')).mtimeMs + 60_000)
+
+      const r = await migrateBlobsToD1(db, { backupDir, now: () => 2_000, overwriteNewer: true })
+      expect(r.protected).toBe(0)
+      expect(r.changes).toBe(1)
+      expect(r.ok).toBe(true)
+      const row = await db.prepare('SELECT value FROM blobs WHERE store = ?1 AND key = ?2').bind('app', 'intraday-flags').first<{ value: string }>()
+      expect(row?.value).toBe(RAW['site__app/intraday-flags'])
+      db.close()
+    })
+
+    // The guard must not cost the idempotence gate. Rows the importer wrote
+    // itself are newer than every file by construction, so if the comparison
+    // ran before the byte comparison, the second run would "protect" all 2,022
+    // rows instead of reporting a no-op. Identical bytes are `unchanged`, full
+    // stop — the guard only ever sees rows that genuinely differ.
+    it('leaves the byte no-op a byte no-op, even though every row is newer than its file', async () => {
+      const db = await fresh()
+      const backupDir = fixtureBackup()
+      await migrateBlobsToD1(db, { backupDir, now: () => Date.now() + 86_400_000 }) // stamped a day in the future
+      const second = await migrateBlobsToD1(db, { backupDir, now: () => Date.now() + 86_400_000 })
+      expect(second.protected).toBe(0)
+      expect(second.changes).toBe(0)
+      expect(second.ok).toBe(true)
+      db.close()
+    })
   })
 
   it('lifts the cache envelope expiry into the column, and leaves app rows immortal', async () => {

@@ -197,6 +197,16 @@ export const appStore: AppStore & { readStrong<T>(key: string): Promise<T | null
     const s = current.app
     return s.readStrong ? s.readStrong<T>(key) : s.read<T>(key)
   },
+  /** A GETTER, not a method (I-4). `acquireLease` branches on whether this
+   * property EXISTS: present means "the backend can compare-and-set, use it",
+   * absent means "fall back to the read-check-write-verify handshake". A plain
+   * delegating method would always be present and would have to reimplement the
+   * handshake to cover Blobs — two copies of the one thing that must not have
+   * two copies. The getter simply is not there when the backend cannot do it. */
+  get tryAcquireLeaseAtomic() {
+    const s = current.app
+    return s.tryAcquireLeaseAtomic?.bind(s)
+  },
 }
 
 export type { AppStore } from './store'

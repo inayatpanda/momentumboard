@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { openSqliteD1 } from '../../../scripts/lib/sqliteD1'
 import { ensureD1Schema, type D1Database } from './d1Store'
-import { blobAppStore } from './store'
+import { acquireLease, blobAppStore } from './store'
 import { appStore, configureStoreForNodeProcess, configureStoreFromEnv, currentAppStore, currentCacheStore, currentD1, findD1Binding, looksLikeD1, storeBackend, useBlobStore, useD1Store, D1_BINDING_NAMES } from './storeProvider'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -215,6 +215,30 @@ describe('configureStoreForNodeProcess — GitHub Actions', () => {
   it('refuses a typo instead of quietly using Blobs', () => {
     process.env.STORE_BACKEND = 'D1 '.trim().toLowerCase() + 'x'
     expect(() => configureStoreForNodeProcess()).toThrow(/unknown STORE_BACKEND/)
+  })
+
+  /* ─────────────────────────────── I-4 ───────────────────────────────
+   * predict-background and drain-queue both call `acquireLease(appStore, …)`
+   * — the FAÇADE, not the concrete store. If the façade did not forward the
+   * atomic capability, the D1 backend would keep taking the four-hop handshake
+   * and the fix would exist only in a test. And if it advertised the capability
+   * under Blobs, the handshake would be lost instead.
+   */
+  it('forwards the atomic lease to D1 and hides it under Blobs', async () => {
+    useBlobStore()
+    expect(appStore.tryAcquireLeaseAtomic, 'Blobs cannot compare-and-set').toBeUndefined()
+    const first = await acquireLease(appStore, 'lease:facade', 100, 60)
+    expect(first).toBeTruthy() // the handshake, unchanged
+
+    const db = await freshD1()
+    useD1Store(db)
+    expect(typeof appStore.tryAcquireLeaseAtomic).toBe('function')
+    const held = await acquireLease(appStore, 'lease:facade', 100, 60)
+    expect(held).toBeTruthy()
+    expect(await acquireLease(appStore, 'lease:facade', 120, 60)).toBeNull()
+    expect(await currentAppStore().read('lease:facade')).toEqual({ token: held, expiresAt: 160 })
+    useBlobStore()
+    db.close()
   })
 
   // The drift guard. Re-introducing the direct import is the whole defect.

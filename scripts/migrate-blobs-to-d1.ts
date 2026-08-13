@@ -16,10 +16,19 @@
 // The exporter encoded '/' in a key as '__' (no key in this backup actually
 // contains one — the count is reported so a future backup cannot slip past).
 //
+// THE DATABASE IS LIVE NOW (I-2). "Idempotent" meant "into an empty database":
+// re-running this against the same rescue folder after the cutover would revert
+// every licence, ledger row and board written since. So a row whose
+// `updated_at` is NEWER than the backup file that would replace it is REFUSED
+// and counted `protected` — the import reports it and exits non-zero rather
+// than quietly restoring a week-old copy. `--overwrite-newer` is the deliberate
+// restore, and has to be typed.
+//
 // Usage:
 //   npx tsx scripts/migrate-blobs-to-d1.ts --dry-run
 //   npx tsx scripts/migrate-blobs-to-d1.ts --sqlite .d1/streetsignal.sqlite
 //   npx tsx scripts/migrate-blobs-to-d1.ts --dir /path/to/backup --json
+//   npx tsx scripts/migrate-blobs-to-d1.ts --remote --overwrite-newer   # a real restore
 
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, statSync, mkdirSync } from 'node:fs'
@@ -62,6 +71,9 @@ export interface StoreTally {
   updated: number
   unchanged: number
   skipped: number
+  /** Rows the import REFUSED to overwrite because D1's copy is newer than the
+   * backup file that would have replaced it. See `overwriteNewer`. */
+  protected: number
   expiredOnArrival: number
   rowsAfter: number
   diskDigest: string
@@ -81,6 +93,8 @@ export interface MigrationReport {
   slashKeys: number
   /** inserted + updated across every store. The idempotence gate reads this. */
   changes: number
+  /** Rows held back because D1's copy is newer than the backup's. */
+  protected: number
   ok: boolean
 }
 
@@ -102,6 +116,9 @@ interface Planned {
   value: string
   expiresAt: number | null
   dir: string
+  /** The backup FILE's own mtime (epoch ms) — "when this value was true". The
+   * newer-row guard compares it against the D1 row's `updated_at`. */
+  mtimeMs: number
 }
 
 export function scanBackup(backupDir: string, sources: readonly Source[] = DEFAULT_SOURCES) {
@@ -154,7 +171,13 @@ export function scanBackup(backupDir: string, sources: readonly Source[] = DEFAU
     for (const file of files) {
       const key = decodeKey(file)
       if (key !== file) slashKeys++
-      const value = readFileSync(join(backupDir, src.dir, file), 'utf8')
+      const path = join(backupDir, src.dir, file)
+      // The file's own mtime IS the age of the value it holds — the exporter
+      // wrote each file once, when it read the blob. Cheaper and more precise
+      // than a manifest timestamp for the whole run (which the backup does not
+      // carry anyway), and it is per-key, which is what the guard needs.
+      const mtimeMs = statSync(path).mtimeMs
+      const value = readFileSync(path, 'utf8')
       let parsed: unknown
       try {
         parsed = JSON.parse(value)
@@ -175,7 +198,7 @@ export function scanBackup(backupDir: string, sources: readonly Source[] = DEFAU
         }
         continue // precedence order means the incumbent already won
       }
-      target.set(key, { key, value, expiresAt, dir: src.dir })
+      target.set(key, { key, value, expiresAt, dir: src.dir, mtimeMs })
     }
   }
 
@@ -187,6 +210,7 @@ export function scanBackup(backupDir: string, sources: readonly Source[] = DEFAU
 interface ExistingRow {
   value: string
   expires_at: number | null
+  updated_at: number
 }
 
 async function tableExists(db: D1Database): Promise<boolean> {
@@ -205,6 +229,9 @@ export interface MigrateOptions {
   now?: () => number
   batchSize?: number
   onProgress?: (done: number, total: number) => void
+  /** Overwrite a D1 row even when it is NEWER than the backup file that would
+   * replace it. Off by default — see the guard in `migrateBlobsToD1`. */
+  overwriteNewer?: boolean
 }
 
 export async function migrateBlobsToD1(db: D1Database, opts: MigrateOptions = {}): Promise<MigrationReport> {
@@ -219,6 +246,7 @@ export async function migrateBlobsToD1(db: D1Database, opts: MigrateOptions = {}
 
   const stores: StoreTally[] = []
   let changes = 0
+  let protectedRows = 0
   const total = [...scan.byStore.values()].reduce((n, m) => n + m.size, 0)
   let done = 0
 
@@ -226,6 +254,7 @@ export async function migrateBlobsToD1(db: D1Database, opts: MigrateOptions = {}
     let inserted = 0
     let updated = 0
     let unchanged = 0
+    let protectedHere = 0
     let expiredOnArrival = 0
     const writes: { key: string; value: string; expiresAt: number | null }[] = []
     const at = now()
@@ -233,10 +262,25 @@ export async function migrateBlobsToD1(db: D1Database, opts: MigrateOptions = {}
     for (const p of [...planned.values()].sort((a, b) => (a.key < b.key ? -1 : 1))) {
       if (p.expiresAt != null && p.expiresAt <= at) expiredOnArrival++
       const existing = live
-        ? await db.prepare(`SELECT value, expires_at FROM blobs WHERE store = ?1 AND key = ?2`).bind(store, p.key).first<ExistingRow>()
+        ? await db.prepare(`SELECT value, expires_at, updated_at FROM blobs WHERE store = ?1 AND key = ?2`).bind(store, p.key).first<ExistingRow>()
         : null
       if (existing && existing.value === p.value && (existing.expires_at ?? null) === p.expiresAt) {
         unchanged++
+      } else if (existing && !opts.overwriteNewer && existing.updated_at > p.mtimeMs) {
+        // THE ROW IS NEWER THAN THE BACKUP (I-2). This script was written as a
+        // one-shot migration into an empty database, and its idempotence gate
+        // ("run it twice and the second run is a byte no-op") holds only while
+        // nothing else writes. It does now: the database is LIVE. Re-running it
+        // against the same rescue folder a week later would silently revert
+        // every licence minted, every ledger entry and every board written
+        // since — an import that looks like a success and is a restore.
+        //
+        // The signal is per-key and needs no new metadata: `updated_at` is
+        // written by d1Store on every write (epoch ms) and the backup file's
+        // own mtime is when the exporter read that blob. Newer row than the
+        // file that would replace it → refuse, and say so. `--overwrite-newer`
+        // is the deliberate restore.
+        protectedHere++
       } else {
         if (existing) updated++
         else inserted++
@@ -255,6 +299,7 @@ export async function migrateBlobsToD1(db: D1Database, opts: MigrateOptions = {}
       }
     }
     changes += inserted + updated
+    protectedRows += protectedHere
 
     // The manifest check. Not a row count — a fingerprint of every value, from
     // the directory and from the table, computed independently and compared.
@@ -287,6 +332,7 @@ export async function migrateBlobsToD1(db: D1Database, opts: MigrateOptions = {}
       updated,
       unchanged,
       skipped: scan.skippedByStore.get(store) ?? 0,
+      protected: protectedHere,
       expiredOnArrival,
       rowsAfter: rows.size,
       diskDigest,
@@ -306,6 +352,12 @@ export async function migrateBlobsToD1(db: D1Database, opts: MigrateOptions = {}
     unparseable: scan.unparseable,
     slashKeys: scan.slashKeys,
     changes,
+    protected: protectedRows,
+    // A protected row means the table deliberately does NOT match the
+    // directory, so the manifest cannot say OK and `ok` cannot be true. That is
+    // the honest answer and the right exit code: the operator asked for an
+    // import, the import did not fully apply, and the report says which rows
+    // and why. `--overwrite-newer` is how they say "yes, restore it".
     ok: stores.every(s => s.manifestOk) && scan.unparseable.length === 0,
   }
 }
@@ -318,17 +370,17 @@ export function formatReport(r: MigrationReport): string {
   lines.push('')
   lines.push(`${r.dryRun ? 'DRY RUN' : 'IMPORT'} — ${r.backupDir}`)
   lines.push('')
-  lines.push('  store   files    new  updated  unchanged  expired  rows in D1  manifest')
+  lines.push('  store   files    new  updated  unchanged  protected  expired  rows in D1  manifest')
   for (const s of r.stores) {
     lines.push(
-      `  ${s.store.padEnd(6)} ${pad(s.filesOnDisk, 6)} ${pad(s.inserted, 6)} ${pad(s.updated, 8)} ${pad(s.unchanged, 10)} ${pad(s.expiredOnArrival, 8)} ${pad(s.rowsAfter, 11)}  ${s.manifestOk ? 'OK' : 'MISMATCH'}`,
+      `  ${s.store.padEnd(6)} ${pad(s.filesOnDisk, 6)} ${pad(s.inserted, 6)} ${pad(s.updated, 8)} ${pad(s.unchanged, 10)} ${pad(s.protected, 10)} ${pad(s.expiredOnArrival, 8)} ${pad(s.rowsAfter, 11)}  ${s.manifestOk ? 'OK' : 'MISMATCH'}`,
     )
   }
   const t = r.stores.reduce(
-    (a, s) => ({ f: a.f + s.filesOnDisk, i: a.i + s.inserted, u: a.u + s.updated, n: a.n + s.unchanged, e: a.e + s.expiredOnArrival, r: a.r + s.rowsAfter }),
-    { f: 0, i: 0, u: 0, n: 0, e: 0, r: 0 },
+    (a, s) => ({ f: a.f + s.filesOnDisk, i: a.i + s.inserted, u: a.u + s.updated, n: a.n + s.unchanged, p: a.p + s.protected, e: a.e + s.expiredOnArrival, r: a.r + s.rowsAfter }),
+    { f: 0, i: 0, u: 0, n: 0, p: 0, e: 0, r: 0 },
   )
-  lines.push(`  ${'TOTAL'.padEnd(6)} ${pad(t.f, 6)} ${pad(t.i, 6)} ${pad(t.u, 8)} ${pad(t.n, 10)} ${pad(t.e, 8)} ${pad(t.r, 11)}`)
+  lines.push(`  ${'TOTAL'.padEnd(6)} ${pad(t.f, 6)} ${pad(t.i, 6)} ${pad(t.u, 8)} ${pad(t.n, 10)} ${pad(t.p, 10)} ${pad(t.e, 8)} ${pad(t.r, 11)}`)
   lines.push('')
   for (const s of r.stores) lines.push(`  digest ${s.store}: disk ${s.diskDigest.slice(0, 16)} · d1 ${s.d1Digest.slice(0, 16)}`)
   lines.push('')
@@ -339,6 +391,14 @@ export function formatReport(r: MigrationReport): string {
   if (r.conflicts.length) lines.push(`  conflicts:      ${r.conflicts.map(c => `${c.store}/${c.key} — kept ${c.winner}, dropped ${c.loser}`).join(', ')}`)
   if (r.unparseable.length) lines.push(`  unparseable:    ${r.unparseable.map(u => `${u.dir}/${u.key}`).join(', ')}`)
   lines.push('')
+  if (r.protected) {
+    lines.push(
+      `  PROTECTED: ${r.protected} row(s) in D1 are NEWER than the backup file that would have replaced them\n` +
+        `             (row.updated_at > the file's mtime) and were left alone. The database is live: these\n` +
+        `             are writes made since the rescue. Pass --overwrite-newer to restore them anyway.`,
+    )
+    lines.push('')
+  }
   lines.push(`  changes: ${r.changes}${r.changes === 0 ? '  (byte no-op — the idempotence gate)' : ''}`)
   lines.push(`  ${r.ok ? 'MANIFEST OK — every store matches the directory, value for value' : 'MANIFEST FAILED'}`)
   lines.push('')
@@ -376,7 +436,7 @@ async function main() {
     db = openSqliteD1(target)
   }
 
-  const report = await migrateBlobsToD1(db, { backupDir, dryRun })
+  const report = await migrateBlobsToD1(db, { backupDir, dryRun, overwriteNewer: argv.includes('--overwrite-newer') })
   process.stdout.write(argv.includes('--json') ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report))
   db.close()
   process.exit(report.ok ? 0 : 1)

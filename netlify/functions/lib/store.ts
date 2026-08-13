@@ -62,17 +62,36 @@ export interface AppStore {
   // new reader off their unlock link). Absent on test stores → callers fall
   // back to read().
   readStrong?<T>(key: string): Promise<T | null>
+  /** OPTIONAL CAPABILITY: take the lease in ONE round trip, atomically.
+   *
+   * A backend that can compare-and-set implements this and `acquireLease` uses
+   * it. A backend that cannot (Netlify Blobs, the in-memory test store) leaves
+   * it undefined and gets the read-check-write-verify handshake below, exactly
+   * as before. Returns the token on success, null when someone else holds it. */
+  tryAcquireLeaseAtomic?(key: string, nowSec: number, ttlSec: number): Promise<string | null>
 }
 
-interface LeaseRecord {
+export interface LeaseRecord {
   token: string
   expiresAt: number
 }
 
-/** Best-effort distributed lease over the blob store. The write-then-verify
- * handshake means that when two functions race, only the token left in the
- * store proceeds. Leases expire so a crashed invocation cannot wedge the job. */
+/** Take a distributed lease, atomically where the backend can and by handshake
+ * where it cannot. Leases expire so a crashed invocation cannot wedge the job.
+ *
+ * WHY THE ATOMIC PATH MATTERS (I-4). The handshake below is
+ * read → check → write → read: four round trips, and between the check and the
+ * write there is a window in which a second caller reads the same "free" lease.
+ * Under Netlify Blobs, in a Netlify function, that window was sub-millisecond
+ * local latency. Over D1's HTTP API from a GitHub Actions runner — which is
+ * exactly where drain-queue.mts takes `lease:queue-worker` — each hop is ~200ms
+ * and the window is closer to 780ms: two runners started by the same 15-minute
+ * cron can both come away believing they own the queue, and drain it twice.
+ * The verify read narrows it (last writer wins the token) but does not close
+ * it: both writes can land, and the loser can still read back its own token if
+ * the reads interleave the other way. */
 export async function acquireLease(store: AppStore, key: string, nowSec: number, ttlSec: number): Promise<string | null> {
+  if (store.tryAcquireLeaseAtomic) return await store.tryAcquireLeaseAtomic(key, nowSec, ttlSec)
   const current = await store.read<LeaseRecord>(key)
   if (current && current.expiresAt > nowSec) return null
   const token = crypto.randomUUID()

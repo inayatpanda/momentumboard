@@ -36,13 +36,26 @@ interface HttpsReply {
   text: string
 }
 
-function postJson(url: string, token: string, body: string): Promise<HttpsReply> {
+/** How long a single request may go without progress before it is abandoned.
+ *
+ * I-3: there was no timeout at all. `node:https` has no default one, so a
+ * black-holed socket — the API dropping a connection without an RST, which is
+ * exactly what a rate-limited or overloaded edge does — left the promise
+ * pending FOREVER. Not a slow import: a hung one, taking a 25-minute GitHub
+ * Actions job down with it and the morning paper with that. The retry ladder
+ * below already knows what to do about a dead connection; it just never got
+ * told. Thirty seconds is far longer than any query here legitimately takes
+ * (the biggest value in the store is 306KB). */
+export const DEFAULT_TIMEOUT_MS = 30_000
+
+function postJson(url: string, token: string, body: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<HttpsReply> {
   return new Promise((resolve, reject) => {
     const req = httpsRequest(
       url,
       {
         method: 'POST',
         agent,
+        timeout: timeoutMs,
         headers: {
           authorization: `Bearer ${token}`,
           'content-type': 'application/json',
@@ -58,14 +71,19 @@ function postJson(url: string, token: string, body: string): Promise<HttpsReply>
         res.on('error', reject)
       },
     )
+    // The 'timeout' event does NOT abort anything on its own — Node just tells
+    // you the socket has been idle. Destroying it with an Error is what turns
+    // silence into a rejection, which `query` already treats as a transport
+    // failure and retries with backoff.
+    req.on('timeout', () => req.destroy(new Error('httpD1: socket timeout')))
     req.on('error', reject)
     req.end(body)
   })
 }
 
 const API = 'https://api.cloudflare.com/client/v4'
-const MIN_GAP_MS = 260
-const RETRIES = 5
+export const MIN_GAP_MS = 260
+export const RETRIES = 5
 
 function wranglerConfigPaths(): string[] {
   return [
@@ -92,6 +110,8 @@ export interface HttpD1Options {
   databaseId: string
   /** Explicit token wins; otherwise wrangler's OAuth token is read from disk. */
   apiToken?: string
+  /** Per-request socket timeout in ms. Default `DEFAULT_TIMEOUT_MS` (30s). */
+  timeoutMs?: number
 }
 
 /** The zero-argument form scripts want: account from CLOUDFLARE_ACCOUNT_ID,
@@ -142,7 +162,7 @@ export function openHttpD1(opts: HttpD1Options): D1Database & { close(): void } 
     const payload = JSON.stringify({ sql, params })
     for (let attempt = 0; ; attempt++) {
       await throttle()
-      const res = await postJson(url, token, payload).catch((e: unknown) => e as Error)
+      const res = await postJson(url, token, payload, opts.timeoutMs).catch((e: unknown) => e as Error)
 
       // Transport failure — retry like a 5xx.
       if (res instanceof Error) {

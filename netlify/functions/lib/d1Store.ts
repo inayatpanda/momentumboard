@@ -22,7 +22,7 @@
 // cache envelope in lib/cache.ts (`{ value, expires }`). Not seconds. The import
 // copies the envelope's own number across, so the two can never disagree.
 
-import type { AppStore } from './store'
+import type { AppStore, LeaseRecord } from './store'
 
 /* ────────────────────────── minimal D1 surface ──────────────────────────
  * Structurally compatible with @cloudflare/workers-types' D1Database, declared
@@ -123,6 +123,8 @@ export interface D1Store extends AppStore {
   /** Deletes rows already past their expiry. For the cron Worker. Returns the
    * number removed. `limit` keeps a single invocation inside its CPU budget. */
   sweepExpired(limit?: number): Promise<number>
+  /** The AppStore capability, present here: one statement, a true CAS. */
+  tryAcquireLeaseAtomic(key: string, nowSec: number, ttlSec: number): Promise<string | null>
 }
 
 /** The cache store's envelope IS its TTL: lib/cache.ts stores `{ value, expires }`
@@ -217,6 +219,41 @@ export function d1AppStore(db: D1Database, opts: D1StoreOptions = {}): D1Store {
             .bind(store, at)
             .all<{ key: string }>()
       return (res.results ?? []).map(r => r.key)
+    },
+
+    // I-4: THE LEASE, IN ONE STATEMENT.
+    //
+    // lib/store.ts's handshake is read → check → write → read. Over D1's HTTP
+    // API from a GitHub Actions runner that is four ~200ms hops with a ~780ms
+    // window in the middle, and two runners started by the same cron can both
+    // decide the lease is free. This is the same decision as one SQL statement:
+    // insert if the key is absent, overwrite ONLY if the lease sitting there has
+    // already expired. SQLite evaluates the predicate against the existing row
+    // inside the write, so there is no window to lose.
+    //
+    // `json_valid` first: a row that is not a lease record at all (corruption,
+    // or a key reused for something else) must be takeable rather than a
+    // permanent wedge, and json_extract on malformed JSON raises instead of
+    // returning null. IFNULL covers valid JSON with no `expiresAt` — also not a
+    // live lease.
+    //
+    // FAILS CLOSED, DELIBERATELY. httpD1.run() reports `meta.changes ?? 0`, so
+    // a write that succeeded on the server but whose reply was lost — retried
+    // by the client and reported as 0 — reads here as "someone else has it".
+    // The caller then does nothing this tick and tries again next tick, which
+    // is the right way round: the alternative is two engine runs.
+    async tryAcquireLeaseAtomic(key: string, nowSec: number, ttlSec: number): Promise<string | null> {
+      const record: LeaseRecord = { token: crypto.randomUUID(), expiresAt: nowSec + ttlSec }
+      const json = JSON.stringify(record)
+      const res = await db
+        .prepare(
+          `INSERT INTO blobs (store, key, value, updated_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(store, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, expires_at = excluded.expires_at
+             WHERE json_valid(blobs.value) = 0 OR IFNULL(json_extract(blobs.value, '$.expiresAt'), 0) <= ?6`,
+        )
+        .bind(store, key, json, now(), expiresAtOf(record), nowSec)
+        .run()
+      return (res.meta?.changes ?? 0) === 1 ? record.token : null
     },
 
     async sweepExpired(limit = 1000): Promise<number> {
