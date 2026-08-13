@@ -1,63 +1,45 @@
 {
- "generatedAt": "2026-07-16T05:00:33.321Z",
- "symbols": 66,
+ "generatedAt": "2026-08-13T06:58:04.817Z",
+ "symbols": 159,
  "weights": {
   "base": {
    "technical": 1,
-   "momentum": 0.8,
-   "sector": 0.6,
+   "momentum": 0.9,
+   "catalyst": 0.6,
+   "news": 0.5,
+   "channels": 0.5,
    "social": 0.5,
-   "channels": 0.6,
    "insiders": 0.4,
-   "news": 0.4,
    "seasonality": 0.3,
    "smartMoney": 0.3,
-   "catalyst": 0.5
+   "sector": 0.3
   },
   "current": {
-   "technical": 0.9931246786632391,
-   "momentum": 0.7958659339516339,
-   "sector": 0.6,
+   "technical": 0.07908966318189245,
+   "momentum": 1.8,
+   "catalyst": 0.6,
+   "news": 0.5,
+   "channels": 0.5,
    "social": 0.5,
-   "channels": 0.6,
    "insiders": 0.4,
-   "news": 0.4,
-   "seasonality": 0.3,
+   "seasonality": 0.000057546131949676135,
    "smartMoney": 0.3,
-   "catalyst": 0.5
+   "sector": 0.5979947429013256
   },
   "ic": {
    "technical": {
-    "nAgree": 778,
-    "sumAgree": -356.59999999999985,
-    "nDisagree": 0,
-    "sumDisagree": 0
+    "nAgree": 5161,
+    "sumAgree": 9080.499999999956,
+    "nDisagree": 552,
+    "sumDisagree": 560.6000000000007
    },
    "momentum": {
-    "nAgree": 695,
-    "sumAgree": -344.0999999999997,
-    "nDisagree": 83,
-    "sumDisagree": -12.500000000000002
+    "nAgree": 5697,
+    "sumAgree": 9629.59999999998,
+    "nDisagree": 15,
+    "sumDisagree": 5.3
    },
-   "sector": {
-    "nAgree": 0,
-    "sumAgree": 0,
-    "nDisagree": 0,
-    "sumDisagree": 0
-   },
-   "social": {
-    "nAgree": 0,
-    "sumAgree": 0,
-    "nDisagree": 0,
-    "sumDisagree": 0
-   },
-   "channels": {
-    "nAgree": 0,
-    "sumAgree": 0,
-    "nDisagree": 0,
-    "sumDisagree": 0
-   },
-   "insiders": {
+   "catalyst": {
     "nAgree": 0,
     "sumAgree": 0,
     "nDisagree": 0,
@@ -69,11 +51,29 @@
     "nDisagree": 0,
     "sumDisagree": 0
    },
-   "seasonality": {
+   "channels": {
     "nAgree": 0,
     "sumAgree": 0,
     "nDisagree": 0,
     "sumDisagree": 0
+   },
+   "social": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
+   },
+   "insiders": {
+    "nAgree": 0,
+    "sumAgree": 0,
+    "nDisagree": 0,
+    "sumDisagree": 0
+   },
+   "seasonality": {
+    "nAgree": 3724,
+    "sumAgree": 5086.60000000001,
+    "nDisagree": 1882,
+    "sumDisagree": 4218.099999999995
    },
    "smartMoney": {
     "nAgree": 0,
@@ -81,135 +81,1853 @@
     "nDisagree": 0,
     "sumDisagree": 0
    },
-   "catalyst": {
-    "nAgree": 0,
-    "sumAgree": 0,
-    "nDisagree": 0,
-    "sumDisagree": 0
+   "sector": {
+    "nAgree": 562,
+    "sumAgree": -471.19999999999993,
+    "nDisagree": 51,
+    "sumDisagree": -39.400000000000006
    }
   },
   "gradedSinceNudge": 0,
   "history": [
    {
+    "date": "2025-11-17",
+    "changes": {
+     "technical": {
+      "from": 0.025,
+      "to": 0.025,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0.001,
+      "to": 0.001,
+      "ic": -0.19
+     }
+    },
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-11-19",
+    "changes": {
+     "technical": {
+      "from": 0.025,
+      "to": 0.025,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0.001,
+      "to": 0.001,
+      "ic": -0.2
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-11-21",
+    "changes": {
+     "technical": {
+      "from": 0.025,
+      "to": 0.026,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0.001,
+      "to": 0.001,
+      "ic": -0.21
+     }
+    },
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-11-25",
+    "changes": {
+     "technical": {
+      "from": 0.026,
+      "to": 0.026,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0.001,
+      "to": 0.001,
+      "ic": -0.22
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-11-28",
+    "changes": {
+     "technical": {
+      "from": 0.026,
+      "to": 0.026,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0.001,
+      "to": 0.001,
+      "ic": -0.22
+     }
+    },
+    "evidence": "26 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-02",
+    "changes": {
+     "technical": {
+      "from": 0.026,
+      "to": 0.026,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0.001,
+      "to": 0.001,
+      "ic": -0.22
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-04",
+    "changes": {
+     "technical": {
+      "from": 0.026,
+      "to": 0.026,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0.001,
+      "to": 0,
+      "ic": -0.22
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-08",
+    "changes": {
+     "technical": {
+      "from": 0.026,
+      "to": 0.027,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.21
+     }
+    },
+    "evidence": "19 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-10",
+    "changes": {
+     "technical": {
+      "from": 0.027,
+      "to": 0.027,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.2
+     }
+    },
+    "evidence": "19 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-12",
+    "changes": {
+     "technical": {
+      "from": 0.027,
+      "to": 0.027,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.2
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-16",
+    "changes": {
+     "technical": {
+      "from": 0.027,
+      "to": 0.027,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.19
+     }
+    },
+    "evidence": "18 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-18",
+    "changes": {
+     "technical": {
+      "from": 0.027,
+      "to": 0.027,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.2
+     }
+    },
+    "evidence": "26 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-22",
+    "changes": {
+     "technical": {
+      "from": 0.027,
+      "to": 0.027,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.2
+     }
+    },
+    "evidence": "21 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-24",
+    "changes": {
+     "technical": {
+      "from": 0.027,
+      "to": 0.028,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.2
+     }
+    },
+    "evidence": "24 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-29",
+    "changes": {
+     "technical": {
+      "from": 0.028,
+      "to": 0.028,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.2
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2025-12-31",
+    "changes": {
+     "technical": {
+      "from": 0.028,
+      "to": 0.028,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.2
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-05",
+    "changes": {
+     "technical": {
+      "from": 0.028,
+      "to": 0.028,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.19
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-07",
+    "changes": {
+     "technical": {
+      "from": 0.028,
+      "to": 0.028,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-09",
+    "changes": {
+     "technical": {
+      "from": 0.028,
+      "to": 0.029,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "22 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-12",
+    "changes": {
+     "technical": {
+      "from": 0.029,
+      "to": 0.029,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-14",
+    "changes": {
+     "technical": {
+      "from": 0.029,
+      "to": 0.029,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-16",
+    "changes": {
+     "technical": {
+      "from": 0.029,
+      "to": 0.029,
+      "ic": 0.06
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-21",
+    "changes": {
+     "technical": {
+      "from": 0.029,
+      "to": 0.03,
+      "ic": 0.06
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-23",
+    "changes": {
+     "technical": {
+      "from": 0.03,
+      "to": 0.03,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.16
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-27",
+    "changes": {
+     "technical": {
+      "from": 0.03,
+      "to": 0.03,
+      "ic": 0.06
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.16
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-01-29",
+    "changes": {
+     "technical": {
+      "from": 0.03,
+      "to": 0.03,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.15
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-02",
+    "changes": {
+     "technical": {
+      "from": 0.03,
+      "to": 0.031,
+      "ic": 0.06
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.16
+     }
+    },
+    "evidence": "22 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-04",
+    "changes": {
+     "technical": {
+      "from": 0.031,
+      "to": 0.031,
+      "ic": 0.06
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.16
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-06",
+    "changes": {
+     "technical": {
+      "from": 0.031,
+      "to": 0.031,
+      "ic": 0.06
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.16
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-10",
+    "changes": {
+     "technical": {
+      "from": 0.031,
+      "to": 0.031,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-12",
+    "changes": {
+     "technical": {
+      "from": 0.031,
+      "to": 0.032,
+      "ic": 0.03
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "24 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-13",
+    "changes": {
+     "technical": {
+      "from": 0.032,
+      "to": 0.032,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-18",
+    "changes": {
+     "technical": {
+      "from": 0.032,
+      "to": 0.032,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-20",
+    "changes": {
+     "technical": {
+      "from": 0.032,
+      "to": 0.032,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-24",
+    "changes": {
+     "technical": {
+      "from": 0.032,
+      "to": 0.032,
+      "ic": 0.04
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-02-26",
+    "changes": {
+     "technical": {
+      "from": 0.032,
+      "to": 0.033,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-02",
+    "changes": {
+     "technical": {
+      "from": 0.033,
+      "to": 0.033,
+      "ic": 0.05
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "21 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-04",
+    "changes": {
+     "technical": {
+      "from": 0.033,
+      "to": 0.033,
+      "ic": 0.06
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "16 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-09",
+    "changes": {
+     "technical": {
+      "from": 0.033,
+      "to": 0.033,
+      "ic": 0.06
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.19
+     }
+    },
+    "evidence": "21 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-11",
+    "changes": {
+     "technical": {
+      "from": 0.033,
+      "to": 0.034,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "22 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-13",
+    "changes": {
+     "technical": {
+      "from": 0.034,
+      "to": 0.034,
+      "ic": 0.09
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "22 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-17",
+    "changes": {
+     "technical": {
+      "from": 0.034,
+      "to": 0.035,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.16
+     }
+    },
+    "evidence": "21 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-19",
+    "changes": {
+     "technical": {
+      "from": 0.035,
+      "to": 0.035,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "16 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-23",
+    "changes": {
+     "technical": {
+      "from": 0.035,
+      "to": 0.035,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-25",
+    "changes": {
+     "technical": {
+      "from": 0.035,
+      "to": 0.036,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "22 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-27",
+    "changes": {
+     "technical": {
+      "from": 0.036,
+      "to": 0.036,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "19 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-03-31",
+    "changes": {
+     "technical": {
+      "from": 0.036,
+      "to": 0.037,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "18 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-02",
+    "changes": {
+     "technical": {
+      "from": 0.037,
+      "to": 0.037,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "21 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-07",
+    "changes": {
+     "technical": {
+      "from": 0.037,
+      "to": 0.038,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "20 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-09",
+    "changes": {
+     "technical": {
+      "from": 0.038,
+      "to": 0.038,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "23 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-14",
+    "changes": {
+     "technical": {
+      "from": 0.038,
+      "to": 0.038,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "22 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-16",
+    "changes": {
+     "technical": {
+      "from": 0.038,
+      "to": 0.039,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "22 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-20",
+    "changes": {
+     "technical": {
+      "from": 0.039,
+      "to": 0.039,
+      "ic": 0.09
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "20 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-22",
+    "changes": {
+     "technical": {
+      "from": 0.039,
+      "to": 0.04,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "22 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-24",
+    "changes": {
+     "technical": {
+      "from": 0.04,
+      "to": 0.04,
+      "ic": 0.09
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-28",
+    "changes": {
+     "technical": {
+      "from": 0.04,
+      "to": 0.041,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-04-30",
+    "changes": {
+     "technical": {
+      "from": 0.041,
+      "to": 0.042,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.19
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-04",
+    "changes": {
+     "technical": {
+      "from": 0.042,
+      "to": 0.042,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.19
+     }
+    },
+    "evidence": "19 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-06",
+    "changes": {
+     "technical": {
+      "from": 0.042,
+      "to": 0.043,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.19
+     }
+    },
+    "evidence": "29 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-07",
+    "changes": {
+     "technical": {
+      "from": 0.043,
+      "to": 0.044,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.19
+     }
+    },
+    "evidence": "16 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-11",
+    "changes": {
+     "technical": {
+      "from": 0.044,
+      "to": 0.044,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.19
+     }
+    },
+    "evidence": "29 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-13",
+    "changes": {
+     "technical": {
+      "from": 0.044,
+      "to": 0.045,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "29 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-14",
+    "changes": {
+     "technical": {
+      "from": 0.045,
+      "to": 0.046,
+      "ic": 0.12
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-15",
+    "changes": {
+     "technical": {
+      "from": 0.046,
+      "to": 0.047,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "19 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-18",
+    "changes": {
+     "technical": {
+      "from": 0.047,
+      "to": 0.047,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-20",
+    "changes": {
+     "technical": {
+      "from": 0.047,
+      "to": 0.048,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-21",
+    "changes": {
+     "technical": {
+      "from": 0.048,
+      "to": 0.049,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.18
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-26",
+    "changes": {
+     "technical": {
+      "from": 0.049,
+      "to": 0.05,
+      "ic": 0.12
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-27",
+    "changes": {
+     "technical": {
+      "from": 0.05,
+      "to": 0.051,
+      "ic": 0.12
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.17
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-05-29",
+    "changes": {
+     "technical": {
+      "from": 0.051,
+      "to": 0.051,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.15
+     }
+    },
+    "evidence": "29 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-01",
+    "changes": {
+     "technical": {
+      "from": 0.051,
+      "to": 0.052,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.15
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-02",
+    "changes": {
+     "technical": {
+      "from": 0.052,
+      "to": 0.053,
+      "ic": 0.12
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.14
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-03",
+    "changes": {
+     "technical": {
+      "from": 0.053,
+      "to": 0.054,
+      "ic": 0.13
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.12
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-04",
+    "changes": {
+     "technical": {
+      "from": 0.054,
+      "to": 0.055,
+      "ic": 0.12
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.11
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-05",
+    "changes": {
+     "technical": {
+      "from": 0.055,
+      "to": 0.056,
+      "ic": 0.12
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-09",
+    "changes": {
+     "technical": {
+      "from": 0.056,
+      "to": 0.057,
+      "ic": 0.12
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-11",
+    "changes": {
+     "technical": {
+      "from": 0.057,
+      "to": 0.058,
+      "ic": 0.12
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.11
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-12",
+    "changes": {
+     "technical": {
+      "from": 0.058,
+      "to": 0.059,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.11
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-16",
+    "changes": {
+     "technical": {
+      "from": 0.059,
+      "to": 0.06,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.11
+     }
+    },
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-17",
+    "changes": {
+     "technical": {
+      "from": 0.06,
+      "to": 0.061,
+      "ic": 0.11
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-18",
+    "changes": {
+     "technical": {
+      "from": 0.061,
+      "to": 0.062,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-22",
+    "changes": {
+     "technical": {
+      "from": 0.062,
+      "to": 0.063,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-24",
+    "changes": {
+     "technical": {
+      "from": 0.063,
+      "to": 0.064,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "26 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-26",
+    "changes": {
+     "technical": {
+      "from": 0.064,
+      "to": 0.065,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-06-30",
+    "changes": {
+     "technical": {
+      "from": 0.065,
+      "to": 0.066,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.09
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-02",
+    "changes": {
+     "technical": {
+      "from": 0.066,
+      "to": 0.067,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.09
+     }
+    },
+    "evidence": "25 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-07",
+    "changes": {
+     "technical": {
+      "from": 0.067,
+      "to": 0.068,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-09",
+    "changes": {
+     "technical": {
+      "from": 0.068,
+      "to": 0.069,
+      "ic": 0.1
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-13",
+    "changes": {
+     "technical": {
+      "from": 0.069,
+      "to": 0.07,
+      "ic": 0.09
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "24 predictions graded since last nudge"
+   },
+   {
     "date": "2026-07-15",
     "changes": {
      "technical": {
-      "from": 1,
-      "to": 0.993,
-      "ic": -0.05
+      "from": 0.07,
+      "to": 0.071,
+      "ic": 0.08
      },
-     "momentum": {
-      "from": 0.8,
-      "to": 0.796,
-      "ic": -0.03
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
      }
     },
-    "evidence": "778 predictions graded since last nudge"
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-17",
+    "changes": {
+     "technical": {
+      "from": 0.071,
+      "to": 0.072,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-21",
+    "changes": {
+     "technical": {
+      "from": 0.072,
+      "to": 0.072,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-23",
+    "changes": {
+     "technical": {
+      "from": 0.072,
+      "to": 0.073,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-27",
+    "changes": {
+     "technical": {
+      "from": 0.073,
+      "to": 0.074,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     },
+     "sector": {
+      "from": 0.6,
+      "to": 0.6,
+      "ic": 0
+     }
+    },
+    "evidence": "24 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-28",
+    "changes": {
+     "technical": {
+      "from": 0.074,
+      "to": 0.075,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     },
+     "sector": {
+      "from": 0.6,
+      "to": 0.6,
+      "ic": 0
+     }
+    },
+    "evidence": "15 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-07-30",
+    "changes": {
+     "technical": {
+      "from": 0.075,
+      "to": 0.075,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     },
+     "sector": {
+      "from": 0.6,
+      "to": 0.6,
+      "ic": 0
+     }
+    },
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-08-03",
+    "changes": {
+     "technical": {
+      "from": 0.075,
+      "to": 0.076,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.1
+     },
+     "sector": {
+      "from": 0.6,
+      "to": 0.599,
+      "ic": 0
+     }
+    },
+    "evidence": "26 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-08-05",
+    "changes": {
+     "technical": {
+      "from": 0.076,
+      "to": 0.077,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.09
+     },
+     "sector": {
+      "from": 0.599,
+      "to": 0.599,
+      "ic": 0
+     }
+    },
+    "evidence": "26 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-08-07",
+    "changes": {
+     "technical": {
+      "from": 0.077,
+      "to": 0.078,
+      "ic": 0.08
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.09
+     },
+     "sector": {
+      "from": 0.599,
+      "to": 0.599,
+      "ic": -0.01
+     }
+    },
+    "evidence": "28 predictions graded since last nudge"
+   },
+   {
+    "date": "2026-08-11",
+    "changes": {
+     "technical": {
+      "from": 0.078,
+      "to": 0.079,
+      "ic": 0.07
+     },
+     "seasonality": {
+      "from": 0,
+      "to": 0,
+      "ic": -0.09
+     },
+     "sector": {
+      "from": 0.599,
+      "to": 0.598,
+      "ic": -0.01
+     }
+    },
+    "evidence": "27 predictions graded since last nudge"
    }
-  ]
+  ],
+  "seedGeneration": 2
  },
  "calibration": {
   "buckets": {
-   "short:red:25-40": {
-    "n": 147,
-    "hits": 48
-   },
-   "short:green:25-40": {
-    "n": 116,
+   "long:red:55-70": {
+    "n": 86,
     "hits": 47
    },
-   "long:green:25-40": {
-    "n": 195,
-    "hits": 76
+   "short:red:55-70": {
+    "n": 67,
+    "hits": 26
    },
-   "long:amber:25-40": {
-    "n": 88,
-    "hits": 38
-   },
-   "short:amber:25-40": {
-    "n": 108,
-    "hits": 33
-   },
-   "short:red:40-55": {
-    "n": 31,
-    "hits": 7
-   },
-   "long:green:40-55": {
-    "n": 46,
-    "hits": 20
-   },
-   "short:amber:40-55": {
-    "n": 19,
-    "hits": 4
+   "long:red:40-55": {
+    "n": 367,
+    "hits": 149
    },
    "long:red:25-40": {
-    "n": 18,
-    "hits": 7
+    "n": 294,
+    "hits": 112
    },
-   "short:red:55-70": {
-    "n": 8,
-    "hits": 4
+   "short:red:40-55": {
+    "n": 115,
+    "hits": 37
+   },
+   "short:red:25-40": {
+    "n": 188,
+    "hits": 66
+   },
+   "long:amber:25-40": {
+    "n": 349,
+    "hits": 167
+   },
+   "short:amber:25-40": {
+    "n": 373,
+    "hits": 131
+   },
+   "long:amber:40-55": {
+    "n": 484,
+    "hits": 212
+   },
+   "long:green:40-55": {
+    "n": 524,
+    "hits": 220
+   },
+   "long:green:25-40": {
+    "n": 381,
+    "hits": 138
+   },
+   "short:green:25-40": {
+    "n": 672,
+    "hits": 277
    },
    "long:green:55-70": {
-    "n": 2,
-    "hits": 1
+    "n": 584,
+    "hits": 282
+   },
+   "long:amber:55-70": {
+    "n": 566,
+    "hits": 228
+   },
+   "short:amber:40-55": {
+    "n": 97,
+    "hits": 39
+   },
+   "short:green:40-55": {
+    "n": 121,
+    "hits": 65
+   },
+   "long:green:70+": {
+    "n": 1270,
+    "hits": 528
+   },
+   "short:amber:55-70": {
+    "n": 80,
+    "hits": 34
+   },
+   "short:amber:70+": {
+    "n": 46,
+    "hits": 19
+   },
+   "short:red:70+": {
+    "n": 82,
+    "hits": 24
+   },
+   "short:green:55-70": {
+    "n": 44,
+    "hits": 24
+   }
+  },
+  "setupBuckets": {
+   "reversal:long:55-70": {
+    "n": 122,
+    "hits": 60
+   },
+   "continuation:short:55-70": {
+    "n": 157,
+    "hits": 68
+   },
+   "reversal:long:40-55": {
+    "n": 313,
+    "hits": 140
+   },
+   "reversal:long:25-40": {
+    "n": 124,
+    "hits": 50
+   },
+   "continuation:long:25-40": {
+    "n": 332,
+    "hits": 145
+   },
+   "velocity:long:40-55": {
+    "n": 96,
+    "hits": 40
+   },
+   "velocity:long:25-40": {
+    "n": 493,
+    "hits": 179
+   },
+   "velocity:long:55-70": {
+    "n": 46,
+    "hits": 25
+   },
+   "continuation:short:40-55": {
+    "n": 262,
+    "hits": 105
+   },
+   "continuation:short:25-40": {
+    "n": 985,
+    "hits": 375
+   },
+   "continuation:long:40-55": {
+    "n": 914,
+    "hits": 372
+   },
+   "continuation:long:55-70": {
+    "n": 1039,
+    "hits": 457
+   },
+   "fade:short:25-40": {
+    "n": 248,
+    "hits": 99
+   },
+   "fade:long:25-40": {
+    "n": 75,
+    "hits": 43
+   },
+   "reversal:long:70+": {
+    "n": 21,
+    "hits": 11
+   },
+   "fade:long:40-55": {
+    "n": 52,
+    "hits": 29
+   },
+   "fade:short:40-55": {
+    "n": 71,
+    "hits": 36
+   },
+   "continuation:long:70+": {
+    "n": 1218,
+    "hits": 509
+   },
+   "fade:long:55-70": {
+    "n": 29,
+    "hits": 15
+   },
+   "fade:short:55-70": {
+    "n": 34,
+    "hits": 16
+   },
+   "fade:short:70+": {
+    "n": 13,
+    "hits": 2
+   },
+   "continuation:short:70+": {
+    "n": 115,
+    "hits": 41
+   },
+   "fade:long:70+": {
+    "n": 31,
+    "hits": 8
    }
   },
   "brier": [],
   "seeded": true,
   "defVersion": 3,
-  "modelVersion": 2,
-  "setupBuckets": {
-   "continuation:short:25-40": {
-    "n": 362,
-    "hits": 122
-   },
-   "continuation:long:25-40": {
-    "n": 140,
-    "hits": 61
-   },
-   "reversal:long:25-40": {
-    "n": 161,
-    "hits": 60
-   },
-   "continuation:short:40-55": {
-    "n": 50,
-    "hits": 11
-   },
-   "reversal:long:40-55": {
-    "n": 12,
-    "hits": 5
-   },
-   "continuation:long:40-55": {
-    "n": 34,
-    "hits": 15
-   },
-   "fade:short:25-40": {
-    "n": 9,
-    "hits": 6
-   },
-   "continuation:short:55-70": {
-    "n": 8,
-    "hits": 4
-   },
-   "reversal:long:55-70": {
-    "n": 2,
-    "hits": 1
-   }
-  },
+  "modelVersion": 3,
+  "seedGeneration": 2,
   "evidence": {
    "seed": {
-    "n": 778,
-    "hits": 285
+    "n": 4356,
+    "hits": 1866
    },
    "live": {
     "n": 0,
     "hits": 0
    },
    "shadow": {
-    "n": 0,
-    "hits": 0
+    "n": 2434,
+    "hits": 959
    }
-  }
+  },
+  "referenceBase": 0.4158
  }
 }

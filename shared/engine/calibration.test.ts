@@ -684,10 +684,13 @@ describe('gradeBaseRate — which number a grade is measured against', () => {
     expect(migrateCalibration(referenceShape()).referenceBase).toBe(0.37)
   })
 
-  it('the COMMITTED seed carries none — installing this code changes nothing live', () => {
+  it('the COMMITTED seed carries its swept reference — grades anchor to it, not the pool', () => {
+    // Generation 2 shipped 2026-08-13: referenceBase 0.4158 measured by the
+    // unconditional sweep over the walk's own 166-symbol universe (4,178 rows).
     const committed = seedJson.calibration as unknown as CalibrationState
-    expect(committed.referenceBase).toBeUndefined()
-    expect(gradeBaseRate(committed)).toBe(baseHitRate(committed).rate)
+    expect(committed.referenceBase).toBe(0.4158)
+    expect(gradeBaseRate(committed)).toBe(0.4158)
+    expect(gradeBaseRate(committed)).not.toBe(baseHitRate(committed).rate) // pool 0.4161 — close, NOT equal
   })
 })
 
@@ -737,7 +740,8 @@ describe('REGRESSION PIN — with no referenceBase, every grade is byte-for-byte
       ['cold store', emptyCal()],
       ['sub-50 store (base cliff)', calOf({ 'long:green:25-40': [40, 18] })],
       ['warm board population', calOf({ 'long:green:55-70': [584, 282], 'long:green:70+': [412, 136] })],
-      ['committed seed.json verbatim', seedJson.calibration as unknown as CalibrationState],
+      // the committed artefact left this list 2026-08-13: generation 2 CARRIES a
+      // reference, and its own pin above asserts the anchored behaviour
     ]
     for (const [label, state] of states) {
       expect(state.referenceBase, label).toBeUndefined()

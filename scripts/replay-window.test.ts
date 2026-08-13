@@ -908,15 +908,16 @@ describe('--seed-out: the flags refuse to guess', () => {
     }
   }
   it('refuses --seed-out with --plant-a or --baseline — a probe calibration is not a seed', async () => {
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '2', '--plant-a'])).rejects.toThrow(/probe calibration/)
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '2', '--baseline'])).rejects.toThrow(/probe calibration/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '3', '--plant-a'])).rejects.toThrow(/probe calibration/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '3', '--baseline'])).rejects.toThrow(/probe calibration/)
   })
   it('refuses a generation at or below the committed seed — the walk would warm-start from it', async () => {
-    // committed seed.json carries no seedGeneration → 1; emitting AT 1 must refuse
+    // the committed seed is generation 2 now (shipped 2026-08-13); AT 2 must refuse
     await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '1'])).rejects.toThrow(/not above the committed/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '2'])).rejects.toThrow(/not above the committed/)
   })
   it('refuses --symbols without a list', async () => {
-    await expect(runWith(['--symbols', '--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '2'])).rejects.toThrow(/--symbols needs/)
+    await expect(runWith(['--symbols', '--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '3'])).rejects.toThrow(/--symbols needs/)
   })
   it('refuses --seed-out without a generation — the artefact may not guess which walk made it', async () => {
     await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json')])).rejects.toThrow(/--seed-generation/)
@@ -956,7 +957,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
     const from = iso(ts[WALK_BARS - WALK_WINDOW])
     const to = iso(ts[WALK_BARS - 1])
     const argv = process.argv
-    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', [...WALK_SYMS, 'ETH-USD'].join(','), '--seed-out', seedPath, '--seed-generation', '2', '--out', outPath]
+    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', [...WALK_SYMS, 'ETH-USD'].join(','), '--seed-out', seedPath, '--seed-generation', '3', '--out', outPath]
     // the walk narrates every day; the suite does not need to hear it — but the
     // seed-out summary IS a deliverable, so it is captured rather than discarded
     const logged: string[] = []
@@ -1011,7 +1012,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
     // guarantees 1, 2, 6 on the file the next task actually copies over seed.json
     expect(art.calibration.defVersion).toBe(3)
     expect(art.calibration.modelVersion).toBe(3)
-    expect(art.calibration.seedGeneration).toBe(2)
+    expect(art.calibration.seedGeneration).toBe(3) // 3: the committed seed is generation 2 since 2026-08-13, and the floor refuses ≤2
     expect(art.weights.seedGeneration).toBe(art.calibration.seedGeneration)
 
     // guarantee 7 — the grade anchor, swept over this same window and universe and
