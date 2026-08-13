@@ -103,19 +103,14 @@ export function regretDisabled(): boolean {
  *    deliberately withheld from the reader, and it grades already, through
  *    gradePrediction, with a real published stop. Charging a gate for a shadow's
  *    move would book the same outcome twice under two different names.
- *  - `shadow-capped` — the shadow budget's casualties. Same argument: the row was
- *    a SHADOW before the cap touched it. The decision that kept it away from the
- *    reader was the shadow flag, not the cap, so the cap must not be charged for
- *    a move nobody was going to take.
- *  - `called-watch` / `called-below-base` / `called-observation` — UNSIZED, and
- *    these DO count. The reader saw the row on the board and could not act on it:
- *    zero size, no instrument, no book entry. That is a gate (a thin grade, a
- *    below-base read, a missing ISA route) denying a move, which is precisely
- *    what this ledger measures. They also grade as watch-only predictions, and
- *    that is not a conflict: grading asks "was the read right", the ledger asks
- *    "was the reader denied". Different questions, both worth an answer.
- *
- * Everything else — every ordinary refusal — is a candidate. */
+ *  - `shadow-capped` — NOT covered by grading and NOT miss-checked: pickShadow
+ *    drops these rows past the per-side budget (or as dedup casualties) and the
+ *    row then appears in nothing the reader or the learning loop sees. They are
+ *    skipped here because the SHADOW flag, not the cap, is what kept them from
+ *    the reader — charging the cap would blame a sampling budget for a decision
+ *    made elsewhere. Until the 3a `priorGate` rider lands, this population is
+ *    measured by NOTHING; a 3c reader must not assume grading covers it
+ *    (3b final review, Important 3). */
 export const MISS_SKIP_GATES: ReadonlySet<GateCode> = new Set<GateCode>(['called-full', 'called-half', 'called-shadow', 'route-blocked', 'shadow-capped'])
 
 export const missCheckable = (gate: GateCode): boolean => !MISS_SKIP_GATES.has(gate)

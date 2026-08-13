@@ -312,7 +312,11 @@ export type BoardExportSource = Omit<BoardRow, 'name'>
 /** How far back the paper looks for its own recent losses. Five trading days:
  * far enough that a quiet week still has something to answer for, near enough
  * that the reader remembers the call. */
-export const PAPER_POSTMORTEM_DAYS = 5
+// 16, not 5: a row published on day D earns its post-mortem when outcome10
+// lands — ten sessions later — so the newest FIVE publication dates are
+// structurally the five that cannot carry one (3b final review, Important 1).
+// Sixteen dates ≈ one grading horizon plus a paper week of stamped losers.
+export const PAPER_POSTMORTEM_DAYS = 16
 export const PAPER_POSTMORTEM_MAX = 6
 
 export interface PaperPostMortem {
@@ -339,16 +343,21 @@ export interface PaperPostMortem {
  *
  * PURE + exported so it can be tested without running the compose pipe. */
 export function paperPostMortems(days: readonly { date: string; preds: readonly Prediction[] }[], max = PAPER_POSTMORTEM_MAX): PaperPostMortem[] {
-  const out: PaperPostMortem[] = []
-  for (const d of [...days].sort((a, b) => b.date.localeCompare(a.date))) {
+  // Ordered by WHEN THE POST-MORTEM LANDED (pm.at), not by publication date:
+  // the freshest explanation is the one the paper should close on, and a
+  // publication-date sort would surface eleven-session-old rows first.
+  const all: (PaperPostMortem & { at: number })[] = []
+  for (const d of days) {
     for (const p of d.preds) {
       const pm = p.postMortem
       if (!pm || !(p.riskPct > 0)) continue
-      out.push({ date: d.date, sym: p.sym, side: p.side, cls: pm.cls, why: pm.sentence || pm.detail, ...(pm.sentence ? { via: 'llm' as const } : {}) })
-      if (out.length >= max) return out
+      all.push({ date: d.date, sym: p.sym, side: p.side, cls: pm.cls, why: pm.sentence || pm.detail, at: pm.at ?? 0, ...(pm.sentence ? { via: 'llm' as const } : {}) })
     }
   }
-  return out
+  return all
+    .sort((a, b) => b.at - a.at || b.date.localeCompare(a.date))
+    .slice(0, max)
+    .map(({ at: _at, ...row }) => row)
 }
 
 /** THE PROMPT'S DROP ORDER — least critical first, so the engine board and the
