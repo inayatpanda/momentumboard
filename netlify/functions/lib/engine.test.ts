@@ -1490,6 +1490,53 @@ describe('buildBoard', () => {
     expect(call.grade).toBe('A') // graded on the ordinary calibration path like any call
   })
 
+  // ---- reference-anchored grading (spec §9, ratified 2026-08-13) ----
+  //
+  // The wiring, end to end on the board: `gradeFor` reads `gradeBaseRate`, not the
+  // pooled base. One store, two runs, identical in every respect except a single
+  // stored `referenceBase` — so the grade step below is attributable to that field
+  // and to nothing else. The buckets are a deep-seed shape in miniature: 200 rows
+  // pooling to exactly 0.5, which is where a board-driven population lands and why
+  // its own rows can no longer clear it.
+  const dipRefDeps = () =>
+    deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' ? dipTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      capUsdM: async sym => (sym === 'GLW' ? 35_000 : null),
+      sparkCloses: sparkOf(dipTape),
+    })
+  const dipRefStore = async (referenceBase?: number) => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await store.write('engine-calibration', {
+      buckets: { 'long:amber:25-40': { n: 200, hits: 100 } }, // pooled (100+2)/(200+4) = 0.5
+      brier: [],
+      defVersion: CALIB_DEF_VERSION,
+      ...(referenceBase == null ? {} : { referenceBase }),
+    })
+    return store
+  }
+
+  it('a row that ties its own selected population grades C — the all-C finding, reproduced on the board', async () => {
+    const { board } = await buildBoard(await dipRefStore(), dipRefDeps(), NOW)
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call).toBeDefined()
+    expect(call.probability).toBeCloseTo(0.5, 2) // reads its band exactly
+    expect(call.grade).toBe('C') // p = base, so it clears neither +0.05 nor +0.10
+  })
+
+  it('…and the SAME row grades A once a swept referenceBase says what ordinary odds are', async () => {
+    const { board } = await buildBoard(await dipRefStore(0.37), dipRefDeps(), NOW)
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call).toBeDefined()
+    // PROBABILITY IS UNMOVED — the reference is a grading anchor, never a price.
+    expect(call.probability).toBeCloseTo(0.5, 2)
+    expect(call.grade).toBe('A') // 0.5 ≥ 0.37 + 0.10, nEff 200 ≥ 30
+    expect(call.riskPct).toBeGreaterThan(0) // …and it is sized, which is the point of the change
+  })
+
   it('dip earnings override: a dip name inside the earnings window is shadowed like any call', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })

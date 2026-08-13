@@ -163,6 +163,31 @@ describe('the generation-keyed seed install', () => {
       expect(cal.seedGeneration).toBe(1) // backfilled, so tomorrow's generation 2 can see it
     })
 
+    it('carries the seed’s referenceBase in with it — the grade anchor travels with the buckets it grades', async () => {
+      // spec §9. The anchor is measured by the same walk that filled these buckets
+      // and is only meaningful beside them, so the wholesale replace is exactly the
+      // right vehicle — but it is worth pinning, because the field is new and a
+      // shallow merge somewhere upstream would install the population without the
+      // yardstick and silently reproduce the all-C board.
+      seedStub.calibration = seedCal({ seedGeneration: 2, referenceBase: 0.3712 })
+      seedStub.weights = seedW({ seedGeneration: 2 })
+
+      const { cal } = await load(storedCal({ seedGeneration: 1 }), storedW({ seedGeneration: 1 }))
+
+      expect(cal.referenceBase).toBe(0.3712)
+      expect(cal.buckets[SEED_KEY]).toEqual({ n: 400, hits: 220 })
+    })
+
+    it('…and does NOT arrive when the stored blob wins — the two move together or not at all', async () => {
+      seedStub.calibration = seedCal({ seedGeneration: 2, referenceBase: 0.3712 })
+      seedStub.weights = seedW({ seedGeneration: 2 })
+
+      const { cal } = await load(storedCal({ seedGeneration: 2 }), storedW({ seedGeneration: 2 }))
+
+      expect(cal.buckets[LIVE_KEY]).toEqual({ n: 12, hits: 5 }) // no swap…
+      expect(cal.referenceBase).toBeUndefined() // …so no anchor from a population this blob never measured
+    })
+
     it('refuses a seed on a STALE outcome definition however high its generation', async () => {
       // a bad artefact — regenerated against a different hit rule and mis-stamped.
       // Its buckets count a different thing; generation must not be able to buy

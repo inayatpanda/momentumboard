@@ -63,7 +63,19 @@ export function seedFromHistory(
   spy: Candle[],
   qqq?: Candle[],
   vix?: Candle[],
+  /** Optional lower bound on the sampled sessions, added for stage 2b's REFERENCE
+   * SWEEP (spec §9). The reference base a grade is anchored to has to be measured
+   * over the same window as the walk whose buckets it grades — an unbounded sweep
+   * over the whole 5y cache would anchor a 2024-2026 board to a 2021 market. The
+   * UPPER bound is the candle set itself: the caller truncates every series to the
+   * bars the walk's last morning could see, so no sample and no outcome can reach
+   * past it. Read on the ENTRY session (bar i+1), because that is the session the
+   * walk's board of date D actually buys — which makes "the same window" mean the
+   * same thing on both sides. Absent → every session from WARMUP on, exactly as
+   * before, so `scripts/seed-engine.ts` and every existing caller is untouched. */
+  window?: { fromISO?: string },
 ): { weights: WeightsState; calibration: CalibrationState } {
+  const sinceSec = window?.fromISO ? Date.parse(`${window.fromISO}T00:00:00Z`) / 1000 : null
   let weights = initWeights()
   const calibration: CalibrationState = { buckets: {}, brier: [], seeded: true, defVersion: CALIB_DEF_VERSION }
   const spyIdxByT = new Map(spy.map((c, i) => [c.t, i]))
@@ -105,6 +117,8 @@ export function seedFromHistory(
   for (const [sym, candles] of [...bySym.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     const closes = candles.map(c => c.c)
     for (let i = WARMUP; i + 1 + HORIZON < candles.length; i += STEP) {
+      // the window bound, before any work: the entry session must land inside it
+      if (sinceSec != null && candles[i + 1].t < sinceSec) continue
       const slice = candles.slice(0, i + 1)
       const sliceCloses = closes.slice(0, i + 1)
       const read = technicalStage(sym, slice)

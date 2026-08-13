@@ -32,6 +32,7 @@ import {
   baseHitRate,
   brierPoint,
   CALIB_DEF_VERSION,
+  gradeBaseRate,
   gradeFor,
   gradePrediction,
   ENGINE_MODEL_VERSION,
@@ -995,7 +996,15 @@ export async function buildBoard(
 
   // shared context for factor computation (weights/calibration/channelCred loaded
   // above with the pundit stances, so a high-credibility call could nominate names)
+  // TWO numbers, and they are two questions [§9]. `engineBaseRate` is POOLED: it
+  // is the engine's measured hit rate over the population it publishes, and it is
+  // used where a PROBABILITY is wanted (the near-miss row's `probability`, far
+  // below). `gradeAnchor` is what every GRADE threshold and the null floor are
+  // measured from — the stored `referenceBase` when the installed seed swept one,
+  // the pooled base otherwise, so the committed generation-1 seed keeps today's
+  // behaviour exactly. They coincide until a generation-2+ seed installs.
   const engineBaseRate = baseHitRate(calibration).rate
+  const gradeAnchor = gradeBaseRate(calibration)
   // per-cohort rungs (migrated from a legacy blob if needed) — each call below
   // trades at its OWN sleeve's rung; unknown-cap names pool to the combined rung.
   const risk = migrateRisk((await store.read<RiskState>('risk-state')) ?? initRisk(today))
@@ -1103,7 +1112,7 @@ export async function buildBoard(
     // ever graded, which caps the grade at C. `provisional` is display only
     // (nEff < MIN_BUCKET_N) — nothing below branches on it.
     const { p, provisional, nEff, belowEvidence } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort)
-    const grade = gradeFor(p, nEff, engineBaseRate, belowEvidence)
+    const grade = gradeFor(p, nEff, gradeAnchor, belowEvidence)
     // grade null = calibration sees no edge in this bucket. The call stays off
     // the paper — but it MUST enter the ledger as a shadow, or buckets below
     // 50% can never earn their way back up (nothing would ever get graded).
@@ -1843,6 +1852,9 @@ export async function buildBoard(
         // there is no belief to state and its levels are a printed comparison
         // rather than a plan. Giving it the engine's voice would make the one row
         // that is NOT a call read exactly like the ones that are.
+        // POOLED [§9]: a near miss cleared no gate, so the honest thing to print
+        // beside it is the engine's own measured rate over what it does publish —
+        // a probability question, not a grading one.
         probability: round2(engineBaseRate),
         provisional: true,
         grade: 'C',

@@ -37,7 +37,9 @@
 // `shared/engine/backtest.ts` itself is NOT retired. `seedFromHistory` remains the
 // reference implementation of the hit definition — its grading twin is deliberately
 // line-for-line with `gradePrediction`, and its test is one of the things that would
-// notice if the two drifted apart.
+// notice if the two drifted apart. Since stage 2b it has a second live job: the walk
+// runs it, bounded to the walk's own window, as the REFERENCE SWEEP that measures the
+// unconditional hit rate a v3 seed's grades are anchored to (spec §9).
 
 export {}
 

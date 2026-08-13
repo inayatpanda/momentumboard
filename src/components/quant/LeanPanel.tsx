@@ -72,7 +72,12 @@ export function LeanPanel({
   const direction = flat ? 'no clear' : lean >= 0 ? 'risk-on' : 'risk-off'
   const dirColor = flat ? 'var(--muted)' : lean >= 0 ? 'var(--green)' : 'var(--red)'
 
-  // engine base hit-rate: Laplace-smoothed over every calibration bucket
+  // engine base hit-rate: Laplace-smoothed over every calibration bucket.
+  // STAYS POOLED [spec §9]: the sentence below says "engine base hit-rate", and
+  // that is a statement about the population the engine actually publishes — how
+  // often ITS calls land. `referenceBase` answers a different question (what
+  // ordinary candidates do, which is what grades are measured against) and printing
+  // it under this label would quietly relabel a measurement as a benchmark.
   const buckets = calibration?.buckets ? Object.values(calibration.buckets) : []
   const nSum = buckets.reduce((a, b) => a + (b?.n ?? 0), 0)
   const hitSum = buckets.reduce((a, b) => a + (b?.hits ?? 0), 0)

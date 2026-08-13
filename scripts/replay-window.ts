@@ -58,6 +58,11 @@
 // mode the walk starts from an EMPTY calibration (never the committed seed — "do not
 // mix a regenerated seed with the committed one, regenerate whole", backtest.ts) and
 // crypto is filtered out of the universe (stage 1c is unbuilt — see isCryptoSymbol).
+// After the walk it also runs the REFERENCE SWEEP (spec §9, `referenceSweep` below):
+// the same candles, window and universe put through `seedFromHistory` with no board
+// in the way, which measures the UNCONDITIONAL gate-clearing rate the artefact's
+// grades will be anchored to. The walk's buckets say what a published row is worth;
+// the sweep says what an ordinary candidate is worth, and a grade is the gap.
 //   npx tsx scripts/replay-window.ts --from 2024-08-12 --to 2026-08-11 \
 //     --seed-out /tmp/seed-candidate.json --seed-generation 2 --out /tmp/walk.json
 // `--symbols A,B,C` narrows the walk universe (default: the whole REPLAY_UNIVERSE) —
@@ -96,6 +101,7 @@ import {
   initWeights,
   probabilityFor,
 } from '../shared/engine/calibration'
+import { seedFromHistory } from '../shared/engine/backtest'
 import { DEFAULT_WEIGHTS } from '../shared/engine/composite'
 import { exchangeFor } from '../shared/symbols'
 import { leverageAllowed } from '../shared/engine/riskLadder'
@@ -803,8 +809,14 @@ export interface DayOut {
   /** per-name candidacy trace for the --watch list (criterion 2) */
   watched: { sym: string; doors: string[]; evaluated: boolean }[]
   candidatesAsked: number
-  /** The engine's own base rate on the day the board was built — every grade
-   * threshold is relative to it, so a grade histogram without it is unreadable. */
+  /** THE GRADE ANCHOR on the day the board was built — every grade threshold is
+   * relative to it, so a grade histogram without it is unreadable. Since spec §9
+   * that is the calibration's stored `referenceBase` when it carries one and the
+   * pooled base otherwise, which is exactly what `gradeFor` was handed: the field
+   * has always meant "the number the grades were measured against", and its job is
+   * to stay that number rather than to stay the pooled rate. Identical to the
+   * pooled base on every blob without a reference — including every walk, which
+   * starts from `emptyLearningState`. */
   baseRate: number
 }
 
@@ -893,6 +905,65 @@ export interface SeedArtefact {
 const cloneJson = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T
 const zero = () => ({ n: 0, hits: 0 })
 
+/** How many graded rows a reference sweep must carry before its reading may be
+ * stored. A thin reference is WORSE than none: absence falls back to the pooled
+ * base — a known quantity with known semantics — while a stored 0.31 read off
+ * forty rows silently becomes the yardstick for every grade the seed ever hands
+ * out. Five hundred is the same order as the committed generation-1 seed's whole
+ * population (778) — a floor set where "this is as much evidence as the seed we
+ * already trust" becomes true, not at a number that merely sounds large. */
+const REFERENCE_MIN_N = 500
+/** The sanity band (2026-08-13 walk-results doc). Every measurement of the
+ * unconditional gate-clearing rate so far has sat near 0.37; a sweep reading 0.08
+ * or 0.90 has measured something other than what it believes — a broken hit rule,
+ * a benchmark mismatch, a universe that collapsed to one name — and the failure
+ * mode of accepting it is a seed that grades everything or nothing for a year. */
+const REFERENCE_MIN = 0.25
+const REFERENCE_MAX = 0.55
+
+/** THE REFERENCE SWEEP (spec §9) — the unconditional population, measured with the
+ * SAME machinery that graded the walk.
+ *
+ * The walk's buckets describe the rows the board PUBLISHES, which is a selected
+ * population; this measures the rows the market OFFERS. The gap between the two is
+ * the whole content of a grade: "how much better is this pick than any ordinary
+ * candidate?" is the question a reader actually asks, and it cannot be answered
+ * from the published population alone.
+ *
+ * `seedFromHistory` is called rather than reimplemented, deliberately: it is the
+ * grading TWIN of the live path (same 10-session horizon, same close-based stop,
+ * same HIT_EXCESS_MIN, same entry-at-next-open basis — backtest.ts states and
+ * pins the correspondence), and a second implementation of that arithmetic would
+ * be a second thing to keep in step with `gradePrediction` forever. Its
+ * walk-forward honesty is structural: every factor reads `candles.slice(0, i + 1)`,
+ * the regime reads `spy.slice(0, j + 1)` with breadth computed per date from
+ * bar-k-and-earlier SMAs, and the outcome is taken from bars i+1 … i+1+HORIZON —
+ * strictly after the decision. (The per-symbol outer loop means accumulation is not
+ * globally chronological, which is irrelevant here: nothing in the sweep READS the
+ * buckets as it fills them; only the final pooled rate is used.)
+ *
+ * The pooled estimate is spelled out rather than delegated to `baseHitRate`,
+ * because `baseHitRate` returns a flat 0.5 below fifty observations — a thin sweep
+ * would come back looking exactly like an ordinary measurement, and 0.5 sits
+ * inside the sanity band. Here the raw `n` travels with the rate and the caller
+ * refuses on it.
+ *
+ * Pure and deterministic: no clocks, no RNG, no network. */
+export function referenceSweep(input: {
+  /** Every non-crypto name in the walk's universe, each truncated to the bars the
+   * walk's LAST morning could see — which is what bounds the sweep from above. */
+  bySym: Map<string, Candle[]>
+  spy: Candle[]
+  qqq?: Candle[]
+  vix?: Candle[]
+  /** The walk's own `--from`. Bounds the sweep from below (backtest.ts `window`). */
+  fromISO: string
+}): { rate: number; n: number } {
+  const { calibration } = seedFromHistory(input.bySym, input.spy, input.qqq, input.vix, { fromISO: input.fromISO })
+  const t = Object.values(calibration.buckets).reduce((a, b) => ({ n: a.n + b.n, hits: a.hits + b.hits }), { n: 0, hits: 0 })
+  return { rate: (t.hits + 2) / (t.n + 4), n: t.n }
+}
+
 /** Turn the two blobs the walk leaves in the carrying store into a seed artefact.
  *
  * Every rule below exists because its absence fails SILENTLY in production:
@@ -927,6 +998,13 @@ const zero = () => ({ n: 0, hits: 0 })
  *    independently, each keyed on its own blob's generation. Halves that disagree
  *    install asymmetrically and silently: one epoch's buckets beside another
  *    epoch's factor evidence.
+ * 7. THE GRADE ANCHOR IS MEASURED (spec §9). `reference` is REQUIRED, not optional:
+ *    a v3 artefact grades against the unconditional sweep, and an emission that
+ *    forgot to run one would fall back to the pooled base and reproduce the all-C
+ *    board the addendum exists to fix — silently, because the file would still
+ *    load. It is thrown out rather than clamped when it is thin or absurd: a
+ *    reference is the yardstick for every grade the seed will ever hand out, and a
+ *    clamped yardstick is a wrong one with a plausible face.
  *
  * Pure, and it does not mutate its inputs — the walk's store keeps its own state. */
 export function seedArtefactFrom(input: {
@@ -937,6 +1015,10 @@ export function seedArtefactFrom(input: {
    * (`bySym.size`) means too. Never "the universe I was handed". */
   symbols: number
   generation: number
+  /** What `referenceSweep` read over the same window and universe — the raw pooled
+   * rate and the sweep's own row count. Validated and rounded here, never taken on
+   * trust and never supplied by an operator (spec §9). */
+  reference: { rate: number; n: number }
   generatedAt?: string
 }): SeedArtefact {
   const { generation } = input
@@ -944,6 +1026,21 @@ export function seedArtefactFrom(input: {
     throw new Error(`BLOCKED: --seed-generation must be a positive integer, got ${JSON.stringify(input.generation)}`)
   if (!input.calibration) throw new Error('BLOCKED: the walk left no `engine-calibration` blob — there is nothing to serialise')
   if (!input.weights) throw new Error('BLOCKED: the walk left no `engine-weights` blob — a seed without its factor IC is half an artefact')
+
+  // guarantee 7 — the grade anchor, validated before anything is stamped
+  const { rate, n } = input.reference
+  if (!Number.isFinite(rate) || !Number.isFinite(n))
+    throw new Error(`BLOCKED: the reference sweep returned a non-finite reading (rate ${rate}, n ${n}) — the grade anchor may not be NaN`)
+  if (n < REFERENCE_MIN_N)
+    throw new Error(
+      `BLOCKED: the reference sweep graded only ${n} rows, under the ${REFERENCE_MIN_N} a stored anchor needs. A thin reference is worse than none — absence falls back to the pooled base, a stored guess does not. Widen the window or the universe.`,
+    )
+  // rounded FIRST, so the number that is checked is the number that is stored
+  const referenceBase = Math.round(rate * 1e4) / 1e4
+  if (referenceBase < REFERENCE_MIN || referenceBase > REFERENCE_MAX)
+    throw new Error(
+      `BLOCKED: the reference sweep read ${referenceBase} over ${n} rows, outside the sane band [${REFERENCE_MIN}, ${REFERENCE_MAX}]. Every honest measurement of the unconditional gate-clearing rate has sat near 0.37; this one measured something else.`,
+    )
 
   const calibration = cloneJson(input.calibration)
   const weights = cloneJson(input.weights)
@@ -959,6 +1056,7 @@ export function seedArtefactFrom(input: {
   calibration.defVersion = CALIB_DEF_VERSION
   calibration.modelVersion = ENGINE_MODEL_VERSION
   calibration.seedGeneration = generation
+  calibration.referenceBase = referenceBase
   calibration.seeded = true
   calibration.setupBuckets ??= {}
   calibration.brier = []
@@ -1198,7 +1296,14 @@ export async function main() {
     // gradeOutstanding writes `engine-calibration`; buildBoard only reads it. So
     // the blob standing here IS the one every grade above was struck against.
     const calNow = await store.read<CalibrationState>('engine-calibration')
-    const baseRate = calNow ? baseHitRate(calNow).rate : 0.5
+    // MOVES TO THE REFERENCE [§9] — this number feeds `gradeUncapped` and the
+    // day's recorded `baseRate`, both of which are GRADE semantics, so they have to
+    // be struck against the same anchor `engine.ts` used or the counterfactual
+    // would answer a question the board never asked. Spelled out rather than
+    // imported from `gradeBaseRate`: every static import in this file must also
+    // resolve in the pre-Stage-1 baseline worktree, whose calibration module has no
+    // such export (see the import block's note).
+    const baseRate = calNow ? calNow.referenceBase ?? baseHitRate(calNow).rate : 0.5
     enrichFromCalibration(board, calNow, baseRate)
     enrichFromCalibration(ledger, calNow, baseRate)
     // velocity diagnostics — over the names buildBoard actually evaluated (`asked`
@@ -1314,7 +1419,37 @@ export async function main() {
     // captures the calibration blob and nothing else — and a seed without its
     // factor IC is the half of §4.4 that would have gone missing quietly.
     const weightsFinal = await store.read<WeightsState>('engine-weights')
-    const artefact = seedArtefactFrom({ calibration: calibrationFinal, weights: weightsFinal, symbols: walked.size, generation: seedGeneration })
+    // THE REFERENCE SWEEP (spec §9), over the SAME candles the walk was driven from:
+    // the same `fullHistory` cache, the same crypto-free universe (`baseUniverse`
+    // was already filtered by `seedUniverse`), the same `--from`, and each series
+    // truncated with the same `sliceBefore` the walk's LAST morning used — so the
+    // sweep cannot see a bar the walk never had in hand. It measures the
+    // unconditional population the board's rows will be graded against; the walk's
+    // own buckets keep pricing them.
+    const sweepBySym = new Map<string, Candle[]>()
+    for (const sym of baseUniverse) {
+      const full = await fullHistory(sym)
+      if (!full) continue
+      const s = sliceBefore(full, to)
+      if (s.length) sweepBySym.set(sym.toUpperCase(), s)
+    }
+    const sweepSpy = sliceBefore(spyFull, to)
+    const sweepQqq = await fullHistory('QQQ')
+    const sweepVix = await fullHistory(VIX_SYMBOL.sym)
+    const reference = referenceSweep({
+      bySym: sweepBySym,
+      spy: sweepSpy,
+      qqq: sweepQqq ? sliceBefore(sweepQqq, to) : undefined,
+      vix: sweepVix ? sliceBefore(sweepVix, to) : undefined,
+      fromISO: from,
+    })
+    const artefact = seedArtefactFrom({
+      calibration: calibrationFinal,
+      weights: weightsFinal,
+      symbols: walked.size,
+      generation: seedGeneration,
+      reference,
+    })
     writeFileSync(seedOut, JSON.stringify(artefact, null, 1))
     const cal = artefact.calibration
     const totals = Object.values(cal.buckets).reduce((a, b) => ({ n: a.n + b.n, hits: a.hits + b.hits }), { n: 0, hits: 0 })
@@ -1322,6 +1457,14 @@ export async function main() {
     console.log(
       `  ${artefact.symbols} symbols · ${totals.n} graded rows in ${Object.keys(cal.buckets).length} buckets ` +
         `(${Object.keys(cal.setupBuckets ?? {}).length} setup keys) · base rate ${(baseHitRate(cal).rate).toFixed(4)}`,
+    )
+    // BOTH numbers, side by side, because the gap between them is the addendum: the
+    // pooled base prices the board's own rows, the reference is what their GRADES
+    // are measured against. `n` is printed because a reference is only as good as
+    // the sweep under it, and a reader of the run log must be able to see that.
+    console.log(
+      `  reference base ${cal.referenceBase!.toFixed(4)} — unconditional sweep over ${sweepBySym.size} symbols, ${reference.n} graded rows ` +
+        `(pooled base ${(baseHitRate(cal).rate).toFixed(4)}; grades anchor to the reference, probabilities to the pool)`,
     )
     console.log(`  evidence: seed ${cal.evidence!.seed.n}/${cal.evidence!.seed.hits} · shadow ${cal.evidence!.shadow.n}/${cal.evidence!.shadow.hits} · live 0 (folded into seed at serialisation)`)
     console.log(

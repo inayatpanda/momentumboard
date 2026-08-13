@@ -52,4 +52,39 @@ describe('seedFromHistory', () => {
     expect(panicKeys.every(k => k.includes(':red:'))).toBe(true)
     expect(JSON.stringify(calmKeys)).not.toBe(JSON.stringify(panicKeys))
   })
+
+  // `fromISO` exists for the stage-2b reference sweep (spec §9): the reference a
+  // grade is anchored to must be measured over the SAME window as the walk that
+  // emitted the buckets, or it is a reading from another market epoch wearing this
+  // one's clothes. Everything else about the sweep — the step, the warmup, the
+  // gates, the hit rule — must stay the seeder's, which is why this is a bound on
+  // the existing loop rather than a second implementation of it.
+  describe('fromISO — the sweep can be bounded to the walk’s own window', () => {
+    const rowsIn = (fromISO?: string) =>
+      Object.values(seedFromHistory(bySym(), spy, undefined, undefined, fromISO ? { fromISO } : undefined).calibration.buckets).reduce(
+        (s, b) => s + b.n,
+        0,
+      )
+
+    it('samples strictly fewer sessions than the unbounded sweep, and none at all past the end', () => {
+      const all = rowsIn()
+      expect(all).toBeGreaterThan(0)
+      // the tape runs 320 calendar days from 2025-01-02; a bound two-thirds in must bite
+      expect(rowsIn('2025-08-01')).toBeGreaterThan(0)
+      expect(rowsIn('2025-08-01')).toBeLessThan(all)
+      expect(rowsIn('2099-01-01')).toBe(0) // a window after the tape measures nothing rather than everything
+    })
+
+    it('a bound at or before the first ENTRY session changes nothing — the window is a filter, not a re-slice', () => {
+      // WARMUP still applies, and the bound is read on the entry session (bar i+1),
+      // so a date under the tape's own start must leave the unbounded result intact.
+      expect(rowsIn('2024-01-01')).toBe(rowsIn())
+    })
+
+    it('stays deterministic under the bound', () => {
+      const a = seedFromHistory(bySym(), spy, undefined, undefined, { fromISO: '2025-06-01' })
+      const b = seedFromHistory(bySym(), spy, undefined, undefined, { fromISO: '2025-06-01' })
+      expect(JSON.stringify(a)).toBe(JSON.stringify(b))
+    })
+  })
 })

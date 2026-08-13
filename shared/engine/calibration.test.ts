@@ -4,6 +4,7 @@ import {
   baseHitRate,
   brierPoint,
   curveFor,
+  gradeBaseRate,
   gradeFor,
   gradePrediction,
   initWeights,
@@ -21,6 +22,7 @@ import {
 } from './calibration'
 import type { Candle } from '../types'
 import type { FactorName, Prediction } from './types'
+import seedJson from './seed.json'
 
 const emptyCal = (): CalibrationState => ({ buckets: {}, brier: [] })
 
@@ -633,6 +635,136 @@ describe('gradeFor', () => {
     expect(baseHitRate(emptyCal()).rate).toBe(0.5)
     expect(gradeFor(0.59, 1000)).toBe('B')
     expect(gradeFor(0.99, 29)).toBe('B')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REFERENCE-ANCHORED GRADING (spec §9, ratified 2026-08-13). A board-driven deep
+// seed RAISES the pooled base — the published population is selected — so grades
+// measured against the pool answer "is a high-composite board row better than a
+// low one?" and collapse to all-C. The reader asks a different question: "how
+// much better is this pick than any ordinary candidate?". `referenceBase` stores
+// the answer to THAT question (the unconditional gate-clearing rate, swept over
+// the same window/universe by the emitter) and every grade threshold anchors to
+// it. Absent — the committed gen-1 seed, every legacy blob — nothing moves.
+// ---------------------------------------------------------------------------
+
+/** The shape §9 describes: board-population buckets pooling to 0.42 (996 rows,
+ * 418 hits → 420/1000), beside a reference of 0.37 swept over the unconditional
+ * population. The two numbers 5pp apart is the whole of the finding. */
+const referenceShape = (): CalibrationState => ({
+  ...calOf({ 'long:green:55-70': [584, 282], 'long:green:70+': [412, 136] }),
+  referenceBase: 0.37,
+})
+
+describe('gradeBaseRate — which number a grade is measured against', () => {
+  it('is the stored referenceBase when a seed measured one', () => {
+    const cal = referenceShape()
+    expect(baseHitRate(cal).rate).toBeCloseTo(0.42, 12) // the pool is still the pool…
+    expect(gradeBaseRate(cal)).toBe(0.37) // …and the grade anchor is not it
+  })
+
+  it('falls back to the pooled base when absent — the committed seed is untouched', () => {
+    expect(gradeBaseRate(seedShape())).toBe(baseHitRate(seedShape()).rate)
+    expect(gradeBaseRate(seedShape())).toBeCloseTo(0.3670077, 7)
+    // …including the cold-start cliff, which the fallback inherits whole
+    expect(gradeBaseRate(emptyCal())).toBe(0.5)
+  })
+
+  it('migrateCalibration NEVER invents one — absence is a claim, not a gap', () => {
+    // seedGeneration/modelVersion are backfilled because absence there means a
+    // known value (generation 1). Absence here means "no sweep ever measured a
+    // reference for this blob", and defaulting it to the pool would be the same
+    // number by a different name — with a stored field that later swaps could
+    // not distinguish from a measured one.
+    const cal = migrateCalibration({ buckets: {}, brier: [] })
+    expect('referenceBase' in cal).toBe(false)
+    expect(cal.referenceBase).toBeUndefined()
+    // …and a stored one survives the migration exactly as written
+    expect(migrateCalibration(referenceShape()).referenceBase).toBe(0.37)
+  })
+
+  it('the COMMITTED seed carries none — installing this code changes nothing live', () => {
+    const committed = seedJson.calibration as unknown as CalibrationState
+    expect(committed.referenceBase).toBeUndefined()
+    expect(gradeBaseRate(committed)).toBe(baseHitRate(committed).rate)
+  })
+})
+
+describe('gradeFor anchored to a referenceBase', () => {
+  const ref = () => gradeBaseRate(referenceShape()) // 0.37
+  const pooled = () => baseHitRate(referenceShape()).rate // 0.42
+
+  it('a 0.43 read on 40 observations is a B against the reference — and a C against the pool', () => {
+    // THE finding, in one line: long:green 55-70 read 48.3% while the pool it was
+    // measured against had risen to 41.6%, so the board graded C at every rung.
+    expect(gradeFor(0.43, 40, ref())).toBe('B')
+    expect(gradeFor(0.43, 40, pooled())).toBe('C') // what the deep seed did to all 531 rows
+  })
+
+  it('A stays rare but reachable: 0.48 clears reference + 0.10 on 40 observations', () => {
+    expect(gradeFor(0.48, 40, ref())).toBe('A')
+    expect(gradeFor(0.48, 29, ref())).toBe('B') // the evidence gate is untouched
+    expect(gradeFor(0.48, 14, ref())).toBe('C')
+    expect(gradeFor(0.48, 40, pooled())).toBe('B') // …one whole rung lower against the pool
+  })
+
+  it('the null floor moved WITH the thresholds — below the reference is no edge', () => {
+    expect(gradeFor(0.36, 999, ref())).toBeNull()
+    expect(gradeFor(0.37, 999, ref())).toBe('C') // exactly on the reference is a C, not a suppression
+    // …and a row between the reference and the pool is now VISIBLE (unsized, per
+    // §3's board-never-blank rule) where the pooled anchor suppressed it entirely
+    expect(gradeFor(0.40, 999, pooled())).toBeNull()
+    expect(gradeFor(0.40, 999, ref())).toBe('C')
+  })
+
+  it('belowEvidence still caps at C, and still does not rescue a below-reference read', () => {
+    expect(gradeFor(0.48, 40, ref(), true)).toBe('C') // the A it would otherwise be
+    expect(gradeFor(0.43, 40, ref(), true)).toBe('C') // the B it would otherwise be
+    expect(gradeFor(0.36, 999, ref(), true)).toBeNull() // a cap, never a floor
+  })
+})
+
+describe('REGRESSION PIN — with no referenceBase, every grade is byte-for-byte today’s', () => {
+  it('matches the pooled anchor across the whole (state × p × nEff × belowEvidence) matrix', () => {
+    // The one guarantee the addendum makes about production: live behaviour does
+    // not move until a generation-2+ seed installs. This is that promise as a
+    // test — the states are the shapes production actually carries (the committed
+    // seed, a cold store, a warm store), and the grid straddles every threshold.
+    const states: [string, CalibrationState][] = [
+      ['committed seed', seedShape()],
+      ['cold store', emptyCal()],
+      ['sub-50 store (base cliff)', calOf({ 'long:green:25-40': [40, 18] })],
+      ['warm board population', calOf({ 'long:green:55-70': [584, 282], 'long:green:70+': [412, 136] })],
+      ['committed seed.json verbatim', seedJson.calibration as unknown as CalibrationState],
+    ]
+    for (const [label, state] of states) {
+      expect(state.referenceBase, label).toBeUndefined()
+      const pooled = baseHitRate(state).rate
+      expect(gradeBaseRate(state), label).toBe(pooled)
+      for (const p of [0, 0.2, 0.3, 0.3669, 0.367, 0.37, 0.4166, 0.42, 0.4670, 0.47, 0.5, 0.55, 0.6, 0.75, 1]) {
+        for (const nEff of [0, 1, 8, 14, 15, 29, 30, 100]) {
+          for (const below of [false, true]) {
+            expect(gradeFor(p, nEff, gradeBaseRate(state), below), `${label} p=${p} nEff=${nEff} below=${below}`).toBe(
+              gradeFor(p, nEff, pooled, below),
+            )
+          }
+        }
+      }
+    }
+  })
+
+  it('…and the end-to-end read path on the committed seed grades exactly as before', () => {
+    // probabilityFor is UNCHANGED by the addendum (bucket probabilities stay
+    // board-population); this pins that the grade it feeds is too.
+    for (const side of ['long', 'short'] as const)
+      for (const regime of ['green', 'amber', 'red'])
+        for (const x of [26, 32.5, 40, 47.5, 55, 62.5, 70, 77.5, 90]) {
+          const r = probabilityFor(seedShape(), side, regime, x)
+          expect(gradeFor(r.p, r.nEff, gradeBaseRate(seedShape()), r.belowEvidence)).toBe(
+            gradeFor(r.p, r.nEff, baseHitRate(seedShape()).rate, r.belowEvidence),
+          )
+        }
   })
 })
 

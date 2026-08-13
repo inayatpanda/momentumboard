@@ -75,6 +75,35 @@ export interface CalibrationState {
    * ABSENT MEANS 1 (migrateCalibration backfills): every blob written before
    * this field existed descends from the generation-1 seed of record. */
   seedGeneration?: number
+  /** THE ANCHOR GRADES ARE MEASURED AGAINST (spec §9, ratified 2026-08-13): the
+   * UNCONDITIONAL gate-clearing hit rate, swept over the same window, universe and
+   * model as the walk that emitted these buckets.
+   *
+   * It exists because the two questions came apart. `buckets` describe the
+   * population the engine PUBLISHES, which is selected — a board-driven deep seed
+   * pools to ~0.42 where the unconditional sweep reads ~0.37 — and grading against
+   * the pool therefore asks "is a high-composite board row better than a low one?".
+   * Measured over 2024-08 → 2026-08 the honest answer is "barely" (the 2026-08-13
+   * walk: long:green reads 48.3% at 55-70 and 41.6% at 70+), so every one of 531
+   * acceptance rows graded C. The reader's question is the other one — "how much
+   * better is this pick than an ordinary candidate?" — and this field is what makes
+   * a grade answer it.
+   *
+   * Probability is NOT anchored here: `probabilityFor` keeps reading the
+   * board-population buckets, because that is the population a published row is
+   * actually drawn from and pricing it against any other would be a lie about the
+   * row in front of the reader. Only grade thresholds and the null floor move
+   * (`gradeBaseRate` below).
+   *
+   * ABSENT MEANS "no sweep measured one" and falls back to the pooled base —
+   * byte-for-byte the behaviour that shipped before this field existed. The
+   * committed generation-1 seed carries none, so installing this code moves
+   * nothing live; behaviour changes only when a generation-2+ seed installs.
+   * Deliberately NOT backfilled by `migrateCalibration`: defaulting it to the pool
+   * would write the same number under a name that later readers could no longer
+   * tell from a measured one. Operator-supplied values are equally forbidden — the
+   * emitter computes it from the same candles or the walk refuses to serialise. */
+  referenceBase?: number
   evidence?: {
     seed: BucketStat
     live: BucketStat
@@ -94,6 +123,9 @@ export function migrateCalibration(state: CalibrationState): CalibrationState {
   // when the field did not exist yet. Backfilling here is what lets the install
   // rule in loadState compare two numbers instead of three states.
   state.seedGeneration ??= 1
+  // `referenceBase` is deliberately NOT backfilled here — see its doc comment.
+  // Absence is a measurement that was never taken, and `gradeBaseRate` answers it
+  // with the pooled base at read time rather than writing one into the blob.
   if (!state.evidence) {
     const total = Object.values(state.buckets).reduce((a, b) => ({ n: a.n + b.n, hits: a.hits + b.hits }), { n: 0, hits: 0 })
     state.evidence = {
@@ -231,6 +263,11 @@ export function curveFor(
   side: 'long' | 'short',
   cohort: CapCohort | 'any',
   regime: string | null,
+  // POOLED, not `gradeBaseRate` [§9]: this is the bottom of the SHRINKAGE
+  // hierarchy, and a thin band is shrunk toward the broader population it belongs
+  // to. That population is the board's own — the buckets right here — so pulling
+  // it toward a reference measured over a DIFFERENT (unconditional) population
+  // would bias every published probability toward names the board never publishes.
   parentAt: (mid: number) => number = () => baseHitRate(state).rate,
 ): CurvePoint[] {
   const seen = BANDS.map(band => ({ band, stat: poolBuckets(state, side, band, cohort, regime) })).filter(b => b.stat.n > 0)
@@ -334,7 +371,7 @@ export function probabilityFor(
       const curve = curveAtRung(j)
       if (curve.length) return readCurve(curve, mid).p
     }
-    return baseHitRate(state).rate
+    return baseHitRate(state).rate // POOLED [§9] — the shrinkage floor, exactly as in curveFor above
   }
 
   for (let i = 0; i < rungs.length; i++) {
@@ -347,6 +384,9 @@ export function probabilityFor(
   // rung 5: nothing for this side anywhere → the engine's own base rate
   // (baseHitRate is a hoisted declaration below). Not a curve read at all, so
   // there is no evidence for it to sit below — a C at most either way.
+  // POOLED [§9]: this IS the emitted probability, and a probability must describe
+  // the population the row was drawn from. The reference answers a grading
+  // question about ordinary candidates, not a pricing question about this one.
   return { p: baseHitRate(state).rate, provisional: true, nEff: 0, belowEvidence: false }
 }
 
@@ -371,12 +411,40 @@ export function baseHitRate(state: CalibrationState): { rate: number; n: number 
   return { rate: n >= 50 ? laplace({ n, hits }) : 0.5, n }
 }
 
-/** A/B/C = how far the read beats the engine's own base rate, AND how much
- * evidence is actually under it. Both, or the grade drops a rung:
+/** THE GRADE ANCHOR — the one number every threshold in `gradeFor` is measured
+ * from, and the ONLY place the pooled/reference choice is made.
+ *
+ * `state.referenceBase` when a seed swept one (spec §9: the unconditional
+ * gate-clearing rate — "how much better is this pick than any ordinary
+ * candidate?"), else the pooled base over the buckets themselves, which is what
+ * the engine did before the field existed and what it still does for the
+ * committed generation-1 seed and every legacy blob.
+ *
+ * It is a separate function rather than a line inside `gradeFor` because
+ * `gradeFor` takes a NUMBER: it is called from the board (engine.ts), from the
+ * replay harness's counterfactual, and from tests that pass a bare rate, and
+ * threading a whole CalibrationState through it would make the fallback
+ * unreadable at three call sites instead of readable at one. Every caller that
+ * asks a GRADE question calls this; every caller that asks a PROBABILITY
+ * question keeps calling `baseHitRate` — see the call-site comments there. */
+export function gradeBaseRate(state: CalibrationState): number {
+  return state.referenceBase ?? baseHitRate(state).rate
+}
+
+/** A/B/C = how far the read beats the GRADE ANCHOR, AND how much evidence is
+ * actually under it. Both, or the grade drops a rung:
  *   A  ≥ base + 0.10  and  nEff ≥ 30
  *   B  ≥ base + 0.05  and  nEff ≥ 15
  *   C  ≥ base                            (no evidence floor — C carries half size at most)
- *   null below base — no edge over the engine's own rate; suppress, don't dress it up.
+ *   null below base — no edge over the anchor; suppress, don't dress it up.
+ *
+ * `baseRate` is whatever the caller anchors to, and callers with a
+ * CalibrationState in hand must get it from `gradeBaseRate` — the stored
+ * `referenceBase` when a seed swept one, the pooled base otherwise (spec §9).
+ * The FLOOR moves with the thresholds, deliberately and as one: a row between the
+ * reference and a higher pooled base is a real edge over ordinary odds, and
+ * suppressing it while grading its neighbours off the reference would be two
+ * different questions answered in one row.
  *
  * `belowEvidence` (probabilityFor) caps the result at C: the read was handed
  * DOWN from the lowest band this rung has ever graded, so the engine has watched

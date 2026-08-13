@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { seedFromHistory } from '../shared/engine/backtest'
+import seedJson from '../shared/engine/seed.json'
 import { DEFAULT_CORE_SLEEVE } from '../shared/engine/coreSleeve'
 import { classifyVelocity, effectiveVelocityStop, MIN_RISK_FRAC } from '../shared/engine/velocityLane'
 import {
@@ -40,6 +42,7 @@ import {
   meanOf,
   monotonicityViolations,
   probeGrid,
+  referenceSweep,
   sdOf,
   seedArtefactFrom,
   seedLikeState,
@@ -638,7 +641,15 @@ const walkedWeights = (over: Partial<WeightsState> = {}): WeightsState => ({
 })
 
 const emit = (over: Partial<Parameters<typeof seedArtefactFrom>[0]> = {}): SeedArtefact =>
-  seedArtefactFrom({ calibration: walkedCalibration(), weights: walkedWeights(), symbols: 143, generation: 2, generatedAt: '2026-08-13T00:00:00.000Z', ...over })
+  seedArtefactFrom({
+    calibration: walkedCalibration(),
+    weights: walkedWeights(),
+    symbols: 143,
+    generation: 2,
+    generatedAt: '2026-08-13T00:00:00.000Z',
+    reference: { rate: 0.3712345, n: 18_402 },
+    ...over,
+  })
 
 describe('seedArtefactFrom — guarantee 1: the artefact describes ITSELF', () => {
   it('stamps defVersion, modelVersion and seedGeneration EXPLICITLY in the emitted JSON', () => {
@@ -732,6 +743,49 @@ describe('seedArtefactFrom — guarantee 6: the two halves announce the SAME gen
   })
 })
 
+describe('seedArtefactFrom — guarantee 7: the grade anchor is MEASURED, and thin or absurd is a refusal', () => {
+  it('stamps the swept reference at 4dp — the number every grade threshold will be read from', () => {
+    const cal = (JSON.parse(JSON.stringify(emit())) as SeedArtefact).calibration
+    expect(cal.referenceBase).toBe(0.3712) // 0.3712345 rounded, and IN the file, not derived on load
+    // …and the buckets are untouched: the reference anchors grades, it does not re-price
+    expect(cal.buckets).toEqual(walkedCalibration().buckets)
+  })
+
+  it('REFUSES a thin sweep — a reference measured on nothing is worse than no reference at all', () => {
+    // Absence falls back to the pooled base, which is a known quantity with known
+    // semantics. A stored 0.31 read off 40 rows is a made-up number that every
+    // grade for the life of the seed is then measured against.
+    expect(() => emit({ reference: { rate: 0.37, n: 499 } })).toThrow(/reference sweep/)
+    expect(() => emit({ reference: { rate: 0.37, n: 499 } })).toThrow(/499/)
+    expect(() => emit({ reference: { rate: 0.37, n: 0 } })).toThrow(/reference sweep/)
+    expect(emit({ reference: { rate: 0.37, n: 500 } }).calibration.referenceBase).toBe(0.37) // the edge is admissible
+  })
+
+  it('REFUSES a reference outside [0.25, 0.55], and says the number it read', () => {
+    // The sanity band from the 2026-08-13 walk-results doc: the unconditional
+    // gate-clearing rate has been ~0.37 across every measurement so far, and a
+    // sweep reading 0.08 or 0.9 has measured something other than what it thinks —
+    // a broken hit rule, a benchmark mismatch, a universe of one name.
+    expect(() => emit({ reference: { rate: 0.2449, n: 5_000 } })).toThrow(/0\.2449/)
+    expect(() => emit({ reference: { rate: 0.9, n: 5_000 } })).toThrow(/0\.9/)
+    expect(() => emit({ reference: { rate: 0.9, n: 5_000 } })).toThrow(/0\.25.*0\.55|\[0\.25, 0\.55\]/)
+    expect(emit({ reference: { rate: 0.25, n: 5_000 } }).calibration.referenceBase).toBe(0.25) // both edges admissible
+    expect(emit({ reference: { rate: 0.55, n: 5_000 } }).calibration.referenceBase).toBe(0.55)
+  })
+
+  it('REFUSES a non-finite reading rather than writing NaN into the anchor', () => {
+    expect(() => emit({ reference: { rate: Number.NaN, n: 5_000 } })).toThrow(/reference/)
+    expect(() => emit({ reference: { rate: 0.37, n: Number.NaN } })).toThrow(/reference/)
+  })
+
+  it('the ROUNDING is applied before the range check, so the stored number is the checked one', () => {
+    // 0.2500499 rounds to 0.25 and passes; nothing may be stamped that was not
+    // itself validated, or a boundary read could store an out-of-band value.
+    expect(emit({ reference: { rate: 0.2500499, n: 5_000 } }).calibration.referenceBase).toBe(0.25)
+    expect(() => emit({ reference: { rate: 0.2494999, n: 5_000 } })).toThrow(/0\.2495/)
+  })
+})
+
 // ---------------------- guarantee 3 + the whole pipe: a tiny walk ----------------------
 // A REAL walk — the same main() Task 3 runs — over a two-name fixture universe with
 // ETH-USD fed in beside them, driven off a temp candle cache so it touches no network.
@@ -739,7 +793,19 @@ describe('seedArtefactFrom — guarantee 6: the two halves announce the SAME gen
 // artefact is what the CARRYING store held at walk end, and that a crypto name in the
 // universe contributes nothing because the walk never looks at it.
 
-const WALK_SYMS = ['AAA', 'BBB']
+/** The two protagonists: the names with enough swing amplitude to clear the
+ * roster's join gate, and therefore the ones that actually publish rows. */
+const WALK_LEADS = ['AAA', 'BBB']
+/** …and the sweep's population. The reference base is measured over the SAME
+ * universe and window as the walk (spec §9), and `seedArtefactFrom` refuses a
+ * sweep under REFERENCE_MIN_N rows — so a two-name fixture can no longer drive
+ * `--seed-out` end to end, and that refusal is itself under test above. These
+ * carry three tape shapes chosen so the pooled reference lands inside the sane
+ * band rather than at one of its edges; the walk treats them like any other
+ * candidate. */
+const SWEEP_SHAPES: [number, number][] = [[-0.3, 4], [-0.3, 20], [-0.3, 9], [-0.3, 14]]
+const SWEEP_SYMS = Array.from({ length: 60 }, (_, i) => `S${String(i).padStart(2, '0')}`)
+const WALK_SYMS = [...WALK_LEADS, ...SWEEP_SYMS]
 /** Every tape the real buildBoard reaches for that is NOT a walk candidate: the
  * index pair, the world panel, the eleven sector ETFs — and the names the rotation
  * and THEME doors put in front of the engine on any day at all (themes.ts: "every
@@ -757,8 +823,11 @@ const CONTEXT_SYMS = [
     VIX_SYMBOL.sym,
   ]),
 ]
-const WALK_BARS = 400
-const WALK_WINDOW = 40
+// Long enough that the reference sweep — which samples every fifth session from
+// the seeder's 80-bar warmup on, inside the walk's own window — can grade the 500
+// rows a stored anchor requires.
+const WALK_BARS = 600
+const WALK_WINDOW = 300
 
 /** Business-day timestamps — the walk derives its trading days from SPY's own series,
  * so weekends simply must not be in the tape. */
@@ -783,6 +852,45 @@ const tape = (ts: number[], start: number, driftPctPerDay: number, swingPct = 7,
     const c = start * (1 + (driftPctPerDay / 100) * i) * (1 + swing / 100)
     return { t, o: c * 0.997, h: c * 1.012, l: c * 0.988, c, v: 2_400_000 + 600_000 * Math.sin(i * 0.9 + phase) }
   })
+
+describe('referenceSweep — the unconditional population, measured by the seeder itself', () => {
+  const swpBySym = (ts: number[]) =>
+    new Map([
+      ['AAA', tape(ts, 40, 0.22, 9, 0.7)],
+      ['BBB', tape(ts, 90, -0.06, 8, 2.1)],
+    ])
+  const swpSpy = (ts: number[]) => tape(ts, 480, 0.04, 1.2)
+
+  it('pools every bucket the sweep filled, and reports the sweep’s own n', () => {
+    const ts = busDays(400)
+    const r = referenceSweep({ bySym: swpBySym(ts), spy: swpSpy(ts), fromISO: iso(ts[0]) })
+    expect(r.n).toBeGreaterThan(0)
+    expect(r.rate).toBeGreaterThan(0)
+    expect(r.rate).toBeLessThan(1)
+    // it IS the seeder's own buckets, pooled — not a reimplementation of the walk,
+    // and not `baseHitRate`, whose n<50 cliff would hand a thin sweep a flat 0.5
+    // that looks exactly like an ordinary measurement
+    const cal = seedFromHistory(swpBySym(ts), swpSpy(ts), undefined, undefined, { fromISO: iso(ts[0]) }).calibration
+    const t = Object.values(cal.buckets).reduce((a, b) => ({ n: a.n + b.n, hits: a.hits + b.hits }), { n: 0, hits: 0 })
+    expect(r.n).toBe(t.n)
+    expect(r.rate).toBeCloseTo((t.hits + 2) / (t.n + 4), 12)
+  })
+
+  it('honours the window: a later `fromISO` measures strictly less', () => {
+    const ts = busDays(400)
+    const all = referenceSweep({ bySym: swpBySym(ts), spy: swpSpy(ts), fromISO: iso(ts[0]) })
+    const late = referenceSweep({ bySym: swpBySym(ts), spy: swpSpy(ts), fromISO: iso(ts[300]) })
+    expect(late.n).toBeLessThan(all.n)
+    expect(late.n).toBeGreaterThan(0)
+  })
+
+  it('is deterministic — the artefact carries this number for the life of the seed', () => {
+    const ts = busDays(400)
+    const a = referenceSweep({ bySym: swpBySym(ts), spy: swpSpy(ts), fromISO: iso(ts[0]) })
+    const b = referenceSweep({ bySym: swpBySym(ts), spy: swpSpy(ts), fromISO: iso(ts[0]) })
+    expect(a).toEqual(b)
+  })
+})
 
 describe('--seed-out: the flags refuse to guess', () => {
   /** main() validates before it touches the disk, so these cost nothing and never
@@ -829,6 +937,11 @@ describe('--seed-out: the walk serialises what it learned', () => {
     for (const [i, sym] of CONTEXT_SYMS.entries()) write(sym, tape(ts, 24 + (i % 37) * 9, 0.01 + (i % 9) * 0.008, 6 + (i % 5), i * 0.41))
     write('AAA', tape(ts, 40, 0.22, 9, 0.7))
     write('BBB', tape(ts, 90, -0.06, 8, 2.1))
+    // the sweep's population — see SWEEP_SYMS
+    for (const [i, sym] of SWEEP_SYMS.entries()) {
+      const [drift, swing] = SWEEP_SHAPES[i % SWEEP_SHAPES.length]
+      write(sym, tape(ts, 30 + (i % 11) * 7, drift, swing, i * 0.37))
+    }
     // The benchmark and the trading calendar, written AFTER the loop above so its
     // generic tape cannot overwrite them: an index is calm, and grading is excess
     // vs SPY, so a swinging SPY would be measuring the benchmark.
@@ -840,8 +953,11 @@ describe('--seed-out: the walk serialises what it learned', () => {
     const from = iso(ts[WALK_BARS - WALK_WINDOW])
     const to = iso(ts[WALK_BARS - 1])
     const argv = process.argv
-    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', 'AAA,BBB,ETH-USD', '--seed-out', seedPath, '--seed-generation', '2', '--out', outPath]
-    const quiet = vi.spyOn(console, 'log').mockImplementation(() => {}) // the walk narrates 40 days; the suite does not need to hear it
+    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', [...WALK_SYMS, 'ETH-USD'].join(','), '--seed-out', seedPath, '--seed-generation', '2', '--out', outPath]
+    // the walk narrates every day; the suite does not need to hear it — but the
+    // seed-out summary IS a deliverable, so it is captured rather than discarded
+    const logged: string[] = []
+    const quiet = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void logged.push(a.map(String).join(' ')))
     try {
       vi.resetModules() // CACHE_DIR is read at module load, so the fresh instance is what sees the temp cache
       vi.stubEnv('REPLAY_CACHE_DIR', dir)
@@ -864,7 +980,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
     const contributors = new Set([...run.days.flatMap(d => [...d.board, ...d.ledger].map(r => r.sym.toUpperCase()))])
     for (const sym of contributors) expect(isCryptoSymbol(sym)).toBe(false)
     expect(art.symbols).toBe(contributors.size) // `symbols` = the names that actually produced rows
-    expect(art.symbols).toBeGreaterThanOrEqual(WALK_SYMS.length)
+    expect(art.symbols).toBeGreaterThanOrEqual(WALK_LEADS.length)
 
     // guarantee 5 — the artefact IS the carrying store's two blobs at walk end
     expect(art.calibration.buckets).toEqual(run.calibrationFinal.buckets)
@@ -874,9 +990,17 @@ describe('--seed-out: the walk serialises what it learned', () => {
     const tech = art.weights.ic.technical
     expect(tech.nAgree + tech.nDisagree).toBeGreaterThan(0)
 
-    // the walk started EMPTY: the committed generation-1 seed's 778 rows did not travel
+    // THE WALK STARTED EMPTY. The proof is in the blob as it stood at walk end,
+    // BEFORE serialisation folds live into seed: `emptyLearningState` zeroes
+    // `evidence.seed` and nothing in the walk ever books `provenance: 'seed'`, so a
+    // zero there means no prior population rode in. Had loadState cold-started from
+    // the committed generation-1 seed, `evidence.seed` would have arrived holding
+    // its whole 778/285 tally (seed.json carries it explicitly, and buckets merge
+    // ADDITIVELY — nothing later removes them). This holds however many rows the
+    // walk grades on its own, which a bound on the total does not.
+    expect(seedJson.calibration.evidence.seed.n).toBeGreaterThan(0) // the pin is not vacuous
+    expect(run.calibrationFinal.evidence!.seed).toEqual({ n: 0, hits: 0 })
     const total = Object.values(art.calibration.buckets).reduce((s, b) => s + b.n, 0)
-    expect(total).toBeLessThan(200)
     expect(art.calibration.evidence!.live).toEqual({ n: 0, hits: 0 })
     expect(art.calibration.evidence!.seed.n + art.calibration.evidence!.shadow.n).toBe(total)
     expect(art.calibration.evidence!.seed.n).toBeGreaterThan(0) // the window is long enough to grade something
@@ -886,6 +1010,22 @@ describe('--seed-out: the walk serialises what it learned', () => {
     expect(art.calibration.modelVersion).toBe(3)
     expect(art.calibration.seedGeneration).toBe(2)
     expect(art.weights.seedGeneration).toBe(art.calibration.seedGeneration)
+
+    // guarantee 7 — the grade anchor, swept over this same window and universe and
+    // stamped into the file. It is measured, so the test pins its SHAPE (a number,
+    // 4dp, inside the sane band) rather than a value that would move with the tape;
+    // the arithmetic itself is pinned on `referenceSweep` above.
+    const ref = art.calibration.referenceBase!
+    expect(typeof ref).toBe('number')
+    expect(Number.isFinite(ref)).toBe(true)
+    expect(ref).toBeGreaterThanOrEqual(0.25)
+    expect(ref).toBeLessThanOrEqual(0.55)
+    expect(ref).toBe(Math.round(ref * 1e4) / 1e4)
+    // it is NOT the pooled base of the walk's own buckets — the two populations are
+    // different, which is the entire reason the field exists
+    expect(ref).not.toBe(baseHitRate(art.calibration).rate)
+    // and the run log names the sweep's n, so a reader can weigh the anchor
+    expect(logged.join('\n')).toMatch(/reference base 0\.\d{4} — unconditional sweep over \d+ symbols, \d+ graded rows/)
   }, 180_000)
 })
 
