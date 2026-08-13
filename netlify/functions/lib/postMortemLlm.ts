@@ -92,8 +92,17 @@ Return ONLY JSON: {"sentence":"...","catalystFlip":true|false} — no prose, no 
 export function parsePostMortemReply(raw: string): { sentence: string; flip: boolean } | null {
   const obj = extractJson<Record<string, unknown>>(raw ?? '')
   if (!obj || typeof obj !== 'object') return null
-  const sentence = typeof obj.sentence === 'string' ? obj.sentence.replace(/\s+/g, ' ').trim() : ''
-  if (!sentence) return null
+  // The same strip voice.ts applies to every non-engine-authored string: this
+  // sentence is stored, then travels into all six section prompts AND the
+  // reader's paper — markup and prompt-steering characters are removed. The
+  // leak check is the IDENTIFIER sweep only, not the whole-word factor list:
+  // a thesis must never say "news" (a field name there), but a post-mortem's
+  // prose legitimately speaks that English — what it must never carry is a
+  // `someFieldName`-shaped token. A leaky reply is DROPPED and the
+  // deterministic line stands, the module's own fail-soft.
+  const sentence =
+    typeof obj.sentence === 'string' ? obj.sentence.replace(/[<>`"{}\[\]]/g, ' ').replace(/\s+/g, ' ').trim() : ''
+  if (!sentence || /\b[a-z]+[A-Z][A-Za-z0-9]*\b/.test(sentence)) return null
   const f = obj.catalystFlip
   // `true` or the string "true" and nothing else. "maybe", "possibly true",
   // 1 and TRUE-ish are all hedges, and a hedge must never mint the one class
@@ -113,6 +122,9 @@ export function applyPostMortemSentence(pm: PostMortem, parsed: { sentence: stri
   pm.sentence = parsed.sentence
   pm.via = 'llm'
   if (!parsed.flip || pm.cls === 'news-reversal') return
+  // clsBefore keeps the upgrade machine-recoverable: byPostMortem keys on cls
+  // alone, and 3c must not have to regex prose to find the stopped population.
+  pm.clsBefore = pm.cls
   pm.detail = `catalyst tone flipped · the deterministic read was ${pm.cls}: ${pm.detail}`
   pm.cls = 'news-reversal'
 }
@@ -152,12 +164,15 @@ export async function annotatePostMortems(
   let overflow = 0
   let chainDown = false
   for (const [i, row] of sentenceOrder(rows).entries()) {
+    // chain-down wins over budget: a row behind a dead provider chain was never
+    // askable, and stamping it 'budget' would tell two stories for one cause
+    // (Task-3 review, Minor 3). Unmarked = never reached, exactly as documented.
+    if (chainDown) continue
     if (i >= budget) {
       row.postMortem.via = 'budget'
       overflow++
       continue
     }
-    if (chainDown) continue
     asked++
     let raw: string | null = null
     try {

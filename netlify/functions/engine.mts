@@ -5,7 +5,7 @@ import type { WeightsState, CalibrationState } from '../../shared/engine/calibra
 import type { RiskState } from '../../shared/engine/riskLadder'
 import type { RosterEntry } from '../../shared/engine/roster'
 import type { ChannelCredState } from '../../shared/engine/channelCred'
-import { missLedgerSummary } from '../../shared/engine/missLedger'
+import { MISS_LEDGER_KEY, missLedgerSummary } from '../../shared/engine/missLedger'
 
 // Read-only aggregation of everything the engine knows: the board, the
 // scorecard, the learning state. The app renders this; the engine writes it.
@@ -122,7 +122,7 @@ export default async (req: Request) => {
     // blob — the blob carries per-gate example lists that grow for months and
     // nothing on the client has a use for them. Display-only, like everything
     // else here; no gate has ever moved because of it (that is Stage 3c).
-    blobAppStore.read('miss-ledger'),
+    blobAppStore.read(MISS_LEDGER_KEY),
   ])
 
   // pattern scorecard: rolled up at read time (pure + cheap) from the sweep's

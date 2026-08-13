@@ -78,6 +78,10 @@ export interface PostMortem {
    * them. ADDITIVE and always optional: `detail` above is the floor and stands
    * whatever happens here. */
   sentence?: string
+  /** Set only by the news-reversal upgrade: the deterministic class it replaced,
+   * so the roll-up's consumers can recover the stopped population without
+   * regexing prose (Task-3 review). */
+  clsBefore?: PostMortemClass
   /** WHY there is no sentence, when there is none — 'llm' wrote one, 'budget'
    * means the row was past the run's cap and was never asked, 'failed' means it
    * was asked and nothing usable came back. Absent means neither happened (the

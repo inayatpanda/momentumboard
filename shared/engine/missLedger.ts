@@ -353,9 +353,11 @@ export function missLedgerSummary(raw: unknown, topN = 3): MissLedgerSummary | n
       saved: g.saved ?? 0,
       unchecked: g.unchecked ?? 0,
     }))
-    // by cost, then by the size of what it cost, then by name so two reads of one
-    // ledger never disagree about which gate is worst
-    .sort((a, b) => b.cost - a.cost || (b.avgCostExcessPct ?? 0) - (a.avgCostExcessPct ?? 0) || a.gate.localeCompare(b.gate))
+    // by cost, then by the size of what it cost, THEN by unchecked — so on a
+    // day where every gate shows cost 0, the gate with 40 unpriced refusals
+    // outranks an alphabetically-early gate that was fully measured at zero
+    // (Task-3 review, Minor 8) — then by name so two reads never disagree
+    .sort((a, b) => b.cost - a.cost || (b.avgCostExcessPct ?? 0) - (a.avgCostExcessPct ?? 0) || b.unchecked - a.unchecked || a.gate.localeCompare(b.gate))
     .slice(0, Math.max(0, topN))
   return {
     days: days.length,
