@@ -142,10 +142,50 @@ const rowOf = (gate: GateCode, extra?: TraceExtra): FunnelTraceRow => {
   return row
 }
 
+/** THE PROOF SEAM (Stage 3a Task 4). `FUNNEL_TRACE=off` in the environment hands
+ * every caller a recorder that records NOTHING — the one seam that lets the same
+ * binary walk the same window twice and prove, over real days rather than a
+ * fixture, that the board and the ledger are byte-identical with the recorder
+ * present and with it stubbed out.
+ *
+ * It lives HERE, in the module that owns the recorder, rather than as a branch in
+ * `buildBoard`: the engine's code path must be IDENTICAL in both runs or the
+ * comparison proves something about the branch instead of about the recorder. So
+ * the no-op still answers every method, `build` still returns a well-formed trace
+ * (with no rows), and the engine still writes it — exactly the same calls, in the
+ * same order, against a recorder that has nothing to say.
+ *
+ * Off is opt-IN and read per construction, so nothing about a production run
+ * changes unless the variable is set. The guard is for the browser bundle, which
+ * has no `process` at all. */
+const traceDisabled = (): boolean => {
+  try {
+    return typeof process !== 'undefined' && process.env?.FUNNEL_TRACE === 'off'
+  } catch {
+    return false
+  }
+}
+
+/** A recorder that forgets everything, for the parity proof above. `hasRow` is
+ * false for every name, which is honest: it holds no rows. */
+export function noopFunnelTraceRecorder(): FunnelTraceRecorder {
+  return {
+    record() {},
+    revise() {},
+    notCandidate() {},
+    rowAt: () => null,
+    gateOf: () => null,
+    hasRow: () => false,
+    size: () => 0,
+    build: ({ date, gates, nearMisses, emptySides }) => ({ date, gates: { ...gates }, rows: {}, counts: { notCandidate: 0 }, nearMisses, emptySides }),
+  }
+}
+
 /** One accumulator per run. Symbols are upper-cased on the way in so a roster
  * spelling and a screener spelling can never become two rows for one name and
  * side. */
 export function funnelTraceRecorder(): FunnelTraceRecorder {
+  if (traceDisabled()) return noopFunnelTraceRecorder()
   const rows = new Map<string, FunnelTraceRow>()
   let notCandidateCount = 0
   return {

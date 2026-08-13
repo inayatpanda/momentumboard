@@ -25,8 +25,11 @@ import { SECTOR_MEMBERS } from '../netlify/functions/lib/sectors'
 import { VIX_SYMBOL, WORLD_SYMBOLS } from '../shared/engine/worldTape'
 import { THEMES } from '../shared/engine/themes'
 import { bannedTokensIn, composeThesis } from '../shared/engine/voice'
-import type { Keyed, ProbeContext, RunFile, SeedArtefact } from './replay-window'
+import type { DayTrace, Keyed, ProbeContext, RunFile, SeedArtefact } from './replay-window'
 import {
+  GATE_CODE_MIRROR,
+  expectedCalledGates,
+  traceViolations,
   MIRROR_EXTRAS,
   PROD_GAINERS_DEPTH,
   aReachableState,
@@ -359,6 +362,7 @@ const row = (over: Partial<Keyed> = {}): Keyed => ({
   nearMiss: false,
   shadow: false,
   belowBase: false,
+  observation: false,
   contract: true,
   catalyst: null,
   setup: null,
@@ -1079,6 +1083,244 @@ describe('--seed-out: the walk serialises what it learned', () => {
     expect(Number(sweep![2])).toBeGreaterThan(0)
     // …and it is the SAME universe the anchor was measured over — one number, printed twice
     expect(logged.join('\n')).toMatch(new RegExp(`unconditional sweep over ${sweep![1]} symbols`))
+  }, 180_000)
+})
+
+// ==================== STAGE-3a TASK 4: THE WALK CARRIES THE TRACE ====================
+// The acceptance instrument 3b and 3c are built on. Two claims, tested separately:
+//   1. CONSISTENCY — per day, the funnel trace and the rows the READER gets agree.
+//      Pure, so it is driven by hand-built days here and by the real walk below.
+//   2. PARITY — the recorder never touches published output. Proved by walking the
+//      same fixture window twice, once with the recorder stubbed to a no-op, and
+//      byte-comparing the board and the ledger.
+
+/** A day as the walk records one, with only the fields the invariant reads. */
+const traceDay = (over: { board?: Keyed[]; ledger?: Keyed[]; trace?: DayTrace | undefined } = {}) => ({
+  date: '2026-07-14',
+  board: over.board ?? [],
+  ledger: over.ledger ?? [],
+  trace: 'trace' in over ? over.trace : { rows: {}, counts: { notCandidate: 0 } },
+})
+const traceOf = (rows: DayTrace['rows'], notCandidate = 0): DayTrace => ({ rows, counts: { notCandidate } })
+
+describe('GATE_CODE_MIRROR', () => {
+  it('carries every code the engine’s own taxonomy declares', () => {
+    // The mirror exists because a static import of shared/engine/funnelTrace would
+    // not resolve in the pre-Stage-1 baseline worktree this harness still has to
+    // load in. A mirror that stops mirroring makes the walk fail on a legitimate
+    // new code, so the drift is caught HERE, in the suite, against the source of
+    // truth — the same guard SLEEVE_MIRROR carries.
+    const src = readFileSync(join(process.cwd(), 'shared', 'engine', 'types.ts'), 'utf8')
+    const union = src.slice(src.indexOf('export type GateCode ='))
+    const declared = [...union.slice(0, union.indexOf('\n\n')).matchAll(/'([a-z-]+)'/g)].map(m => m[1])
+    expect(declared.length).toBeGreaterThan(15) // the extractor found a union, not an empty string
+    expect([...GATE_CODE_MIRROR].sort()).toEqual([...declared].sort())
+  })
+})
+
+describe('expectedCalledGates — the size class the reader can see, read back off the row', () => {
+  it('maps every published shape to the code publishCall writes for it', () => {
+    expect(expectedCalledGates(row({ grade: 'A', contract: true }))).toEqual(['called-full'])
+    expect(expectedCalledGates(row({ grade: 'B', contract: true }))).toEqual(['called-full'])
+    // one of conviction/evidence short — a real trade taken smaller
+    expect(expectedCalledGates(row({ grade: 'A', contract: false }))).toEqual(['called-half'])
+    expect(expectedCalledGates(row({ grade: 'C', contract: true }))).toEqual(['called-half'])
+    // the three zero-size populations the fix wave split apart, kept apart
+    expect(expectedCalledGates(row({ watchOnly: true }))).toEqual(['called-watch'])
+    expect(expectedCalledGates(row({ watchOnly: true, belowBase: true }))).toEqual(['called-below-base'])
+    expect(expectedCalledGates(row({ watchOnly: true, observation: true }))).toEqual(['called-observation'])
+    // a shadow is either an ordinary one or the one an ISA cannot place
+    expect(expectedCalledGates(row({ shadow: true }))).toEqual(['called-shadow', 'route-blocked'])
+  })
+})
+
+describe('traceViolations — the consistency invariant, per day', () => {
+  it('passes a day whose trace and board tell the same story', () => {
+    const board = [
+      row({ sym: 'AAA', side: 'long', grade: 'A', contract: true }),
+      row({ sym: 'BBB', side: 'short', watchOnly: true, riskPct: 0 }),
+      row({ sym: 'CCC', side: 'long', nearMiss: true, watchOnly: true, riskPct: 0, grade: 'C' }),
+    ]
+    const ledger = [
+      row({ sym: 'AAA', side: 'long', grade: 'A', contract: true, where: 'ledger' }),
+      row({ sym: 'BBB', side: 'short', watchOnly: true, riskPct: 0, where: 'ledger' }),
+      row({ sym: 'DDD', side: 'short', shadow: true, riskPct: 0, where: 'ledger' }),
+    ]
+    const trace = traceOf({
+      'AAA:long': { gate: 'called-full', side: 'long' },
+      'BBB:short': { gate: 'called-watch', side: 'short' },
+      // the near miss carries the gate that refused it — never a called-* code
+      'CCC:long': { gate: 'dead-zone-core', side: 'long' },
+      'DDD:short': { gate: 'called-shadow', side: 'short' },
+      // side-free gates: the name died before there was a side
+      EEE: { gate: 'trimmed' },
+      FFF: { gate: 'no-candles' },
+      // a shadow the budget dropped: in the trace, in neither board nor ledger
+      'GGG:long': { gate: 'shadow-capped', side: 'long' },
+      // …and a row the slot cut took off the board entirely
+      'HHH:long': { gate: 'slot-cut', side: 'long' },
+    })
+    expect(traceViolations(traceDay({ board, ledger, trace }))).toEqual([])
+  })
+
+  it('fails loudly when the day wrote no trace at all', () => {
+    expect(traceViolations(traceDay({ trace: undefined }))).toEqual([expect.stringMatching(/no funnel trace/)])
+  })
+
+  it('catches a reader row the funnel never recorded', () => {
+    const board = [row({ sym: 'AAA', side: 'long' })]
+    expect(traceViolations(traceDay({ board, trace: traceOf({}) }))).toEqual([expect.stringMatching(/AAA:long.*no trace row/)])
+  })
+
+  it('catches a published row whose trace row still reads as a refusal', () => {
+    const board = [row({ sym: 'AAA', side: 'long', grade: 'A', contract: true })]
+    const trace = traceOf({ 'AAA:long': { gate: 'dead-zone-core', side: 'long' } })
+    expect(traceViolations(traceDay({ board, trace })).join('\n')).toMatch(/AAA:long reads 'dead-zone-core', expected called-full/)
+  })
+
+  it('catches the WRONG size class — a sized trade traced as a watch row', () => {
+    const board = [row({ sym: 'AAA', side: 'long', grade: 'A', contract: true })]
+    const ledger = [row({ sym: 'AAA', side: 'long', grade: 'A', contract: true, where: 'ledger' })]
+    const trace = traceOf({ 'AAA:long': { gate: 'called-watch', side: 'long' } })
+    expect(traceViolations(traceDay({ board, ledger, trace })).length).toBe(2) // board and ledger both say so
+  })
+
+  it('catches a shadow the budget dropped that nonetheless reached the ledger', () => {
+    const ledger = [row({ sym: 'AAA', side: 'long', shadow: true, riskPct: 0, where: 'ledger' })]
+    const trace = traceOf({ 'AAA:long': { gate: 'shadow-capped', side: 'long' } })
+    const v = traceViolations(traceDay({ ledger, trace }))
+    expect(v.join('\n')).toMatch(/shadow-capped/)
+    expect(v.length).toBeGreaterThan(0)
+  })
+
+  it('exempts near-miss board rows from the called-* match — ONE-DIRECTIONAL, by design', () => {
+    // A near miss is on the board carrying the gate that refused it. The converse
+    // of the invariant ("every board row reads called-*") is false for exactly this
+    // population, and asserting it would break the board's own contract.
+    const board = [row({ sym: 'CCC', side: 'short', nearMiss: true, watchOnly: true, riskPct: 0 })]
+    const trace = traceOf({ 'CCC:short': { gate: 'expected-move', side: 'short' } })
+    expect(traceViolations(traceDay({ board, trace }))).toEqual([])
+  })
+
+  it('still demands a near miss be traced, and never as a publication', () => {
+    const board = [row({ sym: 'CCC', side: 'short', nearMiss: true, watchOnly: true, riskPct: 0 })]
+    expect(traceViolations(traceDay({ board, trace: traceOf({}) })).join('\n')).toMatch(/near miss CCC:short has no trace row/)
+    const published = traceOf({ 'CCC:short': { gate: 'called-shadow', side: 'short' } })
+    expect(traceViolations(traceDay({ board, trace: published })).join('\n')).toMatch(/near miss CCC:short reads 'called-shadow'/)
+  })
+
+  it('catches a called-* row the reader never got', () => {
+    const trace = traceOf({ 'AAA:long': { gate: 'called-half', side: 'long' } })
+    expect(traceViolations(traceDay({ trace })).join('\n')).toMatch(/AAA:long reads 'called-half' and the reader got no such row/)
+  })
+
+  it('catches a malformed key, an undeclared gate and a side that disagrees with its key', () => {
+    const trace = traceOf({
+      'AAA:sideways': { gate: 'trimmed' },
+      'BBB:long': { gate: 'nonsense' as unknown as string, side: 'long' },
+      'CCC:long': { gate: 'dead-zone-core', side: 'short' },
+      'ddd:long': { gate: 'dead-zone-core', side: 'long' },
+    })
+    const v = traceViolations(traceDay({ trace })).join('\n')
+    expect(v).toMatch(/AAA:sideways: not a trace row key/)
+    expect(v).toMatch(/'nonsense' is not a declared GateCode/)
+    expect(v).toMatch(/CCC:long: row.side=short disagrees/)
+    expect(v).toMatch(/ddd:long: symbol is not upper-cased/)
+  })
+
+  it('keeps the side-free gates side-free, in both directions', () => {
+    const sided = traceOf({ 'AAA:long': { gate: 'trimmed', side: 'long' } })
+    expect(traceViolations(traceDay({ trace: sided })).join('\n')).toMatch(/'trimmed' fires before a side exists/)
+    const bare = traceOf({ AAA: { gate: 'dead-zone-core' } })
+    expect(traceViolations(traceDay({ trace: bare })).join('\n')).toMatch(/'dead-zone-core' names a side's fate/)
+  })
+
+  it('refuses a near miss that reached the ledger — board-only is the contract', () => {
+    const ledger = [row({ sym: 'CCC', side: 'long', nearMiss: true, where: 'ledger' })]
+    const trace = traceOf({ 'CCC:long': { gate: 'dead-zone-core', side: 'long' } })
+    expect(traceViolations(traceDay({ ledger, trace })).join('\n')).toMatch(/near miss.*reached the ledger/)
+  })
+})
+
+describe('the walk carries the trace — and the board never noticed', () => {
+  /** A short REAL walk, run twice over one temp candle cache: once with the funnel
+   * recorder live, once with `FUNNEL_TRACE=off` stubbing it to a no-op. Same days,
+   * same universe, same bars — so any difference in the published board or ledger
+   * could only have come from the recorder. */
+  it('surfaces every day’s trace, satisfies the invariant, and publishes byte-identical output with the recorder stubbed out', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'replay-trace-'))
+    const ts = busDays(320)
+    const write = (sym: string, candles: Candle[]) =>
+      writeFileSync(join(dir, `${sym.replace(/[^A-Za-z0-9]/g, '_')}.json`), JSON.stringify({ sym, range: '5y', at: Date.now(), candles }))
+    for (const [i, sym] of CONTEXT_SYMS.entries()) write(sym, tape(ts, 24 + (i % 37) * 9, 0.01 + (i % 9) * 0.008, 6 + (i % 5), i * 0.41))
+    write('AAA', tape(ts, 40, 0.22, 9, 0.7))
+    write('BBB', tape(ts, 90, -0.06, 8, 2.1))
+    const walkSyms = ['AAA', 'BBB', ...SWEEP_SYMS.slice(0, 12)]
+    for (const [i, sym] of SWEEP_SYMS.slice(0, 12).entries()) {
+      const [drift, swing] = SWEEP_SHAPES[i % SWEEP_SHAPES.length]
+      write(sym, tape(ts, 30 + (i % 11) * 7, drift, swing, i * 0.37))
+    }
+    write('SPY', tape(ts, 480, 0.04, 1.2))
+    write('QQQ', tape(ts, 400, 0.05, 1.6))
+
+    const from = iso(ts[320 - 25])
+    const to = iso(ts[319])
+    const argv = process.argv
+    const logged: string[] = []
+    const quiet = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void logged.push(a.map(String).join(' ')))
+    const tracedPath = join(dir, 'traced.json')
+    const stubbedPath = join(dir, 'stubbed.json')
+    const runOnce = async (out: string, fresh: { main: () => Promise<void> }) => {
+      process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', walkSyms.join(','), '--out', out]
+      await fresh.main()
+    }
+    try {
+      vi.resetModules()
+      vi.stubEnv('REPLAY_CACHE_DIR', dir)
+      const fresh = (await import('./replay-window')) as typeof import('./replay-window')
+      // 1) the recorder live — the walk asserts the invariant itself, day by day,
+      //    and throws if it is ever false. Reaching the next line IS that assertion.
+      await runOnce(tracedPath, fresh)
+      // 2) the same walk with the recorder stubbed to a no-op
+      vi.stubEnv('FUNNEL_TRACE', 'off')
+      await runOnce(stubbedPath, fresh)
+    } finally {
+      quiet.mockRestore()
+      vi.unstubAllEnvs()
+      process.argv = argv
+    }
+
+    const traced = JSON.parse(readFileSync(tracedPath, 'utf8')) as RunFile
+    const stubbed = JSON.parse(readFileSync(stubbedPath, 'utf8')) as RunFile
+
+    // the invariant was ARMED in run 1 — the walk checked every day itself and
+    // reaching this point means it never had cause to stop — and deliberately
+    // disarmed in run 2, where the trace is empty by construction
+    expect(logged).toContain('funnel trace: present — the walk enforces the consistency invariant daily')
+    expect(logged).toContain('funnel trace: STUBBED (FUNNEL_TRACE=off) — parity run, invariant not checked')
+
+    // the walk actually walked, and actually published
+    expect(traced.days.length).toBeGreaterThan(10)
+    expect(traced.days.some(d => d.board.length > 0)).toBe(true)
+    expect(traced.days.some(d => d.ledger.length > 0)).toBe(true)
+
+    // every day carries its trace, and every day's trace is consistent with the
+    // rows the reader got — the same function the walk ran inline
+    for (const d of traced.days) {
+      expect(d.trace, `${d.date} carries no trace`).toBeTruthy()
+      expect(Object.keys(d.trace!.rows).length, `${d.date} traced nothing`).toBeGreaterThan(0)
+      expect(traceViolations(d), `${d.date}`).toEqual([])
+    }
+
+    // PARITY: board and ledger are byte-identical with the recorder stubbed out.
+    const published = (r: RunFile) => JSON.stringify(r.days.map(d => ({ date: d.date, regime: d.regime, shape: d.shape, board: d.board, ledger: d.ledger })))
+    expect(published(stubbed)).toBe(published(traced))
+
+    // …and the instrument is not vacuous: with the recorder stubbed the trace is
+    // empty, and the very same invariant then FAILS on a day that published rows.
+    expect(stubbed.days.every(d => Object.keys(d.trace?.rows ?? {}).length === 0)).toBe(true)
+    const publishedDay = stubbed.days.find(d => d.board.some(r => !r.nearMiss) || d.ledger.length > 0)!
+    expect(traceViolations(publishedDay).length).toBeGreaterThan(0)
   }, 180_000)
 })
 

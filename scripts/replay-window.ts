@@ -523,6 +523,20 @@ const CACHE_DIR = process.env.REPLAY_CACHE_DIR ?? DEFAULT_CACHE_DIR
  * to the 1y window the production engine actually reads. */
 const ONE_YEAR_BARS = 252
 
+/** Is a stage-gated engine module present in THIS tree? Every optional module here
+ * (the dip lane, the velocity lane, the sleeve, the voice, the funnel trace) is
+ * guarded on disk so this one file still loads inside the pre-Stage-1 baseline
+ * worktree, where they do not exist.
+ *
+ * A PATH, not `new URL(…, import.meta.url)`. Under vitest the suite runs in the
+ * jsdom environment, whose global `URL` is jsdom's own class rather than Node's —
+ * `fs` refuses it and `existsSync` answers FALSE for every one of these, silently,
+ * so every walk driven from the suite reported every optional module absent. The
+ * board never depended on it (buildBoard imports the lanes itself); the harness's
+ * dip/velocity diagnostics did, and so does the funnel-trace invariant this walk
+ * now enforces — an instrument that disarms itself under test is worse than none. */
+const stageModule = (file: string): string => join(REPO_ROOT, 'shared', 'engine', file)
+
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const cacheFile = (sym: string) => join(CACHE_DIR, `${sym.replace(/[^A-Za-z0-9]/g, '_')}.json`)
 
@@ -744,6 +758,12 @@ export interface Row {
   nearMiss: boolean
   shadow: boolean
   belowBase: boolean
+  /** The route-blocked short PROMOTED to fill an empty side (engine.ts). Carried
+   * since Stage-3a Task 4 because it is the one reader-visible zero-size class
+   * that is NOT a grade decision, and the trace codes it separately
+   * (`called-observation`) — without it the parity check could not tell a promoted
+   * observation from an ordinary watch row. Always false in a pre-Stage-2 tree. */
+  observation: boolean
   contract: boolean
   catalyst: string | null
   setup: string | null
@@ -840,6 +860,175 @@ export interface DayOut {
    * pooled base on every blob without a reference — including every walk, which
    * starts from `emptyLearningState`. */
   baseRate: number
+  /** THE DAY'S FUNNEL TRACE (Stage 3a), read straight back out of the carrying
+   * store — every candidate's fate under the gate that ended its run. ADDITIVE and
+   * OPTIONAL: a pre-Stage-3a tree writes no such blob and the field is simply
+   * absent, which is what lets this harness keep loading in the baseline worktree.
+   *
+   * `nearMisses` and `emptySides` ride the trace blob too and are deliberately NOT
+   * copied here: the near-miss rows are already in `board` (flagged `nearMiss`),
+   * and a diagnostics file carrying the ten `FactorScore` objects of every near
+   * miss a second time would roughly double for nothing. */
+  trace?: DayTrace
+}
+
+// ----------------------------------------------- the funnel trace, in the walk --
+// Stage 3a Task 4. The trace is written by `buildBoard` into the SAME carrying
+// store this walk drives, so surfacing it costs one read per day — no engine
+// change, no second code path, and the walk's diagnostics become the first place
+// the funnel can be read back over a window.
+//
+// The shapes below MIRROR shared/engine/funnelTrace.ts rather than importing it,
+// for the reason every mirror in this file exists: a static import would not
+// resolve in the pre-Stage-1 baseline worktree this harness still has to load in.
+// The mirror cannot drift silently — `GATE_CODE_MIRROR` is checked against the
+// engine's own union in replay-window.test.ts.
+
+export interface TraceRow {
+  gate: string
+  side?: 'long' | 'short'
+  source?: string
+  detail?: string
+}
+export interface DayTrace {
+  rows: Record<string, TraceRow>
+  counts: { notCandidate: number }
+}
+
+/** The blob key, mirrored (funnelTrace.ts `funnelTraceKey`). */
+const funnelTraceKeyOf = (date: string): string => `funnel-trace:${date}`
+
+/** Every code `GateCode` declares (shared/engine/types.ts). */
+export const GATE_CODE_MIRROR: ReadonlySet<string> = new Set([
+  'not-candidate', 'trimmed', 'no-candles', 'no-data',
+  'dead-zone-core', 'dead-zone-context', 'capacity-data', 'expected-move',
+  'entry-wait', 'entry-chase', 'entry-reversal', 'evidence-fail', 'dip-refused',
+  'grade-watchonly', 'route-blocked', 'diversity', 'slot-cut', 'shadow-capped',
+  'called-full', 'called-half', 'called-shadow', 'called-watch', 'called-below-base', 'called-observation',
+])
+
+/** THE READER GOT THIS ROW. Mirrors `PUBLISHED_GATES`: the size decisions, the
+ * promotion that fills an empty side, and the route-blocked shadow that still
+ * reaches the ledger. */
+const PUBLISHED_GATE_CODES: ReadonlySet<string> = new Set([
+  'called-full', 'called-half', 'called-shadow', 'called-watch', 'called-below-base', 'called-observation', 'route-blocked',
+])
+
+/** The gates that fire BEFORE a side exists and therefore key on the bare name:
+ * the two trims, the candle miss, and the tape that produced no read at all. */
+const SIDE_FREE_GATES: ReadonlySet<string> = new Set(['trimmed', 'no-candles', 'no-data'])
+
+/** The called-* code `publishCall` must have written for a row of this shape —
+ * derived from what the READER can see on the row itself, never from the trace.
+ * That is the point: two independent readings of one decision, compared.
+ *
+ * A shadow admits two codes because `route-blocked` is the more specific truth
+ * about a shadow an ISA cannot place, and the ROW carries no field that separates
+ * them (the engine records that distinction by id, deliberately — "the ledger must
+ * not grow a field that means why we hid it"). Both are one size class: zero,
+ * ledger-only. */
+export function expectedCalledGates(r: Pick<Row, 'shadow' | 'watchOnly' | 'belowBase' | 'observation' | 'grade' | 'contract'>): string[] {
+  if (r.shadow) return ['called-shadow', 'route-blocked']
+  if (r.observation) return ['called-observation']
+  if (r.watchOnly) return r.belowBase ? ['called-below-base'] : ['called-watch']
+  // sized: full is A/B ON the core-data contract; everything else sized is half
+  return (r.grade === 'A' || r.grade === 'B') && r.contract ? ['called-full'] : ['called-half']
+}
+
+/** THE CONSISTENCY INVARIANT, for one day. Returns every violation it finds (an
+ * empty array is the pass) so a failure names the row instead of just failing.
+ *
+ * (a) EXACTLY ONCE. Every row keys by (name, side-or-none); the key parses, the
+ *     row's own `side` agrees with it, the gate is declared, and the side-free
+ *     gates stay side-free in both directions. One key, one fate.
+ * (b) THE READER'S ROWS MATCH — ONE-DIRECTIONAL. Every board and ledger row the
+ *     reader gets has a trace row at its exact key carrying a called-* code of the
+ *     right SIZE CLASS; and conversely no called-* row exists for a (name, side)
+ *     the reader never got — so a shadow the budget dropped (`shadow-capped`) or a
+ *     row a cut took off the board sits in the trace and in neither published
+ *     surface.
+ *
+ *     NEAR-MISS BOARD ROWS ARE EXEMPT from the called-* match, by design: a near
+ *     miss is on the board carrying the gate that REFUSED it (dead-zone-core,
+ *     expected-move…) because it cleared nothing and has no publication to name.
+ *     Asserting the converse over them would assert against the board's own
+ *     contract. They are NOT exempt from being traced: a near miss is a scored
+ *     name, so it holds a row — and that row must never read as a publication.
+ *     (Either side satisfies it: the board's near-miss side comes from the ROUNDED
+ *     core read and composeCall's from the raw one, so a core that rounds to -0
+ *     can legitimately be a long near miss against a short refusal.)
+ */
+export function traceViolations(day: { date: string; board: Row[]; ledger: Row[]; trace?: DayTrace }): string[] {
+  const v: string[] = []
+  const t = day.trace
+  if (!t || !t.rows || typeof t.counts?.notCandidate !== 'number')
+    return [`${day.date}: no funnel trace was written for this day — the funnel's record of the run is missing`]
+
+  // ---- (a) one row per (name, side-or-none), and the key says which ----
+  const seen = new Map<string, string>()
+  for (const [key, row] of Object.entries(t.rows)) {
+    const m = /^([^:]+)(?::(long|short))?$/.exec(key)
+    if (!m) {
+      v.push(`${key}: not a trace row key (SYM or SYM:long|short)`)
+      continue
+    }
+    const [, sym, side] = m
+    if (sym !== sym.toUpperCase()) v.push(`${key}: symbol is not upper-cased — one name spelled two ways is two rows`)
+    const norm = side ? `${sym.toUpperCase()}:${side}` : sym.toUpperCase()
+    const prior = seen.get(norm)
+    if (prior) v.push(`${key}: a second row for ${norm} (already ${prior}) — a name and side appear exactly once`)
+    seen.set(norm, key)
+    if ((row.side ?? null) !== (side ?? null)) v.push(`${key}: row.side=${row.side ?? 'none'} disagrees with the key`)
+    if (!GATE_CODE_MIRROR.has(row.gate)) v.push(`${key}: '${row.gate}' is not a declared GateCode`)
+    else if (side && SIDE_FREE_GATES.has(row.gate)) v.push(`${key}: '${row.gate}' fires before a side exists and may not carry one`)
+    else if (!side && !SIDE_FREE_GATES.has(row.gate)) v.push(`${key}: '${row.gate}' names a side's fate and may not be side-free`)
+  }
+
+  // ---- (b) the reader's rows, matched one-directionally ----
+  const keyOfRow = (r: Row) => `${r.sym.toUpperCase()}:${r.side}`
+  const match = (r: Row, where: 'board' | 'ledger') => {
+    const trace = t.rows[keyOfRow(r)]
+    if (!trace) {
+      v.push(`${where} ${keyOfRow(r)} has no trace row — the reader got a row the funnel never recorded`)
+      return
+    }
+    const want = expectedCalledGates(r)
+    if (!want.includes(trace.gate))
+      v.push(
+        `${where} ${keyOfRow(r)} reads '${trace.gate}', expected ${want.join(' | ')} ` +
+          `(shadow=${r.shadow} watchOnly=${r.watchOnly} belowBase=${r.belowBase} observation=${r.observation} grade=${r.grade} contract=${r.contract})`,
+      )
+  }
+  const nearMissKeys = new Set<string>()
+  for (const r of day.board) {
+    if (r.nearMiss) {
+      nearMissKeys.add(keyOfRow(r))
+      const trace = t.rows[keyOfRow(r)] ?? t.rows[`${r.sym.toUpperCase()}:${r.side === 'long' ? 'short' : 'long'}`]
+      if (!trace) v.push(`near miss ${keyOfRow(r)} has no trace row on either side — a near miss is a scored name and carries the gate that refused it`)
+      else if (PUBLISHED_GATE_CODES.has(trace.gate)) v.push(`near miss ${keyOfRow(r)} reads '${trace.gate}' — a near miss cleared no gate and can never read as a publication`)
+      continue
+    }
+    match(r, 'board')
+  }
+  for (const r of day.ledger) {
+    if (r.nearMiss) {
+      v.push(`near miss ${keyOfRow(r)} reached the ledger — near misses are board-only`)
+      continue
+    }
+    match(r, 'ledger')
+  }
+
+  // …and the converse: a called-* code means the reader GOT the row.
+  const readerKeys = new Set([...day.board.filter(r => !r.nearMiss), ...day.ledger].map(keyOfRow))
+  // (the keys compare as written: `traceRowKey` upper-cases the name and the side
+  // is a literal, and a row whose name is NOT upper-cased is already a violation
+  // above — so upper-casing here would only mangle the side back into a miss)
+  for (const [key, row] of Object.entries(t.rows)) {
+    const published = PUBLISHED_GATE_CODES.has(row.gate)
+    if (published && !readerKeys.has(key)) v.push(`${key} reads '${row.gate}' and the reader got no such row — a called-* code that published nothing`)
+    if (!published && readerKeys.has(key) && !nearMissKeys.has(key)) v.push(`${key} reads '${row.gate}' yet the reader got the row`)
+  }
+  return v
 }
 
 const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
@@ -858,6 +1047,7 @@ const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
   nearMiss: !!p.nearMiss,
   shadow: !!p.shadow,
   belowBase: !!(p as { belowBase?: boolean }).belowBase,
+  observation: !!(p as { observation?: boolean }).observation,
   contract: !!p.evidence?.contract,
   catalyst: p.catalyst?.kind ?? null,
   setup: p.setup ?? null,
@@ -1245,7 +1435,7 @@ export async function main() {
   // eagerly, and a `@vite-ignore`d runtime path skips the TS transform and
   // silently yields nothing, which is how an earlier run reported zero dips).
   let dip: DipModule | null = null
-  if (existsSync(new URL('../shared/engine/dipLane.ts', import.meta.url))) {
+  if (existsSync(stageModule('dipLane.ts'))) {
     dip = (await import('../shared/engine/dipLane')) as unknown as DipModule
     console.log('dip lane: present — dip diagnostics enabled')
   } else {
@@ -1256,15 +1446,31 @@ export async function main() {
   // buildBoard evaluated, with the LANE's own gates and WITHOUT the engine's
   // liquidity floor — which no cap-less replay can ever pass. That difference is
   // stated in §13, not smuggled: these are would-be rows, not board rows.
-  const velMod = existsSync(new URL('../shared/engine/velocityLane.ts', import.meta.url))
+  const velMod = existsSync(stageModule('velocityLane.ts'))
     ? ((await import('../shared/engine/velocityLane')) as unknown as VelocityModule)
     : null
   console.log(velMod ? 'velocity lane: present — velocity diagnostics enabled' : 'velocity lane: absent — no velocity diagnostics')
   // Same guard for the sleeve: the door trace uses the REAL rankSleeve when it
   // exists, and reports no sleeve door at all when it does not.
   let rankSleeve: ((closes: Map<string, number[]>, topN: number) => { sym: string }[]) | null = null
-  if (existsSync(new URL('../shared/engine/coreSleeve.ts', import.meta.url)))
+  if (existsSync(stageModule('coreSleeve.ts')))
     rankSleeve = (await import('../shared/engine/coreSleeve')).rankSleeve
+  // …and the funnel trace is a Stage-3a module, detected the same way. When it is
+  // there the walk ENFORCES the consistency invariant every day and stops on the
+  // first violation: this walk is the acceptance instrument 3b and 3c read the
+  // funnel through, and an instrument that keeps going after its own record has
+  // stopped agreeing with the board is worse than no instrument. `FUNNEL_TRACE=off`
+  // is the parity run — the recorder is deliberately a no-op there, so the trace is
+  // empty by construction and there is nothing to check.
+  const traceOff = process.env.FUNNEL_TRACE === 'off'
+  const traceEnforced = existsSync(stageModule('funnelTrace.ts')) && !traceOff
+  console.log(
+    traceEnforced
+      ? 'funnel trace: present — the walk enforces the consistency invariant daily'
+      : traceOff
+        ? 'funnel trace: STUBBED (FUNNEL_TRACE=off) — parity run, invariant not checked'
+        : 'funnel trace: absent (pre-Stage-3a tree) — no funnel diagnostics',
+  )
 
   const { store } = makeStore()
   await store.write('config', {
@@ -1428,6 +1634,8 @@ export async function main() {
       doors: doorsFor(sym, screens, sleeveTop, rosterSyms),
       evaluated: ctx.current.asked.has(sym),
     }))
+    // the funnel's own record of the day, straight out of the carrying store
+    const trace = (await store.read<DayTrace>(funnelTraceKeyOf(date))) ?? undefined
     out.push({
       date,
       regime: built.regime,
@@ -1441,7 +1649,16 @@ export async function main() {
       watched,
       candidatesAsked: ctx.current.asked.size,
       baseRate,
+      trace,
     })
+    if (traceEnforced) {
+      const violations = traceViolations(out[out.length - 1])
+      if (violations.length)
+        throw new Error(
+          `BLOCKED: the funnel trace disagrees with the board on ${date} — ${violations.length} violation(s):\n  ` +
+            `${violations.slice(0, 25).join('\n  ')}${violations.length > 25 ? `\n  …and ${violations.length - 25} more` : ''}`,
+        )
+    }
     console.log(
       `${date} regime=${String(built.regime).padEnd(7)} roster=${String(built.rosterSize).padStart(3)} ` +
         `trades=${shape.trades} watch=${shape.watch} nearMiss=${shape.nearMiss} blankSides=${shape.blankSides} ` +
@@ -2266,7 +2483,7 @@ async function aggregateMain() {
   // the banned-token sweep is the ENGINE's own (voice.ts). Guarded on disk for the
   // same reason every other stage-gated module here is: this file must still load
   // inside the pre-stage-1 worktree, where the module does not exist.
-  const voice = existsSync(new URL('../shared/engine/voice.ts', import.meta.url))
+  const voice = existsSync(stageModule('voice.ts'))
     ? ((await import('../shared/engine/voice')) as { bannedTokensIn: (t: string) => string[] })
     : null
 

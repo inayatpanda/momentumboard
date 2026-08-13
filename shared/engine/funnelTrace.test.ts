@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { MODERATE_GATES } from './catalyst'
-import { FUNNEL_TRACE_INDEX_MAX, PUBLISHED_GATES, TRACE_DETAIL_MAX, funnelTraceKey, funnelTraceRecorder, traceRowKey } from './funnelTrace'
+import { FUNNEL_TRACE_INDEX_MAX, PUBLISHED_GATES, TRACE_DETAIL_MAX, funnelTraceKey, funnelTraceRecorder, noopFunnelTraceRecorder, traceRowKey } from './funnelTrace'
 
 const built = (r: ReturnType<typeof funnelTraceRecorder>) =>
   r.build({ date: '2026-08-13', gates: MODERATE_GATES, nearMisses: [], emptySides: {} })
@@ -126,6 +126,45 @@ describe('funnelTraceRecorder', () => {
     r.record('AAA', 'dip-refused', { side: 'long' })
     r.record('MMM', 'trimmed')
     expect(Object.keys(built(r).rows)).toEqual(['AAA:long', 'AAA:short', 'MMM', 'ZZZ'])
+  })
+
+  it('FUNNEL_TRACE=off hands back a recorder that forgets everything — the parity seam', () => {
+    // The seam Task 4's window proof runs on: the engine's code path is unchanged
+    // (every method still answers, the blob is still built and written), and the
+    // recorder simply has nothing to say. `hasRow` false is the honest answer for
+    // a recorder holding no rows — nothing but the trace's own notCandidate count
+    // reads it.
+    vi.stubEnv('FUNNEL_TRACE', 'off')
+    try {
+      const r = funnelTraceRecorder()
+      r.record('AAA', 'trimmed')
+      r.revise('BBB', 'called-full', { side: 'long', detail: 'grade A' })
+      r.notCandidate(9)
+      expect(r.size()).toBe(0)
+      expect(r.hasRow('BBB')).toBe(false)
+      expect(r.gateOf('BBB', 'long')).toBeNull()
+      expect(r.rowAt('BBB', 'long')).toBeNull()
+      const t = built(r)
+      expect(t.rows).toEqual({})
+      expect(t.counts).toEqual({ notCandidate: 0 })
+      expect(t.date).toBe('2026-08-13')
+      expect(t.gates).toEqual(MODERATE_GATES)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    // …and the switch is opt-in: unset, the recorder records
+    expect(funnelTraceRecorder().size()).toBe(0)
+    const live = funnelTraceRecorder()
+    live.record('AAA', 'trimmed')
+    expect(live.size()).toBe(1)
+  })
+
+  it('the no-op recorder is what the seam hands back, and it answers the whole interface', () => {
+    const r = noopFunnelTraceRecorder()
+    r.record('AAA', 'trimmed')
+    r.revise('AAA', 'called-full', { side: 'long' })
+    expect(built(r).rows).toEqual({})
+    expect(built(r).nearMisses).toEqual([])
   })
 
   it('the called-* family — including the split zero-size codes — is the set a publication is terminal against', () => {
