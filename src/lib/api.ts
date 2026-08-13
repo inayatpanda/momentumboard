@@ -618,6 +618,13 @@ export interface EngineData {
   scorecard: {
     byGrade: Record<string, { n: number; hits: number; sumExcess: number }>
     byRegime: Record<string, { n: number; hits: number }>
+    // does this SHAPE of call work? Keyed by setup family (continuation /
+    // reversal / fade / velocity), over the same last-30-dates window as byGrade,
+    // shadows included — a shadow is exactly the shape being auditioned. The
+    // engine has written this since the families existed and the client type
+    // simply never named it (spec §4.3(d)); optional because a scorecard blob
+    // written before it did carries none.
+    bySetup?: Record<string, { n: number; hits: number; sumExcess: number }>
     // how the engine LOSES, keyed `${setup}:${regime}:${class}` (postMortem.ts) —
     // every graded loser of the last 30 dates, shadows included. Absent on a
     // scorecard written before Stage 3b.

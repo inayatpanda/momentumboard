@@ -1,5 +1,5 @@
 import type { Candle } from '../types'
-import { DEFAULT_WEIGHTS } from './composite'
+import { DEFAULT_WEIGHTS, ZERO_IS_A_READING } from './composite'
 import { capCohortOf, type CapCohort, type CapCohortOrUnknown } from './capClass'
 import { clamp, round1, type FactorName, type PredOutcome, type Prediction } from './types'
 
@@ -258,6 +258,16 @@ const MIN_BUCKET_N = 15
  * beats my own base rate by ten points AND I have watched it happen enough times
  * to believe it", and one is worth nothing without the other. */
 const MIN_GRADE_A_N = 30
+/** THE EARN-INFLUENCE BAR for a setup family [spec §4.3(c)]: a family's own
+ * record starts moving probability at thirty SIZED outcomes in the call's band.
+ * Numerically MIN_GRADE_A_N, deliberately NOT the same constant — that one is a
+ * grade's evidence floor ("may this read claim an A?") and this one is a
+ * specialist model's admission test ("has this family earned a vote at all?").
+ * Tying them would make one edit answer two questions. */
+const SETUP_BLEND_MIN_N = 30
+/** …and the vote is worth 0.3 of the price. Spec §4.3(c) verbatim:
+ * `p = 0.7·p_ladder + 0.3·p_setup`. */
+const SETUP_BLEND_W = 0.3
 const laplace = (b: BucketStat) => (b.hits + 2) / (b.n + 4)
 
 /** Band midpoints — the READ path's x-axis. The write path's edges (bandFor, and
@@ -461,7 +471,64 @@ export function probabilityFor(
    * would shrink sized bands toward a shadow-diluted target and undo the split
    * one rung below where it was made. */
   population: BucketPopulation = 'pooled',
+  /** THE CALL'S SETUP FAMILY [stage 3c, spec §4.3(c)] — continuation / reversal /
+   * fade / velocity. Optional and LAST, so every existing call site keeps the
+   * exact signature and the exact answer it had; absent means no blend, which is
+   * also what every non-production caller (the replay harness, the tests that
+   * probe the ladder) wants. The engine passes `call.setup` for the one row it is
+   * pricing. See `blendSetup` below for what it does and every condition on it. */
+  setup?: string | null,
 ): { p: number; provisional: boolean; nEff: number; belowEvidence: boolean } {
+  /** THE SETUP BLEND: `p = 0.7·p_ladder + 0.3·p_setup`, and nothing else moves.
+   *
+   * WHAT IT IS. The ladder answers "how do calls at this conviction, in this
+   * cohort and regime, tend to do?". The setup buckets answer a question the
+   * ladder cannot see: "how does THIS SHAPE of call — a dip bought, a breakout
+   * ridden, a hype spike faded — tend to do at this conviction?". Once a family
+   * has watched itself thirty sized times in the call's own band, it has earned a
+   * minority say in the price. A specialist model earns its existence from logged
+   * evidence, exactly like a new factor.
+   *
+   * IT ADJUSTS PRICE, NOT EVIDENCE MASS. `nEff`, `provisional` and
+   * `belowEvidence` are returned as the LADDER computed them and are never
+   * blended. nEff is "how many observations straddle this read on the main
+   * curve", the number `gradeFor` prices an A or a B against; a family's thirty
+   * outcomes are a different population answering a different question, and
+   * adding them would let a setup bucket buy an evidence floor the main curve
+   * never earned. The blend can move a call across a grade threshold — through
+   * `p`, on the merits, which is the whole point — but it can never buy it one.
+   *
+   * SIZED READS ONLY, in both directions. The blend is skipped entirely on a
+   * pooled read, because a pooled read is what prices a SHADOW — a row nobody was
+   * offered — and a shadow's probability is a record of what the engine thought,
+   * not money on offer; leaving it as the pure ladder keeps every shadow priced
+   * exactly as it was before this existed. And the family's own stat is read
+   * 'sized', because blending shadow-diluted family evidence into a sized grade
+   * would re-import precisely the dilution the partition exists to remove.
+   *
+   * AN UNPARTITIONED FAMILY BUCKET REFUSES [adjudicated, stage 3c]. Absent
+   * sub-counts are ambiguous by construction: a sized row writes no sub-count, so
+   * "never partitioned" and "partitioned, all sized" are the same bytes. It
+   * cannot be resolved at the store level either — a live blob holds the gen-3
+   * seed's unpartitioned setup buckets AND post-partition live accrual in ONE
+   * object, so "this store has written sub-counts somewhere" would license
+   * reading the seed's shadow-diluted 313-row `reversal:long:40-55` as fully
+   * sized. So: evidence that cannot PROVE it is sized adds no influence. The cost
+   * is a fully-sized family bucket that also refuses, and that is the right way
+   * round — refusing costs a blend that would mostly have agreed with the ladder;
+   * accepting would re-import the dilution into the one read the reader's money
+   * follows. The practical effect is that the blend stays dark until a
+   * partitioning walk rebuilds `setupBuckets`, which is exactly when it should
+   * turn on. */
+  const blendSetup = (pLadder: number): number => {
+    if (population !== 'sized' || !setup) return pLadder
+    const raw = state.setupBuckets?.[`${setup}:${side}:${bandFor(absComposite)}`]
+    if (!raw || (raw.shadowN == null && raw.shadowHits == null)) return pLadder // never partitioned → cannot prove sized
+    const sized = sizedSlice(raw)
+    if (sized.n < SETUP_BLEND_MIN_N) return pLadder
+    return (1 - SETUP_BLEND_W) * pLadder + SETUP_BLEND_W * laplace(sized)
+  }
+
   const rungs: { cohort: CapCohort | 'any'; regime: string | null }[] =
     cohort === 'unknown'
       ? [{ cohort: 'any', regime }, { cohort: 'any', regime: null }]
@@ -490,7 +557,7 @@ export function probabilityFor(
     const curve = curveAtRung(i)
     if (!curve.length) continue
     const { p, nEff, belowEvidence } = readCurve(curve, absComposite)
-    return { p, provisional: nEff < MIN_BUCKET_N, nEff, belowEvidence }
+    return { p: blendSetup(p), provisional: nEff < MIN_BUCKET_N, nEff, belowEvidence }
   }
 
   // rung 5: nothing for this side anywhere → the engine's own base rate
@@ -503,6 +570,14 @@ export function probabilityFor(
   // a sized read that finds no sized evidence anywhere lands on the sized base
   // (the cold 0.5 until fifty SIZED outcomes exist), which is the honest answer
   // rather than a quiet fallback to the pool the partition just removed.
+  //
+  // NOT BLENDED, and it cannot be: every row that books a setup bucket books a
+  // main bucket in the same band and side on the same call (updateCalibration),
+  // so a family with thirty sized outcomes here implies thirty sized main-bucket
+  // rows, and rung 4 would have found them. Reaching this line means the side has
+  // no evidence anywhere in this population — there is no p_ladder to adjust,
+  // only a base rate, and blending a family's record into "we have never graded
+  // this side" would dress a cold store up as a measurement.
   return { p: baseHitRate(state, population).rate, provisional: true, nEff: 0, belowEvidence: false }
 }
 
@@ -845,10 +920,28 @@ export function rebaseWeights(
   return state
 }
 
+/** Book one graded outcome into every factor's agree/disagree columns.
+ *
+ * NULL IS ALWAYS SKIPPED — "we could not look" is not evidence about anything.
+ * ZERO IS PER FACTOR [stage 3c, spec §4.3(b)]: `ZERO_IS_A_READING` (composite.ts)
+ * carries the adjudication and the argument for each of the ten. The shipped line
+ * skipped both together, which quietly selected news IC down to loud tapes only —
+ * `newsFactor` returns 0 for a quiet tape and never returns null at all.
+ *
+ * AN ACCRUED ZERO BOOKS BY THE MODULE'S ONE CONVENTION, `score > 0 === (side ===
+ * 'long')`, and that convention is not symmetric about zero: a zero counts
+ * AGAINST a long and WITH a short. That is deliberate rather than overlooked. The
+ * scores are signed TOWARD LONG, so "no upward pressure" is the honest reading of
+ * a quiet tape or a flat month for a long thesis, and the mirror of it for a
+ * short one. The alternative — a third, neutral column — would need its own
+ * meaning in an IC defined as the gap between two means, and there is none: a
+ * factor that said nothing has no claim to be right or wrong about the call.
+ * Which is precisely why a SILENT zero (see the table) is skipped instead. */
 export function updateIcStats(state: WeightsState, pred: Prediction, outcome: PredOutcome): WeightsState {
   for (const name of FACTOR_NAMES) {
     const f = pred.factors[name]
-    if (!f || f.score == null || f.score === 0) continue
+    if (!f || f.score == null) continue
+    if (f.score === 0 && !ZERO_IS_A_READING[name]) continue
     const agree = f.score > 0 === (pred.side === 'long')
     const st = state.ic[name] ?? { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }
     if (agree) {
@@ -865,34 +958,77 @@ export function updateIcStats(state: WeightsState, pred: Prediction, outcome: Pr
 }
 
 const NUDGE_EVERY = 15 // graded predictions between weight adjustments
-const MIN_IC_N = 20
+/** THE TWO-SIDED IC FLOOR [stage 3c]: a nudge needs `nAgree ≥ 20` AND
+ * `nDisagree ≥ 20`, not twenty observations between them.
+ *
+ * An information coefficient is the GAP BETWEEN TWO MEANS, so a column with
+ * almost nothing in it does not make the IC uncertain — it makes it a reading of
+ * the other column plus noise. The gen-2 vector is the proof: momentum's weight
+ * sat pinned at the old 2× cap, 73% of a weight-normalised composite, on a
+ * disagreement mean of FIFTEEN observations against 5,697 agreements. The old
+ * combined `nAgree + nDisagree ≥ 20` test is subsumed (both sides at 20 is 40),
+ * and the spec's separate `nDisagree === 0` repair is subsumed with it — zero is
+ * simply the loudest case of "under twenty". */
+const MIN_IC_SIDE_N = 20
 const NUDGE_STEP = 0.15
-const PRUNE_MIN_N = 200 // evidence needed before a factor may decay below the floor
+/** THE ABSOLUTE WEIGHT BAND [stage 3c]. `current` may not leave
+ * `[0.5×base, 1.5×base]` — replacing the old `[floor, 2×base]`, whose floor
+ * LIFTED TO ZERO once a factor passed 200 observations (the retired
+ * `PRUNE_MIN_N`). That escape hatch is what let ~450 compounding walk nudges
+ * decay technical — the owner's #1 factor — to 0.0791, a 3% share of the core,
+ * while momentum sat on the ceiling; "a signal that kept being wrong may decay to
+ * nothing" is a fine principle and a terrible mechanism, because the thing that
+ * kept being wrong was a weight vector drifting away from the ratified order
+ * inside its own measurement window.
+ *
+ * The band is an INVARIANT, not a bound on the step: see maybeNudgeWeights. */
+const WEIGHT_BAND_LO = 0.5
+const WEIGHT_BAND_HI = 1.5
 
-/** Bounded, slow, evidenced: weights drift toward factors that kept being
- * right, never beyond [0.4×, 2×] of their base — no whipsawing, no runaway.
- * EXCEPT: once a factor has PRUNE_MIN_N graded observations, the 0.4× floor
- * lifts — a signal that has kept being wrong over real evidence is allowed to
- * decay all the way to zero. The floor protects young factors, not dead ones. */
+/** Bounded, slow, evidenced: weights drift toward factors that kept being right,
+ * never outside [0.5×, 1.5×] of the ratified base — no whipsawing, no runaway,
+ * and no factor switched off by the loop that was supposed to be tuning it.
+ *
+ * TWO BRAKES, ANSWERING TWO QUESTIONS.
+ *
+ * The IC floor asks "has this factor been measured against itself?" and skips the
+ * nudge unless BOTH columns hold 20 observations (MIN_IC_SIDE_N).
+ *
+ * The band asks "how far may the loop move a weight from the vector the owner
+ * ratified?" — and it is applied to every factor on every pass, including the
+ * ones the IC floor just skipped. That is the whole point rather than a
+ * side-effect: a stored vector already outside the band (the gen-2 install:
+ * technical 0.0791, momentum 1.8) would otherwise sit there forever, and would
+ * sit there most immovably for exactly the factor whose evidence is too one-sided
+ * to nudge — the failure would protect itself. A clamp with no nudge behind it is
+ * recorded like any other change with `ic: 0`, because no measurement made it,
+ * and the history line names it so the panel can say what happened.
+ *
+ * Consequence worth stating: a factor is now guaranteed at least half its base
+ * weight forever. The way to retire a factor is to remove it from
+ * DEFAULT_WEIGHTS, which `rebaseWeights` turns into a real, logged re-base — an
+ * explicit decision with an author, not a slow drift nobody signed. */
 export function maybeNudgeWeights(state: WeightsState, dateISO: string): WeightsState {
   if (state.gradedSinceNudge < NUDGE_EVERY) return state
   const changes: Record<string, { from: number; to: number; ic: number }> = {}
+  let repaired = 0
   for (const name of FACTOR_NAMES) {
     const st = state.ic[name]
-    const icN = st ? st.nAgree + st.nDisagree : 0
-    if (!st || icN < MIN_IC_N) continue
-    const meanAgree = st.nAgree ? st.sumAgree / st.nAgree : 0
-    const meanDisagree = st.nDisagree ? st.sumDisagree / st.nDisagree : 0
-    const ic = clamp((meanAgree - meanDisagree) / 10, -1, 1)
     const cur = state.current[name]
-    const floor = icN >= PRUNE_MIN_N ? 0 : 0.4 * state.base[name]
-    const next = clamp(cur * (1 + NUDGE_STEP * ic), floor, 2 * state.base[name])
+    // BOTH columns, independently — see MIN_IC_SIDE_N
+    const eligible = !!st && st.nAgree >= MIN_IC_SIDE_N && st.nDisagree >= MIN_IC_SIDE_N
+    // the phantom-zero guards stay on the means, but they are now unreachable:
+    // eligibility already proved both counts are ≥ 20
+    const ic = eligible ? clamp((st.sumAgree / st.nAgree - st.sumDisagree / st.nDisagree) / 10, -1, 1) : 0
+    const next = clamp(eligible ? cur * (1 + NUDGE_STEP * ic) : cur, WEIGHT_BAND_LO * state.base[name], WEIGHT_BAND_HI * state.base[name])
     if (Math.abs(next - cur) > 1e-9) {
+      if (!eligible) repaired++
       changes[name] = { from: Math.round(cur * 1000) / 1000, to: Math.round(next * 1000) / 1000, ic: Math.round(ic * 100) / 100 }
       state.current[name] = next
     }
   }
-  state.history.push({ date: dateISO, changes, evidence: `${state.gradedSinceNudge} predictions graded since last nudge` })
+  const banded = repaired ? `; ${repaired} weight(s) clamped into the [${WEIGHT_BAND_LO}×, ${WEIGHT_BAND_HI}×] band` : ''
+  state.history.push({ date: dateISO, changes, evidence: `${state.gradedSinceNudge} predictions graded since last nudge${banded}` })
   if (state.history.length > 100) state.history = state.history.slice(-100)
   state.gradedSinceNudge = 0
   return state

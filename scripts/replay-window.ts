@@ -1944,10 +1944,14 @@ export async function main() {
     const missAccrued = accruedDate ? { date: accruedDate, ...missLedgerNow!.days[accruedDate] } : null
     missLedgerPrev = missLedgerNow ? (JSON.parse(JSON.stringify(missLedgerNow)) as MissLedgerLike) : null
     // SEED MODE PINS THE SCORING VECTOR. The seed must be measured under the exact
-    // vector production will score with; the walk's compounding nudges are unbounded
-    // (recon §5: `next = cur·(1 + 0.15·ic)`, ~450 of them over two years, no floor at
-    // all once PRUNE_MIN_N lifts it) and belong to Stage 3c's stability work, not
-    // inside a seed. Generation 2 shipped what happens without this: technical 0.0791
+    // vector production will score with; the walk's compounding nudges (recon §5:
+    // `next = cur·(1 + 0.15·ic)`, ~450 of them over two years) drift away from it
+    // whatever bounds they run under. Stage 3c's brakes narrowed that drift to the
+    // hard [0.5×, 1.5×] band and put a two-sided IC floor in front of it — the old
+    // unbounded-below path (no floor at all once the retired PRUNE_MIN_N lifted it)
+    // is gone — but a band is not a pin, and a seed measured under ANY drifting
+    // vector books buckets under a scorer that moved as they filled. So the pin
+    // stays. Generation 2 shipped what happens without it: technical 0.0791
     // against a base of 1.0, momentum pinned at the 2× cap and 73 % of a
     // weight-normalised composite — the owner's ratified factor order inverted, and
     // buckets accrued under a vector that drifted underneath them as they filled.

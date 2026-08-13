@@ -1335,7 +1335,12 @@ export async function buildBoard(
     // says the number was handed DOWN from the lowest conviction this rung has
     // ever graded, which caps the grade at C. `provisional` is display only
     // (nEff < MIN_BUCKET_N) — nothing below branches on it.
-    const { p, provisional, nEff, belowEvidence } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort, population)
+    // …and `call.setup` is the last argument because of what it unlocks: once
+    // this row's family has thirty SIZED outcomes in this band, its own record
+    // takes 0.3 of the price (spec §4.3(c)). It moves `p` only — nEff and the
+    // evidence flags stay the ladder's — and it is inert on a pooled read, so a
+    // shadow's price is untouched by it. See probabilityFor's `blendSetup`.
+    const { p, provisional, nEff, belowEvidence } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort, population, call.setup)
     const grade = gradeFor(p, nEff, gradeAnchor, belowEvidence)
     // grade null = calibration sees no edge in this bucket. The call stays off
     // the paper — but it MUST enter the ledger as a shadow, or buckets below

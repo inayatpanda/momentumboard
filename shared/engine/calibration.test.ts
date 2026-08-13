@@ -19,9 +19,10 @@ import {
   updateIcStats,
   type Band,
   type CalibrationState,
+  type IcStat,
   type WeightsState,
 } from './calibration'
-import { DEFAULT_WEIGHTS } from './composite'
+import { DEFAULT_WEIGHTS, ZERO_IS_A_READING } from './composite'
 import type { Candle } from '../types'
 import type { FactorName, Prediction } from './types'
 import seedJson from './seed.json'
@@ -1287,6 +1288,95 @@ describe('the provenance partition — sized rows grade against sized history', 
   })
 })
 
+/** THE SETUP BLEND [stage 3c task 2, spec §4.3(c)]. `p = 0.7·p_ladder +
+ * 0.3·p_setup`, and every condition on it is a pin below: sized evidence only,
+ * n ≥ 30 only, the row's OWN family only, a sized read only. */
+describe('the setup blend — a family that earned a voice gets 0.3 of one', () => {
+  /** One main bucket, so the rung's parent is that same bucket and the shrinkage
+   * is the identity: the ladder read IS laplace(bucket), which keeps every
+   * assertion below about the BLEND rather than about the hierarchy. */
+  const withSetups = (setups: Record<string, number[]>, main: Record<string, number[]> = { 'long:green:55-70': [100, 40] }): CalibrationState => ({
+    ...calPart(main),
+    setupBuckets: Object.fromEntries(
+      Object.entries(setups).map(([k, v]) => [k, v.length === 4 ? { n: v[0], hits: v[1], shadowN: v[2], shadowHits: v[3] } : { n: v[0], hits: v[1] }]),
+    ),
+  })
+  // 50 booked, 10 of them shadow → sized {n: 40, hits: 25} → laplace 27/44
+  const EARNED = [50, 30, 10, 5]
+  const P_SETUP = 27 / 44
+  const read = (cal: CalibrationState, setup?: string, x = 62.5, population: 'sized' | 'pooled' = 'sized') =>
+    probabilityFor(cal, 'long', 'green', x, 'unknown', population, setup)
+
+  it('fires at sized n ≥ 30, and moves p by EXACTLY 0.3·(p_setup − p_ladder)', () => {
+    const cal = withSetups({ 'continuation:long:55-70': EARNED })
+    const ladder = read(cal)
+    const blended = read(cal, 'continuation')
+    expect(blended.p).toBeCloseTo(0.7 * ladder.p + 0.3 * P_SETUP, 12)
+    expect(blended.p - ladder.p).toBeCloseTo(0.3 * (P_SETUP - ladder.p), 12)
+  })
+
+  it('the blend adjusts PRICE, not evidence mass: nEff, provisional and belowEvidence stay the ladder’s', () => {
+    const cal = withSetups({ 'continuation:long:55-70': EARNED })
+    const ladder = read(cal)
+    const blended = read(cal, 'continuation')
+    expect({ ...blended, p: ladder.p }).toEqual(ladder)
+    expect(blended.nEff).toBe(100) // the MAIN bucket's n — the setup family's 40 buys no evidence
+  })
+
+  it('29 sized does not fire and 30 does — the earn-influence rule has one edge and it is sharp', () => {
+    expect(read(withSetups({ 'continuation:long:55-70': [39, 25, 10, 5] }), 'continuation').p).toBeCloseTo(read(withSetups({}), 'continuation').p, 12)
+    const at30 = withSetups({ 'continuation:long:55-70': [40, 25, 10, 5] })
+    expect(read(at30, 'continuation').p).not.toBeCloseTo(read(at30).p, 6)
+  })
+
+  it('a shadow-diluted family stays mute: 40 booked with only 15 sized is 15, not 40', () => {
+    const cal = withSetups({ 'continuation:long:55-70': [40, 25, 25, 15] })
+    expect(read(cal, 'continuation').p).toBeCloseTo(read(cal).p, 12)
+  })
+
+  it('a POOLED read never blends — a shadow’s price stays the pure ladder', () => {
+    const cal = withSetups({ 'continuation:long:55-70': EARNED })
+    expect(read(cal, 'continuation', 62.5, 'pooled')).toEqual(read(cal, undefined, 62.5, 'pooled'))
+  })
+
+  it('a velocity row reads velocity:* and nothing else — a fat neighbouring family cannot leak into it', () => {
+    const cal = withSetups({ 'velocity:long:55-70': EARNED, 'continuation:long:55-70': [4000, 400, 100, 10] })
+    expect(read(cal, 'velocity').p).toBeCloseTo(0.7 * read(cal).p + 0.3 * P_SETUP, 12)
+    // …and a family with no bucket at all is an absence, not a zero
+    expect(read(cal, 'reversal').p).toBeCloseTo(read(cal).p, 12)
+  })
+
+  it('the setup key is the CALL’s band: the same family reads a different bucket at a different conviction', () => {
+    const cal = withSetups({ 'continuation:long:25-40': EARNED, 'continuation:long:55-70': [4000, 4000, 1000, 1000] }, { 'long:green:25-40': [100, 40], 'long:green:55-70': [100, 40] })
+    expect(read(cal, 'continuation', 32.5).p).toBeCloseTo(0.7 * read(cal, undefined, 32.5).p + 0.3 * P_SETUP, 12)
+  })
+
+  it('THE LEGACY ADJUDICATION: an unpartitioned setup bucket REFUSES to blend, however fat it is', () => {
+    // Absent sub-counts are ambiguous by construction — a sized row writes no
+    // sub-count, so "never partitioned" and "partitioned, all sized" are the same
+    // bytes. And the ambiguity is not academic: a live blob holds the gen-3 seed's
+    // unpartitioned setup buckets AND post-partition live accrual in ONE object,
+    // so no store-level flag could disambiguate a single bucket either. The safe
+    // reading of evidence that cannot prove it is sized is to add no influence.
+    const cal = withSetups({ 'continuation:long:55-70': [4000, 3000] })
+    expect(cal.setupBuckets!['continuation:long:55-70'].shadowN).toBeUndefined()
+    expect(read(cal, 'continuation')).toEqual(read(cal))
+    // the committed seed is exactly that blob, for every family it carries
+    const committed = seedJson.calibration as unknown as CalibrationState
+    for (const key of Object.keys(committed.setupBuckets ?? {})) {
+      const [setup, side, band] = key.split(':') as [string, 'long' | 'short', Band]
+      const x = { '25-40': 32.5, '40-55': 47.5, '55-70': 62.5, '70+': 77.5 }[band]
+      expect(probabilityFor(committed, side, 'green', x, 'unknown', 'sized', setup)).toEqual(probabilityFor(committed, side, 'green', x, 'unknown', 'sized'))
+    }
+  })
+
+  it('no setup argument → byte-identical to the pre-blend read, on every existing call site', () => {
+    const cal = withSetups({ 'continuation:long:55-70': EARNED })
+    expect(read(cal)).toEqual(probabilityFor(cal, 'long', 'green', 62.5, 'unknown', 'sized'))
+    expect(read(cal, undefined, 62.5, 'pooled')).toEqual(probabilityFor(cal, 'long', 'green', 62.5))
+  })
+})
+
 describe('gradePrediction', () => {
   const spy = mkCandles(500, 0) // flat benchmark
   it('clean long hit: +2/day for 5 sessions from 100 → ~+10% excess', () => {
@@ -1393,14 +1483,18 @@ describe('weight learning', () => {
     expect(w.gradedSinceNudge).toBe(1)
   })
 
-  it('maybeNudgeWeights: no-op under 15 graded; clamps within [0.4×, 2×] base; logs history', () => {
+  it('maybeNudgeWeights: no-op under 15 graded; a TWO-SIDED factor drifts 15%; logs history', () => {
     let w = initWeights()
-    // factor that always agrees and wins big → ic maxed → weight rises 15%
-    for (let i = 0; i < 25; i++) w = updateIcStats(w, pred('long', { technical: 50 }), { ...win, excessPct: 20 })
+    // A factor the loop is allowed to act on now needs BOTH columns filled: 20
+    // agreements that won big AND 20 disagreements that lost. ic maxes → +15%.
+    for (let i = 0; i < 20; i++) {
+      w = updateIcStats(w, pred('long', { technical: 50 }), { ...win, excessPct: 20 })
+      w = updateIcStats(w, pred('long', { technical: -50 }), { ...win, excessPct: -20 })
+    }
     const before = w.current.technical
     w = maybeNudgeWeights(w, '2026-07-01')
     expect(w.current.technical).toBeCloseTo(before * 1.15, 5)
-    expect(w.current.technical).toBeLessThanOrEqual(2 * w.base.technical)
+    expect(w.current.technical).toBeLessThanOrEqual(1.5 * w.base.technical)
     expect(w.history).toHaveLength(1)
     expect(w.gradedSinceNudge).toBe(0)
     // under 15 since nudge → untouched
@@ -1409,25 +1503,187 @@ describe('weight learning', () => {
     expect(maybeNudgeWeights(w, '2026-07-02').current.technical).toBe(cur)
   })
 
-  it('the 0.4× floor holds while evidence is thin, then lifts at 200 observations — a persistently wrong factor decays toward zero', () => {
+  it('a persistently wrong factor decays to the 0.5× floor and STOPS — the PRUNE_MIN_N path that crushed technical to 0.079 is gone', () => {
     let w = initWeights()
     const loss = { excessPct: -5, rawPct: -5, spyPct: 0, stopped: true, hit: false }
-    // young factor: 30 graded, always agreeing and losing → floor still protects it
-    for (let i = 0; i < 30; i++) w = updateIcStats(w, pred('long', { technical: 50 }), loss)
-    w = maybeNudgeWeights(w, '2026-07-01')
-    let rounds = 0
-    while (rounds++ < 8 && w.ic.technical.nAgree < 200) {
-      for (let i = 0; i < 30; i++) w = updateIcStats(w, pred('long', { technical: 50 }), loss)
-      w = maybeNudgeWeights(w, '2026-07-02')
-      if (w.ic.technical.nAgree < 200) expect(w.current.technical).toBeGreaterThanOrEqual(0.4 * w.base.technical)
-    }
-    // mature factor, still wrong: keep grading — the floor is gone, decay continues
-    for (let round = 0; round < 20; round++) {
-      for (let i = 0; i < 15; i++) w = updateIcStats(w, pred('long', { technical: 50 }), loss)
+    for (let round = 0; round < 60; round++) {
+      // always wrong, in both columns: agreeing costs, disagreeing pays
+      for (let i = 0; i < 15; i++) {
+        w = updateIcStats(w, pred('long', { technical: 50 }), loss)
+        w = updateIcStats(w, pred('long', { technical: -50 }), win)
+      }
       w = maybeNudgeWeights(w, '2026-07-03')
+      expect(w.current.technical).toBeGreaterThanOrEqual(0.5 * w.base.technical - 1e-12)
     }
-    expect(w.ic.technical.nAgree).toBeGreaterThanOrEqual(200)
-    expect(w.current.technical).toBeLessThan(0.4 * w.base.technical) // pruned below the old floor
+    // far past the retired PRUNE_MIN_N (200) — the floor used to LIFT here
+    expect(w.ic.technical.nAgree).toBeGreaterThanOrEqual(900)
+    expect(w.current.technical).toBeCloseTo(0.5 * w.base.technical, 9)
+  })
+})
+
+/** THE BRAKES [stage 3c task 2]. The walk's failure mode, made unfailable.
+ *
+ * Two mechanisms, and they answer two different questions. The minDisagree floor
+ * asks "has this factor ever been measured against itself?" — momentum's pinned
+ * 1.8 rested on a mean of FIFTEEN disagreements against 5,697 agreements, which
+ * is not an information coefficient, it is a rounding error with a direction. The
+ * band asks "how far may the loop move a weight from the vector the owner
+ * ratified?" — and it is ABSOLUTE, not a bound on the step, because a stored
+ * vector that is already outside it (the gen-2 install: technical 0.0791,
+ * momentum at the old 2× cap) would otherwise sit there forever, un-nudgeable
+ * precisely because the floor it fails is the one that would have moved it. */
+describe('the IC brakes — a nudge needs BOTH columns, and the band is absolute', () => {
+  const names = Object.keys(DEFAULT_WEIGHTS) as FactorName[]
+  /** A weights state parked one graded row short of nothing: the cadence is
+   * satisfied, so every call to maybeNudgeWeights below actually runs the loop. */
+  const ready = (): WeightsState => {
+    const w = initWeights()
+    w.gradedSinceNudge = 15
+    return w
+  }
+  /** ic = clamp((meanAgree − meanDisagree)/10) — `dir` +1 pins it at +1, −1 at −1. */
+  const twoSided = (nAgree: number, nDisagree: number, dir: 1 | -1): IcStat => ({
+    nAgree,
+    sumAgree: dir * 20 * nAgree,
+    nDisagree,
+    sumDisagree: dir * -20 * nDisagree,
+  })
+
+  it('nDisagree 15 NEVER nudges, at any number of agreements — the momentum failure, killed', () => {
+    for (const nAgree of [20, 200, 5697]) {
+      const w = ready()
+      w.ic.momentum = { nAgree, sumAgree: 20 * nAgree, nDisagree: 15, sumDisagree: -20 * 15 }
+      const before = w.current.momentum
+      const after = maybeNudgeWeights(w, '2026-08-13')
+      expect(after.current.momentum).toBe(before)
+      expect(after.history[0].changes.momentum).toBeUndefined()
+    }
+  })
+
+  it('…and the floor is symmetric: 15 agreements against 500 disagreements is equally mute', () => {
+    const w = ready()
+    w.ic.sector = { nAgree: 15, sumAgree: 300, nDisagree: 500, sumDisagree: -10_000 }
+    expect(maybeNudgeWeights(w, '2026-08-13').current.sector).toBe(0.3)
+  })
+
+  it('20 AND 20 is the bar, and it is reachable — the brakes are not an off switch', () => {
+    const w = ready()
+    w.ic.sector = { nAgree: 20, sumAgree: 400, nDisagree: 20, sumDisagree: -400 }
+    expect(maybeNudgeWeights(w, '2026-08-13').current.sector).toBeCloseTo(0.3 * 1.15, 12)
+  })
+
+  it('THE 500-NUDGE PIN: 500 compounding nudges with adversarial IC leave EVERY factor inside [0.5×, 1.5×]', () => {
+    const w = ready()
+    // the live blob's own out-of-band vector is the starting point, so the loop is
+    // asked to hold a band it did not start inside
+    w.current.technical = 0.0791
+    w.current.momentum = 1.8
+    w.current.seasonality = 5.75e-5
+    let hi = -Infinity
+    let lo = Infinity
+    for (let round = 0; round < 500; round++) {
+      // every factor pulling as hard as the loop allows, and the whole vector
+      // reverses every 50 rounds — the compounding whipsaw the walk produced
+      const up = round % 100 < 50
+      names.forEach((name, i) => {
+        // momentum keeps the fifteen disagreements it pinned itself with: the band
+        // must hold for a factor that can never nudge, too
+        const nDisagree = name === 'momentum' ? 15 : 40
+        w.ic[name] = twoSided(40, nDisagree, (i % 2 === 0) === up ? 1 : -1)
+      })
+      w.gradedSinceNudge = 15
+      maybeNudgeWeights(w, '2026-08-13')
+      for (const name of names) {
+        expect(w.current[name]).toBeGreaterThanOrEqual(0.5 * w.base[name] - 1e-12)
+        expect(w.current[name]).toBeLessThanOrEqual(1.5 * w.base[name] + 1e-12)
+      }
+      hi = Math.max(hi, w.current.technical)
+      lo = Math.min(lo, w.current.technical)
+    }
+    // …and the loop is not inert under the band: the whipsaw drove technical onto
+    // BOTH edges, which is what makes the 500 assertions above a real containment
+    // rather than a vector that never moved.
+    expect(hi).toBeCloseTo(1.5, 9)
+    expect(lo).toBeCloseTo(0.5, 9)
+  })
+
+  it('the band is ABSOLUTE, not a bound on the step: an out-of-band vector is repaired even where the floors forbid a nudge', () => {
+    const w = ready()
+    w.current.technical = 0.0791 // gen-2's crushed #1 factor
+    w.current.momentum = 1.8 // the old 2× cap
+    w.ic.momentum = { nAgree: 5697, sumAgree: 0, nDisagree: 15, sumDisagree: 0 } // ineligible, forever
+    const after = maybeNudgeWeights(w, '2026-08-13')
+    expect(after.current.momentum).toBeCloseTo(1.35, 12) // 1.5 × 0.9
+    expect(after.current.technical).toBeCloseTo(0.5, 12) // 0.5 × 1.0
+    // ic 0 is not a measurement — no IC did this, and the history line says so
+    expect(after.history[0].changes.momentum).toEqual({ from: 1.8, to: 1.35, ic: 0 })
+    expect(after.history[0].evidence).toMatch(/band/)
+  })
+
+  it('an in-band weight the floors skip is left exactly alone — the repair is not a reset', () => {
+    const w = ready()
+    w.current.technical = 1.07 // a learned drift, inside the band
+    w.ic.technical = { nAgree: 900, sumAgree: 900, nDisagree: 3, sumDisagree: -3 }
+    const after = maybeNudgeWeights(w, '2026-08-13')
+    expect(after.current.technical).toBe(1.07)
+    expect(after.history[0].changes).toEqual({})
+    expect(after.history[0].evidence).not.toMatch(/band/)
+  })
+})
+
+/** ZERO IS A READING — for some factors [stage 3c task 2, spec §4.3(b)].
+ *
+ * The shipped line skipped `score === 0` beside `score == null`, which quietly
+ * deleted a whole population from the evidence: `newsFactor` returns 0 for a
+ * QUIET TAPE and never returns null at all, so news IC has only ever been
+ * measured on days something was written about the name. The split is per factor,
+ * and the table (`ZERO_IS_A_READING`, composite.ts) is the adjudication. */
+describe('zero is a READING for some factors and a silence for others', () => {
+  const at = (side: 'long' | 'short', scores: Partial<Record<FactorName, number | null>>): Prediction =>
+    ({
+      side,
+      factors: Object.fromEntries((Object.keys(DEFAULT_WEIGHTS) as FactorName[]).map(k => [k, { score: scores[k] ?? null, detail: '', weight: 1 }])),
+    }) as unknown as Prediction
+  const win = { excessPct: 5, rawPct: 5, spyPct: 0, stopped: false, hit: true }
+  const booked = (name: FactorName, score: number | null, side: 'long' | 'short' = 'long') => {
+    const w = updateIcStats(initWeights(), at(side, { [name]: score }), win)
+    return w.ic[name].nAgree + w.ic[name].nDisagree
+  }
+
+  it('the table names every factor — a new factor cannot be silently omitted from the adjudication', () => {
+    expect(Object.keys(ZERO_IS_A_READING).sort()).toEqual(Object.keys(DEFAULT_WEIGHTS).sort())
+  })
+
+  it('news, seasonality and insiders accrue a zero: each has a DELIBERATE zero branch and its own null for "we could not look"', () => {
+    for (const name of ['news', 'seasonality', 'insiders'] as FactorName[]) {
+      expect(ZERO_IS_A_READING[name]).toBe(true)
+      expect(booked(name, 0)).toBe(1)
+    }
+  })
+
+  it('everything else still skips a zero — a mute factor is not evidence against the call', () => {
+    for (const name of ['technical', 'momentum', 'sector', 'social', 'channels', 'smartMoney', 'catalyst'] as FactorName[]) {
+      expect(ZERO_IS_A_READING[name]).toBe(false)
+      expect(booked(name, 0)).toBe(0)
+    }
+  })
+
+  it('NULL always skips, whatever the table says — absence of data is never a reading', () => {
+    for (const name of Object.keys(DEFAULT_WEIGHTS) as FactorName[]) expect(booked(name, null)).toBe(0)
+    // the named pair from the plan, stated the way the plan states it
+    expect(booked('seasonality', 0)).toBe(1)
+    expect(booked('social', null)).toBe(0)
+  })
+
+  it('an accrued zero books by the SAME side convention as any other score: not-toward-long', () => {
+    // `score > 0 === (side === 'long')` is the convention the whole module uses,
+    // and a zero is simply not a positive score. So a quiet tape counts AGAINST a
+    // long and WITH a short — which is the honest reading of "no upward pressure",
+    // and the asymmetry is documented at updateIcStats rather than special-cased.
+    const long = updateIcStats(initWeights(), at('long', { news: 0 }), win)
+    expect(long.ic.news).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 1, sumDisagree: 5 })
+    const short = updateIcStats(initWeights(), at('short', { news: 0 }), win)
+    expect(short.ic.news).toEqual({ nAgree: 1, sumAgree: 5, nDisagree: 0, sumDisagree: 0 })
   })
 })
 

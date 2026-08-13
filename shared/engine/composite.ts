@@ -53,6 +53,70 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
   catalyst: 'context',
 }
 
+/** IS A ZERO SCORE A READING, OR A SILENCE? [stage 3c, spec §4.3(b)]
+ *
+ * `updateIcStats` (calibration.ts) used to skip `score === 0` beside `score ==
+ * null`, and the two are not the same thing. Null is "we could not look". Zero is
+ * whatever the factor's own semantics say it is — and for three of these it is a
+ * measurement the loop was throwing away, most starkly for NEWS, which never
+ * returns null at all: skipping its zeros meant news IC had only ever been
+ * measured on days somebody wrote about the name.
+ *
+ * THE TEST APPLIED TO EACH FACTOR, so a future one can be adjudicated the same
+ * way: a zero is a READING when the factor emits it from a DELIBERATE branch
+ * meaning "we looked, and the answer is no signal", AND the factor has a separate
+ * null channel for "we could not look". A zero that can only arise as an
+ * arithmetic coincidence on a continuous scale — an exact tie, an exact median,
+ * two opposite votes cancelling — is a SILENCE: the factor is genuinely mute
+ * there, and booking muteness as evidence would count it against every long and
+ * for every short on no information at all.
+ *
+ *   news        READING — `!headlines.length → 0, 'quiet tape'`, its own branch,
+ *                         and this factor has NO null path: skipping zero
+ *                         selected its evidence down to loud tapes only.
+ *   seasonality READING — every "no read" case (unreliable history, no month,
+ *                         n < 3) already returns NULL, so a zero is a reliable
+ *                         month that measured flat. [named in the spec]
+ *   insiders    READING — `undefined → null, 'not checked'` vs `no buyers → 0,
+ *                         'no insider buying'`. The factor draws the line itself,
+ *                         in its own code, and "we checked Form 4s and nobody
+ *                         bought" is the comparison group its positive readings
+ *                         only mean anything against. Practically inert today
+ *                         (its agreements are rare, and the two-sided IC floor
+ *                         holds it mute until both columns fill) — which is
+ *                         exactly why it is safe to book honestly.
+ *   technical   silence — zero is `falling-knife` with no stack and no thrust,
+ *                         and the factor's own comment says why: "wait — no edge
+ *                         either side until the turn confirms".
+ *   momentum    silence — 21d RS exactly equal to SPY's. An arithmetic tie.
+ *   sector      silence — rank exactly at the median. An arithmetic tie.
+ *   channels    silence — bulls and bears exactly cancelling. A split panel is
+ *                         disorder, not a vote (the same argument the technical
+ *                         factor makes about a 'mixed' EMA stack).
+ *   smartMoney  silence — offsetting funds cancelling to zero; "no 13F match" is
+ *                         already null.
+ *   social      silence — unreachable (the score starts at 10 when a row exists);
+ *                         listed so the table stays exhaustive.
+ *   catalyst    silence — a sided catalyst of zero strength; "no catalyst" and
+ *                         "no clean side" are both already null. Lane rows never
+ *                         reach updateIcStats anyway (engine.ts's quarantine).
+ *
+ * It lives beside FACTOR_FAMILY because it is the same KIND of statement — a
+ * per-factor fact about semantics that the learning loop reads — and because a
+ * new factor added to DEFAULT_WEIGHTS must answer both questions in one place. */
+export const ZERO_IS_A_READING: Record<FactorName, boolean> = {
+  technical: false,
+  momentum: false,
+  sector: false,
+  seasonality: true,
+  social: false,
+  channels: false,
+  insiders: true,
+  news: true,
+  smartMoney: false,
+  catalyst: false,
+}
+
 /** Max composite points the whole context layer can add or subtract. Kept
  * BELOW every dead zone (20/25) so context alone can never cross the gate,
  * and — since a gated core is ≥ the dead zone — can never flip the side. */
