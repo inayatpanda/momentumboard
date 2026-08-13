@@ -79,13 +79,18 @@ export default async (req: Request) => {
         // Host-aware: `/.netlify/functions/...` on Netlify, `/api/fn/...` on
         // Pages/Workers — neither path exists on the other host (lib/site.ts).
         const composeUrl = internalFunctionUrl(SITE, 'report-compose-background')
+        // The chain is best-effort by design — the composer degrades to legacy
+        // mode and the ledger is already written — but a kick that never lands
+        // means no paper. The likeliest cross-host failure is a RESPONSE, not a
+        // rejection (a mis-routed kick gets 200 index.html from the SPA rule),
+        // so check res.ok too. One line either way, then carry on.
         await fetch(composeUrl, {
           method: 'POST',
           headers: { 'x-app-token': process.env.APP_TOKEN ?? '' },
-          // The chain is best-effort by design — the composer degrades to legacy
-          // mode and the ledger is already written — but a kick that never lands
-          // means no paper, and swallowing it silently is how you find that out
-          // from a reader. One line, then carry on.
+        }).then(res => {
+          if (!res.ok) console.error('PREDICT: compose kick answered', res.status, '—', composeUrl)
+          else if ((res.headers.get('content-type') ?? '').includes('text/html'))
+            console.error('PREDICT: compose kick reached a page, not a function —', composeUrl)
         }).catch(e => console.error('PREDICT: compose kick failed —', composeUrl, e))
       }
     } finally {
