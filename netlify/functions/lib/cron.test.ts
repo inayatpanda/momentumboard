@@ -3,11 +3,12 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openSqliteD1 } from '../../../scripts/lib/sqliteD1'
 import { ensureD1Schema } from './d1Store'
-import { CRON_JOBS, CRON_ORIGIN, SWEEP_TRIGGER, TRIGGERS, cronMatches, dispatchCron, jobsDueFor, nextRun, synthesiseCronRequest, type CronJob } from './cron'
+import { CRON_JOBS, CRON_ORIGIN, SWEEP_TRIGGER, TRIGGERS, cronJobUrl, cronMatches, dispatchCron, jobsDueFor, nextRun, synthesiseCronRequest, type CronJob } from './cron'
 import { claimScheduleSlot } from './schedule'
 import { memoryStore } from './store'
 import { useBlobStore, useD1Store } from './storeProvider'
 import { clearRuntimeEnv } from './runtimeEnv'
+import { FN_PREFIX, dispatch } from './router'
 
 const FUNCTIONS_DIR = join(__dirname, '..')
 const src = (name: string) => readFileSync(join(FUNCTIONS_DIR, `${name}.mts`), 'utf8')
@@ -267,10 +268,133 @@ describe('dispatchCron', () => {
   })
 })
 
+/* ───────────────────────── C-1: one invocation per job ─────────────────────────
+ * The free plan gives 50 subrequests per INVOCATION, and every fetch and every
+ * D1 binding call spends one. Running the tick's jobs in-process shared that
+ * budget between them, so at 12:45 bulletin-premarket inherited whatever
+ * alert-check had left. The dispatcher now POSTs each job to its own
+ * `/api/fn/<name>` door: a fresh budget per job, one subrequest per job here.
+ */
+describe('the dispatcher gives each job its own invocation', () => {
+  const BASE = 'https://streetsignal.pages.dev'
+  beforeEach(() => {
+    clearRuntimeEnv()
+    useBlobStore()
+  })
+  afterEach(() => {
+    clearRuntimeEnv()
+    useBlobStore()
+  })
+
+  const capture = () => {
+    const sent: { url: string; method: string; token: string | null; body: string; trigger: string | null }[] = []
+    const fetch = async (req: Request) => {
+      sent.push({ url: req.url, method: req.method, token: req.headers.get('x-app-token'), body: await req.text(), trigger: req.headers.get('x-cron-trigger') })
+      return new Response('ok')
+    }
+    return { sent, fetch }
+  }
+
+  it('POSTs every due job to its own by-name door on the Pages origin', async () => {
+    const { sent, fetch } = capture()
+    const results = await dispatchCron('*/5 * * * *', at('2026-08-13T12:45:00Z'), { baseUrl: BASE, fetch })
+    expect(sent.map(s => s.url)).toEqual([`${BASE}${FN_PREFIX}alert-check`, `${BASE}${FN_PREFIX}bulletin-premarket`])
+    expect(sent.every(s => s.method === 'POST')).toBe(true)
+    expect(results.map(r => r.job)).toEqual(['alert-check', 'bulletin-premarket'])
+    expect(results.every(r => r.ran && r.status === 200 && r.body === 'ok')).toBe(true)
+  })
+
+  // The whole point of the by-name door is that it is the SAME request the
+  // in-process path built — including the missing token. `admin` bypasses
+  // claimScheduleSlot, so a dispatcher that started sending one over HTTP would
+  // quietly delete the only rate bound these public URLs have.
+  it('sends the synthesised scheduler body and NO admin token', async () => {
+    const { sent, fetch } = capture()
+    await dispatchCron('*/5 * * * *', at('2026-08-13T12:45:00Z'), { baseUrl: BASE, fetch, appToken: 'sekrit' })
+    for (const s of sent) {
+      expect(s.token).toBeNull()
+      expect(s.body).not.toContain('sekrit')
+      expect(JSON.parse(s.body)).toEqual({ next_run: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) })
+      expect(s.trigger).toBe('*/5 * * * *')
+    }
+  })
+
+  it('builds the door from the router constant, trailing slash or not', () => {
+    const job = CRON_JOBS.find(j => j.name === 'watchdog')!
+    expect(cronJobUrl(BASE, job)).toBe(`${BASE}/api/fn/watchdog`)
+    expect(cronJobUrl(`${BASE}/`, job)).toBe(`${BASE}/api/fn/watchdog`)
+  })
+
+  it('reads the origin off the environment when none is injected', async () => {
+    const { sent, fetch } = capture()
+    await dispatchCron('*/15 * * * *', at('2026-08-13T07:15:00Z'), { fetch, sweep: async () => 0, jobs: CRON_JOBS.filter(j => j.name === 'watchdog') })
+    expect(sent).toEqual([]) // no URL anywhere → nothing is posted…
+    process.env.URL = BASE
+    try {
+      await dispatchCron('*/15 * * * *', at('2026-08-13T07:15:00Z'), { fetch, sweep: async () => 0, jobs: CRON_JOBS.filter(j => j.name === 'watchdog') })
+      expect(sent.map(s => s.url)).toEqual([`${BASE}${FN_PREFIX}watchdog`])
+    } finally {
+      delete process.env.URL
+    }
+  })
+
+  it('reports a missing origin as a job error rather than silently skipping the tick', async () => {
+    const results = await dispatchCron('*/5 * * * *', at('2026-08-13T09:05:00Z'), { fetch: async () => new Response('ok') })
+    expect(results[0]).toMatchObject({ job: 'alert-check', ran: true })
+    expect(results[0].error).toMatch(/URL/)
+  })
+
+  // Netlify gave each of these its own invocation and nobody ever saw its
+  // status. This log is now the only place a 500 from a bulletin surfaces.
+  it('reports a non-2xx as a job error, keeping the status and the body head', async () => {
+    const results = await dispatchCron('*/5 * * * *', at('2026-08-13T12:45:00Z'), {
+      baseUrl: BASE,
+      fetch: async req => (req.url.endsWith('alert-check') ? new Response('boom: no such table blobs', { status: 500 }) : new Response('ok')),
+    })
+    expect(results[0]).toMatchObject({ job: 'alert-check', ran: true, status: 500, body: 'boom: no such table blobs', error: 'HTTP 500: boom: no such table blobs' })
+    expect(results[1]).toMatchObject({ job: 'bulletin-premarket', status: 200 })
+    expect(results[1].error).toBeUndefined()
+  })
+
+  it('isolates a transport failure to the one job, exactly as a thrown handler was', async () => {
+    const results = await dispatchCron('*/5 * * * *', at('2026-08-13T12:45:00Z'), {
+      baseUrl: BASE,
+      fetch: async req => {
+        if (req.url.endsWith('alert-check')) throw new Error('fetch failed')
+        return new Response('ok')
+      },
+    })
+    expect(results[0]).toMatchObject({ job: 'alert-check', ran: true, error: 'fetch failed' })
+    expect(results[1]).toMatchObject({ job: 'bulletin-premarket', status: 200 })
+  })
+
+  // ONE subrequest per job is the entire budget the dispatcher spends. If this
+  // ever counts more than the number of due jobs, the fix has been undone.
+  it('spends exactly one subrequest per due job', async () => {
+    const { sent, fetch } = capture()
+    await dispatchCron('*/5 * * * *', at('2026-08-16T08:00:00Z'), { baseUrl: BASE, fetch }) // Sunday: alert-check + ledger-snapshot
+    expect(sent).toHaveLength(2)
+  })
+
+  // The one job that carries APP_TOKEN never goes over the public door: the
+  // site's master credential would be on the wire every 05:20 tick for nothing.
+  it('keeps predict-background in-process, so APP_TOKEN never goes on the wire', async () => {
+    const { sent, fetch } = capture()
+    const predict = { ...CRON_JOBS.find(j => j.name === 'predict-background')!, enabled: () => true }
+    // No `run` override: this takes the DEFAULT admin path. APP_TOKEN is unset
+    // in the environment, so the real handler's own authenticate() refuses —
+    // which is the proof that the real handler is what ran, right here.
+    const results = await dispatchCron('20 5 * * 1-5', at('2026-08-13T05:20:00Z'), { jobs: [predict], baseUrl: BASE, fetch, appToken: 'sekrit' })
+    expect(sent).toEqual([]) // nothing on the wire
+    expect(results[0]).toMatchObject({ job: 'predict-background', ran: true, status: 401, body: 'admin-only' })
+  })
+})
+
 // The whole chain with nothing stubbed: a Cloudflare cron tick → the
-// synthesised body → alert-check.mts's ACTUAL gate → the real claimScheduleSlot
-// → a real D1 store. It reaches 'no-config' because the store is empty, which
-// is a line the handler only gets to AFTER passing both doors.
+// synthesised POST → the REAL Pages router (resolveRoute, the D1 binding) →
+// alert-check.mts's ACTUAL gate → the real claimScheduleSlot → a real D1 store.
+// It reaches 'no-config' because the store is empty, which is a line the
+// handler only gets to AFTER passing both doors.
 describe('end to end, on D1', () => {
   beforeEach(() => clearRuntimeEnv())
   afterEach(() => {
@@ -282,15 +406,20 @@ describe('end to end, on D1', () => {
     const db = openSqliteD1(':memory:')
     await ensureD1Schema(db)
     useD1Store(db)
+    // The other half of the C-1 fix, exercised for real: the dispatcher's fetch
+    // is answered by the same `dispatch()` a Pages Function calls, handed the
+    // same binding a Pages invocation would be handed.
+    const fetch = async (req: Request) => (await dispatch(req, { env: { STREETSIGNAL_DB: db } }))!
+    const opts = { baseUrl: 'https://streetsignal.pages.dev', fetch }
 
-    const first = await dispatchCron('*/5 * * * *', at('2026-08-13T09:05:00Z'))
+    const first = await dispatchCron('*/5 * * * *', at('2026-08-13T09:05:00Z'), opts)
     expect(first).toHaveLength(1)
     expect(first[0]).toMatchObject({ job: 'alert-check', ran: true, status: 200, body: 'no-config' })
 
     // The slot was claimed in D1 by the run above, so the immediate replay —
     // the exact thing an attacker replaying `next_run` would do — is refused.
-    const replay = await dispatchCron('*/5 * * * *', at('2026-08-13T09:05:00Z'))
-    expect(replay[0]).toMatchObject({ job: 'alert-check', status: 429, body: 'throttled' })
+    const replay = await dispatchCron('*/5 * * * *', at('2026-08-13T09:05:00Z'), opts)
+    expect(replay[0]).toMatchObject({ job: 'alert-check', status: 429, body: 'throttled', error: 'HTTP 429: throttled' })
 
     const runlog = await db.prepare(`SELECT value FROM blobs WHERE store = 'app' AND key = 'runlog'`).first<{ value: string }>()
     expect(JSON.parse(runlog!.value)[0]).toMatchObject({ errors: ['no-config'] })

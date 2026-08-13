@@ -4,9 +4,14 @@
 //
 // Deployed to `*.workers.dev`, so it needs no custom domain (the reason it is a
 // separate Worker from the Pages project at all: Pages Functions cannot carry
-// cron triggers). It shares the D1 binding with Pages, and it calls the handler
-// modules by DIRECT IMPORT rather than over HTTP — same repository, same
-// `netlify/functions/lib/`, no network hop and no public URL to protect.
+// cron triggers). It shares the D1 binding with Pages.
+//
+// It does NOT run the jobs itself. Each due job is POSTed to its own
+// `/api/fn/<name>` door on the Pages origin (`URL`), so it executes in its own
+// Pages Functions invocation with its own 50-subrequest budget — the C-1 fix;
+// see `dispatchCron`'s comment for why a shared budget silently degraded every
+// job after the first. This Worker therefore spends one subrequest per job, and
+// still needs the D1 binding only for the quarter-hour cache sweep.
 //
 // Everything interesting is in `lib/cron.ts`: the job table, the cron matcher,
 // and the synthesis of the `{"next_run": …}` body each handler's own gate

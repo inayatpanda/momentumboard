@@ -206,6 +206,23 @@ export default async (req: Request) => {
 
   for (const e of events.filter((e: AlertEvent) => e.tier === 'instant')) await deliver(e.text.startsWith('🛑') ? e.text : `🔔 ${e.text}`)
 
+  // PERSIST WHAT WAS JUST DELIVERED, IMMEDIATELY (Cloudflare C-1).
+  //
+  // Everything below — the macro sentinel, econ, call-cross, intraday flags,
+  // trending, the pundit bridge — costs subrequests, and on the free plan an
+  // invocation has FIFTY of them, spent by every fetch AND every D1 call alike.
+  // When the budget runs out mid-run the FINAL `alert-state` write throws too,
+  // the invocation dies, and the next tick reads the state as it was BEFORE
+  // these alerts went out: `ruleArmed` still armed, `seenItems` still short —
+  // so the reader's phone buzzes with the same alerts again. The delivery has
+  // already happened by this line and is not undoable, so the record of it must
+  // not be hostage to the rest of the run.
+  //
+  // The end-of-run write below stays: the legs after this point add their own
+  // `seenItems` keys and flush the digest queue, and those need persisting too.
+  // Two writes is one extra D1 call against re-notifying a reader — cheap.
+  await store.write('alert-state', afterEval)
+
   // macro SHOCK sentinel: oil/gold/VIX/dollar/natgas one-day shocks and stretches
   try {
     const { MACRO_ASSETS, detectShock, detectStretch } = await import('./lib/macroEvents')

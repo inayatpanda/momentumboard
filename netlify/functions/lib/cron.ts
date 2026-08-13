@@ -42,7 +42,7 @@
 
 import { readEnv } from './runtimeEnv'
 import { currentCacheStore } from './storeProvider'
-import { invokeHandler, type HandlerName } from './router'
+import { FN_PREFIX, invokeHandler, type HandlerName } from './router'
 
 /* ───────────────────────────── cron matching ─────────────────────────────
  * Enough of the syntax for the expressions this project actually uses:
@@ -175,9 +175,10 @@ export const SWEEP_LIMIT = 1000
 
 /* ─────────────────────────── the synthesised call ─────────────────────────── */
 
-/** The URL a synthesised request carries. Never fetched — the dispatcher calls
- * the handler function directly — but handlers build `new URL(req.url)`, so it
- * has to be a real absolute URL. */
+/** The URL a synthesised request carries. Not the URL it is SENT to — the
+ * dispatcher re-addresses it at the Pages origin (see `cronJobUrl`) — but
+ * handlers build `new URL(req.url)`, so it has to be a real absolute URL, and
+ * the in-process path (predict-background) uses it as-is. */
 export const CRON_ORIGIN = 'https://cron.streetsignal.internal'
 
 export interface SynthOptions {
@@ -228,28 +229,77 @@ export function jobsDueFor(trigger: string, at: Date, jobs: readonly CronJob[] =
   return jobs.filter(j => j.trigger === trigger && cronMatches(j.schedule, at))
 }
 
+/** WHERE A JOB IS POSTED: our own Pages origin, at the router's by-name door.
+ *
+ * `base` is the self-origin (`URL`), exactly as lib/site.ts's
+ * `internalFunctionUrl` uses it — not CANONICAL_SITE, so a preview deployment
+ * calls itself and not production. The path is `FN_PREFIX` rather than a
+ * literal, so it cannot drift from the door the router actually opens. */
+export function cronJobUrl(base: string, job: CronJob): string {
+  return `${base.replace(/\/+$/, '')}${FN_PREFIX}${job.name}`
+}
+
 export interface DispatchCronOptions {
   jobs?: readonly CronJob[]
-  /** Injected for tests; production calls the real handler loader. */
+  /** Overrides HOW a job runs — injected by tests, and the in-process path for
+   * `auth: 'admin'`. Production leaves it unset and each job goes over HTTP. */
   run?: (job: CronJob, req: Request) => Promise<Response>
+  /** Injected for tests; production uses the global fetch. */
+  fetch?: (req: Request) => Promise<Response>
+  /** Self-origin the job URLs are built on. Defaults to the `URL` env var. */
+  baseUrl?: string
   appToken?: string
   /** Injected for tests; production sweeps the live cache store. */
   sweep?: (limit: number) => Promise<number>
 }
 
+/** One job's outcome, from whichever door it went through. A non-2xx is an
+ * ERROR here even though the body is captured either way: on Netlify each job
+ * was its own invocation and nobody saw its status, so the dispatcher's log is
+ * now the only place a 500 from bulletin-evening becomes visible. */
+async function reportOutcome(job: CronJob, res: Response, started: number): Promise<CronResult> {
+  const body = (await res.text().catch(() => '')).slice(0, 200)
+  const out: CronResult = { job: job.name, ran: true, status: res.status, body, ms: Date.now() - started }
+  if (res.status < 200 || res.status >= 300) out.error = `HTTP ${res.status}: ${body.slice(0, 150)}`
+  return out
+}
+
 /**
  * Run everything this trigger owns at this minute, in order, and report.
+ *
+ * ONE INVOCATION PER JOB — the C-1 fix. Cloudflare's free plan allows 50
+ * subrequests per invocation, and every fetch AND every D1 binding call spends
+ * one. Running the jobs in-process made that budget SHARED: at 12:45 the
+ * five-minute tick owed alert-check (which alone can spend 40+ on quotes, news
+ * and store writes) and bulletin-premarket out of the same 50, so the second
+ * job inherited whatever the first left and failed in a way that looked like an
+ * upstream outage. The dispatcher therefore POSTs each job to its own public
+ * `/api/fn/<name>` door: the job executes in ITS OWN Pages Functions invocation
+ * with a fresh 50, and the dispatcher spends exactly one subrequest per job.
+ *
+ * The request is byte-identical to the one the in-process path built — the same
+ * `{"next_run": …}` body, the same headers, and DELIBERATELY NO admin token for
+ * every `auth: 'cron-body'` job (see this file's header: sending one would
+ * bypass `claimScheduleSlot` and delete the only bound those public URLs have).
+ *
+ * PREDICT-BACKGROUND STAYS IN-PROCESS. It is the one `auth: 'admin'` job, and
+ * posting it over the public door would put APP_TOKEN — the site's master
+ * credential — on the wire on every 05:20 tick for no gain: it is gated off
+ * behind WORKER_OWNS_PREDICT (GitHub Actions owns predict), and when the switch
+ * is thrown to MEASURE the CPU claim, an in-process run is exactly what is being
+ * measured. A direct call also spends no subrequest at all.
  *
  * SEQUENTIAL ON PURPOSE. These jobs read-modify-write the same `runlog` blob,
  * and running them concurrently would lose entries the same way alert-check and
  * predict-background used to race (see watchdog.mts:35). They are also
- * individually failure-isolated: one job throwing must not stop the rest of the
+ * individually failure-isolated: one job failing must not stop the rest of the
  * tick, exactly as Netlify's independent invocations behaved.
  */
 export async function dispatchCron(trigger: string, at: Date = new Date(), opts: DispatchCronOptions = {}): Promise<CronResult[]> {
   const jobs = opts.jobs ?? CRON_JOBS
-  const run = opts.run ?? ((job: CronJob, req: Request) => invokeHandler(job.name, req))
   const results: CronResult[] = []
+  const base = opts.baseUrl ?? readEnv('URL') ?? ''
+  const send = opts.fetch ?? ((req: Request) => fetch(req))
 
   for (const job of jobsDueFor(trigger, at, jobs)) {
     if (job.enabled && !job.enabled()) {
@@ -258,8 +308,18 @@ export async function dispatchCron(trigger: string, at: Date = new Date(), opts:
     }
     const started = Date.now()
     try {
-      const res = await run(job, synthesiseCronRequest(job, { at, appToken: opts.appToken }))
-      results.push({ job: job.name, ran: true, status: res.status, body: (await res.text().catch(() => '')).slice(0, 200), ms: Date.now() - started })
+      const synth = synthesiseCronRequest(job, { at, appToken: opts.appToken })
+      const inProcess = opts.run ?? (job.auth === 'admin' ? (j: CronJob, req: Request) => invokeHandler(j.name, req) : null)
+      if (inProcess) {
+        results.push(await reportOutcome(job, await inProcess(job, synth), started))
+        continue
+      }
+      if (!base) throw new Error('no URL in the environment — the dispatcher cannot address its own Pages origin')
+      // Rebuilt rather than re-wrapped: `new Request(url, aRequest)` reads the
+      // body as a stream, which undici will not accept without `duplex`. The
+      // method, the headers and the bytes are the synthesised ones verbatim.
+      const outbound = new Request(cronJobUrl(base, job), { method: synth.method, headers: synth.headers, body: await synth.text() })
+      results.push(await reportOutcome(job, await send(outbound), started))
     } catch (e) {
       results.push({ job: job.name, ran: true, error: String((e as Error)?.message ?? e).slice(0, 300), ms: Date.now() - started })
     }
