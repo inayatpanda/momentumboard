@@ -76,11 +76,15 @@ describe('classifyLoser — the pinned total order', () => {
   })
 
   it('a DIP row that closed under its dip low while the stop held reads thesis-break, naming the dip low', () => {
-    // bars 20..29 bottom at 90 (the dip low); the entry session prints a lower low
-    // of 85, so the published stop sits UNDER the structure — min(dip low, today).
+    // bars 20..(publication−1) bottom at 90 (the dip low); the PUBLICATION session
+    // (entryIdx−1 — the engine publishes pre-open from bars strictly before the
+    // entry) prints the lower low of 85, so the published stop sits UNDER the
+    // structure — min(dip low, publication low). The basis matters: recomputing
+    // on the ENTRY bar instead re-includes the 85 and suppresses this class
+    // entirely (Task-2 review, Critical).
     const t = tape(
       i => (i < 33 ? 100 : 88),
-      i => (i >= 20 && i < ENTRY_IDX ? 90 : i === ENTRY_IDX ? 85 : 95),
+      i => (i >= 20 && i < ENTRY_IDX - 1 ? 90 : i === ENTRY_IDX - 1 ? 85 : 95),
     )
     const { cls, detail } = classifyLoser(row({ stop: 85, catalyst: { kind: DIP_CATALYST_KIND, reason: 'dip 12% · holding: 4.1% above the 90 dip low' } }), outcome(), t)
     expect(cls).toBe('thesis-break')
@@ -98,6 +102,20 @@ describe('classifyLoser — the pinned total order', () => {
     )
     const { cls } = classifyLoser(row({ stop: 90, catalyst: { kind: DIP_CATALYST_KIND, reason: 'dip 12%' } }), outcome({ excessPct: -4 }), t)
     expect(cls).toBe('adverse-move')
+  })
+
+  it('a dip low the PUBLISHED window never contained stays uninvented — the wrong basis would fabricate it', () => {
+    // The oldest published-window bar carries the 80 dip low; the entry-basis
+    // window would DROP that bar and derive a 90 "level" no card ever showed.
+    // Under the publication basis: dip low 80 == stop 80 → no second level →
+    // the row reads adverse-move, never thesis-break-at-90.
+    const t = tape(
+      i => (i < 33 ? 100 : 89),
+      i => (i === ENTRY_IDX - 11 ? 80 : i >= 20 && i < ENTRY_IDX ? 90 : 95),
+    )
+    const { cls, detail } = classifyLoser(row({ stop: 80, catalyst: { kind: DIP_CATALYST_KIND, reason: 'dip 12%' } }), outcome({ excessPct: -4 }), t)
+    expect(cls).toBe('adverse-move')
+    expect(detail).not.toContain('90')
   })
 
   it('a plain composite row NEVER thesis-breaks — no structural level, no claim to have lost one', () => {

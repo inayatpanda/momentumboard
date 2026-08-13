@@ -130,11 +130,14 @@ export interface StructuralBreak {
  *    by session exactly as `openTrace` re-draws it, floored at the published
  *    stop. LONG ONLY, by construction — `effectiveVelocityStop` takes a running
  *    max, which on a short would loosen forever (velocityLane.ts).
- *  - DIP (`catalyst.kind === 'dip'`): the dip-window low as it stood on the entry
- *    session. The published stop is `min(that low, the entry session's own low)`,
- *    so the low is a level ABOVE the stop only when the entry session printed a
- *    lower one — and when it is not, there is no second level to lose and
- *    `stopped` owns the row anyway.
+ *  - DIP (`catalyst.kind === 'dip'`): the dip-window low as it stood on the
+ *    PUBLICATION session — the bar BEFORE `pred.date`. The engine publishes
+ *    pre-open from bars strictly before the entry session (calibration.ts's
+ *    entry-open note; velocityLane.ts's "drawn from the session BEFORE"), so
+ *    the published stop is `min(dipWindowLow(bars ≤ entryIdx−1), low[entryIdx−1])`.
+ *    Recomputing on the ENTRY basis instead would re-include the very bar whose
+ *    low set the stop — suppressing every true dip thesis-break and inventing
+ *    levels the card never carried (Task-2 review, Critical).
  *
  * Returns null the moment the level does not exist, does not sit above the stop,
  * or never gave way. The bar for claiming "the thesis broke" is a level the row
@@ -151,11 +154,14 @@ export function structuralBreak(pred: PostMortemRow, candles: Candle[], entryIdx
     return null
   }
   if (pred.catalyst?.kind === DIP_CATALYST_KIND && pred.side === 'long') {
-    // the low as of the entry session: dipWindowLow reads the DIP_WINDOW sessions
-    // BEFORE the last candle handed in, so the slice must end on the entry bar
-    if (entryIdx < DIP_WINDOW) return null
-    const low = dipWindowLow(candles.slice(0, entryIdx + 1))
-    if (low == null || !(low > pred.stop)) return null
+    // the low as of the PUBLICATION session: dipWindowLow reads the DIP_WINDOW
+    // sessions before the last candle handed in, and publication is entryIdx−1,
+    // so the slice ends BEFORE the entry bar. The published stop is round2ed
+    // (dipLane.ts), so compare rounded-to-rounded or a sub-penny sliver reads
+    // as a "level" one rounding step above the stop.
+    if (entryIdx <= DIP_WINDOW) return null
+    const low = dipWindowLow(candles.slice(0, entryIdx))
+    if (low == null || !(round2(low) > pred.stop)) return null
     const idx = breachIdx(candles, entryIdx, lastIdx, 'long', low)
     return idx === -1 ? null : { level: round2(low), idx, name: 'dip low' }
   }
