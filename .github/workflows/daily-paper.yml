@@ -36,8 +36,14 @@ jobs:
         env:
           URL: https://thestreetsignal.rqai.co.uk
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          # Cloudflare cutover 2026-08-13: the store is D1 over its HTTP API.
+          STORE_BACKEND: d1
+          CLOUDFLARE_ACCOUNT_ID: 2fbc7e35cca809db004dd6f951c16352
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # OpenAI-compatible slot = DeepSeek (see lib/llm.ts; logs name it "openai")
+          OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_BASE_URL: https://api.deepseek.com
+          OPENAI_MODEL: deepseek-chat
           APP_TOKEN: ${{ secrets.APP_TOKEN }}
           REPORT_PUBLISH_TOKEN: ${{ secrets.REPORT_PUBLISH_TOKEN }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
