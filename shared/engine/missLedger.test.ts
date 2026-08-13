@@ -249,7 +249,26 @@ describe('the budget — truncation is COUNTED, never silent', () => {
       io({ GONE: null, SHORTTAPE: runner.slice(0, 35) }),
     )
     expect(ledger.days[ENTRY]).toEqual({ checked: 0, unchecked: 2, misses: 0 })
-    expect(Object.keys(ledger.gates)).toEqual([])
+    // …and the gate itself carries the unpriced count: a gate that was never
+    // measured must never read downstream as a gate that cost nothing
+    expect(ledger.gates['no-candles']!).toMatchObject({ cost: 0, saved: 0, unchecked: 1 })
+    expect(ledger.gates['trimmed']!).toMatchObject({ cost: 0, saved: 0, unchecked: 1 })
+  })
+
+  it("budget truncation charges each starved row's gate, and the rank-0 tiebreak rotates by date", async () => {
+    const rows: Record<string, { gate: 'trimmed'; side: 'long' }> = {}
+    for (let i = 0; i < 45; i++) rows[`SYM${String(i).padStart(2, '0')}:long`] = { gate: 'trimmed', side: 'long' }
+    const l1 = emptyMissLedger()
+    await accrueMissDay(l1, traceOf(rows), flat, io(Object.fromEntries(Object.keys(rows).map(k => [k.split(':')[0], runner]))))
+    expect(l1.gates['trimmed']!.unchecked).toBe(5) // 45 rows, budget 40
+    // …and the rank-0 tiebreak ROTATES: a different trace date orders the same
+    // rows differently, so the starved tail is not the same names every day
+    const t2 = traceOf(rows)
+    ;(t2 as { date: string }).date = '2026-07-21'
+    const order1 = missCandidates(traceOf(rows)).map(c => c.key)
+    const order2 = missCandidates(t2).map(c => c.key)
+    expect(order1).not.toEqual(order2)
+    expect([...order1].sort()).toEqual([...order2].sort()) // same population, different spend order
   })
 
   it('a candles() that throws is unchecked, and never takes the day down with it', async () => {

@@ -413,6 +413,15 @@ async function accrueMissLedger(store: AppStore, spy: Candle[], cache: Map<strin
   // emphatically not a day the engine refused nothing. accrueMissDay refuses it
   // too; it is checked here as well so no `days` entry is minted for it either.
   if (!trace || trace.disabled) return
+  // The selection key and the accrual key must be ONE value: a trace whose own
+  // `date` field disagrees with the index key would file the day under the
+  // wrong entry, the guard above would never see it, and every later run would
+  // re-charge the same day forever (Task-1 review, Important 3). Stored blobs
+  // are untrusted; refuse the mismatch outright.
+  if (trace.date !== date) {
+    console.error(`MISS-LEDGER: trace at ${date} claims to be ${trace.date} — refusing the day`)
+    return
+  }
   const next = await accrueMissDay(ledger, trace, spy, { isFree: sym => cache.has(sym), candles: getCandles })
   await store.write(MISS_LEDGER_KEY, next)
   console.log(`MISS-LEDGER: ${date} — ${next.days[date].checked} checked, ${next.days[date].unchecked} unchecked, ${next.days[date].misses} misses`)

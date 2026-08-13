@@ -111,6 +111,11 @@ export interface MissExample {
    * sign is what tells the two apart in one bounded list. */
   excessPct: number
   gate: GateCode
+  /** True when the row died before a side existed (trimmed/no-candles) and was
+   * evaluated BOTH ways — a bare row past the bar mints one cost AND one mirror
+   * save for the same gate, so 3c must compute sided-only ratios by excluding
+   * these (Task-1 review, Important 2). */
+  bare?: boolean
 }
 
 export interface MissGateStat {
@@ -124,6 +129,10 @@ export interface MissGateStat {
    * the drawdown avoided. Left signed so a reader can never mistake one column
    * for the other. */
   savedExcessSum: number
+  /** Rows charged to this gate that the fetch budget (or a failed tape) left
+   * UNPRICED — without this a gate that was never measured is indistinguishable
+   * from a gate that blocked nothing worth having (Task-1 review, Important 1). */
+  unchecked: number
   examples: MissExample[]
 }
 
@@ -220,7 +229,16 @@ export function missCandidates(trace: FunnelTrace): MissCandidate[] {
     const sym = key.split(':')[0]
     out.push({ key, sym, side: row.side ?? null, gate: row.gate, rank: rank.get(sym) ?? 0 })
   }
-  out.sort((a, b) => (a.side ? 0 : 1) - (b.side ? 0 : 1) || b.rank - a.rank || a.key.localeCompare(b.key))
+  // The rank-0 tiebreak rotates with the trace date: a stable alphabetical
+  // order would measure the same early-alphabet names every day and starve the
+  // rest forever (Task-1 review). Deterministic per day, different across days.
+  const spin = (k: string) => {
+    let h = 0
+    const seed = `${trace.date}:${k}`
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0
+    return h
+  }
+  out.sort((a, b) => (a.side ? 0 : 1) - (b.side ? 0 : 1) || b.rank - a.rank || spin(a.key) - spin(b.key))
   return out
 }
 
@@ -229,7 +247,7 @@ export function missCandidates(trace: FunnelTrace): MissCandidate[] {
 export function accrueMissEvent(ledger: MissLedger, ev: MissExample): 'cost' | 'saved' | null {
   const kind = ev.excessPct >= MISS_EXCESS_MIN ? 'cost' : ev.excessPct <= -MISS_EXCESS_MIN ? 'saved' : null
   if (!kind) return null
-  const g = (ledger.gates[ev.gate] ??= { cost: 0, costExcessSum: 0, saved: 0, savedExcessSum: 0, examples: [] })
+  const g = (ledger.gates[ev.gate] ??= { cost: 0, costExcessSum: 0, saved: 0, savedExcessSum: 0, unchecked: 0, examples: [] })
   if (kind === 'cost') {
     g.cost++
     g.costExcessSum = round1(g.costExcessSum + ev.excessPct)
@@ -239,6 +257,13 @@ export function accrueMissEvent(ledger: MissLedger, ev: MissExample): 'cost' | '
   }
   g.examples = [...g.examples, { ...ev }].slice(-MISS_EXAMPLES_PER_GATE)
   return kind
+}
+
+/** An unpriced row still charges its gate's `unchecked` column — a gate that
+ * was never measured must never read as a gate that cost nothing. */
+export function accrueUnchecked(ledger: MissLedger, gate: GateCode): void {
+  const g = (ledger.gates[gate] ??= { cost: 0, costExcessSum: 0, saved: 0, savedExcessSum: 0, unchecked: 0, examples: [] })
+  g.unchecked = (g.unchecked ?? 0) + 1
 }
 
 /** Records the day's coverage and prunes to the newest MISS_LEDGER_DAYS_MAX.
@@ -298,6 +323,7 @@ export async function accrueMissDay(ledger: MissLedger, trace: FunnelTrace, spy:
     const free = io.isFree(cand.sym)
     if (!free && fetches >= budget) {
       unchecked++
+      accrueUnchecked(ledger, cand.gate)
       continue
     }
     let candles: Candle[] | null = null
@@ -311,11 +337,12 @@ export async function accrueMissDay(ledger: MissLedger, trace: FunnelTrace, spy:
     const ex = candles ? missExcess(candles, spy, trace.date) : null
     if (!ex) {
       unchecked++
+      accrueUnchecked(ledger, cand.gate)
       continue
     }
     checked++
     for (const side of cand.side ? ([cand.side] as const) : (['long', 'short'] as const)) {
-      if (accrueMissEvent(ledger, { date: trace.date, sym: cand.sym, side, excessPct: ex[side], gate: cand.gate }) === 'cost') misses++
+      if (accrueMissEvent(ledger, { date: trace.date, sym: cand.sym, side, excessPct: ex[side], gate: cand.gate, ...(cand.side ? {} : { bare: true }) }) === 'cost') misses++
     }
   }
   return recordMissDay(ledger, trace.date, { checked, unchecked, misses })
