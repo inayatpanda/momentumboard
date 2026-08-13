@@ -49,7 +49,7 @@ import {
 } from '../../../shared/engine/calibration'
 import { pickDiverse } from '../../../shared/engine/select'
 import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder, type FunnelTrace } from '../../../shared/engine/funnelTrace'
-import { MISS_LEDGER_KEY, accrueMissDay, maturedTraceDate, normaliseMissLedger, type MissLedger } from '../../../shared/engine/missLedger'
+import { MISS_LEDGER_KEY, accrueMissDay, maturedTraceDate, normaliseMissLedger, regretDisabled, type MissLedger } from '../../../shared/engine/missLedger'
 import { classifyLoser, postMortemKey } from '../../../shared/engine/postMortem'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
@@ -420,6 +420,10 @@ const mapLimit = async <T, R>(items: T[], limit: number, fn: (item: T) => Promis
  * learning blob is already durable by the time this runs, so a failure here costs
  * the day's regret measurement and nothing else. */
 async function accrueMissLedger(store: AppStore, spy: Candle[], cache: Map<string, Candle[] | null>, getCandles: (sym: string) => Promise<Candle[] | null>): Promise<void> {
+  // the parity seam (missLedger.ts) — `REGRET=off` makes this pass a no-op, the
+  // way the pre-3b tree was, so a window walk can prove the two runs publish the
+  // same rows. Never set in production.
+  if (regretDisabled()) return
   const index = (await store.read<string[]>(FUNNEL_TRACE_INDEX_KEY)) ?? []
   const date = maturedTraceDate(index, spy)
   if (!date) return
@@ -508,8 +512,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // free. EVERY graded loser gets one: a shadow's failure is the audition
           // the shadow was published to run, and a watch row the reader could not
           // act on still teaches how this SHAPE of call dies. Winners get nothing,
-          // and no published decision reads the field.
-          if (!o.hit) {
+          // and no published decision reads the field. `regretDisabled()` is the
+          // parity seam (missLedger.ts): with `REGRET=off` no loser is stamped
+          // and none is queued, which is the pre-3b tree exactly.
+          if (!o.hit && !regretDisabled()) {
             pred.postMortem = { ...classifyLoser(pred, o, candles), at: nowSec }
             // …and if the reader had money on it, queue it for the paper's one
             // sentence. Queued, not asked: the ask happens after every grade in

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { gradeOutstanding, type EngineDeps } from './engine'
 import { memoryStore } from './store'
 import type { Candle } from '../../../shared/types'
@@ -190,5 +190,33 @@ describe('gradeOutstanding → post-mortems', () => {
     expect(JSON.stringify(await store.read(`predictions:${ENTRY}`))).toBe(first)
     const card2 = (await store.read<{ byPostMortem: Record<string, number> }>('engine-scorecard'))!
     expect(card2.byPostMortem).toEqual(card1.byPostMortem)
+  })
+
+  it('REGRET=off is the pre-3b tree exactly: same grades, no class on any loser, no ledger key', async () => {
+    // The parity seam (missLedger.ts `regretDisabled`). It exists so the window
+    // walk can run itself twice and byte-compare what the reader got; this pins
+    // that the switch costs the grade nothing and leaves no trace of itself.
+    const on = await seeded()
+    expect((await gradeOutstanding(on, deps(), NOW, null)).graded).toBe(5)
+
+    vi.stubEnv('REGRET', 'off')
+    const off = await seeded()
+    try {
+      expect((await gradeOutstanding(off, deps(), NOW, null)).graded).toBe(5)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    const rows = (await off.read<Prediction[]>(`predictions:${ENTRY}`))!
+    for (const p of rows) expect(`${p.sym}: ${'postMortem' in p}`).toBe(`${p.sym}: false`)
+    expect((await off.read<{ byPostMortem: Record<string, number> }>('engine-scorecard'))!.byPostMortem).toEqual({})
+    // (the ledger half of the same switch is pinned in engine.missLedger.test.ts,
+    // where a matured trace day exists for it to have measured)
+    // …and the grades themselves are untouched: strip the field the ON run added
+    // and the two stores hold the same rows, byte for byte
+    const stripped = ((await on.read<Prediction[]>(`predictions:${ENTRY}`))!).map(p => {
+      const { postMortem: _drop, ...rest } = p
+      return rest
+    })
+    expect(JSON.stringify(rows)).toBe(JSON.stringify(stripped))
   })
 })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { gradeOutstanding, type EngineDeps } from './engine'
 import { memoryStore, type AppStore } from './store'
 import type { Candle } from '../../../shared/types'
@@ -181,5 +181,23 @@ describe('gradeOutstanding → the miss ledger', () => {
     expect(day.checked).toBe(40)
     expect(day.unchecked).toBe(5)
     expect(day.checked + day.unchecked).toBe(45) // nothing vanished
+  })
+
+  it('REGRET=off measures nothing at all — the parity seam, on the day it would have measured', async () => {
+    // The same matured trace day the first test walks. With the seam off the pass
+    // writes exactly the six grading keys, fetches not one candle for a refusal,
+    // and leaves no blob behind — which is what makes the window walk's
+    // published-output comparison a comparison of two different engines' output
+    // rather than of one engine with itself.
+    vi.stubEnv('REGRET', 'off')
+    const store = await seeded(traceOf())
+    try {
+      await gradeOutstanding(store, deps(), NOW)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    expect([...store.keys].sort()).toEqual([...GRADING_KEYS].sort())
+    expect(await store.read(MISS_LEDGER_KEY)).toBeNull()
+    expect(fetched.filter(s => s !== 'SPY')).toEqual([]) // the pass's own tape, and not one refusal priced
   })
 })

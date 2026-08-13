@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Candle } from '../types'
 import { gradePrediction } from './calibration'
 import { MODERATE_GATES } from './catalyst'
@@ -17,6 +17,7 @@ import {
   emptyMissLedger,
   maturedTraceDate,
   missCandidates,
+  regretDisabled,
   missCheckable,
   missExcess,
   missLedgerSummary,
@@ -390,5 +391,21 @@ describe('missLedgerSummary — the bounded read every surface prints', () => {
     const s = missLedgerSummary(l, 1)!
     expect(s.topGates).toEqual([{ gate: 'trimmed', cost: 2, avgCostExcessPct: 0, saved: 0, unchecked: 0 }])
     expect(s).toMatchObject({ days: 1, checked: 0, unchecked: 0, misses: 0 })
+  })
+})
+
+describe('regretDisabled — the parity seam', () => {
+  it('is OFF by default and reads only the exact opt-in string', () => {
+    // The default is what production runs, so it is pinned first: nothing has to
+    // be set for the engine to measure its own regret.
+    expect(regretDisabled()).toBe(false)
+    for (const v of ['off', 'OFF', 'false', '0', '1', 'on', '', 'offf']) {
+      vi.stubEnv('REGRET', v)
+      try {
+        expect(`${v}:${regretDisabled()}`).toBe(`${v}:${v === 'off'}`)
+      } finally {
+        vi.unstubAllEnvs()
+      }
+    }
   })
 })

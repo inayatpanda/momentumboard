@@ -25,10 +25,21 @@ import { SECTOR_MEMBERS } from '../netlify/functions/lib/sectors'
 import { VIX_SYMBOL, WORLD_SYMBOLS } from '../shared/engine/worldTape'
 import { THEMES } from '../shared/engine/themes'
 import { bannedTokensIn, composeThesis } from '../shared/engine/voice'
-import type { DayTrace, Keyed, ProbeContext, RunFile, SeedArtefact } from './replay-window'
+import { classifyLoser } from '../shared/engine/postMortem'
+import type { DayTrace, Keyed, MissGateStatLike, MissLedgerLike, PostMortemLike, PrecedenceSample, ProbeContext, RegretContext, RunFile, SeedArtefact } from './replay-window'
 import {
   GATE_CODE_MIRROR,
+  MISS_EXCESS_MIN_MIRROR,
+  MISS_LEDGER_DAYS_MAX_MIRROR,
+  MISS_LEDGER_KEY_MIRROR,
+  MISS_SKIP_GATE_MIRROR,
+  POSTMORTEM_CLASS_MIRROR,
   expectedCalledGates,
+  missAccrualViolations,
+  missCandidateCount,
+  missLedgerViolations,
+  postMortemViolations,
+  precedenceViolations,
   traceViolations,
   MIRROR_EXTRAS,
   PROD_GAINERS_DEPTH,
@@ -1321,6 +1332,354 @@ describe('the walk carries the trace — and the board never noticed', () => {
     expect(stubbed.days.every(d => Object.keys(d.trace?.rows ?? {}).length === 0)).toBe(true)
     const publishedDay = stubbed.days.find(d => d.board.some(r => !r.nearMiss) || d.ledger.length > 0)!
     expect(traceViolations(publishedDay).length).toBeGreaterThan(0)
+  }, 180_000)
+})
+
+// ================= STAGE-3b TASK 4: THE WALK MEASURES ITS OWN REGRET =================
+// Both mechanisms already RUN in the walk — `gradeOutstanding` is the engine's own
+// daily pass — so what is proved here is that the walk SEES them and that what it
+// sees is coherent. Four pure instruments, each driven by hand-built violations so
+// the instrument itself is never vacuous, plus the real walk at the bottom.
+
+const missLedgerOf = (over: Partial<MissLedgerLike> = {}): MissLedgerLike => ({ gates: {}, days: {}, ...over })
+const gateStat = (over: Partial<MissGateStatLike> = {}): MissGateStatLike => ({ cost: 0, costExcessSum: 0, saved: 0, savedExcessSum: 0, unchecked: 0, examples: [], ...over })
+/** A one-day context: one walked date whose trace holds two refusals and one
+ * sized publication, which is the smallest shape every check below needs. */
+const regretCtx = (over: Partial<RegretContext> = {}): RegretContext => ({
+  dates: ['2026-07-14'],
+  traces: {
+    '2026-07-14': traceOf({
+      'AAA:long': { gate: 'dead-zone-core', side: 'long' },
+      BBB: { gate: 'trimmed' },
+      'CCC:long': { gate: 'called-half', side: 'long' },
+    }),
+  },
+  sized: { '2026-07-14': new Set(['CCC:long']) },
+  ...over,
+})
+/** A clean ledger for `regretCtx()`: the day's two candidates both priced, one of
+ * them a cost booked against the gate that refused it. */
+const cleanLedger = (): MissLedgerLike =>
+  missLedgerOf({
+    gates: { 'dead-zone-core': gateStat({ cost: 1, costExcessSum: 8.4, examples: [{ date: '2026-07-14', sym: 'AAA', side: 'long', excessPct: 8.4, gate: 'dead-zone-core' }] }) },
+    days: { '2026-07-14': { checked: 2, unchecked: 0, misses: 1 } },
+  })
+
+describe('MISS_SKIP_GATE_MIRROR / POSTMORTEM_CLASS_MIRROR — the drift guards', () => {
+  // Same argument as GATE_CODE_MIRROR: a static import of a Stage-3b module would
+  // not resolve in the pre-Stage-1 baseline worktree, so the constants are copied
+  // and the copy is checked here against the modules' own source.
+  it('carries exactly the gates missLedger.ts refuses to charge, and its bar', () => {
+    const src = readFileSync(join(process.cwd(), 'shared', 'engine', 'missLedger.ts'), 'utf8')
+    const line = src.slice(src.indexOf('export const MISS_SKIP_GATES'))
+    const declared = [...line.slice(0, line.indexOf('\n')).matchAll(/'([a-z-]+)'/g)].map(m => m[1])
+    expect(declared.length).toBeGreaterThan(3)
+    expect([...MISS_SKIP_GATE_MIRROR].sort()).toEqual([...declared].sort())
+    expect(src).toContain(`export const MISS_EXCESS_MIN = ${MISS_EXCESS_MIN_MIRROR}`)
+    expect(src).toContain(`export const MISS_LEDGER_KEY = '${MISS_LEDGER_KEY_MIRROR}'`)
+    expect(src).toContain(`export const MISS_LEDGER_DAYS_MAX = ${MISS_LEDGER_DAYS_MAX_MIRROR}`)
+  })
+  it('carries every post-mortem class the engine declares, in precedence order', () => {
+    const src = readFileSync(join(process.cwd(), 'shared', 'engine', 'postMortem.ts'), 'utf8')
+    const line = src.slice(src.indexOf('export const POSTMORTEM_CLASSES'))
+    const declared = [...line.slice(0, line.indexOf('\n')).matchAll(/'([a-z-]+)'/g)].map(m => m[1])
+    expect(declared.length).toBe(5)
+    expect([...POSTMORTEM_CLASS_MIRROR]).toEqual(declared) // ORDER too — it is the precedence
+  })
+})
+
+describe('missLedgerViolations — what the ledger may never say', () => {
+  it('passes a ledger that priced the day it claims to have priced', () => {
+    expect(missLedgerViolations(cleanLedger(), regretCtx())).toEqual([])
+  })
+  it('is silent before anything has matured — an empty ledger is not a violation', () => {
+    expect(missLedgerViolations(null, regretCtx())).toEqual([])
+    expect(missLedgerViolations(missLedgerOf(), regretCtx())).toEqual([])
+  })
+  it('CATCHES A SIZED PUBLICATION CHARGED AS A MISS — the invariant this task exists for', () => {
+    const l = cleanLedger()
+    l.gates['called-half'] = gateStat({ cost: 1, costExcessSum: 9, examples: [{ date: '2026-07-14', sym: 'CCC', side: 'long', excessPct: 9, gate: 'called-half' }] })
+    expect(missLedgerViolations(l, regretCtx()).join('\n')).toMatch(/called-half/)
+  })
+  it('catches a miss whose (date, sym, side) the reader actually had a size on', () => {
+    // the gate reads as an ordinary refusal, so only the published-row cross-check
+    // can catch it: the trace and the board disagree about what the reader got
+    const l = cleanLedger()
+    l.gates['dead-zone-core']!.examples = [{ date: '2026-07-14', sym: 'CCC', side: 'long', excessPct: 9, gate: 'dead-zone-core' }]
+    expect(missLedgerViolations(l, regretCtx()).join('\n')).toMatch(/CCC:long.*reader/i)
+  })
+  it('catches an example the trace never refused, or refused under another gate', () => {
+    const l = cleanLedger()
+    l.gates['dead-zone-core']!.examples = [{ date: '2026-07-14', sym: 'ZZZ', side: 'long', excessPct: 9, gate: 'dead-zone-core' }]
+    expect(missLedgerViolations(l, regretCtx()).join('\n')).toMatch(/ZZZ:long/)
+    const l2 = cleanLedger()
+    l2.gates['dead-zone-core']!.examples = [{ date: '2026-07-14', sym: 'BBB', side: 'long', excessPct: 9, gate: 'dead-zone-core' }]
+    expect(missLedgerViolations(l2, regretCtx()).join('\n')).toMatch(/BBB/)
+  })
+  it('accepts a BARE row charged both ways — one cost and one mirror save, same gate', () => {
+    const l = missLedgerOf({
+      gates: {
+        trimmed: gateStat({
+          cost: 1,
+          costExcessSum: 7,
+          saved: 1,
+          savedExcessSum: -7,
+          examples: [
+            { date: '2026-07-14', sym: 'BBB', side: 'long', excessPct: 7, gate: 'trimmed', bare: true },
+            { date: '2026-07-14', sym: 'BBB', side: 'short', excessPct: -7, gate: 'trimmed', bare: true },
+          ],
+        }),
+      },
+      days: { '2026-07-14': { checked: 2, unchecked: 0, misses: 1 } },
+    })
+    expect(missLedgerViolations(l, regretCtx())).toEqual([])
+  })
+  it('catches a charge inside the ±5pp bar — the miss bar is not the hit bar', () => {
+    const l = cleanLedger()
+    l.gates['dead-zone-core']!.examples = [{ date: '2026-07-14', sym: 'AAA', side: 'long', excessPct: 4.9, gate: 'dead-zone-core' }]
+    expect(missLedgerViolations(l, regretCtx()).join('\n')).toMatch(/4\.9/)
+  })
+  it('catches a day the walk never walked, and a GAP in the days it did', () => {
+    const ctx = regretCtx({ dates: ['2026-07-14', '2026-07-15', '2026-07-16'], traces: { ...regretCtx().traces }, sized: { ...regretCtx().sized } })
+    const stray = missLedgerOf({ days: { '2026-06-01': { checked: 0, unchecked: 0, misses: 0 } } })
+    expect(missLedgerViolations(stray, ctx).join('\n')).toMatch(/2026-06-01/)
+    const gapped = missLedgerOf({ days: { '2026-07-14': { checked: 2, unchecked: 0, misses: 0 }, '2026-07-16': { checked: 0, unchecked: 0, misses: 0 } } })
+    expect(missLedgerViolations(gapped, ctx).join('\n')).toMatch(/2026-07-15/)
+  })
+  it('catches a population that vanished — checked + unchecked must equal the day’s candidates', () => {
+    const l = cleanLedger()
+    l.days['2026-07-14'] = { checked: 1, unchecked: 0, misses: 1 } // one candidate silently dropped
+    expect(missLedgerViolations(l, regretCtx()).join('\n')).toMatch(/checked 1 \+ unchecked 0/)
+  })
+  it('catches per-gate columns that disagree with the day totals', () => {
+    const unmatched = missLedgerOf({
+      gates: { 'dead-zone-core': gateStat({ unchecked: 1 }) },
+      days: { '2026-07-14': { checked: 2, unchecked: 0, misses: 0 } },
+    })
+    expect(missLedgerViolations(unmatched, regretCtx()).join('\n')).toMatch(/unchecked/)
+    const miscounted = cleanLedger()
+    miscounted.days['2026-07-14'] = { checked: 2, unchecked: 0, misses: 2 }
+    expect(missLedgerViolations(miscounted, regretCtx()).join('\n')).toMatch(/cost/)
+  })
+})
+
+describe('missAccrualViolations — one day per pass, and never twice', () => {
+  it('accepts exactly one new day', () => {
+    const prev = cleanLedger()
+    const next = missLedgerOf({ gates: prev.gates, days: { ...prev.days, '2026-07-15': { checked: 3, unchecked: 1, misses: 0 } } })
+    expect(missAccrualViolations(prev, next)).toEqual([])
+    expect(missAccrualViolations(null, cleanLedger())).toEqual([])
+  })
+  it('catches a day that was RE-ACCRUED — the blob is additive, so twice is double-charged', () => {
+    const prev = cleanLedger()
+    const next = JSON.parse(JSON.stringify(prev)) as MissLedgerLike
+    next.days['2026-07-14'] = { checked: 2, unchecked: 0, misses: 2 }
+    expect(missAccrualViolations(prev, next).join('\n')).toMatch(/2026-07-14/)
+  })
+  it('allows the 60-day PRUNE to drop the oldest, and nothing else', () => {
+    // recordMissDay drops the oldest once the window is full — the prune is what
+    // makes "newest matured day, one per pass" safe, so it must not read as a
+    // measured day being unmeasured. Anything younger than the retained window
+    // still must not vanish.
+    const full = (n: number, from = 0) =>
+      Object.fromEntries(Array.from({ length: n }, (_, i) => [`2026-${String(1 + Math.floor((from + i) / 28)).padStart(2, '0')}-${String(((from + i) % 28) + 1).padStart(2, '0')}`, { checked: 1, unchecked: 0, misses: 0 }]))
+    const prev = missLedgerOf({ days: full(MISS_LEDGER_DAYS_MAX_MIRROR) })
+    const pruned = missLedgerOf({ days: { ...full(MISS_LEDGER_DAYS_MAX_MIRROR - 1, 1), '2026-12-31': { checked: 1, unchecked: 0, misses: 0 } } })
+    expect(missAccrualViolations(prev, pruned)).toEqual([])
+    // …but the SAME shortfall without a full window is a day that simply went missing
+    const short = missLedgerOf({ days: full(10) })
+    const lost = missLedgerOf({ days: full(9, 1) })
+    expect(missAccrualViolations(short, lost).join('\n')).toMatch(/disappeared/)
+  })
+  it('catches a day that disappeared, and two days accrued in one pass', () => {
+    const prev = cleanLedger()
+    expect(missAccrualViolations(prev, missLedgerOf()).join('\n')).toMatch(/2026-07-14/)
+    const two = missLedgerOf({ days: { ...prev.days, '2026-07-15': { checked: 1, unchecked: 0, misses: 0 }, '2026-07-16': { checked: 1, unchecked: 0, misses: 0 } } })
+    expect(missAccrualViolations(prev, two).join('\n')).toMatch(/two|2 new/i)
+  })
+})
+
+describe('postMortemViolations — every graded loser explains itself', () => {
+  const graded = (over: Partial<Keyed> = {}, o: { hit: boolean; stopped: boolean; excessPct: number } | null = { hit: false, stopped: true, excessPct: -6 }, pm?: PostMortemLike | null) => ({
+    ...row(over),
+    storedOutcome10: o,
+    ...(pm === undefined ? {} : { postMortem: pm }),
+  })
+  const pm = (over: Partial<PostMortemLike> = {}): PostMortemLike => ({ cls: 'stopped', detail: 'closed through the 9 stop', at: 1_700_000_000, ...over })
+  const dayOf = (ledger: ReturnType<typeof graded>[]) => [{ date: '2026-07-14', board: [], ledger: ledger as unknown as Keyed[] }]
+
+  it('passes a graded loser that carries a class and a winner that carries none', () => {
+    expect(postMortemViolations(dayOf([graded({ sym: 'AAA' }, { hit: false, stopped: true, excessPct: -6 }, pm()), graded({ sym: 'BBB' }, { hit: true, stopped: false, excessPct: 4 }, null)]))).toEqual([])
+  })
+  it('CATCHES A GRADED LOSER WITH NO POST-MORTEM', () => {
+    expect(postMortemViolations(dayOf([graded({ sym: 'AAA' }, { hit: false, stopped: true, excessPct: -6 }, null)])).join('\n')).toMatch(/AAA:long/)
+  })
+  it('catches an undeclared class and an empty detail', () => {
+    expect(postMortemViolations(dayOf([graded({}, { hit: false, stopped: false, excessPct: -6 }, pm({ cls: 'vibes' }))])).join('\n')).toMatch(/vibes/)
+    expect(postMortemViolations(dayOf([graded({}, { hit: false, stopped: false, excessPct: -6 }, pm({ detail: '' }))])).join('\n')).toMatch(/detail/)
+    expect(postMortemViolations(dayOf([graded({}, { hit: false, stopped: false, excessPct: -6 }, pm({ at: 0 }))])).join('\n')).toMatch(/at/)
+  })
+  it('catches a WINNER carrying a post-mortem, and one on a row the engine never graded', () => {
+    expect(postMortemViolations(dayOf([graded({}, { hit: true, stopped: false, excessPct: 9 }, pm())])).join('\n')).toMatch(/won/)
+    expect(postMortemViolations(dayOf([graded({}, null, pm())])).join('\n')).toMatch(/never graded/)
+  })
+  it('ignores rows the walk could not read back at all (a pre-Stage-3b tree)', () => {
+    expect(postMortemViolations([{ date: '2026-07-14', board: [], ledger: [row()] }])).toEqual([])
+  })
+})
+
+describe('precedenceViolations — the pinned total order, re-derived from the tape', () => {
+  // driven by the REAL classifier: a spot-check that used a copy of the rules
+  // would only prove the copy agrees with itself.
+  const tape = (closes: number[]) => series(closes, '2026-07-14')
+  const sample = (over: Partial<PrecedenceSample> = {}): PrecedenceSample => ({
+    key: '2026-07-14:AAA:long',
+    row: { side: 'long', date: '2026-07-14', stop: 9 },
+    outcome: { hit: false, stopped: true, excessPct: -8, rawPct: -10, spyPct: -2 },
+    postMortem: { cls: 'stopped', detail: '', at: 1 },
+    candles: tape([10, 9.5, 8.9, 9, 9, 9, 9, 9, 9, 9, 9, 9]),
+    ...over,
+  })
+  const withReal = (s: PrecedenceSample) => {
+    const truth = classifyLoser(s.row, s.outcome as never, s.candles)
+    return { ...s, postMortem: { ...s.postMortem, ...truth } }
+  }
+
+  it('passes a row whose stored class and detail are exactly what the tape says', () => {
+    expect(precedenceViolations([withReal(sample())], classifyLoser as never)).toEqual([])
+  })
+  it('catches a stored class the tape contradicts, naming both', () => {
+    const s = withReal(sample())
+    const v = precedenceViolations([{ ...s, postMortem: { ...s.postMortem, cls: 'market-drag' } }], classifyLoser as never)
+    expect(v.join('\n')).toMatch(/market-drag/)
+    expect(v.join('\n')).toMatch(/stopped/)
+  })
+  it('catches a detail that drifted from the class it claims', () => {
+    const s = withReal(sample())
+    expect(precedenceViolations([{ ...s, postMortem: { ...s.postMortem, detail: 'it went down a bit' } }], classifyLoser as never).join('\n')).toMatch(/detail/)
+  })
+  it('compares an LLM upgrade against the class it replaced — the ONE legal difference', () => {
+    const s = withReal(sample())
+    const upgraded = { ...s, postMortem: { ...s.postMortem, cls: 'news-reversal', clsBefore: s.postMortem.cls, detail: 'catalyst tone flipped · the deterministic read was …' } }
+    expect(precedenceViolations([upgraded], classifyLoser as never)).toEqual([])
+    const { clsBefore: _drop, ...noBefore } = upgraded.postMortem
+    expect(precedenceViolations([{ ...upgraded, postMortem: noBefore }], classifyLoser as never).join('\n')).toMatch(/news-reversal/)
+  })
+  it('reports a classifier that throws instead of taking the walk down', () => {
+    expect(
+      precedenceViolations([sample()], () => {
+        throw new Error('no tape')
+      }).join('\n'),
+    ).toMatch(/no tape/)
+  })
+})
+
+describe('the walk measures regret — and the board still never noticed', () => {
+  /** The 3a parity mechanism, EXTENDED. The same fixture window walked twice off
+   * one temp candle cache: once with Stage 3b's two mechanisms live, once with
+   * `REGRET=off`, which makes the engine behave exactly as the pre-3b tree did.
+   * Same days, same universe, same bars — so any difference in what the reader
+   * gets could only have come from the regret machinery.
+   *
+   * The comparison is over PUBLISHED FIELDS. `postMortem` is additive on a ledger
+   * row and `storedOutcome10` is the harness reading the engine's grade back, so
+   * both are stripped BY NAME — and the strip is not a loophole, because the test
+   * separately asserts that those two are the ONLY keys the active run's rows
+   * carry that the stubbed run's do not. */
+  it('accrues the ledger, explains every loser, and publishes byte-identical output with the machinery off', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'replay-regret-'))
+    const ts = busDays(320)
+    const write = (sym: string, candles: Candle[]) =>
+      writeFileSync(join(dir, `${sym.replace(/[^A-Za-z0-9]/g, '_')}.json`), JSON.stringify({ sym, range: '5y', at: Date.now(), candles }))
+    for (const [i, sym] of CONTEXT_SYMS.entries()) write(sym, tape(ts, 24 + (i % 37) * 9, 0.01 + (i % 9) * 0.008, 6 + (i % 5), i * 0.41))
+    write('AAA', tape(ts, 40, 0.22, 9, 0.7))
+    write('BBB', tape(ts, 90, -0.06, 8, 2.1))
+    const walkSyms = ['AAA', 'BBB', ...SWEEP_SYMS.slice(0, 12)]
+    for (const [i, sym] of SWEEP_SYMS.slice(0, 12).entries()) {
+      const [drift, swing] = SWEEP_SHAPES[i % SWEEP_SHAPES.length]
+      write(sym, tape(ts, 30 + (i % 11) * 7, drift, swing, i * 0.37))
+    }
+    write('SPY', tape(ts, 480, 0.04, 1.2))
+    write('QQQ', tape(ts, 400, 0.05, 1.6))
+
+    const from = iso(ts[320 - 30])
+    const to = iso(ts[319])
+    const argv = process.argv
+    const logged: string[] = []
+    const quiet = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void logged.push(a.map(String).join(' ')))
+    const livePath = join(dir, 'live.json')
+    const offPath = join(dir, 'off.json')
+    try {
+      vi.resetModules()
+      vi.stubEnv('REPLAY_CACHE_DIR', dir)
+      const fresh = (await import('./replay-window')) as typeof import('./replay-window')
+      const runOnce = async (out: string) => {
+        process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', walkSyms.join(','), '--out', out]
+        await fresh.main()
+      }
+      // 1) the machinery live — the walk asserts its own invariants every morning
+      //    and at the end, and throws if any of them is ever false. Reaching the
+      //    next line IS that assertion, over every day of the window.
+      await runOnce(livePath)
+      // 2) the same walk with the engine's regret seam switched off
+      vi.stubEnv('REGRET', 'off')
+      await runOnce(offPath)
+    } finally {
+      quiet.mockRestore()
+      vi.unstubAllEnvs()
+      process.argv = argv
+    }
+
+    const live = JSON.parse(readFileSync(livePath, 'utf8')) as RunFile
+    const off = JSON.parse(readFileSync(offPath, 'utf8')) as RunFile
+
+    // ARMED in run 1, deliberately absent in run 2
+    expect(logged).toContain('regret: present — the walk drives the miss ledger and the post-mortems, and enforces their invariants')
+    expect(logged).toContain('regret: STUBBED (REGRET=off) — parity run, no miss ledger and no post-mortems')
+
+    // THE LEDGER ACCRUED, one matured day per pass and never the same day twice
+    const led = live.missLedgerFinal!
+    expect(led, 'the window measured no regret at all').toBeTruthy()
+    const measured = Object.keys(led.days).sort()
+    expect(measured.length).toBeGreaterThan(0)
+    expect(measured).toEqual(live.days.map(d => d.date).slice(0, measured.length))
+    for (const d of measured) expect(led.days[d].checked + led.days[d].unchecked).toBe(missCandidateCount(live.days.find(x => x.date === d)!.trace))
+    // the per-day surfacing walks forward with it — one accrual per pass, in order
+    const accrued = live.days.map(d => d.missAccrued?.date ?? null).filter((d): d is string => !!d)
+    expect(accrued).toEqual(measured)
+    // …and no gate that PUBLISHED a row was ever charged
+    for (const g of Object.keys(led.gates)) expect(MISS_SKIP_GATE_MIRROR.has(g), `${g} was charged`).toBe(false)
+
+    // EVERY GRADED LOSER EXPLAINS ITSELF — total coverage, plus the re-derivation
+    const census = live.postMortemCensus!
+    expect(census.losers).toBeGreaterThan(0)
+    expect(census.classified).toBe(census.losers)
+    expect(census.sampled).toBeGreaterThan(0)
+    expect(census.sentences).toBe(0) // the walk carries no LLM dep, by construction
+    expect(Object.keys(census.byClass).every(c => POSTMORTEM_CLASS_MIRROR.includes(c))).toBe(true)
+    expect(census.byClass['news-reversal']).toBeUndefined() // unreachable without the LLM pass
+    expect(postMortemViolations(live.days)).toEqual([])
+    expect(live.days.flatMap(d => d.ledger).some(r => r.postMortem)).toBe(true)
+
+    // …and with the seam off the engine wrote NEITHER — the pre-3b tree exactly
+    expect(off.missLedgerFinal ?? null).toBeNull()
+    expect(off.postMortemCensus ?? null).toBeNull()
+    expect(off.days.flatMap(d => [...d.board, ...d.ledger]).some(r => r.postMortem)).toBe(false)
+    expect(off.days.every(d => (d.missAccrued ?? null) === null)).toBe(true)
+
+    // PARITY: the two new fields are the ONLY things the rows gained…
+    const added = new Set<string>()
+    for (const [i, d] of live.days.entries())
+      for (const [j, r] of [...d.board, ...d.ledger].entries()) {
+        const mirror = [...off.days[i].board, ...off.days[i].ledger][j]
+        for (const k of Object.keys(r)) if (!(k in mirror)) added.add(k)
+      }
+    expect([...added].sort()).toEqual(['postMortem', 'storedOutcome10'])
+    // …and once they are stripped, every published field is byte-identical
+    const strip = ({ postMortem: _p, storedOutcome10: _s, ...rest }: RunFile['days'][number]['board'][number]) => rest
+    const published = (r: RunFile) =>
+      JSON.stringify(r.days.map(d => ({ date: d.date, regime: d.regime, rosterSize: d.rosterSize, baseRate: d.baseRate, shape: d.shape, board: d.board.map(strip), ledger: d.ledger.map(strip) })))
+    expect(published(off)).toBe(published(live))
   }, 180_000)
 })
 

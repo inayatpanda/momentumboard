@@ -70,6 +70,24 @@ export const MISS_EXAMPLES_PER_GATE = 10
 export const MISS_LEDGER_DAYS_MAX = 60
 export const MISS_LEDGER_KEY = 'miss-ledger'
 
+/** THE PARITY SEAM (Stage 3b Task 4), mirroring `FUNNEL_TRACE=off`
+ * (funnelTrace.ts) down to the guard on `process`.
+ *
+ * ONE switch for BOTH of Stage 3b's mechanisms — this ledger and the post-mortem
+ * — because they are one feature: the engine measuring its own regret. With
+ * `REGRET=off` in the environment the engine behaves exactly as the pre-3b tree
+ * did: no `miss-ledger` blob, no `postMortem` field on a graded loser, no
+ * sentence ask. Nothing in production ever sets it and no code path reads the
+ * answer for a decision; it exists so the window walk can run itself twice and
+ * byte-compare every published row with the machinery on and off. A parity claim
+ * proved by a copy of the pipeline proves something about the copy.
+ *
+ * Opt-in and read per call rather than cached at import: a run that sets it
+ * after the module loaded must still be honoured, and nothing here is hot. */
+export function regretDisabled(): boolean {
+  return typeof process !== 'undefined' && process.env?.REGRET === 'off'
+}
+
 /** THE ADJUDICATION — which trace rows are even miss candidates.
  *
  * The question a miss asks is "did a gate deny the reader a move they could

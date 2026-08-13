@@ -799,6 +799,21 @@ export interface Row {
   gradeUncapped?: string | null
   outcome5?: { hit: boolean; excessPct: number; stopped: boolean } | null
   outcome10?: { hit: boolean; excessPct: number; stopped: boolean } | null
+  // ---- read back off the stored prediction at walk end (Stage 3b) ----
+  /** THE ENGINE'S OWN 10-session grade, as it stands in `predictions:${date}` when
+   * the walk finishes — NOT `outcome10` above, which the harness recomputes over
+   * the full untruncated history for every row including the ones the engine
+   * never got to grade. The post-mortem invariant is about what the ENGINE
+   * classified of what the ENGINE graded, so it reads this and only this.
+   * `null` = the engine never graded the row; absent = the walk could not read it
+   * back at all (a near miss, or a pre-Stage-3b tree). */
+  storedOutcome10?: { hit: boolean; excessPct: number; stopped: boolean } | null
+  /** The deterministic post-mortem the engine stamped on this row when it graded
+   * it a loser (postMortem.ts). ADDITIVE and always optional — it is written
+   * ELEVEN sessions after the day that published the row, so it is backfilled at
+   * walk end rather than captured in the day loop, and it is EXCLUDED from the
+   * published-parity comparison by name. */
+  postMortem?: PostMortemLike
 }
 
 export interface DayOut {
@@ -870,6 +885,12 @@ export interface DayOut {
    * and a diagnostics file carrying the ten `FactorScore` objects of every near
    * miss a second time would roughly double for nothing. */
   trace?: DayTrace
+  /** THE TRACE DAY THIS MORNING'S PASS PRICED (Stage 3b) — the one day the miss
+   * ledger accrued, ten sessions after the refusals it measures, or null when
+   * nothing had matured yet. Surfaced per day because the accrual walking forward
+   * one day per pass IS the mechanism, and a summary at the end would hide a pass
+   * that measured nothing. */
+  missAccrued?: (MissDayLike & { date: string }) | null
 }
 
 // ----------------------------------------------- the funnel trace, in the walk --
@@ -1029,6 +1050,341 @@ export function traceViolations(day: { date: string; board: Row[]; ledger: Row[]
     if (!published && readerKeys.has(key) && !nearMissKeys.has(key)) v.push(`${key} reads '${row.gate}' yet the reader got the row`)
   }
   return v
+}
+
+// ------------------------------------------ the regret machinery, in the walk --
+// Stage 3b Task 4. BOTH mechanisms already RUN here and always have: the walk
+// calls `gradeOutstanding` every morning, the post-mortem is stamped inside it at
+// the point the loser becomes known, and the miss ledger's hook is its last
+// statement. So nothing below drives a second code path — it SURFACES what the
+// engine did (the ledger blob read back out of the carrying store; the
+// post-mortems read back off the prediction rows at walk end) and then CHECKS it.
+//
+// WHY THE POST-MORTEMS ARE READ AT THE END and not in the day loop: a row
+// published on day D is graded ELEVEN sessions later, so the field is written
+// into `predictions:D` on a much later morning. The snapshot the loop takes on
+// day D structurally cannot carry it.
+//
+// The shapes are MIRRORED rather than imported, for the reason every mirror in
+// this file exists: a static import of a Stage-3b module would not resolve in the
+// pre-Stage-1 baseline worktree this harness still has to load in. Both mirrors
+// are drift-guarded in replay-window.test.ts against the modules' own source,
+// exactly like GATE_CODE_MIRROR.
+
+/** missLedger.ts `MISS_LEDGER_KEY`. */
+export const MISS_LEDGER_KEY_MIRROR = 'miss-ledger'
+/** missLedger.ts `MISS_EXCESS_MIN` — ±5pp, deliberately five times the hit bar.
+ * A move inside it is not an opportunity the engine owes anyone an apology for,
+ * so nothing inside it may ever be charged to a gate. */
+export const MISS_EXCESS_MIN_MIRROR = 5
+/** missLedger.ts `MISS_SKIP_GATES` — the rows a miss may never be charged for:
+ * the two SIZED publications (the reader got the row and a size; it grades in the
+ * ledger already) and the three shadow shapes (an audition the engine
+ * deliberately withheld, which also grades already, with a real published stop). */
+export const MISS_SKIP_GATE_MIRROR: ReadonlySet<string> = new Set(['called-full', 'called-half', 'called-shadow', 'route-blocked', 'shadow-capped'])
+/** postMortem.ts `POSTMORTEM_CLASSES`, IN PRECEDENCE ORDER — the order is the
+ * definition, so the mirror is an array and the drift guard compares it ordered. */
+export const POSTMORTEM_CLASS_MIRROR: readonly string[] = ['stopped', 'thesis-break', 'market-drag', 'news-reversal', 'adverse-move']
+/** missLedger.ts `MISS_LEDGER_DAYS_MAX` — the retained day window. The ONE way a
+ * measured day may legally vanish between two passes is `recordMissDay` pruning
+ * the oldest once this many are held. */
+export const MISS_LEDGER_DAYS_MAX_MIRROR = 60
+/** postMortem.ts `POSTMORTEM_HORIZON` — the calibrated ten sessions, used here
+ * only to work out which morning the engine graded a row on. */
+export const POSTMORTEM_HORIZON_MIRROR = 10
+/** How many graded losers the walk re-classifies from scratch. Twenty is enough
+ * to catch a precedence rule that stopped holding and cheap enough to run on
+ * every window: the coverage claim (`classified === losers`) is TOTAL, and this
+ * is the depth check underneath it. */
+export const REGRET_SAMPLE_K = 20
+
+export interface MissExampleLike {
+  date: string
+  sym: string
+  side: 'long' | 'short'
+  /** POSITIVE on a cost, NEGATIVE on a save — the sign is what tells the two
+   * apart inside one bounded list. */
+  excessPct: number
+  gate: string
+  /** the row died before a side existed and was scored BOTH ways */
+  bare?: boolean
+}
+export interface MissGateStatLike {
+  cost: number
+  costExcessSum: number
+  saved: number
+  savedExcessSum: number
+  unchecked: number
+  examples: MissExampleLike[]
+}
+export interface MissDayLike {
+  checked: number
+  unchecked: number
+  misses: number
+}
+export interface MissLedgerLike {
+  gates: Record<string, MissGateStatLike>
+  days: Record<string, MissDayLike>
+}
+export interface PostMortemLike {
+  cls: string
+  detail: string
+  at: number
+  sentence?: string
+  via?: string
+  clsBefore?: string
+}
+
+/** What the invariants are checked AGAINST: the walk's own record of the window.
+ * Every claim the ledger makes is settled against the trace the walk itself
+ * captured and the rows the reader actually got — two independent readings of one
+ * morning, compared, which is the same instrument shape `traceViolations` uses. */
+export interface RegretContext {
+  /** The walked dates, in walk order — the only dates a `days` entry may name. */
+  dates: string[]
+  /** Each walked day's trace, by date (absent when that day wrote none). */
+  traces: Record<string, DayTrace | undefined>
+  /** SIZED published rows per date, keyed `SYM:side`: the population that may
+   * never appear as a miss, read off the ROW's own `riskPct` rather than off the
+   * gate code the ledger is being checked for. */
+  sized: Record<string, Set<string>>
+}
+
+export function regretContextOf(days: { date: string; board: Row[]; ledger: Row[]; trace?: DayTrace }[]): RegretContext {
+  const traces: RegretContext['traces'] = {}
+  const sized: RegretContext['sized'] = {}
+  for (const d of days) {
+    traces[d.date] = d.trace
+    sized[d.date] = new Set([...d.board, ...d.ledger].filter(r => r.riskPct > 0).map(r => `${r.sym.toUpperCase()}:${r.side}`))
+  }
+  return { dates: days.map(d => d.date), traces, sized }
+}
+
+/** The rows in a day's trace a miss may be charged for — every row whose gate is
+ * not on the skip list. `checked + unchecked` for that day must equal it exactly:
+ * a truncation nobody can see is the silence Stage 3 exists to end. */
+export const missCandidateCount = (t?: DayTrace): number => Object.values(t?.rows ?? {}).filter(r => !MISS_SKIP_GATE_MIRROR.has(r.gate)).length
+
+/** THE MISS LEDGER'S INVARIANTS, over the whole window. Returns every violation
+ * so a failure names the row rather than just failing.
+ *
+ * (a) A PUBLISHED, SIZED ROW IS NEVER A MISS — checked twice over, because it is
+ *     the claim the whole feature stands on. Once totally: the skip gates may not
+ *     appear in `gates` AT ALL, and since every charge and every unchecked row is
+ *     booked under the trace row's own gate, their absence proves no such row was
+ *     ever charged anywhere in the window. Once again per example, against the
+ *     BOARD: no example may name a (date, sym, side) the reader had a size on.
+ * (b) THE DAYS ARE THE WALK'S DAYS, CONTIGUOUSLY. Exactly one trace day crosses
+ *     the ten-session maturity line per pass, and the engine works the newest
+ *     matured day each time, so over a contiguous walk the measured days are the
+ *     oldest N walked dates with no gap. A hole means a matured day was skipped
+ *     and never revisited — the one failure mode of "newest first, one per pass".
+ * (c) THE ACCOUNTING CLOSES. Per day, checked + unchecked = the day's candidate
+ *     count. Over the window, Σ gate.unchecked = Σ day.unchecked and Σ gate.cost
+ *     = Σ day.misses — the same events counted along two different axes, so a row
+ *     that fell out of one and not the other is caught. (Only while nothing has
+ *     been pruned: the per-gate columns are lifetime, the days window is 60.)
+ * (d) EVERY EXAMPLE IS REAL. Its date was walked, its gate is what the trace says
+ *     refused that exact key, and its excess is outside the ±5pp bar. */
+export function missLedgerViolations(ledger: MissLedgerLike | null | undefined, ctx: RegretContext): string[] {
+  const v: string[] = []
+  if (!ledger) return v // nothing has matured yet — an absence, not a zero
+  const days = Object.keys(ledger.days ?? {}).sort()
+  const gates = Object.entries(ledger.gates ?? {})
+
+  // (a) the total half
+  for (const [gate] of gates)
+    if (MISS_SKIP_GATE_MIRROR.has(gate))
+      v.push(`miss ledger charges '${gate}' — a row the reader got a size on (or a shadow that grades already) can never be a miss`)
+
+  // (b) the days
+  for (const d of days) if (!ctx.dates.includes(d)) v.push(`miss-ledger day ${d} is not a day this walk walked — the ledger measured a morning that never happened`)
+  const walked = days.filter(d => ctx.dates.includes(d))
+  if (walked.length) {
+    const first = ctx.dates.indexOf(walked[0])
+    const expected = ctx.dates.slice(first, first + walked.length)
+    for (const d of expected) if (!ledger.days[d]) v.push(`miss-ledger has no entry for ${d}, a matured trace day between ${walked[0]} and ${walked[walked.length - 1]} — a day that matured and was never measured is never revisited`)
+  }
+
+  // (c) the accounting
+  for (const d of walked) {
+    const entry = ledger.days[d]
+    const want = missCandidateCount(ctx.traces[d])
+    if (!Number.isInteger(entry.checked) || !Number.isInteger(entry.unchecked) || !Number.isInteger(entry.misses) || entry.checked < 0 || entry.unchecked < 0 || entry.misses < 0)
+      v.push(`miss-ledger day ${d} carries a nonsense count: ${JSON.stringify(entry)}`)
+    if (entry.checked + entry.unchecked !== want)
+      v.push(`miss-ledger day ${d}: checked ${entry.checked} + unchecked ${entry.unchecked} is not the ${want} refusals the trace recorded — a population went missing`)
+    if (entry.misses > entry.checked * 2) v.push(`miss-ledger day ${d}: ${entry.misses} misses out of ${entry.checked} priced rows — a row can cost at most one side`)
+  }
+  if (days.length < 60 && walked.length === days.length) {
+    const dayUnchecked = days.reduce((s, d) => s + (ledger.days[d].unchecked ?? 0), 0)
+    const gateUnchecked = gates.reduce((s, [, g]) => s + (g.unchecked ?? 0), 0)
+    if (dayUnchecked !== gateUnchecked) v.push(`miss-ledger: ${dayUnchecked} unchecked rows by day but ${gateUnchecked} by gate — an unpriced row was charged to no gate`)
+    const dayMisses = days.reduce((s, d) => s + (ledger.days[d].misses ?? 0), 0)
+    const gateCost = gates.reduce((s, [, g]) => s + (g.cost ?? 0), 0)
+    if (dayMisses !== gateCost) v.push(`miss-ledger: ${dayMisses} misses by day but ${gateCost} cost events by gate — a miss was charged to no gate`)
+  }
+
+  // (d) the examples
+  for (const [gate, g] of gates) {
+    for (const ex of g.examples ?? []) {
+      const key = `${ex.date}:${ex.sym}:${ex.side}`
+      if (ex.gate !== gate) v.push(`${key}: filed under '${gate}' but the example says '${ex.gate}'`)
+      if (!ctx.dates.includes(ex.date)) {
+        v.push(`${key}: names a day this walk never walked`)
+        continue
+      }
+      if (Math.abs(ex.excessPct) < MISS_EXCESS_MIN_MIRROR) v.push(`${key}: charged at ${ex.excessPct}pp, inside the ±${MISS_EXCESS_MIN_MIRROR}pp bar — the miss bar is not the hit bar`)
+      if (ctx.sized[ex.date]?.has(`${ex.sym.toUpperCase()}:${ex.side}`)) v.push(`${key}: charged as a miss although the reader was given a size on it that morning`)
+      const rows = ctx.traces[ex.date]?.rows ?? {}
+      // a bare row keys on the name alone and is scored BOTH ways, so its example
+      // carries a side the trace row deliberately does not
+      const traced = ex.bare ? rows[ex.sym.toUpperCase()] : rows[`${ex.sym.toUpperCase()}:${ex.side}`]
+      if (!traced) v.push(`${key}: the funnel never recorded such a refusal that morning`)
+      else if (traced.gate !== ex.gate) v.push(`${key}: charged to '${ex.gate}' but the funnel says '${traced.gate}' ended its run`)
+    }
+  }
+  return v
+}
+
+/** ONE DAY PER PASS, AND NEVER TWICE. The blob is additive, so a day accrued a
+ * second time double-charges its gates forever — `days[date]` is the engine's
+ * guard and this is the walk watching that guard hold, morning after morning,
+ * against the real store rather than a fixture. */
+export function missAccrualViolations(prev: MissLedgerLike | null | undefined, next: MissLedgerLike | null | undefined): string[] {
+  const v: string[] = []
+  const before = prev?.days ?? {}
+  const after = next?.days ?? {}
+  const kept = Object.keys(after).sort()
+  for (const [d, entry] of Object.entries(before)) {
+    if (!after[d]) {
+      // THE ONE LEGAL DISAPPEARANCE: `recordMissDay` prunes the oldest entries
+      // once the 60-day window is full, and the prune is what makes "newest
+      // matured day, one per pass" safe — a day old enough to be dropped can
+      // never be selected again. Anything else is a measured day being unmeasured.
+      if (kept.length >= MISS_LEDGER_DAYS_MAX_MIRROR && d < kept[0]) continue
+      v.push(`miss-ledger day ${d} disappeared between passes — a measured day may never be unmeasured`)
+      continue
+    }
+    if (JSON.stringify(after[d]) !== JSON.stringify(entry)) v.push(`miss-ledger day ${d} was RE-ACCRUED: ${JSON.stringify(entry)} → ${JSON.stringify(after[d])} — the blob is additive, so twice is double-charged`)
+  }
+  const added = Object.keys(after).filter(d => !before[d])
+  if (added.length > 1) v.push(`miss-ledger accrued ${added.length} new days in one pass (${added.join(', ')}) — exactly one trace day matures per session`)
+  return v
+}
+
+/** EVERY GRADED LOSER EXPLAINS ITSELF — and nothing else does.
+ *
+ * Read off `storedOutcome10`, which is the ENGINE's own grade as it stands in the
+ * prediction blob at walk end, never the harness's independent regrade: the
+ * question is whether the engine classified what the engine graded. A row the
+ * walk could not read back at all (`storedOutcome10` undefined — a near miss, or
+ * a pre-Stage-3b tree) is skipped rather than failed. */
+export function postMortemViolations(days: { date: string; board: Row[]; ledger: Row[] }[]): string[] {
+  const v: string[] = []
+  for (const day of days) {
+    for (const r of day.ledger) {
+      if (r.storedOutcome10 === undefined) continue
+      const key = `${day.date}:${r.sym}:${r.side}`
+      const pm = r.postMortem
+      if (!r.storedOutcome10) {
+        if (pm) v.push(`${key}: carries a post-mortem although the engine never graded it`)
+        continue
+      }
+      if (r.storedOutcome10.hit) {
+        if (pm) v.push(`${key}: won and still carries a post-mortem — winners get nothing`)
+        continue
+      }
+      if (!pm) {
+        v.push(`${key}: the engine graded it a loser and it explains nothing`)
+        continue
+      }
+      if (!POSTMORTEM_CLASS_MIRROR.includes(pm.cls)) v.push(`${key}: '${pm.cls}' is not a declared post-mortem class`)
+      if (!pm.detail) v.push(`${key}: a class with no detail — the sentence is the half a human reads`)
+      if (!Number.isFinite(pm.at) || pm.at <= 0) v.push(`${key}: stamped at ${pm.at}`)
+    }
+  }
+  return v
+}
+
+/** One loser, re-classified from scratch. `row`/`outcome` are the shapes
+ * postMortem.ts declares, kept structural so this file never grows a dependency
+ * on the full prediction. */
+export interface PrecedenceSample {
+  key: string
+  row: { side: 'long' | 'short'; date: string; stop: number; trail?: 'velocity'; catalyst?: { kind: string; reason: string } | null }
+  outcome: { hit: boolean; stopped: boolean; excessPct: number; rawPct: number; spyPct: number }
+  postMortem: PostMortemLike
+  candles: Candle[]
+}
+
+/** THE PINNED TOTAL ORDER, RE-DERIVED. The classifier is a PARAMETER so this is
+ * the engine's own `classifyLoser` doing the work — a spot-check that used a copy
+ * of the rules would only prove the copy agrees with itself — and so the suite can
+ * drive a broken one through the same code and watch the instrument fire.
+ *
+ * The stored class may legally differ from the tape's in exactly ONE way: the
+ * budgeted LLM pass upgrading a row to `news-reversal`, which keeps what it
+ * replaced in `clsBefore` (postMortemLlm.ts). That is compared against
+ * `clsBefore`; an upgrade that kept no record of what it overwrote is itself a
+ * violation. The detail is compared too, except on an upgrade, where the class's
+ * own words legitimately move into a longer sentence. */
+export function precedenceViolations(
+  samples: PrecedenceSample[],
+  classify: (row: PrecedenceSample['row'], o: PrecedenceSample['outcome'], candles: Candle[]) => { cls: string; detail: string },
+): string[] {
+  const v: string[] = []
+  for (const s of samples) {
+    let truth: { cls: string; detail: string }
+    try {
+      truth = classify(s.row, s.outcome, s.candles)
+    } catch (e) {
+      v.push(`${s.key}: re-classifying it threw — ${e instanceof Error ? e.message : String(e)}`)
+      continue
+    }
+    const upgraded = s.postMortem.cls === 'news-reversal'
+    const stored = upgraded ? s.postMortem.clsBefore : s.postMortem.cls
+    if (stored === undefined) {
+      v.push(`${s.key}: reads 'news-reversal' with no clsBefore — the upgrade must record the deterministic class it replaced`)
+      continue
+    }
+    if (stored !== truth.cls) v.push(`${s.key}: stored '${s.postMortem.cls}' but the tape says '${truth.cls}' — the precedence order did not hold`)
+    else if (!upgraded && s.postMortem.detail !== truth.detail) v.push(`${s.key}: the class agrees and the detail does not — stored '${s.postMortem.detail}' vs '${truth.detail}'`)
+  }
+  return v
+}
+
+/** A deterministic spread over a population, for the precedence spot-check. Hashed
+ * rather than sliced: the sample must be identical run to run (a proof that
+ * changes when you re-run it is not a proof) without being the first k rows of the
+ * calendar or the alphabet. */
+export function regretSample<T>(items: T[], k: number, keyOf: (t: T) => string): T[] {
+  const h = (s: string) => {
+    let x = 0
+    for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0
+    return x
+  }
+  return [...items].sort((a, b) => h(keyOf(a)) - h(keyOf(b)) || keyOf(a).localeCompare(keyOf(b))).slice(0, k)
+}
+
+/** THE WINDOW'S POST-MORTEM CENSUS — the histogram Stage 3c reads to learn HOW the
+ * engine loses, plus the coverage numbers that say whether the histogram is
+ * complete. */
+export interface PostMortemCensus {
+  /** Rows the ENGINE graded at ten sessions inside this window. */
+  graded: number
+  losers: number
+  /** …of which carry a class. `classified === losers` is the invariant. */
+  classified: number
+  byClass: Record<string, number>
+  /** The scorecard's own key: setup family × regime × class. */
+  byKey: Record<string, number>
+  /** Losers re-classified from scratch and compared against the stored class. */
+  sampled: number
+  /** Post-mortems carrying a bought sentence. STRUCTURALLY ZERO in the walk — it
+   * builds its own deps and never carries `postMortemSentence` — so a non-zero
+   * here would mean the harness had grown an LLM dependency. */
+  sentences: number
 }
 
 const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
@@ -1472,6 +1828,25 @@ export async function main() {
         : 'funnel trace: absent (pre-Stage-3a tree) — no funnel diagnostics',
   )
 
+  // …and Stage 3b's two regret mechanisms, detected the same way. Both already RUN
+  // in this walk — `gradeOutstanding` below is the engine's own daily pass — so what
+  // is switched on here is the SURFACING and the CHECKING. `REGRET=off` is the
+  // parity run: the engine then behaves exactly as the pre-3b tree did (no ledger
+  // blob, no postMortem field), which is what makes the published-output comparison
+  // a real one rather than a comparison of one run with itself.
+  const regretOff = process.env.REGRET === 'off'
+  const regretEnforced = existsSync(stageModule('missLedger.ts')) && existsSync(stageModule('postMortem.ts')) && !regretOff
+  const classifyLoser = regretEnforced
+    ? ((await import('../shared/engine/postMortem')).classifyLoser as unknown as Parameters<typeof precedenceViolations>[1])
+    : null
+  console.log(
+    regretEnforced
+      ? 'regret: present — the walk drives the miss ledger and the post-mortems, and enforces their invariants'
+      : regretOff
+        ? 'regret: STUBBED (REGRET=off) — parity run, no miss ledger and no post-mortems'
+        : 'regret: absent (pre-Stage-3b tree) — no miss ledger, no post-mortems',
+  )
+
   const { store } = makeStore()
   await store.write('config', {
     watchlist: [],
@@ -1501,6 +1876,9 @@ export async function main() {
    * theme and rotation doors put ~150 names a day in front of the engine). This is
    * the population the emitted evidence was actually drawn from. */
   const walked = new Set<string>()
+  /** The miss ledger as it stood after the PREVIOUS pass — the only way to see
+   * what one pass accrued, and the only way to catch a day being charged twice. */
+  let missLedgerPrev: MissLedgerLike | null = null
   /** THE SWEEP'S UNIVERSE (spec §9) — the union, across every replayed day, of every
    * name buildBoard ASKED for candles on, minus the context tapes it reads for regime
    * and sector colour and minus crypto.
@@ -1556,6 +1934,15 @@ export async function main() {
 
     const nowSec = Date.parse(`${date}T05:20:00Z`) / 1000
     await gradeOutstanding(store, deps as never, nowSec, cfg)
+    // THE MISS LEDGER AS IT STANDS AFTER THIS MORNING'S PASS. One store read; the
+    // pass itself did the work (engine.ts's hook is its last statement). Read here
+    // rather than at the end because the ACCRUAL — one matured day per pass, never
+    // the same day twice — is a per-pass claim, and only a per-pass read can make it.
+    const missLedgerNow = regretEnforced ? ((await store.read<MissLedgerLike>(MISS_LEDGER_KEY_MIRROR)) ?? null) : null
+    const accrualViolations = regretEnforced ? missAccrualViolations(missLedgerPrev, missLedgerNow) : []
+    const accruedDate = Object.keys(missLedgerNow?.days ?? {}).find(d => !missLedgerPrev?.days?.[d]) ?? null
+    const missAccrued = accruedDate ? { date: accruedDate, ...missLedgerNow!.days[accruedDate] } : null
+    missLedgerPrev = missLedgerNow ? (JSON.parse(JSON.stringify(missLedgerNow)) as MissLedgerLike) : null
     // SEED MODE PINS THE SCORING VECTOR. The seed must be measured under the exact
     // vector production will score with; the walk's compounding nudges are unbounded
     // (recon §5: `next = cur·(1 + 0.15·ic)`, ~450 of them over two years, no floor at
@@ -1650,7 +2037,18 @@ export async function main() {
       candidatesAsked: ctx.current.asked.size,
       baseRate,
       trace,
+      missAccrued,
     })
+    if (regretEnforced) {
+      // the ledger's claims, settled against the walk's OWN record of the window:
+      // the traces it captured and the sizes the reader was actually given.
+      const violations = [...accrualViolations, ...missLedgerViolations(missLedgerNow, regretContextOf(out))]
+      if (violations.length)
+        throw new Error(
+          `BLOCKED: the miss ledger disagrees with the walk on ${date} — ${violations.length} violation(s):\n  ` +
+            `${violations.slice(0, 25).join('\n  ')}${violations.length > 25 ? `\n  …and ${violations.length - 25} more` : ''}`,
+        )
+    }
     if (traceEnforced) {
       const violations = traceViolations(out[out.length - 1])
       if (violations.length)
@@ -1680,6 +2078,81 @@ export async function main() {
     }
   }
 
+  // ---- the post-mortems, read back off the rows the ENGINE graded ----
+  // The field is written ELEVEN sessions after the morning that published the row
+  // (ten to mature, and the pass that follows), so the day-D snapshot taken in the
+  // loop above structurally cannot carry it: these are the final blobs.
+  let missLedgerFinal: MissLedgerLike | null = null
+  let postMortemCensus: PostMortemCensus | null = null
+  if (regretEnforced) {
+    missLedgerFinal = (await store.read<MissLedgerLike>(MISS_LEDGER_KEY_MIRROR)) ?? null
+    const census: PostMortemCensus = { graded: 0, losers: 0, classified: 0, byClass: {}, byKey: {}, sampled: 0, sentences: 0 }
+    const losers: { key: string; pred: Prediction; gradedOn: string }[] = []
+    for (const [i, day] of out.entries()) {
+      const preds = (await store.read<Prediction[]>(`predictions:${day.date}`)) ?? []
+      const byKey = new Map(preds.map(p => [`${p.sym.toUpperCase()}:${p.side}`, p]))
+      for (const r of [...day.board, ...day.ledger]) {
+        const p = byKey.get(`${r.sym.toUpperCase()}:${r.side}`)
+        if (!p) continue // a near miss is on the board and never in the prediction blob
+        r.storedOutcome10 = p.outcome10 ? { hit: p.outcome10.hit, excessPct: p.outcome10.excessPct, stopped: p.outcome10.stopped } : null
+        if (p.postMortem) r.postMortem = p.postMortem as PostMortemLike
+      }
+      // THE MORNING THE ENGINE GRADED THESE ROWS, and therefore the exact tape its
+      // classifier held: a pass on walk day k sees bars strictly before day k, so a
+      // row published on walk day i is first gradeable at 10 sessions when
+      // i + 10 <= k - 1 — that is, on walk day i + 11. Re-classifying against any
+      // other tape would compare the engine's answer with a question it never asked.
+      const gradedOn = days[i + POSTMORTEM_HORIZON_MIRROR + 1] ?? days[days.length - 1]
+      for (const p of preds) {
+        if (!p.outcome10) continue
+        census.graded++
+        if (p.outcome10.hit) continue
+        census.losers++
+        const pm = p.postMortem as PostMortemLike | undefined
+        if (!pm) continue
+        census.classified++
+        census.byClass[pm.cls] = (census.byClass[pm.cls] ?? 0) + 1
+        const k = `${p.setup || 'unknown'}:${p.regime}:${pm.cls}`
+        census.byKey[k] = (census.byKey[k] ?? 0) + 1
+        if (pm.sentence) census.sentences++
+        losers.push({ key: `${day.date}:${p.sym}:${p.side}`, pred: p, gradedOn })
+      }
+    }
+    // …and k of them re-classified from scratch, with the engine's own classifier.
+    const samples: PrecedenceSample[] = []
+    for (const l of regretSample(losers, REGRET_SAMPLE_K, l => l.key)) {
+      const full = await fullHistory(l.pred.sym)
+      if (!full) continue
+      const tape = sliceBefore(full, l.gradedOn).slice(-ONE_YEAR_BARS)
+      samples.push({
+        key: l.key,
+        row: { side: l.pred.side, date: l.pred.date, stop: l.pred.stop, trail: l.pred.trail, catalyst: l.pred.catalyst ?? null },
+        outcome: l.pred.outcome10!,
+        postMortem: l.pred.postMortem as PostMortemLike,
+        candles: tape,
+      })
+    }
+    census.sampled = samples.length
+    const violations = [...postMortemViolations(out), ...precedenceViolations(samples, classifyLoser!)]
+    if (violations.length)
+      throw new Error(
+        `BLOCKED: the post-mortems disagree with the tape — ${violations.length} violation(s):\n  ` +
+          `${violations.slice(0, 25).join('\n  ')}${violations.length > 25 ? `\n  …and ${violations.length - 25} more` : ''}`,
+      )
+    postMortemCensus = census
+    const led = missLedgerFinal
+    const ledDays = Object.keys(led?.days ?? {})
+    console.log(
+      `regret: miss ledger ${ledDays.length} day(s) — ${ledDays.reduce((s, d) => s + led!.days[d].checked, 0)} priced, ` +
+        `${ledDays.reduce((s, d) => s + led!.days[d].unchecked, 0)} unpriced, ${ledDays.reduce((s, d) => s + led!.days[d].misses, 0)} misses · ` +
+        `post-mortems ${census.classified}/${census.losers} losers of ${census.graded} graded (${census.sampled} re-derived) · ` +
+        Object.entries(census.byClass)
+          .sort((a, b) => b[1] - a[1])
+          .map(([c, n]) => `${c} ${n}`)
+          .join(' '),
+    )
+  }
+
   // The calibration blob as it stood after the last graded day — the state the
   // monotonicity probe samples, so the curve the gate asserts on is the one this
   // window actually built rather than a fixture that resembles it.
@@ -1707,6 +2180,11 @@ export async function main() {
         days: out,
         calibrationFinal,
         riskFinal,
+        // ADDITIVE (Stage 3b): the window's regret, as the engine measured it. Both
+        // are OBSERVATIONS — no board, ledger, grade or size anywhere in this file
+        // reads either, and a run with `REGRET=off` writes null for both.
+        missLedgerFinal,
+        postMortemCensus,
       },
       null,
       1,
@@ -2034,6 +2512,9 @@ export interface RunFile {
   days: DayOut[]
   calibrationFinal?: CalibrationState | null
   riskFinal?: { rung?: number; history?: { date: string; from: number; to: number; evidence: string }[] } | null
+  /** Stage 3b, both ADDITIVE and both null on a `REGRET=off` parity run. */
+  missLedgerFinal?: MissLedgerLike | null
+  postMortemCensus?: PostMortemCensus | null
 }
 
 export type Keyed = Row & { date: string }
