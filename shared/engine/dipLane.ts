@@ -61,7 +61,7 @@ export interface DipRead {
 /** The dip's floor: lowest intraday low of the DIP_WINDOW sessions BEFORE today.
  * Today is excluded on purpose — the reclaim is measured against the low the
  * market already made, not against a low today is still in the middle of. */
-function dipWindowLow(candles: Candle[]): number | null {
+export function dipWindowLow(candles: Candle[]): number | null {
   const window = candles.slice(-(DIP_WINDOW + 1), -1)
   if (!window.length) return null
   return Math.min(...window.map(c => c.l))

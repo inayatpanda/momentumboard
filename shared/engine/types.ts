@@ -1,5 +1,6 @@
 import type { RegimeColor } from '../types'
 import type { Horizon } from './horizon'
+import type { PostMortem } from './postMortem'
 
 export type FactorName = 'technical' | 'momentum' | 'sector' | 'social' | 'channels' | 'insiders' | 'news' | 'seasonality' | 'smartMoney' | 'catalyst'
 
@@ -260,6 +261,13 @@ export interface Prediction extends GradedCall {
   trail?: 'velocity'
   outcome5?: PredOutcome
   outcome10?: PredOutcome
+  // WHY IT LOST, decided the moment the 10-session grade lands and never
+  // revisited (postMortem.ts). Written for every graded loser — sized, watch and
+  // shadow alike — and for no winner, which is why it is optional: its absence on
+  // a graded row means "this one won", and on an ungraded row means "not yet".
+  // Purely additive and purely an observation: nothing about the board, the
+  // ledger, a grade or a size reads it.
+  postMortem?: PostMortem
   outcome21?: PredOutcome // ~a month — the reader's actual holding period upper bound
 }
 

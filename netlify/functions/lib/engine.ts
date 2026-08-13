@@ -49,6 +49,7 @@ import {
 import { pickDiverse } from '../../../shared/engine/select'
 import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder, type FunnelTrace } from '../../../shared/engine/funnelTrace'
 import { MISS_LEDGER_KEY, accrueMissDay, maturedTraceDate, normaliseMissLedger, type MissLedger } from '../../../shared/engine/missLedger'
+import { classifyLoser, postMortemKey } from '../../../shared/engine/postMortem'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
 import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
@@ -480,6 +481,14 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
         const o = gradePrediction(pred, candles, spy, 10)
         if (o) {
           pred.outcome10 = o
+          // EVERY LOSER EXPLAINS ITSELF (postMortem.ts). Deterministic, pure, and
+          // computed here because here is the only place the loss and the tape
+          // that caused it are both in scope — it rides the store.write below for
+          // free. EVERY graded loser gets one: a shadow's failure is the audition
+          // the shadow was published to run, and a watch row the reader could not
+          // act on still teaches how this SHAPE of call dies. Winners get nothing,
+          // and no published decision reads the field.
+          if (!o.hit) pred.postMortem = { ...classifyLoser(pred, o, candles), at: nowSec }
           // THE calibrated grade: calibration buckets, factor-IC weights, the
           // Brier trail and the risk-ladder counters all learn here, at 10d.
           updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
@@ -566,6 +575,14 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   const byRegime: Record<string, { n: number; hits: number }> = {}
   const bySetup: Record<string, { n: number; hits: number; sumExcess: number }> = {}
   const overlays: Record<string, { n: number; hits: number }> = {}
+  // HOW THE ENGINE LOSES, by setup family × regime × class (spec §4.3). Shadows
+  // are counted with everything else, on bySetup's argument: the question is
+  // "does this SHAPE of call fail this way in this tape?", and a shadow is
+  // exactly that shape being auditioned. Counted off the row's own stored
+  // post-mortem rather than re-derived — a loser graded before the field existed
+  // is simply absent (it ages out of the 30-date window on its own) and no row is
+  // ever classified twice.
+  const byPostMortem: Record<string, number> = {}
   for (const date of fullIndex.slice(-30)) {
     const preds = predictionsByDate.get(date) ?? (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     for (const p of preds) {
@@ -586,6 +603,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
         const r = (byRegime[p.regime] ??= { n: 0, hits: 0 })
         r.n++
         if (p.outcome10.hit) r.hits++
+      }
+      if (p.postMortem) {
+        const k = postMortemKey(p.setup, p.regime, p.postMortem.cls)
+        byPostMortem[k] = (byPostMortem[k] ?? 0) + 1
       }
       if (p.overlay) {
         const o = (overlays[p.overlay.flag] ??= { n: 0, hits: 0 })
@@ -610,6 +631,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     byGrade,
     byRegime,
     bySetup,
+    byPostMortem,
     overlays,
     brierTail: calibration.brier.slice(-30),
     totalGraded: Object.values(byGrade).reduce((s, g) => s + g.n, 0),

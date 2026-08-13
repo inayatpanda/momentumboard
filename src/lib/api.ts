@@ -617,6 +617,10 @@ export interface EngineData {
   scorecard: {
     byGrade: Record<string, { n: number; hits: number; sumExcess: number }>
     byRegime: Record<string, { n: number; hits: number }>
+    // how the engine LOSES, keyed `${setup}:${regime}:${class}` (postMortem.ts) —
+    // every graded loser of the last 30 dates, shadows included. Absent on a
+    // scorecard written before Stage 3b.
+    byPostMortem?: Record<string, number>
     overlays: Record<string, { n: number; hits: number }>
     brierTail: { date: string; mean: number; n: number }[]
     totalGraded: number
