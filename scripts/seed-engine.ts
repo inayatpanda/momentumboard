@@ -1,52 +1,48 @@
-// Local-only seeder: fetches 2y of Yahoo candles for a broad liquid universe,
-// replays the technical/momentum factors through the engine, and writes the
-// starting weights + calibration to shared/engine/seed.json (committed).
-// Run: npm run seed-engine
-import { writeFileSync } from 'node:fs'
-import { SECTORS, SECTOR_MEMBERS } from '../netlify/functions/lib/sectors'
-import { parseYahooChart } from '../netlify/functions/lib/yahoo'
-import { seedFromHistory } from '../shared/engine/backtest'
-import type { Candle } from '../shared/types'
+// RETIRED 2026-08-13 — superseded by `scripts/replay-window.ts --seed-out`.
+//
+// This script fetched 2y of Yahoo candles for 66 sector names and handed them to
+// `seedFromHistory` (shared/engine/backtest.ts), which drove `composeCall` over a
+// bare symbol × every-5th-bar grid and wrote `shared/engine/seed.json`. The file is
+// kept — not deleted — because the stage-2b spec (§4.4) names it by path, and a
+// pointer that resolves is worth more than a broken reference.
+//
+// WHY IT IS RETIRED. §4.4 asks the seed to be measured by "all lanes, the sleeve,
+// the roster, the screens and the world-tape tone". This seeder has NONE of them:
+// no dip lane, no velocity lane, no core sleeve, no roster, no screens, no
+// world-tape multiplier, no near-misses, no setup families beyond what composeCall
+// stamps — and a hand-rolled twin of `gradePrediction` that has to be kept in step
+// with the real one by hand. Every one of those already exists in
+// `scripts/replay-window.ts`, which drives the REAL `gradeOutstanding → buildBoard`
+// day by day against a carrying store, with strict point-in-time slicing. Expanding
+// this file to meet §4.4 would have meant re-implementing that harness, worse.
+//
+// The two also measure DIFFERENT POPULATIONS, and that is the substantive part of
+// the decision rather than a matter of code reuse: this seeder sampled every call
+// that cleared the gates for every name on every fifth bar, while the walk samples
+// only what `buildBoard` actually published. The walk's population is the one live
+// grading measures, which is the population a calibration curve is supposed to
+// describe. It is also the one that can reach the 70+ band at all — a board
+// publishes its best, a sweep publishes everything.
+//
+// THE SUCCESSOR:
+//   npx tsx scripts/replay-window.ts --from <ISO> --to <ISO> \
+//     --seed-out shared/engine/seed.json.candidate --seed-generation <n>
+// It emits the same `{ generatedAt, symbols, weights, calibration }` shape with the
+// stamps this seeder never wrote: an explicit `modelVersion` (the committed file
+// still says 2 only because `seedFromHistory` left the field unset and
+// `migrateCalibration` backfilled whatever the constant was on the day), and a
+// `seedGeneration` — the channel `loadState` uses to install a regenerated seed at
+// an unchanged `CALIB_DEF_VERSION`. See replay-window.ts's header, "FIFTH MODE".
+//
+// `shared/engine/backtest.ts` itself is NOT retired. `seedFromHistory` remains the
+// reference implementation of the hit definition — its grading twin is deliberately
+// line-for-line with `gradePrediction`, and its test is one of the things that would
+// notice if the two drifted apart.
 
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+export {}
 
-async function fetchCandles2y(sym: string): Promise<Candle[] | null> {
-  try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=2y&interval=1d`
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (MomentumBoard)' } })
-    if (!res.ok) return null
-    return parseYahooChart(await res.json(), sym).candles
-  } catch {
-    return null
-  }
-}
-
-const universe = [...new Set([...Object.values(SECTOR_MEMBERS).flat(), ...SECTORS.map(s => s.sym)])]
-
-const spy = await fetchCandles2y('SPY')
-if (!spy) throw new Error('SPY candles unavailable — cannot seed')
-// QQQ and ^VIX give the replay the SAME regime read the live engine uses
-// (SPY+QQQ slope, breadth + VIX-level refinement). Fail-soft: null → SPY-only.
-const qqq = await fetchCandles2y('QQQ')
-const vix = await fetchCandles2y('^VIX')
-if (!qqq) console.warn('QQQ unavailable — regime replay falls back to SPY-only')
-if (!vix) console.warn('^VIX unavailable — no VIX-level refinement in replay')
-
-const bySym = new Map<string, Candle[]>()
-for (const sym of universe) {
-  const candles = await fetchCandles2y(sym)
-  if (candles && candles.length > 100) bySym.set(sym, candles)
-  await sleep(200)
-}
-console.log(`fetched ${bySym.size}/${universe.length} symbols`)
-
-const { weights, calibration } = seedFromHistory(bySym, spy, qqq ?? undefined, vix ?? undefined)
-const totalN = Object.values(calibration.buckets).reduce((s, b) => s + b.n, 0)
-console.log(`graded ${totalN} synthetic outcomes across ${Object.keys(calibration.buckets).length} buckets`)
-console.log('weights:', weights.current)
-
-writeFileSync(
-  new URL('../shared/engine/seed.json', import.meta.url),
-  JSON.stringify({ generatedAt: new Date().toISOString(), symbols: bySym.size, weights, calibration }, null, 1),
+throw new Error(
+  'scripts/seed-engine.ts is retired. The deep seed is emitted by the walk that measures it:\n' +
+    '  npx tsx scripts/replay-window.ts --from <ISO> --to <ISO> --seed-out <path> --seed-generation <n>\n' +
+    'See the comment at the top of this file for why, and replay-window.ts\'s header for how.',
 )
-console.log('wrote shared/engine/seed.json')

@@ -1,9 +1,29 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { DEFAULT_CORE_SLEEVE } from '../shared/engine/coreSleeve'
 import { classifyVelocity, effectiveVelocityStop, MIN_RISK_FRAC } from '../shared/engine/velocityLane'
-import { type Band, bandFor, baseHitRate, brierPoint, gradeFor, probabilityFor } from '../shared/engine/calibration'
+import {
+  type Band,
+  type CalibrationState,
+  type WeightsState,
+  CALIB_DEF_VERSION,
+  ENGINE_MODEL_VERSION,
+  bandFor,
+  baseHitRate,
+  brierPoint,
+  gradeFor,
+  initWeights,
+  probabilityFor,
+} from '../shared/engine/calibration'
+import { DEFAULT_WEIGHTS } from '../shared/engine/composite'
+import { exchangeFor } from '../shared/symbols'
+import { SECTOR_MEMBERS } from '../netlify/functions/lib/sectors'
+import { VIX_SYMBOL, WORLD_SYMBOLS } from '../shared/engine/worldTape'
+import { THEMES } from '../shared/engine/themes'
 import { bannedTokensIn, composeThesis } from '../shared/engine/voice'
-import type { Keyed, ProbeContext, RunFile } from './replay-window'
+import type { Keyed, ProbeContext, RunFile, SeedArtefact } from './replay-window'
 import {
   MIRROR_EXTRAS,
   PROD_GAINERS_DEPTH,
@@ -14,12 +34,16 @@ import {
   diffKeys,
   flatten,
   gradeHistogram,
+  isCryptoSymbol,
   keyOf,
+  main,
   meanOf,
   monotonicityViolations,
   probeGrid,
   sdOf,
+  seedArtefactFrom,
   seedLikeState,
+  seedUniverse,
   sleeveKeys,
   spreadByBand,
   spreadOf,
@@ -564,6 +588,290 @@ describe('bornBelowCensus', () => {
   it('counts a routed instrument when one exists, so the counterfactual is never mistaken for a loss', () => {
     expect(bornBelowCensus([row({ instrument: '3LNV.L' })]).routedRowsInWindow).toBe(1)
   })
+})
+
+// ======================= STAGE-2b: THE SEED ARTEFACT (--seed-out) =======================
+// Six guarantees, one test each. They are guarantees rather than behaviours because
+// every one of them fails SILENTLY: a seed whose base has drifted loses its IC on the
+// first production load, a seed carrying the previous generation's rows installs a
+// mixture, and a seed whose two halves disagree on their generation installs one half.
+
+describe('seedUniverse — crypto is out of the deep-seed population', () => {
+  it('drops the crypto pairs (stage 1c is unbuilt: a crypto row would book into the EQUITY buckets)', () => {
+    expect(REPLAY_UNIVERSE).toContain('ETH-USD') // the trap is live in the harness today
+    expect(seedUniverse(REPLAY_UNIVERSE)).not.toContain('ETH-USD')
+    expect(seedUniverse(['AAPL', 'BTC-USD', 'SOL-USD', 'RR.L'])).toEqual(['AAPL', 'RR.L'])
+  })
+  it('keeps BT-A.L — an exchange suffix outranks the dash, which exchangeFor tests FIRST', () => {
+    // shared/symbols.ts:4-8 returns on `includes('-')` before it ever looks for the
+    // '.', so BT Group — a SLEEVE_MIRROR name — reads as CRYPTO. A filter written as
+    // the recon spelled it (`exchangeFor(s) === 'CRYPTO'`) would silently shrink the
+    // seed universe by a real LSE equity.
+    expect(exchangeFor('BT-A.L')).toBe('CRYPTO')
+    expect(isCryptoSymbol('BT-A.L')).toBe(false)
+    expect(isCryptoSymbol('ETH-USD')).toBe(true)
+    expect(seedUniverse(REPLAY_UNIVERSE)).toContain('BT-A.L')
+    expect(seedUniverse(REPLAY_UNIVERSE).length).toBe(REPLAY_UNIVERSE.length - 1) // ETH-USD and nothing else
+  })
+})
+
+/** A calibration blob shaped like the one a walk leaves behind: rows booked live and
+ * shadow, no seed provenance, and the stale stamps a cold-started blob carries. */
+const walkedCalibration = (over: Partial<CalibrationState> = {}): CalibrationState => ({
+  buckets: { 'long:green:25-40': { n: 40, hits: 15 }, 'long:green:70+': { n: 31, hits: 20 } },
+  setupBuckets: { 'velocity:long:55-70': { n: 9, hits: 4 } },
+  brier: [{ date: '2025-03-04', mean: 0.21, n: 6 }],
+  seeded: false,
+  defVersion: 1,
+  modelVersion: 1,
+  seedGeneration: 1,
+  evidence: { seed: { n: 0, hits: 0 }, live: { n: 60, hits: 25 }, shadow: { n: 11, hits: 4 } },
+  ...over,
+})
+
+const walkedWeights = (over: Partial<WeightsState> = {}): WeightsState => ({
+  ...initWeights(),
+  gradedSinceNudge: 7,
+  history: [{ date: '2025-06-02', changes: { technical: { from: 1, to: 0.99, ic: -0.02 } }, evidence: '60 predictions graded since last nudge' }],
+  seedGeneration: 1,
+  ...over,
+})
+
+const emit = (over: Partial<Parameters<typeof seedArtefactFrom>[0]> = {}): SeedArtefact =>
+  seedArtefactFrom({ calibration: walkedCalibration(), weights: walkedWeights(), symbols: 143, generation: 2, generatedAt: '2026-08-13T00:00:00.000Z', ...over })
+
+describe('seedArtefactFrom — guarantee 1: the artefact describes ITSELF', () => {
+  it('stamps defVersion, modelVersion and seedGeneration EXPLICITLY in the emitted JSON', () => {
+    // Round-tripped through JSON on purpose: "explicit" means the reader of the file
+    // sees the number, not that migrateCalibration would have backfilled one.
+    const cal = (JSON.parse(JSON.stringify(emit())) as SeedArtefact).calibration
+    expect(cal.defVersion).toBe(CALIB_DEF_VERSION)
+    expect(cal.defVersion).toBe(3) // pinned as a literal: the hit definition does NOT move in stage 2b
+    expect(cal.modelVersion).toBe(ENGINE_MODEL_VERSION)
+    expect(cal.seedGeneration).toBe(2)
+    expect(cal.seeded).toBe(true)
+    expect(Object.keys(cal)).toEqual(expect.arrayContaining(['defVersion', 'modelVersion', 'seedGeneration', 'seeded']))
+  })
+  it('refuses a generation that is not a positive integer — an artefact may not guess which walk made it', () => {
+    expect(() => emit({ generation: 0 })).toThrow(/seed-generation/)
+    expect(() => emit({ generation: 1.5 })).toThrow(/seed-generation/)
+    expect(() => emit({ generation: Number.NaN })).toThrow(/seed-generation/)
+  })
+  it('carries the shape the committed seed.json has, and the walk’s own symbol count', () => {
+    const art = emit()
+    expect(Object.keys(art)).toEqual(['generatedAt', 'symbols', 'weights', 'calibration'])
+    expect(art.symbols).toBe(143)
+    expect(art.generatedAt).toBe('2026-08-13T00:00:00.000Z')
+  })
+})
+
+describe('seedArtefactFrom — guarantee 2: weights.base IS DEFAULT_WEIGHTS, or nothing ships', () => {
+  it('emits the walked vector when its base already matches, and stamps the generation', () => {
+    const w = emit().weights
+    expect(w.base).toEqual(DEFAULT_WEIGHTS)
+    expect(w.seedGeneration).toBe(2)
+    expect(w.gradedSinceNudge).toBe(7) // the learned state travels; only the stamp is added
+    expect(w.history).toHaveLength(1)
+  })
+  it('THROWS on a drifted base rather than emitting a seed whose IC dies on arrival', () => {
+    // rebaseWeights runs on every load and zeroes the IC whenever the stored base
+    // disagrees with DEFAULT_WEIGHTS. An artefact that ships a drifted base ships
+    // "seeded IC stats for all four core factors" that production deletes on read.
+    const drifted = walkedWeights({ base: { ...DEFAULT_WEIGHTS, technical: 0.42 } })
+    expect(() => emit({ weights: drifted })).toThrow(/technical/)
+    expect(() => emit({ weights: drifted })).toThrow(/rebaseWeights/)
+  })
+})
+
+describe('seedArtefactFrom — guarantee 4: the walk’s live rows ARE seed evidence once serialised', () => {
+  it('folds aggregate live into seed and zeroes live', () => {
+    const ev = emit().calibration.evidence!
+    expect(ev.seed).toEqual({ n: 60, hits: 25 })
+    expect(ev.live).toEqual({ n: 0, hits: 0 })
+  })
+  it('adds to whatever seed evidence was already there rather than replacing it', () => {
+    const ev = emit({ calibration: walkedCalibration({ evidence: { seed: { n: 5, hits: 2 }, live: { n: 60, hits: 25 }, shadow: { n: 11, hits: 4 } } }) }).calibration.evidence!
+    expect(ev.seed).toEqual({ n: 65, hits: 27 })
+  })
+  it('leaves shadow UNTOUCHED — a velocity shadow row is a measured shadow record, not sized history', () => {
+    expect(emit().calibration.evidence!.shadow).toEqual({ n: 11, hits: 4 })
+  })
+  it('drops the brier trail: it is a LIVE diagnostic keyed on dates production never lived', () => {
+    // calibration.brier feeds `brierImproving`, which promotes the risk ladder
+    // (engine.ts:476-491). A seed handing production a promotion argument built from
+    // a walk's dates would size the reader's next trade on tape they never traded.
+    // The committed seed ships `brier: []` for the same reason.
+    expect(emit().calibration.brier).toEqual([])
+  })
+})
+
+describe('seedArtefactFrom — guarantee 5: BOTH halves come out of the carrying store', () => {
+  it('refuses to serialise when either blob is missing', () => {
+    expect(() => emit({ calibration: null })).toThrow(/engine-calibration/)
+    expect(() => emit({ weights: null })).toThrow(/engine-weights/)
+  })
+  it('never mutates the blobs it was handed — the store keeps the walk’s own state', () => {
+    const cal = walkedCalibration()
+    const w = walkedWeights()
+    emit({ calibration: cal, weights: w })
+    expect(cal.defVersion).toBe(1)
+    expect(cal.evidence).toEqual({ seed: { n: 0, hits: 0 }, live: { n: 60, hits: 25 }, shadow: { n: 11, hits: 4 } })
+    expect(cal.brier).toHaveLength(1)
+    expect(w.seedGeneration).toBe(1)
+  })
+})
+
+describe('seedArtefactFrom — guarantee 6: the two halves announce the SAME generation', () => {
+  it('stamps one generation on both, whatever the blobs arrived carrying', () => {
+    // loadState swaps the halves independently (engine.ts:335-352), keyed on each
+    // blob's own generation. Mismatched halves install asymmetrically and silently:
+    // one epoch's buckets beside another epoch's factor IC.
+    const art = emit({ calibration: walkedCalibration({ seedGeneration: 4 }), weights: walkedWeights({ seedGeneration: 9 }), generation: 3 })
+    expect(art.calibration.seedGeneration).toBe(art.weights.seedGeneration)
+    expect(art.calibration.seedGeneration).toBe(3)
+  })
+})
+
+// ---------------------- guarantee 3 + the whole pipe: a tiny walk ----------------------
+// A REAL walk — the same main() Task 3 runs — over a two-name fixture universe with
+// ETH-USD fed in beside them, driven off a temp candle cache so it touches no network.
+// It is the only test that can prove the two claims no unit test reaches: that the
+// artefact is what the CARRYING store held at walk end, and that a crypto name in the
+// universe contributes nothing because the walk never looks at it.
+
+const WALK_SYMS = ['AAA', 'BBB']
+/** Every tape the real buildBoard reaches for that is NOT a walk candidate: the
+ * index pair, the world panel, the eleven sector ETFs — and the names the rotation
+ * and THEME doors put in front of the engine on any day at all (themes.ts: "every
+ * theme scanned a little even on quiet days"). Derived from the engine's own
+ * constants rather than listed, so a new theme cannot quietly turn this test into a
+ * network call. */
+const CONTEXT_SYMS = [
+  ...new Set([
+    'SPY',
+    'QQQ',
+    ...Object.keys(SECTOR_MEMBERS),
+    ...Object.values(SECTOR_MEMBERS).flat(),
+    ...THEMES.flatMap(t => t.members),
+    ...WORLD_SYMBOLS.map(w => w.sym),
+    VIX_SYMBOL.sym,
+  ]),
+]
+const WALK_BARS = 400
+const WALK_WINDOW = 40
+
+/** Business-day timestamps — the walk derives its trading days from SPY's own series,
+ * so weekends simply must not be in the tape. */
+const busDays = (n: number, startISO = '2024-01-01'): number[] => {
+  const out: number[] = []
+  const d = new Date(`${startISO}T13:30:00Z`)
+  while (out.length < n) {
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) out.push(Math.floor(d.getTime() / 1000))
+    d.setUTCDate(d.getUTCDate() + 1)
+  }
+  return out
+}
+const iso = (t: number) => new Date(t * 1000).toISOString().slice(0, 10)
+/** Deterministic tape: a drift plus a two-frequency swing. No RNG — the artefact is
+ * an artefact, and a test that re-rolled its own prices could not pin one. The swing
+ * AMPLITUDE is what makes these names admissible at all: the roster's join gate wants
+ * an 80th-percentile 10-session move of 8% (roster.ts JOIN_CAPACITY), so a smooth
+ * tape walks forty days to an empty board with nothing to serialise. */
+const tape = (ts: number[], start: number, driftPctPerDay: number, swingPct = 7, phase = 0): Candle[] =>
+  ts.map((t, i) => {
+    const swing = Math.sin(i * 0.314 + phase) * swingPct + Math.sin(i * 0.87 + phase) * (swingPct / 4)
+    const c = start * (1 + (driftPctPerDay / 100) * i) * (1 + swing / 100)
+    return { t, o: c * 0.997, h: c * 1.012, l: c * 0.988, c, v: 2_400_000 + 600_000 * Math.sin(i * 0.9 + phase) }
+  })
+
+describe('--seed-out: the flags refuse to guess', () => {
+  /** main() validates before it touches the disk, so these cost nothing and never
+   * warm a cache. */
+  const runWith = async (flags: string[]) => {
+    const argv = process.argv
+    process.argv = ['node', 'replay-window.ts', ...flags]
+    try {
+      await main()
+    } finally {
+      process.argv = argv
+    }
+  }
+  it('refuses --seed-out without a generation — the artefact may not guess which walk made it', async () => {
+    await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json')])).rejects.toThrow(/--seed-generation/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json'), '--seed-generation', '0'])).rejects.toThrow(/--seed-generation/)
+  })
+  it('refuses a --seed-out that swallowed the next flag instead of a path', async () => {
+    await expect(runWith(['--seed-out', '--seed-generation', '2'])).rejects.toThrow(/needs a path/)
+  })
+})
+
+describe('--seed-out: the walk serialises what it learned', () => {
+  it('emits a v3 artefact from the carrying store, and a crypto name in the universe contributes nothing', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'replay-seed-'))
+    const ts = busDays(WALK_BARS)
+    const write = (sym: string, candles: Candle[]) =>
+      writeFileSync(join(dir, `${sym.replace(/[^A-Za-z0-9]/g, '_')}.json`), JSON.stringify({ sym, range: '5y', at: Date.now(), candles }))
+    // Every context tape buildBoard reads, so the walk touches no network. NOT
+    // ETH-USD: the cache writes a file for every symbol it looks up (hit or miss), so
+    // the ABSENCE of ETH_USD.json afterwards is proof the walk never looked, and it
+    // holds whether or not this machine has an internet connection.
+    for (const [i, sym] of CONTEXT_SYMS.entries()) write(sym, tape(ts, 24 + (i % 37) * 9, 0.01 + (i % 9) * 0.008, 6 + (i % 5), i * 0.41))
+    write('AAA', tape(ts, 40, 0.22, 9, 0.7))
+    write('BBB', tape(ts, 90, -0.06, 8, 2.1))
+    // The benchmark and the trading calendar, written AFTER the loop above so its
+    // generic tape cannot overwrite them: an index is calm, and grading is excess
+    // vs SPY, so a swinging SPY would be measuring the benchmark.
+    write('SPY', tape(ts, 480, 0.04, 1.2))
+    write('QQQ', tape(ts, 400, 0.05, 1.6))
+
+    const seedPath = join(dir, 'seed-candidate.json')
+    const outPath = join(dir, 'walk-diag.json')
+    const from = iso(ts[WALK_BARS - WALK_WINDOW])
+    const to = iso(ts[WALK_BARS - 1])
+    const argv = process.argv
+    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', 'AAA,BBB,ETH-USD', '--seed-out', seedPath, '--seed-generation', '2', '--out', outPath]
+    const quiet = vi.spyOn(console, 'log').mockImplementation(() => {}) // the walk narrates 40 days; the suite does not need to hear it
+    try {
+      vi.resetModules() // CACHE_DIR is read at module load, so the fresh instance is what sees the temp cache
+      vi.stubEnv('REPLAY_CACHE_DIR', dir)
+      const fresh = (await import('./replay-window')) as typeof import('./replay-window')
+      await fresh.main()
+    } finally {
+      quiet.mockRestore()
+      vi.unstubAllEnvs()
+      process.argv = argv
+    }
+
+    const art = JSON.parse(readFileSync(seedPath, 'utf8')) as SeedArtefact
+    const run = JSON.parse(readFileSync(outPath, 'utf8')) as { universe: number; days: { board: Keyed[]; ledger: Keyed[] }[]; missing: { sym: string }[]; calibrationFinal: CalibrationState }
+
+    // guarantee 3 — ETH-USD was fed in with the two equities and skipped ENTIRELY:
+    // never in the universe, never fetched, never a row, never a symbol counted.
+    expect(run.universe).toBe(WALK_SYMS.length)
+    expect(existsSync(join(dir, 'ETH_USD.json'))).toBe(false)
+    expect(run.missing.map(m => m.sym)).not.toContain('ETH-USD')
+    const contributors = new Set([...run.days.flatMap(d => [...d.board, ...d.ledger].map(r => r.sym.toUpperCase()))])
+    for (const sym of contributors) expect(isCryptoSymbol(sym)).toBe(false)
+    expect(art.symbols).toBe(contributors.size) // `symbols` = the names that actually produced rows
+    expect(art.symbols).toBeGreaterThanOrEqual(WALK_SYMS.length)
+
+    // guarantee 5 — the artefact IS the carrying store's two blobs at walk end
+    expect(art.calibration.buckets).toEqual(run.calibrationFinal.buckets)
+    expect(art.weights.base).toEqual(DEFAULT_WEIGHTS)
+
+    // the walk started EMPTY: the committed generation-1 seed's 778 rows did not travel
+    const total = Object.values(art.calibration.buckets).reduce((s, b) => s + b.n, 0)
+    expect(total).toBeLessThan(200)
+    expect(art.calibration.evidence!.live).toEqual({ n: 0, hits: 0 })
+    expect(art.calibration.evidence!.seed.n + art.calibration.evidence!.shadow.n).toBe(total)
+    expect(art.calibration.evidence!.seed.n).toBeGreaterThan(0) // the window is long enough to grade something
+
+    // guarantees 1, 2, 6 on the file the next task actually copies over seed.json
+    expect(art.calibration.defVersion).toBe(3)
+    expect(art.calibration.modelVersion).toBe(3)
+    expect(art.calibration.seedGeneration).toBe(2)
+    expect(art.weights.seedGeneration).toBe(art.calibration.seedGeneration)
+  }, 180_000)
 })
 
 describe('flatten', () => {

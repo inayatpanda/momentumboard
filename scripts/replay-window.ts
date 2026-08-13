@@ -49,6 +49,23 @@
 // pipeline proves something about the copy.
 //   npx vite-node scripts/replay-window.ts -- --plant-a --out /tmp/aprobe.json
 //
+// FIFTH MODE — `--seed-out <path>`: the window mode again, but the walk SERIALISES
+// what it learned into a `shared/engine/seed.json`-shaped artefact (stage 2b). It is
+// a flag rather than a fifth loop for the same reason --plant-a is: a seed measured
+// by a copy of the pipeline is a seed measured on a copy. `--seed-generation <n>` is
+// REQUIRED with it — the generation is how loadState decides a regenerated seed may
+// displace the live blob, and an artefact may not guess which walk made it. In this
+// mode the walk starts from an EMPTY calibration (never the committed seed — "do not
+// mix a regenerated seed with the committed one, regenerate whole", backtest.ts) and
+// crypto is filtered out of the universe (stage 1c is unbuilt — see isCryptoSymbol).
+//   npx tsx scripts/replay-window.ts --from 2024-08-12 --to 2026-08-11 \
+//     --seed-out /tmp/seed-candidate.json --seed-generation 2 --out /tmp/walk.json
+// `--symbols A,B,C` narrows the walk universe (default: the whole REPLAY_UNIVERSE) —
+// a targeted diagnostic run, and what lets the unit test walk a fixture universe.
+// Both are NEW-mode only; nothing above changes shape or output because of them, and
+// the pre-Stage-1 baseline worktree never passes them (its calibration module has no
+// `seedGeneration` field to stamp).
+//
 // Candles are cached in ./.replay-cache (gitignored); REPLAY_CACHE_DIR overrides
 // it, which is how the baseline worktree reads the SAME bars as the new run.
 
@@ -69,14 +86,18 @@ import { VIX_SYMBOL, WORLD_SYMBOLS } from '../shared/engine/worldTape'
 import {
   type Band,
   type CalibrationState,
+  type WeightsState,
   CALIB_DEF_VERSION,
   ENGINE_MODEL_VERSION,
   bandFor,
   baseHitRate,
   gradeFor,
   gradePrediction,
+  initWeights,
   probabilityFor,
 } from '../shared/engine/calibration'
+import { DEFAULT_WEIGHTS } from '../shared/engine/composite'
+import { exchangeFor } from '../shared/symbols'
 import { leverageAllowed } from '../shared/engine/riskLadder'
 import { buildBoard, gradeOutstanding } from '../netlify/functions/lib/engine'
 
@@ -113,6 +134,26 @@ export const MIRROR_EXTRAS: string[] = [
 ]
 
 export const REPLAY_UNIVERSE: string[] = [...new Set([...SLEEVE_MIRROR, ...MIRROR_EXTRAS])]
+
+/** Is this a crypto pair? Crypto is EXCLUDED from the deep-seed universe because
+ * stage 1c is unbuilt: there is no crypto cohort and no crypto base rate, so a
+ * crypto row books into the EQUITY buckets and is graded against SPY — and crypto
+ * trades weekends, so its bar index and SPY's diverge and the "10-session" horizon
+ * is not even the same wall-clock span on the two sides of that excess. Precedent:
+ * hypeCluster.ts:167-168 keeps crypto out of cluster detection for the same reason,
+ * until stage 1c gives it a matched clock.
+ *
+ * NOT plain `exchangeFor(sym) === 'CRYPTO'`. That predicate tests the DASH first
+ * (shared/symbols.ts:4-8) and only then the '.', so `BT-A.L` — BT Group, an LSE
+ * equity sitting in SLEEVE_MIRROR — reads as CRYPTO, and a filter written the
+ * obvious way would silently shrink the seed universe by a real name. An exchange
+ * suffix settles it: a symbol carrying one is listed on that exchange, whatever
+ * else is in the string. (The same ordering is a live defect in production's
+ * market-hours and news paths; out of scope here, recorded in the task report.) */
+export const isCryptoSymbol = (sym: string): boolean => !sym.includes('.') && exchangeFor(sym) === 'CRYPTO'
+
+/** The population a v3 seed may measure: the walk universe with crypto removed. */
+export const seedUniverse = (syms: string[] = REPLAY_UNIVERSE): string[] => syms.filter(s => !isCryptoSymbol(s))
 
 /** Index/futures series the world-tape read needs — price-only, so the replay
  * can serve them honestly from the same candle cache. */
@@ -722,11 +763,26 @@ export interface DayOut {
   ledger: Row[]
   dips: { sym: string; triggered: boolean; holding: boolean; dropPct: number; constructed: boolean }[]
   /** VELOCITY DIAGNOSTIC — computed outside buildBoard from the SAME bars and over
-   * the names buildBoard actually evaluated, because the lane itself cannot fire in
-   * this harness: `capUsdM` is null for every name (approximation #4, no
-   * point-in-time cap source) and VELOCITY_MIN_CAP_USD_M refuses an unknown cap by
-   * design. Without this the window would report "0 velocity rows" and say nothing
-   * about why. */
+   * the names buildBoard actually evaluated.
+   *
+   * It once said the lane "cannot fire in this harness" because `capUsdM` is null
+   * for every name (approximation #4, no point-in-time cap source) and
+   * VELOCITY_MIN_CAP_USD_M refuses an unknown cap. THAT IS NO LONGER TRUE. While
+   * `VELOCITY_SHADOW_FIRST` is true the gate reads
+   * `capUsdM == null ? !VELOCITY_SHADOW_FIRST : capUsdM < VELOCITY_MIN_CAP_USD_M`
+   * (engine.ts:1450, flag at :610) — an unknown cap is ADMITTED, cap-less, as a
+   * SHADOW row, precisely so the learning record fills (engine.test.ts:2419-2425,
+   * "an UNKNOWN cap passes the liquidity floor only while the lane is shadowed").
+   * So the lane does fire here, and a cap-less deep seed does get real
+   * `velocity:long:*` setup buckets; they book into `evidence.shadow` rather than
+   * `evidence.seed` (calibration.ts:479-480) and never reach the risk ladder
+   * (engine.ts:459-462).
+   *
+   * The diagnostic stays regardless, and is still the honest instrument: it runs
+   * the lane's own gates WITHOUT the engine's liquidity floor, so it reports the
+   * would-be rows a cap-equipped run would have sized, next to the shadow rows this
+   * run actually published. Without it the window could only say "0 sized velocity
+   * rows" and nothing about why. */
   velocity: {
     sym: string
     door: string | null
@@ -822,7 +878,124 @@ const arg = (name: string, fallback: string): string => {
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback
 }
 
-async function main() {
+// ------------------------------------------------- the seed artefact (2b) --
+
+/** EXACTLY the committed `shared/engine/seed.json` shape. The file is read by
+ * `loadState` and by nothing else, so its shape is a contract with one consumer
+ * and must not drift from it. */
+export interface SeedArtefact {
+  generatedAt: string
+  symbols: number
+  weights: WeightsState
+  calibration: CalibrationState
+}
+
+const cloneJson = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T
+const zero = () => ({ n: 0, hits: 0 })
+
+/** Turn the two blobs the walk leaves in the carrying store into a seed artefact.
+ *
+ * Every rule below exists because its absence fails SILENTLY in production:
+ *
+ * 1. SELF-DESCRIBING STAMPS. `defVersion`/`modelVersion`/`seedGeneration` are
+ *    written explicitly rather than left to `migrateCalibration`'s `??=` backfill.
+ *    The committed seed says `modelVersion: 2` today for exactly that reason — the
+ *    seeder never wrote one and the constant happened to be 2 the day it ran. A
+ *    committed artefact should not have to be loaded to be read.
+ * 2. `weights.base` MUST equal `DEFAULT_WEIGHTS`. `rebaseWeights` runs on every
+ *    load and, when the stored base disagrees, re-bases and ZEROES the IC — so a
+ *    drifted base ships "seeded IC stats for all four core factors" that production
+ *    deletes on arrival (it has been deleting the committed seed's since stage 2).
+ *    This throws rather than rewriting the base: a base that drifted means the IC
+ *    beside it was measured under another vector, and quietly relabelling it would
+ *    make the seed lie about which model earned it.
+ * 3. THE EVIDENCE RELABEL. The walk's rows book as live/shadow, because live
+ *    grading never passes `provenance` (engine.ts). Relative to the engine that
+ *    will LOAD this file they are not live at all — they are prior. So the
+ *    aggregate live tally folds into `seed` and live is zeroed. `shadow` is left
+ *    exactly as it stands: a velocity-lane shadow row IS a measured shadow record,
+ *    not sized history, and flattening it into `seed` would claim the risk ladder
+ *    had seen money on tape where it never did.
+ * 4. THE BRIER TRAIL IS DROPPED. `calibration.brier` feeds `brierImproving`, which
+ *    argues for risk-ladder promotions (engine.ts). A seed that handed production a
+ *    250-day promotion argument dated to a walk would size the reader's next trade
+ *    on tape they never traded. The committed seed ships `[]`; so does this.
+ * 5. BOTH BLOBS OR NEITHER. A missing half is a throw, never a default — the
+ *    weights blob has never been read back out of this harness before, and a silent
+ *    `initWeights()` fallback would emit a seed with no IC at all and look fine.
+ * 6. ONE GENERATION ON BOTH HALVES. loadState swaps calibration and weights
+ *    independently, each keyed on its own blob's generation. Halves that disagree
+ *    install asymmetrically and silently: one epoch's buckets beside another
+ *    epoch's factor evidence.
+ *
+ * Pure, and it does not mutate its inputs — the walk's store keeps its own state. */
+export function seedArtefactFrom(input: {
+  calibration: CalibrationState | null
+  weights: WeightsState | null
+  /** Distinct symbols that contributed at least one published row — the population
+   * this evidence was drawn from, which is what the committed seed's `symbols`
+   * (`bySym.size`) means too. Never "the universe I was handed". */
+  symbols: number
+  generation: number
+  generatedAt?: string
+}): SeedArtefact {
+  const { generation } = input
+  if (!Number.isInteger(generation) || generation < 1)
+    throw new Error(`BLOCKED: --seed-generation must be a positive integer, got ${JSON.stringify(input.generation)}`)
+  if (!input.calibration) throw new Error('BLOCKED: the walk left no `engine-calibration` blob — there is nothing to serialise')
+  if (!input.weights) throw new Error('BLOCKED: the walk left no `engine-weights` blob — a seed without its factor IC is half an artefact')
+
+  const calibration = cloneJson(input.calibration)
+  const weights = cloneJson(input.weights)
+
+  const names = [...new Set([...Object.keys(DEFAULT_WEIGHTS), ...Object.keys(weights.base ?? {})])] as (keyof typeof DEFAULT_WEIGHTS)[]
+  const drifted = names.filter(n => weights.base?.[n] !== DEFAULT_WEIGHTS[n])
+  if (drifted.length)
+    throw new Error(
+      `BLOCKED: weights.base disagrees with DEFAULT_WEIGHTS on ${drifted.join(', ')} — rebaseWeights would zero this seed's IC on the first production load. Re-run the walk on a tree whose DEFAULT_WEIGHTS is the one it scored with.`,
+    )
+  weights.seedGeneration = generation
+
+  calibration.defVersion = CALIB_DEF_VERSION
+  calibration.modelVersion = ENGINE_MODEL_VERSION
+  calibration.seedGeneration = generation
+  calibration.seeded = true
+  calibration.setupBuckets ??= {}
+  calibration.brier = []
+  const ev = calibration.evidence ?? { seed: zero(), live: zero(), shadow: zero() }
+  calibration.evidence = {
+    seed: { n: ev.seed.n + ev.live.n, hits: ev.seed.hits + ev.live.hits },
+    live: zero(),
+    shadow: ev.shadow,
+  }
+
+  return { generatedAt: input.generatedAt ?? new Date().toISOString(), symbols: input.symbols, weights, calibration }
+}
+
+/** The blank slate a seed walk starts from. NOT the committed seed: `loadState`'s
+ * cold start would otherwise hand the walk generation 1's 778 rows and the artefact
+ * would ship a MIXTURE of two scoring epochs inside one set of buckets — the exact
+ * thing backtest.ts's header forbids ("do not mix a regenerated seed with the
+ * committed one — regenerate whole") and the thing loadState's own swap refuses to
+ * do (it REPLACES, never merges). Stamped with the generation being emitted so the
+ * committed seed cannot swap itself in over the walk's own state mid-run. */
+function emptyLearningState(generation: number): { calibration: CalibrationState; weights: WeightsState } {
+  return {
+    calibration: {
+      buckets: {},
+      setupBuckets: {},
+      brier: [],
+      seeded: false, // during the walk these ARE live rows; the relabel happens at serialisation
+      defVersion: CALIB_DEF_VERSION,
+      modelVersion: ENGINE_MODEL_VERSION,
+      seedGeneration: generation,
+      evidence: { seed: zero(), live: zero(), shadow: zero() },
+    },
+    weights: { ...initWeights(), seedGeneration: generation },
+  }
+}
+
+export async function main() {
   const baseline = process.argv.includes('--baseline')
   // A-REACHABILITY PROBE (§15 criterion 4). The same window, the same board code,
   // the same everything — with ONE substitution: the calibration blob is replaced
@@ -844,6 +1017,25 @@ async function main() {
   // can be attributed to it rather than to everything else that shipped since.
   const gainersDepth = Number(arg('gainers', String(PROD_GAINERS_DEPTH))) || PROD_GAINERS_DEPTH
   const outPath = arg('out', join(CACHE_DIR, `replay-${baseline ? 'baseline' : 'new'}.json`))
+  // SEED MODE (stage 2b). Presence, not value: `--seed-out` with no path is a typo,
+  // and a walk that ran for ten minutes and then found it had nowhere to write is
+  // the worst possible time to discover one.
+  const seedOut = process.argv.includes('--seed-out') ? arg('seed-out', '') : null
+  if (seedOut === '' || seedOut?.startsWith('--'))
+    throw new Error(`BLOCKED: --seed-out needs a path to write the artefact to${seedOut ? ` (got the next flag, ${seedOut})` : ''}`)
+  const seedGeneration = seedOut ? Number(arg('seed-generation', 'x')) : 0
+  if (seedOut && (!Number.isInteger(seedGeneration) || seedGeneration < 1))
+    throw new Error(
+      'BLOCKED: --seed-out requires --seed-generation <n>, a positive integer. It is how loadState decides this artefact may displace the live blob (it installs only when the seed announces a HIGHER generation), so it cannot be guessed here.',
+    )
+  // The walk universe. `--symbols` narrows it (a targeted run, and what lets the
+  // unit test walk a fixture universe); seed mode then removes crypto, which is the
+  // contract rather than a property of whichever list arrived.
+  const symbolsArg = process.argv.includes('--symbols')
+    ? arg('symbols', '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+    : null
+  const askedUniverse = symbolsArg ?? REPLAY_UNIVERSE
+  const baseUniverse = seedOut ? seedUniverse(askedUniverse) : askedUniverse
   let commit = 'unknown'
   try {
     commit = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim()
@@ -854,9 +1046,15 @@ async function main() {
   mkdirSync(CACHE_DIR, { recursive: true })
   console.log(`replay-window: mode=${baseline ? 'BASELINE' : plantA ? 'A-PROBE' : 'NEW'} commit=${commit} window=${from}..${to} appetite=${appetite} gainers=${gainersDepth}`)
   console.log(`cache: ${CACHE_DIR}`)
+  if (seedOut)
+    console.log(
+      `seed mode: generation ${seedGeneration} → ${seedOut} · universe ${baseUniverse.length}` +
+        `${askedUniverse.length - baseUniverse.length ? ` (${askedUniverse.length - baseUniverse.length} crypto excluded: ${askedUniverse.filter(isCryptoSymbol).join(' ')})` : ''}` +
+        ' · the walk starts from an EMPTY calibration, never the committed seed',
+    )
 
   // ---- warm the cache: the replay universe + the index/world series ----
-  const warm = [...new Set([...REPLAY_UNIVERSE, 'SPY', 'QQQ', ...WORLD_TAPE_SYMS])]
+  const warm = [...new Set([...baseUniverse, 'SPY', 'QQQ', ...WORLD_TAPE_SYMS])]
   console.log(`warming ${warm.length} symbols…`)
   let done = 0
   await Promise.all(
@@ -912,17 +1110,35 @@ async function main() {
     riskAppetite: appetite,
   })
   const cfg = (await store.read('config')) as Parameters<typeof gradeOutstanding>[3]
+  if (seedOut) {
+    // Written BEFORE day one so `loadState`'s cold-start fallback never fires: the
+    // artefact must be this walk's own record and nothing else's (see
+    // emptyLearningState). Both blobs, because loadState reads both.
+    const blank = emptyLearningState(seedGeneration)
+    await store.write('engine-calibration', blank.calibration)
+    await store.write('engine-weights', blank.weights)
+  }
 
   const ctx = { current: { date: days[0], bars: new Map<string, Candle[]>(), screens: [], asked: new Set<string>() } as DayCtx }
   const deps = makeDeps(ctx)
   const out: DayOut[] = []
+  /** The artefact's `symbols`: distinct names the walk PUBLISHED at least one row
+   * for. Not the universe it was handed (a name the gates never let through
+   * contributed nothing to these buckets) and not everything it evaluated (the
+   * theme and rotation doors put ~150 names a day in front of the engine). This is
+   * the population the emitted evidence was actually drawn from. */
+  const walked = new Set<string>()
 
   for (const date of days) {
     const t0 = Date.now()
     // Screen universe = sleeve ∪ the window's tickers ∪ whatever the roster has
     // earned so far. Rebuilt daily because the roster carries.
     const rosterSyms = ((await store.read<{ sym: string }[]>('engine-roster')) ?? []).map(e => e.sym)
-    const universe = [...new Set([...REPLAY_UNIVERSE, ...rosterSyms.map(s => s.toUpperCase())])]
+    let universe = [...new Set([...baseUniverse, ...rosterSyms.map(s => s.toUpperCase())])]
+    // The roster is built by this walk out of this universe, so it cannot introduce
+    // a crypto name — but the filter is the seed's contract, not an inference about
+    // where the roster came from, so it is applied where the universe is composed.
+    if (seedOut) universe = seedUniverse(universe)
     const bars = new Map<string, Candle[]>()
     for (const sym of universe) {
       const full = await fullHistory(sym)
@@ -954,6 +1170,7 @@ async function main() {
     const built = await buildBoard(store, deps as never, nowSec)
     const ledger = ((await store.read<Prediction[]>(`predictions:${date}`)) ?? []).map(p => rowOf(p, 'ledger'))
     const board = built.board.map(p => rowOf(p, 'board'))
+    for (const r of [...board, ...ledger]) walked.add(r.sym.toUpperCase())
     // gradeOutstanding writes `engine-calibration`; buildBoard only reads it. So
     // the blob standing here IS the one every grade above was struck against.
     const calNow = await store.read<CalibrationState>('engine-calibration')
@@ -1052,7 +1269,9 @@ async function main() {
         to,
         appetite,
         gainersDepth,
-        universe: REPLAY_UNIVERSE.length,
+        // the universe actually walked — identical to REPLAY_UNIVERSE.length in
+        // every mode that does not narrow or filter it
+        universe: baseUniverse.length,
         modelVersion: ENGINE_MODEL_VERSION,
         missing,
         days: out,
@@ -1064,6 +1283,30 @@ async function main() {
     ),
   )
   console.log(`\nwrote ${outPath}`)
+
+  if (seedOut) {
+    // BOTH halves, read out of the carrying store at walk end. `engine-weights` has
+    // never been read back out of this harness before — the diagnostics JSON above
+    // captures the calibration blob and nothing else — and a seed without its
+    // factor IC is the half of §4.4 that would have gone missing quietly.
+    const weightsFinal = await store.read<WeightsState>('engine-weights')
+    const artefact = seedArtefactFrom({ calibration: calibrationFinal, weights: weightsFinal, symbols: walked.size, generation: seedGeneration })
+    writeFileSync(seedOut, JSON.stringify(artefact, null, 1))
+    const cal = artefact.calibration
+    const totals = Object.values(cal.buckets).reduce((a, b) => ({ n: a.n + b.n, hits: a.hits + b.hits }), { n: 0, hits: 0 })
+    console.log(`\nwrote ${seedOut} — generation ${seedGeneration}, defVersion ${cal.defVersion}, modelVersion ${cal.modelVersion}`)
+    console.log(
+      `  ${artefact.symbols} symbols · ${totals.n} graded rows in ${Object.keys(cal.buckets).length} buckets ` +
+        `(${Object.keys(cal.setupBuckets ?? {}).length} setup keys) · base rate ${(baseHitRate(cal).rate).toFixed(4)}`,
+    )
+    console.log(`  evidence: seed ${cal.evidence!.seed.n}/${cal.evidence!.seed.hits} · shadow ${cal.evidence!.shadow.n}/${cal.evidence!.shadow.hits} · live 0 (folded into seed at serialisation)`)
+    console.log(
+      `  IC: ${(Object.keys(DEFAULT_WEIGHTS) as (keyof typeof DEFAULT_WEIGHTS)[])
+        .filter(f => artefact.weights.ic[f] && (artefact.weights.ic[f].nAgree || artefact.weights.ic[f].nDisagree))
+        .map(f => `${f} ${artefact.weights.ic[f].nAgree}/${artefact.weights.ic[f].nDisagree}`)
+        .join(' · ') || 'none — no factor scored a graded call'}`,
+    )
+  }
 
   const blank = out.filter(d => d.shape.blankBoard).length
   const noTrades = out.filter(d => d.shape.trades === 0).length
