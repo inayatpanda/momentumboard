@@ -109,3 +109,9 @@ Continuous/ML probability model (approach B); paid data sources; Twitter/X or Di
 - Miss ledger live with per-gate cost/saved; first bounded gate move (if any) correctly announced.
 - Velocity lane: when a hype cluster forms (≥3 co-moving theme names), its members appear as half-sized labelled trades or the miss ledger records which gate blocked them.
 - Wildcard: present most weeks a candidate exists, hypothesis always stated, post-mortem on 100% of closures, record separable from the board's.
+
+## 9. Addendum (2026-08-13, ratified in dialogue): reference-anchored grading
+
+The Stage-2b deep seed measured the §4.4 walk honestly and surfaced a semantics flaw in relative grading: a board-driven seed RAISES the pooled base rate to ~0.42 (the published population is selected), while the composite ladder separates outcomes inside that population by less than 5pp — so grades measured against the pooled base collapse to all-C even when picks genuinely beat the market's ordinary odds.
+
+**Decision (owner, "option 1"):** grade thresholds anchor to a stored **`referenceBase`** — the unconditional gate-clearing hit rate, measured by a symbol×date sweep over the SAME window, universe and v3 model as the walk (the question a reader actually asks: "how much better is this pick than any ordinary candidate?"). Bucket probabilities stay board-population (they price honestly); `probabilityFor` is unchanged; the below-base null floor anchors to the same reference (below-reference rows stay visible but unsized, per §3's board-never-blank rule). The emitter computes `referenceBase` inside `--seed-out` from the same candle set — never operator-supplied. Absent `referenceBase` (the committed gen-1 seed, any legacy blob) falls back to the pooled base — live behaviour changes only when a generation-2+ seed installs. NOT a hit-definition change: `CALIB_DEF_VERSION` stays 3 (grading is presentation over the same graded outcomes).
