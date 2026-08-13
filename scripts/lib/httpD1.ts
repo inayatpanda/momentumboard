@@ -18,9 +18,50 @@
 // for scripts — imports, backfills, smoke checks — not for serving traffic.
 
 import { readFileSync } from 'node:fs'
+import { Agent, request as httpsRequest } from 'node:https'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { D1Database, D1PreparedStatement, D1Result } from '../../netlify/functions/lib/d1Store'
+
+// Plain node:https, NOT global fetch. Under a long import/predict run, undici
+// negotiates HTTP/2 to api.cloudflare.com and a server GOAWAY poisons the
+// pooled session — every retry then reuses the same destroyed session and
+// throws ERR_HTTP2_INVALID_SESSION until the process dies. HTTP/1.1 with
+// keep-alive has no session to poison: a dropped socket is just a new socket.
+const agent = new Agent({ keepAlive: true, maxSockets: 4 })
+
+interface HttpsReply {
+  status: number
+  headers: Record<string, string | string[] | undefined>
+  text: string
+}
+
+function postJson(url: string, token: string, body: string): Promise<HttpsReply> {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      url,
+      {
+        method: 'POST',
+        agent,
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          'content-length': Buffer.byteLength(body),
+        },
+      },
+      res => {
+        const chunks: Buffer[] = []
+        res.on('data', c => chunks.push(c as Buffer))
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, text: Buffer.concat(chunks).toString('utf8') }),
+        )
+        res.on('error', reject)
+      },
+    )
+    req.on('error', reject)
+    req.end(body)
+  })
+}
 
 const API = 'https://api.cloudflare.com/client/v4'
 const MIN_GAP_MS = 260
@@ -80,12 +121,13 @@ interface QueryResult {
 }
 
 export function openHttpD1(opts: HttpD1Options): D1Database & { close(): void } {
-  let token = opts.apiToken ?? process.env.CLOUDFLARE_API_TOKEN ?? loadWranglerOauthToken()
-  if (!token) {
+  const initial = opts.apiToken ?? process.env.CLOUDFLARE_API_TOKEN ?? loadWranglerOauthToken()
+  if (!initial) {
     throw new Error(
       'httpD1: no Cloudflare credential. Set CLOUDFLARE_API_TOKEN or log in with `npx wrangler login`.',
     )
   }
+  let token: string = initial
   const url = `${API}/accounts/${opts.accountId}/d1/database/${opts.databaseId}/query`
 
   let last = 0
@@ -97,13 +139,10 @@ export function openHttpD1(opts: HttpD1Options): D1Database & { close(): void } 
 
   async function query(sql: string, params: unknown[]): Promise<QueryResult> {
     let refreshed = false
+    const payload = JSON.stringify({ sql, params })
     for (let attempt = 0; ; attempt++) {
       await throttle()
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ sql, params }),
-      }).catch((e: unknown) => e as Error)
+      const res = await postJson(url, token, payload).catch((e: unknown) => e as Error)
 
       // Transport failure — retry like a 5xx.
       if (res instanceof Error) {
@@ -124,17 +163,22 @@ export function openHttpD1(opts: HttpD1Options): D1Database & { close(): void } 
         }
       }
       if ((res.status === 429 || res.status >= 500) && attempt < RETRIES) {
-        const after = Number(res.headers.get('retry-after'))
+        const after = Number(res.headers['retry-after'])
         await new Promise(r => setTimeout(r, Number.isFinite(after) && after > 0 ? after * 1000 : 1000 * 2 ** attempt))
         continue
       }
 
-      const body = (await res.json().catch(() => null)) as {
+      let body: {
         success?: boolean
         errors?: { code?: number; message?: string }[]
         result?: QueryResult[]
-      } | null
-      if (!res.ok || !body?.success) {
+      } | null = null
+      try {
+        body = JSON.parse(res.text)
+      } catch {
+        /* non-JSON error page — falls through to the throw */
+      }
+      if (res.status < 200 || res.status >= 300 || !body?.success) {
         const err = body?.errors?.map(e => `${e.code}: ${e.message}`).join('; ') ?? `HTTP ${res.status}`
         throw new Error(`httpD1: query failed — ${err}\n  sql: ${sql.slice(0, 120)}`)
       }
