@@ -15,11 +15,15 @@ export type Band = '25-40' | '40-55' | '55-70' | '70+'
  * every committed seed and `poolBuckets`'s key parse are unchanged, and
  * `CALIB_DEF_VERSION` does not move (a hit still means what it meant).
  *
- * `shadowN`/`shadowHits` are the SUB-COUNT of those totals contributed by rows
- * the reader was never offered — shadows, watch rows, near misses: anything the
- * engine published at zero risk (`updateCalibration`'s `riskPct > 0 ⇒ sized`).
- * They live inside the totals rather than beside them, so the sized read is a
- * subtraction (`n − shadowN`) and nothing downstream of `n`/`hits` changed.
+ * `shadowN`/`shadowHits` are the SUB-COUNT of those totals contributed by rows the
+ * reader could never have been offered AT ANY GRADE — an earnings print inside the
+ * horizon, an unroutable short, a lane stand-down (`Prediction.accrual`, stamped at
+ * publication from the shadow's CAUSE). NOT every zero-size row: a grade-null
+ * demotion or a below-base watch row accrues SIZED, because it is the band's own
+ * record of what happened to it and sealing it stops a band ever earning its way
+ * back over the anchor. They live inside the totals rather than beside them, so the
+ * sized read is a subtraction (`n − shadowN`) and nothing downstream of `n`/`hits`
+ * changed.
  *
  * ABSENT MEANS "THIS EVIDENCE WAS NEVER PARTITIONED" — not "no shadows here" —
  * and the sized read then falls back to the pooled one, byte for byte. That is
@@ -33,8 +37,9 @@ export interface BucketStat { n: number; hits: number; shadowN?: number; shadowH
 
 /** Which population a read asks about. 'pooled' is every graded row (what the
  * engine did before the partition, and what a SHADOW's own probability is still
- * priced against — a shadow is not reader money); 'sized' is the rows the reader
- * could have taken, which is what a sized row's grade must be measured on. */
+ * priced against — a shadow is not reader money); 'sized' is every row the reader
+ * COULD have been offered, whatever the grade then decided about it, which is what
+ * a sized row's grade must be measured on. */
 export type BucketPopulation = 'sized' | 'pooled'
 
 /** The sized slice of one bucket: the totals minus the shadow sub-count, with
@@ -657,25 +662,35 @@ export function gradePrediction(
 /** Add one graded outcome to a bucket, and — since stage 3c — record whether the
  * reader could have taken it.
  *
- * THE DISCRIMINATOR IS `riskPct > 0`, ratified, and it is the one field that
- * already means "money could be on this". It is not `shadow`, which misses watch
- * rows and near misses; and it deliberately counts the velocity door's 0.25/0.5
- * caps as SIZED — a door cap is momentum sizing ("small here, this move is
- * young"), not an evidence deficiency, and a row the reader was offered at a
- * quarter rung is still a row the reader was offered.
+ * THE DISCRIMINATOR IS `pred.accrual`, the stamp the engine writes at publication
+ * from THE SHADOW'S CAUSE (types.ts): 'shadow' only for the three pre-grade,
+ * grade-proof causes — an earnings print inside the horizon, an unroutable short,
+ * a lane stand-down — and 'sized' for every other row, including the ones that
+ * publish at zero risk.
+ *
+ * It is deliberately NOT the row's size. Size was the first ratification and it
+ * sealed a band's recovery: a grade-null demotion carries riskPct 0, so every
+ * call a below-anchor band made accrued OUTSIDE the population that decides its
+ * grade, and the sized read could never move again however well the band did —
+ * while the pooled read, on the very same outcomes, recovered. The demotions ARE
+ * the band's recovery record. (The velocity door's 0.25/0.5 caps stay sized for
+ * the same reason they always did: a door cap is momentum sizing, not an evidence
+ * deficiency.)
  *
  * A SIZED row writes no sub-count at all, so a store that only ever books sized
- * rows stays byte-identical to what the pre-partition tree wrote. Only an unsized
+ * rows stays byte-identical to what the pre-partition tree wrote. Only a shadow
  * row leaves a mark, which is what keeps "absent means never partitioned" true of
  * every bucket rather than only of legacy ones.
  *
- * An ABSENT `riskPct` is not a shadow — it is a caller that did not answer, and
- * the safe answer is the pre-partition one: count it in the totals, partition
- * nothing, let the sized read see exactly what the pooled read sees. Booking it
- * as shadow would let one forgetful call site silently delete the sized history.
- * Both production callers supply it: engine.ts's grader passes the whole
- * `Prediction` (where `riskPct` is required and is 0 for every shadow, watch and
- * near-miss row), and the reference sweep stamps its rows explicitly. */
+ * LEGACY FALLBACK — an ABSENT stamp falls back to `riskPct > 0 ⇒ sized`, the rule
+ * that shipped, so every row already sitting in the ledger books exactly as it
+ * would have; and an absent `riskPct` on top of that is not a shadow either, but a
+ * caller that answered neither question, whose safe reading is the pre-partition
+ * one: count it in the totals, partition nothing, let the sized read see what the
+ * pooled read sees. Booking silence as shadow would let one forgetful call site
+ * quietly delete the sized history. Both production callers are explicit:
+ * engine.ts's grader passes the whole `Prediction` (stamped at publication), and
+ * the reference sweep stamps its rows 'sized' by construction. */
 export function updateCalibration(
   state: CalibrationState,
   pred: {
@@ -686,14 +701,16 @@ export function updateCalibration(
     shadow?: boolean
     setup?: string | null
     provenance?: 'seed' | 'live' | 'shadow'
+    accrual?: 'sized' | 'shadow'
     riskPct?: number
   },
   outcome: PredOutcome,
 ): CalibrationState {
   migrateCalibration(state)
-  // `!= null` and not a truthiness test: 0 is the value that MEANS unsized, and
-  // it is the whole point of the field here.
-  const unsized = pred.riskPct != null && pred.riskPct <= 0
+  // The stamp when there is one; otherwise the shipped rule. `!= null` on both,
+  // and not a truthiness test: 0 is the value that MEANS unsized under the
+  // fallback, and it is the whole point of the field there.
+  const unsized = pred.accrual != null ? pred.accrual === 'shadow' : pred.riskPct != null && pred.riskPct <= 0
   /** One increment, with the sub-count carried alongside the totals. Spreading
    * `cur` first preserves any sub-count already on a bucket when a SIZED row
    * lands in it — the two counters are independent and a bucket holds both. */

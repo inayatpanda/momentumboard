@@ -231,6 +231,32 @@ export interface Prediction extends GradedCall {
   horizon?: Horizon
   capUsdM?: number | null // market cap in $M when known — lets the UI band micro/small/mid/large
   shadow?: boolean // suppressed by calibration but logged anyway — the learning loop must eat even when the paper doesn't
+  /** WHICH POPULATION THIS ROW WILL TEACH [stage 3c — the provenance partition],
+   * stamped at publication and never revised.
+   *
+   * 'shadow' for exactly the three causes that are knowable BEFORE the grade and
+   * that no grade can undo — an earnings print inside the horizon, a short an ISA
+   * cannot route, a lane stand-down. Those rows were never on offer at any grade,
+   * they are the dilution the walk named, and a sized read must not see them.
+   *
+   * 'sized' for EVERYTHING ELSE, including the rows that publish at zero risk: a
+   * grade-null demotion, a below-base watch row, a C on thin evidence. Their
+   * unsized-ness is the ANSWER the read gave them, not a property they had going
+   * in — and it is the band's own record of what happened next. Booking those as
+   * shadow sealed the recovery: a band whose sized read dipped under the anchor
+   * demoted every subsequent call, every demotion accrued outside the sized
+   * population, and the sized read could never move again however well the band
+   * did — while the pooled read, on the very same outcomes, recovered. engine.ts
+   * says in its own words at the grade-null branch that a bucket below the anchor
+   * MUST be able to earn its way back up; this is the field that keeps it true.
+   *
+   * It is the SAME trio that chooses the population a row is PRICED against
+   * (engine.ts), so accrual and pricing can never disagree about a row.
+   *
+   * ABSENT MEANS "PUBLISHED BEFORE THE STAMP" — updateCalibration then falls back
+   * to the shipped `riskPct > 0 ⇒ sized` rule, so every row already in the ledger
+   * books exactly as it would have. */
+  accrual?: 'sized' | 'shadow'
   // The board's last resort: a name that cleared NO gate, published purely so a
   // day when nothing qualified still says what came closest. Always watch-only,
   // riskPct 0, probability = the engine's own base rate (it earned no bucket

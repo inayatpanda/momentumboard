@@ -115,7 +115,15 @@ const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).diges
 // regenerate after an INTENDED engine change: log `sha({board, ledger})` from
 // this fixture and paste it back, and say in the commit why the board moved.
 // Naming the noes may never change a yes.
-const GOLDEN_SHA = 'd065d2187b9c40160c92373dddba036d05ed24ccc8b06533265f27d7e44bf18c'
+//
+// RE-STAMPED ONCE, at stage 3c's accrual field: every published row now carries
+// `accrual: 'sized' | 'shadow'` — which population its outcome will teach — so the
+// serialisation moved by exactly one key per row. Nothing the reader sees moved,
+// and the readable half of this pin (GOLDEN_ROWS: id, grade, composite, riskPct,
+// entry, stop, target, watch/shadow/near) is unchanged and was NOT re-stamped —
+// which is the evidence that the hash moved for a new field and not for a new
+// decision. d065d21… was the pre-3c value.
+const GOLDEN_SHA = '492c14e7ad6e23e70d0d54186b6ad06109eb2acd184f471cb16eabf5503e4ead'
 const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-64.8 r=1 e=162 s=170.44 t=150.75 ']
 /** Every key the golden day wrote at BASE. The trace may ADD to this list and
  * may touch nothing in it. */

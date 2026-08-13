@@ -1092,11 +1092,25 @@ describe('the provenance partition — sized rows grade against sized history', 
     })
   })
 
-  describe('updateCalibration books the sub-counts by riskPct', () => {
+  describe('updateCalibration books the sub-counts by the row’s ACCRUAL stamp', () => {
     const hit = { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true }
     const miss = { excessPct: -2, rawPct: -2, spyPct: 0, stopped: true, hit: false }
 
-    it('riskPct > 0 is SIZED — including the velocity door’s quarter cap', () => {
+    it('the stamp outranks riskPct in BOTH directions — it is the shadow’s CAUSE, not the row’s size', () => {
+      const cal = emptyCal()
+      // A sized-stamped row at ZERO risk is the case the whole re-ratification is
+      // about: a grade-null demotion carries no money and is still the band's own
+      // record of what happened to it. It books no sub-count at all.
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0, accrual: 'sized' }, hit)
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 1, hits: 1 })
+      // …and the converse holds too, so the stamp is genuinely the discriminator
+      // rather than a hint riskPct could override.
+      updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 1, accrual: 'shadow' }, miss)
+      expect(cal.buckets['long:green:25-40']).toEqual({ n: 2, hits: 1, shadowN: 1, shadowHits: 0 })
+      expect(baseHitRate(cal, 'sized')).toEqual({ rate: 0.5, n: 1 })
+    })
+
+    it('LEGACY FALLBACK — an unstamped row books by riskPct > 0, exactly as the shipped rule did', () => {
       const cal = emptyCal()
       updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0.25 }, hit)
       // a door cap is momentum sizing, not an evidence deficiency: the reader
@@ -1107,7 +1121,7 @@ describe('the provenance partition — sized rows grade against sized history', 
       expect(baseHitRate(cal, 'sized').n).toBe(1)
     })
 
-    it('riskPct === 0 is SHADOW — it still accrues, and the sized read never sees it', () => {
+    it('LEGACY FALLBACK — an unstamped riskPct 0 row is SHADOW: every row already stored keeps booking as it would have', () => {
       const cal = emptyCal()
       updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 1 }, hit)
       updateCalibration(cal, { side: 'long', regime: 'green', composite: 30, riskPct: 0, shadow: true }, miss)
@@ -1166,6 +1180,109 @@ describe('the provenance partition — sized rows grade against sized history', 
       const shadowN = Object.values(cal.buckets).reduce((s, b) => s + (b.shadowN ?? 0), 0)
       expect(shadowN).toBeGreaterThan(0) // the run really did book shadows
       expect(baseHitRate(cal, 'sized').n + shadowN).toBe(baseHitRate(cal).n)
+    })
+
+    // THE RECOVERY PIN — the defect the Task-1 review found, made unfailable.
+    //
+    // A band the sized read prices under the anchor grades NULL, and a grade-null
+    // row publishes at riskPct 0. Under the shipped `riskPct > 0 ⇒ sized` rule
+    // every one of those rows accrued as SHADOW, so the band's sized evidence
+    // could never grow again however well its calls went: the sized read froze at
+    // whatever it was on the day it dipped, while the pooled read — reading the
+    // very same outcomes — recovered. That directly contradicts the invariant
+    // engine.ts states in its own words at the grade-null branch ("buckets below
+    // 50% can never earn their way back up"). The stamp is what un-seals it.
+    it('THE RECOVERY PIN: a band under the anchor earns its way back up, because its demoted rows are SIZED evidence', () => {
+      const anchor = 0.42
+      // one bucket, so the base rate IS the bucket and the shrinkage hierarchy is
+      // the identity in both populations — this test is about the partition, not
+      // about the ladder.
+      const seal = (stamp: 'sized' | undefined): CalibrationState => {
+        const cal: CalibrationState = { buckets: { 'long:green:55-70': { n: 100, hits: 30 } }, brier: [], referenceBase: anchor }
+        // 200 further calls in the same band at a TRUE 60% — the band is genuinely
+        // good now, and every one of them published at zero size because the read
+        // it was graded against still said "below the anchor".
+        for (let i = 0; i < 200; i++)
+          updateCalibration(
+            cal,
+            { side: 'long', regime: 'green', composite: 62, riskPct: 0, accrual: stamp },
+            i < 120 ? { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true } : { excessPct: -2, rawPct: -2, spyPct: 0, stopped: true, hit: false },
+          )
+        return cal
+      }
+
+      // Where it started: laplace(100, 30) = 32/104 = 0.3077, under the 0.42 anchor
+      // → no grade, no size. Both branches begin here.
+      const start: CalibrationState = { buckets: { 'long:green:55-70': { n: 100, hits: 30 } }, brier: [], referenceBase: anchor }
+      const before = probabilityFor(start, 'long', 'green', 62.5, 'unknown', 'sized')
+      expect(before.p).toBeCloseTo(32 / 104, 12)
+      expect(gradeFor(before.p, before.nEff, gradeBaseRate(start), before.belowEvidence)).toBeNull()
+
+      // STAMPED SIZED: the 200 demoted rows are the band's own recovery record.
+      const recovered = seal('sized')
+      expect(recovered.buckets['long:green:55-70']).toEqual({ n: 300, hits: 150 }) // no sub-count at all
+      const after = probabilityFor(recovered, 'long', 'green', 62.5, 'unknown', 'sized')
+      expect(after.p).toBeCloseTo(152 / 304, 12) // 0.5 — back over the bar
+      expect(after.nEff).toBe(300)
+      expect(gradeFor(after.p, after.nEff, gradeBaseRate(recovered), after.belowEvidence)).toBe('B')
+
+      // UNSTAMPED (the shipped rule): the same 200 outcomes, booked as shadow.
+      const sealed = seal(undefined)
+      expect(sealed.buckets['long:green:55-70']).toEqual({ n: 300, hits: 150, shadowN: 200, shadowHits: 120 })
+      const still = probabilityFor(sealed, 'long', 'green', 62.5, 'unknown', 'sized')
+      expect(still.p).toBeCloseTo(32 / 104, 12) // the sized read never moved a hair
+      expect(still.nEff).toBe(100)
+      expect(gradeFor(still.p, still.nEff, gradeBaseRate(sealed), still.belowEvidence)).toBeNull()
+      // …and this is the contradiction in one line: the POOLED read of those very
+      // same outcomes recovered, so the band was demonstrably fine and only the
+      // population that decides its grade was forbidden to notice.
+      const pooled = probabilityFor(sealed, 'long', 'green', 62.5)
+      expect(gradeFor(pooled.p, pooled.nEff, gradeBaseRate(sealed), pooled.belowEvidence)).toBe('B')
+    })
+  })
+
+  describe('the review’s two read-side corners', () => {
+    it('belowEvidence rides the SIZED read: a wholly-shadow band below leaves the sized curve starting high', () => {
+      // The lower band exists and is graded — but every observation in it came
+      // from a row nobody was offered. To a sized read the engine has watched
+      // NOTHING at that conviction, so a read there is handed down from the band
+      // above and may claim no more than a C, exactly as for a band that was never
+      // graded at all. The pooled read of the same blob sits between two points
+      // and claims what it likes.
+      const cal = calPart({ 'long:green:25-40': [40, 20, 40, 20], 'long:green:55-70': [40, 24] })
+      const pooled = probabilityFor(cal, 'long', 'green', 47.5)
+      expect(pooled.belowEvidence).toBe(false)
+      const sized = probabilityFor(cal, 'long', 'green', 47.5, 'unknown', 'sized')
+      expect(sized.belowEvidence).toBe(true)
+      expect(sized.nEff).toBe(40) // the 55-70 band's own n — the only sized evidence there is
+      expect(sized.p).toBeGreaterThan(0.5) // p is unchanged by the flag; what it may CLAIM is not
+      expect(gradeFor(sized.p, sized.nEff, 0.3, sized.belowEvidence)).toBe('C')
+      expect(gradeFor(sized.p, sized.nEff, 0.3)).toBe('A') // …which is what the cap took away
+    })
+
+    it('a partitioned COHORT-TAGGED key partitions like any other — provenance lives in the value, never in the key', () => {
+      // The 4-part key is the one place a fifth key part would have broken the
+      // parse, which is why the sub-counts went into the value. A named cohort
+      // still matches only its own tagged key, in either population.
+      const cal = calPart({ 'large:long:green:55-70': [100, 60, 40, 40], 'long:green:55-70': [20, 8] })
+      const flat = () => 0.5
+      expect(curveFor(cal, 'long', 'large', 'green', flat).map(p => p.n)).toEqual([100])
+      expect(curveFor(cal, 'long', 'large', 'green', flat)[0].p).toBeCloseTo(0.8 * (62 / 104) + 0.2 * 0.5, 12)
+      expect(curveFor(cal, 'long', 'large', 'green', flat, 'sized').map(p => p.n)).toEqual([60]) // 100 − 40
+      expect(curveFor(cal, 'long', 'large', 'green', flat, 'sized')[0].p).toBeCloseTo((60 / 85) * (22 / 64) + (25 / 85) * 0.5, 12)
+      // 'any' pools the tagged key WITH the legacy cohortless one, sub-counts and all
+      expect(curveFor(cal, 'long', 'any', 'green', flat, 'sized').map(p => p.n)).toEqual([80]) // 60 sized + 20 unpartitioned
+      expect(curveFor(cal, 'long', 'any', 'green', flat).map(p => p.n)).toEqual([120])
+      // …and the WRITE side reaches the 4-part key too: a known cap books into its
+      // cohort bucket, and the stamp partitions it there
+      const written = emptyCal()
+      updateCalibration(
+        written,
+        { side: 'long', regime: 'green', composite: 62, capUsdM: 50_000, riskPct: 0, accrual: 'shadow' },
+        { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true },
+      )
+      expect(written.buckets['large:long:green:55-70']).toEqual({ n: 1, hits: 1, shadowN: 1, shadowHits: 1 })
+      expect(curveFor(written, 'long', 'large', 'green', flat, 'sized')).toEqual([])
     })
   })
 })

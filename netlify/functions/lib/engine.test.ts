@@ -465,6 +465,7 @@ describe('buildBoard', () => {
     const call = board.find(b => b.sym === 'NVDA')!
     expect(call).toBeDefined()
     expect(call.riskPct).toBeGreaterThan(0) // a row the reader can act on — which is WHY it reads sized
+    expect(call.accrual).toBe('sized') // …and what it will TEACH is the same population it was graded on
     expect(call.grade).toBe('B') // 'A' on the same totals before the partition
     expect(call.probability).toBeCloseTo(0.58, 2)
     // and the row still trades: this is a demotion in what the engine CLAIMS, not
@@ -489,8 +490,69 @@ describe('buildBoard', () => {
     const shadow = (await store.read<Prediction[]>(`predictions:${today}`))!.find(p => p.sym === 'NVDA')!
     expect(shadow.shadow).toBe(true)
     expect(shadow.riskPct).toBe(0)
+    expect(shadow.accrual).toBe('shadow') // an earnings print is one of the three PRE-GRADE causes
     expect(shadow.probability).toBeCloseTo(0.63, 2)
     expect(shadow.grade).toBe('A')
+  })
+
+  // THE ACCRUAL STAMP [stage 3c, re-ratified after the Task-1 review]. The row
+  // records at publication WHICH POPULATION IT WILL TEACH, and it records it from
+  // the same three pre-grade causes that chose the population it was PRICED on —
+  // so the two can never disagree. The point of the re-ratification is what is NOT
+  // on the shadow side of that line: a grade-null demotion is the band's own
+  // record of what happened to it, and sealing it made a band that dipped under
+  // the anchor unable to earn its way back up (engine.ts says in its own words
+  // that it must be able to).
+  it('a BELOW-BASE watch row accrues SIZED — the demotion is the band’s recovery record, not dilution', async () => {
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
+    // the same fixture as the below-base watch test above: this band has proven it
+    // loses, so the grade comes back null and the row publishes at zero size.
+    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 3 })
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    const { board } = await buildBoard(store, deps(), NOW)
+    const call = board.find(b => b.sym === 'NVDA')!
+    expect(call.belowBase).toBe(true)
+    expect(call.riskPct).toBe(0) // no money on it…
+    expect(call.accrual).toBe('sized') // …and it still teaches the sized population
+    expect(call.shadow).toBeUndefined()
+  })
+
+  it('…and so does the FOURTH shadow condition — a null grade on a failed contract is priced sized AND accrues sized', async () => {
+    // `!grade && !contract` is decided BY the read, so it cannot choose the
+    // population without circularity — it is priced 'sized' like any other
+    // candidate. Under the ratified stamp it now ACCRUES sized as well, so the
+    // asymmetry the Task-1 review flagged (priced sized, booked shadow) is gone.
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
+    // partitioned totals + an unreachable anchor: the sized read is 0.58 and the
+    // pooled one 0.63, and 0.8 is above both, so the grade is null either way —
+    // which makes the PRICE the only thing that can tell us which population it
+    // was read from.
+    await store.write('engine-calibration', {
+      buckets: { 'short:unknown:55-70': { n: 32, hits: 22, shadowN: 17, shadowHits: 12 } },
+      brier: [],
+      referenceBase: 0.8,
+      defVersion: CALIB_DEF_VERSION,
+      seedGeneration: 3,
+    })
+    await store.write('video-extracts', [
+      { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    ])
+    // no QQQ candles → regime 'unknown' → the evidence contract fails on the regime leg
+    const noQqq = deps({ candles: async sym => (sym === 'NVDA' ? shorty : sym === 'SPY' || sym === 'XLU' ? flat : sym === 'XLK' ? shorty : null) })
+    const { board, regime } = await buildBoard(store, noQqq, NOW)
+    expect(regime).toBe('unknown')
+    expect(board.find(b => b.sym === 'NVDA')).toBeUndefined() // a null grade with no contract is a shadow row
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const row = (await store.read<Prediction[]>(`predictions:${today}`))!.find(p => p.sym === 'NVDA')!
+    expect(row.shadow).toBe(true)
+    expect(row.evidence.contract).toBe(false)
+    expect(row.riskPct).toBe(0)
+    expect(row.probability).toBeCloseTo(0.58, 2) // the SIZED read — 0.63 is what the pooled one says
+    expect(row.accrual).toBe('sized') // …and the stamp now agrees with the price
   })
 
   it('an earnings print inside the horizon forces SHADOW — off the public board, still logged for the print-edge ledger', async () => {
@@ -542,6 +604,7 @@ describe('buildBoard', () => {
     expect(shadow.shadow).toBe(true) // still logged so the small-cap cohort learns
     expect(shadow.side).toBe('short')
     expect(shadow.riskPct).toBe(0)
+    expect(shadow.accrual).toBe('shadow') // an unroutable short is a pre-grade cause: it dilutes, it does not recover
     const publicBoard = (await store.read<{ board: Prediction[] }>('engine-board'))!
     expect(publicBoard.board.find(p => p.sym === 'NVDA')).toBeUndefined()
   })
@@ -2478,10 +2541,14 @@ describe('buildBoard', () => {
     // …and the PROVENANCE PARTITION rides along [stage 3c]: the row is booked into
     // the shared bucket AND recorded as shadow evidence inside it, so a future
     // SIZED read of this band gets its observation count back to zero while the
-    // pooled read still sees the shadow's outcome. Sub-counts are written only for
-    // an unsized row (`riskPct > 0 ⇒ sized`), so the shape of the assertion is
-    // itself the pin: shadow-first books them, a sized velocity row would not.
+    // pooled read still sees the shadow's outcome. A lane stand-down is one of the
+    // three PRE-GRADE causes, so the row was stamped `accrual: 'shadow'` at
+    // publication — the dilution the walk named stays out of the sized read, and
+    // the shape of the assertion is itself the pin: shadow-first books the
+    // sub-counts, a sized velocity row would not.
     const cal = (await store.read<CalibrationState>('engine-calibration'))!
+    const velo = (await store.read<Prediction[]>(`predictions:${date}`))!.find(p => p.sym === 'VELO')!
+    expect(velo.accrual).toBe(VELOCITY_SHADOW_FIRST ? 'shadow' : 'sized')
     const shadowSub = VELOCITY_SHADOW_FIRST ? { shadowN: 1, shadowHits: 1 } : {}
     expect(cal.buckets['large:long:amber:25-40']).toEqual({ n: 1, hits: 1, ...shadowSub })
     expect(cal.buckets['long:amber:25-40']).toEqual({ n: 20, hits: 14 }) // the seeded bucket is untouched
@@ -3099,12 +3166,20 @@ describe('gradeOutstanding', () => {
     expect(preds[0].outcome5!.hit).toBe(true) // falling knife kept falling, stop never touched
     expect(preds[0].outcome10).toBeDefined()
     expect(preds[1].outcome5).toBeDefined() // the watch call is graded too
+    expect(preds[0].accrual).toBeUndefined() // the fixture's own premise: neither row carries the stamp,
+    expect(preds[1].accrual).toBeUndefined() // so the booking below really is the legacy path and not the new one
 
     // BOTH outcomes are booked (32/22 + 2 hits) — the learning loop eats every
     // published row — and the PROVENANCE PARTITION says which of them the reader
-    // could have taken: the watch row carries riskPct 0, so it accrues into the
-    // totals AND into the shadow sub-count, and a later SIZED read of this band
-    // sees 33/23 while the pooled read still sees 34/24. [stage 3c]
+    // could have taken. THESE TWO ROWS ARE THE LEGACY FALLBACK, deliberately:
+    // hand-planted, they carry no `accrual` stamp, exactly like every row already
+    // sitting in the ledger when the stamp shipped. An unstamped row books by
+    // `riskPct > 0`, which is the rule that shipped — so the watch row accrues into
+    // the totals AND into the shadow sub-count, and a later SIZED read of this band
+    // sees 33/23 while the pooled read still sees 34/24. A row PUBLISHED today
+    // would carry `accrual: 'sized'` and book differently (see the stamp tests
+    // above); an already-stored one must keep booking as it always would have.
+    // [stage 3c]
     const cal = (await store.read<CalibrationState>('engine-calibration'))!
     expect(cal.buckets['short:amber:25-40']).toEqual({ n: 34, hits: 24, shadowN: 1, shadowHits: 1 })
     expect(baseHitRate(cal, 'sized')).toEqual({ rate: 0.5, n: 33 }) // 33 < 50 → the cold-start cliff, applied to the SIZED n
