@@ -20,7 +20,13 @@ export function EnginePanel() {
   }, [])
   if (!data) return null
 
-  const { scorecard, weights, calibration, riskState, roster, channelCred, ledger } = data
+  const { scorecard, weights, calibration, riskState, roster, channelCred, ledger, missLedger } = data
+  // THE OTHER HALF OF THE RECEIPTS: the calls it never made. `unchecked` travels
+  // with the cost on purpose — a gate whose refusals were never priced would
+  // otherwise read as a gate that cost nothing, which is the exact silence this
+  // ledger exists to end (missLedger.ts). Null until a trace day matures, and
+  // then the pane says nothing rather than printing a confident zero.
+  const worstGate = missLedger?.topGates[0] ?? null
   const lastRungChange = riskState?.history.at(-1)
   const brier = scorecard?.brierTail ?? []
   const brierTrend =
@@ -92,24 +98,37 @@ export function EnginePanel() {
         </div>
       )}
 
-      {scorecard && scorecard.totalGraded > 0 && (
+      {((scorecard && scorecard.totalGraded > 0) || missLedger) && (
         <div className="ledger-block">
           <h3 className="section-title">Scorecard — is the engine earning?</h3>
-          <div className="perf-row"><span>Graded predictions</span><span>{scorecard.totalGraded} · Brier {brierTrend}</span></div>
-          {Object.entries(scorecard.byGrade).map(([g, s]) => (
-            <div key={g} className="perf-row">
-              <span>{g === 'shadow' ? 'Shadows' : `Grade ${g}`}</span>
+          {scorecard && scorecard.totalGraded > 0 && (
+            <>
+              <div className="perf-row"><span>Graded predictions</span><span>{scorecard.totalGraded} · Brier {brierTrend}</span></div>
+              {Object.entries(scorecard.byGrade).map(([g, s]) => (
+                <div key={g} className="perf-row">
+                  <span>{g === 'shadow' ? 'Shadows' : `Grade ${g}`}</span>
+                  <span>
+                    {pct(s.hits, s.n)} hit ({s.hits}/{s.n}) · avg excess {s.n ? (s.sumExcess / s.n).toFixed(1) : '—'}%
+                  </span>
+                </div>
+              ))}
+              {Object.entries(scorecard.overlays ?? {}).map(([f, s]) => (
+                <div key={f} className="perf-row">
+                  <span>LLM overlay: {f}</span>
+                  <span>{pct(s.hits, s.n)} {f === 'veto' ? 'dodged a loser' : 'hit'} ({s.hits}/{s.n})</span>
+                </div>
+              ))}
+            </>
+          )}
+          {missLedger && (
+            <div className="perf-row" title={missLedger.note}>
+              <span>Misses (10d)</span>
               <span>
-                {pct(s.hits, s.n)} hit ({s.hits}/{s.n}) · avg excess {s.n ? (s.sumExcess / s.n).toFixed(1) : '—'}%
+                {missLedger.misses}
+                {worstGate && ` · worst gate: ${worstGate.gate} (cost ${worstGate.cost}, unchecked ${worstGate.unchecked})`}
               </span>
             </div>
-          ))}
-          {Object.entries(scorecard.overlays ?? {}).map(([f, s]) => (
-            <div key={f} className="perf-row">
-              <span>LLM overlay: {f}</span>
-              <span>{pct(s.hits, s.n)} {f === 'veto' ? 'dodged a loser' : 'hit'} ({s.hits}/{s.n})</span>
-            </div>
-          ))}
+          )}
         </div>
       )}
 

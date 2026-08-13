@@ -13,11 +13,13 @@ import {
   MISS_SKIP_GATES,
   accrueMissDay,
   accrueMissEvent,
+  accrueUnchecked,
   emptyMissLedger,
   maturedTraceDate,
   missCandidates,
   missCheckable,
   missExcess,
+  missLedgerSummary,
   normaliseMissLedger,
   recordMissDay,
 } from './missLedger'
@@ -340,5 +342,53 @@ describe('maturedTraceDate — SESSIONS back, never calendar days', () => {
   it('is unmoved by a GAP in the index — an outage day shifts positions, sessions do not', () => {
     expect(maturedTraceDate([dateOf(10), dateOf(49)], flat)).toBe(dateOf(49))
     expect(maturedTraceDate([dateOf(49), dateOf(10)], flat)).toBe(dateOf(49))
+  })
+})
+
+describe('missLedgerSummary — the bounded read every surface prints', () => {
+  const ledgerWith = () => {
+    const l = emptyMissLedger()
+    // dead-zone-core: three costs, one big; expected-move: one cost, two saves
+    for (const excess of [6, 8, 22]) accrueMissEvent(l, { date: ENTRY, sym: 'A', side: 'long', excessPct: excess, gate: 'dead-zone-core' })
+    accrueMissEvent(l, { date: ENTRY, sym: 'B', side: 'long', excessPct: 7, gate: 'expected-move' })
+    for (const excess of [-9, -11]) accrueMissEvent(l, { date: ENTRY, sym: 'C', side: 'short', excessPct: excess, gate: 'expected-move' })
+    accrueUnchecked(l, 'dead-zone-core')
+    accrueUnchecked(l, 'diversity')
+    recordMissDay(l, ENTRY, { checked: 12, unchecked: 2, misses: 4 })
+    recordMissDay(l, dateOf(31), { checked: 8, unchecked: 1, misses: 1 })
+    return l
+  }
+
+  it('totals the day window, ranks the gates by cost and carries the average of what each refused', () => {
+    const s = missLedgerSummary(ledgerWith())!
+    expect(s).toMatchObject({ days: 2, checked: 20, unchecked: 3, misses: 5 })
+    expect(s.topGates[0]).toEqual({ gate: 'dead-zone-core', cost: 3, avgCostExcessPct: 12, saved: 0, unchecked: 1 })
+    expect(s.topGates[1]).toEqual({ gate: 'expected-move', cost: 1, avgCostExcessPct: 7, saved: 2, unchecked: 0 })
+    // a gate that has only ever been UNCHECKED still appears — it is the one the
+    // ledger knows least about, and hiding it is how it would read as costless
+    expect(s.topGates[2]).toEqual({ gate: 'diversity', cost: 0, avgCostExcessPct: null, saved: 0, unchecked: 1 })
+    expect(s.topGates).toHaveLength(3)
+  })
+
+  it('the caveat is not optional: it names the unpriced population and the stopless bound', () => {
+    const s = missLedgerSummary(ledgerWith())!
+    expect(s.note).toContain('3 of 23 refusals went unpriced')
+    expect(s.note).toMatch(/unmeasured gate is not a costless one/)
+    expect(s.note).toMatch(/stopless upper bounds/)
+  })
+
+  it('is null on a ledger nothing has ever been written to — a surface must not announce a confident zero', () => {
+    expect(missLedgerSummary(null)).toBeNull()
+    expect(missLedgerSummary(emptyMissLedger())).toBeNull()
+    expect(missLedgerSummary('nonsense')).toBeNull()
+  })
+
+  it('survives a half-written blob and honours topN', () => {
+    const l = emptyMissLedger()
+    l.gates['trimmed'] = { cost: 2 } as unknown as (typeof l.gates)['trimmed']
+    recordMissDay(l, ENTRY, {} as unknown as { checked: number; unchecked: number; misses: number })
+    const s = missLedgerSummary(l, 1)!
+    expect(s.topGates).toEqual([{ gate: 'trimmed', cost: 2, avgCostExcessPct: 0, saved: 0, unchecked: 0 }])
+    expect(s).toMatchObject({ days: 1, checked: 0, unchecked: 0, misses: 0 })
   })
 })

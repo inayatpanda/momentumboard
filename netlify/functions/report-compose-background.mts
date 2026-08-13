@@ -1,7 +1,8 @@
 import { appStore as blobAppStore } from './lib/storeProvider'
 import { authenticate, scopedToken } from './lib/auth'
 import { callLlm } from './lib/llm'
-import { composePrompt, parseComposed, buildNewspaperHtml, boardExportRows, constrainIdeasToBoard, validateNominations, mergeNominations, type StoredNomination } from './lib/newspaper'
+import { composePrompt, parseComposed, buildNewspaperHtml, boardExportRows, constrainIdeasToBoard, validateNominations, mergeNominations, paperPostMortems, COMPOSE_DROP_ORDER, PAPER_POSTMORTEM_DAYS, type StoredNomination } from './lib/newspaper'
+import { missLedgerSummary, MISS_LEDGER_KEY } from '../../shared/engine/missLedger'
 import { cachedQuote, cachedCandles, cachedCompanyName } from './lib/marketCache'
 import { regimeFromCandles } from '../../shared/setups'
 import type { AppConfig } from '../../shared/config'
@@ -183,6 +184,22 @@ export default async (req: Request) => {
       return (await fetchNews(symbols, process.env.FINNHUB_API_KEY ?? '', nowSec)).slice(0, 10).map(n => n.title)
     })
 
+    // ---- the paper's own account of itself: what lost, and what was refused ----
+    // Both are OBSERVATIONS written by the grading pass (postMortem.ts,
+    // missLedger.ts) and neither changes a single number on the board. They are
+    // gathered here because the honest close cannot be written from the board
+    // alone: it says how today's calls could be wrong, and until now it had no
+    // way of saying how the last ones actually were.
+    const postMortems = await grab(async () => {
+      const idx = (await blobAppStore.read<string[]>('predictions-index')) ?? []
+      const days = await Promise.all(
+        idx.slice(-PAPER_POSTMORTEM_DAYS).map(async date => ({ date, preds: (await blobAppStore.read<Prediction[]>(`predictions:${date}`)) ?? [] })),
+      )
+      const rows = paperPostMortems(days)
+      return rows.length ? rows : null // an empty list is noise in a budgeted prompt
+    })
+    const missLedger = await grab(async () => missLedgerSummary(await blobAppStore.read(MISS_LEDGER_KEY)))
+
     // ---- deterministic paper extras: rotation tables, social board, charts ----
     const { SECTOR_MEMBERS, SECTORS, returnOver } = await import('./lib/sectors')
     const topSectors = (sectors ?? []).filter(s => s.rs21 != null).slice(0, 2)
@@ -305,12 +322,15 @@ export default async (req: Request) => {
         pickPersistence: picksHistory,
         userNotes: cfg.notes ?? [],
         recentEventAssessments: dossiers,
+        // why the reader's last few sized calls lost, and what the gates turned
+        // down — the two keys the honest close is written from
+        postMortems,
+        missLedger,
       },
-      // drop order: least critical first — the engine board and headlines must
-      // survive. pickPersistence + previousEditions are last: they are tiny and
-      // they are the paper's memory — dropping them (as the old order did every
-      // single day) is why editions re-announced the same story as breaking.
-      ['recentEventAssessments', 'userNotes', 'insiderBuying', 'recentChannelVideos', 'socialPulse', 'rotationLeaders', 'candidateReads', 'ownScorecard', 'channelConsensus', 'sectorRotation', 'watchlistQuotes', 'pickPersistence', 'previousEditions'],
+      // least critical first; the tail is a promise about what the paper never
+      // loses. Owned by newspaper.ts so the tail is testable — see the comment
+      // on COMPOSE_DROP_ORDER for what dropping the memory once cost.
+      [...COMPOSE_DROP_ORDER],
     )
 
     console.log('COMPOSE: gathered ok, data bytes', data.length, dropped.length ? `| dropped to fit: ${dropped.join(',')}` : '')

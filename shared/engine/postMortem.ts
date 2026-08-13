@@ -73,6 +73,17 @@ export interface PostMortem {
   detail: string
   /** When the class was decided (grading time), not when the row was called. */
   at: number
+  /** THE PAPER'S SENTENCE (netlify/functions/lib/postMortemLlm.ts) — one plain
+   * line bought for the run's sized losers, at most POSTMORTEM_LLM_BUDGET of
+   * them. ADDITIVE and always optional: `detail` above is the floor and stands
+   * whatever happens here. */
+  sentence?: string
+  /** WHY there is no sentence, when there is none — 'llm' wrote one, 'budget'
+   * means the row was past the run's cap and was never asked, 'failed' means it
+   * was asked and nothing usable came back. Absent means neither happened (the
+   * provider chain was already down, or the pass never ran at all). A silence
+   * with no cause recorded is exactly what Stage 3 exists to end. */
+  via?: 'llm' | 'budget' | 'failed'
 }
 
 /** Everything the classification reads off a `Prediction`, and nothing else —

@@ -1,6 +1,7 @@
 import type { ApiEnvelope, Candle, Quote } from '../../shared/types'
 import type { AppConfig } from '../../shared/config'
 import type { EmptySideReason } from '../../shared/engine/types'
+import type { MissLedgerSummary } from '../../shared/engine/missLedger'
 
 export const getToken = () => localStorage.getItem('mb-token')
 export const setToken = (t: string) => localStorage.setItem('mb-token', t)
@@ -626,6 +627,11 @@ export interface EngineData {
     totalGraded: number
     lifetime?: { live: { graded: number; hits: number; sumExcess: number }; shadow: { graded: number; hits: number; sumExcess: number }; since: string }
   } | null
+  // THE REGRET LEDGER, summarised (shared/engine/missLedger.ts): what the gates
+  // refused and what it went on to do. Absent on any deployment whose engine has
+  // not yet measured a matured trace day — the panel then says nothing at all,
+  // which is the only honest reading of "not measured".
+  missLedger?: MissLedgerSummary | null
   weights: { base: Record<string, number>; current: Record<string, number>; history: { date: string; changes: Record<string, { from: number; to: number; ic: number }>; evidence: string }[] } | null
   // buckets are keyed EITHER `${cohort}:${side}:${regime}:${band}` (cohort =
   // large|small, Phase 2) or the legacy cohortless `${side}:${regime}:${band}`

@@ -300,6 +300,73 @@ export function maturedTraceDate(index: readonly string[], spy: Candle[], horizo
   return best
 }
 
+/** One gate's line in the summary — the two columns that argue, and the one that
+ * says how much of the argument is missing. */
+export interface MissGateLine {
+  gate: GateCode
+  cost: number
+  /** Mean excess of the moves it refused, in pp. null when it has cost nothing. */
+  avgCostExcessPct: number | null
+  saved: number
+  unchecked: number
+}
+
+/** THE BOUNDED READ — what a panel line and a paragraph of the paper may say
+ * about the ledger, and nothing more. */
+export interface MissLedgerSummary {
+  /** Trace days measured (the retained window, MISS_LEDGER_DAYS_MAX). */
+  days: number
+  /** Refusals priced, and refusals we could not price, over those days. */
+  checked: number
+  unchecked: number
+  /** Cost events booked over those days. */
+  misses: number
+  /** Worst gates by cost. Their counters are LIFETIME — see `note`. */
+  topGates: MissGateLine[]
+  /** The caveat, in words, because both halves of it are load-bearing: an
+   * unmeasured gate is not a costless one, and the excesses are stopless upper
+   * bounds. Every surface prints this or prints nothing. */
+  note: string
+}
+
+/** The stored blob → the summary. Null when nothing has ever been measured, so a
+ * surface says NOTHING rather than announcing a confident zero.
+ *
+ * TWO WINDOWS, deliberately, and the summary is explicit about which is which:
+ * `days`/`checked`/`unchecked`/`misses` are the retained day window (60 days,
+ * pruned), while the per-gate counters accumulate from the first day ever
+ * measured and are never pruned — pruning them would quietly delete the evidence
+ * Stage 3c is accruing. */
+export function missLedgerSummary(raw: unknown, topN = 3): MissLedgerSummary | null {
+  const l = normaliseMissLedger(raw)
+  const days = Object.values(l.days)
+  const gates = Object.entries(l.gates) as [GateCode, MissGateStat][]
+  if (!days.length && !gates.length) return null
+  const sum = (pick: (d: MissDay) => number) => days.reduce((s, d) => s + (Number.isFinite(pick(d)) ? pick(d) : 0), 0)
+  const checked = sum(d => d.checked)
+  const unchecked = sum(d => d.unchecked)
+  const topGates = gates
+    .map(([gate, g]) => ({
+      gate,
+      cost: g.cost ?? 0,
+      avgCostExcessPct: g.cost ? round1((g.costExcessSum ?? 0) / g.cost) : null,
+      saved: g.saved ?? 0,
+      unchecked: g.unchecked ?? 0,
+    }))
+    // by cost, then by the size of what it cost, then by name so two reads of one
+    // ledger never disagree about which gate is worst
+    .sort((a, b) => b.cost - a.cost || (b.avgCostExcessPct ?? 0) - (a.avgCostExcessPct ?? 0) || a.gate.localeCompare(b.gate))
+    .slice(0, Math.max(0, topN))
+  return {
+    days: days.length,
+    checked,
+    unchecked,
+    misses: sum(d => d.misses),
+    topGates,
+    note: `${unchecked} of ${checked + unchecked} refusals went unpriced — an unmeasured gate is not a costless one; excesses are stopless upper bounds.`,
+  }
+}
+
 export interface MissIo {
   /** Is this name already in the grading run's candle cache? Free names never
    * touch the budget. */

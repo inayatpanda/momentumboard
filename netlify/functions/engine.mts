@@ -5,6 +5,7 @@ import type { WeightsState, CalibrationState } from '../../shared/engine/calibra
 import type { RiskState } from '../../shared/engine/riskLadder'
 import type { RosterEntry } from '../../shared/engine/roster'
 import type { ChannelCredState } from '../../shared/engine/channelCred'
+import { missLedgerSummary } from '../../shared/engine/missLedger'
 
 // Read-only aggregation of everything the engine knows: the board, the
 // scorecard, the learning state. The app renders this; the engine writes it.
@@ -106,7 +107,7 @@ export default async (req: Request) => {
     blobAppStore.read<{ startedAt: number; updatedAt: number; phase: string; completedAt?: number; failedAt?: number; error?: string; graded?: number; boardSize?: number; rosterSize?: number; holdingsCount?: number; regime?: string }>('engine-run-status'),
   ])
 
-  const [paperBook, paperMonths, patternSightings, eventRadar, intradayFlagsBlob] = await Promise.all([
+  const [paperBook, paperMonths, patternSightings, eventRadar, intradayFlagsBlob, missLedgerBlob] = await Promise.all([
     blobAppStore.read('paper-book'),
     blobAppStore.read('paper-months'),
     blobAppStore.read<import('../../shared/engine/patternScore').PatternSighting[]>('pattern-sightings'),
@@ -116,6 +117,12 @@ export default async (req: Request) => {
     // intraday entry flags: today's live-scan blob (alert-check writes it in two
     // session windows). Display-only — the morning's setups at today's prices.
     blobAppStore.read<import('./lib/intradayFlags').IntradayFlagsBlob>('intraday-flags'),
+    // THE REGRET LEDGER (shared/engine/missLedger.ts): what the gates turned down
+    // and what it went on to do. Served as the bounded SUMMARY, never the raw
+    // blob — the blob carries per-gate example lists that grow for months and
+    // nothing on the client has a use for them. Display-only, like everything
+    // else here; no gate has ever moved because of it (that is Stage 3c).
+    blobAppStore.read('miss-ledger'),
   ])
 
   // pattern scorecard: rolled up at read time (pure + cheap) from the sweep's
@@ -151,7 +158,12 @@ export default async (req: Request) => {
     // null (they have their own per-ns Positions page); admin + house devices
     // — the owner's own — keep the Desk holdings pane
     holdingsReads: auth.level === 'admin' || auth.house ? (holdingsReads ?? null) : null,
+    // the scorecard travels whole, so `byPostMortem` — how the engine loses, by
+    // setup × regime × class — reaches the client with it (Stage 3b Task 2)
     scorecard,
+    // …and the other half of the same honesty: what it never called. null until
+    // the first trace day matures, so the panel prints nothing rather than a zero.
+    missLedger: missLedgerSummary(missLedgerBlob),
     weights: weights ? { base: weights.base, current: weights.current, history: weights.history.slice(-10) } : null,
     // `referenceBase` travels with the buckets [spec §9]: it is the bar every grade
     // on the board was measured against, and a reader looking at "42% · B" cannot

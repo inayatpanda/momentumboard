@@ -27,6 +27,7 @@ import { clusterCandidates, detectClusters, TREND_DAY_SYMS, TREND_HISTORY_DAYS, 
 import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, VELOCITY_CATALYST_KIND, gatesFor, type CatalystTag } from '../../../shared/engine/catalyst'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
 import { DIP_NEWS_BUDGET, unservedVenue, type DipNewsVerdict } from './dipNews'
+import { annotatePostMortems, POSTMORTEM_LLM_MAX_TOKENS, type PostMortemAsk } from './postMortemLlm'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
 import {
   baseHitRate,
@@ -125,6 +126,13 @@ export interface EngineDeps {
   // the reader's REAL Trading 212 book, or null when T212 is unconfigured / down.
   // Fail-soft: a broker outage must never stop the board building.
   holdings: () => Promise<T212Position[] | null>
+  // ONE plain sentence explaining a sized loser, for at most
+  // POSTMORTEM_LLM_BUDGET of them per grading run (postMortemLlm.ts).
+  // OPTIONAL, and that is the fail-soft: absent — a replay, a test, a
+  // deployment with no LLM key — means the deterministic post-mortem line
+  // stands alone and not one prediction row is touched. Nothing published
+  // reads it either way.
+  postMortemSentence?: (prompt: string) => Promise<string>
 }
 
 const londonDate = (nowSec: number) => new Date(nowSec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
@@ -265,6 +273,14 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
       const ttl = verdict.via === 'llm' ? DIP_NEWS_TTL_SEC : DIP_NEWS_HEURISTIC_TTL_SEC
       if (verdict.verdict !== 'unclear') await setCached(`dip-news:${sym.toUpperCase()}`, verdict, ttl).catch(() => {})
       return verdict
+    },
+    // The paper's one sentence per sized loser (postMortemLlm.ts). Non-strict,
+    // like every other LLM dep here: whatever provider the deployment has
+    // answers, and a deployment with none simply throws on the first ask and
+    // stands the pass down for the run.
+    postMortemSentence: async prompt => {
+      const { callLlm } = await import('./llm')
+      return (await callLlm(prompt, { maxTokens: POSTMORTEM_LLM_MAX_TOKENS })).text
     },
     // fresh listings: pull the IPO calendar (90d back → 7d ahead, one cached
     // fetch shared with the market-data endpoint) and keep the recently-priced
@@ -457,6 +473,11 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // vs small; unknown-cap calls stay in the combined stream but neither sleeve.
   const allOutcomes: (OutcomeLite & { cohort: CapCohortOrUnknown })[] = []
   const stillPending: string[] = []
+  // THE SIZED LOSERS THIS RUN — the only rows the budgeted sentence is spent on
+  // (postMortemLlm.ts). `riskPct > 0` is the engine's own definition of a row
+  // the reader could act on: shadows, watch rows and cut rows are all set to 0
+  // at the single sizing site, so this needs no second test for them.
+  const sentenceAsks: { date: string; pred: Prediction }[] = []
   // Reuse the records graded in this invocation when building the scorecard.
   // Netlify Blobs can briefly return the pre-write version after a write, which
   // otherwise makes a successful grading run publish an empty scorecard.
@@ -488,7 +509,13 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // the shadow was published to run, and a watch row the reader could not
           // act on still teaches how this SHAPE of call dies. Winners get nothing,
           // and no published decision reads the field.
-          if (!o.hit) pred.postMortem = { ...classifyLoser(pred, o, candles), at: nowSec }
+          if (!o.hit) {
+            pred.postMortem = { ...classifyLoser(pred, o, candles), at: nowSec }
+            // …and if the reader had money on it, queue it for the paper's one
+            // sentence. Queued, not asked: the ask happens after every grade in
+            // this pass is durable (see the pass below).
+            if (pred.riskPct > 0) sentenceAsks.push({ date, pred })
+          }
           // THE calibrated grade: calibration buckets, factor-IC weights, the
           // Brier trail and the risk-ladder counters all learn here, at 10d.
           updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
@@ -524,6 +551,40 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     if (preds.some(p => !p.outcome5 || !p.outcome10 || !p.outcome21)) stillPending.push(date)
   }
   await store.write('predictions-pending', stillPending.slice(-250))
+
+  // THE PAPER'S SENTENCE (postMortemLlm.ts) — deliberately HERE, after every
+  // grade above is already durable on disk. A sentence is the least important
+  // thing this pass produces and the only part of it that depends on a third
+  // party being up, so it is never allowed to sit between a grade and its
+  // write: a 429 from Groq must cost the day's prose and nothing else. The
+  // rows are then re-written with what the model said, and a failure of THAT
+  // write costs the sentence too — the grade is already down.
+  if (deps.postMortemSentence && sentenceAsks.length) {
+    try {
+      const asks: PostMortemAsk[] = sentenceAsks.map(({ pred }) => ({
+        sym: pred.sym,
+        side: pred.side,
+        date: pred.date,
+        setup: pred.setup,
+        entry: pred.entry,
+        stop: pred.stop,
+        target: pred.target,
+        thesis: pred.thesis,
+        falsifier: pred.falsifier,
+        catalyst: pred.catalyst ?? null,
+        outcome: pred.outcome10!,
+        postMortem: pred.postMortem!, // mutated in place — it rides the write below
+      }))
+      const stat = await annotatePostMortems(asks, deps.postMortemSentence)
+      for (const date of new Set(sentenceAsks.map(a => a.date))) {
+        const rows = predictionsByDate.get(date)
+        if (rows) await store.write(`predictions:${date}`, rows)
+      }
+      console.log(`POSTMORTEM-LLM: ${stat.asked} asked, ${stat.written} written, ${stat.upgraded} upgraded, ${stat.overflow} past budget`)
+    } catch (e) {
+      console.log(`POSTMORTEM-LLM: skipped — ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
 
   if (newlyGraded.length) {
     const mean = brierPoint(newlyGraded)

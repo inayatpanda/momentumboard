@@ -1,3 +1,4 @@
+import type { Prediction } from '../../../shared/engine/types'
 import { CANONICAL_SITE } from './site'
 
 // THE STREET SIGNAL — the guaranteed morning newspaper. The LLM writes the
@@ -308,6 +309,82 @@ export function boardExportRows(board: readonly BoardExportSource[]): BoardRow[]
  * a Prediction itself) satisfy it structurally, without a cast. */
 export type BoardExportSource = Omit<BoardRow, 'name'>
 
+/** How far back the paper looks for its own recent losses. Five trading days:
+ * far enough that a quiet week still has something to answer for, near enough
+ * that the reader remembers the call. */
+export const PAPER_POSTMORTEM_DAYS = 5
+export const PAPER_POSTMORTEM_MAX = 6
+
+export interface PaperPostMortem {
+  date: string
+  sym: string
+  side: 'long' | 'short'
+  cls: string
+  /** The bought sentence where the budget stretched to one, the deterministic
+   * line where it did not — the reader is owed an explanation either way, and
+   * the two are never mixed on the same row. */
+  why: string
+  /** Present only when a model wrote `why`; absent means the deterministic line.
+   * The paper must never present the two as the same kind of statement. */
+  via?: 'llm'
+}
+
+/** WHY THE READER'S LAST FEW CALLS LOST — the paper's projection of the stored
+ * post-mortems (shared/engine/postMortem.ts + lib/postMortemLlm.ts).
+ *
+ * SIZED ROWS ONLY (`riskPct > 0`), newest day first: the reader had money on
+ * these, so these are the ones an honest close has to account for. A shadow's
+ * or a watch row's post-mortem is real and useful, but it belongs to the
+ * engine's own learning, not to the paper's confession.
+ *
+ * PURE + exported so it can be tested without running the compose pipe. */
+export function paperPostMortems(days: readonly { date: string; preds: readonly Prediction[] }[], max = PAPER_POSTMORTEM_MAX): PaperPostMortem[] {
+  const out: PaperPostMortem[] = []
+  for (const d of [...days].sort((a, b) => b.date.localeCompare(a.date))) {
+    for (const p of d.preds) {
+      const pm = p.postMortem
+      if (!pm || !(p.riskPct > 0)) continue
+      out.push({ date: d.date, sym: p.sym, side: p.side, cls: pm.cls, why: pm.sentence || pm.detail, ...(pm.sentence ? { via: 'llm' as const } : {}) })
+      if (out.length >= max) return out
+    }
+  }
+  return out
+}
+
+/** THE PROMPT'S DROP ORDER — least critical first, so the engine board and the
+ * headlines are the last things standing when the data JSON is over budget.
+ *
+ * Exported (rather than the literal it used to be inside the compose handler)
+ * so the tail of this list is testable: the tail is a promise about what the
+ * paper never loses, and it has been broken before — `previousEditions` sat at
+ * the FRONT of the old order and was therefore dropped every single day, which
+ * is why editions kept re-announcing the same story as breaking while the
+ * persona block carried three sentences of continuity instructions the writer
+ * had no data to obey.
+ *
+ * `missLedger` and `postMortems` are last for exactly that reason, one lesson
+ * later: they are the two smallest keys in the document (a summary and at most
+ * six one-line confessions), so dropping them could never rescue an overflow —
+ * it would only reproduce the same silence in the one section whose whole job
+ * is to say what went wrong. */
+export const COMPOSE_DROP_ORDER = [
+  'recentEventAssessments',
+  'userNotes',
+  'insiderBuying',
+  'recentChannelVideos',
+  'socialPulse',
+  'rotationLeaders',
+  'candidateReads',
+  'ownScorecard',
+  'channelConsensus',
+  'sectorRotation',
+  'watchlistQuotes',
+  'pickPersistence',
+  'previousEditions',
+  'missLedger',
+  'postMortems',
+] as const
+
 export interface PaperExtras {
   firstEdition?: boolean
   pdfLink?: string
@@ -581,7 +658,7 @@ NO-SIGNAL DAYS: the reader values a real explanation — signalWhy is 3-5 tight 
   {
     key: 'voice',
     fields: ['editorial', 'honestClose'],
-    brief: 'editorial (The Long View): 1-2 TIGHT paragraphs of well-established market history or a great investor\'s principle that rhymes with TODAY\'s tape — tied explicitly to current conditions, no invented statistics, and never a principle used in a recent edition (see previousEditions). honestClose: confidence grade, what proves today wrong, what was unverifiable — three crisp sentences, no more.',
+    brief: 'editorial (The Long View): 1-2 TIGHT paragraphs of well-established market history or a great investor\'s principle that rhymes with TODAY\'s tape — tied explicitly to current conditions, no invented statistics, and never a principle used in a recent edition (see previousEditions). honestClose: confidence grade, what proves today wrong, what was unverifiable — three crisp sentences, and at most one more IF the data earns it: when postMortems is present, spend that sentence on the most recent SIZED loss, using its `why` in plain English and never the class name verbatim; when missLedger is present you may add its misses count and worst gate, but ONLY together with that gate\'s unchecked number — an unmeasured gate must never be written as a costless one, and the excesses are stopless upper bounds, so never call one a realised profit missed.',
     shape: '{"editorial":"...","honestClose":"..."}',
   },
 ]

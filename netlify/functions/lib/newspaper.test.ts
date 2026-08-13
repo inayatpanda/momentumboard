@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildDataJson, boardExportRows, fallbackIdeasFromBoard, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, findVerbatimRepeats, type ComposedReport, type StoredNomination } from './newspaper'
+import { buildDataJson, boardExportRows, paperPostMortems, COMPOSE_DROP_ORDER, PAPER_POSTMORTEM_MAX, fallbackIdeasFromBoard, parseComposed, buildNewspaperHtml, constrainIdeasToBoard, mergeSections, sectionPrompt, SECTIONS, validateNominations, mergeNominations, findVerbatimRepeats, type ComposedReport, type StoredNomination } from './newspaper'
+import type { Prediction } from '../../../shared/engine/types'
 
 const sample: ComposedReport = {
   headline: 'Tech Leads a Cautious Tape Higher',
@@ -422,5 +423,66 @@ describe('findVerbatimRepeats', () => {
   it('empty and missing fields are safe', () => {
     expect(findVerbatimRepeats({ smallCap: undefined, tape: '' }, prior)).toHaveLength(0)
     expect(findVerbatimRepeats({ tape: 'Anything.' }, '')).toHaveLength(0)
+  })
+})
+
+describe('the paper is told what it lost — the two accountability keys and where they sit in the drop order', () => {
+  const loser = (over: Partial<Prediction> = {}): Prediction =>
+    ({
+      sym: 'ACME', side: 'long', riskPct: 1,
+      postMortem: { cls: 'stopped', detail: 'closed through the 92.5 stop on 2026-08-07 (session 3)', at: 1 },
+      ...over,
+    }) as unknown as Prediction
+
+  it('projects SIZED losers only, newest day first, and says which line the reader is getting', () => {
+    const rows = paperPostMortems([
+      { date: '2026-08-03', preds: [loser({ sym: 'OLD' })] },
+      {
+        date: '2026-08-05',
+        preds: [
+          loser({ sym: 'SIZED', postMortem: { cls: 'adverse-move', detail: 'no level broke', at: 1, sentence: 'It faded with the sector and never came back.', via: 'llm' } }),
+          loser({ sym: 'SHADOW', riskPct: 0 }), // a shadow's failure is the engine's business, not the paper's
+          { sym: 'WINNER', side: 'long', riskPct: 1 } as unknown as Prediction, // nothing to explain
+        ],
+      },
+    ])
+    expect(rows.map(r => r.sym)).toEqual(['SIZED', 'OLD'])
+    // the bought sentence where there was one…
+    expect(rows[0]).toMatchObject({ date: '2026-08-05', cls: 'adverse-move', why: 'It faded with the sector and never came back.', via: 'llm' })
+    // …the deterministic line where there was not, and never labelled as written
+    expect(rows[1].why).toContain('closed through the 92.5 stop')
+    expect(rows[1].via).toBeUndefined()
+  })
+
+  it('is bounded — a bad fortnight cannot flood a budgeted prompt', () => {
+    const days = Array.from({ length: 5 }, (_, d) => ({ date: `2026-08-0${d + 1}`, preds: Array.from({ length: 4 }, (_, i) => loser({ sym: `S${d}${i}` })) }))
+    expect(paperPostMortems(days)).toHaveLength(PAPER_POSTMORTEM_MAX)
+    expect(paperPostMortems(days, 2).map(r => r.sym)).toEqual(['S40', 'S41'])
+  })
+
+  it('drops LAST: the two smallest keys in the document are the last things the paper loses', () => {
+    expect(COMPOSE_DROP_ORDER.slice(-3)).toEqual(['previousEditions', 'missLedger', 'postMortems'])
+    // and they are really in the order the compose pipe uses: with everything
+    // droppable gone, these two are still standing
+    const obj = {
+      engineBoard: 'B'.repeat(400),
+      candidateReads: 'c'.repeat(400),
+      previousEditions: 'p'.repeat(400),
+      missLedger: { misses: 4, topGates: [{ gate: 'dead-zone-core', cost: 3, unchecked: 1 }] },
+      postMortems: [{ sym: 'ACME', cls: 'stopped', why: 'It stopped out on day three.' }],
+    }
+    const { json, dropped } = buildDataJson(obj, [...COMPOSE_DROP_ORDER], 700)
+    expect(dropped).toEqual(['candidateReads', 'previousEditions'])
+    const parsed = JSON.parse(json)
+    expect(parsed.missLedger.topGates[0].unchecked).toBe(1)
+    expect(parsed.postMortems[0].why).toContain('stopped out')
+  })
+
+  it('the writer is TOLD about them, with the unchecked caveat attached — data with no instruction is the same silence', () => {
+    const voice = SECTIONS.find(s => s.key === 'voice')!
+    expect(voice.brief).toContain('postMortems')
+    expect(voice.brief).toContain('missLedger')
+    expect(voice.brief).toMatch(/unchecked/)
+    expect(voice.brief).toMatch(/stopless/)
   })
 })
