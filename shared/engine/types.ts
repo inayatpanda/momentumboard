@@ -77,7 +77,15 @@ export interface EngineCall {
  *   not-candidate ..... never entered the day's `sources` map at all (engine.ts) —
  *                       counted, never listed: the universe is unbounded
  *   trimmed ........... entered, then cut by the roster trim or the 180-name budget
- *   no-data ........... no candles, or no core factor scored (composeCall, `!coreDen`)
+ *   no-candles ........ the tape never arrived — no candles, or fewer than 30
+ *                       sessions of them (engine.ts). ADDED in Stage 3a Task 2 and
+ *                       DISTINCT from no-data on purpose: "we never got the chart"
+ *                       and "we had the chart and no core factor scored" are two
+ *                       different failures with two different fixes, and pooling
+ *                       them under one code makes a data-supply outage read as a
+ *                       scoring problem for as long as the trace is read back
+ *   no-data ........... the chart was there and no core factor scored
+ *                       (composeCall, `!coreDen`)
  *   dead-zone-core .... the CORE composite alone sat under the dead zone
  *   dead-zone-context . the core cleared it and the capped context layer pushed the
  *                       call back under — DISTINCT from dead-zone-core on purpose:
@@ -88,8 +96,17 @@ export interface EngineCall {
  *   entry-chase ....... a long into a chase
  *   entry-reversal .... a short into a pullback or an early reversal
  *   evidence-fail ..... the minimum core-data contract failed
- *   grade-watchonly ... published, but sized to zero by the grade (publishCall)
- *   route-blocked ..... no instrument an ISA can actually place
+ *   dip-refused ....... the dip lane READ a dip and then declined to build a call
+ *                       on it (the 1:1 reward-to-risk gate, a degenerate shape —
+ *                       dipLane.ts). ADDED in Stage 3a Task 2: the taxonomy had no
+ *                       fit, because this is a LANE's own refusal of its own
+ *                       construction, not a gate on a composite that was scored
+ *   grade-watchonly ... published, but sized to zero by the grade. RESERVED, and
+ *                       emitted by nothing: `called-watch` says exactly this and
+ *                       publishCall emits that instead, so the four called-* codes
+ *                       stay one closed set. Kept because removals are not allowed
+ *   route-blocked ..... published as a shadow for ONE reason — no instrument an ISA
+ *                       can actually place
  *   diversity ......... the sector/correlation gate refused the slot
  *   slot-cut .......... good enough, but the board had no room left
  *   called-full | called-half | called-shadow | called-watch — it PUBLISHED, at that size
@@ -100,6 +117,7 @@ export interface EngineCall {
 export type GateCode =
   | 'not-candidate'
   | 'trimmed'
+  | 'no-candles'
   | 'no-data'
   | 'dead-zone-core'
   | 'dead-zone-context'
@@ -109,6 +127,7 @@ export type GateCode =
   | 'entry-chase'
   | 'entry-reversal'
   | 'evidence-fail'
+  | 'dip-refused'
   | 'grade-watchonly'
   | 'route-blocked'
   | 'diversity'

@@ -47,6 +47,7 @@ import {
   type WeightsState,
 } from '../../../shared/engine/calibration'
 import { pickDiverse } from '../../../shared/engine/select'
+import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder } from '../../../shared/engine/funnelTrace'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
 import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
@@ -668,6 +669,10 @@ export async function buildBoard(
   const watchSyms = cfg.watchlist.map(w => w.symbol)
   const favourites = cfg.favouriteChannels ?? ['Stocks with Josh']
   const gates = gatesFor(cfg.riskAppetite) // 'aggressive' lowers the dead zone / expected-move floor (catalyst.ts)
+  // THE FUNNEL'S RECORD (shared/engine/funnelTrace.ts). Every `continue` below now
+  // also says WHY, into an accumulator that costs a Map insert and decides nothing.
+  // Written once at the end of the run, fail-soft, under `funnel-trace:${today}`.
+  const trace = funnelTraceRecorder()
 
   const [spy, qqq] = await Promise.all([deps.candles('SPY'), deps.candles('QQQ')])
   if (!spy) throw new Error('no SPY candles — engine cannot run')
@@ -731,8 +736,14 @@ export async function buildBoard(
   const credOf = (ch: string) => credibilityOf(channelCred, ch, favourites)
 
   const sources = new Map<string, { source: string; capUsdM: number | null }>()
+  /** Every distinct name a door OFFERED to the pool. `not-candidate` is a count,
+   * never a list (the universe of names nobody nominated is unbounded), and this
+   * is the only honest population to count it over: the names the run actually
+   * touched. `offered − sources` is exactly the route-ETP refusal below. */
+  const offered = new Set<string>()
   const addSource = (sym: string, source: string, capUsdM: number | null = null) => {
     const key = sym.toUpperCase()
+    offered.add(key)
     // leveraged/inverse ETPs are ROUTES, never underlyings — a held 3CON.L
     // (bought as the route of an earlier short) must not circle back in as a
     // fresh candidate through the holdings/watchlist doors (see isRouteEtp)
@@ -907,12 +918,24 @@ export async function buildBoard(
   const candidateSyms = [...sources.keys()]
     .sort((a, b) => candidatePriority(a) - candidatePriority(b) || a.localeCompare(b))
     .slice(0, 180)
+  // the budget's own cut, named: everything the sort put past slot 180
+  const candidateSet = new Set(candidateSyms)
+  for (const [sym, s] of sources) {
+    if (!candidateSet.has(sym)) trace.record(sym, 'trimmed', { source: s.source, detail: 'past the 180-candidate evaluation budget' })
+  }
   const candleMap = new Map<string, Candle[]>()
   await mapLimit(candidateSyms, 8, async sym => {
     // fail-soft per symbol: one refused read costs one candidate, never the board
     const c = clusterTapes.get(sym) ?? (await deps.candles(sym).catch(() => null))
     if (c && c.length >= 30) candleMap.set(sym, c)
   })
+  // …and the tape that never arrived. `no-candles`, NOT `no-data`: composeCall's
+  // no-data means "we had the chart and no core factor scored", which is a
+  // scoring failure. This is a supply failure, and a trace read back next quarter
+  // must be able to tell them apart without parsing prose.
+  for (const sym of candidateSyms) {
+    if (!candleMap.has(sym)) trace.record(sym, 'no-candles', { source: sources.get(sym)?.source, detail: 'no candles, or fewer than 30 sessions of them' })
+  }
 
   // cap lookups are budgeted: screener caps ride along free, the rest rotate.
   // ELEVATION must not EAT the budget. Both elevation-only doors — the sleeve and
@@ -1059,6 +1082,16 @@ export async function buildBoard(
       .filter(sym => sleeveSet.has(sym) && !rosterSymSet.has(sym) && candleMap.has(sym))
       .map(sym => ({ sym, capUsdM: sources.get(sym)?.capUsdM ?? null })),
   ]
+  // The quietest drop in the whole run, and the largest: a candidate with a good
+  // tape that is NEITHER on the roster NOR in the sleeve is never scored at all.
+  // It is the roster trim doing the cutting, one door along — so it is `trimmed`,
+  // with the reason spelled out. A lane (dip, velocity) may still publish on such
+  // a name below, and that publication revises this row.
+  const evalSet = new Set(evalRows.map(e => e.sym.toUpperCase()))
+  for (const sym of candidateSyms) {
+    if (candleMap.has(sym) && !evalSet.has(sym))
+      trace.record(sym, 'trimmed', { source: sources.get(sym)?.source, detail: 'not on the roster and not in the sleeve — never scored' })
+  }
 
   const board: Prediction[] = []
   /** Row ids of shorts shadowed ONLY for want of an ISA route, having cleared
@@ -1226,6 +1259,32 @@ export async function buildBoard(
       // the multiplier it truly ran at: 1.
       worldTape: { tone: tone.tone, mult: LANE_CATALYST_KINDS.has(cat?.kind ?? '') ? 1 : worldMult(tone.tone, call.side) },
     })
+    // …and the size decision is REPORTED HERE rather than handed back to the
+    // caller. publishCall is a closure over the whole run, so it can write the
+    // row itself; returning a code instead would have meant editing all four call
+    // sites (composite, dip, velocity, and the shadow path) to remember to record
+    // it — and "the caller forgot" is precisely the class of silence Stage 3a
+    // exists to end. `revise`, not `record`: a publication is the row's fate and
+    // must overwrite whatever gate the composite wrote on the way past.
+    //
+    // route-blocked outranks called-shadow because it is the more specific truth:
+    // the row cleared everything and an ISA simply cannot place it. `grade-watchonly`
+    // is NOT used — called-watch already says "published, sized to zero".
+    trace.revise(call.sym, routeShadowed ? 'route-blocked' : shadow ? 'called-shadow' : fullTrade ? 'called-full' : halfTrade ? 'called-half' : 'called-watch', {
+      side: call.side,
+      source: sources.get(call.sym.toUpperCase())?.source,
+      detail: routeShadowed
+        ? `no ISA short route${routeBlocked ? ' — promotable to an observation' : ''}`
+        : shadow
+          ? call.earningsRisk
+            ? 'earnings print inside the horizon'
+            : forceShadow
+              ? 'the lane stood it down'
+              : unshortable
+                ? 'no ISA short route'
+                : 'graded null on a failed evidence contract'
+          : `grade ${grade ?? 'null'}${call.evidence.contract ? '' : ', contract failed'}${belowBase ? ', below base rate' : ''}${sizeCap < 1 ? `, lane cap ${sizeCap}` : ''}`,
+    })
   }
 
   // Every name that produced a real core read and STILL published nothing — the
@@ -1245,10 +1304,18 @@ export async function buildBoard(
 
   for (const entry of evalRows) {
     const candles = candleMap.get(entry.sym) ?? (await deps.candles(entry.sym).then(c => (c && c.length >= 30 ? c : null)))
-    if (!candles) continue
+    if (!candles) {
+      trace.record(entry.sym, 'no-candles', { source: sources.get(entry.sym.toUpperCase())?.source, detail: 'no tape at scoring time' })
+      continue
+    }
     const closes = candles.map(c => c.c)
     const read = technicalStage(entry.sym, candles)
-    if (!read) continue
+    if (!read) {
+      // The chart was HERE and produced no read — a scoring failure, not a supply
+      // one, so it shares composeCall's `no-data` rather than `no-candles`.
+      trace.record(entry.sym, 'no-data', { source: sources.get(entry.sym.toUpperCase())?.source, detail: 'no technical stage read off the tape' })
+      continue
+    }
     const cat = catalystBySym.get(entry.sym.toUpperCase()) ?? null
 
     const factors: Record<FactorName, FactorScore> = {
@@ -1292,6 +1359,12 @@ export async function buildBoard(
     // re-score below behaves identically — the second pass overwrites the first
     // verdict, so a re-score that fails is the rejection that stands.
     let call = composeCall(composeInput)
+    // Whether the FIRST pass drafted at all. The world-tape re-score below
+    // overwrites the verdict, so a name that cleared every gate and was then
+    // pushed back under by the overnight nudge records the SECOND pass's gate —
+    // correct for "why did nothing publish", and materially different evidence
+    // from a name that never cleared anything, so the trace says which.
+    const draftedFirstPass = !isRejection(call)
     if (!isRejection(call)) {
       // the 5y fetch is earned, not default: only names that already made a call
       const c5 = await deps.candles5y(entry.sym)
@@ -1306,6 +1379,11 @@ export async function buildBoard(
       call = composeCall({ ...composeInput, factors, worldMult: worldMult(tone.tone, call.side) })
     }
     if (isRejection(call)) {
+      trace.record(entry.sym, call.gate, {
+        side: call.side,
+        source: sources.get(entry.sym.toUpperCase())?.source,
+        detail: draftedFirstPass ? `second-pass · ${call.detail ?? ''}` : call.detail,
+      })
       // Nothing published. Record the gate-free core read (composite.ts — the same
       // arithmetic the call would have stood on) so the assembly can name this name
       // if the whole side comes up empty. Requires real levels: a row the reader
@@ -1343,7 +1421,16 @@ export async function buildBoard(
     if (!candles) continue
     const capUsdM = sources.get(sym)?.capUsdM ?? null
     const raw = dipCall(sym, candles, read, capUsdM)
-    if (!raw) continue
+    if (!raw) {
+      // A dip READ that the lane then declined to BUILD (the 1:1 reward-to-risk
+      // gate, or a degenerate stop/target shape — dipLane.ts). The plan's taxonomy
+      // had no fit for it: every other code names a gate applied to a scored
+      // composite, and this is a lane refusing its own construction. `dip-refused`
+      // is an ADDITION (allowed; removals are not), and it matters because these
+      // are exactly the names the wildcard lane will want to argue about.
+      trace.record(sym, 'dip-refused', { side: 'long', source: sources.get(sym)?.source, detail: `dip lane declined to build · ${read.detail}` })
+      continue
+    }
     // dipCall is pure and has no calendar — earnings honesty is applied here, so a
     // dip into a print shadows exactly like any other call.
     dipCandidates.push({ sym, read, call: { ...raw, earningsRisk: earningsSet.has(baseSym(sym)) }, capUsdM })
@@ -1544,13 +1631,26 @@ export async function buildBoard(
   // map has never heard of still count as ONE crowd. Shadows keep the plain
   // top-N (they exist to feed calibration; their dedup is handled above).
   const pickDiverseSide = (pool: Prediction[], side: 'long' | 'short', cap: number, label: string) => {
+    const sidePool = pool.filter(b => b.side === side)
     const { picked, skipped } = pickDiverse(
-      pool.filter(b => b.side === side),
+      sidePool,
       cap,
       sym => symToSector.get(baseSym(sym)) ?? primaryThemeOf(sym),
       sym => candleMap.get(sym)?.map(c => c.c) ?? null,
     )
     if (skipped.length) console.log(`BOARD: diversity gates (${label} ${side}):`, skipped.map(s => `${s.sym} — ${s.why}`).join('; '))
+    // …and the two ways a row that had earned its place loses it, told apart. The
+    // gate's own `why` (the blocking sector, the correlation partner) is carried
+    // into `detail` verbatim — it was already computed and thrown at the console,
+    // and the wildcard lane (3d) reads exactly these rows to find the day's
+    // highest-value blocked trade.
+    const pickedIds = new Set(picked.map(p => p.id))
+    const skippedSyms = new Set(skipped.map(s => s.sym.toUpperCase()))
+    for (const s of skipped) trace.revise(s.sym, 'diversity', { side, source: sources.get(s.sym.toUpperCase())?.source, detail: `${label} cut · ${s.why}` })
+    for (const b of sidePool) {
+      if (pickedIds.has(b.id) || skippedSyms.has(b.sym.toUpperCase())) continue
+      trace.revise(b.sym, 'slot-cut', { side, source: sources.get(b.sym.toUpperCase())?.source, detail: `${label} cut · ${cap} per side already filled` })
+    }
     return picked
   }
   // The actionable board is SMALL by design: at most 3 trades per side. The watch
@@ -1670,6 +1770,8 @@ export async function buildBoard(
     row.paperOnly = true // a short with no instrument, exactly as publishCall stamps one
     row.horizon = horizonOf({ watchOnly: false, stage: row.stage, setup: row.setup, evidence: row.evidence })
     laneDemotedShorts.set(row.id, lane)
+    // the row's fate genuinely changed after it published, so the trace follows it
+    trace.revise(row.sym, 'called-shadow', { side: 'short', source: sources.get(sym)?.source, detail: `the ${lane} lane's read on the same chart outranked it` })
     console.log(`BOARD: ${lane} read on ${row.sym} demotes the composite short to a shadow`)
   }
 
@@ -1777,6 +1879,11 @@ export async function buildBoard(
       // there was never a belief to state.)
       observation.evidence = { ...observation.evidence, detail: `${observation.evidence.detail} · no ISA route — observation only` }
       liveCalls.push(observation)
+      trace.revise(observation.sym, 'called-watch', {
+        side,
+        source: sources.get(observation.sym.toUpperCase())?.source,
+        detail: 'promoted observation — cleared every gate, no ISA route',
+      })
       console.log(`BOARD: ${observation.sym} cleared every gate with no ISA route — shown as an observation on the empty ${side} side`)
       continue
     }
@@ -1924,6 +2031,35 @@ export async function buildBoard(
     // focus themes ranked by headline heat — identification for the UI, never a score
     themes: themeHeat(mediaTitles).filter(t => t.hits > 0).slice(0, 3),
   })
+
+  // ---- the funnel's daily trace ----
+  // Every candidate's fate, once a day, in one blob (shared/engine/funnelTrace.ts):
+  // the gate that ended each name's run, the thresholds it was judged against, the
+  // near-miss array verbatim and why each empty side is empty. Nothing reads it
+  // back yet — it is the raw material 3b's miss ledger, 3c's gate accounting and
+  // 3d's wildcard priority are all built on, and none of them can exist until the
+  // engine stops discarding its own reasons.
+  //
+  // Written LAST and fail-soft, deliberately: the board, the ledger and every
+  // other blob are already durable by the time this runs, so a trace that cannot
+  // write costs the day's evidence and nothing the reader can see. (Same pattern
+  // as the pattern sweep below and recordTrendDay above.)
+  try {
+    // EXACTLY ONCE, and the invariant is enforced here rather than assumed:
+    // a name is either a row or a count, never both. `offered − sources` is not
+    // quite the count, because the watchlist rides into the roster
+    // unconditionally (roster.ts) — so a levMap route on the watchlist is refused
+    // by addSource AND still scored, and it earns a row. Counting it as well
+    // would book one name twice.
+    let notCandidate = 0
+    for (const sym of offered) if (!sources.has(sym) && trace.gateOf(sym) == null) notCandidate++
+    trace.notCandidate(notCandidate)
+    await store.write(funnelTraceKey(today), trace.build({ date: today, gates, nearMisses, emptySides }))
+    const traceIndex = (await store.read<string[]>(FUNNEL_TRACE_INDEX_KEY)) ?? []
+    if (!traceIndex.includes(today)) await store.write(FUNNEL_TRACE_INDEX_KEY, [...traceIndex, today].slice(-FUNNEL_TRACE_INDEX_MAX))
+  } catch (e) {
+    console.log('FUNNEL: trace write failed —', String(e).slice(0, 160))
+  }
 
   // ---- pattern scorecard sweep ----
   // Every candidate with candles gets pattern-scanned (pure CPU — the candles
