@@ -606,11 +606,10 @@ describe('seedUniverse — crypto is out of the deep-seed population', () => {
     expect(seedUniverse(['AAPL', 'BTC-USD', 'SOL-USD', 'RR.L'])).toEqual(['AAPL', 'RR.L'])
   })
   it('keeps BT-A.L — an exchange suffix outranks the dash, which exchangeFor tests FIRST', () => {
-    // shared/symbols.ts:4-8 returns on `includes('-')` before it ever looks for the
-    // '.', so BT Group — a SLEEVE_MIRROR name — reads as CRYPTO. A filter written as
-    // the recon spelled it (`exchangeFor(s) === 'CRYPTO'`) would silently shrink the
-    // seed universe by a real LSE equity.
-    expect(exchangeFor('BT-A.L')).toBe('CRYPTO')
+    // Stage-3a Task 3 fixed exchangeFor itself (suffix first), so the local
+    // no-dot guard is belt over braces now — this pin documents that BOTH
+    // layers agree BT Group is an LSE equity, not a coin.
+    expect(exchangeFor('BT-A.L')).toBe('LSE')
     expect(isCryptoSymbol('BT-A.L')).toBe(false)
     expect(isCryptoSymbol('ETH-USD')).toBe(true)
     expect(seedUniverse(REPLAY_UNIVERSE)).toContain('BT-A.L')

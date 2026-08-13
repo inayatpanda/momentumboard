@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectInsiderCoverage, rotationSlice } from './insiders'
+import { collectInsiderCoverage, fetchInsiderBuys, rotationSlice } from './insiders'
 
 describe('rotationSlice', () => {
   const syms = Array.from({ length: 80 }, (_, i) => `S${String(i).padStart(2, '0')}`)
@@ -88,5 +88,37 @@ describe('collectInsiderCoverage', () => {
     const fetchFn = (async () => resp([])) as typeof fetch
     const cov = await collectInsiderCoverage(['3LTS.L', 'BTC-USD'], [], today, 'key', { fetchFn, cacheGet, cacheSet })
     expect(cov.size).toBe(0)
+  })
+
+  // Finnhub's insider endpoint is US-listed only, and the roster filter reads
+  // exchangeFor(). BT-A.L was excluded for the WRONG reason (it read CRYPTO);
+  // it must stay excluded now that it reads LSE, and BRK-B — a US share class
+  // the dash rule wrote off — must now be looked up like the equity it is.
+  it('excludes BT-A.L as the LSE name it is, and stops writing off the dashed US share class', async () => {
+    const { cacheGet, cacheSet } = harness()
+    const seen: string[] = []
+    const fetchFn = (async (url: string) => {
+      seen.push(new URL(url).searchParams.get('symbol')!)
+      return resp([])
+    }) as typeof fetch
+    const cov = await collectInsiderCoverage(['BT-A.L', 'BRK-B', 'AAPL'], ['BT-A.L', 'BRK-B'], today, 'key', { fetchFn, cacheGet, cacheSet })
+    expect(seen).not.toContain('BT-A.L')
+    expect(seen).toContain('BRK-B')
+    expect(cov.has('BT-A.L')).toBe(false)
+    expect(cov.has('BRK-B')).toBe(true)
+  })
+})
+
+describe('fetchInsiderBuys — the venue filter', () => {
+  const resp = () => ({ ok: true, json: async () => ({ data: [] }) }) as unknown as Response
+
+  it('asks Finnhub only about the US names', async () => {
+    const seen: string[] = []
+    const fetchFn = (async (url: string) => {
+      seen.push(new URL(url).searchParams.get('symbol')!)
+      return resp()
+    }) as typeof fetch
+    await fetchInsiderBuys(['AAPL', 'BT-A.L', 'RR.L', 'ETH-USD', 'BRK-B'], 'key', fetchFn)
+    expect(seen.sort()).toEqual(['AAPL', 'BRK-B'])
   })
 })

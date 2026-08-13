@@ -175,6 +175,9 @@ export const REPLAY_UNIVERSE: string[] = [...new Set([...SLEEVE_MIRROR, ...MIRRO
  * suffix settles it: a symbol carrying one is listed on that exchange, whatever
  * else is in the string. (The same ordering is a live defect in production's
  * market-hours and news paths; out of scope here, recorded in the task report.) */
+// Delegates cleanly since Stage-3a Task 3: exchangeFor reads the suffix before
+// the dash, so the local no-dot guard (which existed to keep BT-A.L out of the
+// crypto bucket) is no longer load-bearing — kept as belt over braces.
 export const isCryptoSymbol = (sym: string): boolean => !sym.includes('.') && exchangeFor(sym) === 'CRYPTO'
 
 /** The population a v3 seed may measure: the walk universe with crypto removed. */
