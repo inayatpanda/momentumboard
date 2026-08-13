@@ -153,7 +153,20 @@ export default async (req: Request) => {
     holdingsReads: auth.level === 'admin' || auth.house ? (holdingsReads ?? null) : null,
     scorecard,
     weights: weights ? { base: weights.base, current: weights.current, history: weights.history.slice(-10) } : null,
-    calibration: calibration ? { buckets: calibration.buckets, brier: calibration.brier.slice(-30), seeded: calibration.seeded ?? false, modelVersion: calibration.modelVersion ?? null, evidence: calibration.evidence ?? null } : null,
+    // `referenceBase` travels with the buckets [spec §9]: it is the bar every grade
+    // on the board was measured against, and a reader looking at "42% · B" cannot
+    // check the letter without it. null when no seed ever swept one — the client
+    // then says nothing about a bar rather than inventing the pooled base as one.
+    calibration: calibration
+      ? {
+          buckets: calibration.buckets,
+          brier: calibration.brier.slice(-30),
+          seeded: calibration.seeded ?? false,
+          modelVersion: calibration.modelVersion ?? null,
+          referenceBase: calibration.referenceBase ?? null,
+          evidence: calibration.evidence ?? null,
+        }
+      : null,
     riskState,
     roster: roster ? { entries: roster, changes: (rosterLog ?? []).slice(-7) } : null,
     channelCred: Object.fromEntries(

@@ -426,7 +426,16 @@ export function baseHitRate(state: CalibrationState): { rate: number; n: number 
  * threading a whole CalibrationState through it would make the fallback
  * unreadable at three call sites instead of readable at one. Every caller that
  * asks a GRADE question calls this; every caller that asks a PROBABILITY
- * question keeps calling `baseHitRate` — see the call-site comments there. */
+ * question keeps calling `baseHitRate` — see the call-site comments there.
+ *
+ * The fallback inherits `baseHitRate`'s flat 0.5 under fifty observations, and that
+ * is NOT the same rule as the emitter's ≥500-row refusal on a swept reference
+ * (replay-window.ts REFERENCE_MIN_N) — deliberately. This is the legacy cold-start
+ * default: a store with almost no history has measured nothing, and 0.5 is the
+ * deliberately unreachable anchor that hands out no As until it has (see
+ * baseHitRate). The emitter's floor guards the opposite failure — a thin sweep
+ * STORED as a yardstick, where absence would have been the safer answer. One
+ * refuses to write a number, the other refuses to trust one it never wrote. */
 export function gradeBaseRate(state: CalibrationState): number {
   return state.referenceBase ?? baseHitRate(state).rate
 }

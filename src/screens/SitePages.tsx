@@ -107,11 +107,18 @@ export function EnginePage() {
       <h2>Grades that mean something</h2>
       <p>
         Every published call carries a probability calibrated on the engine's own graded history — not a vibe, a bucket of past
-        outcomes. Size then follows conviction <em>and</em> evidence together, in three tiers. <b>A</b> or <b>B</b> on the full
+        outcomes. The <em>letter</em> beside it answers the question that probability alone cannot: how much better is this than an
+        ordinary candidate? So the letter is measured against a <b>grade bar</b> — the rate at which any name the engine screens
+        clears the same test, swept over years of history and then held still. A <b>C</b> clears that bar, a <b>B</b> clears it by
+        five points, an <b>A</b> by ten with enough graded history underneath to mean it. The bar does not drift with the engine's
+        mood or with a good month: it is measured once, when the engine is seeded from history, and only a re-seed can move it.
+      </p>
+      <p>
+        Size then follows conviction <em>and</em> evidence together, in three tiers. <b>A</b> or <b>B</b> on the full
         evidence contract is a full-size trade — at most three per side per day, each with entry, invalidation, target and the risk
         the engine's track record has earned. When exactly one of the two is short — a <b>C</b> that clears the full contract, or an
         A/B whose evidence is thin — the call still trades, at <b>half size</b>, with the gap it is missing named on the card. Only
-        when conviction and evidence are both short — a C on thin evidence, or a setup priced below the engine's own base rate — does
+        when conviction and evidence are both short — a C on thin evidence, or a setup priced below the grade bar — does
         the row publish watch-only: visible, graded, learning, carrying no size.
       </p>
       <p>
@@ -209,13 +216,17 @@ export function LedgerPage() {
       <h2>The learning loop</h2>
       <p>
         Factors that keep being right slowly earn weight; factors that keep being wrong decay — all bounded, all evidenced, and a
-        factor with a long enough losing record is allowed to decay to zero. Grades are relative to the engine's own base rate, so
-        the bar rises as the engine improves. Weight changes are journalled with the evidence that caused them.
+        factor with a long enough losing record is allowed to decay to zero. Weight changes are journalled with the evidence that
+        caused them. What does <em>not</em> move while all that happens is the grade bar: it is the market's ordinary odds, measured
+        once when the engine is seeded from history and then held fixed, so that an A this quarter means what an A meant last
+        quarter. A better engine earns better letters against the same yardstick instead of moving the yardstick with itself — and
+        the only thing that can move it is a re-seed, which re-measures the whole thing from the tape.
       </p>
       <h2>Why some days say "no qualified trades"</h2>
       <p>
-        The board is small by design: at most three full-size trades per side, and only grades that beat the engine's own base rate
-        on full evidence. A call short of one of those two — grade C with the full evidence, or an A/B whose evidence is thin — trades
+        The board is small by design: at most three full-size trades per side, and only grades that clear the grade bar — the
+        ordinary-candidate rate — by a real margin on full evidence. A call short of one of those two — grade C with the full
+        evidence, or an A/B whose evidence is thin — trades
         at half size and says which half is missing. Setups short of both are shown as watch-only observations with no size attached,
         and on a day nothing clears the gates the board names the nearest misses instead of pretending it has a call — while a side
         emptied by routing rather than by the gates is labelled as exactly that. An honest empty board beats seven forced ones — and

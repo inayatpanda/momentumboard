@@ -726,11 +726,12 @@ describe('gradeFor anchored to a referenceBase', () => {
 })
 
 describe('REGRESSION PIN — with no referenceBase, every grade is byte-for-byte today’s', () => {
-  it('matches the pooled anchor across the whole (state × p × nEff × belowEvidence) matrix', () => {
+  it('anchors every shape production actually carries to its OWN pooled base', () => {
     // The one guarantee the addendum makes about production: live behaviour does
-    // not move until a generation-2+ seed installs. This is that promise as a
-    // test — the states are the shapes production actually carries (the committed
-    // seed, a cold store, a warm store), and the grid straddles every threshold.
+    // not move until a generation-2+ seed installs. On these states — the committed
+    // seed, a cold store, a sub-50 store, a warm board population — no reference has
+    // ever been measured, so the anchor a grade is struck against IS the pooled base
+    // and nothing downstream can tell the two apart.
     const states: [string, CalibrationState][] = [
       ['committed seed', seedShape()],
       ['cold store', emptyCal()],
@@ -742,16 +743,50 @@ describe('REGRESSION PIN — with no referenceBase, every grade is byte-for-byte
       expect(state.referenceBase, label).toBeUndefined()
       const pooled = baseHitRate(state).rate
       expect(gradeBaseRate(state), label).toBe(pooled)
-      for (const p of [0, 0.2, 0.3, 0.3669, 0.367, 0.37, 0.4166, 0.42, 0.4670, 0.47, 0.5, 0.55, 0.6, 0.75, 1]) {
-        for (const nEff of [0, 1, 8, 14, 15, 29, 30, 100]) {
-          for (const below of [false, true]) {
-            expect(gradeFor(p, nEff, gradeBaseRate(state), below), `${label} p=${p} nEff=${nEff} below=${below}`).toBe(
-              gradeFor(p, nEff, pooled, below),
-            )
-          }
-        }
-      }
     }
+  })
+
+  it('grades the committed seed EXACTLY these letters — a golden table, not a re-derivation', () => {
+    // What stood here was a 1,200-cell matrix comparing gradeFor(…, gradeBaseRate(s))
+    // with gradeFor(…, pooled) — identical arguments on both sides once the line
+    // above is proved, so it would have passed for ANY implementation of gradeFor,
+    // including one that returned 'A' for everything. The letters are written out by
+    // hand instead, off the anchor the committed seed actually carries:
+    //   base   = (285+2)/(778+4) = 0.3670077   → C at or above it, null below
+    //   base+0.05 = 0.4170077, with nEff ≥ 15  → B
+    //   base+0.10 = 0.4670077, with nEff ≥ 30  → A
+    const anchor = gradeBaseRate(seedShape())
+    expect(anchor).toBeCloseTo(0.3670077, 7) // the number every letter below was read off
+    const GOLDEN: [p: number, nEff: number, grade: 'A' | 'B' | 'C' | null][] = [
+      [0, 100, null],
+      [0.2, 100, null],
+      [0.3669, 100, null], // a ten-thousandth under the anchor is still no edge
+      [0.367, 100, null], // …and so is 0.367 itself: the anchor is 0.3670077, not 0.367
+      [0.3671, 0, 'C'], // at the anchor, C — the only rung with no evidence floor at all
+      [0.4, 0, 'C'],
+      [0.4166, 100, 'C'], // short of anchor + 0.05, however deep the bucket
+      [0.4171, 14, 'C'], // clears B's threshold; fourteen observations do not clear its floor
+      [0.4171, 15, 'B'],
+      [0.42, 100, 'B'],
+      [0.467, 100, 'B'], // 0.4670 < 0.4670077 — a ten-thousandth short of an A
+      [0.4671, 29, 'B'], // clears A's threshold; twenty-nine observations do not
+      [0.4671, 30, 'A'],
+      [0.6, 30, 'A'],
+      [0.75, 29, 'B'],
+      [1, 0, 'C'], // certainty on no evidence at all is still only a C
+    ]
+    for (const [p, nEff, grade] of GOLDEN) expect(gradeFor(p, nEff, anchor), `p=${p} nEff=${nEff}`).toBe(grade)
+    // belowEvidence is a CAP over the same table: every letter becomes C, every null stays null
+    for (const [p, nEff, grade] of GOLDEN) expect(gradeFor(p, nEff, anchor, true), `below p=${p} nEff=${nEff}`).toBe(grade === null ? null : 'C')
+    // …and the cold store's 0.5 anchor, the other shape production carries: A needs
+    // 0.60 from a bucket that cannot yet hold 30 observations, so a cold engine
+    // hands out none (baseHitRate's deliberate cliff).
+    const cold = gradeBaseRate(emptyCal())
+    expect(cold).toBe(0.5)
+    expect(gradeFor(0.49, 100, cold)).toBeNull()
+    expect(gradeFor(0.5, 0, cold)).toBe('C')
+    expect(gradeFor(0.55, 100, cold)).toBe('B')
+    expect(gradeFor(0.6, 30, cold)).toBe('A')
   })
 
   it('…and the end-to-end read path on the committed seed grades exactly as before', () => {

@@ -369,7 +369,11 @@ export interface EnginePrediction {
   // an actionable row the diversity gates did not pick. A/B on the full contract
   // carry full size; C WITH the contract and A/B WITHOUT it carry half.
   watchOnly?: boolean
-  belowBase?: boolean // fully-evidenced watch row rated below the engine's base rate — shown, no size
+  // fully-evidenced watch row whose probability sits BELOW the grade bar — the
+  // hit rate of an ordinary candidate (`calibration.referenceBase`, or the pooled
+  // base until a seed sweeps one). No edge over doing nothing in particular, so it
+  // is shown and tracked but never sized. [spec §9]
+  belowBase?: boolean
   // the nearest thing to a call on a side where nothing cleared the gates at all:
   // named so the board is never blank, always watch-only, never in the ledger
   nearMiss?: boolean
@@ -629,6 +633,14 @@ export interface EngineData {
     brier: { date: string; mean: number; n: number }[]
     seeded: boolean
     modelVersion?: number | null
+    // THE GRADE BAR [spec §9]: the hit rate of an ordinary candidate — every name
+    // the engine screened, graded by the same rule — swept once when the seed was
+    // generated and fixed until the next regeneration. Grades measure a call's
+    // probability against THIS; the probability itself is still the engine's own
+    // measured hit rate for calls like it. null = no sweep has ever measured one,
+    // in which case grades fall back to the pooled base and no surface may print a
+    // bar (see gradeBaseRate).
+    referenceBase?: number | null
     evidence?: { seed: { n: number; hits: number }; live: { n: number; hits: number }; shadow: { n: number; hits: number } } | null
   } | null
   // top-level = the COMBINED rung (back-compat: every existing screen reads this);

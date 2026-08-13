@@ -59,10 +59,29 @@
 // mix a regenerated seed with the committed one, regenerate whole", backtest.ts) and
 // crypto is filtered out of the universe (stage 1c is unbuilt — see isCryptoSymbol).
 // After the walk it also runs the REFERENCE SWEEP (spec §9, `referenceSweep` below):
-// the same candles, window and universe put through `seedFromHistory` with no board
-// in the way, which measures the UNCONDITIONAL gate-clearing rate the artefact's
-// grades will be anchored to. The walk's buckets say what a published row is worth;
-// the sweep says what an ordinary candidate is worth, and a grade is the gap.
+// the same candles and window put through `seedFromHistory` with no board in the way,
+// over the universe the WALK ITSELF CONSIDERED — the union of every name buildBoard
+// asked for candles on, day by day, minus the context tapes and crypto. It measures
+// the UNCONDITIONAL gate-clearing rate the artefact's grades will be anchored to. The
+// walk's buckets say what a published row is worth; the sweep says what an ordinary
+// candidate is worth, and a grade is the gap. Two notes a reader of the artefact
+// needs and cannot see in the number:
+//   · The stored anchor is rounded to 4dp BEFORE the sane-band check, so the band
+//     admits [0.24995, 0.55005) in raw terms — a 0.5500499 sweep stores 0.55 and
+//     passes. The rounding is deliberate (the number checked is the number stored);
+//     the half-tick of slack at each edge is its consequence, not a second policy.
+//   · The sweep APPROXIMATES the walk's model rather than reproducing it. Same
+//     `composeCall`, same v3 composite arithmetic, same 10-session close-based hit
+//     rule — but it scores with `DEFAULT_WEIGHTS` (never the walk's nudged vector)
+//     and with the price-derived factors only: technical, momentum and seasonality,
+//     with sector, world-tape, news, social, insider and smart-money all null. The
+//     regime IS point-in-time real (SPY/QQQ slope, breadth, VIX). One gate differs
+//     and is worth knowing: `seedFromHistory` passes no `gates`, so the sweep runs
+//     MODERATE (deadZone 25 / minExpectedMove 1.5) while an `--appetite aggressive`
+//     walk runs 20 / 1.0 — the anchor is therefore "an ordinary candidate a moderate
+//     board would have looked at", a slightly stricter population than the walk's
+//     own admission, and it reads a little HIGHER for it. It is a benchmark, not a
+//     replica of the row in front of the reader.
 //   npx tsx scripts/replay-window.ts --from 2024-08-12 --to 2026-08-11 \
 //     --seed-out /tmp/seed-candidate.json --seed-generation 2 --out /tmp/walk.json
 // `--symbols A,B,C` narrows the walk universe (default: the whole REPLAY_UNIVERSE) —
@@ -917,7 +936,14 @@ const REFERENCE_MIN_N = 500
  * unconditional gate-clearing rate so far has sat near 0.37; a sweep reading 0.08
  * or 0.90 has measured something other than what it believes — a broken hit rule,
  * a benchmark mismatch, a universe that collapsed to one name — and the failure
- * mode of accepting it is a seed that grades everything or nothing for a year. */
+ * mode of accepting it is a seed that grades everything or nothing for a year.
+ *
+ * The band is checked AFTER the 4dp round, deliberately (the number checked is the
+ * number stored), so in raw terms it admits [0.24995, 0.55005): a 0.2499501 sweep
+ * stores 0.25 and passes, a 0.2494999 sweep stores 0.2495 and is refused. Half a
+ * tick of slack at each edge is the consequence of rounding first, not a second
+ * policy — and it is stated here because "outside [0.25, 0.55]" in the refusal
+ * message is otherwise a hair narrower than what the code does. */
 const REFERENCE_MIN = 0.25
 const REFERENCE_MAX = 0.55
 
@@ -950,8 +976,11 @@ const REFERENCE_MAX = 0.55
  *
  * Pure and deterministic: no clocks, no RNG, no network. */
 export function referenceSweep(input: {
-  /** Every non-crypto name in the walk's universe, each truncated to the bars the
-   * walk's LAST morning could see — which is what bounds the sweep from above. */
+  /** Every non-crypto name the walk ASKED for candles on, across the whole window
+   * (the caller's `sweptUniverse`, not the list it was handed — a roster arrival or
+   * a theme-door name is part of the population the board draws from), each
+   * truncated to the bars the walk's LAST morning could see, which is what bounds
+   * the sweep from above. */
   bySym: Map<string, Candle[]>
   spy: Candle[]
   qqq?: Candle[]
@@ -1250,6 +1279,23 @@ export async function main() {
    * theme and rotation doors put ~150 names a day in front of the engine). This is
    * the population the emitted evidence was actually drawn from. */
   const walked = new Set<string>()
+  /** THE SWEEP'S UNIVERSE (spec §9) — the union, across every replayed day, of every
+   * name buildBoard ASKED for candles on, minus the context tapes it reads for regime
+   * and sector colour and minus crypto.
+   *
+   * The handed `baseUniverse` is the wrong population for the anchor and was only
+   * ever the convenient one: the roster carries names in as the walk runs, and the
+   * theme and rotation doors put ~150 names a day in front of the engine that the
+   * `--symbols`/REPLAY_UNIVERSE list never mentions. Anchoring grades to a sweep over
+   * the handed list would answer "how does this pick compare with an ordinary name
+   * from a list the board does not use", when the question §9 asks is "how does it
+   * compare with an ordinary name the board ACTUALLY considered". `asked` is the
+   * walk's own record of the latter, kept for the velocity diagnostic already.
+   *
+   * Accumulated rather than taken from the last day because the population is the
+   * WINDOW's, not the final morning's — a name the roster dropped in March was still
+   * a candidate in March, and the sweep grades March. */
+  const sweptUniverse = new Set<string>()
 
   for (const date of days) {
     const t0 = Date.now()
@@ -1338,6 +1384,11 @@ export async function main() {
         })
       }
     }
+    // the sweep's population grows HERE, from what the walk asked for, not from the
+    // list it was handed. Crypto is filtered again rather than assumed away: `asked`
+    // records whatever buildBoard reached for, and the seed's no-crypto contract is
+    // enforced wherever a population is composed.
+    if (seedOut) for (const sym of ctx.current.asked) if (!CONTEXT_TAPES.has(sym) && !isCryptoSymbol(sym)) sweptUniverse.add(sym)
     const shape = summariseBoard(built.board)
     const watched = watchList.map(sym => ({
       sym,
@@ -1420,19 +1471,32 @@ export async function main() {
     // factor IC is the half of §4.4 that would have gone missing quietly.
     const weightsFinal = await store.read<WeightsState>('engine-weights')
     // THE REFERENCE SWEEP (spec §9), over the SAME candles the walk was driven from:
-    // the same `fullHistory` cache, the same crypto-free universe (`baseUniverse`
-    // was already filtered by `seedUniverse`), the same `--from`, and each series
-    // truncated with the same `sliceBefore` the walk's LAST morning used — so the
-    // sweep cannot see a bar the walk never had in hand. It measures the
-    // unconditional population the board's rows will be graded against; the walk's
-    // own buckets keep pricing them.
+    // the same `fullHistory` cache, the same `--from`, and each series truncated with
+    // the same `sliceBefore` the walk's LAST morning used — so the sweep cannot see a
+    // bar the walk never had in hand. Its universe is `sweptUniverse`, the union of
+    // what the walk actually considered, NOT the handed `baseUniverse`: the anchor
+    // has to be the ordinary odds of the population the board draws from, and the
+    // board draws from roster arrivals and theme/rotation names that no handed list
+    // contains. It measures the unconditional population the board's rows will be
+    // graded against; the walk's own buckets keep pricing them.
     const sweepBySym = new Map<string, Candle[]>()
-    for (const sym of baseUniverse) {
+    for (const sym of sweptUniverse) {
       const full = await fullHistory(sym)
       if (!full) continue
       const s = sliceBefore(full, to)
       if (s.length) sweepBySym.set(sym.toUpperCase(), s)
     }
+    // What the change bought, in the run log: the handed universe is printed beside
+    // the walked one so a reader can see how much of the board's own population a
+    // baseUniverse sweep would have been blind to.
+    const handed = new Set(baseUniverse.map(s => s.toUpperCase()))
+    const missedByHanded = [...sweptUniverse].filter(s => !handed.has(s)).length
+    const neverAsked = [...handed].filter(s => !sweptUniverse.has(s)).length
+    console.log(
+      `  sweep universe ${sweepBySym.size} symbols — the union of every name the walk ASKED for` +
+        `${sweptUniverse.size === sweepBySym.size ? '' : ` (${sweptUniverse.size - sweepBySym.size} of ${sweptUniverse.size} had no history to sweep)`} · ` +
+        `+${missedByHanded} the handed universe would have missed · ${neverAsked} of its ${handed.size} names the walk never asked for`,
+    )
     const sweepSpy = sliceBefore(spyFull, to)
     const sweepQqq = await fullHistory('QQQ')
     const sweepVix = await fullHistory(VIX_SYMBOL.sym)

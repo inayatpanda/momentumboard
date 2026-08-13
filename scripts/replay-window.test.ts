@@ -796,13 +796,16 @@ describe('seedArtefactFrom — guarantee 7: the grade anchor is MEASURED, and th
 /** The two protagonists: the names with enough swing amplitude to clear the
  * roster's join gate, and therefore the ones that actually publish rows. */
 const WALK_LEADS = ['AAA', 'BBB']
-/** …and the sweep's population. The reference base is measured over the SAME
- * universe and window as the walk (spec §9), and `seedArtefactFrom` refuses a
- * sweep under REFERENCE_MIN_N rows — so a two-name fixture can no longer drive
- * `--seed-out` end to end, and that refusal is itself under test above. These
- * carry three tape shapes chosen so the pooled reference lands inside the sane
- * band rather than at one of its edges; the walk treats them like any other
- * candidate. */
+/** …and the bulk of the sweep's population. The reference base is measured over the
+ * window and the universe the walk ACTUALLY CONSIDERED (spec §9), and
+ * `seedArtefactFrom` refuses a sweep under REFERENCE_MIN_N rows — so a two-name
+ * fixture can no longer drive `--seed-out` end to end, and that refusal is itself
+ * under test above. These carry tape shapes chosen so the pooled reference lands
+ * inside the sane band rather than at one of its edges; the walk treats them like
+ * any other candidate. They are not the whole sweep: the theme and rotation doors
+ * hand the engine CONTEXT_SYMS names too, and those are in the swept universe
+ * because the walk asked for them — the assertion on the run-log line below is what
+ * pins that widening. */
 const SWEEP_SHAPES: [number, number][] = [[-0.3, 4], [-0.3, 20], [-0.3, 9], [-0.3, 14]]
 const SWEEP_SYMS = Array.from({ length: 60 }, (_, i) => `S${String(i).padStart(2, '0')}`)
 const WALK_SYMS = [...WALK_LEADS, ...SWEEP_SYMS]
@@ -1026,6 +1029,18 @@ describe('--seed-out: the walk serialises what it learned', () => {
     expect(ref).not.toBe(baseHitRate(art.calibration).rate)
     // and the run log names the sweep's n, so a reader can weigh the anchor
     expect(logged.join('\n')).toMatch(/reference base 0\.\d{4} — unconditional sweep over \d+ symbols, \d+ graded rows/)
+
+    // THE SWEEP WALKS THE WALK'S OWN UNIVERSE [§9]: not the `--symbols` list it was
+    // handed, but the union of every name buildBoard asked for. In this fixture the
+    // theme and rotation doors put context names in front of the engine that the
+    // handed list never mentions, so the swept universe is strictly WIDER — which is
+    // exactly the population a baseUniverse sweep would have anchored grades without.
+    const sweep = logged.join('\n').match(/sweep universe (\d+) symbols — the union of every name the walk ASKED for.*?\+(\d+) the handed universe would have missed/)
+    expect(sweep, 'the seed-out summary must report the swept universe').not.toBeNull()
+    expect(Number(sweep![1])).toBeGreaterThan(WALK_SYMS.length)
+    expect(Number(sweep![2])).toBeGreaterThan(0)
+    // …and it is the SAME universe the anchor was measured over — one number, printed twice
+    expect(logged.join('\n')).toMatch(new RegExp(`unconditional sweep over ${sweep![1]} symbols`))
   }, 180_000)
 })
 

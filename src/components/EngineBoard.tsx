@@ -269,7 +269,7 @@ export function EngineBoard() {
               <>
                 <h4 className="section-title" style={{ fontSize: 12, marginTop: 8 }}>Developing — building over 2–4 weeks</h4>
                 {/* the tracked-not-sized reason, said ONCE for the group instead of on every card */}
-                <p className="empty-line" style={{ fontSize: 11, marginTop: -2, marginBottom: 4 }}>Valid setups the engine rates below their base rate in this tape — tracked while they build, not sized.</p>
+                <p className="empty-line" style={{ fontSize: 11, marginTop: -2, marginBottom: 4 }}>Valid setups the engine prices under the grade bar in this tape — no measured edge over an ordinary candidate yet, so they are tracked while they build, not sized.</p>
               </>
             )}
             {developing.map(p => (
@@ -315,11 +315,28 @@ export function EngineBoard() {
         )
       })()}
       <EventRadar radar={data?.eventRadar ?? null} />
+      {/* THE TWO NUMBERS, SAID APART [spec §9]. The percentage on a row is the
+          engine's own measured hit rate for calls like it; the letter is that
+          percentage against a FIXED bar — how often an ordinary candidate clears the
+          same test. Which bar is in force is a fact about the loaded seed, not a
+          slogan, so the sentence reads the blob: `referenceBase` when a seed swept
+          one, the engine's own pooled rate when none has (gradeBaseRate). */}
       <p className="empty-line" style={{ fontSize: 11 }}>
         Grades are calibrated on the engine's own graded history: a hit must beat SPY by ≥1pp over the horizon, and stops are judged on daily closes — an
-        intraday wick through is survivable. A/B/C means the call's bucket beats the engine's own base rate, not a coin flip. Provisional = thin evidence
-        bucket. A/B on full evidence carry full size; grade C on full evidence, and A/B whose evidence is thin, carry HALF size; below-base, unpicked and
-        near-miss rows are watch-only. This is analysis, not advice.
+        intraday wick through is survivable. The percentage on a row is how often calls like it have actually landed. The letter is that percentage against
+        the grade bar
+        {data?.calibration?.referenceBase != null ? (
+          <>
+            {' '}
+            — {Math.round(data.calibration.referenceBase * 100)}%, the rate an ordinary candidate hits on the same test, swept over years of history and
+            fixed until the engine is re-seeded
+          </>
+        ) : (
+          <> — for now the engine's own pooled hit rate across every graded call, until a re-seed measures the ordinary-candidate rate directly</>
+        )}
+        : C clears the bar, B clears it by 5 points, A by 10 with enough history underneath to mean it. Provisional = thin evidence bucket. A/B on full
+        evidence carry full size; grade C on full evidence, and A/B whose evidence is thin, carry HALF size; rows under the bar, unpicked and near-miss rows
+        are watch-only. This is analysis, not advice.
       </p>
     </section>
   )

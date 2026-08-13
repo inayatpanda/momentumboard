@@ -77,11 +77,20 @@ export function LeanPanel({
   // that is a statement about the population the engine actually publishes — how
   // often ITS calls land. `referenceBase` answers a different question (what
   // ordinary candidates do, which is what grades are measured against) and printing
-  // it under this label would quietly relabel a measurement as a benchmark.
+  // it under this label would quietly relabel a measurement as a benchmark. It gets
+  // its own label instead, right beside this one — see `gradeBar`.
   const buckets = calibration?.buckets ? Object.values(calibration.buckets) : []
   const nSum = buckets.reduce((a, b) => a + (b?.n ?? 0), 0)
   const hitSum = buckets.reduce((a, b) => a + (b?.hits ?? 0), 0)
   const baseRate = Math.round(((hitSum + 2) / (nSum + 4)) * 100)
+  // …and BESIDE it, the other number, when a seed measured one: the bar the letter
+  // grades are struck against. Without it a reader who sees "hit-rate 42%" next to a
+  // B earned at 43% has no way to know the bar was 37% — the two numbers answer
+  // different questions and only one of them is a yardstick. Printed only when
+  // `referenceBase` exists: on a blob with none the grades ARE anchored to the
+  // pooled rate above, and printing that twice under two names would invent a
+  // distinction the engine is not making today.
+  const gradeBar = calibration?.referenceBase != null ? Math.round(calibration.referenceBase * 100) : null
 
   return (
     <section className="card quant-hero">
@@ -98,7 +107,8 @@ export function LeanPanel({
       </div>
 
       <p className="empty-line quant-hero-note">
-        A probabilistic tilt from measurable inputs (regime, overnight tape, news tone, volatility) — not a forecast. Engine base hit-rate {baseRate}%.
+        A probabilistic tilt from measurable inputs (regime, overnight tape, news tone, volatility) — not a forecast. Engine base hit-rate {baseRate}%
+        {gradeBar != null ? <> · grade bar {gradeBar}% — what an ordinary candidate does, and what A/B/C are measured against.</> : '.'}
       </p>
 
       {analogue && (
