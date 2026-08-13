@@ -672,6 +672,8 @@ export async function buildBoard(
   // THE FUNNEL'S RECORD (shared/engine/funnelTrace.ts). Every `continue` below now
   // also says WHY, into an accumulator that costs a Map insert and decides nothing.
   // Written once at the end of the run, fail-soft, under `funnel-trace:${today}`.
+  // Rows are keyed (name, side-or-none), so a chart the engine argued both ways
+  // about — a lane long over a demoted composite short — keeps both verdicts.
   const trace = funnelTraceRecorder()
 
   const [spy, qqq] = await Promise.all([deps.candles('SPY'), deps.candles('QQQ')])
@@ -1085,8 +1087,11 @@ export async function buildBoard(
   // The quietest drop in the whole run, and the largest: a candidate with a good
   // tape that is NEITHER on the roster NOR in the sleeve is never scored at all.
   // It is the roster trim doing the cutting, one door along — so it is `trimmed`,
-  // with the reason spelled out. A lane (dip, velocity) may still publish on such
-  // a name below, and that publication revises this row.
+  // with the reason spelled out. Side-free, because no side was ever argued: a
+  // lane (dip, velocity) may still publish on such a name below, and that
+  // publication writes its own SIDED row rather than overwriting this one. Both
+  // are true — the composite never looked, and the lane called it — and under one
+  // row per name only the second survived.
   const evalSet = new Set(evalRows.map(e => e.sym.toUpperCase()))
   for (const sym of candidateSyms) {
     if (candleMap.has(sym) && !evalSet.has(sym))
@@ -1261,30 +1266,50 @@ export async function buildBoard(
     })
     // …and the size decision is REPORTED HERE rather than handed back to the
     // caller. publishCall is a closure over the whole run, so it can write the
-    // row itself; returning a code instead would have meant editing all four call
-    // sites (composite, dip, velocity, and the shadow path) to remember to record
-    // it — and "the caller forgot" is precisely the class of silence Stage 3a
-    // exists to end. `revise`, not `record`: a publication is the row's fate and
-    // must overwrite whatever gate the composite wrote on the way past.
+    // row itself; returning a code instead would have meant editing all three call
+    // sites (composite, dip, velocity) to remember to record it — and "the caller
+    // forgot" is precisely the class of silence Stage 3a exists to end. `revise`,
+    // not `record`: a publication is the row's fate and must overwrite whatever
+    // gate the composite wrote on the way past — on THIS side's key, which is why
+    // a lane long can no longer erase the short's row or be erased by it.
     //
     // route-blocked outranks called-shadow because it is the more specific truth:
     // the row cleared everything and an ISA simply cannot place it. `grade-watchonly`
-    // is NOT used — called-watch already says "published, sized to zero".
-    trace.revise(call.sym, routeShadowed ? 'route-blocked' : shadow ? 'called-shadow' : fullTrade ? 'called-full' : halfTrade ? 'called-half' : 'called-watch', {
-      side: call.side,
-      source: sources.get(call.sym.toUpperCase())?.source,
-      detail: routeShadowed
-        ? `no ISA short route${routeBlocked ? ' — promotable to an observation' : ''}`
+    // is NOT used, and the zero-size case is not one population but two: a call the
+    // calibration rates BELOW ITS OWN BASE RATE on a full evidence contract is an
+    // honest, fully-evidenced setup the tape is against, where a `called-watch` row
+    // is C on thin evidence — conviction and evidence both short. Pooling them under
+    // one code meant 3b's accounting could never tell "we don't believe this side
+    // today" from "we barely believe this name at all".
+    trace.revise(
+      call.sym,
+      routeShadowed
+        ? 'route-blocked'
         : shadow
-          ? call.earningsRisk
-            ? 'earnings print inside the horizon'
-            : forceShadow
-              ? 'the lane stood it down'
-              : unshortable
-                ? 'no ISA short route'
-                : 'graded null on a failed evidence contract'
-          : `grade ${grade ?? 'null'}${call.evidence.contract ? '' : ', contract failed'}${belowBase ? ', below base rate' : ''}${sizeCap < 1 ? `, lane cap ${sizeCap}` : ''}`,
-    })
+          ? 'called-shadow'
+          : fullTrade
+            ? 'called-full'
+            : halfTrade
+              ? 'called-half'
+              : belowBase
+                ? 'called-below-base'
+                : 'called-watch',
+      {
+        side: call.side,
+        source: sources.get(call.sym.toUpperCase())?.source,
+        detail: routeShadowed
+          ? `no ISA short route${routeBlocked ? ' — promotable to an observation' : ''}`
+          : shadow
+            ? call.earningsRisk
+              ? 'earnings print inside the horizon'
+              : forceShadow
+                ? 'the lane stood it down'
+                : unshortable
+                  ? 'no ISA short route'
+                  : 'graded null on a failed evidence contract'
+            : `grade ${grade ?? 'null'}${call.evidence.contract ? '' : ', contract failed'}${belowBase ? ', below base rate' : ''}${sizeCap < 1 ? `, lane cap ${sizeCap}` : ''}`,
+      },
+    )
   }
 
   // Every name that produced a real core read and STILL published nothing — the
@@ -1770,7 +1795,9 @@ export async function buildBoard(
     row.paperOnly = true // a short with no instrument, exactly as publishCall stamps one
     row.horizon = horizonOf({ watchOnly: false, stage: row.stage, setup: row.setup, evidence: row.evidence })
     laneDemotedShorts.set(row.id, lane)
-    // the row's fate genuinely changed after it published, so the trace follows it
+    // The row's fate genuinely changed after it published, so the trace follows
+    // it — on the SHORT key. The lane's long keeps its own row: two facts about
+    // one chart, which is the whole reason the key carries the side.
     trace.revise(row.sym, 'called-shadow', { side: 'short', source: sources.get(sym)?.source, detail: `the ${lane} lane's read on the same chart outranked it` })
     console.log(`BOARD: ${lane} read on ${row.sym} demotes the composite short to a shadow`)
   }
@@ -1781,6 +1808,25 @@ export async function buildBoard(
   const trades = [...longTrades, ...shortTrades]
   const watchPool = board.filter(b => !b.shadow && b.watchOnly)
   const watch = [...pickDiverseSide(watchPool, 'long', 6, 'watch'), ...pickDiverseSide(watchPool, 'short', 6, 'watch')]
+  // …and a trade the cuts above sent DOWN to the watch list is a row the reader
+  // gets, so it must stop reading like a row that vanished. `demoteToWatch` strips
+  // the size but keeps the row on the board, and the watch pick then seats it —
+  // yet its trace row still said `slot-cut` / `diversity`, which is the fate of the
+  // rows that fell off the board entirely. The cut is still the true story of how
+  // the row got here, so it is kept verbatim in `detail`; only the GATE changes,
+  // and only for the rows the watch list actually seated. A row that published as
+  // a watch row in the first place (called-watch / called-below-base) is already
+  // right and is left alone — re-labelling it would pool the two zero-size
+  // populations back together.
+  for (const row of watch) {
+    const prev = trace.rowAt(row.sym, row.side)
+    if (!prev || (prev.gate !== 'slot-cut' && prev.gate !== 'diversity')) continue
+    trace.revise(row.sym, 'called-watch', {
+      side: row.side,
+      source: prev.source,
+      detail: `on the watch list · ${prev.detail ?? 'cut from the trade slots'}`,
+    })
+  }
   const liveCalls = [...trades, ...watch].sort((a, b) => (a.watchOnly ? 1 : 0) - (b.watchOnly ? 1 : 0) || Math.abs(b.composite) - Math.abs(a.composite))
 
   // ---- nearest misses: an empty SIDE still says what came closest ----
@@ -1879,7 +1925,11 @@ export async function buildBoard(
       // there was never a belief to state.)
       observation.evidence = { ...observation.evidence, detail: `${observation.evidence.detail} · no ISA route — observation only` }
       liveCalls.push(observation)
-      trace.revise(observation.sym, 'called-watch', {
+      // Its own code, not `called-watch`: this row is on the board because the
+      // SIDE was empty and it was the best thing the route blocked — not because a
+      // grade sized it to zero. 3b counts by code, and pooling the promotion with
+      // the graded watch rows would make "the route cost us the side" invisible.
+      trace.revise(observation.sym, 'called-observation', {
         side,
         source: sources.get(observation.sym.toUpperCase())?.source,
         detail: 'promoted observation — cleared every gate, no ISA route',
@@ -1985,8 +2035,32 @@ export async function buildBoard(
   liveCalls.sort((a, b) => (a.watchOnly ? 1 : 0) - (b.watchOnly ? 1 : 0) || Math.abs(b.composite) - Math.abs(a.composite))
 
   const live = [...liveCalls, ...nearMissRows]
-  const shadows = [...pickShadow('long', 5), ...pickShadow('short', 5)]
+  const SHADOW_CAP = 5
+  const shadows = [...pickShadow('long', SHADOW_CAP), ...pickShadow('short', SHADOW_CAP)]
   const final = [...liveCalls, ...shadows] // the LEDGER — near misses are board-only
+
+  // ---- the shadows that never made the ledger ----
+  // pickShadow is the LAST filter of the run, and it drops rows two ways: past the
+  // per-side budget, and deduped against a prior shadow on the same name that has
+  // not graded yet. Either way the row appears in nothing — not the board, not the
+  // ledger, nothing the reader or the learning loop ever sees — while its trace row
+  // still said `called-shadow` or `route-blocked`. A `called-*` code has to mean
+  // "the reader got this row" or 3b's accounting is counting publications that
+  // never happened, so these rows get their own gate and `detail` says which of the
+  // two dropped them. Kept as one code deliberately: both are the shadow budget
+  // refusing a row that had already published, and the prose tells them apart
+  // without making the taxonomy carry a distinction 3b can already read.
+  const shadowedIds = new Set(shadows.map(s => s.id))
+  for (const b of board) {
+    if (!b.shadow || shadowedIds.has(b.id)) continue
+    trace.revise(b.sym, 'shadow-capped', {
+      side: b.side,
+      source: sources.get(b.sym.toUpperCase())?.source,
+      detail: outstandingShadowKeys.has(`${b.sym}:${b.side}`)
+        ? 'dropped by the shadow budget — already outstanding as an ungraded shadow'
+        : `past the ${SHADOW_CAP}-per-side shadow budget`,
+    })
+  }
 
   // Company names ride the published rows so the board, ledger, open book and
   // paper all print "SOC — Sable Offshore" without their own enrichment pass.
@@ -2050,9 +2124,11 @@ export async function buildBoard(
     // quite the count, because the watchlist rides into the roster
     // unconditionally (roster.ts) — so a levMap route on the watchlist is refused
     // by addSource AND still scored, and it earns a row. Counting it as well
-    // would book one name twice.
+    // would book one name twice. `hasRow` asks about the NAME across every key it
+    // could hold: rows are keyed by (name, side) now, so asking about one key
+    // would count a name that has a row on the other side.
     let notCandidate = 0
-    for (const sym of offered) if (!sources.has(sym) && trace.gateOf(sym) == null) notCandidate++
+    for (const sym of offered) if (!sources.has(sym) && !trace.hasRow(sym)) notCandidate++
     trace.notCandidate(notCandidate)
     await store.write(funnelTraceKey(today), trace.build({ date: today, gates, nearMisses, emptySides }))
     const traceIndex = (await store.read<string[]>(FUNNEL_TRACE_INDEX_KEY)) ?? []

@@ -11,11 +11,11 @@ import type { EmptySideReason, FactorName, FactorScore, GateCode } from './types
 // answer anywhere in the system, and the learning loop had no population of
 // refusals to charge a cost against.
 //
-// This module is the shape of the answer: one row per symbol per day, naming the
-// gate that ended its run, written once as `funnel-trace:${date}` beside a
-// bounded index. It is a RECORD, never a decision — nothing in the engine reads
-// it back, and a trace that fails to write costs the day's evidence and nothing
-// else (see the fail-soft write in engine.ts).
+// This module is the shape of the answer: one row per NAME PER SIDE per day,
+// naming the gate that ended its run, written once as `funnel-trace:${date}`
+// beside a bounded index. It is a RECORD, never a decision — nothing in the
+// engine reads it back, and a trace that fails to write costs the day's evidence
+// and nothing else (see the fail-soft write in engine.ts).
 
 export const FUNNEL_TRACE_INDEX_KEY = 'funnel-trace-index'
 /** Mirrors `predictions-index` (engine.ts) exactly — same bound, same shape, so
@@ -28,6 +28,20 @@ export const FUNNEL_TRACE_INDEX_MAX = 250
 export const TRACE_DETAIL_MAX = 120
 
 export const funnelTraceKey = (date: string): string => `funnel-trace:${date}`
+
+/** THE ROW KEY: `SYM:side` once a side exists, the bare `SYM` for the gates that
+ * fire before there is one (trimmed, no-candles). RATIFIED after the Task-2
+ * review, replacing one row per symbol.
+ *
+ * One key per name could hold only ONE fact about a chart, and the engine
+ * routinely produces two: the dip lane publishes a sized long on the same tape
+ * the composite shorted, and the demotion that follows (engine.ts) then wrote
+ * `called-shadow/short` over the row the long had just written — so the only
+ * sized, reader-facing call on the name disappeared from the record of the run
+ * while the row nobody could take survived. A name that dies on one side and
+ * pays on the other is two rows, and the exactly-once invariant is per
+ * (name, side-or-none) rather than per name. */
+export const traceRowKey = (sym: string, side?: 'long' | 'short' | null): string => (side ? `${sym.toUpperCase()}:${side}` : sym.toUpperCase())
 
 export interface FunnelTraceRow {
   gate: GateCode
@@ -63,6 +77,8 @@ export interface FunnelTrace {
    * gate feedback (spec §4.3) moves these, and a trace read back next quarter
    * must know which dead zone said no. */
   gates: Gates
+  /** Keyed by `traceRowKey` — `SYM:side`, or a bare `SYM` for the gates that fire
+   * before a side exists. Sorted, so two runs of one day diff cleanly. */
   rows: Record<string, FunnelTraceRow>
   /** `not-candidate` is a COUNT and never a list: the universe of names that were
    * never candidates is unbounded, so only the ones the run actually touched and
@@ -72,17 +88,22 @@ export interface FunnelTrace {
   emptySides: { long?: EmptySideReason; short?: EmptySideReason }
 }
 
-/** The codes `publishCall` emits — the name reached the board array. They are
- * TERMINAL against ordinary recording: once a chart has published, a later lane
- * refusing its own attempt on the same chart is not what happened to that name,
- * and must not overwrite the publication. Only `revise` (the fate of a row that
- * genuinely changed after it published — a lane demotion, a diversity cut, a
- * promoted observation) may write over one. */
+/** The codes that mean THE READER GOT THIS ROW — `publishCall`'s size decision,
+ * the promotion that fills an empty side, and the route-blocked shadow. They are
+ * TERMINAL against ordinary recording ON THEIR OWN KEY: once a (name, side) has
+ * published, a later lane refusing its own attempt on that same side is not what
+ * happened to it, and must not overwrite the publication. Precedence is per key,
+ * so a publication on the long side has nothing to say about the short side's
+ * refusal. Only `revise` (the fate of a row that genuinely changed after it
+ * published — a lane demotion, a diversity cut, a shadow the budget dropped) may
+ * write over one. */
 export const PUBLISHED_GATES: ReadonlySet<GateCode> = new Set<GateCode>([
   'called-full',
   'called-half',
   'called-shadow',
   'called-watch',
+  'called-below-base',
+  'called-observation',
   'route-blocked',
 ])
 
@@ -93,15 +114,22 @@ export interface TraceExtra {
 }
 
 export interface FunnelTraceRecorder {
-  /** "This name died here." Later stages overwrite earlier ones — the trace names
-   * where a name FINALLY stopped, and the engine's stages run in the order a name
-   * travels — EXCEPT over a publication (see PUBLISHED_GATES). */
+  /** "This name died here, on this side." Later stages overwrite earlier ones on
+   * the SAME key — the trace names where a name finally stopped, and the engine's
+   * stages run in the order a name travels — EXCEPT over a publication (see
+   * PUBLISHED_GATES). `extra.side` picks the key. */
   record(sym: string, gate: GateCode, extra?: TraceExtra): void
   /** "This row's fate changed." Always writes, publication or not. */
   revise(sym: string, gate: GateCode, extra?: TraceExtra): void
   /** Names offered to the candidate pool that never entered it. */
   notCandidate(n: number): void
-  gateOf(sym: string): GateCode | null
+  /** The row standing at (sym, side) — a COPY, so a caller re-labelling a cut row
+   * that later reached the board cannot mutate the record in place. */
+  rowAt(sym: string, side?: 'long' | 'short' | null): FunnelTraceRow | null
+  gateOf(sym: string, side?: 'long' | 'short' | null): GateCode | null
+  /** Does this NAME hold a row on any key — either side, or side-free? The
+   * not-candidate count asks exactly this and must never ask about one key. */
+  hasRow(sym: string): boolean
   size(): number
   build(input: { date: string; gates: Gates; nearMisses: FunnelNearMiss[]; emptySides: FunnelTrace['emptySides'] }): FunnelTrace
 }
@@ -115,25 +143,34 @@ const rowOf = (gate: GateCode, extra?: TraceExtra): FunnelTraceRow => {
 }
 
 /** One accumulator per run. Symbols are upper-cased on the way in so a roster
- * spelling and a screener spelling can never become two rows for one name. */
+ * spelling and a screener spelling can never become two rows for one name and
+ * side. */
 export function funnelTraceRecorder(): FunnelTraceRecorder {
   const rows = new Map<string, FunnelTraceRow>()
   let notCandidateCount = 0
   return {
     record(sym, gate, extra) {
-      const key = sym.toUpperCase()
+      const key = traceRowKey(sym, extra?.side)
       const prev = rows.get(key)
       if (prev && PUBLISHED_GATES.has(prev.gate)) return
       rows.set(key, rowOf(gate, extra))
     },
     revise(sym, gate, extra) {
-      rows.set(sym.toUpperCase(), rowOf(gate, extra))
+      rows.set(traceRowKey(sym, extra?.side), rowOf(gate, extra))
     },
     notCandidate(n) {
       notCandidateCount += Math.max(0, n)
     },
-    gateOf(sym) {
-      return rows.get(sym.toUpperCase())?.gate ?? null
+    rowAt(sym, side) {
+      const row = rows.get(traceRowKey(sym, side))
+      return row ? { ...row } : null
+    },
+    gateOf(sym, side) {
+      return rows.get(traceRowKey(sym, side))?.gate ?? null
+    },
+    hasRow(sym) {
+      const bare = sym.toUpperCase()
+      return rows.has(bare) || rows.has(`${bare}:long`) || rows.has(`${bare}:short`)
     },
     size() {
       return rows.size

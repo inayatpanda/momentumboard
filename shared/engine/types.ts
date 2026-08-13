@@ -102,14 +102,35 @@ export interface EngineCall {
  *                       fit, because this is a LANE's own refusal of its own
  *                       construction, not a gate on a composite that was scored
  *   grade-watchonly ... published, but sized to zero by the grade. RESERVED, and
- *                       emitted by nothing: `called-watch` says exactly this and
- *                       publishCall emits that instead, so the four called-* codes
- *                       stay one closed set. Kept because removals are not allowed
+ *                       emitted by nothing: the three called-* zero-size codes say
+ *                       it more precisely (below). Kept because removals are not
+ *                       allowed
  *   route-blocked ..... published as a shadow for ONE reason — no instrument an ISA
  *                       can actually place
  *   diversity ......... the sector/correlation gate refused the slot
  *   slot-cut .......... good enough, but the board had no room left
- *   called-full | called-half | called-shadow | called-watch — it PUBLISHED, at that size
+ *   shadow-capped ..... published as a shadow and then dropped before the ledger —
+ *                       past the 5-per-side shadow budget, or deduped against a
+ *                       prior shadow on the same name that has not graded yet
+ *                       (engine.ts, pickShadow). ADDED in the Task-2 fix wave: these
+ *                       rows kept a called-shadow / route-blocked code while
+ *                       appearing in nothing the reader or the ledger ever sees, and
+ *                       the invariant "a called-* row is a row the reader got" has
+ *                       to be true for 3b's accounting to mean anything
+ *   called-full | called-half | called-shadow — it PUBLISHED, at that size
+ *   called-watch ...... published at zero size by the GRADE: C on thin evidence,
+ *                       conviction and evidence both short — or a trade the slot /
+ *                       diversity cut sent down to the watch list, which the reader
+ *                       still gets
+ *   called-below-base . published at zero size because the calibration rates the
+ *                       side BELOW its own base rate on a call that nonetheless
+ *                       cleared the full evidence contract. ADDED in the Task-2 fix
+ *                       wave: pooling it with called-watch hid the one zero-size
+ *                       population that is an honest, fully-evidenced setup
+ *   called-observation  a route-blocked short PROMOTED to fill an empty side. ADDED
+ *                       in the Task-2 fix wave, for the same reason: it is on the
+ *                       board because the side was empty, not because a grade
+ *                       sized it to zero
  *
  * composeCall owns eight of these (no-data … entry-reversal); the rest are the
  * engine's own, wired in Stage 3a Task 2. Additions are allowed when a code path
@@ -132,10 +153,13 @@ export type GateCode =
   | 'route-blocked'
   | 'diversity'
   | 'slot-cut'
+  | 'shadow-capped'
   | 'called-full'
   | 'called-half'
   | 'called-shadow'
   | 'called-watch'
+  | 'called-below-base'
+  | 'called-observation'
 
 /** A refusal that says which gate refused. `side` is the direction the core was
  * arguing for when it died, and is null only when there was no core read to have

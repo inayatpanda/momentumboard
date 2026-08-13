@@ -164,24 +164,26 @@ describe('the funnel trace', () => {
 
     expect(trace.date).toBe(TODAY)
     expect(trace.gates).toEqual(MODERATE_GATES) // the thresholds this run was judged against
-    // NVDA cleared everything and traded at the full rung.
-    expect(trace.rows.NVDA).toMatchObject({ gate: 'called-full', side: 'short', source: 'screener:gainers' })
-    // EXACTLY ONCE — a name is a row or a count, never both. INV is NVDA's
-    // inverse route, so addSource refused it as a candidate; but the watchlist
-    // rides into the roster unconditionally (roster.ts), so it was scored anyway
-    // and earned a row of its own. It is therefore NOT in the count.
+    // NVDA cleared everything and traded at the full rung — keyed by SIDE.
+    expect(trace.rows['NVDA:short']).toMatchObject({ gate: 'called-full', side: 'short', source: 'screener:gainers' })
+    // EXACTLY ONCE per (name, side-or-none) — a name is a row or a count, never
+    // both. INV is NVDA's inverse route, so addSource refused it as a candidate;
+    // but the watchlist rides into the roster unconditionally (roster.ts), so it
+    // was scored anyway and earned a row of its own. It is therefore NOT in the
+    // count. Its tape never arrived, so it died before it had a side: bare key.
     expect(trace.rows.INV).toBeDefined()
     expect(trace.counts).toEqual({ notCandidate: 0 })
-    // Every published row is accounted for, and no name is accounted for twice
-    // (the shape makes that structural: one row per symbol).
+    // Every published row is accounted for, and no (name, side) twice.
     const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
-    for (const p of ledger) expect(trace.rows[p.sym.toUpperCase()]).toBeDefined()
+    for (const p of ledger) expect(trace.rows[`${p.sym.toUpperCase()}:${p.side}`]).toBeDefined()
     expect(Object.keys(trace.rows)).toEqual([...new Set(Object.keys(trace.rows))])
     // …and every name the run touched IS in the trace: the rotation door alone
     // puts both top sectors' members in the pool, and every one of them is named.
     expect(Object.keys(trace.rows).length).toBeGreaterThan(10)
-    for (const [sym, row] of Object.entries(trace.rows)) {
+    for (const [key, row] of Object.entries(trace.rows)) {
+      const [sym, side] = key.split(':')
       expect(sym).toBe(sym.toUpperCase())
+      expect(side).toBe(row.side) // the key IS the (name, side) pair — never out of step with the row
       expect(row.detail == null || row.detail.length <= TRACE_DETAIL_MAX).toBe(true)
     }
     // the empty long side keeps its reason, beside the near-miss array verbatim
@@ -207,8 +209,8 @@ describe('the funnel trace', () => {
     )
     const trace = (await readTrace(store))!
     expect(trace.counts).toEqual({ notCandidate: 1 })
-    expect(trace.rows.INV).toBeUndefined()
-    expect(trace.rows.NVDA.gate).toMatch(/^called-/) // …while the name beside it published normally
+    expect(Object.keys(trace.rows).filter(k => k.startsWith('INV'))).toEqual([])
+    expect(trace.rows['NVDA:short'].gate).toMatch(/^called-/) // …while the name beside it published normally
   })
 
   it('a tape that never arrived is no-candles, not no-data: a supply failure is not a scoring failure', async () => {
@@ -228,7 +230,7 @@ describe('the funnel trace', () => {
     expect(Object.values(trace.rows).some(r => r.gate === 'no-data')).toBe(false)
   })
 
-  it('a called-half row records its size class, and the rows that lost their slot say which cut took it', async () => {
+  it('a called-half row records its size class, and a row the trade cut sent to the WATCH list reads called-watch — carrying the cut that sent it', async () => {
     const store = recordingStore()
     // Five uncorrelated rolled-over names, all half-size C trades (empty
     // calibration → base rate 0.5 → every band grades C; the contract passes on
@@ -261,15 +263,17 @@ describe('the funnel trace', () => {
       NOW,
     )
     const trace = (await readTrace(store))!
-    const gates = syms.map(s => trace.rows[s].gate)
+    const gates = syms.map(s => trace.rows[`${s}:short`].gate)
     expect(gates.filter(g => g === 'called-half')).toHaveLength(3) // the three that kept a slot
-    expect(gates.filter(g => g === 'slot-cut')).toHaveLength(2) // …and the two the 3-a-side cap demoted
-    const cut = syms.filter(s => trace.rows[s].gate === 'slot-cut')
+    // …and the two the 3-a-side cap demoted, which then LANDED on the watch list
+    // (6 slots a side, two takers) — so what the reader gets is what the trace says
+    expect(gates.filter(g => g === 'called-watch')).toHaveLength(2)
+    const cut = syms.filter(s => trace.rows[`${s}:short`].gate === 'called-watch')
     for (const s of cut) {
-      expect(trace.rows[s]).toMatchObject({ side: 'short', source: 'screener:losers' })
-      expect(trace.rows[s].detail).toContain('3 per side already filled')
+      expect(trace.rows[`${s}:short`]).toMatchObject({ side: 'short', source: 'screener:losers' })
+      expect(trace.rows[`${s}:short`].detail).toContain('3 per side already filled')
     }
-    for (const s of syms.filter(x => !cut.includes(x))) expect(trace.rows[s].detail).toContain('grade C')
+    for (const s of syms.filter(x => !cut.includes(x))) expect(trace.rows[`${s}:short`].detail).toContain('grade C')
     // and the demoted rows are on the board and in the ledger exactly as before —
     // the trace records the cut, it does not perform one
     const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
@@ -301,9 +305,12 @@ describe('the funnel trace', () => {
       NOW,
     )
     const trace = (await readTrace(store))!
-    const blocked = syms.filter(s => trace.rows[s].gate === 'diversity')
+    const blocked = syms.filter(s => /corr>0\.75 with [A-Z]{3}/.test(trace.rows[`${s}:short`].detail ?? ''))
     expect(blocked.length).toBeGreaterThanOrEqual(3)
-    for (const s of blocked) expect(trace.rows[s].detail).toMatch(/corr>0\.75 with [A-Z]{3}/)
+    // the ones the WATCH cut also refused keep the gate; the one it seated reads
+    // called-watch and still carries the correlation partner that cost it its trade
+    for (const s of blocked) expect(['diversity', 'called-watch']).toContain(trace.rows[`${s}:short`].gate)
+    expect(syms.filter(s => trace.rows[`${s}:short`].gate === 'diversity').length).toBeGreaterThanOrEqual(1)
   })
 
   it('a dip the lane itself refused is named dip-refused, not left as the composite’s gate', async () => {
@@ -320,8 +327,8 @@ describe('the funnel trace', () => {
       NOW,
     )
     const trace = (await readTrace(store))!
-    expect(trace.rows.GLW).toMatchObject({ gate: 'dip-refused', side: 'long' })
-    expect(trace.rows.GLW.detail).toContain('dip lane declined to build')
+    expect(trace.rows['GLW:long']).toMatchObject({ gate: 'dip-refused', side: 'long' })
+    expect(trace.rows['GLW:long'].detail).toContain('dip lane declined to build')
     // the composite's own verdict on the same chart is what the dip refusal
     // replaced — the expected-move floor, which published nothing
     const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
@@ -362,13 +369,13 @@ describe('the funnel trace', () => {
       NOW,
     )
     const trace = (await readTrace(store))!
-    expect(trace.rows.SA).toMatchObject({ gate: 'dead-zone-core', side: 'short' })
-    expect(trace.rows.SA.detail).not.toContain('second-pass')
-    expect(trace.rows.SB).toMatchObject({ gate: 'dead-zone-core', side: 'short' })
-    expect(trace.rows.SB.detail).toMatch(/^second-pass · core -2[0-9.]+ inside ±25$/)
+    expect(trace.rows['SA:short']).toMatchObject({ gate: 'dead-zone-core', side: 'short' })
+    expect(trace.rows['SA:short'].detail).not.toContain('second-pass')
+    expect(trace.rows['SB:short']).toMatchObject({ gate: 'dead-zone-core', side: 'short' })
+    expect(trace.rows['SB:short'].detail).toMatch(/^second-pass · core -2[0-9.]+ inside ±25$/)
   })
 
-  it('a short the dip lane outranked records the demotion, not the size it published at', async () => {
+  it('a short the dip lane outranked records the demotion — and the sized LONG that outranked it survives beside it', async () => {
     const store = recordingStore()
     // ONE tape, two lanes, opposite sides: a rolled-over name whose last session
     // is a volume-paid bounce off the low. The composite calls a live short; the
@@ -400,14 +407,22 @@ describe('the funnel trace', () => {
       NOW,
     )
     const trace = (await readTrace(store))!
-    // One row per symbol, so the LAST thing that happened to this chart is what it
-    // names — and what happened last is the demotion.
-    expect(trace.rows.GLW).toMatchObject({ gate: 'called-shadow', side: 'short' })
-    expect(trace.rows.GLW.detail).toContain("the dip lane's read on the same chart outranked it")
+    // TWO rows, because two different things happened to this chart. Under one key
+    // per symbol the demotion's `revise` landed on the row the dip long had just
+    // written, and the reader-facing LONG — the only sized call on the name —
+    // vanished from the record of the run. Keyed by side, both survive.
+    expect(trace.rows['GLW:short']).toMatchObject({ gate: 'called-shadow', side: 'short' })
+    expect(trace.rows['GLW:short'].detail).toContain("the dip lane's read on the same chart outranked it")
+    expect(trace.rows['GLW:long'].gate).toMatch(/^called-(full|half)$/)
+    expect(trace.rows['GLW:long'].side).toBe('long')
     expect(trace.emptySides.short).toBe('dip-lane')
+    // …and the trace agrees with the ledger, which carries both rows too
+    const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
+    expect(ledger.find(p => p.sym === 'GLW' && p.side === 'long')!.riskPct).toBeGreaterThan(0)
+    expect(ledger.find(p => p.sym === 'GLW' && p.side === 'short')!.shadow).toBe(true)
   })
 
-  it('a short an ISA cannot place is route-blocked, and the one the board promotes becomes a called-watch', async () => {
+  it('a short an ISA cannot place is route-blocked, and the one the board promotes becomes a called-observation', async () => {
     const store = recordingStore()
     const syms = ['AAA', 'BBB', 'CCC', 'DDD']
     const tapes = new Map(syms.map((s, i) => [s, shortyVariant(0.7 + i * 0.4)]))
@@ -425,12 +440,14 @@ describe('the funnel trace', () => {
       NOW,
     )
     const trace = (await readTrace(store))!
-    const gates = syms.map(s => trace.rows[s].gate)
+    const gates = syms.map(s => trace.rows[`${s}:short`].gate)
     expect(gates.filter(g => g === 'route-blocked').length).toBe(3)
-    expect(gates.filter(g => g === 'called-watch').length).toBe(1) // the best of them, promoted to the empty side
-    const promoted = syms.find(s => trace.rows[s].gate === 'called-watch')!
-    expect(trace.rows[promoted].detail).toContain('promoted observation')
-    for (const s of syms.filter(x => x !== promoted)) expect(trace.rows[s].detail).toContain('no ISA short route')
+    // its own code, not `called-watch`: a promoted observation and a graded watch
+    // row are two different reasons to be on the board at zero size
+    expect(gates.filter(g => g === 'called-observation').length).toBe(1) // the best of them, promoted to the empty side
+    const promoted = syms.find(s => trace.rows[`${s}:short`].gate === 'called-observation')!
+    expect(trace.rows[`${promoted}:short`].detail).toContain('promoted observation')
+    for (const s of syms.filter(x => x !== promoted)) expect(trace.rows[`${s}:short`].detail).toContain('no ISA short route')
     expect(trace.emptySides.short).toBe('no-route')
   })
 
@@ -520,11 +537,98 @@ describe('the funnel trace', () => {
       'route-blocked',
       'diversity',
       'slot-cut',
+      'shadow-capped',
       'called-full',
       'called-half',
       'called-shadow',
       'called-watch',
+      'called-below-base',
+      'called-observation',
     ]
     for (const row of Object.values(trace.rows)) expect(known).toContain(row.gate)
+  })
+
+  it('a row the trade cut sent to the watch list and the WATCH cut then dropped keeps slot-cut — called-* is only ever what the reader gets', async () => {
+    const store = recordingStore()
+    // Eleven uncorrelated rolled-over names against three trade slots and six
+    // watch slots: three trade, six land on the watch list, and the rest fall off
+    // the board entirely. The first six must not keep reading `slot-cut` (the
+    // reader has them) and the last must not read `called-*` (the reader doesn't).
+    const syms = Array.from({ length: 11 }, (_, i) => `S${String(i).padStart(2, '0')}`)
+    const tapes = new Map(syms.map((s, i) => [s, shortyVariant(0.6 + i * 0.37)]))
+    await store.write('config', {
+      watchlist: syms.map(symbol => ({ symbol })),
+      rules: [],
+      ytChannels: [],
+      levMap: Object.fromEntries(syms.map(s => [s, { short2x: `I${s}` }])),
+    })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 3 })
+    await buildBoard(
+      store,
+      deps({
+        screens: async () => [],
+        mediaTitles: async () => [],
+        candles: async sym => tapes.get(sym) ?? (sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      }),
+      NOW,
+    )
+    const trace = (await readTrace(store))!
+    const board = (await store.read<{ board: Prediction[] }>('engine-board'))!.board
+    const seen = new Set(board.filter(p => !p.nearMiss).map(p => `${p.sym.toUpperCase()}:${p.side}`))
+    const rows = syms.map(s => [s, trace.rows[`${s}:short`]] as const)
+
+    // the reader's rows and the trace's called-* rows are the SAME set
+    for (const [s, row] of rows) {
+      if (seen.has(`${s}:short`)) expect(row.gate).toMatch(/^called-/)
+      else expect(row.gate).not.toMatch(/^called-/)
+    }
+    // the trade cut's casualties that the watch list SEATED say so, and still
+    // carry the cut that sent them there
+    const seated = rows.filter(([s, r]) => seen.has(`${s}:short`) && r.gate === 'called-watch')
+    expect(seated.length).toBeGreaterThanOrEqual(1)
+    for (const [, r] of seated) expect(r.detail).toContain('trade cut')
+    // …and the ones that fell off the board entirely keep the cut's own verdict
+    const dropped = rows.filter(([s]) => !seen.has(`${s}:short`))
+    expect(dropped.length).toBeGreaterThanOrEqual(1)
+    for (const [, r] of dropped) expect(['slot-cut', 'diversity']).toContain(r.gate)
+    expect(dropped.some(([, r]) => r.gate === 'slot-cut')).toBe(true)
+  })
+
+  it('a shadow past the 5-per-side budget never reaches the ledger, so it reads shadow-capped rather than called-shadow', async () => {
+    const store = recordingStore()
+    // Nine unroutable shorts: every one publishes as a route-blocked shadow, one is
+    // promoted to fill the empty side, and pickShadow then takes the best five of
+    // the remaining eight. The three the budget dropped are in NOTHING the reader
+    // or the ledger ever sees — and must stop claiming they published.
+    const syms = Array.from({ length: 9 }, (_, i) => `R${String(i).padStart(2, '0')}`)
+    const tapes = new Map(syms.map((s, i) => [s, shortyVariant(0.7 + i * 0.4)]))
+    await store.write('config', { watchlist: syms.map(symbol => ({ symbol })), rules: [], ytChannels: [], levMap: {} }) // NO routes at all
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 3 })
+    const fillers = ['FIL1', 'FIL2', 'FIL3', 'FIL4', 'FIL5', 'FIL6']
+    await buildBoard(
+      store,
+      deps({
+        screens: async () =>
+          [...syms, ...fillers].map(sym => ({ row: { sym, price: 150, capUsdM: 50_000, changePct: null, name: null }, source: 'screener:losers' })),
+        mediaTitles: async () => [],
+        candles: async sym => tapes.get(sym) ?? (fillers.includes(sym) || sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      }),
+      NOW,
+    )
+    const trace = (await readTrace(store))!
+    const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
+    const gates = syms.map(s => trace.rows[`${s}:short`].gate)
+
+    expect(ledger.filter(p => p.shadow && p.side === 'short')).toHaveLength(5)
+    expect(gates.filter(g => g === 'shadow-capped')).toHaveLength(3)
+    expect(gates.filter(g => g === 'route-blocked' || g === 'called-shadow')).toHaveLength(5)
+    expect(gates.filter(g => g === 'called-observation')).toHaveLength(1)
+    for (const s of syms.filter(x => trace.rows[`${x}:short`].gate === 'shadow-capped')) {
+      expect(ledger.some(p => p.sym === s)).toBe(false) // …and they are genuinely absent
+      expect(trace.rows[`${s}:short`].detail).toContain('shadow budget')
+    }
+    // the invariant Task 4 asserts: a called-* row is a row the reader gets
+    const seen = new Set([...ledger.map(p => `${p.sym.toUpperCase()}:${p.side}`)])
+    for (const [key, row] of Object.entries(trace.rows)) if (row.gate.startsWith('called-') || row.gate === 'route-blocked') expect(seen.has(key)).toBe(true)
   })
 })
