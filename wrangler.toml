@@ -1,0 +1,32 @@
+# The Pages project: the Vite app in dist/ plus the Pages Functions in functions/.
+#
+# M2 of the Cloudflare migration. Nothing here is deployed yet — `wrangler login`
+# is the owner's to run (design §4) and M2 is local/miniflare only. This file
+# exists so `wrangler pages dev` and M3's first real deploy find the bindings
+# already written down rather than clicked into a dashboard.
+#
+# It does NOT affect the Netlify build in any way: Netlify reads netlify.toml,
+# runs `npm run build`, publishes dist/, and takes its functions from
+# netlify/functions/ (explicitly configured there).
+
+name = "streetsignal"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-08-01"
+
+# The handlers reach for Buffer, node:crypto and web-push, and this is also what
+# populates `process.env` from the vars/secrets below — the mechanism that lets
+# 23 handler files keep their existing `process.env.X` reads (lib/runtimeEnv.ts).
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "STREETSIGNAL_DB"
+database_name = "streetsignal"
+# M3 fills this in from `wrangler d1 create streetsignal`. Deliberately blank:
+# a plausible-looking wrong id is worse than a deploy that refuses to start.
+database_id = ""
+
+[vars]
+STORE_BACKEND = "d1"
+
+[observability]
+enabled = true

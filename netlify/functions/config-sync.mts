@@ -1,6 +1,6 @@
 import type { Context } from '@netlify/functions'
 import { validateConfig, type AppConfig } from '../../shared/config'
-import { blobAppStore, type AppStore } from './lib/store'
+import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { authenticate } from './lib/auth'
 
 const json = (status: number, body: unknown) =>

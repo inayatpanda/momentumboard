@@ -1,5 +1,5 @@
 import type { Context } from '@netlify/functions'
-import { blobAppStore, type AppStore } from './lib/store'
+import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { CANONICAL_SITE } from './lib/site'
 import { scopedToken } from './lib/auth'
 

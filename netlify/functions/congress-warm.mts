@@ -1,5 +1,5 @@
 import type { Context } from '@netlify/functions'
-import { blobAppStore } from './lib/store'
+import { appStore as blobAppStore } from './lib/storeProvider'
 import { getCached, setCached } from './lib/cache'
 import { accumulateCongressHistory, computeCongressScorecard, fetchCongressTrades, resolveCongressSectors, type CongressTrade } from './lib/congress'
 import { cachedIndustry } from './lib/marketCache'

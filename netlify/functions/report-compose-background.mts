@@ -1,4 +1,4 @@
-import { blobAppStore } from './lib/store'
+import { appStore as blobAppStore } from './lib/storeProvider'
 import { authenticate, scopedToken } from './lib/auth'
 import { callLlm } from './lib/llm'
 import { composePrompt, parseComposed, buildNewspaperHtml, boardExportRows, constrainIdeasToBoard, validateNominations, mergeNominations, type StoredNomination } from './lib/newspaper'

@@ -1,5 +1,5 @@
 import type { Context } from '@netlify/functions'
-import { blobAppStore, type AppStore } from './lib/store'
+import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { authenticate } from './lib/auth'
 import { getCached, setCached } from './lib/cache'
 import { fetchT212Positions } from './lib/t212lib'

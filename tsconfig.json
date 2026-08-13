@@ -13,5 +13,5 @@
     "noEmit": true,
     "types": ["vitest/globals", "@testing-library/jest-dom", "node"]
   },
-  "include": ["src", "shared", "netlify"]
+  "include": ["src", "shared", "netlify", "scripts", "functions", "workers"]
 }

@@ -1,4 +1,4 @@
-import { blobAppStore } from './lib/store'
+import { appStore as blobAppStore } from './lib/storeProvider'
 import { authenticate } from './lib/auth'
 import { fetchYahooChart } from './lib/yahoo'
 import { MACRO_ASSETS, shockAnalogues, type MacroEvent } from './lib/macroEvents'

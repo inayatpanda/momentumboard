@@ -1,5 +1,5 @@
 import type { Context } from '@netlify/functions'
-import { blobAppStore, type AppStore } from './lib/store'
+import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { sendTelegram } from './lib/telegram'
 import { parseCallText, toExtract, type PunditExtract } from './lib/punditCalls'
 import { addLicenceVerified, generateLicenceKey, readLicencesFresh, scopedToken, type Licence } from './lib/auth'

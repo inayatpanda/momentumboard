@@ -50,11 +50,63 @@ describe('d1AppStore — the AppStore contract', () => {
     db.close()
   })
 
-  it('a corrupt row reads as a miss, not an exception', async () => {
+  // M1 shipped 'null' here and the M1 review booked the reversal for M2. The
+  // app store's callers READ-MODIFY-WRITE: `licences` is read, appended to and
+  // written back. A corrupt row read as null would become `[] → push → write`
+  // and overwrite every licence key with a one-element list, silently. The
+  // corrupt bytes must survive for recovery, so the read throws instead.
+  it('a corrupt row THROWS on the app store, leaving the bytes intact', async () => {
     const db = await fresh()
     const store = d1AppStore(db)
     await store.writeRaw('half-written', '{"a":')
+    await expect(store.read('half-written')).rejects.toThrow(/corrupt JSON at key 'half-written'/)
+    expect(await store.readRaw('half-written')).toBe('{"a":')
+    db.close()
+  })
+
+  it("…and reads as a miss on the cache store, where every caller's null means 'go and fetch it'", async () => {
+    const db = await fresh()
+    const cache = d1CacheStore(db)
+    await cache.writeRaw('quote:AAPL', '{"value":')
+    expect(await cache.read('quote:AAPL')).toBeNull()
+    expect(await cache.readRaw('quote:AAPL')).toBe('{"value":')
+    db.close()
+  })
+
+  it("onCorrupt: 'null' is available on the app store for callers that want it", async () => {
+    const db = await fresh()
+    const store = d1AppStore(db, { onCorrupt: 'null' })
+    await store.writeRaw('half-written', '{"a":')
     expect(await store.read('half-written')).toBeNull()
+    db.close()
+  })
+
+  // M1 review, booked for M2. Lazy eviction was SELECT-then-DELETE: two round
+  // trips to a remote D1 on a path every cache miss takes. One conditional
+  // DELETE does the same job, and its predicate is the exact complement of the
+  // read's, so it can only remove a row the read just refused to serve.
+  it('evicts a stale row in ONE statement, and only ever a stale one', async () => {
+    const db = await fresh()
+    const queries: string[] = []
+    const counted: D1Database = { prepare: (q: string) => (queries.push(q.trim().split(/\s+/).slice(0, 2).join(' ')), db.prepare(q)) }
+    const now = 1_760_000_000_000
+    const cache = d1CacheStore(counted, { now: () => now })
+    await cache.writeRaw('quote:RMS.PA', RAW['site__cache/quote:RMS.PA'], now - 1)
+    await cache.writeRaw('quote:AAPL', JSON.stringify({ value: 231, expires: now + 60_000 }), now + 60_000)
+
+    queries.length = 0
+    expect(await cache.read('quote:RMS.PA')).toBeNull()
+    expect(queries).toEqual(['SELECT value', 'DELETE FROM'])
+    expect(await cache.readRaw('quote:RMS.PA')).toBeNull() // really gone
+
+    queries.length = 0
+    expect(await cache.read('quote:AAPL')).toMatchObject({ value: 231 }) // a hit costs one query and evicts nothing
+    expect(queries).toEqual(['SELECT value'])
+
+    queries.length = 0
+    expect(await cache.read('never-existed')).toBeNull() // a plain miss still tries once, harmlessly
+    expect(queries).toEqual(['SELECT value', 'DELETE FROM'])
+    expect(await cache.read('quote:AAPL')).toMatchObject({ value: 231 }) // the live row survived every sweep above
     db.close()
   })
 

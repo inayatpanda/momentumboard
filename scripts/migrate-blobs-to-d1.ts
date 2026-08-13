@@ -105,19 +105,28 @@ interface Planned {
 }
 
 export function scanBackup(backupDir: string, sources: readonly Source[] = DEFAULT_SOURCES) {
-  const present = readdirSync(backupDir).filter(n => {
-    try {
-      return statSync(join(backupDir, n)).isDirectory()
-    } catch {
-      return false
-    }
-  })
+  // Dotfiles are macOS/git furniture, never blob data — and the M1 review booked
+  // this: a single `.DS_Store` inside an otherwise-empty directory made it look
+  // like unmapped DATA and aborted the whole import with "holds 1 blobs". The
+  // per-source read at the bottom of this function already filtered them; these
+  // two did not. Same predicate everywhere now.
+  const notDotfile = (n: string) => !n.startsWith('.')
+
+  const present = readdirSync(backupDir)
+    .filter(notDotfile)
+    .filter(n => {
+      try {
+        return statSync(join(backupDir, n)).isDirectory()
+      } catch {
+        return false
+      }
+    })
 
   const known = new Map(sources.map(s => [s.dir, s]))
   const ignoredDirs: string[] = []
   for (const name of present) {
     if (known.has(name)) continue
-    const count = readdirSync(join(backupDir, name)).length
+    const count = readdirSync(join(backupDir, name)).filter(notDotfile).length
     // An unmapped directory WITH files is data we would silently drop. Refuse.
     if (count > 0) throw new Error(`backup directory '${name}' holds ${count} blobs but maps to no store — add it to DEFAULT_SOURCES`)
     ignoredDirs.push(name)
@@ -137,7 +146,7 @@ export function scanBackup(backupDir: string, sources: readonly Source[] = DEFAU
       perSource.push({ dir: src.dir, store: src.store, files: 0 })
       continue
     }
-    const files = readdirSync(join(backupDir, src.dir)).filter(f => !f.startsWith('.')).sort()
+    const files = readdirSync(join(backupDir, src.dir)).filter(notDotfile).sort()
     perSource.push({ dir: src.dir, store: src.store, files: files.length })
     const target = byStore.get(src.store) ?? new Map<string, Planned>()
     byStore.set(src.store, target)

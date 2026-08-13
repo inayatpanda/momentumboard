@@ -1,0 +1,42 @@
+# The scheduled Worker. Not deployed yet — M2 is local/miniflare only, and
+# `wrangler login` is the owner's to run (design §4).
+#
+# WHY A SEPARATE WORKER: Pages Functions serve the site on its custom domain but
+# cannot carry cron triggers. This one lives on *.workers.dev, needs no domain,
+# and shares the D1 database with the Pages project.
+
+name = "streetsignal-cron"
+main = "index.ts"
+compatibility_date = "2026-08-01"
+
+# The handlers reach for Buffer, node:crypto and web-push. Also populates
+# `process.env` from the vars and secrets below, which is what lets 23 handler
+# files keep their existing `process.env.X` reads unchanged (lib/runtimeEnv.ts).
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+# The three the design fixes (§2). Every other Netlify schedule fires on a
+# minute divisible by five (12:45, 16:05, 06:10/18:10, 08:00), so the */5 tick
+# carries them at their exact original cadence — lib/cron.ts's job table decides
+# which are due. Cloudflare's free plan allows five triggers; this uses three.
+crons = [
+  "*/5 * * * *",   # alert-check, and the four bulletins/sweeps that land on :00/:05/:10/:45
+  "*/15 * * * *",  # watchdog (its own 3600s slot claim collapses this to hourly) + the D1 cache sweep
+  "20 5 * * 1-5",  # report-kick → predict-background, OFF unless WORKER_OWNS_PREDICT=1
+]
+
+[[d1_databases]]
+binding = "STREETSIGNAL_DB"
+database_name = "streetsignal"
+# M3 fills this in from `wrangler d1 create streetsignal`. Left blank on purpose:
+# a placeholder id that happens to be valid is worse than a deploy that refuses.
+database_id = ""
+
+[observability]
+enabled = true
+
+[vars]
+# Non-secret switches. Everything else is a SECRET and is set with
+# `wrangler secret put <NAME>` — the full list is in .superpowers/sdd/m2-report.md.
+STORE_BACKEND = "d1"
+WORKER_OWNS_PREDICT = "0"

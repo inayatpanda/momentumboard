@@ -1,6 +1,6 @@
 import type { Config } from '@netlify/functions'
 import { cachedQuote, cachedCandles } from './lib/marketCache'
-import { blobAppStore } from './lib/store'
+import { appStore as blobAppStore } from './lib/storeProvider'
 import { fetchNews } from './lib/news'
 import { fetchVideos } from './lib/youtube'
 import { withDefaults } from '../../shared/channels'

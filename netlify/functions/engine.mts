@@ -1,4 +1,4 @@
-import { blobAppStore } from './lib/store'
+import { appStore as blobAppStore } from './lib/storeProvider'
 import { authenticate } from './lib/auth'
 import type { Prediction } from '../../shared/engine/types'
 import type { WeightsState, CalibrationState } from '../../shared/engine/calibration'

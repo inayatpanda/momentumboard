@@ -1,4 +1,4 @@
-import { blobAppStore } from './lib/store'
+import { appStore as blobAppStore } from './lib/storeProvider'
 
 // THE WEEKLY SNAPSHOT: the engine's entire track record — predictions,
 // calibration, weights, scorecard, the paper book — lives in one blob store.

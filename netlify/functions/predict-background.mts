@@ -1,4 +1,4 @@
-import { acquireLease, blobAppStore, releaseLease } from './lib/store'
+import { acquireLease, appStore as blobAppStore, releaseLease } from './lib/storeProvider'
 import { authenticate } from './lib/auth'
 import { buildBoard, defaultDeps, gradeOutstanding, traceOpenIdeas } from './lib/engine'
 import { validateConfig } from '../../shared/config'

@@ -1,5 +1,5 @@
 import type { Context } from '@netlify/functions'
-import { blobAppStore, type AppStore } from './lib/store'
+import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { hash8 } from './lib/auth'
 
 // Free desktop downloads, counted. /download/mac|win 302s to the public

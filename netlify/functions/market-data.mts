@@ -32,7 +32,7 @@ export async function routeRequest(
   deps: { yahoo: typeof fetchYahooChart; finnhub: typeof fetchFinnhubQuote; news?: typeof fetchSymbolNews },
 ): Promise<Response> {
   const { authenticate } = await import('./lib/auth')
-  const { blobAppStore } = await import('./lib/store')
+  const { appStore: blobAppStore } = await import('./lib/storeProvider')
   const auth = await authenticate(headers, env, blobAppStore)
   if (!auth) return json(401, { ok: false, error: 'unauthorized' })
   const type = url.searchParams.get('type')
@@ -143,7 +143,7 @@ export async function routeRequest(
     const hit = await getCached<unknown>('digest-feed')
     if (hit) return json(200, { ok: true, data: hit })
     try {
-      const { blobAppStore } = await import('./lib/store')
+      const { appStore: blobAppStore } = await import('./lib/storeProvider')
       const { fetchNews } = await import('./lib/news')
       const { fetchVideos } = await import('./lib/youtube')
       const cfg = await blobAppStore.read<{ watchlist: { symbol: string }[]; ytChannels: { id: string; name: string }[] }>('config')
@@ -263,7 +263,7 @@ export async function routeRequest(
     const hit = await getCached<unknown>('signal-stats')
     if (hit) return json(200, { ok: true, data: hit })
     try {
-      const { blobAppStore } = await import('./lib/store')
+      const { appStore: blobAppStore } = await import('./lib/storeProvider')
       const { scoreSignals } = await import('./lib/signalStats')
       const { cachedCandles } = await import('./lib/marketCache')
       const log = ((await blobAppStore.read<unknown[]>('signal-log')) ?? []) as Parameters<typeof scoreSignals>[0]
@@ -430,7 +430,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
     if (hit) return json(200, { ok: true, data: hit })
     try {
       const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse, pickDiscoveries, isMega } = await import('./lib/social')
-      const { blobAppStore } = await import('./lib/store')
+      const { appStore: blobAppStore } = await import('./lib/storeProvider')
       const { computeConsensus } = await import('./lib/videoTrends')
       const [reddit, stocktwits, extracts, cfg] = await Promise.all([
         fetchRedditTrends(),
@@ -536,7 +536,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
     const hit = fresh ? null : await getCached<unknown>('pick-stats')
     if (hit) return json(200, { ok: true, data: hit })
     try {
-      const { blobAppStore } = await import('./lib/store')
+      const { appStore: blobAppStore } = await import('./lib/storeProvider')
       const { scorePicks } = await import('./lib/picks')
       const { cachedCandles } = await import('./lib/marketCache')
       const history = ((await blobAppStore.read<unknown[]>('report-picks')) ?? []) as Parameters<typeof scorePicks>[0]

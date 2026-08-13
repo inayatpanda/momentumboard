@@ -1,4 +1,4 @@
-import { blobAppStore } from './lib/store'
+import { appStore as blobAppStore } from './lib/storeProvider'
 import { publishBulletin } from './lib/bulletins'
 import { isUsMarketHoliday } from '../../shared/usMarketHolidays'
 

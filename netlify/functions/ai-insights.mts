@@ -1,5 +1,5 @@
 import type { Context } from '@netlify/functions'
-import { blobAppStore, type AppStore } from './lib/store'
+import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { cachedQuote, cachedCandles } from './lib/marketCache'
 import { fetchNews } from './lib/news'
 import { detectSetups, regimeFromCandles } from '../../shared/setups'

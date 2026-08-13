@@ -1,4 +1,4 @@
-import { blobAppStore } from './store'
+import { appStore as blobAppStore } from './storeProvider'
 
 /**
  * Netlify scheduled functions are reachable at their public

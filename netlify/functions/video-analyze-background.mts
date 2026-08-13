@@ -1,4 +1,4 @@
-import { blobAppStore, type AppStore } from './lib/store'
+import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import type { VideoExtract } from './lib/videoTrends'
 
 // Netlify background function (-background suffix): returns 202 immediately,

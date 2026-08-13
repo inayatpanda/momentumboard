@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -160,12 +160,44 @@ describe('migrate-blobs-to-d1', () => {
     db.close()
   })
 
+  // M1 review, booked for M2. macOS drops a `.DS_Store` into every directory
+  // it has ever displayed, and the unmapped-directory check counted it as a
+  // blob: one Finder visit to the rescue folder and the whole import aborted
+  // with "site%3Aapp holds 1 blobs but maps to no store".
+  it('ignores dotfile furniture everywhere, not only inside the mapped sources', async () => {
+    const dir = fixtureBackup({
+      '.DS_Store': 'macos junk',
+      'site%3Aapp/.DS_Store': 'macos junk',
+      'site__app/.DS_Store': 'macos junk',
+    })
+    const scan = scanBackup(dir)
+    expect(scan.ignoredDirs).toContain('site%3Aapp')
+    expect(scan.perSource.find(s => s.dir === 'site__app')?.files).toBe(2)
+
+    const db = await fresh()
+    const r = await migrateBlobsToD1(db, { backupDir: dir })
+    expect(r.ok).toBe(true)
+    expect(await db.prepare(`SELECT count(*) AS n FROM blobs WHERE key LIKE '.%'`).first()).toEqual({ n: 0 })
+    db.close()
+  })
+
   it("decodes the exporter's '__' back into a slash", async () => {
     const db = await fresh()
     const r = await migrateBlobsToD1(db, { backupDir: fixtureBackup({ 'site__app/nested__key': '{"ok":true}' }) })
     expect(r.slashKeys).toBe(1)
     expect(await db.prepare('SELECT 1 AS hit FROM blobs WHERE store = ?1 AND key = ?2').bind('app', 'nested/key').first()).toEqual({ hit: 1 })
     db.close()
+  })
+})
+
+// M1 left this script OUTSIDE the compiler's reach: tsconfig's `include` did
+// not list `scripts`, so `npm run build` could go green over a type error in
+// the one program that touches the rescued data. M2 added it — pinned here so
+// nobody trims the include back and quietly loses the coverage again.
+describe("this script is inside the build's type checking", () => {
+  it('tsconfig include lists scripts, functions and workers', () => {
+    const tsconfig = JSON.parse(readFileSync(join(__dirname, '..', 'tsconfig.json'), 'utf8')) as { include: string[] }
+    for (const dir of ['src', 'shared', 'netlify', 'scripts', 'functions', 'workers']) expect(tsconfig.include, dir).toContain(dir)
   })
 })
 

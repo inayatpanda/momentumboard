@@ -1,4 +1,4 @@
-import { blobAppStore } from './lib/store'
+import { appStore as blobAppStore } from './lib/storeProvider'
 import { isUsMarketHoliday } from '../../shared/usMarketHolidays'
 
 // THE WATCHDOG: fail-soft everywhere means fail-SILENT everywhere — this is

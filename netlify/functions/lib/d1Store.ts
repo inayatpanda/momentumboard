@@ -90,6 +90,21 @@ export interface D1StoreOptions {
   /** Lazily delete a row found expired on read. Best-effort; failures are
    * swallowed because a failed eviction must never fail the read. Default true. */
   evictOnRead?: boolean
+  /** What `read()` does when a row's JSON will not parse. Default 'throw'.
+   *
+   * M1 shipped 'null' everywhere, mirroring Netlify Blobs' `{ type: 'json' }`
+   * read, and the M1 review booked this reversal. The reason is the app store's
+   * read-modify-WRITE pattern: `licences`, `runlog`, `alert-history` are all
+   * read, appended to, and written back. Swallowing a corrupt row turns that
+   * into `[] → push → write`, which OVERWRITES the corruption with a
+   * near-empty list — the licence table silently emptied, every key dead, and
+   * no error anywhere to say so. Throwing turns a corrupt row into a 500 that
+   * leaves the bytes on disk to be recovered.
+   *
+   * The cache is the opposite case and keeps 'null': every cache caller already
+   * treats a miss as "go and fetch it", so a corrupt cache row should be a miss
+   * (M1's H2 audit, 40 call sites, uniform fail-soft). */
+  onCorrupt?: 'throw' | 'null'
 }
 
 /** Extras beyond the AppStore contract — the cron sweep and the import both
@@ -124,19 +139,23 @@ export function d1AppStore(db: D1Database, opts: D1StoreOptions = {}): D1Store {
   const now = opts.now ?? (() => Date.now())
   const expiresAtOf = opts.expiresAt ?? (() => null)
   const evict = opts.evictOnRead !== false
+  const onCorrupt = opts.onCorrupt ?? 'throw'
 
   // Expiry is enforced in the SQL predicate, not after the fact: a stale row
   // cannot be handed back even if the eviction below fails or is disabled.
   const SELECT = `SELECT value FROM blobs WHERE store = ?1 AND key = ?2 AND (expires_at IS NULL OR expires_at >= ?3)`
-  const SELECT_ANY = `SELECT value, expires_at FROM blobs WHERE store = ?1 AND key = ?2`
   const UPSERT = `INSERT OR REPLACE INTO blobs (store, key, value, updated_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)`
   const DELETE = `DELETE FROM blobs WHERE store = ?1 AND key = ?2`
+  // ONE statement, not a SELECT then a DELETE (M1 review). The predicate is the
+  // exact complement of SELECT's, so this can only ever remove a row the read
+  // just refused to serve — and it costs one round trip to a remote D1 instead
+  // of two, on a path taken by every miss.
+  const DELETE_IF_STALE = `DELETE FROM blobs WHERE store = ?1 AND key = ?2 AND expires_at IS NOT NULL AND expires_at < ?3`
 
   async function evictIfStale(key: string, at: number): Promise<void> {
     if (!evict) return
     try {
-      const row = await db.prepare(SELECT_ANY).bind(store, key).first<{ expires_at: number | null }>()
-      if (row && row.expires_at != null && row.expires_at < at) await db.prepare(DELETE).bind(store, key).run()
+      await db.prepare(DELETE_IF_STALE).bind(store, key, at).run()
     } catch {
       /* eviction is housekeeping — never let it fail a read */
     }
@@ -156,9 +175,10 @@ export function d1AppStore(db: D1Database, opts: D1StoreOptions = {}): D1Store {
       if (raw == null) return null
       try {
         return JSON.parse(raw) as T
-      } catch {
-        // Blobs' `{ type: 'json' }` read threw here too; a corrupt row is a
-        // miss, not an outage — the callers all treat null as "go and fetch it".
+      } catch (e) {
+        // See D1StoreOptions.onCorrupt. The app store THROWS: a miss here would
+        // be appended to and written back, overwriting the corruption.
+        if (onCorrupt === 'throw') throw new Error(`d1 store '${store}': corrupt JSON at key '${key}' (${String((e as Error)?.message ?? e).slice(0, 120)})`)
         return null
       }
     },
@@ -222,5 +242,8 @@ export function d1AppStore(db: D1Database, opts: D1StoreOptions = {}): D1Store {
  * `write()` still get an expiry when the value carries the getCached envelope,
  * so a ported cache.ts needs no special casing. */
 export function d1CacheStore(db: D1Database, opts: Omit<D1StoreOptions, 'store' | 'expiresAt'> = {}): D1Store {
-  return d1AppStore(db, { ...opts, store: 'cache', expiresAt: envelopeExpiry })
+  // onCorrupt 'null' — and ONLY here. Every cache caller treats null as "go and
+  // fetch it" (M1's H2 audit), so a corrupt cache row should read as a miss;
+  // the app store throws instead, because its callers write back what they read.
+  return d1AppStore(db, { onCorrupt: 'null', ...opts, store: 'cache', expiresAt: envelopeExpiry })
 }

@@ -1,5 +1,5 @@
 import type { Context } from '@netlify/functions'
-import { blobAppStore, type AppStore } from './lib/store'
+import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 
 // Web Push device registry. GET serves the public VAPID key (not a secret);
 // POST (app token) registers this device's subscription. Up to 6 devices.
