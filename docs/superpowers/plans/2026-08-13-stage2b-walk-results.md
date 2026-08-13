@@ -51,3 +51,17 @@ Option 1 preserves every deliverable of this walk AND the meaning of grades; it 
 - Cohort-tagged keys: 0 in the artefact (cohortless 3-part keys, matching the committed seed's shape — cohort rungs fill from live accrual, per the fallback-ladder design).
 - Zero-trade days 64/501 (12.8%) — the walk spans the 2024-08 → 2025-04 chop; not a defect, the board held C/watch rows those days (blank boards 0).
 - The three pre-walk refusal guards (probe-seed exclusion, generation floor, `--symbols` hygiene) landed in c6f48fc after Task 2's review; the generation floor is why a Task-4 world can't accidentally warm-start a future walk.
+
+## Addendum — the regenerated artefact and the sized-only truth (option 1 executed)
+
+**referenceBase measured = 0.4158** (unconditional sweep, 166 symbols — the walk's own asked-universe, 4,178 rows) vs pooled 0.4161: the yardstick the owner chose exists and sits exactly where the pool sits. Acceptance window under the final artefact: still 531/531 C. The old committed seed's 0.367 base — and therefore today's live B-grades — were an apples-to-oranges artefact (66 symbols, different window, v2 model).
+
+**But the sized-only decomposition changes the story.** The 1,259 rows readers would actually trade (watch and shadow rows excluded):
+- Aggregate: 42.3% graded hits (+0.8pp over reference) and **+3.05pp mean excess per trade** (median 0 — right-skewed, big winners carry it; the engine makes money on magnitude, not frequency).
+- **`long:green:55-70`: 67/117 = 57.3% — clears the A-bar** (≥0.5158, n≥30) on its own merits.
+- **`long:green:70+`: 250/612 = 40.8% — the inversion is real in the sized data**, not a dilution artefact. The composite's top end is overconfident; PAVA correctly pools the 57% cell down against it (to ~43.5%), which is what erases the A.
+- The velocity lane's 2,434 shadow rows (39.4%) additionally dilute every bucket they touch — by ratified design ("graded, learning"), but the provenance is not partitioned at read time.
+
+**What this means:** grades cannot honestly separate until two Stage-3 items land: (1) provenance-partitioned bucket reads (sized evidence grades sized rows; shadow evidence prices shadow rows), (2) the 70+ inversion investigated as a MODEL question (why does maximum conviction underperform?). Both are learning-stage work, now with the data to do it.
+
+**Ship recommendation:** install generation 2 as measured (all-C at half size, honest probabilities, thesis/falsifier voice carrying conviction in words), because the alternative — keeping generation 1 — shows readers B-grades manufactured by a stale yardstick. Everything is reversible: a generation-3 seed re-installs in a 25-second walk + deploy. NOTE: the plan's Task-4 gate "grade distribution not ≥90% single-grade" fails by construction under any honest yardstick this window — shipping requires the owner to explicitly waive that gate with the evidence above in hand.
