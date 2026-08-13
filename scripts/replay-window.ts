@@ -1028,11 +1028,35 @@ export async function main() {
     throw new Error(
       'BLOCKED: --seed-out requires --seed-generation <n>, a positive integer. It is how loadState decides this artefact may displace the live blob (it installs only when the seed announces a HIGHER generation), so it cannot be guessed here.',
     )
+  // A fabricated calibration must never wear a seed's clothes: --plant-a
+  // overwrites engine-calibration with a hand-written A-reachability fixture
+  // every morning, and --baseline measures the OLD screens — either one walked
+  // into --seed-out would serialise as a legitimate v3 artefact with no tell.
+  if (seedOut && (plantA || baseline))
+    throw new Error('BLOCKED: --seed-out cannot run with --plant-a or --baseline — a probe calibration is not a seed')
+  // The floor: the walk starts from a blank stamped with THIS generation, and
+  // loadState's swap fires whenever the committed seed announces a HIGHER one
+  // (engine.ts). Emitting at or below the committed generation would let the
+  // committed seed install itself INTO the walk on day one — the two-epoch
+  // mixture the design forbids — and the artefact could never install anyway.
+  if (seedOut) {
+    const committed = (await import('../shared/engine/seed.json')).default as {
+      calibration?: { seedGeneration?: number }
+    }
+    const committedGen = committed.calibration?.seedGeneration ?? 1
+    if (seedGeneration <= committedGen)
+      throw new Error(
+        `BLOCKED: --seed-generation ${seedGeneration} is not above the committed seed's generation ${committedGen} — the walk would warm-start from the committed seed and the artefact could never install`,
+      )
+  }
   // The walk universe. `--symbols` narrows it (a targeted run, and what lets the
   // unit test walk a fixture universe); seed mode then removes crypto, which is the
   // contract rather than a property of whichever list arrived.
-  const symbolsArg = process.argv.includes('--symbols')
-    ? arg('symbols', '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+  const symbolsRaw = process.argv.includes('--symbols') ? arg('symbols', '') : null
+  if (symbolsRaw === '' || symbolsRaw?.startsWith('--'))
+    throw new Error(`BLOCKED: --symbols needs a comma-separated list${symbolsRaw ? ` (got the next flag, ${symbolsRaw})` : ''}`)
+  const symbolsArg = symbolsRaw !== null
+    ? symbolsRaw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
     : null
   const askedUniverse = symbolsArg ?? REPLAY_UNIVERSE
   const baseUniverse = seedOut ? seedUniverse(askedUniverse) : askedUniverse

@@ -796,6 +796,17 @@ describe('--seed-out: the flags refuse to guess', () => {
       process.argv = argv
     }
   }
+  it('refuses --seed-out with --plant-a or --baseline — a probe calibration is not a seed', async () => {
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '2', '--plant-a'])).rejects.toThrow(/probe calibration/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '2', '--baseline'])).rejects.toThrow(/probe calibration/)
+  })
+  it('refuses a generation at or below the committed seed — the walk would warm-start from it', async () => {
+    // committed seed.json carries no seedGeneration → 1; emitting AT 1 must refuse
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '1'])).rejects.toThrow(/not above the committed/)
+  })
+  it('refuses --symbols without a list', async () => {
+    await expect(runWith(['--symbols', '--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '2'])).rejects.toThrow(/--symbols needs/)
+  })
   it('refuses --seed-out without a generation — the artefact may not guess which walk made it', async () => {
     await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json')])).rejects.toThrow(/--seed-generation/)
     await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json'), '--seed-generation', '0'])).rejects.toThrow(/--seed-generation/)
@@ -858,6 +869,10 @@ describe('--seed-out: the walk serialises what it learned', () => {
     // guarantee 5 — the artefact IS the carrying store's two blobs at walk end
     expect(art.calibration.buckets).toEqual(run.calibrationFinal.buckets)
     expect(art.weights.base).toEqual(DEFAULT_WEIGHTS)
+    // …and the IC is the WALK's, not initWeights' zeros — technical scores on
+    // every graded composite, so a walk that graded rows must have moved it
+    const tech = art.weights.ic.technical
+    expect(tech.nAgree + tech.nDisagree).toBeGreaterThan(0)
 
     // the walk started EMPTY: the committed generation-1 seed's 778 rows did not travel
     const total = Object.values(art.calibration.buckets).reduce((s, b) => s + b.n, 0)
