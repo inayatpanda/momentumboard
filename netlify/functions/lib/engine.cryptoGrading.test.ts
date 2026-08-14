@@ -195,6 +195,44 @@ describe('UNRELAXED: everything Phase A contained is still contained', () => {
   })
 })
 
+// -------------------------------------------------- what "leveraged" means --
+
+describe('the rung’s leveraged-stop rule counts GEARING, not routing (Stage 1c-R)', () => {
+  /** Flat through the call, then down 3/bar from the entry bar — through the
+   * stop at 90 and never back. */
+  const loser = tape(i => (i <= ENTRY_IDX + 1 ? 100 : 100 - 3 * (i - ENTRY_IDX - 1)))
+  const mixedTapes = (sym: string) => (sym === 'SPY' ? flat : sym.startsWith('L') ? loser : sym.endsWith('-USD') ? winner : null)
+  /** A cohort standing on its OWN record (17 winners) so the ladder reads its
+   * stream instead of mirroring itself while thin — then three stop-outs at the
+   * end, which is the ladder's "3 consecutive leveraged calls stopped out"
+   * trigger IF the rows were geared. The hit rate stays well over the cold-streak
+   * floor, so the only rule that can fire here is the leveraged one. */
+  const stream = (instrument: Prediction['instrument']) => [
+    ...Array.from({ length: 17 }, (_, i) => call(`W${i}-USD`, { id: `${ENTRY}:W${i}-USD:long`, cohort: 'crypto', capUsdM: null })),
+    ...Array.from({ length: 3 }, (_, i) => call(`L${i}-USD`, { id: `${ENTRY}:L${i}-USD:long`, cohort: 'crypto', capUsdM: null, instrument })),
+  ]
+  const walk = async (instrument: Prediction['instrument']) => {
+    const store = memoryStore()
+    await store.write(`predictions:${ENTRY}`, stream(instrument))
+    await store.write('predictions-index', [ENTRY])
+    await store.write(CRYPTO_RISK_KEY, { rung: 2, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
+    await gradeOutstanding(store, deps(mixedTapes), NOW, null)
+    return (await store.read<CohortRung>(CRYPTO_RISK_KEY))!
+  }
+
+  it('three GEARED stop-outs still step the crypto rung down', async () => {
+    const risk = await walk({ ticker: '3BTL.L', leverage: 3 })
+    expect(risk.rung).toBe(1)
+    expect(risk.history.at(-1)!.evidence).toContain('leveraged')
+  })
+
+  it('…and three 1× TRACKER stop-outs do not — a spot tracker has no gearing to compound', async () => {
+    const risk = await walk({ ticker: 'BTCE.DE', leverage: 1 })
+    expect(risk.rung).toBe(2)
+    expect(risk.history).toEqual([])
+  })
+})
+
 // ------------------------------------------------------ the completed cut --
 
 describe('completed bars only — the grade never reads a bar that is still moving', () => {

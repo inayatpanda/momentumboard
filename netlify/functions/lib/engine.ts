@@ -880,8 +880,14 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // published because it did not. The counter and this evidence window must
       // exclude the same stream or the two drift apart by exactly the rows the
       // exclusion was written for.
+      // …and `leveraged` means GEARED, not "routed" (Stage 1c-R). The rule this
+      // flag feeds — three consecutive leveraged calls stopped out demotes the
+      // rung — is about geared exposure compounding a losing streak. A 1×
+      // tracker carries no gearing, so a routed spot position is an ordinary
+      // stop-out and is counted as one. Inert for equity: every equity route is
+      // a 2× or 3× ETP, so `leverage > 1` is `!!instrument` there.
       if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym) && pred.cohort !== 'crypto')
-        allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: !!pred.instrument, cohort: capCohortOf(pred.capUsdM) })
+        allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1, cohort: capCohortOf(pred.capUsdM) })
       // …and the crypto ladder's evidence window, which is the SAME sentence
       // over a disjoint population: the crypto stream never enters `allOutcomes`
       // (the guard one line up is unconditional and stays that way) and the
@@ -899,7 +905,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // The alternative — marking outcomes with the lever state they graded
       // under — buys a field on every row to close a drift that cannot promote.
       if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !cryptoOff && pred.cohort === 'crypto')
-        cryptoOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: !!pred.instrument })
+        cryptoOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1 })
       // THE DEBT COLLECTION (Stage 3d fix wave). Read off the ROW rather than off
       // "did it grade in this pass", which is what makes a failed ledger write
       // recoverable: a row graded last time whose blob write threw still says

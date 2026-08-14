@@ -137,7 +137,11 @@ function Call({ p }: { p: EnginePrediction }) {
                 <span style={{ textAlign: 'right' }}>{f.score! > 0 ? '+' : ''}{f.score} — {f.detail}</span>
               </div>
             ))}
-          {p.instrument && <div style={{ marginTop: 3, color: 'var(--faint)' }}>Leveraged ETPs decay daily — max hold 10 sessions; exit on the UNDERLYING levels above, not the ETP price.</div>}
+          {/* the decay warning belongs to GEARED routes only — a 1× tracker is
+              the asset, with no daily reset to compound and no hold clock */}
+          {p.instrument && p.instrument.leverage > 1 && (
+            <div style={{ marginTop: 3, color: 'var(--faint)' }}>Leveraged ETPs decay daily — max hold 10 sessions; exit on the UNDERLYING levels above, not the ETP price.</div>
+          )}
         </div>
       )}
     </div>
