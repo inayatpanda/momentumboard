@@ -32,7 +32,11 @@ export default defineConfig({
       // fonts + icons. Lazy screen chunks are CacheFirst at runtime instead of
       // being force-downloaded on first visit (the old glob shipped 943 KB).
       injectManifest: {
-        globPatterns: ['index.html', 'assets/index-*.js', 'assets/react-*.js', 'assets/data-*.js', 'assets/index-*.css', 'fonts/*.woff2', 'icon*.png', 'icon.svg', 'apple-touch-icon.png', 'manifest.webmanifest'],
+        // workbox-window is EAGERLY imported by the entry — omit it and a
+        // first-visit-then-offline install fails its import (codex cutover
+        // review #5). Manifest icons + manifest.webmanifest are auto-added by
+        // VitePWA — globbing them too precached each twice.
+        globPatterns: ['index.html', 'assets/index-*.js', 'assets/react-*.js', 'assets/data-*.js', 'assets/workbox-window*.js', 'assets/index-*.css', 'fonts/*.woff2', 'apple-touch-icon.png'],
       },
       manifest: {
         id: '/',
