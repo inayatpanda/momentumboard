@@ -12,7 +12,7 @@
 import { useSlice } from '../lib/useSlice'
 import { getBoardSlice } from '../lib/apiViews'
 import { splitBoardRows } from '../lib/boardTaxonomy'
-import { NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
+import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
 import { CountsRail } from './parts/CountsRail'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
@@ -43,7 +43,11 @@ export default function Today() {
         <h1>Today</h1>
         {blob && <span className={`pill ${blob.regime === 'green' ? 'accent' : ''}`}>{blob.regime}</span>}
       </div>
-      {blob === null ? (
+      {data && blob === null ? (
+        // the slice RESOLVED and there is no board (cold store, pre-run
+        // morning) — an empty state, never a skeleton that looks hung (A1)
+        <p className="cc-reason">{NO_BOARD_YET}</p>
+      ) : blob === null ? (
         <>
           <div className="skeleton" style={{ height: 118, marginBottom: 10 }} />
           <div className="skeleton" style={{ height: 118 }} />

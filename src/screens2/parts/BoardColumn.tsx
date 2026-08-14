@@ -34,6 +34,7 @@ import { useSlice } from '../../lib/useSlice'
 import { getBoardSlice, getFunnel } from '../../lib/apiViews'
 import type { EnginePrediction } from '../../lib/api'
 import { splitBoardRows } from '../../lib/boardTaxonomy'
+import { NO_BOARD_YET } from '../../lib/copy'
 import { CallCard } from './CallCard'
 import { CohortPill } from './CohortMarks'
 import { RefusalRow } from './RefusalRow'
@@ -130,7 +131,11 @@ export default function BoardColumn() {
 
   return (
     <>
-      {blob === null ? (
+      {data && blob === null ? (
+        // resolved-and-empty is an ANSWER (cold store, pre-run morning) — an
+        // empty state, never a skeleton that looks hung (walkthrough A1)
+        <p className="cc-reason">{NO_BOARD_YET}</p>
+      ) : blob === null ? (
         <>
           <div className="skeleton" style={{ height: 118, marginBottom: 10 }} />
           <div className="skeleton" style={{ height: 118 }} />

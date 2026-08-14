@@ -17,3 +17,8 @@ export const NO_SIZED_TODAY = 'Nothing sized today. The engine scanned, and noth
  * in the reader's own field of view, about the one thing this app sells: that
  * the engine says what actually happened. */
 export const NO_SIZED_NO_ROUTE = 'Nothing sized today — what cleared the gates has no route an ISA can take.'
+
+/** The slice resolved and there IS no board (a cold store, or a weekday
+ * morning before the engine's run) — said out loud, never a skeleton that
+ * looks hung (walkthrough finding A1). */
+export const NO_BOARD_YET = 'No board yet — the engine publishes on weekday mornings.'

@@ -90,11 +90,11 @@ describe('OfflinePill', () => {
     await db.slices.put({ key: 'board:d1', data: { v: 1 }, fetchedAt: Date.now() - 10 * 60_000 })
 
     render(<OfflinePill />)
-    const a = renderHook(() => useSlice('board:d1', async () => Promise.reject(new Error('net down'))))
+    const a = renderHook(() => useSlice('board:d1', async () => Promise.reject(new TypeError('Failed to fetch'))))
     await waitFor(() => expect(a.result.current.offline).toBe(true))
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/offline/i))
 
-    const b = renderHook(() => useSlice('board:d1', async () => Promise.reject(new Error('net down'))))
+    const b = renderHook(() => useSlice('board:d1', async () => Promise.reject(new TypeError('Failed to fetch'))))
     await waitFor(() => expect(b.result.current.offline).toBe(true))
     b.unmount()
 

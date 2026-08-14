@@ -33,9 +33,21 @@ describe('useSlice', () => {
 
   it('keeps stale data and flips offline when the refresh fails', async () => {
     await db.slices.put({ key: 'board:off', data: { v: 1 }, fetchedAt: Date.now() - 10 * 60_000 })
-    const { result } = renderHook(() => useSlice<{ v: number }>('board:off', async () => Promise.reject(new Error('net down'))))
+    const { result } = renderHook(() => useSlice<{ v: number }>('board:off', async () => Promise.reject(new TypeError('Failed to fetch'))))
     await waitFor(() => expect(result.current.offline).toBe(true))
     expect(result.current.data).toEqual({ v: 1 }) // the whole point of local-first
+  })
+
+  it('an HTTP failure is not "offline" — the pill is a connectivity claim (walkthrough A2)', async () => {
+    await db.slices.put({ key: 'board:http', data: { v: 1 }, fetchedAt: Date.now() - 200_000 })
+    const { result } = renderHook(() => useSlice<{ v: number }>('board:http', async () => Promise.reject(new Error('http-404'))))
+    await waitFor(() => expect(result.current.refreshing).toBe(false))
+    expect(result.current.offline).toBe(false) // a 404 while online is a server answer, not lost connectivity
+    expect(result.current.data).toEqual({ v: 1 }) // the stale paint still stays
+
+    // …but a genuine network rejection (fetch throws TypeError) DOES flip it
+    const { result: r2 } = renderHook(() => useSlice<{ v: number }>('board:net', async () => Promise.reject(new TypeError('Failed to fetch'))))
+    await waitFor(() => expect(r2.current.offline).toBe(true))
   })
 
   it('a fresh cache never triggers the fetcher', async () => {

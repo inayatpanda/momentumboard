@@ -65,10 +65,15 @@ export function useSlice<T>(key: SliceKey, fetcher: () => Promise<T>): SliceStat
           setRec({ data: fresh.data, fetchedAt: fresh.fetchedAt })
           setOffline(false)
         }
-      } catch {
+      } catch (e) {
         // Refresh failed. The cached paint (if any) stays on screen — that IS
-        // the local-first contract; the pill says how old it is.
-        if (live()) setOffline(true)
+        // the local-first contract. The pill is a CONNECTIVITY claim (A2): a
+        // fetch network failure rejects with TypeError, and a hidden tab's
+        // radio being off shows as navigator.onLine=false — an HTTP error
+        // (`http-404`, an api envelope error) is a server ANSWER and must not
+        // be dressed as "offline".
+        const isNetwork = e instanceof TypeError || (typeof navigator !== 'undefined' && navigator.onLine === false)
+        if (live() && isNetwork) setOffline(true)
       } finally {
         if (live()) setRefreshing(false)
       }

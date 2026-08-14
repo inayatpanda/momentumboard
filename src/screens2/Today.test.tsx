@@ -13,7 +13,7 @@ import { db } from '../lib/db'
 import type { BoardSlice } from '../lib/apiViews'
 import type { EnginePrediction, IntradayFlag, IntradayFlagsBlob } from '../lib/api'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
-import { NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
+import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
 import { CountsRail } from './parts/CountsRail'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
@@ -300,6 +300,15 @@ describe('Today', () => {
     withRouter(<Today />)
     expect(await screen.findByText('NVDA')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: /today/i })).toBeInTheDocument()
+  })
+
+  // A1 (walkthrough): a RESOLVED slice with no board is an answer — the cold
+  // store / pre-run morning must say so, never sit on a skeleton forever.
+  it('a resolved slice with board:null renders the no-board-yet state, not a skeleton', async () => {
+    await db.slices.put({ key: 'board', data: { ...mkBoardData([]), board: null }, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText(NO_BOARD_YET)).toBeInTheDocument()
+    expect(document.querySelector('.skeleton')).toBeNull()
   })
 
   it('shows the empty-board sentence when nothing sized today', async () => {
