@@ -15,8 +15,10 @@ import type { EnginePrediction } from '../../lib/api'
 import type { VerdictRead } from '../../lib/apiViews'
 
 /** The engine's factor keys, in the reader's words. Unknown keys degrade to a
- * de-camel-cased version of the key itself rather than vanishing. */
-const FACTOR_LABELS: Record<string, string> = {
+ * de-camel-cased version of the key itself rather than vanishing. Exported so
+ * GatesLearning's weights section (plan Task 21) reads the same names this
+ * page does — one label per factor key, never two. */
+export const FACTOR_LABELS: Record<string, string> = {
   technical: 'technical',
   momentum: 'momentum',
   sector: 'sector',
@@ -29,7 +31,7 @@ const FACTOR_LABELS: Record<string, string> = {
   catalyst: 'catalyst',
 }
 
-const labelOf = (key: string) => FACTOR_LABELS[key] ?? key.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
+export const labelOf = (key: string) => FACTOR_LABELS[key] ?? key.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
 
 interface Vote {
   name: string
