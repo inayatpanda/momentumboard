@@ -28,7 +28,10 @@ export default function AnalyticsPanels() {
   const { data: season } = useSlice('seasonality:SPY', () => getSeasonality('SPY'))
   const { data: smart } = useSlice('smart-money', getSmartMoney)
   const { data: vix } = useSlice('candles:^VIX:1y', () => getCandles('^VIX', '1y'))
-  const { data: dossiers } = useSlice('events', getEventDossiers)
+  // the SAME key Research2 reads (it was 'events' here and 'research:events'
+  // there): two keys over one fetcher is two Dexie rows, two TTL clocks and two
+  // network trips for one answer
+  const { data: dossiers } = useSlice('research:events', getEventDossiers)
 
   // ONE server projection (netlify/functions/engine.mts `projectCalibration`)
   // feeds both `?view=learning` and the legacy aggregate; the aggregate's

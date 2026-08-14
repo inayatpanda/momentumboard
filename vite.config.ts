@@ -9,9 +9,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // Vendor split (plan Task 11): app edits stop busting React's cache.
-        // `motion` stays IN the entry deliberately (CX-21) — it is ~3 KB and
-        // load-bearing for route transitions; a separate chunk just adds a
-        // request.
+        // `motion` stays IN the entry deliberately (DS-2/DS-21 — CX-21 is the
+        // T212 removal and has nothing to do with chunking): it is ~3 KB and
+        // load-bearing for route transitions, so a separate chunk would only
+        // add a request.
         manualChunks: {
           react: ['react', 'react-dom'],
           data: ['dexie'],

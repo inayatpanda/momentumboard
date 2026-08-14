@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# tsc -b's incremental state — a build artefact that changes on every typecheck
+tsconfig.tsbuildinfo
 .env
 .netlify/
 dev.log

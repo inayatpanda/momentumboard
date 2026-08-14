@@ -137,12 +137,14 @@ function SectorsRail() {
  * call only ever mounts once the real symbol list is known (Stocks' parent
  * effect resolves `db.watchlist` first) — `key={symbols.join(',')}` on the
  * call site below forces a full remount, not an in-place key transition,
- * whenever the watchlist itself changes. That matters: `useSlice`'s cleanup
- * flag is a single re-armable ref, so an in-place key swap can race a
- * still-in-flight fetch for the OLD key against the new one (the same
- * hazard Board.tsx's `key={blob.date}` on RefusedSection works around for
- * the funnel slice) — a remount gives the new key a wholly fresh hook
- * instance instead. */
+ * whenever the watchlist itself changes.
+ *
+ * That remount is BELT AND BRACES now, not the fix. The race it was written
+ * against — an in-place key swap racing a still-in-flight fetch for the old key
+ * — is closed inside the hook: `useSlice` bumps a generation on every key change
+ * and orphans the old key's continuations (and, since the final wave, pins each
+ * load's fetcher to the key it was made for). A fresh instance per watchlist is
+ * still the clearer thing to reason about, so it stays. */
 function WatchlistRows({ items, onRemove }: { items: WatchItem[]; onRemove: (sym: string) => void }) {
   const symbols = items.map(i => i.symbol)
   const { data: quotes } = useSlice(`quotes:${symbols.join(',')}`, () => getQuotes(symbols))
