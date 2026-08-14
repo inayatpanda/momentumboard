@@ -25,7 +25,31 @@ import type { Prediction } from '../../../shared/engine/types'
 // on a day the slot goes unspent — which is most days, by design — nothing about
 // the run is different from the day before this lane existed.
 
-afterEach(() => vi.unstubAllEnvs())
+/** THE REGRESSED-LANE SEAM (fix wave, F-3).
+ *
+ * `selectWildcard` is pure and the engine trusts what it hands back, so every
+ * BELT the publish path holds against a bad candidate — the earnings shadow in
+ * particular — is unreachable for as long as the lane itself is correct. That is
+ * the definition of a defensive branch, and a defensive branch nothing can reach
+ * is a defensive branch nothing has ever tested.
+ *
+ * This wrapper lets one test hand the engine a candidate the real lane would
+ * never choose. With `fn` null — every other test in this file — it is the real
+ * function called with the real arguments, byte for byte. */
+const wildcardOverride = vi.hoisted(() => ({ fn: null as null | ((inputs: unknown, real: (i: unknown) => unknown) => unknown) }))
+vi.mock('../../../shared/engine/wildcardLane', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../shared/engine/wildcardLane')>()
+  return {
+    ...actual,
+    selectWildcard: (inputs: Parameters<typeof actual.selectWildcard>[0]) =>
+      wildcardOverride.fn ? wildcardOverride.fn(inputs, i => actual.selectWildcard(i as typeof inputs)) : actual.selectWildcard(inputs),
+  }
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  wildcardOverride.fn = null
+})
 
 // ---- fixtures: the same tapes engine.test.ts uses, for the same reasons ----
 
@@ -330,6 +354,92 @@ describe('the seams: a day the slot goes unspent is the day before this lane exi
   })
 })
 
+// ---- the belts under the lane's braces (fix wave, F-3) ----
+//
+// The lane refuses earnings names outright, so the publish path's earnings arm
+// can only ever fire on a lane that has regressed. That is precisely what it is
+// for — and until the real flag reached `publishCall` it could not have fired at
+// all, because the call site handed it a hardcoded `false`.
+describe('the earnings belt — the engine does not experiment on a coin flip, twice over', () => {
+  /** A candidate the real lane would never return: a name with an earnings print
+   * inside the horizon. Everything else about it is the day's own arithmetic.
+   *
+   * A LONG, deliberately: `preGradeShadow` has three arms, and a short with no
+   * inverse ETP would shadow on the ROUTE arm — which would pass this test
+   * without the earnings flag ever being read. A long is always routable, so the
+   * print is the only thing left that can stop it. */
+  const earningsCandidate = (sym: string) => ({
+    candidate: {
+      sym,
+      side: 'long' as const,
+      cohort: 'large' as const,
+      gate: 'expected-move' as const,
+      gateEvidenceN: 0,
+      miss: {
+        sym,
+        core: 26,
+        capUsdM: 40_000,
+        lastClose: 100,
+        atrNow: 2,
+        capacityPct: 8,
+        stage: 'trending',
+        factors: { technical: { score: 30, detail: '' } },
+      },
+    },
+    hypothesis: 'a regressed lane offered a coin flip',
+    priority: 1 as const,
+  })
+
+  const withEarnings = (syms: string[]) => deps({ ...gatesOnlyDeps(), earningsSyms: async () => new Set(syms) } as Partial<EngineDeps>)
+
+  it('an earnings name that reaches the publish path shadows there — and the slot is NOT spent on it', async () => {
+    const store = await gatesOnlyStore()
+    // CALM is short-routable (the fixture maps it) and ERNS is the print, so the
+    // ONLY thing between this row and the board is the earnings flag itself.
+    wildcardOverride.fn = () => earningsCandidate('ERNS')
+    const board = boardOf(await buildBoard(store, withEarnings(['ERNS']), NOW))
+    expect(board.some(p => p.sym === 'ERNS')).toBe(false)
+    // …and NOTHING wildcard-shaped reached the LEDGER, which is the only record
+    // the outstanding scan reads. THE ADJUDICATION: a shadowed wildcard bought no
+    // causal evidence at all — a shadow is exactly what wildcardLane.ts refuses as
+    // worthless — so it must not hold the one slot shut for the ten sessions it
+    // would take to grade. The slot is spent on EVIDENCE, never on an attempt.
+    const stored = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
+    expect(stored.some(p => p.catalyst?.kind === WILDCARD_CATALYST_KIND)).toBe(false)
+    // …and the trace does not leave a `called-wildcard` code stranded on a row
+    // nobody ever gets — the gate that refused the name is what stands
+    const trace = (await store.read<FunnelTrace>(funnelTraceKey(TODAY)))!
+    expect(Object.values(trace.rows).some(r => r.gate === 'called-wildcard')).toBe(false)
+  })
+
+  it('…and the SAME candidate with no print seats normally — the belt is what stopped it, not the synthesis', async () => {
+    const store = await gatesOnlyStore()
+    wildcardOverride.fn = () => earningsCandidate('CALM')
+    const board = boardOf(await buildBoard(store, withEarnings([]), NOW))
+    const w = board.find(p => p.sym === 'CALM' && p.wildcard)
+    expect(w, 'the hand-built candidate publishes when nothing is wrong with it').toBeDefined()
+    expect(w!.earningsRisk).toBe(false)
+    expect(w!.shadow).toBeUndefined()
+  })
+
+  it('THE OUTSTANDING-SCAN IMPLICATION: the day after, the slot is open — a refusal never consumed it', async () => {
+    // day one: the regressed lane offers a print, the belt refuses it, and the
+    // day's ledger is written with whatever it legitimately held
+    const day1 = await gatesOnlyStore()
+    wildcardOverride.fn = () => earningsCandidate('ERNS')
+    await buildBoard(day1, withEarnings(['ERNS']), NOW)
+    const day1Rows = (await day1.read<Prediction[]>(`predictions:${TODAY}`))!
+
+    // day two reads day one's ledger exactly as the scan does — and finds no
+    // wildcard holding the slot, so the real lane may spend it
+    wildcardOverride.fn = null
+    const day2 = await gatesOnlyStore()
+    await day2.write('predictions-index', ['2000-01-03'])
+    await day2.write('predictions:2000-01-03', day1Rows)
+    expect(wildcardIn(boardOf(await buildBoard(day2, gatesOnlyDeps(), NOW)))).toBeDefined()
+  })
+})
+
 // ================= the grading half =================
 
 const G0 = Date.parse('2026-01-05') / 1000
@@ -441,7 +551,64 @@ describe('the causal write-back — the one measurement in this engine that is n
     await gradeOutstanding(store, gDeps(), GNOW, null)
     expect(await store.read<MissLedger>(MISS_LEDGER_KEY)).toBeNull()
   })
+
+  // A LOST WRITE IS RECOVERABLE, NOT SILENT (fix wave, F-4). The grade is durable
+  // long before the ledger hook runs — deliberately, so a blob failure can never
+  // sit between a grade and its store.write — which used to mean that a ledger
+  // throw destroyed the one causal sample the slot spent a week buying, with
+  // nothing left on the row to say so.
+  it('a ledger throw does not lose the outcome: the grade stands, the row says it is owed, the next run books it ONCE', async () => {
+    const inner = memoryStore()
+    let ledgerWritesFail = true
+    const store = {
+      read: inner.read,
+      write: async (k: string, v: unknown) => {
+        if (ledgerWritesFail && k === MISS_LEDGER_KEY) throw new Error('blobs 503')
+        await inner.write(k, v)
+      },
+    } as unknown as Parameters<typeof gradeOutstanding>[0]
+    await store.write(`predictions:${ENTRY}`, [gRow('WON')])
+    await store.write('predictions-index', [ENTRY])
+
+    await gradeOutstanding(store, gDeps(), GNOW, null)
+    const afterFail = (await store.read<Prediction[]>(`predictions:${ENTRY}`))![0]
+    expect(afterFail.outcome10!.hit, 'the grade is durable whatever the ledger did').toBe(true)
+    expect(afterFail.wildcard!.booked, 'and the row itself records the debt').toBe(false)
+    expect(await store.read<MissLedger>(MISS_LEDGER_KEY)).toBeNull()
+
+    ledgerWritesFail = false
+    await gradeOutstanding(store, gDeps(), GNOW, null)
+    expect((await store.read<MissLedger>(MISS_LEDGER_KEY))!.gates['expected-move']!.causal).toMatchObject({ n: 1, hits: 1 })
+    expect((await store.read<Prediction[]>(`predictions:${ENTRY}`))![0].wildcard!.booked).toBe(true)
+
+    // …and ONCE. The stamp is the receipt, so a third pass finds nothing owed.
+    await gradeOutstanding(store, gDeps(), GNOW, null)
+    expect((await store.read<MissLedger>(MISS_LEDGER_KEY))!.gates['expected-move']!.causal).toMatchObject({ n: 1 })
+  })
+
+  // MIGRATION SAFETY, and it is why the stamp is a tri-state rather than a
+  // boolean: a row graded before this field existed carries `booked: undefined`,
+  // which must read as "settled long ago", never as "owed". `false` is written
+  // WITH the grade, so only a row this engine graded can ever be re-offered.
+  it('a wildcard graded before the receipt existed is never re-booked', async () => {
+    const store = await gradedStore([
+      gRow('WON', { outcome10: { excessPct: 9, rawPct: 10, spyPct: 1, stopped: false, hit: true } } as Partial<Prediction>),
+    ])
+    await gradeOutstanding(store, gDeps(), GNOW, null)
+    expect(await store.read<MissLedger>(MISS_LEDGER_KEY)).toBeNull()
+  })
 })
+
+/** The honesty pane's stored shape — read here rather than imported, because the
+ * blob is a contract with the app and the panel and this file is one of the
+ * places that has to notice when it changes. */
+type Scorecard = {
+  byGrade: Record<string, { n: number; hits: number; sumExcess: number }>
+  byRegime: Record<string, { n: number; hits: number }>
+  bySetup: Record<string, { n: number; hits: number; sumExcess: number }>
+  byPostMortem: Record<string, number>
+  lifetime: { live: { graded: number; hits: number; sumExcess: number }; shadow: { graded: number; hits: number; sumExcess: number }; since: string }
+}
 
 describe('what a graded wildcard may NOT move', () => {
   const plain = (sym: string) => gRow(sym, { catalyst: undefined, wildcard: undefined, riskPct: 1 })
@@ -459,6 +626,7 @@ describe('what a graded wildcard may NOT move', () => {
         risk: (await store.read<RiskState>('risk-state'))!,
         weights: (await store.read<WeightsState>('engine-weights'))!,
         calibration: (await store.read<CalibrationState>('engine-calibration'))!,
+        scorecard: (await store.read<Scorecard>('engine-scorecard'))!,
       }
     }
     return { none: await run([]), ordinary: await run([plain('PLAIN')]), experiment: await run([gRow('WON')]) }
@@ -485,6 +653,74 @@ describe('what a graded wildcard may NOT move', () => {
   it('…but calibration still learns from it: it was the reader’s money, at a real size', async () => {
     const { none, experiment } = await arms()
     expect(bucketN(experiment.calibration) - bucketN(none.calibration)).toBe(1)
+  })
+
+  // ---- THE FOURTH ARM (fix wave, F-2): the two readings of the engine's SKILL ----
+  //
+  // `newlyGraded` feeds exactly two consumers, and both of them answer "is this
+  // tool any good?": the Brier trail (which decides `brierImproving`, which is a
+  // precondition of every rung promotion) and the lifetime counters (the Ledger's
+  // never-resets headline). A wildcard is the engine deliberately overriding its
+  // own no at a quarter of the rung — an experiment, not a claim of skill — so
+  // letting it into either would let one refused trade a week talk the ladder up
+  // and restate the tool's lifetime accuracy.
+
+  it('the BRIER trail: an ordinary row is a point on it and an experiment is not', async () => {
+    const { none, ordinary, experiment } = await arms()
+    expect(ordinary.calibration.brier.length - none.calibration.brier.length).toBe(1)
+    expect(experiment.calibration.brier.length - none.calibration.brier.length).toBe(0)
+  })
+
+  it('the LIFETIME counters — the headline that never resets — never hear about an experiment', async () => {
+    const { none, ordinary, experiment } = await arms()
+    const live = (s: Scorecard) => s.lifetime.live.graded
+    const shadow = (s: Scorecard) => s.lifetime.shadow.graded
+    expect(live(ordinary.scorecard) - live(none.scorecard)).toBe(1)
+    expect(live(experiment.scorecard) - live(none.scorecard)).toBe(0)
+    // …and it does not sneak in through the shadow column either
+    expect(shadow(experiment.scorecard) - shadow(none.scorecard)).toBe(0)
+  })
+
+  // THE SCORECARD ADJUDICATION (fix wave, F-2), pinned pane by pane. The rule:
+  // at every pane a wildcard takes the SAME treatment the pane already gives a
+  // SHADOW, because both are populations carrying no reader conviction and every
+  // pane has already had to decide what to do with such a population.
+  it('the scorecard panes: the SHAPE panes count it, the SKILL panes do not, and it never wears a letter', async () => {
+    const { none, ordinary, experiment } = await arms()
+    const n = (o: { n: number } | undefined) => o?.n ?? 0
+
+    // byGrade — the ordinary row lands on its letter; the experiment gets its OWN
+    // key, exactly as a shadow does. Its grade is not why it published, so
+    // crediting C with it would make the letter mean two different things.
+    expect(n(ordinary.scorecard.byGrade.C) - n(none.scorecard.byGrade.C)).toBe(1)
+    expect(n(experiment.scorecard.byGrade.C) - n(none.scorecard.byGrade.C)).toBe(0)
+    expect(experiment.scorecard.byGrade.wildcard).toMatchObject({ n: 1, hits: 1 })
+    expect(none.scorecard.byGrade.wildcard).toBeUndefined()
+
+    // byRegime — the LIVE pane (it already drops shadows for this reason): "how
+    // does the engine read THIS tape?" is a skill question, and the answer must
+    // not include the row it published because it read the tape the other way.
+    expect(n(ordinary.scorecard.byRegime.amber) - n(none.scorecard.byRegime.amber)).toBe(1)
+    expect(n(experiment.scorecard.byRegime.amber) - n(none.scorecard.byRegime.amber)).toBe(0)
+
+    // bySetup — the SHAPE pane, which counts shadows deliberately ("does this
+    // shape of call work?"). A wildcard's family is real, and it is a sized,
+    // stopped, graded outcome of it. It counts.
+    expect(n(experiment.scorecard.bySetup.continuation) - n(none.scorecard.bySetup.continuation)).toBe(1)
+  })
+
+  it('byPostMortem is the HOW-WE-LOSE roll-up: a win has no place in it, and a losing experiment does', async () => {
+    const won = await gradedStore([gRow('WON')])
+    await gradeOutstanding(won, gDeps(), GNOW, null)
+    // the row IS post-mortemed (the slot is examined either way) and the roll-up
+    // still says nothing — a `won` key under a setup family would read as a way
+    // the engine loses
+    expect((await won.read<Prediction[]>(`predictions:${ENTRY}`))![0].postMortem!.cls).toBe('won')
+    expect((await won.read<Scorecard>('engine-scorecard'))!.byPostMortem).toEqual({})
+
+    const lost = await gradedStore([gRow('LOST')])
+    await gradeOutstanding(lost, gDeps(), GNOW, null)
+    expect((await lost.read<Scorecard>('engine-scorecard'))!.byPostMortem).toEqual({ 'continuation:amber:adverse-move': 1 })
   })
 })
 

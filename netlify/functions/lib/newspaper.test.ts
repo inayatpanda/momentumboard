@@ -454,6 +454,28 @@ describe('the paper is told what it lost — the two accountability keys and whe
     expect(rows[1].via).toBeUndefined()
   })
 
+  // A WIN IS NOT A CONFESSION (Stage 3d fix wave, F-1). The wildcard slot is the
+  // one population post-mortemed either way, so `cls: 'won'` rows now exist in the
+  // stored ledger — sized, freshly stamped, and therefore first past a sort on
+  // `pm.at`. The writer's brief points the honest close's accountability sentence
+  // at the head of this list, so a winning experiment at the top would have the
+  // paper apologise for the one row that made money.
+  it('a WON post-mortem never reaches the paper — however fresh it is, and however sized', () => {
+    const rows = paperPostMortems([
+      { date: '2026-08-03', preds: [loser({ sym: 'REALLOSS', postMortem: { cls: 'stopped', detail: 'closed through the 92.5 stop', at: 10 } })] },
+      // newer BY THE STAMP the sort reads, sized, and the experiment's own class
+      { date: '2026-08-10', preds: [loser({ sym: 'WILDWIN', postMortem: { cls: 'won', detail: 'cleared the bar with the 90 stop never touched', at: 9_999 } })] },
+    ])
+    expect(rows.map(r => r.sym)).toEqual(['REALLOSS'])
+  })
+
+  it('a day of nothing but wins leaves the paper with nothing to confess, not a confession about a win', () => {
+    const rows = paperPostMortems([
+      { date: '2026-08-10', preds: [loser({ sym: 'W1', postMortem: { cls: 'won', detail: 'cleared the bar', at: 5 } }), loser({ sym: 'W2', postMortem: { cls: 'won', detail: 'cleared the bar', at: 6 } })] },
+    ])
+    expect(rows).toEqual([])
+  })
+
   it('is bounded — a bad fortnight cannot flood a budgeted prompt', () => {
     const days = Array.from({ length: 5 }, (_, d) => ({ date: `2026-08-0${d + 1}`, preds: Array.from({ length: 4 }, (_, i) => loser({ sym: `S${d}${i}` })) }))
     expect(paperPostMortems(days)).toHaveLength(PAPER_POSTMORTEM_MAX)

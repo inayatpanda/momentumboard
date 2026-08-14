@@ -141,3 +141,33 @@ describe('TodaysCalls — the thesis leads, the evidence line survives', () => {
     expect(screen.queryByText(/Wrong if it closes/)).toBeNull()
   })
 })
+
+// THE EXPERIMENT, ON THE CARD THE READER ACTUALLY OPENS FIRST (Stage 3d fix
+// wave). EngineBoard has carried the chip since the slot shipped; this is the
+// watchlist card, and a wildcard shown here without it is a quarter-size bet on
+// a row the engine's own gates refused, printed as if it were an ordinary call.
+describe('TodaysCalls — the wildcard is chipped here too', () => {
+  const wild = () =>
+    row({ sym: 'WILD', riskPct: 0.25, wildcard: { gate: 'expected-move', priority: 1, hypothesis: 'testing the gate', gateEvidenceN: 0 } })
+
+  it('shows the 🃏 chip and names the gate under test', async () => {
+    board.board = [wild()]
+    board.emptySides = undefined
+    render(<TodaysCalls onOpen={() => {}} />)
+    await waitFor(() => expect(screen.getByText('🃏 wildcard')).toBeInTheDocument())
+    expect(screen.getByText('🃏 wildcard').getAttribute('title')).toContain('expected-move')
+  })
+
+  it('…on that row and no other, and a board without one shows no chip at all', async () => {
+    board.board = [wild(), row({ sym: 'ORDINARY' })]
+    board.emptySides = undefined
+    const { unmount } = render(<TodaysCalls onOpen={() => {}} />)
+    await waitFor(() => expect(screen.getAllByText('🃏 wildcard')).toHaveLength(1))
+    unmount()
+
+    board.board = [row({ sym: 'ORDINARY' })]
+    render(<TodaysCalls onOpen={() => {}} />)
+    await waitFor(() => expect(screen.getByText('ORDINARY')).toBeInTheDocument())
+    expect(screen.queryByText('🃏 wildcard')).toBeNull()
+  })
+})

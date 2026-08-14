@@ -494,7 +494,13 @@ const isWildcardRow = (p: Prediction): boolean => p.catalyst?.kind === WILDCARD_
  *
  * The parity seam is `REGRET=off` (missLedger.ts) exactly as for the ledger it
  * writes into — the caller checks it — and `WILDCARD=off` cannot reach here at
- * all, because with the lane silent no row was ever stamped. */
+ * all, because with the lane silent no row was ever stamped.
+ *
+ * IDEMPOTENCE IS THE CALLER'S, deliberately: this function books exactly what it
+ * is handed, and `wildcard.booked` on the row (types.ts) is the receipt that
+ * decides what that is. Putting the check here would mean re-reading and
+ * re-writing the prediction blobs from inside the ledger hook — two records of
+ * one fact, in the one place a throw is expected. */
 async function bookCausalOutcomes(store: AppStore, events: (MissExample & { hit: boolean })[]): Promise<void> {
   if (!events.length) return
   const ledger = normaliseMissLedger(await store.read<MissLedger>(MISS_LEDGER_KEY))
@@ -565,7 +571,33 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // per-cohort tally of NON-shadow calls graded THIS run — feeds each sleeve's
   // graded-at-rung counter so it stays honest even while a young cohort pools.
   const newByCohort: Record<CapCohortOrUnknown, number> = { large: 0, small: 0, unknown: 0 }
-  const newlyGraded: { probability: number; outcome10?: PredOutcome; shadow: boolean }[] = []
+  // EVERY ROW GRADED THIS RUN, tagged rather than pre-filtered.
+  //
+  // `wildcard` rides along instead of the experiment being dropped at the push,
+  // so this array keeps meaning exactly what its name says and each consumer
+  // states its own policy at its own site. A pre-filtered array named
+  // `newlyGraded` would hand a future consumer an incomplete population that
+  // looks complete — the silence this whole stage exists to end.
+  //
+  // TODAY IT HAS EXACTLY TWO CONSUMERS, and both EXCLUDE the experiment:
+  //
+  //  · the BRIER TRAIL (`brierPoint`, below) — a wildcard is the engine
+  //    deliberately overriding its own no. Its probability is not a forecast the
+  //    engine stood behind, so scoring it would measure the calibration of a
+  //    belief nobody held — and the trail is not display: `brierImproving` is a
+  //    precondition of every rung promotion (riskLadder.ts), so one experiment a
+  //    week would help set the size of every ordinary call.
+  //  · the LIFETIME counters (the scorecard, below) — the Ledger's never-resets
+  //    headline answer to "is this tool accurate?". Same argument, one horizon
+  //    longer.
+  //
+  // Both are readings of the engine's SKILL, which is precisely what a refused
+  // trade taken on purpose is not evidence of. What the wildcard DOES still move
+  // is everything that is a record of an outcome rather than of skill:
+  // `updateCalibration` (it was the reader's money at a real size),
+  // `graded`/`predictions-pending` (it graded), the per-row ledger, and the
+  // causal column of the miss ledger, which is the whole reason it was bought.
+  const newlyGraded: { probability: number; outcome10?: PredOutcome; shadow: boolean; wildcard: boolean }[] = []
   // each non-shadow outcome carries its cohort so the risk ladder can split large
   // vs small; unknown-cap calls stay in the combined stream but neither sleeve.
   const allOutcomes: (OutcomeLite & { cohort: CapCohortOrUnknown })[] = []
@@ -575,12 +607,19 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // the reader could act on: shadows, watch rows and cut rows are all set to 0
   // at the single sizing site, so this needs no second test for them.
   const sentenceAsks: { date: string; pred: Prediction }[] = []
-  // THE WILDCARDS THAT CLOSED THIS RUN (Stage 3d) — one causal outcome each,
-  // charged to the gate each one overrode once every grade in this pass is
-  // durable. Collected rather than written inline for the reason every other
-  // ledger write in this pass is: a blob failure must never sit between a grade
-  // and its store.write.
-  const causalOutcomes: (MissExample & { hit: boolean })[] = []
+  // THE WILDCARD OUTCOMES THE LEDGER IS OWED — one causal outcome each, charged
+  // to the gate each one overrode once every grade in this pass is durable.
+  // Collected rather than written inline for the reason every other ledger write
+  // in this pass is: a blob failure must never sit between a grade and its
+  // store.write.
+  //
+  // NOT "the wildcards that closed this run": the population is every wildcard
+  // whose row says `wildcard.booked === false` — the receipt written with the
+  // grade (types.ts). Most passes that is exactly the ones that just graded; on
+  // the pass after a ledger failure it is also the one that graded last time and
+  // never reached the blob. The `pred` reference travels so the receipt can be
+  // stamped `true` once the write returns.
+  const causalOutcomes: { ev: MissExample & { hit: boolean }; pred: Prediction; date: string }[] = []
   // Reuse the records graded in this invocation when building the scorecard.
   // Netlify Blobs can briefly return the pre-write version after a write, which
   // otherwise makes a successful grading run publish an empty scorecard.
@@ -635,12 +674,12 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
             // the whole of what a winning experiment says.
             if (pred.riskPct > 0 && !o.hit) sentenceAsks.push({ date, pred })
           }
-          // …and the causal evidence the slot was spent on, queued for the write
-          // that happens once every grade in this pass is durable. `pred.wildcard`
-          // carries the gate STORED AT SELECTION — never re-derived, because the
-          // publication overwrote the trace row it came from.
-          if (wildcardRow && pred.wildcard && !regretDisabled())
-            causalOutcomes.push({ date: pred.date, sym: pred.sym, side: pred.side, excessPct: o.excessPct, gate: pred.wildcard.gate, hit: o.hit })
+          // …and the causal evidence the slot was spent on is now OWED to the
+          // ledger, which the row says on itself. Written here so it rides the
+          // same `store.write` the grade does: the debt and the outcome that
+          // created it become durable in one operation, or neither does. The
+          // collection pass below is what turns it into a queued write.
+          if (wildcardRow && pred.wildcard && !regretDisabled()) pred.wildcard.booked = false
           // THE calibrated grade: calibration buckets, factor-IC weights, the
           // Brier trail and the risk-ladder counters all learn here, at 10d.
           updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
@@ -651,7 +690,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // lane's P&L — a signal it never cast. Calibration buckets and setup
           // buckets above still accrue: only factor-IC is excluded.
           if (!LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '')) w = updateIcStats(w, pred, o)
-          newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow })
+          newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow, wildcard: wildcardRow })
           graded++
           // …and the risk ladder's graded-at-rung counter, which the WILDCARD is
           // blind to (Stage 3d). A wildcard is the engine deliberately overriding
@@ -684,6 +723,22 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // exclusion was written for.
       if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred))
         allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: !!pred.instrument, cohort: capCohortOf(pred.capUsdM) })
+      // THE DEBT COLLECTION (Stage 3d fix wave). Read off the ROW rather than off
+      // "did it grade in this pass", which is what makes a failed ledger write
+      // recoverable: a row graded last time whose blob write threw still says
+      // `booked === false`, and this is the pass that settles it.
+      //
+      // `=== false` and not `!booked`, deliberately — the receipt is a tri-state
+      // (types.ts). A wildcard graded before the field existed carries `undefined`
+      // and must read as "settled long ago"; treating absence as a debt would have
+      // the first run after this ships re-book every wildcard still inside the
+      // 30-date window.
+      if (pred.outcome10 && pred.wildcard?.booked === false && isWildcardRow(pred) && !regretDisabled())
+        causalOutcomes.push({
+          ev: { date: pred.date, sym: pred.sym, side: pred.side, excessPct: pred.outcome10.excessPct, gate: pred.wildcard.gate, hit: pred.outcome10.hit },
+          pred,
+          date,
+        })
     }
     if (changed) await store.write(`predictions:${date}`, preds)
     if (preds.some(p => !p.outcome5 || !p.outcome10 || !p.outcome21)) stillPending.push(date)
@@ -724,9 +779,14 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     }
   }
 
-  if (newlyGraded.length) {
-    const mean = brierPoint(newlyGraded)
-    if (mean != null) calibration.brier = [...calibration.brier, { date: today, mean: Math.round(mean * 1000) / 1000, n: newlyGraded.length }].slice(-250)
+  // WHAT THE ENGINE MAY CLAIM AS SKILL — `newlyGraded` less the experiments (see
+  // its declaration for the full enumeration of consumers and policies). Derived
+  // once, here, so the Brier trail and the lifetime counters below can never
+  // drift into disagreeing about which rows count.
+  const skillGraded = newlyGraded.filter(g => !g.wildcard)
+  if (skillGraded.length) {
+    const mean = brierPoint(skillGraded)
+    if (mean != null) calibration.brier = [...calibration.brier, { date: today, mean: Math.round(mean * 1000) / 1000, n: skillGraded.length }].slice(-250)
   }
   w = maybeNudgeWeights(w, today)
 
@@ -782,28 +842,62 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // is simply absent (it ages out of the 30-date window on its own) and no row is
   // ever classified twice.
   const byPostMortem: Record<string, number> = {}
+  // THE WILDCARD'S PLACE IN EACH PANE (Stage 3d fix wave), and one rule decides
+  // all four: A WILDCARD TAKES THE TREATMENT THE PANE ALREADY GIVES A SHADOW.
+  // Both are populations carrying no reader conviction — a shadow because nobody
+  // was offered it, a wildcard because the engine's own gates said no — so every
+  // pane here has already had to answer this exact question once.
+  //
+  //  · byGrade   — ITS OWN KEY, exactly as a shadow gets one. The letter is not
+  //                why this row published (a wildcard's evidence contract is false
+  //                by construction and its grade is usually null), so folding it
+  //                into C would make C mean two different things. Visible rather
+  //                than dropped: it IS reader money, and "how have the experiments
+  //                done?" deserves an answer.
+  //  · byRegime  — EXCLUDED, as a shadow is. This is the live/skill pane: "how does
+  //                the engine read THIS tape?" must not be answered with the row it
+  //                published because it read the tape the other way.
+  //  · bySetup   — INCLUDED, as a shadow is. The question is about the SHAPE, and a
+  //                wildcard's setup family is a real read of a real chart — sized,
+  //                stopped and graded. The most honest sample the family has.
+  //  · byPostMortem — INCLUDED, as a shadow is, and therefore only ever as a LOSER:
+  //                `'won'` is excluded outright below, because this roll-up is HOW
+  //                THE ENGINE LOSES and a win is not one of the ways.
+  //
+  // Everything the wildcard is excluded from, it says elsewhere: its own byGrade
+  // key, the miss ledger's causal column, and the row's own `wildcard` block.
   for (const date of fullIndex.slice(-30)) {
     const preds = predictionsByDate.get(date) ?? (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     for (const p of preds) {
       if (!p.outcome10) continue
-      const g = (byGrade[p.shadow ? 'shadow' : p.grade] ??= { n: 0, hits: 0, sumExcess: 0 })
+      const wildcardRow = isWildcardRow(p)
+      // shadow first, for the same reason `preGradeShadow` stands over the
+      // publish override: "the reader was never offered this" is the stronger
+      // statement, and a shadowed wildcard is not seated at all today.
+      const g = (byGrade[p.shadow ? 'shadow' : wildcardRow ? 'wildcard' : p.grade] ??= { n: 0, hits: 0, sumExcess: 0 })
       g.n++
       if (p.outcome10.hit) g.hits++
       g.sumExcess += p.outcome10.excessPct
       if (p.setup) {
         // per-setup honesty (shadows included — the panes ask "does this SHAPE
-        // of call work?", and shadows are exactly the shapes being auditioned)
+        // of call work?", and shadows are exactly the shapes being auditioned;
+        // a wildcard is that shape actually carried, with a stop)
         const s = (bySetup[p.setup] ??= { n: 0, hits: 0, sumExcess: 0 })
         s.n++
         if (p.outcome10.hit) s.hits++
         s.sumExcess += p.outcome10.excessPct
       }
-      if (!p.shadow) {
+      if (!p.shadow && !wildcardRow) {
         const r = (byRegime[p.regime] ??= { n: 0, hits: 0 })
         r.n++
         if (p.outcome10.hit) r.hits++
       }
-      if (p.postMortem) {
+      // …and `'won'` never enters the how-we-lose roll-up. It is the one class
+      // that names no failure at all (postMortem.ts's `classifyOutcome`, reachable
+      // only for the wildcard slot), so a `family:regime:won` key would read as a
+      // way this shape of call dies. The win is reported where it belongs: the
+      // causal column of the miss ledger, which is what it was bought for.
+      if (p.postMortem && p.postMortem.cls !== 'won') {
         const k = postMortemKey(p.setup, p.regime, p.postMortem.cls)
         byPostMortem[k] = (byPostMortem[k] ?? 0) + 1
       }
@@ -818,9 +912,13 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // LIFETIME counters: the by-grade/by-regime panes rebuild from the last 30
   // dates, but "is this tool accurate?" is a months-scale question — these
   // accumulate forever (live calls and shadows separately) and never reset.
+  // …which is exactly why they read `skillGraded` and not `newlyGraded`: a
+  // counter that never resets is the last place an experiment belongs, and there
+  // are only two columns here, neither of which a wildcard is. (See
+  // `newlyGraded`'s declaration for the full consumer table.)
   const priorCard = await store.read<{ lifetime?: { live: { graded: number; hits: number; sumExcess: number }; shadow: { graded: number; hits: number; sumExcess: number }; since: string } }>('engine-scorecard')
   const lifetime = priorCard?.lifetime ?? { live: { graded: 0, hits: 0, sumExcess: 0 }, shadow: { graded: 0, hits: 0, sumExcess: 0 }, since: today }
-  for (const g of newlyGraded) {
+  for (const g of skillGraded) {
     const side = g.shadow ? lifetime.shadow : lifetime.live
     side.graded++
     if (g.outcome10!.hit) side.hits++
@@ -855,7 +953,25 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // ledger hiccup here must not be reported as a miss-accrual failure, and the
   // accrual below re-reads the blob for itself either way.
   try {
-    await bookCausalOutcomes(store, causalOutcomes)
+    await bookCausalOutcomes(store, causalOutcomes.map(c => c.ev))
+    // THE RECEIPT, and only now (fix wave, F-4). Until this line the rows say
+    // `booked: false` and the debt is outstanding, so a throw above — a 503, a
+    // malformed ledger blob — leaves the outcome recoverable on the next pass
+    // instead of silently gone: the grade was durable before this hook ran and
+    // nothing here can un-write it.
+    //
+    // THE RESIDUAL, stated rather than hidden: if the ledger write returns and
+    // THIS write then fails, the next pass books the same outcome a second time.
+    // That window is one blob write wide and its cost is one duplicated causal
+    // sample on one gate — against the alternative, which is a sample the slot
+    // spent a week buying vanishing with nothing left anywhere to say it existed.
+    if (causalOutcomes.length) {
+      for (const c of causalOutcomes) if (c.pred.wildcard) c.pred.wildcard.booked = true
+      for (const date of new Set(causalOutcomes.map(c => c.date))) {
+        const rows = predictionsByDate.get(date)
+        if (rows) await store.write(`predictions:${date}`, rows)
+      }
+    }
   } catch (e) {
     console.log(`WILDCARD: causal write-back skipped — ${e instanceof Error ? e.message : String(e)}`)
   }
@@ -2622,7 +2738,16 @@ export async function buildBoard(
               target,
               capacityPct: m.capacityPct ?? 0,
               smallCap,
-              earningsRisk: false, // the lane excludes earnings names outright — the engine does not experiment on coin flips
+              // THE REAL FLAG, not the assumption. The lane excludes earnings
+              // names outright — those are the braces — and this is the belt: it
+              // is the same question `publishCall`'s `preGradeShadow` asks of
+              // every other row, asked of this one too, off the same
+              // `earningsSet` the composite loop reads (keyed by base symbol).
+              // Hardcoding `false` here made the lane's own exclusion the ONLY
+              // thing standing between the reader and a quarter-size bet on a
+              // coin flip, and left the defensive shadow branch below permanently
+              // unreachable — a belt that cannot be reached is not a belt.
+              earningsRisk: earningsSet.has(baseSym(c.sym)),
               stage: m.stage,
               note: `🃏 wildcard experiment — quarter size, testing the ${c.gate} gate; one real outcome is worth more to the engine than a hundred refusals`,
               thesis,
@@ -2639,16 +2764,34 @@ export async function buildBoard(
             record,
           )
           if (row.shadow) {
-            // BELT AND BRACES (publishCall's `preGradeShadow` still stands over
-            // the override, and the lane has already refused earnings names and
-            // unroutable shorts, so this is unreachable today). A shadowed
-            // wildcard bought nothing — a shadow yields no causal evidence — so
-            // it is not seated, and the record is put back the way it was: the
-            // row leaves the board it never earned a place on, and the trace
-            // returns to naming the gate that refused the name. Leaving it would
-            // strand a `called-shadow` code on a row appearing in nothing the
-            // reader or the ledger ever sees, which is precisely the silence the
-            // `shadow-capped` code was added to end.
+            // THE BELT UNDER THE LANE'S BRACES. `preGradeShadow` stands over the
+            // publish override in all three of its arms — an earnings print, an
+            // unroutable short, a lane stand-down — and the lane refuses the first
+            // two itself, so this branch fires only when the lane has regressed.
+            // That is what it is for, and it is now genuinely armed: the earnings
+            // flag above is the day's real one rather than a hardcoded `false`, so
+            // a lane that stopped excluding prints is caught HERE instead of
+            // publishing a quarter-size bet on a binary event.
+            //
+            // A shadowed wildcard bought nothing — a shadow yields no causal
+            // evidence, which is the only thing the slot exists to buy — so it is
+            // not seated, and the record is put back the way it was: the row
+            // leaves the board it never earned a place on, and the trace returns
+            // to naming the gate that refused the name. Leaving it would strand a
+            // `called-shadow` code on a row appearing in nothing the reader or the
+            // ledger ever sees, which is precisely the silence the `shadow-capped`
+            // code was added to end.
+            //
+            // AND THE SLOT IS NOT SPENT (adjudicated, fix wave F-3). The one-slot
+            // invariant is enforced by the outstanding scan, which reads
+            // `predictions:<date>` for a wildcard row with no `outcome10` — and
+            // this row reaches no ledger at all: `shadows` was assembled before
+            // this lane ran, so a row pushed into `board` afterwards is in neither
+            // collection, and the splice above leaves `board` as it found it. The
+            // slot is therefore spent on EVIDENCE and never on an attempt, which
+            // is the only reading consistent with why it exists: holding the lane
+            // shut for the ten sessions a refused row would have taken to grade
+            // would cost the engine a real causal sample to punish it for a bug.
             const at = board.indexOf(row)
             if (at !== -1) board.splice(at, 1)
             trace.revise(c.sym, c.gate, { side: c.side, source: sources.get(c.sym)?.source, detail: 'wildcard declined — it would have published as a shadow' })
@@ -2771,6 +2914,32 @@ export async function buildBoard(
     let notCandidate = 0
     for (const sym of offered) if (!sources.has(sym) && !trace.hasRow(sym)) notCandidate++
     trace.notCandidate(notCandidate)
+    // ---- WHERE THE BOARD AND THE RECORD DELIBERATELY DISAGREE (Stage 3d) ----
+    //
+    // On a day the experiment slot is spent, two of the arguments below are NOT
+    // what the reader was shown, and both divergences run the same way: the board
+    // is edited so it cannot state something false, and the record keeps the
+    // funnel's own truth for the walk, the ledger and 3b's accounting to read. A
+    // reviewer finding one of them alone will read it as a bug, so they are named
+    // together, once, at the site where the record is written:
+    //
+    //  1. `emptySides` — the BOARD blob (above) drops the side the wildcard seated
+    //     on, because "nothing tradeable on the short side today" is a claim the
+    //     reader can falsify by looking at the sized row beneath it. THIS argument
+    //     is untouched: the ordinary funnel really did empty that side, for that
+    //     reason, and the gate the wildcard overrode survives on the row
+    //     (`wildcard.gate`) and in its trace row (`priorGate`) either way.
+    //  2. `nearMisses` — this argument still names the row the wildcard was chosen
+    //     FROM, which by now is a published call. The board dropped its near-miss
+    //     twin (they would otherwise share an id, and a near miss is a printed
+    //     comparison with no belief, size or stop beside a sized experiment); the
+    //     record keeps it because the choice was MADE from this list, and a list
+    //     edited to remove the row that was chosen would make the day's selection
+    //     unreproducible — the one thing a replay of this lane has to be able to do.
+    //
+    // The trace ROWS carry no such divergence: the wildcard's own key holds
+    // `called-wildcard` with `priorGate` naming its gate, which is exactly what
+    // the reader was shown.
     await store.write(funnelTraceKey(today), trace.build({ date: today, gates, nearMisses, emptySides }))
     const traceIndex = (await store.read<string[]>(FUNNEL_TRACE_INDEX_KEY)) ?? []
     if (!traceIndex.includes(today)) await store.write(FUNNEL_TRACE_INDEX_KEY, [...traceIndex, today].slice(-FUNNEL_TRACE_INDEX_MAX))

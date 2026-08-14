@@ -117,7 +117,12 @@ export function EnginePanel() {
               <div className="perf-row"><span>Graded predictions</span><span>{scorecard.totalGraded} · Brier {brierTrend}</span></div>
               {Object.entries(scorecard.byGrade).map(([g, s]) => (
                 <div key={g} className="perf-row">
-                  <span>{g === 'shadow' ? 'Shadows' : `Grade ${g}`}</span>
+                  {/* Two of these keys are not letters, and both name a population
+                      the reader's conviction was never behind: `shadow` (never
+                      offered) and `wildcard` (offered BECAUSE the engine's own
+                      gates refused it — Stage 3d). Printing either as "Grade
+                      shadow"/"Grade wildcard" would invent a tier neither has. */}
+                  <span>{g === 'shadow' ? 'Shadows' : g === 'wildcard' ? '🃏 Wildcards' : `Grade ${g}`}</span>
                   <span>
                     {pct(s.hits, s.n)} hit ({s.hits}/{s.n}) · avg excess {s.n ? (s.sumExcess / s.n).toFixed(1) : '—'}%
                   </span>

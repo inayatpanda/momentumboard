@@ -341,6 +341,21 @@ export interface Prediction extends GradedCall {
      * choice — the evidence gap the slot was spent to close, frozen so the panel
      * and the paper quote the number the decision was actually made on. */
     gateEvidenceN: number
+    /** THE RECEIPT for the causal write-back (engine.ts's `bookCausalOutcomes`).
+     *
+     * A TRI-STATE, and every value carries weight:
+     *   absent  — this row has not graded yet, OR it graded before the receipt
+     *             existed. Either way nothing is owed: a row that predates the
+     *             field cannot be re-offered, so no migration can double-count.
+     *   `false` — written WITH the 10d grade: "the ledger is owed this outcome".
+     *   `true`  — the ledger has it. Written after the blob write returns.
+     *
+     * Why it exists: the grade is made durable long before the ledger hook runs
+     * (deliberately — a blob failure must never sit between a grade and its
+     * store.write), which used to mean a throw in that hook destroyed the one
+     * causal sample the slot spent a week buying, with nothing on the row left to
+     * say so. The receipt turns that loss into a debt the next pass settles. */
+    booked?: boolean
   }
   worldTape?: { tone: string; mult: number } // overnight world-tape nudge applied to this call's conviction (bounded ±10/−15%)
   overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string }

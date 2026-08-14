@@ -91,8 +91,17 @@ export function TodaysCalls({ onOpen }: { onOpen: (symbol: string) => void }) {
             <span className="calls-risk" style={{ fontSize: 11, color: 'var(--muted)' }}>
               {p.riskPct > 0 ? `${fmtRiskPct(p.riskPct)}% risk${sizeLabel(p.riskPct, p.riskRung)}` : p.nearMiss ? 'nearest miss — no size' : 'watch only'}
             </span>
-            {(band || (p.themes ?? []).length > 0 || p.earningsRisk) && (
+            {(band || (p.themes ?? []).length > 0 || p.earningsRisk || p.wildcard) && (
               <span className="calls-tags">
+                {/* THE EXPERIMENT (Stage 3d), first and warned — parity with
+                    EngineBoard, which has carried this chip since the slot
+                    shipped. This is the card the reader opens first, so a
+                    wildcard printed here without it is quarter-size money on a
+                    row the engine's own gates REFUSED, dressed as an ordinary
+                    call. The thesis line beneath already carries the label, the
+                    hypothesis and the standing warning; this finds it at a
+                    glance. */}
+                {p.wildcard && <span className="badge warn" title={`Experiment · testing the ${p.wildcard.gate} gate`}>🃏 wildcard</span>}
                 {band && <span className="badge">{band}</span>}
                 {(p.themes ?? []).slice(0, 2).map(t => (
                   <span key={t} className="badge">{t}</span>

@@ -45,3 +45,31 @@ describe('EnginePanel — what the experiment slot has actually taken', () => {
     expect(screen.getByText(/worst gate/).textContent).toContain('cost 1')
   })
 })
+
+// THE SCORECARD'S OWN KEY (Stage 3d fix wave). The experiment never joins a
+// letter — its grade is not why it published — so it gets a key of its own, the
+// way a shadow already does. Both are populations that carry no reader
+// conviction, and neither may be printed as a tier it never earned.
+describe('EnginePanel — the experiments have their own line on the scorecard', () => {
+  it('names the wildcard key instead of inventing a grade called "wildcard"', async () => {
+    data.scorecard = {
+      byGrade: {
+        A: { n: 4, hits: 3, sumExcess: 12 },
+        shadow: { n: 2, hits: 1, sumExcess: 1 },
+        wildcard: { n: 2, hits: 1, sumExcess: 4 },
+      },
+      byRegime: {},
+      bySetup: {},
+      overlays: {},
+      brierTail: [],
+      totalGraded: 8,
+      updatedAt: 1,
+    } as unknown as EngineData['scorecard']
+    render(<EnginePanel />)
+    await waitFor(() => expect(screen.getByText('🃏 Wildcards')).toBeInTheDocument())
+    expect(screen.getByText('Shadows')).toBeInTheDocument()
+    expect(screen.getByText('Grade A')).toBeInTheDocument()
+    expect(screen.queryByText('Grade wildcard')).toBeNull()
+    expect(screen.getByText('🃏 Wildcards').closest('.perf-row')!.textContent).toContain('(1/2)')
+  })
+})

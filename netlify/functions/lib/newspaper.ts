@@ -341,6 +341,18 @@ export interface PaperPostMortem {
  * or a watch row's post-mortem is real and useful, but it belongs to the
  * engine's own learning, not to the paper's confession.
  *
+ * …AND LOSSES ONLY. Every class in this list used to be one — `classifyLoser`
+ * only ever ran on `hit === false` — so the filter was the caller's gate and
+ * nothing here needed to say it. Stage 3d ended that: the wildcard slot is
+ * post-mortemed WIN OR LOSE (postMortem.ts's `classifyOutcome`), so `cls: 'won'`
+ * rows now exist, they are sized, and being freshly stamped they sort to the very
+ * front of a `pm.at` order. The writer's brief points the honest close's
+ * accountability sentence at the head of this list — "spend that sentence on the
+ * most recent SIZED loss" — so a winning experiment left in it would have the
+ * paper apologise for the one row that made money. A win is not a confession, and
+ * it has its own separable record (the wildcard key, the causal ledger, the
+ * board's own 🃏 row) to be reported from.
+ *
  * PURE + exported so it can be tested without running the compose pipe. */
 export function paperPostMortems(days: readonly { date: string; preds: readonly Prediction[] }[], max = PAPER_POSTMORTEM_MAX): PaperPostMortem[] {
   // Ordered by WHEN THE POST-MORTEM LANDED (pm.at), not by publication date:
@@ -351,6 +363,8 @@ export function paperPostMortems(days: readonly { date: string; preds: readonly 
     for (const p of d.preds) {
       const pm = p.postMortem
       if (!pm || !(p.riskPct > 0)) continue
+      // see above: this list is what the paper OWES the reader an answer for
+      if (pm.cls === 'won') continue
       all.push({ date: d.date, sym: p.sym, side: p.side, cls: pm.cls, why: pm.sentence || pm.detail, at: pm.at ?? 0, ...(pm.sentence ? { via: 'llm' as const } : {}) })
     }
   }

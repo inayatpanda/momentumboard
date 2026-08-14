@@ -249,5 +249,12 @@ export function classifyOutcome(pred: PostMortemRow, o: PredOutcome, candles: Ca
 /** The scorecard's key: setup family × regime × class, exactly the aggregation the
  * spec asks for ("so the engine knows HOW it loses"). A row with no setup read is
  * counted under `unknown` rather than dropped — a population that vanishes from
- * the roll-up is the silence Stage 3 exists to end. */
+ * the roll-up is the silence Stage 3 exists to end.
+ *
+ * `'won'` is the one class that never reaches this key: the roll-up is HOW THE
+ * ENGINE LOSES, and a win is not one of the ways. The caller (engine.ts's
+ * scorecard pass) holds that exclusion rather than this function, because the
+ * key is also what a reader of a single row's post-mortem would build, and a
+ * winning wildcard genuinely has a class — it simply has no place in this
+ * particular sum. Its record lives in the miss ledger's causal column. */
 export const postMortemKey = (setup: string | null | undefined, regime: string, cls: PostMortemClass): string => `${setup || 'unknown'}:${regime}:${cls}`

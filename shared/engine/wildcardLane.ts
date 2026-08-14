@@ -268,7 +268,18 @@ function gatesByName(rows: Readonly<Record<string, FunnelTraceRow>>): Map<string
  * thing: a SHORT with no inverse ETP an ISA can place. A long is bought as the
  * underlying and needs no mapping, so `levMap` silence about a long says nothing.
  * Route ETPs themselves are refused outright (`isRouteEtp`) — a 3x product is a
- * route, never an underlying. */
+ * route, never an underlying.
+ *
+ * …AND A SHORT THAT PASSES THIS FILTER IS STILL PAPER MONEY. Routability here
+ * means the name HAS an inverse ETP, not that this row will be given one:
+ * `mapInstrument` is reached only at `sizedFraction === 1` (engine.ts) and a
+ * wildcard is capped at 0.25, so every short wildcard publishes with
+ * `instrument: null` and therefore `paperOnly: true`. That is honest and
+ * deliberate — an ISA cannot place a quarter of an inverse ETP position the
+ * engine never sized — but it means a short wildcard is a MEASUREMENT and not a
+ * trade the reader took. Anything reading these rows back (Task 3's window walk
+ * above all) must not count a short wildcard as reader money: the causal evidence
+ * it buys is real, the P&L is paper until quarter-size short routing exists. */
 function wildcardPool(inputs: WildcardInputs): WildcardCandidate[] {
   const ex = inputs.exclusions ?? {}
   const levMap = inputs.levMap ?? {}
