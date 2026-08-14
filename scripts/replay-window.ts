@@ -1060,6 +1060,12 @@ export interface Row {
    * SPY over ten equity sessions is exactly the leak Phase A shipped to stop,
    * and the harness would have re-introduced it in its own artefact. */
   cohort?: string
+  /** THE ROW'S NOTE — carried on a cohort row and nowhere else. It is where the
+   * lane's cold-start sentence and its paper-only sentence live (`cryptoVoice`
+   * appends to `note` and to the evidence detail, never to the thesis), and both
+   * are a ratified requirement of the design rather than decoration, so the walk
+   * has to be able to read them back. */
+  note?: string
   // ---- recomputed post-publication from the SAME calibration blob (HEAD only) ----
   /** The UNROUNDED curve read. `probability` on the row is this quantised to 2dp
    * (engine.ts), and the two are reported side by side on purpose: the curve can
@@ -2395,8 +2401,13 @@ const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
   // shape it has always had.
   ...((p as { wildcard?: WildcardRecordLike }).wildcard ? { wildcard: (p as { wildcard?: WildcardRecordLike }).wildcard } : {}),
   // …and the row's PARTITION, spread for the same reason (Stage 1c B1 stamps it
-  // on crypto-lane rows only, so an equity row's shape is exactly what it was).
-  ...((p as { cohort?: string }).cohort ? { cohort: (p as { cohort?: string }).cohort } : {}),
+  // on crypto-lane rows only, so an equity row's shape is exactly what it was) —
+  // with the row's NOTE beside it, and only on such a row. The cold-start
+  // sentence the lane is required to say out loud ("C at half size is the
+  // designed floor, not a verdict") is appended to `note` and to the evidence
+  // detail, NOT to the thesis, so a walk carrying the thesis alone could not
+  // check the one piece of copy the ratified design made a requirement.
+  ...((p as { cohort?: string }).cohort ? { cohort: (p as { cohort?: string }).cohort, note: p.note } : {}),
 })
 
 /** Recompute, from the SAME calibration blob the day's board was built against,
@@ -3397,6 +3408,13 @@ export async function main() {
       // cannot find the session the engine's own detail line names.
       const gradedOn = gradedOnDate(days, spyFull, i)
       for (const p of preds) {
+        // THE CENSUS IS THE EQUITY CLASSIFIER'S REPORT CARD, so the population is
+        // the one the classifier is allowed to read: a crypto row is excluded
+        // from the post-mortem at the accrual (engine.ts's `!cryptoRow`), so
+        // counting it here would book it as a loser the classifier failed to
+        // explain and quietly move `graded`, `losers` and the hit denominators
+        // of an instrument the partition is not part of.
+        if ((p as { cohort?: string }).cohort === 'crypto') continue
         if (!p.outcome10) continue
         census.graded++
         if (p.outcome10.hit) continue
