@@ -64,6 +64,13 @@ export function ledgerRow(p: Prediction) {
     // that after the row has aged out of today's board into this projection.
     // (nearMiss deliberately absent: a near miss never enters the ledger.)
     observation: p.observation ?? false,
+    // …and WHICH PARTITION the row was measured in (Stage 1c Phase B). Same
+    // argument as `observation` one line up, with a sharper edge: without it a
+    // crypto row's `excessPct` — an ABSOLUTE move against a structural spyPct of
+    // 0 — is indistinguishable in this projection from an equity excess, and the
+    // client's own avgExcess10 would average the two into one number that means
+    // neither. One optional string is what keeps the two bases apart.
+    cohort: p.cohort,
     // …and the experiment slot's record (Stage 3d), on the same argument as
     // `observation` above: it is a ROW KIND, and the ledger's own by-grade
     // breakdown cannot keep a wildcard out of the letter buckets without it.

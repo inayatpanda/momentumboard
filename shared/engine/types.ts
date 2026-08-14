@@ -321,6 +321,34 @@ export interface Prediction extends GradedCall {
   // trade, no "use engine levels", no agreement/conflict read, never counted as
   // one of the day's live calls.
   observation?: true
+  /** WHICH PARTITION THIS ROW BELONGS TO (Stage 1c Phase B) — present only on a
+   * row the CRYPTO LANE published, absent on every equity row ever written.
+   *
+   * IT IS A ROW KIND, exactly as `observation` and `wildcard` are, and it exists
+   * because the symbol is not a sufficient discriminator. `isCryptoSymbol(sym)`
+   * answers "is this a coin?"; this field answers "was this row MEASURED as
+   * one?", and the two differ for the population that matters most: the legacy
+   * crypto rows already in the ledger, published before the lane existed and
+   * graded against SPY on a clock the asset does not keep. Those rows keep the
+   * Phase-A treatment forever — they resolve, and they teach nothing — while a
+   * row carrying this stamp is graded on the crypto basis (absolute, 14 bars),
+   * accrues into `crypto-calibration`, and moves the crypto rung. Keying either
+   * behaviour off the symbol alone would apply one partition's rules to the
+   * other partition's evidence.
+   *
+   * WHAT EVERY SURFACE MUST DO WITH IT. This row's `outcome.excessPct` is the
+   * side-adjusted RAW move and its `spyPct` is a structural 0 — nothing was
+   * subtracted. So it must never enter an equity aggregate that means "excess
+   * over the benchmark" (the ledger's avgExcess10, the scorecard's panes, the
+   * factor IC, the rung streams), and any surface that PRINTS the number has to
+   * say which basis it is on. The wildcard's four-pane adjudication is the
+   * precedent: a special population is either given its own key or excluded,
+   * never quietly folded in.
+   *
+   * A UNION OF ONE, deliberately: a second partition would be a second blob, a
+   * second clock and a second basis, and it should have to say so here rather
+   * than inherit a string field that already exists. */
+  cohort?: 'crypto'
   /** THE EXPERIMENT SLOT'S RECORD (Stage 3d, shared/engine/wildcardLane.ts).
    *
    * Present ONLY on a wildcard row: a trade a gate had already refused, published

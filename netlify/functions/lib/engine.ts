@@ -3091,7 +3091,22 @@ export async function traceOpenIdeas(store: AppStore, deps: EngineDeps, nowSec: 
       // watch-only calls aren't positions — the open book traces trades. Open
       // until the CALIBRATED (10d) grade lands, matching openTrace's GRADE_HORIZON
       // so "grades in N sessions" stays truthful (a call no longer vanishes at 5d).
-      if (!p.shadow && !p.watchOnly && !p.outcome10) open.push(p)
+      //
+      // …and a CRYPTO row is kept OUT of the open book entirely (Stage 1c Phase
+      // B, and it is a DECISION rather than an omission — B1's
+      // `CRYPTO_LOOKBACKS.openTraceGradeHorizon10` names the fork). `openTrace.ts`
+      // holds the equity answers to both of the questions the crypto partition
+      // re-answers: `GRADE_HORIZON = 10` and an entry of `t >= dayEpoch` (the
+      // publication day's own bar). Fed a crypto row unchanged it would tell the
+      // reader a call matures in ten sessions when the grade will strike it on
+      // fourteen bars, and base its running P&L on a bar the return leg
+      // deliberately forfeits — the trace and the grade contradicting each other
+      // in front of the person holding the position. The other arm of the fork
+      // (teaching openTrace the crypto clock) is a real option and is recorded as
+      // the follow-up; until it is taken, saying nothing beats saying something
+      // the grade will contradict. The row still grades, still teaches the crypto
+      // partition, and still appears on the board and in the ledger.
+      if (!p.shadow && !p.watchOnly && !p.outcome10 && p.cohort !== 'crypto') open.push(p)
     }
   }
   const board = await store.read<{ date: string; board: Prediction[] }>('engine-board')

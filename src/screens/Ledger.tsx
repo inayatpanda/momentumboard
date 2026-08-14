@@ -342,6 +342,12 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
             <tbody>
               {visible.map(p => {
                 const st = statusOf(p)
+                // A CRYPTO row's two outcome columns are NOT vs-SPY (Stage 1c
+                // Phase B): the partition grades absolute, so the number is the
+                // side-adjusted raw move over 7/14 crypto bars. Same digits,
+                // different sentence — marked in the cell rather than silently
+                // printed under a "vs SPY" header that would be false about it.
+                const raw = p.cohort === 'crypto'
                 return (
                   <tr
                     key={p.id}
@@ -365,11 +371,11 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
                     <td className="num">{p.entry}</td>
                     <td className="num">{p.stop}</td>
                     <td className="num">{p.target}</td>
-                    <td className={`num ${p.outcome5 ? (p.outcome5.excessPct >= 0 ? 'up-text' : 'down-text') : ''}`}>
-                      {p.outcome5 ? `${p.outcome5.excessPct >= 0 ? '+' : ''}${p.outcome5.excessPct}%` : '·'}
+                    <td className={`num ${p.outcome5 ? (p.outcome5.excessPct >= 0 ? 'up-text' : 'down-text') : ''}`} title={raw ? 'raw move over 7 crypto bars — no benchmark' : undefined}>
+                      {p.outcome5 ? `${p.outcome5.excessPct >= 0 ? '+' : ''}${p.outcome5.excessPct}%${raw ? ' raw' : ''}` : '·'}
                     </td>
-                    <td className={`num ${p.outcome10 ? (p.outcome10.excessPct >= 0 ? 'up-text' : 'down-text') : ''}`}>
-                      {p.outcome10 ? `${p.outcome10.excessPct >= 0 ? '+' : ''}${p.outcome10.excessPct}%` : '·'}
+                    <td className={`num ${p.outcome10 ? (p.outcome10.excessPct >= 0 ? 'up-text' : 'down-text') : ''}`} title={raw ? 'raw move over 14 crypto bars — no benchmark' : undefined}>
+                      {p.outcome10 ? `${p.outcome10.excessPct >= 0 ? '+' : ''}${p.outcome10.excessPct}%${raw ? ' raw' : ''}` : '·'}
                     </td>
                     <td><span className={`badge ${STATUS_BADGE[st]}`}>{st}</span></td>
                   </tr>
@@ -381,8 +387,9 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
       )}
 
       <p className="empty-line led-fine">
-        Excess = the call's move minus SPY's, side-adjusted; a hit must clear +1pp with the stop (daily-close basis) never breached. Shadows (sh) were
-        suppressed from the board but graded anyway — the learning loop eats everything. Scroll the table sideways; tap a row for the chart. Last 30
+        Excess = the call's move minus SPY's, side-adjusted; a hit must clear +1pp with the stop (daily-close basis) never breached. Crypto rows are
+        marked <b>raw</b>: that cohort has no benchmark and no five-day week, so its number is the side-adjusted move itself over 7/14 crypto bars,
+        and it is kept out of every average above. Shadows (sh) were suppressed from the board but graded anyway — the learning loop eats everything. Scroll the table sideways; tap a row for the chart. Last 30
         trading days, up to 100 calls.
       </p>
     </div>

@@ -407,6 +407,13 @@ export interface EnginePrediction {
 
 // A prediction's realised outcome over one horizon: side-adjusted excess vs SPY,
 // plus whether it hit / got stopped. Absent horizon = not yet matured.
+//
+// …EXCEPT on a row stamped `cohort: 'crypto'` (Stage 1c Phase B), where the
+// basis is ABSOLUTE: `excessPct` is the side-adjusted raw move, `spyPct` is a
+// structural 0 because nothing was subtracted, and the horizon is 14 crypto bars
+// rather than 10 sessions. The fields are reused rather than renamed — renaming
+// would rewrite every stored row in the ledger for a cosmetic gain — so every
+// surface that AVERAGES or LABELS them has to read the cohort first.
 export interface PredOutcome {
   excessPct: number
   rawPct: number
@@ -452,6 +459,11 @@ export interface LedgerPrediction {
   // trade, disagreeing. (Absent on every ordinary row and on every row published
   // before the slot existed.)
   wildcard?: { gate: string; priority: number; hypothesis: string; gateEvidenceN: number; booked?: boolean }
+  // WHICH PARTITION MEASURED THIS ROW (Stage 1c Phase B). Carried for the same
+  // reason as the two above and one more: it is the ONLY thing standing between
+  // a crypto row's absolute return and the equity excess means on this pane. See
+  // PredOutcome above for what the outcome fields mean on such a row.
+  cohort?: 'crypto'
   note: string
   // the engine's two sentences, carried into the ledger so a historical card can
   // still be read against what price then did (optional — see EnginePrediction)
