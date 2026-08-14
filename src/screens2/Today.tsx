@@ -1,4 +1,52 @@
-// Today — the home screen (stub until plan Task 13 builds it).
+// Today — the home screen (plan Task 13). The ratified "Today stack" layout
+// (brainstorm/67693-1786687483/content/home-layout.html, option A): today's
+// sized calls as big cards up top, then one counts rail (developing / watch /
+// refused), then the yesterday strip — everything else is one tap deeper.
+//
+// Data: ONE slice, `board` (getBoardSlice) — the amendments folded the
+// original brief's second fetch (`ledger:2` for yesterday) and the funnel
+// count into the board slice itself / a no-fetch chip, so Today never awaits
+// more than the one slice it paints from cache first (CX-4's local-first
+// contract, useSlice.ts).
+
+import { useSlice } from '../lib/useSlice'
+import { getBoardSlice } from '../lib/apiViews'
+import { NO_SIZED_TODAY } from '../lib/copy'
+import { CallCard } from './parts/CallCard'
+import { CountsRail } from './parts/CountsRail'
+import { YesterdayStrip } from './parts/YesterdayStrip'
+
 export default function Today() {
-  return <h1>Today</h1>
+  const { data } = useSlice('board', getBoardSlice)
+  const blob = data?.board ?? null
+  const rows = blob?.board ?? []
+  // "sized" mirrors src/components/EngineBoard.tsx:251's `trades` split — the
+  // only rows a grade pill and a probability may ever show on (CallCard's own
+  // hard rule, checked again there rather than trusted from here).
+  const sized = rows.filter(p => !p.watchOnly)
+
+  return (
+    <div className="today">
+      <div className="today-head">
+        <h1>Today</h1>
+        {blob && <span className={`pill ${blob.regime === 'green' ? 'accent' : ''}`}>{blob.regime}</span>}
+      </div>
+      {blob === null ? (
+        <>
+          <div className="skeleton" style={{ height: 118, marginBottom: 10 }} />
+          <div className="skeleton" style={{ height: 118 }} />
+        </>
+      ) : sized.length === 0 ? (
+        <p className="cc-reason">{NO_SIZED_TODAY}</p>
+      ) : (
+        <div className="today-cards">
+          {sized.map(row => (
+            <CallCard key={row.id} row={row} />
+          ))}
+        </div>
+      )}
+      <CountsRail board={rows} />
+      <YesterdayStrip yesterday={data?.yesterday ?? null} />
+    </div>
+  )
 }

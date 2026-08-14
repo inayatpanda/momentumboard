@@ -242,3 +242,97 @@
 .v2 .pressable:active {
   transform: scale(0.985);
 }
+
+/* --- today ------------------------------------------------------------------
+   The home screen (plan Task 13): Today's own layout classes, on top of the
+   primitives above (.card, .pill, .convbar, .hrail, .sec-label, .pressable,
+   .skeleton). Tokens only — every colour comes from tokens.css. */
+.v2 .today-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.v2 .today-head h1 {
+  font-size: 22px;
+  margin: 0;
+}
+.v2 .today-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* the call card itself: an <a> (wouter Link) styled as a .card, so the whole
+   surface is one tap target to the stock page */
+.v2 a.cc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+.v2 .cc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.v2 .cc-sym {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 16px;
+}
+.v2 .cc-name {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+.v2 .cc-levels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.v2 .cc-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.v2 .cc-reason {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.v2 .cc-wildcard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* the yesterday strip */
+.v2 .cc-yesterday {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.v2 .cc-yesterday b {
+  color: var(--text);
+}
