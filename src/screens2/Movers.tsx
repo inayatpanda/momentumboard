@@ -18,12 +18,16 @@ import type { Quote } from '../../shared/types'
 
 const PAGE = 40
 
-function moverQuote(r: MoverRow): Quote {
+function moverQuote(r: MoverRow): Quote | null {
+  // Return null if price is missing — StockRow will render '—' instead of fabricated $0.00
+  if (r.price == null) {
+    return null
+  }
   return {
     symbol: r.sym,
-    price: r.price ?? 0,
-    prevClose: r.price ?? 0,
-    changePct: r.changePct ?? 0,
+    price: r.price,
+    prevClose: r.price,
+    changePct: r.changePct,
     currency: 'USD',
     todayVolume: null,
     asOf: 0,

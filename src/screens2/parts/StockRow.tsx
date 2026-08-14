@@ -31,7 +31,7 @@ export function StockRow({
 }) {
   const { data: candles } = useSlice(`candles:${symbol}:3mo`, () => getCandles(symbol, '3mo').then(d => d.candles))
   const closes = candles && candles.length > 1 ? candles.slice(-30).map(c => c.c) : undefined
-  const up = (quote?.changePct ?? 0) >= 0
+  const up = quote && quote.changePct != null ? quote.changePct >= 0 : false
   return (
     <div className="card pressable stx-row">
       <Link href={`/stock/${symbol}`} className="stx-row-link">
@@ -45,7 +45,7 @@ export function StockRow({
         {closes && <Sparkline closes={closes} />}
         <span className="stx-row-prices">
           <span className="num">{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
-          {quote && <span className={`pill ${up ? 'long' : 'short'}`}><span className="num">{fmtPct(quote.changePct)}</span></span>}
+          {quote && quote.changePct != null && <span className={`pill ${up ? 'long' : 'short'}`}><span className="num">{fmtPct(quote.changePct)}</span></span>}
         </span>
       </Link>
       {onRemove && (

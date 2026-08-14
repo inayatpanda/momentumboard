@@ -104,7 +104,7 @@ export default async (req: Request) => {
       await Promise.all(
         priceSymbols.map(async s => {
           const q = await cachedQuote(s, process.env.FINNHUB_API_KEY ?? '').catch(() => null)
-          return q ? `${s} ${q.price} (${q.changePct.toFixed(1)}%)` : null
+          return q ? `${s} ${q.price} (${q.changePct != null ? q.changePct.toFixed(1) : '?'}%)` : null
         }),
       )
     ).filter(Boolean)

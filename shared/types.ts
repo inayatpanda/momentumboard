@@ -12,7 +12,7 @@ export interface Quote {
   name?: string
   price: number
   prevClose: number
-  changePct: number
+  changePct: number | null
   currency: string // 'USD' | 'GBP' | 'GBp' | ...
   todayVolume: number | null
   asOf: number // unix seconds

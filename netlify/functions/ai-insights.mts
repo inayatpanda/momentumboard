@@ -56,7 +56,7 @@ export async function routeAi(headers: Headers, env: Env, store: AppStore, llm: 
       symbols.map(async sym => {
         const [q, candles] = await Promise.all([cachedQuote(sym, env.FINNHUB_API_KEY ?? ''), cachedCandles(sym)])
         const setups = candles && candles.length > 25 ? detectSetups(candles, null) : []
-        return `${sym}: ${q ? `${q.price} (${q.changePct.toFixed(1)}% day)` : 'n/a'}${setups.length ? ` [${setups.join(', ')}]` : ''}`
+        return `${sym}: ${q ? `${q.price} (${q.changePct != null ? q.changePct.toFixed(1) : '?'}% day)` : 'n/a'}${setups.length ? ` [${setups.join(', ')}]` : ''}`
       }),
     ),
     cachedCandles('SPY'),

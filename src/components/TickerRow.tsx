@@ -29,7 +29,7 @@ export function TickerRow({
   action?: { label: string; onClick: () => void; disabled?: boolean }
 }) {
   const { symbol, quote, rvol, setups, spark } = row
-  const up = (quote?.changePct ?? 0) >= 0
+  const up = quote && quote.changePct != null ? quote.changePct >= 0 : false
   const prevPrice = useRef(quote?.price)
   const [flash, setFlash] = useState<'up' | 'down' | null>(null)
   useEffect(() => {
@@ -61,7 +61,7 @@ export function TickerRow({
       {spark && spark.length > 1 && <Sparkline closes={spark} />}
       <span className="trow-prices">
         <span className={`price ${flash ? `flash-${flash}` : ''}`}>{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
-        {quote && (
+        {quote && quote.changePct != null && (
           <span className={`trow-chg ${up ? 'up' : 'down'}`}>
             {up ? '↗' : '↘'} {Math.abs(quote.changePct).toFixed(2)}%
           </span>

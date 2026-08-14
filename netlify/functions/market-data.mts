@@ -316,7 +316,7 @@ export async function routeRequest(
         .catch(() => null)
       const call = boardBlob?.board?.find(p => p.sym === symbol)
       const evidence = [
-        `Price ${quote?.price ?? last}${quote ? ` (${quote.changePct.toFixed(1)}% today)` : ''}; 21d return ${ret(21) ?? '?'}%, 63d return ${ret(63) ?? '?'}%.`,
+        `Price ${quote?.price ?? last}${quote && quote.changePct != null ? ` (${quote.changePct.toFixed(1)}% today)` : ''}; 21d return ${ret(21) ?? '?'}%, 63d return ${ret(63) ?? '?'}%.`,
         read ? `Chart read: ${read.note} (stage ${read.stage}, entry quality ${read.entryQuality}, RSI ${read.rsi ?? '?'}, RVOL ${read.rvol ?? '?'}).` : 'No confident chart read.',
         `Active setups: ${setups.join(', ') || 'none'}. Typical 10-day swing capacity ±${capacity ?? '?'}%.`,
         `Market regime: ${regime}.`,

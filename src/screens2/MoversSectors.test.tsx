@@ -107,6 +107,24 @@ describe('Movers', () => {
     expect(document.body.textContent).not.toMatch(/\bgrade\b/i)
     expect(document.body.textContent).not.toMatch(/\bprobability\b/i)
   })
+
+  it('null price renders dash, not fabricated $0.00 or pill', async () => {
+    await writeSlice('movers', {
+      gainers: [mkMover('NULLPX', 0, { price: null, changePct: null })],
+      losers: [],
+      actives: [],
+      at: Date.now(),
+    })
+    withRouter('/app/stocks/movers', 'movers')
+
+    await screen.findByText('NULLPX')
+    // Should show dash, not $0.00
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('$0.00')
+    // Should not render a pill with false +0.00%
+    expect(document.body.textContent).not.toContain('+0.00%')
+    expect(document.querySelector('.pill')).not.toBeInTheDocument()
+  })
 })
 
 describe('Sectors', () => {

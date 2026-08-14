@@ -160,7 +160,7 @@ export function TickerDetail({ symbol, onBack }: { symbol: string; onBack: () =>
           </span>
           <div className="detail-hero-line">
             <span className="val">{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
-            {quote && <span className={`chg-pill ${quote.changePct >= 0 ? 'up' : 'down'}`}>{fmtPct(quote.changePct)}</span>}
+            {quote && quote.changePct != null && <span className={`chg-pill ${quote.changePct >= 0 ? 'up' : 'down'}`}>{fmtPct(quote.changePct)}</span>}
           </div>
         </div>
       </header>
