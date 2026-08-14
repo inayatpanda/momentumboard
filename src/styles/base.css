@@ -2135,3 +2135,177 @@
   font-size: 12px;
   color: var(--text-dim);
 }
+
+/* --- desk: the ≥1200px master–detail layout ---------------------------------
+   Plan Task 22 + DS-18 (ratified mockup option A). Three columns — the
+   existing Nav as a rail, the board column, and the detail pane that hosts the
+   ROUTED screen — each column owning its own scroll so the page itself never
+   scrolls and the two lists cannot drag each other. Everything here is gated
+   on the same 1200px the JS reads (DESK_QUERY in src/shell/DeskLayout.tsx):
+   the desk is not mounted below it, and if a resize ever races the re-render,
+   the CSS refuses to draw a three-column grid in a phone's width. Tokens
+   only — no colour literal enters this file. */
+@media (min-width: 1200px) {
+  .v2 .desk2 {
+    display: grid;
+    grid-template-columns: 200px 320px minmax(0, 1fr);
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* the rail is the EXISTING .v2-nav, released from its fixed position so the
+     grid — not the viewport — places it (the ≥1024px rail skin above stays,
+     this only changes where it sits) */
+  .v2 .desk2-rail {
+    background: var(--surface-2);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  .v2 .desk2 .v2-nav {
+    position: static;
+    inset: auto;
+    width: 100%;
+    min-height: 100%;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-right: none;
+  }
+
+  /* the board column: its own scroll, its own sticky header */
+  .v2 .desk2-board {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-right: 1px solid var(--border);
+    padding: 0 14px 28px;
+  }
+  .v2 .desk2-colhead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 14px 0 8px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .v2 .desk2-colhead .sec-label {
+    margin: 0;
+  }
+
+  /* the same CallCards and ranked rows the phone shows, tightened for a 320px
+     column — layout only; nothing is hidden and no meaning changes */
+  .v2 .desk2-board .card {
+    padding: 11px;
+    border-radius: 14px;
+  }
+  .v2 .desk2-board .today-cards {
+    gap: 9px;
+    margin: 12px 0;
+  }
+  .v2 .desk2-board .cc-sym {
+    font-size: 14.5px;
+  }
+  .v2 .desk2-board .cc-name {
+    max-width: 88px;
+  }
+  .v2 .desk2-board .cc-levels,
+  .v2 .desk2-board .cc-meta {
+    font-size: 12px;
+  }
+  .v2 .desk2-board .sec-label {
+    margin: 14px 0 4px;
+  }
+  .v2 .desk2-board details.board-refused {
+    margin-top: 14px;
+  }
+  .v2 .desk2-board details.board-refused > summary {
+    padding: 11px;
+  }
+
+  /* the detail pane: the routed screen, full width of what is left */
+  .v2 .desk2 .v2-page {
+    margin-left: 0;
+    max-width: none;
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 28px 40px;
+  }
+  .v2 .desk2-panebar {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    justify-content: flex-end;
+    padding: 12px 0 8px;
+    background: var(--bg);
+  }
+
+  /* the analytics slide-over: desktop-only, lazy-mounted, non-modal */
+  .v2 .desk2-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(440px, 34vw);
+    z-index: 60;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 14px 16px 28px;
+    background: var(--surface-1);
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow-card);
+    animation: desk2-slide-in 200ms ease-out;
+  }
+  .v2 .desk2-drawer-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 4px 0 10px;
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border);
+  }
+  .v2 .desk2-drawer-head .sec-label {
+    margin: 0;
+  }
+  .v2 .desk2-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 14px;
+  }
+  /* the four quant panels keep their own skin (index.css `.quant-*`, which
+     survives the cutover with the public site) — only the card shell and the
+     stacking are v2's business. The margin reset is the same one the retired
+     `.quant-grid` did: spacing here comes from the flex gap, once. */
+  .v2 .desk2-panels > .card {
+    padding: 14px;
+    margin-bottom: 0;
+  }
+  .v2 .desk2-panels .quant-comp {
+    grid-template-columns: minmax(74px, 106px) minmax(0, 1fr) 48px;
+    gap: 8px;
+  }
+}
+
+@keyframes desk2-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2 .desk2-drawer {
+    animation: none;
+  }
+}

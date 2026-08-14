@@ -45,7 +45,11 @@ export function LeanPanel({
   analogue,
   analogueSym,
 }: {
-  board: EngineData['board']
+  // Exactly the three fields this panel reads, named structurally so BOTH
+  // board shapes the app carries can feed it: the legacy aggregate's `board`
+  // and the v2 `?view=board` slice's blob (whose `emptySides`/`themes` are
+  // typed loosely and are none of this panel's business either way).
+  board: Pick<NonNullable<EngineData['board']>, 'regime' | 'worldTape' | 'newsTone'> | null
   calibration: EngineData['calibration']
   vixChangePct: number | null
   analogue: { n: number; median5: number; p75_5: number; median20: number; maxExt5: number } | null

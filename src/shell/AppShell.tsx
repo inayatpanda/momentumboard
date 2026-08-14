@@ -8,6 +8,7 @@ import { Redirect, Route, Router, Switch } from 'wouter'
 import type { BaseLocationHook } from 'wouter'
 import '../styles/base.css'
 import { gcSlices } from '../lib/store'
+import DeskLayout, { useIsDesk } from './DeskLayout'
 import { Nav } from './Nav'
 import { OfflinePill } from './OfflinePill'
 import { UpdateBanner } from './UpdateBanner'
@@ -25,33 +26,45 @@ export default function AppShell({ locationHook }: { locationHook?: BaseLocation
   useEffect(() => {
     void gcSlices().catch(() => {})
   }, [])
+  // ≥1200px: the routed screen renders inside the desk's detail pane (DS-18 —
+  // the layout wraps the outlet, never the reverse, so navigating between
+  // screens leaves the rail and the board column mounted). Below 1200px this
+  // shell is byte-for-byte what it was: one page column and the bottom tabs.
+  const desk = useIsDesk()
+  const outlet = (
+    <Suspense fallback={<PageFallback />}>
+      <Switch>
+        {ROUTES.map(r =>
+          r.path.includes(':') ? (
+            <Route key={r.path} path={r.path}>
+              {params => {
+                const C = r.component as React.ComponentType<{ sym: string }>
+                return <C sym={String((params as { sym?: string }).sym ?? '').toUpperCase()} />
+              }}
+            </Route>
+          ) : (
+            <Route key={r.path} path={r.path} component={r.component as React.ComponentType} />
+          ),
+        )}
+        <Route>
+          <Redirect to="/" />
+        </Route>
+      </Switch>
+    </Suspense>
+  )
   return (
     <div className="v2">
       <Router base="/app" hook={locationHook}>
         <OfflinePill />
         <UpdateBanner />
-        <main className="v2-page">
-          <Suspense fallback={<PageFallback />}>
-            <Switch>
-              {ROUTES.map(r =>
-                r.path.includes(':') ? (
-                  <Route key={r.path} path={r.path}>
-                    {params => {
-                      const C = r.component as React.ComponentType<{ sym: string }>
-                      return <C sym={String((params as { sym?: string }).sym ?? '').toUpperCase()} />
-                    }}
-                  </Route>
-                ) : (
-                  <Route key={r.path} path={r.path} component={r.component as React.ComponentType} />
-                ),
-              )}
-              <Route>
-                <Redirect to="/" />
-              </Route>
-            </Switch>
-          </Suspense>
-        </main>
-        <Nav />
+        {desk ? (
+          <DeskLayout>{outlet}</DeskLayout>
+        ) : (
+          <>
+            <main className="v2-page">{outlet}</main>
+            <Nav />
+          </>
+        )}
       </Router>
     </div>
   )
