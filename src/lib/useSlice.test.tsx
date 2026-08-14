@@ -51,6 +51,26 @@ describe('useSlice', () => {
     expect(calls).toBe(0)
   })
 
+  it('an in-place key change never lets the old key’s slow fetch clobber the new key’s data', async () => {
+    // The race Task 15 found: `alive` is a single re-armable ref, so a load()
+    // continuation from the OLD key could setRec after the key changed.
+    let resolveA!: (v: unknown) => void
+    const fetchers: Record<string, () => Promise<unknown>> = {
+      'board:gen-a': () => new Promise(r => (resolveA = r)),
+      'board:gen-b': async () => ({ v: 'B-fresh' }),
+    }
+    await db.slices.put({ key: 'board:gen-a', data: { v: 'A-stale' }, fetchedAt: Date.now() - 200_000 })
+    const { result, rerender } = renderHook(({ k }: { k: string }) => useSlice(k, fetchers[k]), {
+      initialProps: { k: 'board:gen-a' },
+    })
+    await waitFor(() => expect(result.current.data).toEqual({ v: 'A-stale' })) // painted + A's fetch hanging
+    rerender({ k: 'board:gen-b' })
+    await waitFor(() => expect(result.current.data).toEqual({ v: 'B-fresh' }))
+    act(() => resolveA({ v: 'A-late' })) // the old fetch lands late…
+    await new Promise(r => setTimeout(r, 40))
+    expect(result.current.data).toEqual({ v: 'B-fresh' }) // …and must not win
+  })
+
   it('invalidateSlices forces a refetch on a mounted slice, and only the matching one', async () => {
     await writeSlice('board:inv', { v: 1 })
     let boardCalls = 0
