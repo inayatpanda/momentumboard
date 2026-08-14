@@ -200,8 +200,10 @@ export const getSeasonality = (symbol: string) =>
     weakestDay: { name: string; avgPct: number | null } | null
   }>(`/api/market?type=seasonality&symbol=${encodeURIComponent(symbol)}`)
 
+// members: the sector's real constituent tickers (server: SECTOR_MEMBERS,
+// CX-24) — the Sectors see-all page expands a tile to these, never invented.
 export const getSectors = () =>
-  apiGet<{ rows: { sym: string; name: string; rs5: number | null; rs21: number | null; rs63: number | null; trend: 'in' | 'out' | 'flat' }[]; rotatingIn: string[]; rotatingOut: string[]; at: number }>('/api/market?type=sectors')
+  apiGet<{ rows: { sym: string; name: string; rs5: number | null; rs21: number | null; rs63: number | null; trend: 'in' | 'out' | 'flat'; members: string[] }[]; rotatingIn: string[]; rotatingOut: string[]; at: number }>('/api/market?type=sectors')
 
 export interface IpoRow {
   sym: string

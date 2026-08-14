@@ -593,6 +593,50 @@
   font-weight: 700;
 }
 
+/* --- movers/sectors --------------------------------------------------------
+   The Movers + Sectors see-all pages (plan Task 16; CX-24). Tokens only, on
+   top of .card/.pill/.seg/.sec-label/.cc-reason/.num/.pressable/.skeleton and
+   the .stx-* primitives above — long/short stay reserved for direction, the
+   sector tint is still the only other use of them. */
+.v2 .stx-showmore {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* the see-all tile grid: same tile look as the rail (.stx-sector-tile), but a
+   button (toggles the sector open in place) rather than a Link, and full
+   width of its grid cell rather than the rail's fixed 118px card. */
+.v2 .stx-sector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.v2 .stx-sector-grid .stx-sector-tile {
+  width: 100%;
+}
+.v2 button.stx-sector-tile {
+  border: none;
+  appearance: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.v2 .stx-sector-members {
+  margin-top: 18px;
+}
+
 /* the yesterday strip */
 .v2 .cc-yesterday {
   display: flex;

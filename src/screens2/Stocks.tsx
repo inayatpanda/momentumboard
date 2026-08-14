@@ -29,6 +29,7 @@ import { Sparkline } from '../components/Sparkline'
 import type { Candle, Quote } from '../../shared/types'
 import { StockRow } from './parts/StockRow'
 import { HRail } from './parts/HRail'
+import { sectorSign, SectorTileBody } from './parts/SectorTile'
 
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
 
@@ -118,13 +119,9 @@ function MoversRails({ watchSymbols, onAdd }: { watchSymbols: Set<string>; onAdd
 }
 
 function SectorTile({ row }: { row: { sym: string; name: string; rs21: number | null } }) {
-  // Tinted by sign only — --long/--short at low alpha via color-mix, never a
-  // third hue (the app's decoration colour is always indigo/accent).
-  const sign = row.rs21 != null && row.rs21 < 0 ? 'neg' : 'pos'
   return (
-    <Link href={`/stock/${row.sym}`} className="card pressable stx-sector-tile" data-sign={sign}>
-      <span className="stx-sector-name">{row.name}</span>
-      <span className="num stx-sector-rs">{row.rs21 != null ? row.rs21.toFixed(1) : '—'}</span>
+    <Link href={`/stock/${row.sym}`} className="card pressable stx-sector-tile" data-sign={sectorSign(row.rs21)}>
+      <SectorTileBody name={row.name} rs={row.rs21} />
     </Link>
   )
 }

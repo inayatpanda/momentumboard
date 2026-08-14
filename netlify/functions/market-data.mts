@@ -375,7 +375,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
     const hit = await getCached<unknown>('sector-rotation')
     if (hit) return json(200, { ok: true, data: hit })
     try {
-      const { SECTORS, computeSectorRows } = await import('./lib/sectors')
+      const { SECTORS, SECTOR_MEMBERS, computeSectorRows } = await import('./lib/sectors')
       const { cachedCandles } = await import('./lib/marketCache')
       const pairs = await Promise.all([...SECTORS.map(s => s.sym), 'SPY'].map(async sym => [sym, await cachedCandles(sym)] as const))
       const bySym = new Map(pairs.filter((p): p is [string, NonNullable<(typeof pairs)[0][1]>] => p[1] !== null))
@@ -383,7 +383,10 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
       if (!spy) return json(502, { ok: false, error: 'no-spy-data' })
       const rows = computeSectorRows(bySym, spy)
       const data = {
-        rows,
+        // CX-24: additive — every existing field rides unchanged (the legacy
+        // app reads this same endpoint); `members` is the sector's real
+        // constituent tickers, so the Sectors see-all page never invents any.
+        rows: rows.map(r => ({ ...r, members: SECTOR_MEMBERS[r.sym] ?? [] })),
         rotatingIn: rows.filter(r => r.trend === 'in').map(r => r.name),
         rotatingOut: rows.filter(r => r.trend === 'out').map(r => r.name),
         at: Math.floor(Date.now() / 1000),
