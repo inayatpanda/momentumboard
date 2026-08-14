@@ -216,6 +216,30 @@ describe('engine ?view= slices', () => {
       expect(d.calls[0].outcome21).toBe(9.2)
     })
 
+    // D6: every value in these projections comes out of a stored blob, and a
+    // blob is not a type. A truncated write or an older schema puts a null
+    // where a factor should be, and `f.score` on it threw — surfacing as a 500
+    // on the whole page, for one bad field.
+    it('survives a corrupt trace: a null factor, a null near miss and a non-array nearMisses', async () => {
+      await seed('funnel-trace-index', ['2026-08-12', '2026-08-13'])
+      await seed('funnel-trace:2026-08-13', {
+        date: '2026-08-13',
+        rows: { 'NVDA:long': { gate: 'entry-chase', side: 'long', core: 0.61 } },
+        nearMisses: [null, { sym: 'NVDA', core: 0.61, factors: { momentum: null, technical: { score: 2, detail: 'x' } } }],
+      })
+      await seed('funnel-trace:2026-08-12', { date: '2026-08-12', rows: {}, nearMisses: 'not-an-array' })
+
+      const journey = await handler(req('?view=journey&sym=NVDA'))
+      expect(journey.status).toBe(200)
+      const d = (await body(journey)).data as { funnel: { nearMiss: { factors: Record<string, { score: number | null }> } | null }[] }
+      expect(d.funnel[0].nearMiss?.factors.momentum.score).toBeNull() // the field is lost, the page is not
+      expect(d.funnel[0].nearMiss?.factors.technical.score).toBe(2)
+
+      const funnel = await handler(req('?view=funnel&date=2026-08-12'))
+      expect(funnel.status).toBe(200)
+      expect(((await body(funnel)).data as { nearMisses: unknown[] }).nearMisses).toEqual([])
+    })
+
     it('uppercases the sym and answers an unseen name with an empty journey', async () => {
       const r = await body(await handler(req('?view=journey&sym=zzq')))
       expect(r.ok).toBe(true)

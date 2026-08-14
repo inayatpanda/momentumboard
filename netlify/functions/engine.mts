@@ -58,8 +58,10 @@ export function ledgerRow(p: Prediction) {
     // inversion can only be RECONSTRUCTED from the note text — which is
     // how the short-side inversion (2026-07-28) had to be diagnosed.
     // score+weight only: `detail` is prose and would bloat 30 days of rows.
+    // …and null-safe per FACTOR (D6), the same reason `slimNearMiss` is: one
+    // corrupt field in one stored row must not 500 a thirty-day ledger.
     factors: p.factors
-      ? Object.fromEntries(Object.entries(p.factors).map(([k, f]) => [k, { score: f.score, weight: f.weight }]))
+      ? Object.fromEntries(Object.entries(p.factors).map(([k, f]) => [k, { score: f?.score ?? null, weight: f?.weight ?? null }]))
       : undefined,
     worldTape: p.worldTape,
     earningsRisk: p.earningsRisk,
@@ -197,11 +199,17 @@ async function viewBoard() {
 const SYM_RE = /^[A-Z0-9.\-]{1,12}$/
 
 /** Near-miss factor prose is ~85% of the record's bytes (recon §3.3a) — the
- * journey ships score+weight only, the same projection ledgerRow applies. */
+ * journey ships score+weight only, the same projection ledgerRow applies.
+ *
+ * NULL-SAFE ON THE WAY THROUGH (D6). Every value here comes out of a stored
+ * blob, and a blob is not a type — a truncated write, a hand-edited trace or an
+ * older schema puts a null where a factor should be, and `f.score` on it threw
+ * a TypeError that surfaced as a 500 on the whole journey view. A view that
+ * cannot render one corrupt factor should lose that factor, not the page. */
 const slimNearMiss = (m: FunnelNearMiss) => ({
   ...m,
   // FunnelNearMiss factors carry no weight (unlike Prediction's) — score only
-  factors: Object.fromEntries(Object.entries(m.factors ?? {}).map(([k, f]) => [k, { score: f.score }])),
+  factors: Object.fromEntries(Object.entries(m?.factors ?? {}).map(([k, f]) => [k, { score: f?.score ?? null }])),
 })
 
 /** ?view=journey&sym= — one name's whole story: today's board row, the open-trace
@@ -221,7 +229,7 @@ async function viewJourney(sym: string, days = 30) {
     const trace = traces[i]
     if (!trace) return []
     const rows = keys.filter(k => trace.rows?.[k]).map(k => ({ key: k, ...trace.rows[k] }))
-    const miss = (trace.nearMisses ?? []).find(m => m.sym === sym)
+    const miss = arr<FunnelNearMiss>(trace.nearMisses).find(m => m?.sym === sym)
     if (!rows.length && !miss) return []
     return [{ date, rows, nearMiss: miss ? slimNearMiss(miss) : null }]
   })
@@ -244,12 +252,19 @@ async function viewJourney(sym: string, days = 30) {
 
 // The four projections BOTH the aggregate and ?view=learning apply — one code
 // path each, so the two reads can never drift apart.
-const projectWeights = (w: WeightsState | null) => (w ? { base: w.base, current: w.current, history: w.history.slice(-10) } : null)
+//
+// EVERY ARRAY IS CHECKED BEFORE IT IS SLICED (D6). These read stored blobs, and
+// the types above describe what the WRITER intends, not what is on disk: a
+// truncated write or an older schema leaves `history` undefined and `.slice()`
+// on it throws, which the handler surfaces as a 500 on the whole learning view.
+// The reader loses a section, never the page.
+const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : [])
+const projectWeights = (w: WeightsState | null) => (w ? { base: w.base ?? {}, current: w.current ?? {}, history: arr(w.history).slice(-10) } : null)
 const projectCalibration = (c: CalibrationState | null) =>
   c
     ? {
-        buckets: c.buckets,
-        brier: c.brier.slice(-30),
+        buckets: c.buckets ?? {},
+        brier: arr(c.brier).slice(-30),
         seeded: c.seeded ?? false,
         modelVersion: c.modelVersion ?? null,
         referenceBase: c.referenceBase ?? null,
@@ -257,10 +272,12 @@ const projectCalibration = (c: CalibrationState | null) =>
       }
     : null
 const projectRoster = (roster: RosterEntry[] | null, log: { date: string; joined: string[]; dropped: { sym: string; why: string }[] }[] | null) =>
-  roster ? { entries: roster, changes: (log ?? []).slice(-7) } : null
+  roster ? { entries: arr<RosterEntry>(roster), changes: arr<{ date: string }>(log).slice(-7) } : null
 const projectChannelCred = (cred: ChannelCredState | null) =>
   Object.fromEntries(
-    Object.entries(cred ?? {}).map(([ch, e]) => [ch, { graded: e.graded, hits: e.hits, avgExcess: e.graded ? Math.round((e.sumExcess / e.graded) * 10) / 10 : null }]),
+    Object.entries(cred ?? {})
+      .filter(([, e]) => e != null)
+      .map(([ch, e]) => [ch, { graded: e.graded ?? 0, hits: e.hits ?? 0, avgExcess: e.graded ? Math.round((e.sumExcess / e.graded) * 10) / 10 : null }]),
   )
 
 /** ?view=learning — the Gates & learning page and the regret surface: the
@@ -408,7 +425,7 @@ async function viewFunnel(date: string | null) {
       .filter(r => !PUBLISHED_GATES.has(r.gate))
       .sort((a, b) => (b.core == null ? Number.NEGATIVE_INFINITY : Math.abs(b.core)) - (a.core == null ? Number.NEGATIVE_INFINITY : Math.abs(a.core))),
     published: rows.filter(r => PUBLISHED_GATES.has(r.gate)),
-    nearMisses: (trace.nearMisses ?? []).map(slimNearMiss),
+    nearMisses: arr<FunnelNearMiss>(trace.nearMisses).filter(Boolean).map(slimNearMiss),
   }
 }
 

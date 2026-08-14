@@ -861,11 +861,18 @@ export function boardFootnote(board: readonly BoardRow[]): string {
   // The partition, in the same reader words the app's board uses (EngineBoard):
   // a sized row's percentage is the record of rows that carried size, not of every
   // row the engine ever thought about.
-  const parts = ["Calibrated on the engine's own graded history — calls like it, sized like it — excess vs S&amp;P."]
-  // …which is an EQUITY sentence, and a cohort row was never measured against a
-  // benchmark at all (crypto-v2 wave, finding 10). Its own sentence, earned by a
-  // row that is present exactly like every clause below, and placed beside the
-  // one it qualifies rather than replacing it: the equity claim stays true about
+  //
+  // …and EARNED BY AN EQUITY ROW, like every other clause in this footer (codex
+  // #10). It was unconditional, so a crypto-only board — which the lane can now
+  // produce on a quiet equity morning — was footed with a promise of calibration
+  // against the S&P over rows that were never measured against it, beside the
+  // very sentence saying they were not. The one dishonesty this footer exists to
+  // avoid, in its own opening line.
+  const parts: string[] = []
+  if (board.some(b => b.cohort !== 'crypto'))
+    parts.push("Calibrated on the engine's own graded history — calls like it, sized like it — excess vs S&amp;P.")
+  // The cohort's own sentence, placed beside the one it qualifies rather than
+  // replacing it (crypto-v2 wave, finding 10): the equity claim stays true about
   // the equity rows on the same board.
   if (board.some(b => b.cohort === 'crypto'))
     parts.push(

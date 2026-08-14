@@ -25,19 +25,98 @@ export function boardEvidenceLine(
   return `Engine board (${date}): ${kind}, ${row.side}, grade ${row.grade}, p=${Math.round(row.probability * 100)}%, entry ${row.entry} / stop ${row.stop} / target ${row.target} — ${row.note}.`
 }
 
+/** The states the v2 Ask sheet's hero can be in — `AskState` in
+ * src/screens2/parts/AskSheet.tsx, kept as a literal set here because this is a
+ * validator and a validator that imports its allowed values from the thing it is
+ * validating is not one. */
+const ASK_STATES = new Set(['sized', 'unsized', 'refused', 'published-elsewhere', 'near-miss', 'on-demand', 'no-read'])
+
+/** Every string field is bounded HERE, not by the 2000-char envelope. */
+const ASK_FIELD_MAX = 200
+
+const askStr = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.slice(0, ASK_FIELD_MAX) : null)
+const askNum = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+/** The validated shape — `AskContext` in AskSheet.tsx, rebuilt field by field. */
+export interface AskContextSafe {
+  sym: string
+  state: string | null
+  grade: string | null
+  side: 'long' | 'short' | null
+  core: number | null
+  gateLabel: string | null
+  openTrace: { status: string | null; verdict: string | null } | null
+}
+
 /** CX-20: decode the v2 Ask sheet's `context` param (the journey page's own
  * hero-state summary). Fail-soft — an absent or malformed param is simply "no
  * context", never a 400; a reader must not lose the whole answer because one
- * param round-tripped oddly. Hard cap at 2000 chars to prevent unbounded context
- * strings from inflating the prompt. */
-export function parseAskContext(raw: string | null): unknown | null {
+ * param round-tripped oddly.
+ *
+ * VALIDATED STRUCTURALLY, NOT MERELY MEASURED (D5). The old version parsed the
+ * JSON and handed the WHOLE object to the prompt, where it is pinned as "ground
+ * truth — do not contradict it". A query parameter is attacker-controlled by
+ * definition: any key at all rode into that block, under that instruction, and
+ * the 2000-char envelope was the only bound on it. So the object is now REBUILT
+ * — known keys only, each one type-checked, every string clamped to 200 chars —
+ * and it is the rebuilt object, never the parsed one, that reaches the model.
+ * Anything else the caller sent is dropped without comment. */
+export function parseAskContext(raw: string | null): AskContextSafe | null {
   if (!raw) return null
   if (raw.length > 2000) return null
+  let parsed: unknown
   try {
-    return JSON.parse(raw)
+    parsed = JSON.parse(raw)
   } catch {
     return null
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const o = parsed as Record<string, unknown>
+  // the symbol is the thing the whole block is ABOUT — a context without one
+  // pins nothing, and is dropped rather than half-rendered
+  const sym = askStr(o.sym)
+  if (!sym) return null
+  const ot = o.openTrace && typeof o.openTrace === 'object' && !Array.isArray(o.openTrace) ? (o.openTrace as Record<string, unknown>) : null
+  return {
+    sym,
+    state: typeof o.state === 'string' && ASK_STATES.has(o.state) ? o.state : null,
+    grade: askStr(o.grade),
+    side: o.side === 'long' || o.side === 'short' ? o.side : null,
+    core: askNum(o.core),
+    gateLabel: askStr(o.gateLabel),
+    openTrace: ot ? { status: askStr(ot.status), verdict: askStr(ot.verdict) } : null,
+  }
+}
+
+/** The server-side ask backstop (T18). Generous by design — the client's own
+ * 20/day is the product's limit and this is the runaway one. */
+export const ASK_SERVER_DAILY_CAP = 100
+
+/** 48h, so a key outlives its own day comfortably and still collects itself. */
+const ASK_COUNT_TTL_SEC = 172_800
+
+/** Who is asking, in a form that is safe as a cache key: the licensee's own
+ * namespace hash (`u:<hash8>:`), or 'admin' for the APP_TOKEN master. Never the
+ * token itself — this string is stored. */
+export const askCounterId = (auth: { level: string; ns: string }): string => auth.ns.replace(/^u:/, '').replace(/:$/, '') || auth.level
+
+export const askCountKey = (auth: { level: string; ns: string }, day = new Date().toISOString().slice(0, 10)): string =>
+  `ask-count:${askCounterId(auth)}:${day}`
+
+/** Counts this ask, and returns a 429 Response when the caller is over the day's
+ * cap (null means "carry on"). Counted BEFORE the work: the point is to stop a
+ * runaway from spending, and a loop that fails late spends just the same. */
+async function bumpAskCount(auth: { level: string; ns: string }): Promise<Response | null> {
+  const key = askCountKey(auth)
+  const used = (await getCached<number>(key)) ?? 0
+  if (used >= ASK_SERVER_DAILY_CAP)
+    return json(429, {
+      ok: false,
+      error: 'ask-cap',
+      message: 'The desk has answered all it can today — it will be back tomorrow.',
+    })
+  await setCached(key, used + 1, ASK_COUNT_TTL_SEC)
+  return null
 }
 
 export async function routeRequest(
@@ -310,6 +389,16 @@ export async function routeRequest(
     const q = url.searchParams.get('q')?.slice(0, 400)
     const askContext = parseAskContext(url.searchParams.get('context'))
     if (!symbol || !q) return json(400, { ok: false, error: 'missing-params' })
+    // THE CAP THAT IS ACTUALLY A CAP (T18). The 20/day limit lives in
+    // localStorage on the client, which makes it a courtesy: it is the UX, it
+    // is not a control. This endpoint spends the owner's LLM keys (admin and
+    // house licences ride them outright) and does real market work besides, and
+    // nothing server-side counted a single call. This does — per caller, per
+    // London-free calendar day, in the CACHE store so the rows expire on their
+    // own. Deliberately generous: it is a runaway backstop, not the product's
+    // limit, and a reader who somehow passes it is told plainly.
+    const capped = await bumpAskCount(auth)
+    if (capped) return capped
     try {
       const llmEnv = await llmEnvForCaller()
       if (!llmEnv) return json(200, { ok: true, data: { answer: 'Add your own AI key in Settings to ask the desk questions.', at: 0 } })

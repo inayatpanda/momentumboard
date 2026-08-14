@@ -322,16 +322,28 @@ describe('deterministic board table in the paper', () => {
   // vs the S&P, over ten sessions. A cohort row was never measured against a
   // benchmark at all, so a board carrying one needs the second sentence beside
   // the first. Earned by a row that is present, like every other clause here.
+  // …and codex #10: the calibration sentence is EARNED BY AN EQUITY ROW, like
+  // every other clause in this footer. Unconditional, it footed a crypto-only
+  // board with a promise of calibration against the S&P over rows that were
+  // never measured against it — directly beside the sentence saying they were
+  // not. On a mixed board both are true and both print, the equity one
+  // byte-identical to what it always was.
+  const EQUITY_FOOT = "Calibrated on the engine's own graded history — calls like it, sized like it — excess vs S&amp;P."
+
   it('the footer explains the crypto partition only when a cohort row is on the board', () => {
     const coin = { ...board[0], sym: 'ETH-USD', cohort: 'crypto' as const, watchOnly: undefined }
-    const withCoin = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [coin] })
-    expect(withCoin).toContain('excess vs S&amp;P') // the equity sentence stays exactly as it was
-    expect(withCoin).toContain('14-bar clock')
-    expect(withCoin).toContain('no benchmark')
+    const cryptoOnly = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [coin] })
+    expect(cryptoOnly).toContain('14-bar clock')
+    expect(cryptoOnly).toContain('no benchmark')
+    expect(cryptoOnly).not.toContain('excess vs S&amp;P') // no equity row earned it
 
     const equityOnly = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: board })
-    expect(equityOnly).toContain('excess vs S&amp;P')
+    expect(equityOnly).toContain(EQUITY_FOOT)
     expect(equityOnly).not.toContain('14-bar clock')
+
+    const mixed = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [...board, coin] })
+    expect(mixed).toContain(EQUITY_FOOT) // unchanged, to the byte
+    expect(mixed).toContain('14-bar clock')
   })
 
   it('an ordinary watch row keeps its grade and probability', () => {
