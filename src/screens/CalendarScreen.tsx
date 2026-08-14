@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { db, type NoteItem } from '../lib/db'
-import { getMonthMap, getDayLedger } from '../lib/api'
+import { apiUrl, getMonthMap, getDayLedger } from '../lib/api'
 import { IconGear, IconNews, IconTarget, stripEmoji } from '../components/icons'
 import type { Trade } from '../../shared/journal'
 
@@ -98,7 +98,7 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
         {ledger && (
           <>
             {ledger.hasReport && (
-              <a className="link-card" href={`/report?date=${selected}`} target="_blank" rel="noreferrer">
+              <a className="link-card" href={apiUrl(`/report?date=${selected}`)} target="_blank" rel="noreferrer">
                 <IconNews /> The Street Signal — {new Date(selected).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} edition
                 <span>The full paper as published that morning.</span>
               </a>

@@ -8,11 +8,36 @@ export const getToken = () => localStorage.getItem('mb-token')
 export const setToken = (t: string) => localStorage.setItem('mb-token', t)
 export const clearToken = () => localStorage.removeItem('mb-token')
 
+/* ─────────────────────────── the API origin ───────────────────────────
+ * THE ONE PLACE the server's origin is decided.
+ *
+ * On the web this is empty and every call below stays relative — same-origin,
+ * cookies and `_headers` behave exactly as they always have, and the built
+ * bundle is unchanged. The desktop shell (Tauri) is the reason it exists: it
+ * serves this SAME dist from `tauri://localhost`, an origin with no server
+ * behind it, so a relative `/api/…` would resolve against the local asset
+ * protocol and 404 forever. `npm run build:dmg` bakes the production origin in
+ * via VITE_API_BASE, and `functions/_middleware.ts` answers the resulting
+ * cross-origin requests with CORS for those two Tauri origins only.
+ *
+ * Everything that talks to the server — here, apiViews.ts, push.ts,
+ * portfolioMirror.ts, SettingsAdmin.tsx — goes through `apiUrl`. Adding a
+ * bare `fetch('/api/…')` anywhere else silently breaks the desktop build only.
+ */
+export const API_BASE: string = import.meta.env.VITE_API_BASE ?? ''
+
+/** Absolute-ise a server path against `API_BASE`. Identity on the web. */
+export function apiUrl(path: string): string {
+  if (!API_BASE) return path
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) return path
+  return `${API_BASE.replace(/\/+$/, '')}${path.startsWith('/') ? '' : '/'}${path}`
+}
+
 /** Self-served 7-day reader pass (landing page). Mints a real, expiring trial
  * licence server-side, stores it as this device's token, and resolves with the
  * key. Throws a human-readable error when the rate limit says no. */
 export async function startTrial(): Promise<{ key: string }> {
-  const res = await fetch('/api/licences', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ trial: true }) })
+  const res = await fetch(apiUrl('/api/licences'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ trial: true }) })
   const body = (await res.json().catch(() => null)) as { ok?: boolean; data?: { key: string }; error?: string } | null
   if (!res.ok || !body?.ok || !body.data?.key) {
     throw new Error(
@@ -30,7 +55,7 @@ export async function startTrial(): Promise<{ key: string }> {
  * true — being offline must never lock a licensed reader out of cached data. */
 export async function validateAccess(): Promise<boolean> {
   try {
-    const res = await fetch('/api/licences?check=1', { headers: { 'x-app-token': getToken() ?? '' } })
+    const res = await fetch(apiUrl('/api/licences?check=1'), { headers: { 'x-app-token': getToken() ?? '' } })
     if (res.status === 401) return false
     return true
   } catch {
@@ -39,7 +64,7 @@ export async function validateAccess(): Promise<boolean> {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers: { 'x-app-token': getToken() ?? '' } })
+  const res = await fetch(apiUrl(path), { headers: { 'x-app-token': getToken() ?? '' } })
   const body = (await res.json()) as ApiEnvelope<T>
   if (!body.ok || body.data === undefined) throw new Error(body.error ?? `http-${res.status}`)
   return body.data
@@ -233,7 +258,7 @@ export const getLicences = () =>
 export const getLlmKeyStatus = () => apiGet<{ hasKey: boolean }>('/api/config?view=llm-key')
 
 export async function putLlmKey(groqKey: string) {
-  const res = await fetch('/api/config?view=llm-key', {
+  const res = await fetch(apiUrl('/api/config?view=llm-key'), {
     method: 'PUT',
     headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
     body: JSON.stringify({ groqKey }),
@@ -242,7 +267,7 @@ export async function putLlmKey(groqKey: string) {
 }
 
 export async function createLicence(label: string) {
-  const res = await fetch('/api/licences', {
+  const res = await fetch(apiUrl('/api/licences'), {
     method: 'POST',
     headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
     body: JSON.stringify({ label }),
@@ -253,7 +278,7 @@ export async function createLicence(label: string) {
 }
 
 export async function revokeLicence(key: string) {
-  await fetch('/api/licences', {
+  await fetch(apiUrl('/api/licences'), {
     method: 'DELETE',
     headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
     body: JSON.stringify({ key }),
@@ -318,7 +343,7 @@ export const getNews = (symbol: string) =>
 
 export async function putConfig(cfg: AppConfig): Promise<void> {
   // keepalive: the request survives the user switching away from the app mid-send
-  const res = await fetch('/api/config', {
+  const res = await fetch(apiUrl('/api/config'), {
     method: 'PUT',
     headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
     body: JSON.stringify(cfg),

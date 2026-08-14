@@ -1,5 +1,5 @@
 import { db, getCapital } from './db'
-import { getToken } from './api'
+import { apiUrl, getToken } from './api'
 import { computeStats, exposureWarnings, tradePnl } from '../../shared/journal'
 
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -29,7 +29,7 @@ export function mirrorPortfolio(delayMs = 1500) {
       stats: computeStats(trades),
       warnings: exposureWarnings(open, capital, Math.floor(Date.now() / 1000)).map(w => w.message),
     }
-    fetch('/api/portfolio', {
+    fetch(apiUrl('/api/portfolio'), {
       method: 'PUT',
       headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
       body: JSON.stringify(snapshot),
@@ -38,7 +38,7 @@ export function mirrorPortfolio(delayMs = 1500) {
 
     // full backup rides along: trades + rules + watchlist + settings → private Blobs
     const [rules, watchlist, settings] = await Promise.all([db.rules.toArray(), db.watchlist.toArray(), db.settings.toArray()])
-    fetch('/api/backup', {
+    fetch(apiUrl('/api/backup'), {
       method: 'PUT',
       headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
       body: JSON.stringify({ trades, rules, watchlist, settings }),
@@ -48,7 +48,7 @@ export function mirrorPortfolio(delayMs = 1500) {
 
 /** Pull the server backup and restore it into local IndexedDB (merge by id/key). */
 export async function restoreBackup(): Promise<{ trades: number; at: number } | null> {
-  const res = await fetch('/api/backup', { headers: { 'x-app-token': getToken() ?? '' } })
+  const res = await fetch(apiUrl('/api/backup'), { headers: { 'x-app-token': getToken() ?? '' } })
   const body = (await res.json()) as { ok: boolean; data?: { trades?: unknown[]; rules?: unknown[]; watchlist?: unknown[]; settings?: unknown[]; at: number } | null }
   if (!body.ok || !body.data) return null
   const d = body.data

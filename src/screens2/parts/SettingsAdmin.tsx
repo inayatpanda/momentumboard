@@ -5,7 +5,7 @@
 // whole Settings screen still lives here so a re-render never re-fires it.
 
 import { useCallback, useEffect, useState } from 'react'
-import { createLicence, getLicences, getToken, revokeLicence, setToken } from '../../lib/api'
+import { apiUrl, createLicence, getLicences, getToken, revokeLicence, setToken } from '../../lib/api'
 
 type Licence = Awaited<ReturnType<typeof getLicences>>[number]
 
@@ -82,7 +82,7 @@ export function AdminUnlock() {
     try {
       // Direct fetch with the CANDIDATE key — the stored token stays
       // untouched unless the server says this one is the admin key.
-      const res = await fetch('/api/licences', { headers: { 'x-app-token': candidate } })
+      const res = await fetch(apiUrl('/api/licences'), { headers: { 'x-app-token': candidate } })
       if (res.ok) {
         setToken(candidate)
         location.reload()
