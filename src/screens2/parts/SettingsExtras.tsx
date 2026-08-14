@@ -230,6 +230,28 @@ export function NotificationRow() {
   )
 }
 
+/** Escape hatch back to the v1 shell while both live side by side. Dies at
+ * cutover (plan Task 24) together with the `mb-shell` flag it reads — the
+ * flag's own split goes away in the same commit that removes this row. */
+export function ShellFlagRow() {
+  return (
+    <button
+      type="button"
+      className="menu-row"
+      onClick={() => {
+        localStorage.removeItem('mb-shell')
+        location.reload()
+      }}
+    >
+      <span className="set-main">
+        <span>Classic shell</span>
+        <span className="sub">Switch back to the previous app shell on this device.</span>
+      </span>
+      <span className="chev">›</span>
+    </button>
+  )
+}
+
 export function AppearanceGroup() {
   const [pref, setPref] = useState<ThemePref>(getThemePref)
   const apply = (p: ThemePref) => {

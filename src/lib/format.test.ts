@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { fmtPrice, fmtPct, capCohort, emptySideLine, sizeLabel } from './format'
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import { fmtPrice, fmtPct, capCohort, emptySideLine, sizeLabel, longDate, shortDateWithWeekday } from './format'
 
 describe('fmtPrice', () => {
   it('renders pence for GBp', () => expect(fmtPrice(123.4, 'GBp')).toBe('123.4p'))
@@ -47,6 +47,34 @@ describe('emptySideLine', () => {
   // other's trade.
   it('names the velocity lane separately — a breakout is not a dip', () => {
     expect(emptySideLine('short', 'velocity-lane')).toBe('Nothing tradeable on the short side today — a breakout read outranked the shorts we had.')
+  })
+})
+
+describe('longDate / shortDateWithWeekday — timezone-proof date labels', () => {
+  // `new Date('2026-08-13')` is parsed as UTC midnight; a reader west of
+  // Greenwich (America/Los_Angeles, UTC-7/8) would see `toLocaleDateString`
+  // walk it back to 12 Aug. Pin TZ to that offset and assert the manual-parse
+  // helpers still land on 13 Aug — proving the bug this replaces is gone.
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('renders 2026-08-13 as 13 Aug 2026 regardless of TZ', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    expect(longDate('2026-08-13')).toBe('13 Aug 2026')
+    vi.stubEnv('TZ', 'Pacific/Kiritimati') // UTC+14, the other direction
+    expect(longDate('2026-08-13')).toBe('13 Aug 2026')
+  })
+
+  it('renders 2026-08-13 (a Thursday) with its weekday regardless of TZ', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    expect(shortDateWithWeekday('2026-08-13')).toBe('Thu, 13 Aug')
+    vi.stubEnv('TZ', 'Pacific/Kiritimati')
+    expect(shortDateWithWeekday('2026-08-13')).toBe('Thu, 13 Aug')
+  })
+
+  it('sanity check: the bug this replaces is real — new Date + toLocaleDateString walks the day back in LA', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    const bugged = new Date('2026-08-13').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    expect(bugged).toBe('12 Aug') // proves the trap, not the fix
   })
 })
 

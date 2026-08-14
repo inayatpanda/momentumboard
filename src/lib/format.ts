@@ -2,6 +2,28 @@ import { CAP_COHORT_LABEL, capCohortOf } from '../../shared/engine/capClass'
 import { RUNG_RISK_PCT } from '../../shared/engine/riskLadder'
 import type { EmptySideReason } from '../../shared/engine/types'
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Manual parse, never `new Date(iso)` — a bare YYYY-MM-DD string fed to the
+ * Date constructor (or to `toLocaleDateString`) is parsed as UTC midnight, and
+ * a reader west of Greenwich (e.g. America/Los_Angeles) sees it walk back a
+ * calendar day. Split the string ourselves so the label is timezone-proof. */
+export function longDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  return `${String(d).padStart(2, '0')} ${MONTHS[(m ?? 1) - 1] ?? ''} ${y}`
+}
+
+/** Same manual-parse rule as {@link longDate}, plus the short weekday —
+ * computed via `Date.UTC` + `getUTCDay()` so the day-of-week can never drift
+ * with the reader's local timezone either. No year (matches the day-by-day
+ * track record's own short style). */
+export function shortDateWithWeekday(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const wd = WEEKDAYS[new Date(Date.UTC(y, (m ?? 1) - 1, d)).getUTCDay()]
+  return `${wd}, ${d} ${MONTHS[(m ?? 1) - 1] ?? ''}`
+}
+
 export function fmtPrice(price: number, currency: string): string {
   if (currency === 'GBp') return `${price.toFixed(1)}p`
   const sym = currency === 'GBP' ? '£' : currency === 'USD' ? '$' : `${currency} `

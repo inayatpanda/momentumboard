@@ -1989,13 +1989,16 @@
   background: var(--surface-1);
 }
 .v2 .cal2 .dot.report {
-  background: var(--accent);
+  background: var(--accent-soft);
 }
 .v2 .cal2 .dot.alerts {
   background: var(--warn);
 }
 .v2 .cal2 .dot.events {
   background: var(--short);
+}
+.v2 .cal2 .dot.picks {
+  background: var(--accent);
 }
 .v2 .cal2 .section-title {
   font-size: 11px;

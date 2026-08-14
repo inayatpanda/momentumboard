@@ -75,6 +75,28 @@ describe('Settings', () => {
     expect(screen.queryByText('Your AI key')).not.toBeInTheDocument()
   })
 
+  it('the "Classic shell" row removes mb-shell and reloads (dies at cutover — plan Task 24)', async () => {
+    asNonAdmin()
+    localStorage.setItem('mb-shell', 'v2')
+    // jsdom throws "Not implemented: navigation" on a real location.reload —
+    // replace the whole location object so the stub is a real spy, not a no-op.
+    const reload = vi.fn()
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, reload },
+    })
+    try {
+      render(<Settings />)
+      const row = await screen.findByText('Classic shell')
+      row.closest('button')!.click()
+      expect(localStorage.getItem('mb-shell')).toBeNull()
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
+  })
+
   it('the theme row cycles auto → light → dark, writing mb-theme and dataset.theme each time', async () => {
     asNonAdmin()
     render(<Settings />)

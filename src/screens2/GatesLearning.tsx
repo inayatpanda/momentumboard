@@ -16,16 +16,7 @@ import type { LearningSlice } from '../lib/apiViews'
 import { GATE_CADENCE_SESSIONS } from '../../shared/engine/gateState'
 import type { GateStructuredEntry } from '../../shared/engine/gateState'
 import { labelOf } from './parts/FactorVotes'
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-// Manual parse, never `new Date(iso)` — same rule Regrets.tsx follows: the
-// reader's timezone can walk an ISO day string back to the wrong calendar
-// date. This surface's history can span years, so the label carries one.
-function longDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  return `${String(d).padStart(2, '0')} ${MONTHS[(m ?? 1) - 1] ?? ''} ${y}`
-}
+import { longDate } from '../lib/format'
 
 /** The three "why" sentences a held gate can carry — human prose, not the
  * server's prompt-safe template (gateAnnouncement owns that one). */

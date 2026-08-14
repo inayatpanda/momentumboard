@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
 import { getAiRead, getEventDossiers, getOutcomes, getPickStats, getPicks } from '../lib/api'
+import { shortDateWithWeekday } from '../lib/format'
 
 function AiReadCard() {
   const { data } = useSlice('research:aiRead', getAiRead)
@@ -150,7 +151,7 @@ function OutcomesSection() {
           {days.slice(0, 10).map(d => (
             <div className="rs2-row" key={d.date}>
               <span>
-                <Link href="/more/calendar">{new Date(d.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</Link>
+                <Link href="/more/calendar">{shortDateWithWeekday(d.date)}</Link>
                 {d.regime && <span className={`pill ${d.regime === 'green' ? 'accent' : ''}`}>{d.regime}</span>}
               </span>
               <span className="rs2-day-picks">
