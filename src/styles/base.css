@@ -212,6 +212,29 @@
   }
 }
 
+/* --- offline pill + update banner ------------------------------------------ */
+.v2 .v2-offline {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  background: var(--warn);
+  color: var(--surface-1);
+  border: none;
+}
+.v2 .v2-update {
+  position: fixed;
+  bottom: calc(86px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
 /* --- press feedback -------------------------------------------------------- */
 .v2 .pressable {
   transition: transform 120ms ease, box-shadow 120ms ease;

@@ -9,6 +9,8 @@ import type { BaseLocationHook } from 'wouter'
 import '../styles/base.css'
 import { gcSlices } from '../lib/store'
 import { Nav } from './Nav'
+import { OfflinePill } from './OfflinePill'
+import { UpdateBanner } from './UpdateBanner'
 import { ROUTES } from './routes'
 
 const PageFallback = () => (
@@ -26,6 +28,8 @@ export default function AppShell({ locationHook }: { locationHook?: BaseLocation
   return (
     <div className="v2">
       <Router base="/app" hook={locationHook}>
+        <OfflinePill />
+        <UpdateBanner />
         <main className="v2-page">
           <Suspense fallback={<PageFallback />}>
             <Switch>

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isFresh, readSlice, revalidate, sliceEvents, type SliceEventKind, type SliceKey } from './store'
+import { reportSliceHealth } from '../shell/OfflinePill'
 
 export interface SliceState<T> {
   data: T | null
@@ -77,6 +78,13 @@ export function useSlice<T>(key: SliceKey, fetcher: () => Promise<T>): SliceStat
       window.removeEventListener('focus', onWake)
     }
   }, [key, load])
+
+  // The app-wide offline pill (DS-13): every mounted slice reports its health;
+  // the pill shows when any is offline, stamped with the oldest data age.
+  useEffect(() => {
+    reportSliceHealth(key, { offline, fetchedAt: rec.fetchedAt })
+  }, [key, offline, rec.fetchedAt])
+  useEffect(() => () => reportSliceHealth(key, null), [key])
 
   return { data: rec.data, fetchedAt: rec.fetchedAt, refreshing, offline, refresh: () => void load(true) }
 }

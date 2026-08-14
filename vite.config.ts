@@ -25,8 +25,14 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
-      registerType: 'autoUpdate',
-      injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png}'] },
+      // 'prompt': a new SW WAITS; the UpdateBanner asks the reader (CX-8).
+      registerType: 'prompt',
+      // Precache = the ENTRY CLOSURE only (CX-7): shell + vendor + styles +
+      // fonts + icons. Lazy screen chunks are CacheFirst at runtime instead of
+      // being force-downloaded on first visit (the old glob shipped 943 KB).
+      injectManifest: {
+        globPatterns: ['index.html', 'assets/index-*.js', 'assets/react-*.js', 'assets/data-*.js', 'assets/index-*.css', 'fonts/*.woff2', 'icon*.png', 'icon.svg', 'apple-touch-icon.png', 'manifest.webmanifest'],
+      },
       manifest: {
         id: '/',
         start_url: '/app/',
