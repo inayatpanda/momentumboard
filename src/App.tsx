@@ -11,6 +11,7 @@ import { EnginePage, FaqPage, LedgerPage, PaperPage, siteRouteFor } from './scre
 // routes, so this component needs none.
 import AppShell from './shell/AppShell'
 import { clearToken, getToken, validateAccess } from './lib/api'
+import { isDesktopShell } from './lib/platform'
 
 /** The surfaces this component still owns after the cutover deletion wave:
  *  the public website, the licence front door, and the boot-time sync. Every
@@ -19,12 +20,28 @@ export default function App() {
   // `/` is always the public website; `/app/` is the product/PWA. Keeping the
   // surfaces on separate paths stops an installed PWA claiming a normal visit
   // to the website and makes the reader's intent explicit.
-  const [surface, setSurface] = useState<'site' | 'app'>(() => (location.pathname.startsWith('/app') ? 'app' : 'site'))
+  //
+  // …except in the desktop shell, which has no address bar and can only ever
+  // boot at `/`. Downloading and opening a Mac app IS the intent this path
+  // exists to read, so the shell starts on the product — otherwise every
+  // launch would show the marketing page, and its "download the Mac app"
+  // buttons, from inside the Mac app. An unlicensed shell still gets a front
+  // door: AppGate, which is the app's own, as the comment below already said.
+  const [surface, setSurface] = useState<'site' | 'app'>(() =>
+    isDesktopShell() || location.pathname.startsWith('/app') ? 'app' : 'site',
+  )
   // licence gate: no token → the public landing page. main.tsx consumes ?key=
   // unlock links before React mounts, so licensed arrivals never see it.
   const [licensed, setLicensed] = useState(() => !!getToken())
   const enterApp = () => {
-    history.replaceState(null, '', '/app/')
+    // The URL is cosmetic in the desktop shell — there is no address bar and
+    // the next launch loads index.html regardless — and a custom protocol is
+    // not obliged to accept a path change, so never let it break the unlock.
+    try {
+      history.replaceState(null, '', '/app/')
+    } catch {
+      /* the shell's local protocol refused the path — the surface below is what matters */
+    }
     setSurface('app')
     setLicensed(true)
   }
