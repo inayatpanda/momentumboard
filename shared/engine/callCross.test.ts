@@ -65,6 +65,43 @@ describe('checkCallCrossings — crossings', () => {
   })
 })
 
+// AN EXIT INSTRUCTION ON THE EXPERIMENT MUST READ AS THE EXPERIMENT (final
+// review, C-1). The ping is the most execution-shaped sentence the engine ever
+// sends — "execution says exit" — and it was going out about a quarter-size row
+// the engine's own gates refused, worded exactly like one about a conviction
+// call. The GATING is untouched: a wildcard is sized, unshadowed and not
+// watch-only, so it pings like any other open call, and it should.
+describe('checkCallCrossings — the wildcard ping says which row it is', () => {
+  const wild = (over: Partial<OpenCallLevels> = {}) => call({ wildcard: { gate: 'expected-move' }, ...over })
+
+  it('carries the mark and names the row an experiment on the stop ping', () => {
+    const { alerts } = checkCallCrossings([wild()], prices({ SOFI: 14.15 }), {}, NOW)
+    expect(alerts[0].text).toBe(
+      "⛔ 🃏 SOFI long — stop 14.2 touched (now 14.15). Execution says exit; the formal close-based grade lands with the morning paper. This one is the experiment — quarter size, on a trade the engine's own gates refused.",
+    )
+  })
+
+  it('…and on the target ping, which is the one a reader is likeliest to read as skill', () => {
+    const { alerts } = checkCallCrossings([wild()], prices({ SOFI: 16.8 }), {}, NOW)
+    expect(alerts[0].text).toBe(
+      "🎯 🃏 SOFI long — target 16.5 reached (now 16.8). This one is the experiment — quarter size, on a trade the engine's own gates refused.",
+    )
+  })
+
+  it('an ordinary call is worded exactly as it always was', () => {
+    expect(checkCallCrossings([call()], prices({ SOFI: 14.15 }), {}, NOW).alerts[0].text).not.toContain('🃏')
+    expect(checkCallCrossings([call()], prices({ SOFI: 16.8 }), {}, NOW).alerts[0].text).toBe('🎯 SOFI long — target 16.5 reached (now 16.8).')
+  })
+
+  it('the gating is unchanged: the same crossings fire, the same keys are recorded', () => {
+    const plain = checkCallCrossings([call()], prices({ SOFI: 14.15 }), {}, NOW)
+    const experiment = checkCallCrossings([wild()], prices({ SOFI: 14.15 }), {}, NOW)
+    expect(experiment.alerts.map(a => ({ key: a.key, kind: a.kind, sym: a.sym }))).toEqual(plain.alerts.map(a => ({ key: a.key, kind: a.kind, sym: a.sym })))
+    expect(experiment.fired).toEqual(plain.fired)
+    expect(checkCallCrossings([wild()], prices({ SOFI: 15 }), {}, NOW).alerts).toHaveLength(0)
+  })
+})
+
 describe('checkCallCrossings — dedupe and pruning', () => {
   it('an already-fired (call, level) stays silent and keeps its original timestamp', () => {
     const before = { '2026-07-08:SOFI:long:stop': NOW - 3_600 }

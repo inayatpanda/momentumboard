@@ -385,6 +385,47 @@ describe('deterministic board table in the paper', () => {
       expect(html).toContain('no ISA route — observation only')
       expect(html).toContain('Observation rows cleared every gate')
     })
+
+    it('carries the 🃏 tag through — the paper is a surface the reader is SENT', () => {
+      const rows = boardExportRows([{ ...board[0], wildcard: { gate: 'expected-move' } }, board[0]])
+      expect(rows[0].wildcard).toEqual({ gate: 'expected-move' })
+      expect(rows[1].wildcard).toBeUndefined()
+    })
+  })
+
+  // THE EXPERIMENT IS LABELLED WHEREVER THE READER IS SENT (final review, C-1).
+  // The row has ridden `engineBoard` since the slot shipped, but only the two app
+  // cards and the two aggregate panes printed the mark — so the emailed paper
+  // showed a quarter-size bet on a row the engine's own gates refused as an
+  // ordinary C-grade call with an ordinary chip.
+  describe('the wildcard row is marked on the paper’s board', () => {
+    const wildRow = { ...board[0], sym: 'WILD', paperOnly: false, wildcard: { gate: 'expected-move' as const } }
+
+    it('chips the row with the mark and earns the footer clause', () => {
+      const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [wildRow] })
+      expect(html).toContain('🃏 wildcard')
+      expect(html).toContain('WILD')
+      expect(html).toContain('Wildcard rows are experiments, not calls')
+      expect(html).toContain('quarter size')
+      expect(html).toContain('refused') // the engine's own gates said no to this row
+    })
+
+    it('leaves every ordinary row exactly as it was — no mark, no clause', () => {
+      const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: board })
+      expect(html).not.toContain('🃏')
+      expect(html).not.toContain('Wildcard rows are experiments')
+      // …and on a mixed board exactly ONE row is chipped — the experiment. (The
+      // footer clause carries the mark too, which is where it is explained.)
+      const mixed = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [wildRow, ...board] })
+      expect(mixed.match(/🃏 wildcard &middot;/g) ?? []).toHaveLength(1)
+      expect(mixed.match(/🃏/g) ?? []).toHaveLength(2) // the chip and its explanation, nothing else
+      expect(mixed).toContain('Wildcard rows are experiments, not calls')
+    })
+
+    it('the mark leads the chip: on this row the letter is not why it published', () => {
+      const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [wildRow] })
+      expect(html).toContain('🃏 wildcard &middot; C')
+    })
   })
 })
 

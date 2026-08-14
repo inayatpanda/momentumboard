@@ -1,4 +1,5 @@
-import type { Prediction } from '../../../shared/engine/types'
+import type { GateCode, Prediction } from '../../../shared/engine/types'
+import { WILDCARD_MARK } from '../../../shared/engine/voice'
 import { CANONICAL_SITE } from './site'
 
 // THE STREET SIGNAL — the guaranteed morning newspaper. The LLM writes the
@@ -249,6 +250,16 @@ export interface BoardRow {
   watchOnly?: boolean // unsized: C on thin evidence, below-base, or an unpicked overflow row — printed as an observation
   nearMiss?: boolean // cleared NO gate; named only so a side with nothing on it is not blank — never an idea
   observation?: boolean // cleared EVERY gate and an ISA cannot route it: fully graded, never placeable
+  /** THE EXPERIMENT (Stage 3d) — the gate it is testing, and nothing else.
+   *
+   * The third row kind whose numbers mean something different from an ordinary
+   * call's, and the third to be dropped on the way here: a wildcard is quarter
+   * size on a trade the engine's own gates refused, and its letter is a stored
+   * `grade ?? 'C'` rather than a verdict. Both renderers key their chip and their
+   * footer off this flag, exactly as they do off `nearMiss` and `observation`.
+   * The hypothesis and the standing warning reach the reader by other carriers
+   * (the row's own thesis, the compose `wildcard` key); the board needs the gate. */
+  wildcard?: { gate: GateCode }
   earningsRisk: boolean
   instrument: { ticker: string; leverage: number } | null
   // The engine's two sentences (voice.ts). CARRIED, not yet printed here: the
@@ -297,6 +308,7 @@ export function boardExportRows(board: readonly BoardExportSource[]): BoardRow[]
     watchOnly: b.watchOnly,
     nearMiss: b.nearMiss, // the row kinds the renderers key their honesty off
     observation: b.observation,
+    wildcard: b.wildcard, // …the third of them: quarter size, on a row the gates refused
     earningsRisk: b.earningsRisk,
     instrument: b.instrument,
     thesis: b.thesis, // what the row believes, and what would end it — verbatim, both hops
@@ -856,6 +868,16 @@ export function boardFootnote(board: readonly BoardRow[]): string {
     )
   if (board.some(b => b.paperOnly && !b.watchOnly))
     parts.push('Paper-only calls are analysis — the risk ladder has not unlocked their route yet.')
+  // THE EXPERIMENT SLOT (Stage 3d). The chip carries the mark; this clause is
+  // what the mark MEANS, and it is the only place on either export where the
+  // reader is told the three things that make the row not a call: it is a
+  // quarter of the ordinary size, the engine's own gates refused it, and it is
+  // on the board to test one of those gates. Worded so the print edition still
+  // reads true after `sanitizeWinAnsi` drops the glyph (reportPdf.ts).
+  if (board.some(b => b.wildcard))
+    parts.push(
+      `${WILDCARD_MARK} Wildcard rows are experiments, not calls: quarter size, on a trade the engine's own gates refused, published to charge one of those gates a real outcome — they lose more often than the board does.`,
+    )
   return parts.join(' ')
 }
 
@@ -1151,9 +1173,15 @@ ${
               // are real — but its chip says 'observation' rather than 'watch': it
               // is unsized because an ISA cannot route it, not because the evidence
               // was thin, and 'watch' is where the paper explains the other thing.
+              //
+              // …and the EXPERIMENT leads with its mark rather than its letter,
+              // which is the one ordering decision in this chip: on a wildcard
+              // the letter is a stored `grade ?? 'C'` and not why the row
+              // published — the engine's own gates refused it — so a chip that
+              // opened with "C" would put the meaningless half first.
               const chip = b.nearMiss
                 ? `nearest miss &mdash; did not clear the gates`
-                : `${b.grade}${b.provisional ? '&middot;prov' : ''}${b.observation ? '&middot;observation' : b.watchOnly ? '&middot;watch' : ''}`
+                : `${b.wildcard ? `${WILDCARD_MARK} wildcard &middot; ` : ''}${b.grade}${b.provisional ? '&middot;prov' : ''}${b.observation ? '&middot;observation' : b.watchOnly ? '&middot;watch' : ''}`
               return (
                 `<div style="padding:7px 0;border-bottom:1px solid #e6e0d2">` +
                 `<div style="line-height:1.45"><span style="font-weight:700;font-size:14.5px">${esc(b.sym)}</span>` +

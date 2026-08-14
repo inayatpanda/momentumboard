@@ -285,4 +285,33 @@ describe('the printed board tells the truth about a near miss', () => {
       expect(pdfMagic(await composeReportPdf({ html: '', print: { engineBoard: [observation] } }))).toBe('%PDF-')
     })
   })
+
+  // …AND ABOUT THE EXPERIMENT (final review, C-1). The print edition is a surface
+  // the reader is SENT, and it is the one surface that cannot show the glyph: 🃏
+  // is U+1F0CF and the WinAnsi standard fonts have no code point for it, so
+  // sanitizeWinAnsi drops it. Here the mark is the WORD, and every clause that
+  // carries the glyph elsewhere is worded so that losing it leaves a true sentence.
+  describe('…and about the wildcard, which the PDF must say in words', () => {
+    const wild: PrintBoardRow = { ...nearMiss, sym: 'WILD', nearMiss: false, watchOnly: false, provisional: false, wildcard: { gate: 'expected-move' } }
+
+    it('names the row an experiment in the chip, before the letter it never earned', () => {
+      expect(boardPrintRow(wild)).toEqual({ chip: 'wildcard C', route: 'cash', probability: '50%' })
+      expect(boardPrintRow({ ...wild, wildcard: undefined }).chip).toBe('C')
+      // the glyph would vanish silently in a WinAnsi run — the word may not
+      expect(sanitizeWinAnsi(boardPrintRow(wild).chip)).toBe('wildcard C')
+    })
+
+    it('the footer earns its clause and survives the WinAnsi trip intact', () => {
+      const foot = boardPrintFootline([wild])
+      expect(foot).toContain('Wildcard rows are experiments, not calls')
+      expect(foot).toContain('quarter size')
+      expect(foot).not.toContain('🃏') // stripped HERE, not silently at draw time
+      expect(sanitizeWinAnsi(foot)).toContain('Wildcard rows are experiments, not calls') // …and the clause survives the trip
+      expect(boardPrintFootline([nearMiss])).not.toContain('Wildcard rows are experiments')
+    })
+
+    it('a board carrying the experiment still renders a valid PDF', async () => {
+      expect(pdfMagic(await composeReportPdf({ html: '', print: { engineBoard: [wild] } }))).toBe('%PDF-')
+    })
+  })
 })

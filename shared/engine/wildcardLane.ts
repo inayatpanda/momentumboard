@@ -109,6 +109,25 @@ export const WILDCARD_NEAR_DEAD_ZONE = 5
  * already has is not a blocked trade at any priority. */
 export const WILDCARD_INELIGIBLE_GATES: ReadonlySet<GateCode> = new Set<GateCode>([...PUBLISHED_GATES, 'shadow-capped'])
 
+/** THE BOARD'S CAPACITY VERDICTS — the two codes that mean "no room", not "no".
+ * `diversity` is the sector/correlation gate declining ANOTHER one of these, and
+ * `slot-cut` is a row that was good enough and arrived after the board was full.
+ * Neither is an opinion about the name's thesis: both are opinions about the
+ * board, taken on one side, on one day, with the rest of that day's rows in
+ * scope. (Final review, minor 2.) */
+export const WILDCARD_CAPACITY_GATES: ReadonlySet<GateCode> = new Set<GateCode>(['diversity', 'slot-cut'])
+
+/** …and what `gatesByName` therefore refuses to count as a block against a NAME:
+ * everything the pool already refuses, plus the capacity verdicts.
+ *
+ * ONLY OTHER KEYS are affected. The candidate's OWN gate is added back by
+ * `blockingGateCount` below, because that gate is the one under test — "the board
+ * had no room for it" is a refusal a causal outcome can price, and pricing it is
+ * exactly what the slot is for. What must not happen is a genuinely single-gate
+ * candidate being retired at rung 1 because the OTHER side of its chart lost a
+ * slot to somebody else. */
+export const WILDCARD_UNCOUNTED_GATES: ReadonlySet<GateCode> = new Set<GateCode>([...WILDCARD_INELIGIBLE_GATES, ...WILDCARD_CAPACITY_GATES])
+
 /** What the engine needs handed back to publish the experiment. The near-miss row
  * travels VERBATIM: Task 2 prices it with `levelsFor(core, capacityPct, atrNow,
  * lastClose, smallCap)` — the same arithmetic composeCall and the near-miss rows
@@ -248,13 +267,32 @@ function gatesByName(rows: Readonly<Record<string, FunnelTraceRow>>): Map<string
     // shadow-capped casualty) says nothing about the refused side's gate —
     // funnelTrace.ts's own per-key precedence promise (Task-1 review). Only
     // genuine refusals count toward "blocked by exactly one gate".
-    if (WILDCARD_INELIGIBLE_GATES.has(row.gate)) continue
+    //
+    // …AND NEITHER IS A CAPACITY VERDICT (final review, minor 2): `diversity` and
+    // `slot-cut` say the BOARD had no room, not that the name's thesis was wrong,
+    // so counting one against a name retires a genuinely single-gate candidate on
+    // the strength of an answer to a different question.
+    if (WILDCARD_UNCOUNTED_GATES.has(row.gate)) continue
     const sym = key.split(':')[0]
     const seen = out.get(sym) ?? new Set<GateCode>()
     seen.add(row.gate)
     out.set(sym, seen)
   }
   return out
+}
+
+/** HOW MANY DISTINCT REFUSALS STAND AGAINST THIS CANDIDATE'S NAME — the number
+ * rung 1 requires to be exactly one.
+ *
+ * The candidate's own gate always counts: it is the gate under test, and a row
+ * refused by a capacity verdict and nothing else is a clean single-gate test of
+ * that verdict. `gatesByName` drops it from the per-name set when it is one of
+ * those (it cannot tell whose key it is), so it is added back HERE and only here
+ * — `seen.has(c.gate)` is false for exactly that reason and no other, because
+ * `wildcardPool` has already refused any candidate whose own gate is ineligible. */
+const blockingGateCount = (c: WildcardCandidate, gateSets: Map<string, Set<GateCode>>): number => {
+  const seen = gateSets.get(c.sym)
+  return (seen?.size ?? 0) + (seen?.has(c.gate) ? 0 : 1)
 }
 
 /** THE POOL — near misses that are genuinely blocked, tradeable, and unspoken
@@ -330,9 +368,26 @@ const byThinnestGate = (a: WildcardCandidate, b: WildcardCandidate): number => a
 const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`
 
 /** Rung 1's sentence: the gate under test, what the ledger has and has not
- * measured about it, and the row being spent to find out. */
+ * measured about it, and the row being spent to find out.
+ *
+ * …AND THE COLD-START SENTENCE, which says something else entirely (final review,
+ * I-1). When the ENTIRE `gateStats` array is empty — `gateAttribution` handed a
+ * null ledger, i.e. the miss ledger has never been written — every gate reads 0
+ * for the same reason: nothing has been priced about anything. Saying "<gate> has
+ * 0 priced outcomes and 0 unpriced" there is a true string and a false claim: it
+ * reads as a measurement OF THAT GATE when it is a fact about the ledger, and on
+ * that day the thinness preference has not discriminated at all (every candidate
+ * ties at 0, so `byThinnestGate` collapses to `byConviction` — Task 3's §2). The
+ * sentence says which of the two it is, and names the tie-break it actually used.
+ *
+ * A gate reading 0 inside a ledger that HAS evidence keeps the original wording:
+ * that zero is a measured contrast, and it is the contrast this rung exists to
+ * spend the slot on. */
 const hypothesisP1 = (c: WildcardCandidate, inputs: WildcardInputs): string => {
-  const g = (inputs.gateStats ?? []).find(s => s?.gate === c.gate)
+  const stats = inputs.gateStats ?? []
+  if (!stats.length)
+    return `the miss ledger has not matured its first day; this tests ${c.gate} at composite ${round1(c.miss.core)} as the highest-conviction refusal, for one real outcome with a stop.`
+  const g = stats.find(s => s?.gate === c.gate)
   const priced = Math.max(0, g?.cost ?? 0) + Math.max(0, g?.saved ?? 0)
   const unpriced = Math.max(0, g?.unchecked ?? 0)
   return `${c.gate} has ${plural(priced, 'priced outcome')} and ${unpriced} unpriced in the miss ledger, none of them causal; this takes the ${c.side} it blocked, core read ${round1(c.miss.core)}, for one real outcome with a stop.`
@@ -356,7 +411,7 @@ export function selectWildcard(inputs: WildcardInputs): WildcardSelection | null
 
   // ---- 1. exactly one gate, thinnest first ----
   const gateSets = gatesByName(inputs.traceRows ?? {})
-  const single = cands.filter(c => (gateSets.get(c.sym)?.size ?? 0) === 1).sort(byThinnestGate)[0]
+  const single = cands.filter(c => blockingGateCount(c, gateSets) === 1).sort(byThinnestGate)[0]
   if (single) return { candidate: single, hypothesis: hypothesisP1(single, inputs), priority: 1 }
 
   // ---- 2. a rung with no sized evidence at all ----

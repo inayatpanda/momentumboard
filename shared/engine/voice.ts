@@ -374,11 +374,25 @@ export function dipThesis(input: { sym: string; dropPct: number; stop: number; n
   return { thesis: `Long ${input.sym} — hit ${round1(input.dropPct)}% and holding${clause}. ${falsifier}`, falsifier }
 }
 
+/** THE MARK ITSELF, split out of the label because the surfaces that carry the
+ * ROW are not the surfaces that carry a SENTENCE. The paper's board chip, the
+ * print edition, both intraday bulletins, the ledger table and the stop/target
+ * pings each print a glyph beside a row rather than a label inside prose — and
+ * every one of them printed the experiment as an ordinary call until the final
+ * review of Stage 3d. Spec §4.1's "distinctly labelled" is a promise about every
+ * surface the reader is SENT, not about the two the engine happens to compose.
+ *
+ * ONE SURFACE CANNOT PRINT IT: the print edition's WinAnsi standard fonts have no
+ * code point for U+1F0CF, so `sanitizeWinAnsi` (reportPdf.ts) drops it. There the
+ * mark is the WORD instead, and every clause that carries the glyph is worded so
+ * that losing it still leaves a true sentence. */
+export const WILDCARD_MARK = '🃏'
+
 /** THE EXPERIMENT'S LABEL, one exported constant because four surfaces print it
  * — the row's thesis and note here, the board card's badge, the panel line and
  * the paper's brief — and a reader who learns to recognise one glyph must find
  * the same glyph everywhere. Spec §4.1: "distinctly labelled". */
-export const WILDCARD_LABEL = '🃏 Wildcard'
+export const WILDCARD_LABEL = `${WILDCARD_MARK} Wildcard`
 
 /** …and the STANDING WARNING, printed on every wildcard row without exception
  * and never softened by how good the particular row looks. The slot exists to

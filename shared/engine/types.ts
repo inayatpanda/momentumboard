@@ -354,7 +354,16 @@ export interface Prediction extends GradedCall {
      * (deliberately — a blob failure must never sit between a grade and its
      * store.write), which used to mean a throw in that hook destroyed the one
      * causal sample the slot spent a week buying, with nothing on the row left to
-     * say so. The receipt turns that loss into a debt the next pass settles. */
+     * say so. The receipt turns that loss into a debt the next pass settles.
+     *
+     * A SECOND ROUTE TO ABSENT (final review, minor 1): `REGRET=off` on the run
+     * that GRADES a wildcard silences the stamp along with the rest of the regret
+     * machinery (engine.ts), so the row grades with the field still absent and
+     * "nothing is owed" — which is right for that run and permanent afterwards,
+     * because the debt collector reads `booked === false` and this row never said
+     * it. The sample is not lost, only unsettled: `wildcard.gate` beside
+     * `outcome10` is the whole of what `accrueCausalOutcome` needs, so a
+     * regret-off window is recoverable BY HAND and never automatically. */
     booked?: boolean
   }
   worldTape?: { tone: string; mult: number } // overnight world-tape nudge applied to this call's conviction (bounded ±10/−15%)

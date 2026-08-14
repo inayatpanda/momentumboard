@@ -133,6 +133,36 @@ describe('journalistBoardRows — the board the paper is written from', () => {
     expect(html).not.toContain('grade C, thin evidence')
   })
 
+  // …and the same chain, for the 🃏 EXPERIMENT (final review, C-1). The row has
+  // ridden `engineBoard` since Stage 3d shipped, but the projection dropped its
+  // tag at the first hop, so the emailed paper and the print edition printed a
+  // quarter-size bet on a row the engine's own gates refused with an ordinary
+  // chip. Both hops asserted together: separately, either can drift silently.
+  it('the wildcard tag survives both hops into the printed paper', () => {
+    const wild: Prediction = {
+      ...observation,
+      id: '2026-08-12:WILD:long',
+      sym: 'WILD',
+      side: 'long',
+      riskPct: 0.25,
+      watchOnly: undefined,
+      observation: undefined,
+      wildcard: { gate: 'expected-move', priority: 1, hypothesis: 'expected-move has 0 priced outcomes', gateEvidenceN: 0 },
+    }
+    const [row] = journalistBoardRows([wild])
+    expect(row.wildcard).toEqual({ gate: 'expected-move' }) // the gate only — the hypothesis reaches the writer through its own key
+    expect(journalistBoardRows([observation])[0].wildcard).toBeUndefined()
+
+    const composed: ComposedReport = {
+      headline: 'H', standfirst: 'S', lead: 'L', portfolioDesk: 'p', tape: 't', ideas: [],
+      shortDesk: 's', rotation: 'r', crypto: 'c', channels: 'ch', editorial: 'e', honestClose: 'h',
+      regime: 'amber', fedStance: 'neutral', macroNotes: [],
+    }
+    const html = buildNewspaperHtml(composed, 'Wednesday, 12 August 2026', { engineBoard: boardExportRows(journalistBoardRows([wild])) })
+    expect(html).toContain('🃏 wildcard')
+    expect(html).toContain('Wildcard rows are experiments, not calls')
+  })
+
   // The prompt carries an EXCEPTION for the velocity lane: a quarter- or half-size
   // momentum probe is deliberate sizing, so it must not be written up as the
   // half-conviction, evidence-short call a reduced riskPct otherwise means. That rule

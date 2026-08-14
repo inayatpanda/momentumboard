@@ -8,6 +8,7 @@
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type Color } from 'pdf-lib'
 import { boardFootnote } from './newspaper'
+import { WILDCARD_MARK } from '../../../shared/engine/voice'
 import type { ComposedReport, PaperExtras, Idea, SocialRow, CalendarRow } from './newspaper'
 
 // The structured payload the compose pipe now ships alongside the HTML (see
@@ -614,17 +615,25 @@ export type PrintBoardRow = NonNullable<PaperExtras['engineBoard']>[number]
  * probability are real and both print. What it has no route to is the market — an
  * ISA cannot place it — so it says that where a placeable row prints its ETP, and
  * its chip reads 'observation' rather than 'watch' (the footer explains watch rows
- * as thin evidence, which this row is the opposite of). */
+ * as thin evidence, which this row is the opposite of).
+ *
+ * A WILDCARD SAYS SO IN WORDS, and leads with it. The print edition is the one
+ * surface that cannot show the mark: 🃏 is U+1F0CF and the WinAnsi standard fonts
+ * have no code point for it, so `sanitizeWinAnsi` drops it — silently, which is
+ * the worst of both outcomes on a row whose whole point is that it is not an
+ * ordinary call. The word carries it here, ahead of a letter that is a stored
+ * `grade ?? 'C'` rather than a verdict; the footer says what the word means. */
 export function boardPrintRow(b: PrintBoardRow): { chip: string; route: string; probability: string | null } {
   if (b.nearMiss) return { chip: 'nearest miss — did not clear the gates', route: 'no size', probability: null }
+  const mark = b.wildcard ? 'wildcard ' : ''
   if (b.observation)
     return {
-      chip: `${b.grade}${b.provisional ? ' prov' : ''} observation`,
+      chip: `${mark}${b.grade}${b.provisional ? ' prov' : ''} observation`,
       route: 'no ISA route - observation only',
       probability: `${Math.round((b.probability || 0) * 100)}%`,
     }
   return {
-    chip: `${b.grade}${b.provisional ? ' prov' : ''}${b.watchOnly ? ' watch' : ''}`,
+    chip: `${mark}${b.grade}${b.provisional ? ' prov' : ''}${b.watchOnly ? ' watch' : ''}`,
     route: b.watchOnly ? 'watch - no size' : b.instrument ? `${b.instrument.ticker} ${b.instrument.leverage}x` : b.paperOnly ? 'paper-only' : 'cash',
     probability: `${Math.round((b.probability || 0) * 100)}%`,
   }
@@ -634,12 +643,19 @@ export function boardPrintRow(b: PrintBoardRow): { chip: string; route: string; 
  * never explain the board differently — it already names only the row kinds
  * actually present. HTML entities are the only thing that does not survive the
  * trip into a PDF text run, so they are decoded here (and the em dashes then
- * fold to ASCII in sanitizeWinAnsi like every other glyph). */
+ * fold to ASCII in sanitizeWinAnsi like every other glyph).
+ *
+ * …and the wildcard MARK is dropped HERE rather than left to vanish at draw time:
+ * U+1F0CF has no WinAnsi code point, so `sanitizeWinAnsi` would strip the glyph
+ * and leave its trailing space stranded mid-sentence. The clause is written to
+ * read true without it — "Wildcard rows are experiments, not calls: …" — so this
+ * is a removal, not a fallback. */
 export function boardPrintFootline(board: readonly PrintBoardRow[]): string {
   return boardFootnote(board)
     .replace(/&mdash;/g, '—')
     .replace(/&middot;/g, '·')
     .replace(/&amp;/g, '&')
+    .replace(`${WILDCARD_MARK} `, '')
 }
 
 function drawBoard(c: Cursor, board: NonNullable<PaperExtras['engineBoard']>, fonts: Fonts): void {

@@ -198,6 +198,17 @@ export async function runPaperBook(store: AppStore, deps: { candles: (sym: strin
 
   // open today's ACTIONABLE calls the book doesn't already hold — watch-only
   // entries (grade C / low evidence) are observations and never take capital
+  //
+  // …AND THAT INCLUDES THE 🃏 WILDCARD (Stage 3d, adjudicated in the final
+  // review). An experiment row is sized and not watch-only, so it enters the book
+  // like any other call, at the quarter-size `riskPct` it published with. That is
+  // the consistent answer, not an oversight: this book is a record of OUTCOMES,
+  // and it already opens `paperOnly` shorts — rows an ISA could never place —
+  // because what it models is the engine's calls, not the reader's brokerage. The
+  // accepted cost, stated once: the equity headline carries an experiment's P&L
+  // with no mark anywhere near it. Telling the experiment apart is the job of the
+  // records built for it — the scorecard's own 🃏 key, the causal ledger, the
+  // board's marked row — and the book is deliberately not one of them.
   const boardBlob = await store.read<{ date: string; board: Prediction[] }>('engine-board').catch(() => null)
   const live = (boardBlob?.board ?? []).filter(b => !b.shadow && !b.watchOnly)
   for (const call of live) {

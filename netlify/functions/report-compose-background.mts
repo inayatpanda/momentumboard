@@ -68,6 +68,14 @@ export function journalistBoardRows(board: readonly Prediction[]) {
     watchOnly: p.watchOnly, // an observation, not a trade — may never become an idea
     nearMiss: p.nearMiss, // a row that cleared no gate — the journalist must not write it up
     observation: p.observation, // cleared every gate, no ISA route — analysis, never a trade to take
+    // …and the EXPERIMENT's tag, slimmed to the gate under test. It is here for
+    // the SECOND hop: boardExportRows reads this projection, so the emailed paper
+    // and the print edition can only chip the 🃏 row if the flag survives the
+    // first one — exactly how `nearMiss` and `observation` were lost before it.
+    // The hypothesis and the standing warning reach the writer through the
+    // compose `wildcard` key and the row's own thesis, so they are not duplicated
+    // here: what the board needs is which row, and which gate.
+    wildcard: p.wildcard ? { gate: p.wildcard.gate } : undefined,
     setup: p.setup,
     evidence: p.evidence?.detail,
     factorDetails: Object.fromEntries(Object.entries(p.factors).filter(([, f]) => f.score != null).map(([k, f]) => [k, `${f.score} — ${f.detail}`])),

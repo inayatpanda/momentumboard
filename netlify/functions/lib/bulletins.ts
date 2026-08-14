@@ -1,5 +1,6 @@
 import type { AppStore } from './store'
 import type { Prediction } from '../../../shared/engine/types'
+import { WILDCARD_MARK } from '../../../shared/engine/voice'
 import type { AppConfig } from '../../../shared/config'
 
 // THE BULLETINS: two intraday dispatches that bookend the morning paper.
@@ -23,6 +24,49 @@ export interface Bulletin {
 
 const londonDate = (sec: number) => new Date(sec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
 const pct = (x: number | null | undefined) => (x == null ? '?' : `${x >= 0 ? '+' : ''}${Math.round(x * 10) / 10}%`)
+
+// ---- the mini-edition's shared bits (hoisted so the two board-row templates
+// below can be pure, exported and tested without running the whole compose) ----
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+const up = (x: number | null) => (x == null ? '#98a2b3' : x >= 0 ? '#2bd396' : '#ff5f76')
+const td = 'padding:6px 8px;border-bottom:1px solid rgba(158,173,198,.12);font-size:13px'
+const numStyle = 'font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums'
+
+/** One board row as both dispatches print it: the call, marked to the current
+ * tape. `wildcard` is the EXPERIMENT SLOT's flag (Stage 3d) — a quarter-size row
+ * on a trade the engine's own gates refused. */
+export interface BulletinBoardMark {
+  sym: string
+  side: 'long' | 'short'
+  grade: string
+  entry: number
+  now: number | null
+  stop: number
+  target: number
+  movePct: number | null
+  wildcard?: boolean
+}
+
+/** THE TELEGRAM LINE. Pure + exported for the same reason the paper's board
+ * projection is (newspaper.ts): this is a surface the reader is SENT, and a row
+ * kind that goes unmarked here reaches them as an ordinary call. */
+export function bulletinBoardLine(m: BulletinBoardMark): string {
+  return `${m.wildcard ? `${WILDCARD_MARK} ` : ''}${m.sym} ${m.side.toUpperCase()} ${m.grade} · in ${m.entry}${m.now != null ? ` → ${m.now}` : ''}${
+    m.movePct != null ? ` (${pct(m.movePct)})` : ''
+  } · stop ${m.stop} · tgt ${m.target}`
+}
+
+/** THE EMAIL ROW — stacked two-line rows, not a grid: eight columns can never fit
+ * a phone inbox, and mail apps have no inner scrolling (Gmail strips overflow — a
+ * sideways swipe just turns the page to the next email). Line one is the call and
+ * its mark-to-market; line two carries the levels. The mark sits beside the
+ * ticker, where the app's own board card puts it. */
+export function bulletinBoardRowHtml(m: BulletinBoardMark): string {
+  return `<tr>
+<td style="padding:8px 8px 0;font-size:13.5px">${m.wildcard ? `${WILDCARD_MARK} ` : ''}<b>${esc(m.sym)}</b> <span style="color:${m.side === 'long' ? '#2bd396' : '#ff5f76'}">${m.side}</span> <span style="color:#98a2b3">· ${esc(m.grade)}</span></td>
+<td style="padding:8px 8px 0;${numStyle};text-align:right;color:${up(m.movePct)}">${m.movePct != null ? pct(m.movePct) : '·'}</td></tr>
+<tr><td colspan="2" style="padding:2px 8px 8px;border-bottom:1px solid rgba(158,173,198,.12);${numStyle};font-size:12px;color:#98a2b3">in ${m.entry}${m.now != null ? ` → ${m.now}` : ''} · stop ${m.stop} · tgt ${m.target}</td></tr>`
+}
 
 export async function composeBulletin(kind: BulletinKind, store: AppStore, env: { FINNHUB_API_KEY?: string }, nowSec: number): Promise<Bulletin> {
   const date = londonDate(nowSec)
@@ -58,7 +102,9 @@ export async function composeBulletin(kind: BulletinKind, store: AppStore, env: 
       const { cachedQuote } = await import('./marketCache')
       const q = await grab(() => cachedQuote(p.sym, env.FINNHUB_API_KEY ?? ''))
       const movePct = q?.price && p.entry ? Math.round(((q.price - p.entry) / p.entry) * (p.side === 'short' ? -1000 : 1000)) / 10 : null
-      return { sym: p.sym, side: p.side, grade: p.grade, entry: p.entry, now: q?.price ?? null, stop: p.stop, target: p.target, movePct, note: p.note }
+      // …and whether this row is the EXPERIMENT (Stage 3d). Both dispatches print
+      // it beside real calls, so it travels as a flag rather than as prose.
+      return { sym: p.sym, side: p.side, grade: p.grade, entry: p.entry, now: q?.price ?? null, stop: p.stop, target: p.target, movePct, note: p.note, wildcard: !!p.wildcard }
     }),
   )
 
@@ -118,36 +164,21 @@ FIRST CHECK — the one thing to look at first tomorrow morning, and why.`
   const bodyText = prose ?? `${title} (auto-summary — the desk's writer was unavailable):\n\n${dataLines.join('\n')}`
 
   // telegram: prose + the board marked to market
-  const boardLines = marked.map(m => `${m.sym} ${m.side.toUpperCase()} ${m.grade} · in ${m.entry}${m.now != null ? ` → ${m.now}` : ''}${m.movePct != null ? ` (${pct(m.movePct)})` : ''} · stop ${m.stop} · tgt ${m.target}`)
+  const boardLines = marked.map(bulletinBoardLine)
   const text = `${title.toUpperCase()} — ${date}\n\n${bodyText}${boardLines.length ? `\n\nTHE BOARD\n${boardLines.join('\n')}` : ''}\n\nFull app → https://thestreetsignal.rqai.co.uk/app/`
 
   // ---- the email/archive page: a structured mini-edition, not a note ----
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
-  const up = (x: number | null) => (x == null ? '#98a2b3' : x >= 0 ? '#2bd396' : '#ff5f76')
-  const td = 'padding:6px 8px;border-bottom:1px solid rgba(158,173,198,.12);font-size:13px'
-  const num = 'font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums'
   const section = (t: string, inner: string) =>
     `<div style="margin-top:26px"><div style="color:#98a2b3;font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;border-bottom:1px solid rgba(158,173,198,.2);padding-bottom:6px;margin-bottom:8px">${t}</div>${inner}</div>`
 
   const tapeRows = [...futures, ...(vix ? [vix] : []), ...europeAsia]
-    .map(r => `<tr><td style="${td}">${esc(r.name)}</td><td style="${td};${num};text-align:right;color:${up(r.changePct)}">${pct(r.changePct)}</td></tr>`)
+    .map(r => `<tr><td style="${td}">${esc(r.name)}</td><td style="${td};${numStyle};text-align:right;color:${up(r.changePct)}">${pct(r.changePct)}</td></tr>`)
     .join('')
   const tapeHtml = tapeRows
     ? section('The tape' + (tone ? ` · ${esc(tone.tone)}` : ''), `<table style="width:100%;border-collapse:collapse">${tapeRows}</table>`)
     : ''
 
-  // Stacked two-line rows, not a grid: eight columns can never fit a phone
-  // inbox, and mail apps have no inner scrolling (Gmail strips overflow — a
-  // sideways swipe just turns the page to the next email). Line one is the
-  // call and its mark-to-market; line two carries the levels.
-  const boardRows = marked
-    .map(
-      m => `<tr>
-<td style="padding:8px 8px 0;font-size:13.5px"><b>${esc(m.sym)}</b> <span style="color:${m.side === 'long' ? '#2bd396' : '#ff5f76'}">${m.side}</span> <span style="color:#98a2b3">· ${esc(m.grade)}</span></td>
-<td style="padding:8px 8px 0;${num};text-align:right;color:${up(m.movePct)}">${m.movePct != null ? pct(m.movePct) : '·'}</td></tr>
-<tr><td colspan="2" style="padding:2px 8px 8px;border-bottom:1px solid rgba(158,173,198,.12);${num};font-size:12px;color:#98a2b3">in ${m.entry}${m.now != null ? ` → ${m.now}` : ''} · stop ${m.stop} · tgt ${m.target}</td></tr>`,
-    )
-    .join('')
+  const boardRows = marked.map(bulletinBoardRowHtml).join('')
   const boardHtml = marked.length
     ? section(
         `The board · ${board?.date ?? ''} · regime ${board?.regime ?? '?'}`,
@@ -158,7 +189,7 @@ FIRST CHECK — the one thing to look at first tomorrow morning, and why.`
   const moverLine = (rows: { sym: string; changePct: number | null; stage: string | null }[]) =>
     rows
       .slice(0, 4)
-      .map(r => `<span style="margin-right:14px">${esc(r.sym)} <span style="${num};color:${up(r.changePct)}">${pct(r.changePct)}</span>${r.stage ? ` <span style="color:#636e80">${esc(r.stage.replace('-', ' '))}</span>` : ''}</span>`)
+      .map(r => `<span style="margin-right:14px">${esc(r.sym)} <span style="${numStyle};color:${up(r.changePct)}">${pct(r.changePct)}</span>${r.stage ? ` <span style="color:#636e80">${esc(r.stage.replace('-', ' '))}</span>` : ''}</span>`)
       .join('')
   const moversHtml = movers
     ? section('The day\'s extremes', `<div style="font-size:13px;margin-bottom:6px">${moverLine(movers.gainers ?? [])}</div><div style="font-size:13px">${moverLine(movers.losers ?? [])}</div>`)
@@ -167,7 +198,7 @@ FIRST CHECK — the one thing to look at first tomorrow morning, and why.`
   const calRows = events
     .map(
       e =>
-        `<tr><td style="${td};${num}">${new Date(e.at * 1000).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}</td><td style="${td}">${esc(e.title)}</td><td style="${td}">${esc(e.country)}</td><td style="${td};color:${e.impact === 'High' ? '#f2b843' : '#98a2b3'}">${esc(e.impact)}</td></tr>`,
+        `<tr><td style="${td};${numStyle}">${new Date(e.at * 1000).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}</td><td style="${td}">${esc(e.title)}</td><td style="${td}">${esc(e.country)}</td><td style="${td};color:${e.impact === 'High' ? '#f2b843' : '#98a2b3'}">${esc(e.impact)}</td></tr>`,
     )
     .join('')
   const calHtml = events.length
@@ -192,7 +223,7 @@ ${news ? `<div style="color:#636e80;font-size:12px">Headlines lean ${esc(news.la
 ${proseHtml}
 ${tapeHtml}
 ${boardHtml}
-${paperBook && paperBook.history.length ? `<div style="margin-top:10px;color:#98a2b3;font-size:13px">The mock £10k book: <span style="${num}">£${Math.round(paperBook.history[paperBook.history.length - 1].equity)}</span> · ${paperBook.positions.length} open · ${paperBook.closed.length} closed this month</div>` : ''}
+${paperBook && paperBook.history.length ? `<div style="margin-top:10px;color:#98a2b3;font-size:13px">The mock £10k book: <span style="${numStyle}">£${Math.round(paperBook.history[paperBook.history.length - 1].equity)}</span> · ${paperBook.positions.length} open · ${paperBook.closed.length} closed this month</div>` : ''}
 ${moversHtml}
 ${calHtml}
 <div style="margin-top:26px;padding-top:14px;border-top:1px solid rgba(158,173,198,.2);color:#636e80;font-size:12px">

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  WILDCARD_CAPACITY_GATES,
   WILDCARD_INELIGIBLE_GATES,
   WILDCARD_NEAR_DEAD_ZONE,
   WILDCARD_SIZE_CAP,
+  WILDCARD_UNCOUNTED_GATES,
   gateEvidenceN,
   rungSizedN,
   selectWildcard,
@@ -412,5 +414,87 @@ describe('WILDCARD_INELIGIBLE_GATES tracks the publication set', () => {
     // built from that one, so the exclusion came for free — which is the whole
     // point of deriving it rather than re-listing it.
     expect(WILDCARD_INELIGIBLE_GATES.has('called-wildcard')).toBe(true)
+  })
+})
+
+// A CAPACITY VERDICT IS NOT A SECOND OPINION (final review, minor 2). Rung 1
+// asks "was this name blocked by exactly ONE thing an experiment could test".
+// `diversity` and `slot-cut` answer a different question — the board had no room
+// for another one of these — so counting one against a name retired a genuinely
+// single-gate candidate on the strength of a verdict about the BOARD.
+describe('the board’s capacity verdicts are not blocks on the name', () => {
+  it('a diversity or slot-cut row on the other side leaves the blocked side rung-1 eligible', () => {
+    for (const other of ['diversity', 'slot-cut'] as const) {
+      const sel = selectWildcard(p1Inputs({ traceRows: { 'AAA:long': row('dead-zone-core', 'long'), 'AAA:short': row(other, 'short') } }))
+      expect(sel?.priority, other).toBe(1)
+      expect(sel?.candidate.gate, other).toBe('dead-zone-core')
+    }
+  })
+
+  it('…and they are the ONLY additions — every other refusal still counts as a gate', () => {
+    expect([...WILDCARD_CAPACITY_GATES].sort()).toEqual(['diversity', 'slot-cut'])
+    expect([...WILDCARD_UNCOUNTED_GATES].sort()).toEqual([...new Set([...WILDCARD_INELIGIBLE_GATES, ...WILDCARD_CAPACITY_GATES])].sort())
+    // an ordinary second refusal still retires the name (the guard above stands)
+    expect(selectWildcard(p1Inputs({
+      traceRows: { 'AAA:long': row('dead-zone-core', 'long'), 'AAA:short': row('expected-move', 'short') },
+      calibration: { buckets: { 'large:long:green:25-40': { n: 9, hits: 3 } } },
+    }))).toBeNull()
+  })
+
+  it('a candidate whose OWN row is a capacity verdict is STILL a rung-1 test of that verdict', () => {
+    // the gate under test always counts as the one block: "no room" is a refusal a
+    // causal outcome can price, and a row refused by it alone is a clean test of it
+    for (const gate of ['diversity', 'slot-cut'] as const) {
+      const sel = selectWildcard(p1Inputs({ traceRows: { 'AAA:long': row(gate, 'long') }, gateStats: [attrib(gate, { cost: 1, saved: 0, n: 1, unchecked: 2 })] }))
+      expect(sel?.priority, gate).toBe(1)
+      expect(sel?.candidate.gate, gate).toBe(gate)
+    }
+  })
+
+  it('…and a capacity verdict plus a real refusal elsewhere is still two things standing against the name', () => {
+    const sel = selectWildcard(
+      p1Inputs({
+        traceRows: { 'AAA:long': row('diversity', 'long'), 'AAA:short': row('expected-move', 'short') },
+        gateStats: [attrib('diversity', { cost: 1, saved: 0, n: 1, unchecked: 2 })],
+        calibration: { buckets: { 'large:long:green:25-40': { n: 9, hits: 3 } } }, // close rung 2
+      }),
+    )
+    expect(sel).toBeNull()
+  })
+})
+
+// THE EMPTY LEDGER MUST NOT FAKE A MEASUREMENT (final review, I-1). On a cold
+// start every gate reads 0 because NOTHING has been priced — and the rung-1
+// sentence said "<gate> has 0 priced outcomes and 0 unpriced", which is a claim
+// about the named gate when it is really a claim about the ledger.
+describe('the rung-1 hypothesis tells the truth about an empty ledger', () => {
+  it('says the ledger has not matured, and never attributes a zero to the gate', () => {
+    const sel = selectWildcard(p1Inputs({ gateStats: [] }))
+    expect(sel!.priority).toBe(1)
+    expect(sel!.hypothesis).toContain('the miss ledger has not matured its first day')
+    expect(sel!.hypothesis).toContain('dead-zone-core')
+    expect(sel!.hypothesis).toContain('23') // the composite it is spending
+    expect(sel!.hypothesis).toContain('highest-conviction refusal')
+    // the one thing it must never say: a per-gate measurement nobody made
+    expect(sel!.hypothesis).not.toContain('priced outcome')
+    expect(sel!.hypothesis).not.toContain('unpriced')
+    expect(sel!.hypothesis).not.toMatch(/\b0 /)
+  })
+
+  it('…but a gate reading 0 inside a ledger that HAS evidence keeps the measured contrast', () => {
+    // stats exist and this gate genuinely carries nothing — that IS a measurement,
+    // and it is the contrast the thinness rung was built to spend the slot on.
+    const sel = selectWildcard(
+      inputs({
+        nearMisses: [miss('AAA', 23)],
+        traceRows: { 'AAA:long': row('entry-wait', 'long') },
+        gateStats: [attrib('dead-zone-core', { cost: 40, saved: 10, n: 50, unchecked: 100 })],
+      }),
+    )
+    expect(sel!.candidate.gate).toBe('entry-wait')
+    expect(sel!.hypothesis).toBe(
+      'entry-wait has 0 priced outcomes and 0 unpriced in the miss ledger, none of them causal; this takes the long it blocked, core read 23, for one real outcome with a stop.',
+    )
+    expect(sel!.hypothesis).not.toContain('has not matured')
   })
 })

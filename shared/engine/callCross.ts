@@ -1,4 +1,5 @@
 import { round2 } from './types'
+import { WILDCARD_MARK } from './voice'
 
 // INTRADAY LEVEL WATCH: the published stop/target is HARD execution advice,
 // but the formal grade is daily-CLOSE based (a wick through the stop is
@@ -15,6 +16,17 @@ export interface OpenCallLevels {
   side: 'long' | 'short'
   stop: number
   target: number
+  /** THE EXPERIMENT SLOT'S RECORD (`Prediction['wildcard']`, types.ts), read for
+   * one thing only: the ping has to say WHICH ROW it is about.
+   *
+   * This is the most execution-shaped sentence the engine ever sends — "execution
+   * says exit" — and a wildcard is sized, unshadowed and not watch-only, so it
+   * pings exactly like a conviction call and SHOULD: a quarter of the rung is
+   * still the reader's money and a stop touch is still a stop touch. What must not
+   * happen is that instruction arriving with nothing on it to say the row is a
+   * trade the engine's own gates refused, taken at quarter size on purpose. The
+   * GATING is untouched by this field; only the wording is. */
+  wildcard?: { gate: string }
 }
 
 export interface CrossAlert {
@@ -63,14 +75,18 @@ export function checkCallCrossings(
     const key = `${c.id}:${kind}`
     if (key in fired) continue // once per (call, level), across runs
     fired[key] = nowSec
+    // the mark leads the row, and one clause names what it is — on BOTH pings,
+    // because the target ping is the one a reader is likeliest to read as skill
+    const mark = c.wildcard ? `${WILDCARD_MARK} ` : ''
+    const tail = c.wildcard ? " This one is the experiment — quarter size, on a trade the engine's own gates refused." : ''
     alerts.push({
       key,
       sym: c.sym,
       kind,
       text:
         kind === 'stop'
-          ? `⛔ ${c.sym} ${c.side} — stop ${fmt(c.stop)} touched (now ${fmt(price)}). Execution says exit; the formal close-based grade lands with the morning paper.`
-          : `🎯 ${c.sym} ${c.side} — target ${fmt(c.target)} reached (now ${fmt(price)}).`,
+          ? `⛔ ${mark}${c.sym} ${c.side} — stop ${fmt(c.stop)} touched (now ${fmt(price)}). Execution says exit; the formal close-based grade lands with the morning paper.${tail}`
+          : `🎯 ${mark}${c.sym} ${c.side} — target ${fmt(c.target)} reached (now ${fmt(price)}).${tail}`,
     })
   }
   return { alerts, fired }

@@ -352,7 +352,15 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
                     <td>{p.date.slice(5)}</td>
                     <td style={{ fontWeight: 700 }}>{p.sym}</td>
                     <td className={p.side === 'long' ? 'up-text' : 'down-text'}>{p.side === 'long' ? '▲L' : '▼S'}</td>
-                    <td><GradeChip grade={p.grade} provisional={p.provisional} />{p.shadow ? <span className="led-n"> sh</span> : ''}</td>
+                    {/* …and the EXPERIMENT rides the same convention as the shadow (stage 3d):
+                        two row kinds whose stored letter is not why they are here, marked in
+                        the one column that already says so. The by-grade pane below files
+                        them apart; without this the table itself still called it a C. */}
+                    <td>
+                      <GradeChip grade={p.grade} provisional={p.provisional} />
+                      {p.shadow ? <span className="led-n"> sh</span> : ''}
+                      {p.wildcard ? <span className="led-n" title={`Experiment · quarter size, testing the ${p.wildcard.gate} gate`}> 🃏</span> : ''}
+                    </td>
                     <td className="num">{Math.round(p.probability * 100)}</td>
                     <td className="num">{p.entry}</td>
                     <td className="num">{p.stop}</td>
