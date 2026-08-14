@@ -318,6 +318,22 @@ describe('deterministic board table in the paper', () => {
     expect(crypto).not.toContain('the risk ladder has not unlocked') // no rung can mint an unconfigured route
   })
 
+  // FINDING 10: the footer's calibration sentence is an EQUITY sentence — excess
+  // vs the S&P, over ten sessions. A cohort row was never measured against a
+  // benchmark at all, so a board carrying one needs the second sentence beside
+  // the first. Earned by a row that is present, like every other clause here.
+  it('the footer explains the crypto partition only when a cohort row is on the board', () => {
+    const coin = { ...board[0], sym: 'ETH-USD', cohort: 'crypto' as const, watchOnly: undefined }
+    const withCoin = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [coin] })
+    expect(withCoin).toContain('excess vs S&amp;P') // the equity sentence stays exactly as it was
+    expect(withCoin).toContain('14-bar clock')
+    expect(withCoin).toContain('no benchmark')
+
+    const equityOnly = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: board })
+    expect(equityOnly).toContain('excess vs S&amp;P')
+    expect(equityOnly).not.toContain('14-bar clock')
+  })
+
   it('an ordinary watch row keeps its grade and probability', () => {
     const watch = { ...nearMissRow, sym: 'WTCH', nearMiss: false, provisional: false }
     const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [watch] })
@@ -458,6 +474,21 @@ describe('fallbackIdeasFromBoard', () => {
     expect(ideas[0].caseText).toContain('no tracker route is configured for this pair')
     expect(ideas[0].caseText).not.toContain('risk ladder') // no rung can mint an unconfigured route
     expect(ideas[1].caseText).toContain('until the risk ladder unlocks the route') // the equity story is still the equity story
+  })
+
+  // THE CLOCK (crypto-v2 wave, finding 10). "5-10 sessions" is an equity span:
+  // the cohort is graded over 7/14 CRYPTO BARS — a seven-day week, weekends
+  // included — so the same words describe a window a third shorter than the one
+  // the row was actually measured on.
+  it('states the expected move on the clock the row was measured on', () => {
+    const board = [
+      { id: 'b', sym: 'BTC-USD', side: 'long' as const, cohort: 'crypto' as const, entry: 60000, stop: 55000, target: 70000, probability: 0.5, grade: 'C' as const, expectedMovePct: 8, instrument: null, paperOnly: false, note: 'crypto cohort.' },
+      { id: 'n', sym: 'NOK', side: 'short' as const, entry: 12.07, stop: 13.42, target: 10.26, probability: 0.5, grade: 'C' as const, expectedMovePct: 5.1, instrument: null, paperOnly: false, note: 'weak.' },
+    ]
+    const ideas = fallbackIdeasFromBoard(board as never)
+    expect(ideas[0].expectedMove).toBe('~8% over 7–14 crypto bars')
+    expect(ideas[0].expectedMove).not.toContain('session')
+    expect(ideas[1].expectedMove).toBe('~5.1% over 5-10 sessions') // the equity span is untouched
   })
 })
 

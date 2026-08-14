@@ -496,7 +496,11 @@ export function fallbackIdeasFromBoard(board: (BoardIdeaSlim & { note?: string; 
     target: String(b.target),
     conviction: b.grade,
     predictionId: b.id,
-    expectedMove: `~${b.expectedMovePct}% over 5-10 sessions`,
+    // …and over the span the ROW WAS MEASURED ON. "5-10 sessions" is an equity
+    // window; the cohort is graded over 7/14 CRYPTO BARS — a seven-day week,
+    // weekends included — so the equity words describe a window a third shorter
+    // than the one behind the number they sit beside (crypto-v2 wave, finding 10).
+    expectedMove: `~${b.expectedMovePct}% over ${b.cohort === 'crypto' ? '7–14 crypto bars' : '5-10 sessions'}`,
     chartRead: b.stage ?? undefined,
   }))
 }
@@ -858,6 +862,15 @@ export function boardFootnote(board: readonly BoardRow[]): string {
   // a sized row's percentage is the record of rows that carried size, not of every
   // row the engine ever thought about.
   const parts = ["Calibrated on the engine's own graded history — calls like it, sized like it — excess vs S&amp;P."]
+  // …which is an EQUITY sentence, and a cohort row was never measured against a
+  // benchmark at all (crypto-v2 wave, finding 10). Its own sentence, earned by a
+  // row that is present exactly like every clause below, and placed beside the
+  // one it qualifies rather than replacing it: the equity claim stays true about
+  // the equity rows on the same board.
+  if (board.some(b => b.cohort === 'crypto'))
+    parts.push(
+      "Crypto rows are calibrated apart, on the cohort's own 14-bar clock: the number is the side-adjusted move itself — absolute, no benchmark subtracted, because a 24/7 asset class has no S&amp;P week to be measured against.",
+    )
   // An observation is NOT one of these: it cleared everything and is fully graded,
   // so explaining it as "grade C or thin evidence" would be a true sentence about
   // a different row — the one dishonesty this footer exists to avoid.
