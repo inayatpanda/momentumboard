@@ -106,16 +106,42 @@ const londonToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/L
 // ride one — the auth-split test drives that with a real licence.
 // ---------------------------------------------------------------------------
 
-/** ?view=board — what Today/Board render: ~6 reads instead of ~50. */
+/** ?view=board — what Today/Board render: ~9 reads instead of ~50. */
 async function viewBoard() {
-  const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration] = await Promise.all([
-    blobAppStore.read('engine-board'),
+  const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration, predIndex, missLedgerBlob] = await Promise.all([
+    blobAppStore.read<{ date?: string }>('engine-board'),
     blobAppStore.read<{ date: string }>('intraday-flags'),
     blobAppStore.read('event-radar'),
     blobAppStore.read('engine-run-status'),
     blobAppStore.read('risk-state'),
     blobAppStore.read<{ referenceBase?: number | null }>('engine-calibration'),
+    blobAppStore.read<string[]>('predictions-index'),
+    blobAppStore.read(MISS_LEDGER_KEY),
   ])
+
+  // THE YESTERDAY STRIP (CX-18): the newest predictions day before the board's,
+  // scored from its own rows, plus that day's costliest named regret — shipped
+  // IN the board slice so a cold Today never depends on the learning slice.
+  const ydate = (predIndex ?? []).filter(d => d !== (board?.date ?? null)).at(-1) ?? null
+  let yesterday: { date: string; wins: number; losses: number; topRegret: { sym: string; excessPct: number; gate: string } | null } | null = null
+  if (ydate) {
+    const preds = (await blobAppStore.read<Prediction[]>(`predictions:${ydate}`)) ?? []
+    // outcome10 is a PredOutcome object; `hit` is the side-adjusted verdict
+    const graded = preds.filter(p => p.outcome10 != null)
+    if (graded.length) {
+      const regrets = missLedgerExamples(missLedgerBlob, 20)
+      const dayExamples = (regrets?.topGates ?? [])
+        .flatMap(g => g.examples.filter(e => e.date === ydate && e.excessPct > 0).map(e => ({ sym: e.sym, excessPct: e.excessPct, gate: g.gate as string })))
+        .sort((a, b) => b.excessPct - a.excessPct)
+      yesterday = {
+        date: ydate,
+        wins: graded.filter(p => p.outcome10!.hit).length,
+        losses: graded.filter(p => !p.outcome10!.hit).length,
+        topRegret: dayExamples[0] ?? null,
+      }
+    }
+  }
+
   return {
     board: board ?? null,
     // only today's flags — a stale blob from a prior session must not show as live
@@ -124,6 +150,7 @@ async function viewBoard() {
     runStatus: runStatus ?? null,
     riskState: riskState ?? null,
     referenceBase: calibration?.referenceBase ?? null,
+    yesterday,
   }
 }
 

@@ -71,6 +71,37 @@ describe('engine ?view= slices', () => {
     expect(r.data).not.toHaveProperty('holdingsReads')
   })
 
+  it('?view=board carries the yesterday strip: wins/losses + the day’s top regret (CX-18)', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('predictions-index', ['2026-08-12', '2026-08-13'])
+    await seed('predictions:2026-08-13', [
+      { id: 'w', sym: 'NVDA', side: 'long', outcome10: { excessPct: 4.2, rawPct: 5, spyPct: 0.8, stopped: false, hit: true } },
+      { id: 'l', sym: 'COIN', side: 'short', outcome10: { excessPct: -2.0, rawPct: -1, spyPct: 1, stopped: true, hit: false } },
+      { id: 'u', sym: 'AMD', side: 'long' }, // ungraded — counts nowhere
+    ])
+    await seed('miss-ledger', {
+      gates: {
+        'dead-zone-core': {
+          cost: 2,
+          costExcessSum: 16,
+          examples: [
+            { date: '2026-08-13', sym: 'PLTR', side: 'long', excessPct: 6.1, gate: 'dead-zone-core' },
+            { date: '2026-08-10', sym: 'STALE', side: 'long', excessPct: 9.9, gate: 'dead-zone-core' }, // not yesterday
+          ],
+        },
+      },
+      days: { '2026-08-13': { checked: 3, unchecked: 1, misses: 1 } },
+    })
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.yesterday).toEqual({ date: '2026-08-13', wins: 1, losses: 1, topRegret: { sym: 'PLTR', excessPct: 6.1, gate: 'dead-zone-core' } })
+  })
+
+  it('?view=board yesterday is null with no graded history', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.yesterday).toBeNull()
+  })
+
   it('?view=board keeps the intraday-flags today-only guard', async () => {
     await seed('engine-board', { date: todayLondon(), board: [] })
     await seed('intraday-flags', { date: '2020-01-01', flags: [{ sym: 'OLD' }] })
