@@ -9,19 +9,14 @@
 
 import { Link } from 'wouter'
 import type { LedgerDay, JourneyCall } from '../../lib/apiViews'
-import type { PredOutcome } from '../../lib/api'
 import { rowKind, unsizedReason } from '../../lib/boardTaxonomy'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
-
-const signed = (pct: number) => `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%`
-
-function OutcomePill({ horizon, o }: { horizon: string; o: PredOutcome }) {
-  return (
-    <span className={`pill num ${o.excessPct >= 0 ? 'long' : 'short'}`}>
-      {horizon} {signed(o.excessPct)} vs SPY{o.stopped ? ' · stopped' : o.hit ? ' · hit' : ''}
-    </span>
-  )
-}
+import { CohortPill } from './CohortMarks'
+// The outcome pill is SHARED with PastCalls (crypto-v2 wave, finding 2): both
+// surfaces held a private copy hard-coding `10d … vs SPY`, which is false twice
+// over on a cohort row — wrong basis (absolute, nothing subtracted) and wrong
+// clock (14 / 29 crypto bars, weekends included). One component, one law.
+import { OutcomePill } from './OutcomePill'
 
 function LedgerCard({ c }: { c: JourneyCall }) {
   // the ledger never carries near misses (they never enter it — apiViews.ts's
@@ -37,6 +32,7 @@ function LedgerCard({ c }: { c: JourneyCall }) {
           {c.sym}
         </Link>
         <span className={`pill ${c.side}`}>{c.side === 'long' ? 'Long' : 'Short'}</span>
+        <CohortPill cohort={c.cohort} />
         {sized && (
           <span className="pill accent" aria-label={`Grade ${c.grade}`}>
             {c.grade}
@@ -47,8 +43,8 @@ function LedgerCard({ c }: { c: JourneyCall }) {
       </div>
       {c.thesis && <p className="rec-ledger-thesis">{c.thesis}</p>}
       <div className="rec-ledger-out">
-        {c.outcome10 && <OutcomePill horizon="10d" o={c.outcome10} />}
-        {c.outcome21 && <OutcomePill horizon="21d" o={c.outcome21} />}
+        {c.outcome10 && <OutcomePill lens={10} o={c.outcome10} cohort={c.cohort} />}
+        {c.outcome21 && <OutcomePill lens={21} o={c.outcome21} cohort={c.cohort} />}
         {!c.outcome10 && !c.outcome21 && <span className="cc-reason">Not yet matured — no graded outcome.</span>}
       </div>
       {/* the reason line: only the shapes the shared law names one for — a

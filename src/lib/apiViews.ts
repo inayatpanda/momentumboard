@@ -27,7 +27,21 @@ export interface BoardSlice {
   runStatus: { startedAt: number; updatedAt: number; phase: string; completedAt?: number; failedAt?: number; error?: string } | null
   riskState: { rung?: number; [k: string]: unknown } | null
   referenceBase: number | null
-  yesterday: { date: string; wins: number; losses: number; topRegret: { sym: string; excessPct: number; gate: string } | null } | null
+  yesterday: {
+    date: string
+    /** the whole day's census, both partitions — kept for one release so a slice
+     * cached by the previous bundle still paints something true */
+    wins: number
+    losses: number
+    /** …and the SPLIT, which is what YesterdayStrip reads: an equity verdict is
+     * an excess over SPY across ten sessions, a cohort verdict an absolute move
+     * across fourteen crypto bars, and one line summing both means neither.
+     * Optional because a cached slice may predate them; `crypto` is null on a
+     * day no cohort row graded. */
+    equity?: { wins: number; losses: number }
+    crypto?: { wins: number; losses: number } | null
+    topRegret: { sym: string; excessPct: number; gate: string } | null
+  } | null
 }
 
 export const getBoardSlice = () => apiGet<BoardSlice>('/api/engine?view=board')
@@ -121,6 +135,22 @@ export interface LearningSlice {
   roster: { entries: unknown[]; changes: unknown[] } | null
   channelCred: Record<string, { graded: number; hits: number; avgExcess: number | null }>
   calibration: { buckets: Record<string, unknown>; brier: unknown[]; seeded: boolean; modelVersion: string | null; referenceBase: number | null; evidence: unknown } | null
+  /** THE CRYPTO PARTITION'S OWN RECORD. `scorecard` and `calibration` above are
+   * the EQUITY partition's — the grading pass keeps every cohort row out of both
+   * — so without this the cohort's graded count, its independently earned rung
+   * and its whole calibration are invisible to the app. null when the partition
+   * has never moved; optional because a slice cached before it existed has none.
+   * No `hitRate`: `baseHitRate` returns a flat 0.5 under fifty outcomes, which
+   * is a designed cold-start floor and not a measurement — the pane computes its
+   * hit rate from the cohort's actual receipts instead. */
+  crypto?: {
+    gradedN: number
+    coldStartN: number
+    rung: number | null
+    gradedAtRung: number | null
+    sinceDate: string | null
+    calibration: { buckets: Record<string, unknown>; brier: unknown[]; seeded: boolean; modelVersion: string | null; referenceBase: number | null; evidence: unknown; basis: 'absolute' } | null
+  } | null
 }
 
 export const getLearning = () => apiGet<LearningSlice>('/api/engine?view=learning')
@@ -131,6 +161,11 @@ export interface VerdictRead {
   onDemand: true
   at: string
   unavailable?: true
+  /** The pair belongs to the crypto lane, so the on-demand desk — which runs the
+   * EQUITY factors — refused to read it (netlify/functions/lib/onDemandVerdict.ts).
+   * A different state from `unavailable`: the lane prices this pair every
+   * morning. Every numeric field is empty on such a verdict. */
+  contained?: true
   lean: 'long' | 'short' | 'none'
   core: number | null
   stage: string | null

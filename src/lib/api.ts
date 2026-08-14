@@ -406,6 +406,15 @@ export interface EnginePrediction {
   horizon?: 'week' | 'developing'
   // mirrors SetupFamily in shared/engine/types.ts — keep the two in step
   setup?: 'continuation' | 'reversal' | 'fade' | 'velocity' | null
+  // WHICH PARTITION PUBLISHED THIS ROW (Stage 1c Phase B). The server has been
+  // stamping it on board rows since the lane merged; without it here every board
+  // consumer was typed blind to a cohort it renders — `LedgerPrediction` has
+  // carried the same field, for the same reason, since the lane's own wave. It
+  // changes NO row-kind law: a cohort row is sized or unsized exactly as an
+  // equity row is. What it changes is what the numbers beside it MEAN — an
+  // absolute move over crypto bars, not an excess over SPY across sessions —
+  // and which explanation the row's `note` is carrying.
+  cohort?: 'crypto'
   evidence?: { coverage: number; famAgree: number; contract: boolean; contextPts: number; detail: string }
   factors: Record<string, { score: number | null; detail: string; weight: number }>
   overlay?: { flag: string; reason: string }

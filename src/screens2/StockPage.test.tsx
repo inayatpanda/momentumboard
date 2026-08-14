@@ -173,6 +173,37 @@ describe('StockPage', () => {
     expect(within(hero).getByText('141')).toHaveClass('num')
   })
 
+  // THE ROUTE DISCLAIMER (crypto-v2 wave, finding 3) — the same shared sentence
+  // CallCard prints, on the surface that leads with the levels.
+  it('a GEARED routed hero warns on decay and points the exit at the underlying levels', async () => {
+    await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow({ instrument: { ticker: '3LNV.L', leverage: 3 } }) }))
+    withRouter('NVDA')
+    const hero = await screen.findByLabelText("The engine's verdict")
+    expect(within(hero).getByText(/decay daily/i)).toBeInTheDocument()
+    expect(within(hero).getByText(/underlying/i)).toBeInTheDocument()
+  })
+
+  it('a 1× tracker hero says the exit is on the underlying and that it has NEITHER decay nor a hold clock', async () => {
+    await writeSlice('journey:BTC-USD', mkJourney({ sym: 'BTC-USD', boardRow: mkRow({ sym: 'BTC-USD', cohort: 'crypto', instrument: { ticker: 'BTCE.L', leverage: 1 } }) }))
+    withRouter('BTC-USD')
+    const hero = await screen.findByLabelText("The engine's verdict")
+    expect(within(hero).getByText(/tracker route/i)).toHaveTextContent(/no daily decay and no hold clock/i)
+    expect(within(hero).queryByText(/decay daily/i)).not.toBeInTheDocument()
+  })
+
+  // FINDING 6: the server stamps the cohort's whole explanation into `note` —
+  // the 14-bar calibration, the ~50-outcome cold start, the C/half-size designed
+  // floor, the missing tracker — and the hero showed an unexplained C.
+  it('a cohort hero is marked crypto and can explain why it is sized like this', async () => {
+    const note = 'crypto cohort — its own calibration, its own 14-bar clock; graded 12 of the ~50 outcomes it needs, so C at half size is the designed floor · paper only — no BTC-USD tracker configured yet'
+    await writeSlice('journey:BTC-USD', mkJourney({ sym: 'BTC-USD', boardRow: mkRow({ sym: 'BTC-USD', cohort: 'crypto', grade: 'C', paperOnly: true, note }) }))
+    withRouter('BTC-USD')
+    const hero = await screen.findByLabelText("The engine's verdict")
+    expect(within(hero).getByText('crypto')).toBeInTheDocument()
+    expect(within(hero).getByText(/why sized like this/i)).toBeInTheDocument()
+    expect(within(hero).getByText(note)).toBeInTheDocument()
+  })
+
   it('a watch-only row shows its own reason line and NEVER a grade or a probability', async () => {
     await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow({ watchOnly: true }) }))
     withRouter('NVDA')
@@ -359,6 +390,39 @@ describe('StockPage', () => {
       expect(await screen.findByText(/not in today's scan universe/i)).toBeInTheDocument()
     })
 
+    // THE CONTAINED READ (crypto-v2 wave, finding 1). The on-demand desk runs
+    // the EQUITY factors — momentum against SPY, equity windows, equity weights,
+    // the board's equity regime — so it now refuses a coin rather than printing
+    // a lean nothing measured. The hero must show the refusal AS a refusal:
+    // no lean, no core, no factor count, and never the "unavailable" sentence.
+    it('a contained crypto pair shows the lane’s own sentence — no lean, no core, not "unavailable"', async () => {
+      const contained: VerdictRead = {
+        sym: 'BTC-USD',
+        onDemand: true,
+        at: '2026-08-14T09:00:00Z',
+        contained: true,
+        lean: 'none',
+        core: null,
+        stage: null,
+        computed: [],
+        nulls: [],
+        lastClose: null,
+        atr: null,
+        note: 'The crypto lane reads this pair on its own clock — its own calibration, a 14-bar horizon and no benchmark at all. Ask the board, not the on-demand desk.',
+      }
+      await writeSlice('journey:BTC-USD', mkJourney({ sym: 'BTC-USD' }))
+      await writeSlice('verdict:BTC-USD', contained)
+      withRouter('BTC-USD')
+      const hero = await screen.findByLabelText("The engine's verdict")
+      expect(within(hero).getByText(contained.note)).toBeInTheDocument()
+      expect(within(hero).getByText(/belongs to the crypto lane/i)).toBeInTheDocument()
+      expect(within(hero).queryByText(/no lean/i)).not.toBeInTheDocument()
+      expect(within(hero).queryByText(/leans/i)).not.toBeInTheDocument()
+      expect(within(hero).queryByText(/factors? computed/i)).not.toBeInTheDocument()
+      expect(within(hero).queryByText(/could not price this name/i)).not.toBeInTheDocument()
+      expect(within(hero).queryByText(/^core$/)).not.toBeInTheDocument()
+    })
+
     it('add to watchlist writes the Dexie row and mirrors the config', async () => {
       withRouter('TSLA')
       fireEvent.click(await screen.findByRole('button', { name: /add to watchlist/i }))
@@ -425,6 +489,33 @@ describe('StockPage', () => {
       expect(within(past).getByText(/\+9\.2%/)).toHaveClass('num')
       expect(within(past).getByLabelText('Grade A')).toBeInTheDocument()
       expect(within(past).getByText('Ran to target on volume.')).toBeInTheDocument()
+    })
+
+    // FINDING 2, on the second receipt surface: PastCalls hard-coded `10d … vs
+    // SPY` too, and the two pills had already drifted apart in wording.
+    it('labels a cohort call’s outcomes as raw crypto bars, never as an excess over SPY', async () => {
+      await writeSlice(
+        'journey:BTC-USD',
+        mkJourney({
+          sym: 'BTC-USD',
+          calls: [
+            mkCall({
+              sym: 'BTC-USD',
+              cohort: 'crypto',
+              outcome10: { excessPct: 6.4, rawPct: 6.4, spyPct: 0, stopped: false, hit: true },
+              outcome21: { excessPct: -1.2, rawPct: -1.2, spyPct: 0, stopped: false, hit: false },
+            }),
+          ],
+        }),
+      )
+      withRouter('BTC-USD')
+      const past = await screen.findByLabelText('Past calls')
+      const pill = within(past).getByText(/14b/)
+      expect(pill).toHaveTextContent('+6.4%')
+      expect(pill).toHaveTextContent(/raw — no benchmark/)
+      expect(pill).not.toHaveTextContent(/SPY/)
+      expect(within(past).getByText(/29b/)).toBeInTheDocument()
+      expect(within(past).queryByText(/10d/)).not.toBeInTheDocument()
     })
 
     it('a wildcard call carries the label and the standing warning', async () => {

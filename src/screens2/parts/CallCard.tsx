@@ -14,6 +14,8 @@ import { rowKind, unsizedReason } from '../../lib/boardTaxonomy'
 import { fmtRiskPct, sizeLabel } from '../../lib/format'
 import { Sparkline } from '../../components/Sparkline'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
+import { CohortPill, WhySized } from './CohortMarks'
+import { RouteNote } from './RouteNote'
 
 // The row-kind law (which shape is this, and what does it say instead of a
 // grade) lives in src/lib/boardTaxonomy.ts — ONE copy, shared with VerdictHero.
@@ -34,12 +36,18 @@ export function CallCard({ row, spark }: { row: EnginePrediction; spark?: number
   const sizingNote = `risk ${fmtRiskPct(row.riskPct)}%${sizeLabel(row.riskPct, row.riskRung)}${
     row.instrument ? ` · ${row.instrument.ticker} ${row.instrument.leverage}x` : row.paperOnly ? ' · paper-only' : ''
   }`
-  return (
-    <Link href={`/stock/${row.sym}`} className="card pressable cc">
+  // THE COHORT'S OWN EXPLANATION (crypto-v2 wave, finding 6) is a <details>, and
+  // interactive content may not nest inside an anchor — so a cohort row wraps
+  // the link in the card instead of BEING the card, and the disclosure sits
+  // beside it. An equity row's markup is byte-identical to what it always was.
+  const cohortNote = row.cohort === 'crypto' && row.note ? <WhySized cohort={row.cohort} note={row.note} /> : null
+  const card = (
+    <Link href={`/stock/${row.sym}`} className={cohortNote ? 'pressable cc' : 'card pressable cc'}>
       <div className="cc-top">
         <span className="cc-sym">
           {row.sym}
           <span className={`pill ${row.side}`}>{row.side === 'long' ? 'Long' : 'Short'}</span>
+          <CohortPill cohort={row.cohort} />
           {row.name && <span className="cc-name">{row.name}</span>}
         </span>
         {sized && (
@@ -79,6 +87,16 @@ export function CallCard({ row, spark }: { row: EnginePrediction; spark?: number
       ) : (
         <p className="cc-reason">{unsizedReason(kind, row.belowBase)}</p>
       )}
+      {/* the levels above are the UNDERLYING's, whatever the ticker beside them
+          says — and only a geared route decays (parts/RouteNote.tsx) */}
+      <RouteNote instrument={row.instrument} />
     </Link>
+  )
+  if (!cohortNote) return card
+  return (
+    <div className="card cc-wrap">
+      {card}
+      {cohortNote}
+    </div>
   )
 }

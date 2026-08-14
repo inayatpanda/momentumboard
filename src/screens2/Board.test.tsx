@@ -120,6 +120,27 @@ describe('Board', () => {
     expect(screen.getAllByLabelText(/^grade/i)).toHaveLength(1)
   })
 
+  // THE COHORT ON THE BOARD (crypto-v2 wave, finding 7). `EnginePrediction` had
+  // no `cohort` field at all, though the server has been stamping it since the
+  // lane merged — so every board consumer was typed blind to it and no fixture
+  // had ever rendered one. Both shapes here, sized and thin.
+  it('renders cohort rows on both board shapes, each marked crypto, with the row-kind law untouched', async () => {
+    const sizedCoin = mkRow({ id: 'c1', sym: 'BTC-USD', name: 'Bitcoin', cohort: 'crypto', grade: 'C', watchOnly: false, note: 'crypto cohort — its own 14-bar clock' })
+    const watchCoin = mkRow({ id: 'c2', sym: 'ETH-USD', name: 'Ethereum', cohort: 'crypto', watchOnly: true, horizon: 'week', composite: 33 })
+    const equity = mkRow({ id: 'e1', sym: 'NVDA', watchOnly: false, grade: 'A' })
+    await seedBoard([sizedCoin, watchCoin, equity])
+    withRouter(<Board />)
+
+    expect(await screen.findByText('BTC-USD')).toBeInTheDocument()
+    expect(screen.getByText('ETH-USD')).toBeInTheDocument()
+    // the mark is on BOTH cohort rows and on neither equity row
+    expect(screen.getAllByText('crypto')).toHaveLength(2)
+    // …and a cohort stamp changes nothing about which rows may carry a letter:
+    // the sized coin keeps its C, the watch coin has none.
+    expect(screen.getByLabelText('Grade C')).toBeInTheDocument()
+    expect(screen.getAllByLabelText(/^grade/i)).toHaveLength(2) // the coin's C and NVDA's A
+  })
+
   it('renders refusals in server order with gate labels, and no grade/probability text anywhere in the section', async () => {
     const refusals = [
       mkFunnelRow({ key: 'ZZZ:long', gate: 'slot-cut', core: 10 }),

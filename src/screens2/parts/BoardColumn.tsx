@@ -27,6 +27,7 @@ import { getBoardSlice, getFunnel } from '../../lib/apiViews'
 import type { EnginePrediction } from '../../lib/api'
 import { splitBoardRows } from '../../lib/boardTaxonomy'
 import { CallCard } from './CallCard'
+import { CohortPill } from './CohortMarks'
 import { RefusalRow } from './RefusalRow'
 
 // one ranked, unsized row: sym, side, a short note (stage word for
@@ -38,6 +39,9 @@ function BoardThinRow({ p, note, conviction }: { p: EnginePrediction; note: stri
       <span className="board-row-main">
         <b>{p.sym}</b>
         <span className={`pill ${p.side}`}>{p.side === 'long' ? 'Long' : 'Short'}</span>
+        {/* which partition measured this row (crypto-v2 wave, finding 7) — a
+            label, never a grade: the row-kind law is untouched by it */}
+        <CohortPill cohort={p.cohort} />
       </span>
       <span className="board-row-detail">{note}</span>
       {conviction != null && <span className="num board-row-core">{Math.round(conviction)}</span>}

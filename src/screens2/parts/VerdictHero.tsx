@@ -18,6 +18,8 @@ import { rowKind, unsizedReason } from '../../lib/boardTaxonomy'
 import { GATE_LABELS } from '../../lib/gateLabels'
 import { fmtRiskPct, sizeLabel } from '../../lib/format'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
+import { CohortPill, WhySized } from './CohortMarks'
+import { RouteNote } from './RouteNote'
 
 const sideWord = (s: 'long' | 'short') => (s === 'long' ? 'Long' : 'Short')
 
@@ -99,6 +101,7 @@ export function VerdictHero({
         {Q}
         <div className="sp-hero-top">
           <span className={`sp-side ${row.side}`}>Yes — {sideWord(row.side)}</span>
+          <CohortPill cohort={row.cohort} />
           <span className="pill accent" aria-label={`Grade ${row.grade}`}>
             {row.grade}
           </span>
@@ -120,6 +123,13 @@ export function VerdictHero({
           {sizeLabel(row.riskPct, row.riskRung)}
           {row.instrument ? ` · ${row.instrument.ticker} ${row.instrument.leverage}x` : row.paperOnly ? ' · paper-only' : ''}
         </p>
+        {/* the shared route disclaimer: the levels above are the UNDERLYING's,
+            and only a geared route decays (parts/RouteNote.tsx) */}
+        <RouteNote instrument={row.instrument} />
+        {/* …and, on a cohort row, the engine's own account of why it is sized
+            like this — its 14-bar calibration, the cold start, the designed
+            C-at-half-size floor, the missing tracker (parts/CohortMarks.tsx) */}
+        <WhySized cohort={row.cohort} note={row.note} />
         {row.thesis && <p className="sp-thesis">{row.thesis}</p>}
       </>,
     )
@@ -132,8 +142,10 @@ export function VerdictHero({
         {Q}
         <div className="sp-hero-top">
           <span className={`sp-side ${row.side}`}>{sideWord(row.side)}</span>
+          <CohortPill cohort={row.cohort} />
         </div>
         <p className="cc-reason">{unsizedReason(kind, row.belowBase)}</p>
+        <WhySized cohort={row.cohort} note={row.note} />
         {wildcard}
         <div className="convbar">
           <i style={{ width: `${Math.max(0, Math.min(100, Math.abs(row.composite)))}%` }} />
@@ -216,7 +228,15 @@ export function VerdictHero({
     return shell(
       <>
         {Q}
-        {verdict.unavailable ? (
+        {verdict.contained ? (
+          // THE CONTAINED PAIR (crypto-v2 wave, finding 1). The on-demand desk
+          // runs the EQUITY factors — momentum against SPY, equity windows,
+          // equity weights, the board's equity regime — so it refuses a coin
+          // rather than publishing a lean nothing ever measured. NOT the
+          // "could not price this name" sentence: the lane prices this pair
+          // every morning, and the note below says which door to use.
+          <p className="sp-verdict-line">Not read here — this pair belongs to the crypto lane.</p>
+        ) : verdict.unavailable ? (
           <p className="sp-verdict-line">No read available — the engine could not price this name right now.</p>
         ) : (
           <>

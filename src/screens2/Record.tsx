@@ -15,6 +15,7 @@ import { getLearning, getLedgerDays } from '../lib/apiViews'
 import type { LearningSlice, LedgerDay } from '../lib/apiViews'
 import type { EngineData } from '../lib/api'
 import { CalibrationPlot } from '../components/CalibrationPlot'
+import { cryptoLedgerSummary, flattenLedger } from '../lib/ledgerStats'
 import { LedgerDayCards } from './parts/LedgerDayCards'
 import { Regrets } from './parts/Regrets'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
@@ -41,8 +42,13 @@ function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
   }
   return (
     <section aria-label="Scorecard">
+      {/* NAMED AS THE EQUITY PARTITION (crypto-v2 wave, finding 4). Every number
+          under this header is an excess against SPY over ten sessions, and the
+          grading pass keeps every cohort row out of `engine-scorecard` on
+          purpose — so an unqualified "Scorecard" reads as the whole record when
+          it is one partition of it. The cohort's own panel sits below. */}
       <p className="sec-label">
-        Scorecard — <span className="num">{scorecard.totalGraded}</span> graded
+        Equity — excess vs SPY · <span className="num">{scorecard.totalGraded}</span> graded
       </p>
       <div className="rec-tiles">
         {Object.entries(scorecard.byGrade).map(([key, s]) => (
@@ -57,6 +63,59 @@ function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
           </div>
         ))}
       </div>
+    </section>
+  )
+}
+
+/** THE COHORT'S OWN PANE (crypto-v2 wave, finding 4).
+ *
+ * The crypto partition is excluded from every equity aggregate on this page —
+ * server-side from `engine-scorecard`, client-side from every mean in
+ * ledgerStats.ts — because its outcome is an ABSOLUTE side-adjusted move over
+ * fourteen crypto bars and the equity ones are excesses over SPY across ten
+ * sessions. Averaging the two produces a number that answers neither question.
+ * A population removed from every pane and given none of its own is a population
+ * nobody can audit, so this is that pane.
+ *
+ * TWO SOURCES, deliberately. The hit rate and the mean raw move are rolled from
+ * the cohort's own RECEIPTS (`cryptoLedgerSummary`, the same rows the cards
+ * below show); the graded count and the rung come from the partition's own
+ * blobs, because those are months-scale facts the visible window cannot see. The
+ * blob's own base RATE is not used: `baseHitRate` returns a flat 0.5 under fifty
+ * outcomes, which is a designed cold-start floor, not a measurement. */
+function CryptoPanel({ crypto, rows }: { crypto: NonNullable<LearningSlice['crypto']>; rows: ReturnType<typeof flattenLedger> }) {
+  const s = cryptoLedgerSummary(rows)
+  const cold = crypto.gradedN < crypto.coldStartN
+  return (
+    <section aria-label="Crypto scorecard">
+      <p className="sec-label">Crypto — raw, no benchmark</p>
+      <div className="rec-tiles">
+        <div className="card rec-tile">
+          <span className="rec-tile-label">Hit rate</span>
+          <span className="num rec-tile-n">{s.graded ? pct(s.hits, s.graded) : '—'}</span>
+          <span className="num rec-tile-sub">{s.graded ? `${s.hits} of ${s.graded} graded here` : 'nothing graded in this window'}</span>
+        </div>
+        <div className="card rec-tile">
+          <span className="rec-tile-label">Mean move</span>
+          <span className="num rec-tile-n">{s.avgRaw10 == null ? '—' : fmtExcess(s.avgRaw10)}</span>
+          <span className="rec-tile-sub">side-adjusted, over 14 bars</span>
+        </div>
+        <div className="card rec-tile">
+          <span className="rec-tile-label">Own outcomes</span>
+          <span className="num rec-tile-n">{crypto.gradedN}</span>
+          <span className="rec-tile-sub">of the ~{crypto.coldStartN} its base rate needs</span>
+        </div>
+        <div className="card rec-tile">
+          <span className="rec-tile-label">Its own rung</span>
+          <span className="num rec-tile-n">R{crypto.rung ?? 0}</span>
+          <span className="rec-tile-sub">earned on this cohort alone</span>
+        </div>
+      </div>
+      <p className="cc-reason">
+        A 24/7 asset class has no five-day week and no index to be measured against, so this cohort is graded on the move itself — absolute, nothing
+        subtracted, over fourteen crypto bars.
+        {cold && ' Until it has watched itself about fifty times, every row grades C at half size: that is a designed floor, not a verdict on the asset.'}
+      </p>
     </section>
   )
 }
@@ -91,10 +150,11 @@ function Ledger30({ fallback }: { fallback: LedgerDay[] }) {
   return <LedgerDayCards days={data?.days ?? fallback} />
 }
 
-function LedgerSection() {
+/** `days` is passed IN rather than fetched here (crypto-v2 wave): the crypto
+ * panel rolls the same receipts, and two components calling `useSlice` on one
+ * key would revalidate `ledger:7` twice for one screen. */
+function LedgerSection({ days }: { days: LedgerDay[] }) {
   const [wide, setWide] = useState(false)
-  const { data } = useSlice('ledger:7', () => getLedgerDays(7))
-  const days = data?.days ?? []
   return (
     <section aria-label="The ledger">
       <p className="sec-label">The ledger — the receipts</p>
@@ -110,6 +170,8 @@ function LedgerSection() {
 
 export default function Record() {
   const { data: learning } = useSlice('learning', getLearning)
+  const { data: ledger } = useSlice('ledger:7', () => getLedgerDays(7))
+  const days = ledger?.days ?? []
   return (
     <div className="rec2">
       <h1>Track record</h1>
@@ -122,10 +184,14 @@ export default function Record() {
       ) : (
         <>
           <ScorecardTiles scorecard={learning.scorecard as unknown as Scorecard | null} />
+          {/* the cohort's own numbers, beside the equity ones and never inside
+              them — rendered only once the partition has actually moved, so a
+              reader who has never watched a coin sees nothing about one */}
+          {learning.crypto && <CryptoPanel crypto={learning.crypto} rows={flattenLedger(days)} />}
           <CalibrationSection calibration={learning.calibration} />
         </>
       )}
-      <LedgerSection />
+      <LedgerSection days={days} />
       <Regrets regrets={learning?.regrets ?? null} />
     </div>
   )

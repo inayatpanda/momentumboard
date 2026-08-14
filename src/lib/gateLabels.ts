@@ -11,7 +11,15 @@ import type { GateCode } from '../../shared/engine/types'
 
 export const GATE_LABELS = {
   'not-candidate': "never made the day's list",
-  'crypto-contained': "crypto — outside this engine's market",
+  // NEUTRAL ABOUT THE LANE, deliberately (crypto-v2 wave, finding 9). "outside
+  // this engine's market" was written in Phase A, when the engine refused every
+  // coin outright and it was true. The lane merged; this gate now fires for
+  // three different reasons — the lever is off, the pair is outside the
+  // partition's universe, or the reader has not watchlisted a pair the lane
+  // DOES serve — and the trace detail printed straight after this label says
+  // which. A label claiming the engine has no crypto market contradicts its own
+  // next sentence. This one is true of all three.
+  'crypto-contained': 'not admitted to the crypto lane',
   trimmed: 'cut in the roster trim',
   'no-candles': 'no chart data',
   'no-data': 'no factor could score it',

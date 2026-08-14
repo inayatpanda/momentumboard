@@ -58,6 +58,17 @@ describe('GATE_LABELS', () => {
     }
   })
 
+  // FINDING 9 (crypto-v2 wave): "outside this engine's market" was written in
+  // Phase A, when it was true — the engine refused every coin. Since the lane
+  // merged, the trace detail that follows this label can say the lane SERVES
+  // this pair and the reader simply has not watchlisted it, so the label
+  // contradicted the sentence printed next to it. Neutral: the lane exists, and
+  // this name was not admitted to it.
+  it('crypto-contained is neutral about the lane, never a claim that the engine has no crypto market', () => {
+    expect(GATE_LABELS['crypto-contained']).toBe('not admitted to the crypto lane')
+    expect(GATE_LABELS['crypto-contained']).not.toMatch(/outside/i)
+  })
+
   it('specific honest phrasings the reviewer will spot-check', () => {
     expect(GATE_LABELS['dead-zone-core']).toMatch(/conviction/i)
     expect(GATE_LABELS['entry-chase']).toMatch(/chase/i)

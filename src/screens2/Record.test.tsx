@@ -137,6 +137,66 @@ describe('Record', () => {
       expect(within(sc).queryByText('Grade shadow')).not.toBeInTheDocument()
       expect(within(sc).queryByText('Grade wildcard')).not.toBeInTheDocument()
     })
+
+    // THE SCORECARD IS THE EQUITY PARTITION'S (crypto-v2 wave, finding 4). Every
+    // number in it is an excess against SPY over ten sessions, and the grading
+    // pass keeps every cohort row out of it on purpose — so the header has to
+    // say which population it is about, or a crypto reader reads it as the whole.
+    it('names the scorecard as the EQUITY partition, and says what its numbers are', async () => {
+      await seedLearning(mkLearning({ scorecard: { byGrade: { A: { n: 2, hits: 1, sumExcess: 3 } }, byRegime: {}, overlays: {}, brierTail: [], totalGraded: 2 } }))
+      withRouter()
+      const sc = await screen.findByLabelText('Scorecard')
+      expect(within(sc).getByText(/equity/i)).toBeInTheDocument()
+      expect(within(sc).getByText(/excess vs SPY/i)).toBeInTheDocument()
+    })
+  })
+
+  // THE COHORT'S OWN PANE (finding 4). Excluded from every equity aggregate and
+  // given none of its own, the crypto cohort's hit rate, average raw return,
+  // calibration and independently earned rung all disappear at cutover.
+  describe('the crypto panel', () => {
+    const cryptoLearning = () =>
+      mkLearning({
+        scorecard: { byGrade: { A: { n: 2, hits: 1, sumExcess: 3 } }, byRegime: {}, overlays: {}, brierTail: [], totalGraded: 2 },
+        crypto: {
+          gradedN: 12,
+          coldStartN: 50,
+          rung: 0,
+          gradedAtRung: 12,
+          sinceDate: '2026-08-01',
+          calibration: { buckets: {}, brier: [0.24], seeded: false, modelVersion: null, referenceBase: null, evidence: null, basis: 'absolute' },
+        },
+      })
+
+    it('renders a distinct raw/no-benchmark panel with the cohort’s own numbers', async () => {
+      await seedLearning(cryptoLearning())
+      await seedLedger('ledger:7', [
+        {
+          date: '2026-08-10',
+          predictions: [
+            mkCall({ id: 'k1', sym: 'BTC-USD', cohort: 'crypto', outcome10: { excessPct: 6.4, rawPct: 6.4, spyPct: 0, stopped: false, hit: true } }),
+            mkCall({ id: 'k2', sym: 'ETH-USD', cohort: 'crypto', outcome10: { excessPct: -2.4, rawPct: -2.4, spyPct: 0, stopped: false, hit: false } }),
+            // the equity row must not touch a single crypto number
+            mkCall({ id: 'e1', sym: 'NVDA', outcome10: { excessPct: 20, rawPct: 21, spyPct: 1, stopped: false, hit: true } }),
+          ],
+        },
+      ])
+      withRouter()
+      const panel = await screen.findByLabelText('Crypto scorecard')
+      expect(within(panel).getByText(/raw, no benchmark/i)).toBeInTheDocument()
+      expect(within(panel).getByText(/50%/)).toBeInTheDocument() // 1 of 2 graded — the cohort's own rows only
+      expect(within(panel).getByText(/\+2.0%/)).toBeInTheDocument() // mean RAW move, (6.4 + −2.4) / 2
+      expect(within(panel).getByText(/12/)).toBeInTheDocument() // its own graded outcomes, against the ~50 cold start
+      expect(within(panel).getByText(/R0/)).toBeInTheDocument() // the rung it earned itself
+      expect(within(panel).queryByText(/SPY/i)).not.toBeInTheDocument() // there is no benchmark in this partition
+    })
+
+    it('renders no crypto panel at all when the partition has never moved', async () => {
+      await seedLearning(mkLearning({ scorecard: { byGrade: { A: { n: 2, hits: 1, sumExcess: 3 } }, byRegime: {}, overlays: {}, brierTail: [], totalGraded: 2 } }))
+      withRouter()
+      await screen.findByLabelText('Scorecard')
+      expect(screen.queryByLabelText('Crypto scorecard')).not.toBeInTheDocument()
+    })
   })
 
   describe('ledger day cards', () => {
@@ -151,6 +211,32 @@ describe('Record', () => {
       expect(within(ledger).queryByLabelText('Grade B')).not.toBeInTheDocument()
       // the watch row still carries the shared law's honest reason line
       expect(within(ledger).getByText(/watch — no size yet/i)).toBeInTheDocument()
+    })
+
+    // THE RECEIPT'S OWN BASIS (crypto-v2 wave, finding 2). `10d … vs SPY` is
+    // hard-coded on both v2 receipt surfaces. On a cohort row those digits are
+    // an ABSOLUTE side-adjusted move over 14 / 29 CRYPTO BARS — weekends
+    // included — and nothing was ever subtracted, so the equity label is a claim
+    // the engine never made (src/components/LedgerCard.tsx made this branch).
+    it('labels a cohort row’s outcomes as raw crypto bars, never as an excess over SPY', async () => {
+      const coin = mkCall({
+        id: 'k1',
+        sym: 'BTC-USD',
+        cohort: 'crypto',
+        outcome10: { excessPct: 6.4, rawPct: 6.4, spyPct: 0, stopped: false, hit: true },
+        outcome21: { excessPct: -1.2, rawPct: -1.2, spyPct: 0, stopped: false, hit: false },
+      })
+      const equity = mkCall({ id: 'e1', sym: 'NVDA', outcome10: { excessPct: 4.2, rawPct: 5, spyPct: 0.8, stopped: false, hit: true } })
+      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [coin, equity] }])
+      withRouter()
+      const ledger = await screen.findByLabelText('The ledger')
+      const coinPill = await within(ledger).findByText(/14b/)
+      expect(coinPill).toHaveTextContent('+6.4%')
+      expect(coinPill).toHaveTextContent(/raw — no benchmark/)
+      expect(coinPill).not.toHaveTextContent(/SPY/)
+      expect(within(ledger).getByText(/29b/)).toHaveTextContent('−1.2%')
+      // the equity row keeps its own sentence, unchanged
+      expect(within(ledger).getByText(/10d/)).toHaveTextContent(/vs SPY/)
     })
 
     it('renders the post-mortem sentence on the row that carries one', async () => {

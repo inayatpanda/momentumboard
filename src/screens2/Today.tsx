@@ -15,6 +15,7 @@ import { splitBoardRows } from '../lib/boardTaxonomy'
 import { NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
 import { CountsRail } from './parts/CountsRail'
+import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
 import { YesterdayStrip } from './parts/YesterdayStrip'
 
 export default function Today() {
@@ -48,6 +49,11 @@ export default function Today() {
           ))}
         </div>
       )}
+      {/* the morning's setups at today's prices — the board slice has always
+          carried them and no v2 screen read them (crypto-v2 wave, finding 8).
+          Under the cards, because they are those same cards' levels being
+          reached, never new calls. */}
+      <IntradayFlagsStrip blob={data?.intradayFlags ?? null} />
       <CountsRail board={rows} />
       <YesterdayStrip yesterday={data?.yesterday ?? null} />
     </div>

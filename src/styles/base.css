@@ -323,6 +323,97 @@
   color: var(--text-dim);
 }
 
+/* --- the crypto cohort's marks (crypto-v2 wave) ----------------------------
+   A cohort row's letter, percentage and size were struck on a different
+   partition (its own calibration, its own 14-bar clock, no benchmark), so it
+   carries a quiet label saying which — and, because that story is long and
+   identical on every cohort row, a disclosure rather than a permanent
+   paragraph. `.cc-wrap` exists because a <details> is interactive content and
+   may not nest inside the card's own <a>: a cohort row wraps the link instead
+   of being it. Tokens only. */
+.v2 .pill.cc-cohort {
+  color: var(--accent-soft);
+}
+.v2 .cc-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 .cc-wrap > a.cc {
+  color: inherit;
+}
+.v2 .cc-why {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.v2 .cc-why > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+.v2 .cc-why > summary::-webkit-details-marker {
+  display: none;
+}
+.v2 .cc-why > summary::after {
+  content: ' ▾';
+}
+.v2 .cc-why[open] > summary::after {
+  content: ' ▴';
+}
+.v2 .cc-why > .cc-reason {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* the route disclaimer, on every surface that prints levels beside a tracker */
+.v2 .cc-route {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+/* --- intraday flags ---------------------------------------------------------
+   The morning's setups at today's prices (parts/IntradayFlagsStrip.tsx) —
+   never new calls, so they are deliberately thinner than a CallCard. */
+.v2 .if-strip {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 .if-strip .sec-label,
+.v2 .if-strip .cc-reason {
+  margin: 0;
+}
+.v2 .if-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+}
+.v2 .if-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.v2 .if-row-sym {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.v2 .if-row-at {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.v2 .if-strip-empty {
+  margin: 0 0 16px;
+  font-size: 12px;
+}
+
 /* --- board -------------------------------------------------------------------
    The Board screen (plan Task 14): the whole engine's mind as one
    conviction-ranked scroll. Sized rows reuse CallCard/.today-cards as-is;

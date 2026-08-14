@@ -15,8 +15,10 @@
 import { useState } from 'react'
 import { useSlice } from '../../lib/useSlice'
 import { getJourney, type JourneyCall } from '../../lib/apiViews'
-import type { PredOutcome } from '../../lib/api'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
+import { CohortPill } from './CohortMarks'
+// SHARED with LedgerDayCards (crypto-v2 wave, finding 2) — see that file's note.
+import { OutcomePill } from './OutcomePill'
 
 /** A ledger row that was never a live size carries no honest letter — and
  * `watchOnly`/`belowBase` are two more ways a row never got one (Task 17
@@ -27,16 +29,6 @@ import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
  * the record that can tell an old watch row from an old sized one. */
 const wasSized = (c: JourneyCall) => !c.shadow && !c.observation && !c.watchOnly && !c.belowBase
 
-const signed = (pct: number) => `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%`
-
-function OutcomePill({ horizon, o }: { horizon: string; o: PredOutcome }) {
-  return (
-    <span className={`pill num ${o.excessPct >= 0 ? 'long' : 'short'}`}>
-      {horizon} {signed(o.excessPct)} vs SPY{o.stopped ? ' · stopped' : o.hit ? ' · hit' : ''}
-    </span>
-  )
-}
-
 function CallRow({ c }: { c: JourneyCall }) {
   const pm = c.postMortem?.sentence ?? c.postMortem?.detail ?? null
   return (
@@ -44,6 +36,7 @@ function CallRow({ c }: { c: JourneyCall }) {
       <div className="sp-call-top">
         <span className="num sp-call-date">{c.date}</span>
         <span className={`pill ${c.side}`}>{c.side === 'long' ? 'Long' : 'Short'}</span>
+        <CohortPill cohort={c.cohort} />
         {wasSized(c) && (
           <span className="pill accent" aria-label={`Grade ${c.grade}`}>
             {c.grade}
@@ -53,8 +46,8 @@ function CallRow({ c }: { c: JourneyCall }) {
         {c.observation && <span className="pill">observation — no ISA route</span>}
       </div>
       <div className="sp-call-out">
-        {c.outcome10 && <OutcomePill horizon="10d" o={c.outcome10} />}
-        {c.outcome21 && <OutcomePill horizon="21d" o={c.outcome21} />}
+        {c.outcome10 && <OutcomePill lens={10} o={c.outcome10} cohort={c.cohort} />}
+        {c.outcome21 && <OutcomePill lens={21} o={c.outcome21} cohort={c.cohort} />}
         {!c.outcome10 && !c.outcome21 && <span className="cc-reason">Not yet matured — no graded outcome.</span>}
       </div>
       {c.wildcard && (
