@@ -579,6 +579,15 @@ describe('the paper is told what it lost — the two accountability keys and whe
     expect(voice.brief).toMatch(/never describe it as a call/)
   })
 
+  it('the ideas brief scopes the decay warning to GEARED routes — a 1× tracker does not decay and has no hold clock [1c-R]', () => {
+    const ideas = SECTIONS.find(s => s.key === 'ideas')!
+    // the caveat is load-bearing prose: without it the writer warns every
+    // routed row about daily rebalance decay, which is FALSE about a 1× spot
+    // or inverse tracker — the exact overstatement 1c-R exists to remove
+    expect(ideas.brief).toMatch(/ONLY when the leverage is above 1/)
+    expect(ideas.brief).toMatch(/1x entry is a plain spot\/inverse tracker/)
+  })
+
   it('the writer is TOLD about them, with the unchecked caveat attached — data with no instruction is the same silence', () => {
     const voice = SECTIONS.find(s => s.key === 'voice')!
     expect(voice.brief).toContain('postMortems')

@@ -212,7 +212,10 @@ const baseSymOf = (sym: string): string => sym.split('.')[0].split('-')[0]
  * ETP, so a name with neither mapping is unroutable. */
 const routableShort = (sym: string, levMap: LevMap): boolean => {
   const m = levMap[sym.toUpperCase()]
-  return !!(m?.short2x || m?.short3x)
+  // short1x counts (1c-R) — one definition of "routable short" across the
+  // engine, or the wildcard refuses to spend its slot on a name the board
+  // would happily route
+  return !!(m?.short1x || m?.short2x || m?.short3x)
 }
 
 /** THE THINNESS OF ONE GATE: `sidedCost + sidedSaved + unchecked`.

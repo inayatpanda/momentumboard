@@ -2776,7 +2776,11 @@ export async function buildBoard(
   const publishedKeys = new Set(board.map(b => `${b.sym.toUpperCase()}:${b.side}`))
   const routableShort = (sym: string) => {
     const m = (cfg.levMap ?? {})[sym.toUpperCase()]
-    return !!(m?.short2x || m?.short3x)
+    // short1x counts (1c-R): an inverse 1x tracker is a route an ISA can place,
+    // and "routable short" must mean ONE thing — publishCall's unshortable test
+    // already counts it, and a near-miss printing "no ISA route" about a name
+    // the board would route is the split this line closes
+    return !!(m?.short1x || m?.short2x || m?.short3x)
   }
   const nearMissRows: Prediction[] = []
   /** Why a side carries nothing tradeable: 'gates' (nothing cleared them),
@@ -3361,7 +3365,12 @@ export async function buildBoard(
         // instrument `publishCall` will mint for the row (a geared ticket needs
         // a full-size row, and the cohort cap forbids one until the record
         // earns it). Asking the same question the mint asks is what keeps the
-        // voice and the row's `paperOnly` from ever disagreeing.
+        // voice and the row's `paperOnly` from ever disagreeing — with ONE
+        // known ledger-only exception (1c-R review): a SHADOWED crypto row
+        // sizes to zero, so the mint's `sizedFraction > 0` gate leaves it
+        // `paperOnly: true, instrument: null` while this note carries no
+        // paper-only sentence. The board never shows shadows, so no reader
+        // sees the pair disagree; recorded here rather than special-cased.
         drafts.push({ sym, call: drafted, routed: !!spotInstrument(drafted.side, sym, cfg.levMap ?? {}) })
       }
 

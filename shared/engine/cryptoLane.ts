@@ -286,7 +286,7 @@ export const CRYPTO_NEWS_WEIGHT_MULT = 0.5
  *
  * Frozen because nothing may nudge it: `migrateWeights`/`rebaseWeights`/the IC
  * loop all operate on the stored blob, and this is not one. */
-export const CRYPTO_WEIGHTS: Record<FactorName, number> = Object.freeze({
+export const CRYPTO_WEIGHTS: Readonly<Record<FactorName, number>> = Object.freeze({
   ...DEFAULT_WEIGHTS,
   news: DEFAULT_WEIGHTS.news * CRYPTO_NEWS_WEIGHT_MULT,
 })
