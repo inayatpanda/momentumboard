@@ -25,6 +25,19 @@ export function boardEvidenceLine(
   return `Engine board (${date}): ${kind}, ${row.side}, grade ${row.grade}, p=${Math.round(row.probability * 100)}%, entry ${row.entry} / stop ${row.stop} / target ${row.target} — ${row.note}.`
 }
 
+/** CX-20: decode the v2 Ask sheet's `context` param (the journey page's own
+ * hero-state summary). Fail-soft — an absent or malformed param is simply "no
+ * context", never a 400; a reader must not lose the whole answer because one
+ * param round-tripped oddly. */
+export function parseAskContext(raw: string | null): unknown | null {
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
 export async function routeRequest(
   url: URL,
   headers: Headers,
@@ -283,8 +296,17 @@ export async function routeRequest(
     // but grounded in measured chart evidence computed right here — stage,
     // setups, RSI/RVOL, returns, capacity, regime, the engine's live call and
     // the latest headlines. The model narrates the numbers; it never invents them.
+    //
+    // CX-20: the v2 Ask sheet ALWAYS carries the page's own verdict state as a
+    // `context` param — a compact JSON summary of exactly what the hero card is
+    // showing (sized/refused/on-demand, grade-or-not, core/lean, gate label,
+    // live open-trace verdict). The 400-char clamp below is for `q` alone; a
+    // reader typing a long question must never truncate the engine's own
+    // evidence. Optional and additive — the legacy AskDesk client never sends
+    // it, and that call is unchanged.
     const symbol = url.searchParams.get('symbol')?.toUpperCase()
     const q = url.searchParams.get('q')?.slice(0, 400)
+    const askContext = parseAskContext(url.searchParams.get('context'))
     if (!symbol || !q) return json(400, { ok: false, error: 'missing-params' })
     try {
       const llmEnv = await llmEnvForCaller()
@@ -323,8 +345,15 @@ export async function routeRequest(
         boardEvidenceLine(boardBlob?.date ?? '', call),
         news.length ? `Recent headlines: ${news.slice(0, 4).map(n => n.title).join(' | ')}.` : 'No notable recent headlines.',
       ].join('\n- ')
+      // The pinned block: when the v2 sheet sent its own hero-state context,
+      // it is inserted WHOLE (never truncated — only `q` above is clamped) and
+      // named explicitly as ground truth, so the model narrates it rather than
+      // reasoning its way to a different verdict from the evidence lines below.
+      const contextBlock = askContext
+        ? `\n\nThe engine's verdict below is ground truth — narrate and answer within it; do not contradict it:\n${JSON.stringify(askContext)}\n`
+        : ''
       const prompt = `You are the StreetSignal research desk — a seasoned, plain-spoken swing-trading analyst. A reader asks about ${symbol}: "${q}"
-
+${contextBlock}
 Ground your answer ONLY in this measured evidence (do not invent numbers):
 - ${evidence}
 

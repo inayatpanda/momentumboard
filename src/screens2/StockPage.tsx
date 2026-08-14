@@ -31,6 +31,8 @@ import { FactorVotes } from './parts/FactorVotes'
 import { FunnelPath, funnelDayKind, isPublishedGate } from './parts/FunnelPath'
 import { PastCalls } from './parts/PastCalls'
 import { OpenTraceCard } from './parts/OpenTraceCard'
+import { AskSheet } from './parts/AskSheet'
+import type { OpenTraceEntry } from '../lib/api'
 
 const PriceChart = lazy(() => import('../components/PriceChart').then(m => ({ default: m.PriceChart })))
 
@@ -50,9 +52,10 @@ const hostOf = (url: string) => {
  * never pays for it. It replaces THREE sections at once: the hero, the factor
  * votes (from `computed`/`nulls`), and the funnel path, which cannot exist
  * for a name that was never in the funnel. */
-function OnDemandRead({ sym }: { sym: string }) {
+function OnDemandRead({ sym, openTrace }: { sym: string; openTrace?: OpenTraceEntry | null }) {
   const { data } = useSlice(`verdict:${sym}`, () => getVerdict(sym))
   const [added, setAdded] = useState(false)
+  const [askOpen, setAskOpen] = useState(false)
   const addToWatchlist = async () => {
     await db.watchlist.put({ symbol: sym, addedAt: Date.now(), riskClass: 'normal' })
     setAdded(true)
@@ -62,6 +65,10 @@ function OnDemandRead({ sym }: { sym: string }) {
   return (
     <>
       <VerdictHero verdict={data} onWatch={addToWatchlist} watched={added} />
+      <button type="button" className="ask-open-btn" onClick={() => setAskOpen(true)}>
+        Ask the desk
+      </button>
+      <AskSheet open={askOpen} onClose={() => setAskOpen(false)} sym={sym} verdict={data} openTrace={openTrace} />
       <FactorVotes computed={data.computed} nulls={data.nulls} />
       <section aria-label="The funnel path">
         <p className="sec-label">The funnel path</p>
@@ -99,6 +106,7 @@ export default function StockPage({ sym }: { sym: string }) {
   const { data: chart } = useSlice(`candles:${sym}:${range}`, () => getCandles(sym, range))
   const [rules, setRules] = useState<RuleItem[]>([])
   const [capital, setCapital] = useState(5000)
+  const [askOpen, setAskOpen] = useState(false)
 
   useEffect(() => {
     void db.rules.where('symbol').equals(sym).toArray().then(setRules)
@@ -195,11 +203,24 @@ export default function StockPage({ sym }: { sym: string }) {
         </>
       ) : unscanned ? (
         /* 2-4 — the on-demand read replaces hero, votes and funnel path */
-        <OnDemandRead sym={sym} />
+        <OnDemandRead sym={sym} openTrace={journey?.openTrace} />
       ) : (
         <>
           {/* 2 — the verdict */}
           <VerdictHero row={row} refusal={refusal} published={published} nearMissDate={nearMissDate} resolved />
+          <button type="button" className="ask-open-btn" onClick={() => setAskOpen(true)}>
+            Ask the desk
+          </button>
+          <AskSheet
+            open={askOpen}
+            onClose={() => setAskOpen(false)}
+            sym={sym}
+            row={row}
+            refusal={refusal}
+            published={published}
+            nearMissDate={nearMissDate}
+            openTrace={journey?.openTrace}
+          />
           {/* 3 — the factor votes */}
           <FactorVotes factors={row?.factors} />
           {/* 4 — the funnel path */}

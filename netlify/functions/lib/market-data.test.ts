@@ -1,6 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { boardEvidenceLine, routeRequest } from '../market-data.mts'
 import type { Candle, Quote } from '../../../shared/types'
+
+// CX-20 ask tests mock the LLM call itself, the same way video-extract.test.ts
+// pins the extract rung ladder: `vi.hoisted` + `vi.mock` on the module the
+// route dynamic-imports (`./lib/llm` from market-data.mts is the same file as
+// `./llm` from here, one directory up).
+const llmMock = vi.hoisted(() => ({ callLlm: vi.fn() }))
+vi.mock('./llm', () => llmMock)
 
 const q = (symbol: string): Quote => ({ symbol, price: 1, prevClose: 1, changePct: 0, currency: 'USD', todayVolume: null, asOf: 0, source: 'finnhub' })
 const env = { APP_TOKEN: 'secret', FINNHUB_API_KEY: 'fk' }
@@ -121,5 +128,67 @@ describe('boardEvidenceLine — what Ask-AI is told the board said', () => {
 
   it('no row at all says so', () => {
     expect(boardEvidenceLine('2026-08-11', undefined)).toBe('Engine board: no live call on this name today.')
+  })
+})
+
+// CX-20: the v2 Ask sheet always carries the journey page's own hero-state
+// summary as a `context` param, pinned in the prompt as ground truth so the
+// model narrates the engine's verdict instead of second-guessing it — and the
+// legacy AskDesk card (which never sends `context`) must see no change at all.
+describe('market-data ask — CX-20 pins the sheet\'s verdict context', () => {
+  const mkCandles = (n = 40): Candle[] =>
+    Array.from({ length: n }, (_, i) => ({ t: 1_700_000_000 + i * 86_400, o: 100 + i, h: 101 + i, l: 99 + i, c: 100 + i, v: 1_000_000 }))
+  const news = vi.fn(async () => [] as { title: string; url: string; publishedSec: number }[])
+
+  const askCall = (qs: string) =>
+    routeRequest(new URL(`http://x/api/market?${qs}`), new Headers({ 'x-app-token': 'secret' }), env, { ...deps, news } as never)
+
+  beforeEach(async () => {
+    llmMock.callLlm.mockReset()
+    llmMock.callLlm.mockResolvedValue({ text: 'A grounded answer.' })
+    news.mockClear()
+    const { setCached } = await import('./cache')
+    await setCached('candles:NVDA:1y', { candles: mkCandles() }, 900)
+    await setCached('candles:SPY:1y', { candles: mkCandles() }, 900)
+    await setCached('candles:QQQ:1y', { candles: mkCandles() }, 900)
+    await setCached('quote:NVDA', q('NVDA'), 60) // pre-cached so cachedQuote never hits the real Finnhub fetch
+  })
+
+  it('a) the prompt carries the full context, pinned as ground truth, when the sheet sends one', async () => {
+    const context = { sym: 'NVDA', state: 'sized', grade: 'A', side: 'long', core: 62, gateLabel: null, openTrace: null }
+    const res = await askCall(`type=ask&symbol=NVDA&q=${encodeURIComponent('Good entry here?')}&context=${encodeURIComponent(JSON.stringify(context))}`)
+    expect(res.status).toBe(200)
+    expect(llmMock.callLlm).toHaveBeenCalledTimes(1)
+    const prompt = llmMock.callLlm.mock.calls[0][0] as string
+    expect(prompt).toContain('ground truth')
+    expect(prompt).toContain(JSON.stringify(context))
+  })
+
+  it('b) a long question still clamps to 400 chars, but the context survives whole and unclipped', async () => {
+    const longQ = 'why is this moving '.repeat(30) // well over 400 chars
+    expect(longQ.length).toBeGreaterThan(400)
+    const marker = 'M'.repeat(600) // longer than the 400-char clamp — proves context is never truncated
+    const context = { sym: 'NVDA', note: marker }
+    const res = await askCall(`type=ask&symbol=NVDA&q=${encodeURIComponent(longQ)}&context=${encodeURIComponent(JSON.stringify(context))}`)
+    expect(res.status).toBe(200)
+    const prompt = llmMock.callLlm.mock.calls[0][0] as string
+    expect(prompt).not.toContain(longQ) // the untruncated question never reaches the prompt
+    expect(prompt).toContain(longQ.slice(0, 400))
+    expect(prompt).toContain(marker) // the 600-char context marker is intact
+  })
+
+  it("c) a legacy call with no context param is unchanged — no pinned block at all", async () => {
+    const res = await askCall(`type=ask&symbol=NVDA&q=${encodeURIComponent('Good entry here?')}`)
+    expect(res.status).toBe(200)
+    const prompt = llmMock.callLlm.mock.calls[0][0] as string
+    expect(prompt).not.toContain('ground truth')
+    expect(prompt).toContain('Ground your answer ONLY in this measured evidence')
+  })
+
+  it('a malformed context param fails soft — no context block, no error', async () => {
+    const res = await askCall(`type=ask&symbol=NVDA&q=${encodeURIComponent('Good entry here?')}&context=${encodeURIComponent('{not json')}`)
+    expect(res.status).toBe(200)
+    const prompt = llmMock.callLlm.mock.calls[0][0] as string
+    expect(prompt).not.toContain('ground truth')
   })
 })

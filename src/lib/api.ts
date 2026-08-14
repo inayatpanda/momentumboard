@@ -169,8 +169,15 @@ export const getSocialPulse = () =>
 export const evaluateNote = (text: string, kind: string) =>
   apiGet<{ take: string }>(`/api/market?type=evaluate-note&text=${encodeURIComponent(text)}&kind=${kind}`).then(d => d.take)
 
-export const askDesk = (symbol: string, q: string) =>
-  apiGet<{ answer: string; at: number }>(`/api/market?type=ask&symbol=${encodeURIComponent(symbol)}&q=${encodeURIComponent(q)}`)
+// `context` (CX-20) is the v2 Ask sheet's own compact JSON of the journey
+// page's hero state — sized/refused/on-demand, grade-or-not, core/lean, the
+// gate label if refused, the open-trace verdict if a call is live. It rides
+// as its own query param so the server's 400-char clamp on `q` never touches
+// it. Optional: the legacy AskDesk card calls this with two args, unchanged.
+export const askDesk = (symbol: string, q: string, context?: unknown) =>
+  apiGet<{ answer: string; at: number }>(
+    `/api/market?type=ask&symbol=${encodeURIComponent(symbol)}&q=${encodeURIComponent(q)}${context !== undefined ? `&context=${encodeURIComponent(JSON.stringify(context))}` : ''}`,
+  )
 
 export const getMonthMap = (month: string) =>
   apiGet<Record<string, { r?: boolean; p?: number; a?: number; e?: number }>>(`/api/config?view=month&month=${month}`)

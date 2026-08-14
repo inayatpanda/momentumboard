@@ -1031,3 +1031,141 @@
   font-size: 12px;
   color: var(--warn);
 }
+
+/* --- ask sheet --------------------------------------------------------------
+   "Ask the desk" (plan Task 18): a bottom sheet on the journey page. The
+   engine's verdict is authoritative — this is chrome around a narration, not
+   a second opinion, so nothing here carries the --long/--short/grade colour
+   language; it borrows card/pill/num like every other v2 surface. */
+.v2 .ask-open-btn {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  margin-top: 2px;
+}
+.v2 .ask-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 60;
+}
+.v2 .ask-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 61;
+  max-height: min(80vh, 640px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-glass);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  box-shadow: var(--shadow-card);
+  padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+.v2 .ask-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.v2 .ask-head h2 {
+  font-size: 16px;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .ask-cap {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex: none;
+}
+.v2 .ask-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.v2 .ask-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 10px;
+}
+.v2 .ask-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .ask-q {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 .ask-a {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.v2 .ask-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 .ask-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.v2 .ask-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.v2 .ask-form input:disabled {
+  opacity: 0.6;
+}
+.v2 .ask-form button {
+  flex: none;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent-bar);
+  color: var(--surface-1);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+.v2 .ask-form button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
