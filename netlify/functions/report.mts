@@ -84,14 +84,27 @@ export async function routeReport(
       return page(hit ? 200 : 404, hit?.html ?? PLACEHOLDER)
     }
     const asFile = url?.searchParams.get('download') != null
+    // ?format=json (CX-19): the SAME edition bytes in a JSON envelope, so the
+    // app can render the paper inline (sandboxed srcDoc) — the route's
+    // X-Frame-Options stays DENY, and srcDoc is not a navigation. Read-only,
+    // additive: HTML/download modes and the publish path are untouched.
+    const asJson = url?.searchParams.get('format') === 'json'
     if (wantedDate) {
       const archived = await store.read<StoredReport>(`report:${wantedDate}`)
+      if (asJson) {
+        if (!archived) return json(404, { ok: false, error: 'no edition for that date' })
+        return json(200, { ok: true, data: { date: wantedDate, at: archived.at, html: await withCallStatus(archived.html, wantedDate) } })
+      }
       // a DOWNLOAD is a snapshot to keep — never bake a live price into it
       const body = archived && !asFile ? await withCallStatus(archived.html, wantedDate) : archived?.html
       return page(archived ? 200 : 404, body ?? PLACEHOLDER, asFile && archived ? `StreetSignal-${wantedDate}.html` : undefined)
     }
     const report = await store.read<StoredReport>('morning-report')
     const latestDate = report ? new Date(report.at * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) : ''
+    if (asJson) {
+      if (!report) return json(404, { ok: false, error: 'no edition yet' })
+      return json(200, { ok: true, data: { date: latestDate, at: report.at, html: await withCallStatus(report.html, latestDate) } })
+    }
     const latestBody = report && !asFile ? await withCallStatus(report.html, latestDate) : report?.html
     return page(200, latestBody ?? PLACEHOLDER, asFile && report ? `StreetSignal-${latestDate}.html` : undefined)
   }
