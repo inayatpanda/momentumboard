@@ -109,7 +109,7 @@ export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => vo
           <div className="site-downloads">
             <a className="dl-btn" href="/download/mac">
               <b>Mac app</b>
-              <span>universal · Apple&nbsp;Silicon + Intel</span>
+              <span>Apple&nbsp;Silicon (M-series Macs)</span>
             </a>
             <a className="dl-btn" href="/download/win">
               <b>Windows app</b>
