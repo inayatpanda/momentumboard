@@ -71,12 +71,15 @@ describe('a different profile is a different read — the parameter is load-bear
     expect(detectSetups(knife, 1, { ...EQUITY_SETUP_WINDOWS, minHistory: 40 })).toEqual([])
   })
 
-  it('moves the index read when the slope lag widens', () => {
-    // A tape whose 20-SMA turned over recently: a 5-bar slope and a 7-bar slope
-    // straddle the turn, so the health verdict is not the same sentence.
-    const turning = tape(i => (i < 250 ? 100 + i * 0.5 : 225 - (i - 250) * 0.2), 260)
-    const five = regimeFromCandles(turning, turning)
-    const seven = regimeFromCandles(turning, turning, { sma20: 28, sma50: 70, slopeLag: 7 })
-    expect([five, seven].every(r => ['green', 'amber', 'red'].includes(r))).toBe(true)
+  it('moves the index read when the windows widen — the two profiles disagree on a real tape', () => {
+    // A year-long rise with a five-bar dip at the end. The equity profile
+    // (20/50, lag 5) sees the dip break its 20-SMA test and says AMBER; the
+    // crypto profile (28/70, lag 7) still sees an intact uptrend and says
+    // GREEN. If the parameter were decoration both calls would return the
+    // same colour and this pin — the one that guards CRYPTO_INDEX_WINDOWS
+    // actually deciding the cohort's regime — would fail.
+    const dipped = tape(i => (i < 295 ? 100 + i : 100 + 295 - (i - 295) * 2), 300)
+    expect(regimeFromCandles(dipped, dipped)).toBe('amber')
+    expect(regimeFromCandles(dipped, dipped, { sma20: 28, sma50: 70, slopeLag: 7 })).toBe('green')
   })
 })

@@ -60,6 +60,7 @@ import {
   cryptoCandlesVia,
   cryptoGradeBaseRate,
   cryptoProbabilityFor,
+  emptyCryptoCalibration,
   gradeCryptoPrediction,
   loadCryptoCalibration,
   updateCryptoCalibration,
@@ -78,6 +79,7 @@ import {
   cryptoSizeCap,
   cryptoUniverseFor,
   cryptoVoice,
+  initCryptoRisk,
   loadCryptoRisk,
 } from '../../../shared/engine/cryptoLane'
 import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder, type FunnelTrace } from '../../../shared/engine/funnelTrace'
@@ -646,7 +648,13 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     return cryptoBarCache.get(sym) ?? null
   }
   const cryptoOff = cryptoDisabled()
-  const { cal: cryptoCal, risk: cryptoRisk } = await loadCryptoState(store, today)
+  // Under CRYPTO=off nothing accrues and nothing writes back (`cryptoMoved`
+  // stays false), so the two blob reads would be pure cost — cold objects are
+  // observationally identical here, and the lever keeps the store footprint at
+  // its Phase-A shape too.
+  const { cal: cryptoCal, risk: cryptoRisk } = cryptoOff
+    ? { cal: emptyCryptoCalibration(), risk: initCryptoRisk(today) }
+    : await loadCryptoState(store, today)
   /** Every crypto-lane row whose 14-bar grade landed in THIS pass — the crypto
    * partition's own `newlyGraded`, feeding its own Brier trail. There is no
    * wildcard column: the experiment slot refuses crypto outright
@@ -720,13 +728,22 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     let changed = false
     for (const pred of preds) {
       // WHICH PARTITION MEASURES THIS ROW — decided once, here, and it decides
-      // the tape, the clock, the basis and the blob together. `cohort` is the
-      // stamp the crypto lane wrote at publication (types.ts): a row without it
-      // is an equity row OR a legacy crypto row, and both take the path they
-      // have always taken. `CRYPTO=off` collapses this to the legacy answer, so
-      // the lever restores the Phase-A tree exactly rather than approximately.
-      const cryptoLaneRow = !cryptoOff && pred.cohort === 'crypto'
-      const candles = cryptoLaneRow ? await getCryptoCandles(pred.sym) : await getCandles(pred.sym)
+      // the tape, the clock and the basis together. `cohort` is the stamp the
+      // crypto lane wrote at publication (types.ts): a row without it is an
+      // equity row OR a legacy crypto row, and both take the path they have
+      // always taken.
+      //
+      // The BASIS is NOT lever-gated, deliberately. A cohort-stamped row's
+      // outcome definition was fixed the morning it published — absolute, 14
+      // crypto bars, completed-bars tape — and `CRYPTO=off` governs the LANE
+      // (publication, accrual, the rung stream), never the arithmetic of a row
+      // that already exists. Grading a cohort row on the SPY path under the
+      // lever would store a wrong number in the ledger forever, and flipping
+      // the lever back on would then feed that SPY-benchmarked outcome to the
+      // crypto rung's evidence window. Accrual below IS lever-gated: under
+      // CRYPTO=off a cohort row resolves on its own basis and teaches nothing.
+      const cryptoBasisRow = pred.cohort === 'crypto'
+      const candles = cryptoBasisRow ? await getCryptoCandles(pred.sym) : await getCandles(pred.sym)
       if (!candles) continue
       /** The three lenses, on whichever clock owns this row. Crypto's are 7 / 14
        * / 29 CRYPTO BARS — the ×7/5 images of a week, the calibrated horizon and
@@ -735,7 +752,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
        * calibrated one in both partitions, which is what keeps every "learn at
        * the 10 field" site below correct without a second test. */
       const gradeAt = (lens: 0 | 1 | 2, equityHorizon: 5 | 10 | 21) =>
-        cryptoLaneRow ? gradeCryptoPrediction(pred, candles, CRYPTO_HORIZONS[lens]) : gradePrediction(pred, candles, spy, equityHorizon)
+        cryptoBasisRow ? gradeCryptoPrediction(pred, candles, CRYPTO_HORIZONS[lens]) : gradePrediction(pred, candles, spy, equityHorizon)
       // grading stores all three lenses (5/10/21d); only the 10-session outcome
       // — the CALIBRATED horizon (reader holds 1-2wk+) — feeds the learning loop.
       if (!pred.outcome5) {
@@ -757,7 +774,15 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // gate ledger, the paper's sentence) would be learning from a
           // measurement the engine now knows was malformed. Phase B gives
           // crypto its own everything.
-          const cryptoRow = isCryptoSymbol(pred.sym)
+          //
+          // `|| cryptoBasisRow` closes the one seam between the two accrual
+          // paths: the symbol test and the cohort stamp are independent, so a
+          // row that were somehow stamped 'crypto' under a non-crypto symbol
+          // would otherwise book into BOTH blobs. The stamp chose the row's
+          // population at publication and is never revised (the accrual
+          // doctrine), so the equity loop refuses anything the stamp claims —
+          // whatever the symbol says.
+          const cryptoRow = isCryptoSymbol(pred.sym) || cryptoBasisRow
           // EVERY LOSER EXPLAINS ITSELF (postMortem.ts). Deterministic, pure, and
           // computed here because here is the only place the loss and the tape
           // that caused it are both in scope — it rides the store.write below for
@@ -809,7 +834,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // sized/shadow sub-counts, the setup-family buckets, the evidence
           // counters — happens INSIDE the crypto state. Nothing pools: the two
           // objects have no key in common and no read walks both.
-          if (cryptoLaneRow) {
+          if (cryptoBasisRow && !cryptoOff) {
             updateCryptoCalibration(cryptoCal, pred, o)
             cryptoGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow })
             if (!pred.shadow && !pred.watchOnly) cryptoNewActionable++
@@ -852,7 +877,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // published because it did not. The counter and this evidence window must
       // exclude the same stream or the two drift apart by exactly the rows the
       // exclusion was written for.
-      if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym))
+      if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym) && pred.cohort !== 'crypto')
         allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: !!pred.instrument, cohort: capCohortOf(pred.capUsdM) })
       // …and the crypto ladder's evidence window, which is the SAME sentence
       // over a disjoint population: the crypto stream never enters `allOutcomes`
@@ -1401,9 +1426,15 @@ export async function buildBoard(
       if (!cryptoLaneOwns(key, cryptoUniverse))
         trace.record(key, 'crypto-contained', {
           source,
+          // three distinct refusals, each named as itself: the lever, a pair
+          // the partition is not defined over, and a lane pair arriving from a
+          // non-watchlist door the reader never asked to watch — "outside the
+          // universe" would be false about BTC-USD from a screener
           detail: cryptoDisabled()
             ? 'crypto pair — the lane is off (CRYPTO=off); watched, never a candidate'
-            : `crypto pair outside the lane's universe (${CRYPTO_UNIVERSE.join(', ')}) — watched, never a candidate`,
+            : (CRYPTO_UNIVERSE as readonly string[]).includes(key.toUpperCase())
+              ? `crypto pair the lane serves but the reader has not watchlisted — the lane is watchlist-driven; watched, never a candidate`
+              : `crypto pair outside the lane's universe (${CRYPTO_UNIVERSE.join(', ')}) — watched, never a candidate`,
         })
       return
     }
@@ -2041,11 +2072,14 @@ export async function buildBoard(
       instrument,
       // PAPER ONLY: a row the reader can read but not place. A short qualifies
       // because an ISA cannot place one without an inverse ETP — and so does
-      // EVERY crypto row until the owner maps a real tracker, on the same
-      // sentence and for the same reason. It is the capped-short precedent
-      // applied to a cohort whose route does not exist yet, said out loud on the
-      // row rather than left for the reader to discover at the broker.
-      paperOnly: !watchOnly && !instrument && (call.side === 'short' || (!!crypto && !crypto.routed)),
+      // EVERY crypto row that carries no instrument, on the same sentence and
+      // for the same reason. NOT `!crypto.routed`: a mapped tracker in levMap
+      // is a route that EXISTS, not a route this row carries — instruments only
+      // mint at sizedFraction 1 and the cohort cap holds crypto at 0.5 until
+      // its own rung earns the full one, so a routed-but-capped row would
+      // otherwise publish as placeable with no instrument and no route named.
+      // The test is the instrument on THIS row, nothing upstream of it.
+      paperOnly: !watchOnly && !instrument && (call.side === 'short' || !!crypto),
       // The stamp must describe what the call ACTUALLY got. The composite loop
       // re-scores with worldMult before publishing; a LANE composite is structural
       // (depth-derived in dipLane.ts, run-derived in velocityLane.ts) and never

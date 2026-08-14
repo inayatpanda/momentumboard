@@ -350,8 +350,13 @@ export const CRYPTO_COLD_START_N = 50
  * engine's opinion of bitcoin; this is the difference between a designed floor
  * and a judgement, said out loud on the row itself.
  *
- * ROUTING IS THE SECOND SENTENCE. Until the owner maps a real tracker in
- * `levMap`, a crypto row is paper only — the capped-short precedent, labelled
+ * ROUTING IS THE SECOND SENTENCE, and it has THREE states, not two. No tracker
+ * in `levMap`: paper only, said plainly. Tracker configured but the cohort cap
+ * still at 0.5: STILL paper only — an instrument only mints on a full-size row
+ * (engine.ts `mapInstrument` under `sizedFraction === 1`), so a configured
+ * route is a promise about the future, not a route this morning's row carries,
+ * and the sentence says which. Only a row that can actually mint its
+ * instrument drops the label. The capped-short precedent throughout: labelled
  * honestly rather than shown as a placeable trade. */
 export function cryptoVoice(input: { sym: string; gradedN: number; routed: boolean; sizeCap: number }): { note: string; detail: string } {
   const cold = input.gradedN < CRYPTO_COLD_START_N
@@ -360,7 +365,11 @@ export function cryptoVoice(input: { sym: string; gradedN: number; routed: boole
     (cold
       ? `; this cohort has graded ${input.gradedN} of the ~${CRYPTO_COLD_START_N} outcomes it needs, so C at half size is the designed floor, not a verdict`
       : `; ${input.gradedN} graded outcomes of its own now price it`)
-  const route = input.routed ? '' : ` · paper only — no ${input.sym} tracker configured yet`
+  const route = !input.routed
+    ? ` · paper only — no ${input.sym} tracker configured yet`
+    : input.sizeCap < 1
+      ? ` · paper only — ${input.sym} tracker configured; it routes when the cohort's record earns the full rung`
+      : ''
   const cap = input.sizeCap < 1 ? ` · capped at ${input.sizeCap}× the rung until the cohort's own record earns the full one` : ''
   return { note: `${cohort}${route}${cap}`, detail: `${cohort}${route}` }
 }

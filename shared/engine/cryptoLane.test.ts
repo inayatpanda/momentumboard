@@ -304,9 +304,17 @@ describe('the voice — cohort-labelled, and the cold start explained rather tha
     expect(v.note).toContain('designed floor, not a verdict')
   })
 
-  it('says paper-only until a tracker is mapped, and stops saying it once one is', () => {
+  it('the route sentence has THREE states — unmapped, mapped-but-capped, and earning the label off', () => {
+    // no tracker: the plain sentence
     expect(cryptoVoice({ sym: 'BTC-USD', gradedN: 7, routed: false, sizeCap: 0.5 }).note).toContain('paper only — no BTC-USD tracker configured yet')
-    expect(cryptoVoice({ sym: 'BTC-USD', gradedN: 7, routed: true, sizeCap: 0.5 }).note).not.toContain('paper only')
+    // tracker configured, cap still 0.5: STILL paper only — an instrument only
+    // mints on a full-size row, so a configured route is a promise, not a route
+    // this row carries, and dropping the label here published a placeable-
+    // looking row with no instrument on it
+    const capped = cryptoVoice({ sym: 'BTC-USD', gradedN: 7, routed: true, sizeCap: 0.5 }).note
+    expect(capped).toContain('paper only — BTC-USD tracker configured; it routes when the cohort\'s record earns the full rung')
+    // only the earned full rung drops the sentence
+    expect(cryptoVoice({ sym: 'BTC-USD', gradedN: 64, routed: true, sizeCap: 1 }).note).not.toContain('paper only')
   })
 
   it('drops the cold-start explanation once the cohort has its own record', () => {

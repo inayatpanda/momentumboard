@@ -53,9 +53,21 @@ describe('a crypto row never enters an equity mean', () => {
     expect(isCryptoCohort(row({ sym: 'BTC-USD', outcome10: out(3, 1) }))).toBe(false)
   })
 
-  it('leaves the topline avgExcess10 exactly where it was', () => {
+  it('leaves the topline avgExcess10 exactly where it was — while the CENSUS tiles count what the table shows', () => {
     expect(summariseLedger(equity).avgExcess10).toBe(2)
-    expect(summariseLedger([...equity, coin])).toEqual(summariseLedger(equity))
+    const withCoin = summariseLedger([...equity, coin])
+    const alone = summariseLedger(equity)
+    // every AVERAGE (and the graded/hits counts that caption them) is equity-
+    // basis arithmetic and does not move by one crypto outcome…
+    expect(withCoin.avgExcess10).toBe(alone.avgExcess10)
+    expect(withCoin.hitRate).toBe(alone.hitRate)
+    expect(withCoin.graded).toBe(alone.graded)
+    expect(withCoin.hits).toBe(alone.hits)
+    // …but total/open/stopped are a CENSUS of the table the tiles sit above,
+    // and the table lists the coin — "12 calls" over 13 visible rows was the
+    // review's M4
+    expect(withCoin.total).toBe(alone.total + 1)
+    expect(withCoin.open).toBe(alone.open)
   })
 
   it('leaves every by-grade bucket exactly where it was', () => {

@@ -138,17 +138,24 @@ export function capClassBreakdown(all: LedgerPrediction[]): CapClassBucket[] {
 }
 
 export function summariseLedger(all: LedgerPrediction[]): LedgerSummary {
+  // CENSUS vs AVERAGE, split on purpose (1c Phase B). total/open/stopped are
+  // counts of the table the tiles sit above, and the table lists crypto rows —
+  // a census that excluded them would show "12 calls" over 13 visible rows.
+  // A count of rows and a count of stop close-throughs mean the same thing in
+  // both partitions. hitRate and avgExcess10 do NOT: they are computed on the
+  // equity basis (excess vs SPY), so they stay equity-only — which is exactly
+  // what the footnote below the tiles promises about "every average".
+  const allGraded = all.filter(r => r.outcome10)
   const rows = equityRows(all)
   const graded = rows.filter(r => r.outcome10)
   const hits = graded.filter(r => r.outcome10!.hit).length
-  const stopped = graded.filter(r => r.outcome10!.stopped).length
   const sumExcess = graded.reduce((s, r) => s + r.outcome10!.excessPct, 0)
   return {
-    total: rows.length,
-    open: rows.length - graded.length,
+    total: all.length,
+    open: all.length - allGraded.length,
     graded: graded.length,
     hits,
-    stopped,
+    stopped: allGraded.filter(r => r.outcome10!.stopped).length,
     hitRate: graded.length ? Math.round((hits / graded.length) * 100) / 100 : null,
     avgExcess10: graded.length ? Math.round((sumExcess / graded.length) * 10) / 10 : null,
   }

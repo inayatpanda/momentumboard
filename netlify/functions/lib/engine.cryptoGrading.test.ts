@@ -218,15 +218,41 @@ describe('completed bars only — the grade never reads a bar that is still movi
 
 // -------------------------------------------------------------- the lever --
 
-describe('CRYPTO=off restores the Phase-A guard exactly', () => {
-  it('grades a stamped row the legacy way and writes no crypto blob', async () => {
+describe('CRYPTO=off kills the accrual, never the arithmetic', () => {
+  it('grades a stamped row on ITS OWN basis, teaches nothing, and writes no crypto blob', async () => {
     process.env.CRYPTO = 'off'
     const off = await run([LANE_COIN()])
     delete process.env.CRYPTO
-    const legacy = await run([LEGACY_COIN()])
-    expect(off.rows[0].outcome10).toEqual(legacy.rows[0].outcome10)
+    // NOT the legacy SPY grade: a stamped row's outcome definition was fixed
+    // the morning it published, and the lever governs the LANE, not the
+    // arithmetic of a row that already exists. Grading it on the equity clock
+    // here would store a wrong number in the ledger forever — and then hand
+    // that SPY-benchmarked outcome to the crypto rung's evidence window the
+    // day the lever came back on (the lever-flap leak, review M3).
+    expect(off.rows[0].outcome10!.excessPct).toBe(14) // 14 crypto bars from D+1's open
+    expect(off.rows[0].outcome10!.spyPct).toBe(0) // nothing subtracted — absent, not flat
+    // …and NOTHING accrued anywhere: no crypto blob written, no equity pane moved
     expect(off.cryptoCal).toBeNull()
     expect(off.cryptoRisk).toBeNull()
+    expect(off.card.totalGraded).toBe(0)
+  })
+
+  it('the round trip is clean: graded under off, the outcome re-enters accrual on the crypto basis when the lever returns', async () => {
+    // day 1: lever off — the outcome fills, nothing accrues
+    process.env.CRYPTO = 'off'
+    const store = memoryStore()
+    await store.write(`predictions:${ENTRY}`, [LANE_COIN()])
+    await store.write('predictions-index', [ENTRY])
+    await gradeOutstanding(store, deps(tapes), NOW, null)
+    delete process.env.CRYPTO
+    expect(await store.read(CRYPTO_CALIB_KEY)).toBeNull()
+    // day 2: lever back on — the pass sees an already-graded row whose outcome
+    // is on the crypto basis; the rung's evidence window may read it, and no
+    // SPY number ever existed to leak
+    await gradeOutstanding(store, deps(tapes), NOW + DAY, null)
+    const rows = (await store.read<Prediction[]>(`predictions:${ENTRY}`))!
+    expect(rows[0].outcome10!.excessPct).toBe(14)
+    expect(rows[0].outcome10!.spyPct).toBe(0)
   })
 
   it('leaves every equity blob identical to the run with the lane on — the lever is a no-op for equities', async () => {

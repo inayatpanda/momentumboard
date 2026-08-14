@@ -172,6 +172,19 @@ describe('the lane publishes a partitioned cohort onto the same board', () => {
     expect(row.instrument).toBeNull()
   })
 
+  it('a MAPPED tracker does not lift the label while the cap holds — routed-but-capped is still paper only', async () => {
+    // the trap this pins: `levMap` gains BTC-USD, but an instrument only mints
+    // on a full-size row and the cohort cap holds crypto at 0.5 until its own
+    // rung earns the full one — so the row must keep the paper-only label and
+    // say WHY, not publish as placeable with no instrument and no route named
+    const { board } = await runDay(['BTC-USD'], { 'BTC-USD': { long2x: '3BTL.L' } })
+    const row = cryptoOf(board.board)[0]
+    expect(row.paperOnly).toBe(true)
+    expect(row.instrument).toBeNull()
+    expect(row.note).toContain('tracker configured; it routes when the cohort\'s record earns the full rung')
+    expect(row.note).not.toContain('no BTC-USD tracker configured')
+  })
+
   it('says so in the reader’s own words — the cohort, the cold start, the route', async () => {
     const { board } = await runDay(['BTC-USD'])
     const row = cryptoOf(board.board)[0]

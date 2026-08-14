@@ -101,6 +101,14 @@ describe('boardFlagRows — what the runner may feed the scan', () => {
     const board = [{ sym: 'A' }, { sym: 'B', observation: true }, { sym: 'C', nearMiss: true }, { sym: 'D' }]
     expect(boardFlagRows(board, 40).map(r => r.sym)).toEqual(['A', 'D'])
   })
+
+  it('RELAXED NOWHERE for crypto [1c Phase B]: a sized crypto row never lends its levels to the scan', () => {
+    // the scan reads the RAW intraday tape on the equity clock — for a coin
+    // that is today's still-moving 00:00-UTC bar plus 20-bar windows that mean
+    // 3 weeks, not 4. The lane put crypto on the board; it must not put it here.
+    const board = [{ sym: 'A' }, { sym: 'BTC-USD', cohort: 'crypto' as const }, { sym: 'C' }]
+    expect(boardFlagRows(board, 40).map(r => r.sym)).toEqual(['A', 'C'])
+  })
 })
 
 describe('scanIntradayFlags — second-chance', () => {
@@ -151,6 +159,10 @@ describe('isActionableRow — which board rows carry risk', () => {
     // an observation is watch-only anyway; the stamp is the belt, so a future
     // caller that forgets the watch flag still cannot call one risk-carrying
     expect(isActionableRow({ observation: true })).toBe(false)
+    // …and a SIZED crypto row is refused here too — a second belt under the
+    // boardFlagRows door, so no path can offer a "second chance" priced off an
+    // unclosed bar on the wrong clock
+    expect(isActionableRow({ cohort: 'crypto' })).toBe(false)
   })
 })
 
