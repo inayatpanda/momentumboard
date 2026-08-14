@@ -79,6 +79,12 @@ export function ledgerRow(p: Prediction) {
     // before the fields existed — the UI reads them as optional.
     thesis: p.thesis,
     falsifier: p.falsifier,
+    // The loss's own obituary (Stage 3): class + one deterministic sentence
+    // (+ the LLM line when composed). The exact field the recon flagged as
+    // "written and read by nobody" outside the paper — the reader's history
+    // keeps it now. Undefined on winners-without-postmortem and old rows.
+    postMortem: p.postMortem,
+    outcome21: p.outcome21,
   }
 }
 
@@ -151,7 +157,7 @@ async function viewJourney(sym: string) {
   const predDays = await Promise.all(predDates.map(d => blobAppStore.read<Prediction[]>(`predictions:${d}`)))
   const calls = predDays
     .flatMap(day => (day ?? []).filter(p => p.sym === sym))
-    .map(p => ({ ...ledgerRow(p), postMortem: p.postMortem ?? null, outcome21: p.outcome21 ?? null }))
+    .map(p => ({ ...ledgerRow(p), postMortem: p.postMortem ?? null, outcome21: p.outcome21 ?? null })) // null (not undefined) so an empty journey serialises honestly
     .reverse() // newest first
 
   return {
@@ -161,6 +167,20 @@ async function viewJourney(sym: string) {
     funnel,
     calls,
   }
+}
+
+/** ?view=ledger&days=N — the Track record's food, same day shape as the
+ * aggregate's `ledger` key so the client type is shared. Newest first. */
+async function viewLedger(days: number) {
+  const predIndex = (await blobAppStore.read<string[]>('predictions-index')) ?? []
+  const dates = predIndex.slice(-days).reverse()
+  const out = await Promise.all(
+    dates.map(async date => {
+      const preds = (await blobAppStore.read<Prediction[]>(`predictions:${date}`)) ?? []
+      return { date, predictions: preds.map(ledgerRow) }
+    }),
+  )
+  return { days: out }
 }
 
 export default async (req: Request) => {
@@ -175,6 +195,12 @@ export default async (req: Request) => {
       const sym = (url.searchParams.get('sym') ?? '').toUpperCase()
       if (!SYM_RE.test(sym)) return json({ error: 'bad sym' }, 400)
       return json(await viewJourney(sym))
+    }
+    if (view === 'ledger') {
+      const raw = url.searchParams.get('days')
+      const parsed = raw === null || raw === '' ? 7 : Number(raw)
+      const days = Math.min(30, Math.max(1, Number.isFinite(parsed) ? Math.floor(parsed) : 7))
+      return json(await viewLedger(days))
     }
     return json({ error: 'unknown view' }, 400)
   }

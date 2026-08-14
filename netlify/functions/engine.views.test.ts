@@ -160,6 +160,43 @@ describe('engine ?view= slices', () => {
     })
   })
 
+  describe('?view=ledger', () => {
+    const seedDays = async () => {
+      await seed('predictions-index', ['2026-08-11', '2026-08-12', '2026-08-13'])
+      await seed('predictions:2026-08-11', [{ id: 'p11', date: '2026-08-11', sym: 'OLD', side: 'long' }])
+      await seed('predictions:2026-08-12', [{ id: 'p12', date: '2026-08-12', sym: 'AMD', side: 'long' }])
+      await seed('predictions:2026-08-13', [
+        { id: 'p13', date: '2026-08-13', sym: 'NVDA', side: 'long', postMortem: { cls: 'market-drag', detail: 'tape rolled over', at: 1 }, outcome21: -3.1 },
+      ])
+    }
+
+    it('serves the last N days newest-first, rows carrying postMortem + outcome21', async () => {
+      await seedDays()
+      const r = await body(await handler(req('?view=ledger&days=2')))
+      const d = r.data as { days: { date: string; predictions: { sym: string; postMortem: { cls: string } | null; outcome21: number | null }[] }[] }
+      expect(d.days.map(x => x.date)).toEqual(['2026-08-13', '2026-08-12'])
+      expect(JSON.stringify(d)).not.toContain('OLD')
+      expect(d.days[0].predictions[0].postMortem?.cls).toBe('market-drag')
+      expect(d.days[0].predictions[0].outcome21).toBe(-3.1)
+    })
+
+    it('clamps days to at least 1 and defaults to 7', async () => {
+      await seedDays()
+      const zero = await body(await handler(req('?view=ledger&days=0')))
+      expect((zero.data as { days: unknown[] }).days).toHaveLength(1)
+      const dflt = await body(await handler(req('?view=ledger')))
+      expect((dflt.data as { days: unknown[] }).days).toHaveLength(3) // only 3 seeded, default window is 7
+    })
+
+    it('the legacy aggregate ledger rows now carry postMortem too (same projection)', async () => {
+      await seedDays()
+      const r = await body(await handler(req()))
+      const ledger = r.data.ledger as { date: string; predictions: { postMortem?: { cls: string } | null }[] }[]
+      const day13 = ledger.find(x => x.date === '2026-08-13')
+      expect(day13?.predictions[0].postMortem?.cls).toBe('market-drag')
+    })
+  })
+
   it('legacy aggregate still serves without ?view — and keeps its admin gate', async () => {
     await seed('engine-board', { date: '2026-08-14', board: [] })
     await seed('holdings-reads', [{ sym: 'SECRET-HOLDING', quantity: 1 }])
