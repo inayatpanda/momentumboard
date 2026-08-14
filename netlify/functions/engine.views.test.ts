@@ -232,6 +232,46 @@ describe('engine ?view= slices', () => {
     })
   })
 
+  describe('?view=learning', () => {
+    it('serves structured gates, regret examples, and the aggregate’s own projections of weights/scorecard/roster', async () => {
+      await seed('gate-state', { gates: { deadZone: { delta: -2.5, history: [{ date: '2026-08-01', from: 25, to: 22.5, why: 'earned' }] } } })
+      await seed('miss-ledger', {
+        gates: { 'dead-zone-core': { cost: 2, costExcessSum: 15.3, saved: 1, unchecked: 3, examples: [{ date: '2026-08-04', sym: 'PLTR', side: 'long', excessPct: 6.1, gate: 'dead-zone-core' }] } },
+        days: { '2026-08-10': { checked: 5, unchecked: 3, misses: 2 } },
+      })
+      await seed('engine-weights', { base: { momentum: 2 }, current: { momentum: 2.2 }, history: Array.from({ length: 15 }, (_, i) => ({ at: i })) })
+      await seed('engine-scorecard', { byGrade: { A: { n: 3 }, wildcard: { n: 1 } } })
+      await seed('engine-roster', [{ sym: 'NVDA' }])
+      await seed('engine-roster-log', [{ date: '2026-08-13', joined: ['NVDA'], dropped: [] }])
+      await seed('channel-credibility', { yt1: { graded: 4, hits: 2, sumExcess: 8 } })
+      await seed('engine-calibration', { buckets: { 'long:risk-on:high': { n: 5 } }, brier: [0.2], referenceBase: 0.41 })
+
+      const r = await body(await handler(req('?view=learning')))
+      const d = r.data as {
+        gateState: { gates: { gate: string; current: number; history: unknown[] }[] }
+        gateLines: { moves: string[] } | null
+        regrets: { topGates: { gate: string; examples: { sym: string }[] }[]; note: string } | null
+        weights: { history: unknown[] }
+        scorecard: { byGrade: Record<string, unknown> }
+        roster: { entries: unknown[]; changes: unknown[] }
+        channelCred: Record<string, { graded: number; avgExcess: number | null }>
+        calibration: { referenceBase: number | null }
+      }
+      expect(d.gateState.gates).toHaveLength(3)
+      expect(d.gateState.gates.find(g => g.gate === 'deadZone')?.history).toHaveLength(1)
+      expect(d.gateLines?.moves.length).toBeGreaterThan(0)
+      expect(d.regrets?.topGates[0].examples[0].sym).toBe('PLTR')
+      expect(d.regrets?.note).toContain('unpriced')
+      expect(d.weights.history).toHaveLength(10) // same slice(-10) the aggregate applies
+      expect(d.scorecard.byGrade).toHaveProperty('wildcard')
+      expect(d.roster.entries).toHaveLength(1)
+      expect(d.channelCred.yt1.avgExcess).toBe(2)
+      expect(d.calibration.referenceBase).toBe(0.41)
+      expect(r.data).not.toHaveProperty('holdingsReads')
+      expect(r.data).not.toHaveProperty('ledger')
+    })
+  })
+
   it('legacy aggregate still serves without ?view — and keeps its admin gate', async () => {
     await seed('engine-board', { date: '2026-08-14', board: [] })
     await seed('holdings-reads', [{ sym: 'SECRET-HOLDING', quantity: 1 }])

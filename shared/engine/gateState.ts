@@ -555,3 +555,39 @@ export function gateAnnouncement(raw: unknown, date: string): GateStateSummary |
     )
   return moves.length || notes.length ? { moves, notes } : null
 }
+
+/** THE PANEL'S STRUCTURED READ (PWA rebuild). gateStateSummary stays the
+ * paper's three sentences; this is the timeline — every tunable gate, moved or
+ * not, with its current value, base, ratified bounds, full history and any
+ * block note. Pure projection: no reads, no interpretation, and a corrupt blob
+ * normalises to pristine gates rather than throwing at the one surface built
+ * to show the learning. */
+export interface GateStructuredEntry {
+  gate: TunableGate
+  label: string
+  base: number
+  current: number
+  bounds: { min: number; max: number }
+  history: { date: string; from: number; to: number; why: string }[]
+  blocked?: { why: 'cadence' | 'override' | 'bound'; date: string }
+}
+
+export function gateStateStructured(raw: unknown, appetite?: 'moderate' | 'aggressive' | null): { gates: GateStructuredEntry[] } {
+  const state = normaliseGateState(raw)
+  return {
+    gates: TUNABLE_GATES.map(gate => {
+      const b = GATE_BOUNDS[gate]
+      const d = state.gates[gate]
+      const base = baseGateValue(gate, appetite)
+      return {
+        gate,
+        label: b.label,
+        base,
+        current: base + (d?.delta ?? 0),
+        bounds: { min: b.min, max: b.max },
+        history: d?.history ?? [],
+        ...(d?.blocked ? { blocked: d.blocked } : {}),
+      }
+    }),
+  }
+}

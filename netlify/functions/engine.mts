@@ -5,8 +5,8 @@ import type { WeightsState, CalibrationState } from '../../shared/engine/calibra
 import type { RiskState } from '../../shared/engine/riskLadder'
 import type { RosterEntry } from '../../shared/engine/roster'
 import type { ChannelCredState } from '../../shared/engine/channelCred'
-import { MISS_LEDGER_KEY, missLedgerSummary } from '../../shared/engine/missLedger'
-import { GATE_STATE_KEY, gateStateSummary } from '../../shared/engine/gateState'
+import { MISS_LEDGER_KEY, missLedgerExamples, missLedgerSummary } from '../../shared/engine/missLedger'
+import { GATE_STATE_KEY, gateStateStructured, gateStateSummary } from '../../shared/engine/gateState'
 import { FUNNEL_TRACE_INDEX_KEY, funnelTraceKey, traceRowKey, type FunnelTrace, type FunnelNearMiss } from '../../shared/engine/funnelTrace'
 
 // Read-only aggregation of everything the engine knows: the board, the
@@ -169,6 +169,55 @@ async function viewJourney(sym: string) {
   }
 }
 
+// The four projections BOTH the aggregate and ?view=learning apply — one code
+// path each, so the two reads can never drift apart.
+const projectWeights = (w: WeightsState | null) => (w ? { base: w.base, current: w.current, history: w.history.slice(-10) } : null)
+const projectCalibration = (c: CalibrationState | null) =>
+  c
+    ? {
+        buckets: c.buckets,
+        brier: c.brier.slice(-30),
+        seeded: c.seeded ?? false,
+        modelVersion: c.modelVersion ?? null,
+        referenceBase: c.referenceBase ?? null,
+        evidence: c.evidence ?? null,
+      }
+    : null
+const projectRoster = (roster: RosterEntry[] | null, log: { date: string; joined: string[]; dropped: { sym: string; why: string }[] }[] | null) =>
+  roster ? { entries: roster, changes: (log ?? []).slice(-7) } : null
+const projectChannelCred = (cred: ChannelCredState | null) =>
+  Object.fromEntries(
+    Object.entries(cred ?? {}).map(([ch, e]) => [ch, { graded: e.graded, hits: e.hits, avgExcess: e.graded ? Math.round((e.sumExcess / e.graded) * 10) / 10 : null }]),
+  )
+
+/** ?view=learning — the Gates & learning page and the regret surface: the
+ * structured gate timeline, the paper's own gate lines, the miss ledger WITH
+ * its named examples, and the aggregate's projections of weights, scorecard,
+ * roster, channel cred and calibration. */
+async function viewLearning() {
+  const [gateStateBlob, missLedgerBlob, weights, scorecard, roster, rosterLog, channelCred, calibration, config] = await Promise.all([
+    blobAppStore.read(GATE_STATE_KEY),
+    blobAppStore.read(MISS_LEDGER_KEY),
+    blobAppStore.read<WeightsState>('engine-weights'),
+    blobAppStore.read('engine-scorecard'),
+    blobAppStore.read<RosterEntry[]>('engine-roster'),
+    blobAppStore.read<{ date: string; joined: string[]; dropped: { sym: string; why: string }[] }[]>('engine-roster-log'),
+    blobAppStore.read<ChannelCredState>('channel-credibility'),
+    blobAppStore.read<CalibrationState>('engine-calibration'),
+    blobAppStore.read<{ riskAppetite?: 'moderate' | 'aggressive' | null }>('config'),
+  ])
+  return {
+    gateState: gateStateStructured(gateStateBlob, config?.riskAppetite ?? null),
+    gateLines: gateStateSummary(gateStateBlob),
+    regrets: missLedgerExamples(missLedgerBlob),
+    weights: projectWeights(weights),
+    scorecard: scorecard ?? null,
+    roster: projectRoster(roster, rosterLog),
+    channelCred: projectChannelCred(channelCred),
+    calibration: projectCalibration(calibration),
+  }
+}
+
 /** ?view=funnel&date= — one day of "the engine said no", ranked by the
  * conviction each refusal stood on. Default = the newest trace day. */
 async function viewFunnel(date: string | null) {
@@ -218,6 +267,7 @@ export default async (req: Request) => {
       if (!SYM_RE.test(sym)) return json({ error: 'bad sym' }, 400)
       return json(await viewJourney(sym))
     }
+    if (view === 'learning') return json(await viewLearning())
     if (view === 'funnel') {
       const date = url.searchParams.get('date')
       if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: 'bad date' }, 400)
@@ -326,25 +376,14 @@ export default async (req: Request) => {
     // allowed to move yet — one line each, the SAME line the runlog and the
     // paper print (gateState.ts owns the sentence)
     gateState: gateStateSummary(gateStateBlob),
-    weights: weights ? { base: weights.base, current: weights.current, history: weights.history.slice(-10) } : null,
+    weights: projectWeights(weights),
     // `referenceBase` travels with the buckets [spec §9]: it is the bar every grade
     // on the board was measured against, and a reader looking at "42% · B" cannot
     // check the letter without it. null when no seed ever swept one — the client
     // then says nothing about a bar rather than inventing the pooled base as one.
-    calibration: calibration
-      ? {
-          buckets: calibration.buckets,
-          brier: calibration.brier.slice(-30),
-          seeded: calibration.seeded ?? false,
-          modelVersion: calibration.modelVersion ?? null,
-          referenceBase: calibration.referenceBase ?? null,
-          evidence: calibration.evidence ?? null,
-        }
-      : null,
+    calibration: projectCalibration(calibration),
     riskState,
-    roster: roster ? { entries: roster, changes: (rosterLog ?? []).slice(-7) } : null,
-    channelCred: Object.fromEntries(
-      Object.entries(channelCred ?? {}).map(([ch, e]) => [ch, { graded: e.graded, hits: e.hits, avgExcess: e.graded ? Math.round((e.sumExcess / e.graded) * 10) / 10 : null }]),
-    ),
+    roster: projectRoster(roster, rosterLog),
+    channelCred: projectChannelCred(channelCred),
   })
 }

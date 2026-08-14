@@ -614,3 +614,17 @@ export async function accrueMissDay(ledger: MissLedger, trace: FunnelTrace, spy:
   }
   return recordMissDay(ledger, trace.date, { checked, unchecked, misses })
 }
+
+/** THE REGRET SURFACE'S READ (PWA rebuild): missLedgerSummary's exact maths and
+ * ordering — same code path, so the two can never disagree — but each top gate
+ * keeps its named examples and the default topN widens. The summary stays the
+ * paper's and the legacy panel's read, untouched. */
+export function missLedgerExamples(raw: unknown, topN = 8): (Omit<MissLedgerSummary, 'topGates'> & { topGates: (MissGateLine & { examples: MissExample[] })[] }) | null {
+  const summary = missLedgerSummary(raw, topN)
+  if (!summary) return null
+  const l = normaliseMissLedger(raw)
+  return {
+    ...summary,
+    topGates: summary.topGates.map(g => ({ ...g, examples: l.gates[g.gate]?.examples ?? [] })),
+  }
+}
