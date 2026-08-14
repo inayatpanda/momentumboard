@@ -323,6 +323,83 @@
   color: var(--text-dim);
 }
 
+/* --- board -------------------------------------------------------------------
+   The Board screen (plan Task 14): the whole engine's mind as one
+   conviction-ranked scroll. Sized rows reuse CallCard/.today-cards as-is;
+   everything below is new — the ranked thin row and the collapsed "engine
+   said no" details. Tokens only, on top of .card/.pill/.sec-label/.num/
+   .pressable already declared above. */
+.v2 .board2 h1 {
+  font-size: 22px;
+  margin: 0 0 14px;
+}
+
+/* one ranked row, thinner than a card: sym + side on the left, a note in the
+   middle, an optional trailing .num (conviction or core) on the right */
+.v2 a.board-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.v2 a.board-row:last-child {
+  border-bottom: none;
+}
+.v2 .board-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13.5px;
+  flex-shrink: 0;
+}
+.v2 .board-row-detail {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .board-row-core {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* "the engine said no" — a collapsed card by default; #refused opens it */
+.v2 details.board-refused {
+  margin-top: 18px;
+  padding: 0;
+}
+.v2 details.board-refused > summary {
+  margin: 0;
+  padding: 14px;
+  cursor: pointer;
+  list-style: none;
+}
+.v2 details.board-refused > summary::-webkit-details-marker {
+  display: none;
+}
+.v2 details.board-refused[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.v2 details.board-refused > .board-row,
+.v2 details.board-refused > .cc-reason {
+  margin: 0 14px;
+}
+.v2 details.board-refused > .board-row:last-of-type {
+  margin-bottom: 14px;
+}
+.v2 details.board-refused > .cc-reason {
+  padding-bottom: 14px;
+}
+
 /* the yesterday strip */
 .v2 .cc-yesterday {
   display: flex;
