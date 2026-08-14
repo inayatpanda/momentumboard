@@ -1308,3 +1308,151 @@
   flex-basis: 100%;
   margin-top: 2px;
 }
+
+/* --- record --------------------------------------------------------------
+   Track record (plan Task 20): scorecard tiles → calibration → the ledger as
+   cards (the legacy 11-column sideways table dies here) → regrets. Tokens
+   only, on top of .card/.pill/.sec-label/.cc-reason/.cc-wildcard/.num/
+   .pressable/.skeleton/.stx-showmore already declared above. */
+.v2 .rec2 h1 {
+  font-size: 22px;
+  margin: 0 0 14px;
+}
+
+/* the scorecard: one tile per byGrade key, shadow/wildcard included — never
+   styled differently from an ordinary letter, only LABELLED differently
+   (Record.tsx's tileLabel) */
+.v2 .rec-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.v2 .rec-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .rec-tile-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.v2 .rec-tile-n {
+  font-size: 20px;
+  font-weight: 800;
+}
+.v2 .rec-tile-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.v2 .rec-tile-warn {
+  font-size: 11px;
+  color: var(--warn);
+}
+
+/* calibration: CalibrationPlot is reused AS-IS (its own file is untouched) —
+   this wrapper only restyles the legacy .digest-section/.section-title/
+   .empty-line classes it renders, onto the v2 palette. */
+.v2 .rec-calibration {
+  margin: 4px 0 18px;
+}
+.v2 .rec-calibration .digest-section {
+  margin-bottom: 0;
+}
+.v2 .rec-calibration .section-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.v2 .rec-calibration .section-title::after {
+  background: var(--border);
+}
+.v2 .rec-calibration .empty-line {
+  color: var(--text-dim);
+}
+.v2 .rec-calibration-context {
+  margin-top: 8px;
+}
+
+/* the ledger, grouped by day */
+.v2 .rec-ledger-day {
+  margin-bottom: 4px;
+}
+.v2 .rec-ledger-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.v2 .rec-ledger-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.v2 a.rec-ledger-sym {
+  font-weight: 800;
+  font-size: 15px;
+  color: inherit;
+  text-decoration: none;
+}
+.v2 .rec-ledger-thesis {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.v2 .rec-ledger-out {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v2 .rec-ledger-pm {
+  margin: 0;
+  font-style: italic;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* the regret surface */
+.v2 .rec-regret-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.v2 .rec-regret-label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.v2 .rec-regret-stat {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 .rec-regret-causal {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.v2 .rec-regret-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.v2 a.rec-regret-example {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+.v2 a.rec-regret-example b {
+  color: var(--text);
+}
+.v2 .rec-regret-caveat {
+  margin-top: 10px;
+  font-style: italic;
+}
