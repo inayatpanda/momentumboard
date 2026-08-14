@@ -8,3 +8,12 @@
 // from it or editing it. Two different surfaces, two copies of one idea, by
 // design — the paper's prose stays the paper's own.
 export const NO_SIZED_TODAY = 'Nothing sized today. The engine scanned, and nothing cleared its gates.'
+
+/** …AND THE OBSERVATION-ONLY DAY, which is a different fact told with the same
+ * sentence until now (T13a). A board carrying observations and watch rows has
+ * rows that DID clear the gates — the observation row's whole definition is
+ * "cleared every gate, but no ISA route exists to place it". Printing "nothing
+ * cleared its gates" above three such rows contradicts the list underneath it,
+ * in the reader's own field of view, about the one thing this app sells: that
+ * the engine says what actually happened. */
+export const NO_SIZED_NO_ROUTE = 'Nothing sized today — what cleared the gates has no route an ISA can take.'

@@ -69,8 +69,11 @@ const PanelsFallback = () => (
 export default function DeskLayout({ children }: { children: ReactNode }) {
   // /board at desk width would dock a SECOND copy of the list the column
   // already shows (Today's counts rail and typed URLs land here — Task 22
-  // review, Important 1). The URL and its #refused hash stay untouched (the
-  // column's own section carries the id), only the pane's content swaps.
+  // review, Important 1). The URL and its hash stay untouched, only the pane's
+  // content swaps — and the hash is not lost with the pane: BoardColumn (which
+  // is mounted right there on the left, and never unmounts) watches the wouter
+  // location and opens or scrolls to the section the chip named. So a chip that
+  // used to dead-end into this paragraph now moves the column (D2).
   const [path] = useLocation()
   const atBoard = path === '/board'
   const [analytics, setAnalytics] = useState(false)

@@ -19,9 +19,17 @@
 //   unless the page was reached at #refused (read from `window.location.hash`
 //   on mount — real browser navigation, independent of wouter's location
 //   hook, which is why this reads the DOM global directly).
+//
+// THE HASH IS A DESTINATION, on both surfaces (final wave, D2). Today's counts
+// rail links `/board#developing|#watch|#refused`, and at desk width the pane
+// answers /board with a pointer paragraph while THIS column stays mounted — so
+// the chip landed somewhere that showed nothing new and the reader was left to
+// find the section themselves. The three sections now carry the ids the rail
+// names, and this component honours whichever one it was sent to: #refused
+// opens the details, #developing/#watch scroll their heading into view.
 
-import { useState } from 'react'
-import { Link } from 'wouter'
+import { useEffect, useState } from 'react'
+import { Link, useLocation } from 'wouter'
 import { useSlice } from '../../lib/useSlice'
 import { getBoardSlice, getFunnel } from '../../lib/apiViews'
 import type { EnginePrediction } from '../../lib/api'
@@ -49,12 +57,41 @@ function BoardThinRow({ p, note, conviction }: { p: EnginePrediction; note: stri
   )
 }
 
-function RefusedSection({ date }: { date: string }) {
+/** The live `window.location.hash`.
+ *
+ * Two triggers, because one is not enough. A real browser hash navigation
+ * fires `hashchange`; a wouter <Link href="/board#watch"> is a `pushState`,
+ * which fires NOTHING — so the wouter location is watched too, and any change
+ * to it re-reads the DOM global. window.location stays the source of truth
+ * either way: wouter's own location hook carries no hash at all, and under the
+ * memory hook the tests use it carries nothing real. */
+const currentHash = () => (typeof window === 'undefined' ? '' : window.location.hash)
+
+function useLocationHash(): string {
+  const [loc] = useLocation()
+  const [hash, setHash] = useState(currentHash)
+  useEffect(() => setHash(currentHash()), [loc])
+  useEffect(() => {
+    const onHash = () => setHash(currentHash())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  return hash
+}
+
+function RefusedSection({ date, hash }: { date: string; hash: string }) {
   const { data } = useSlice(`funnel:${date}`, () => getFunnel(date))
   // Real browser navigation lands the hash in window.location regardless of
   // which locationHook is routing the app (wouter's memory hook, used in
-  // tests, never touches it) — checked once, at mount, per DS-17.
-  const [open, setOpen] = useState(() => typeof window !== 'undefined' && window.location.hash === '#refused')
+  // tests, never touches it) — checked at mount per DS-17, and again whenever
+  // the hash changes UNDER a mounted column, which is the desk's whole case:
+  // the column never unmounts, so mount-only would have answered the chip once
+  // per session and never again. Only ever opens — a reader who collapsed it
+  // does not get it reopened under them by an unrelated re-render.
+  const [open, setOpen] = useState(() => hash === '#refused')
+  useEffect(() => {
+    if (hash === '#refused') setOpen(true)
+  }, [hash])
   const refusals = data?.refusals ?? []
   return (
     <details id="refused" className="card board-refused" open={open} onToggle={e => setOpen(e.currentTarget.open)}>
@@ -72,6 +109,7 @@ function RefusedSection({ date }: { date: string }) {
 
 export default function BoardColumn() {
   const { data } = useSlice('board', getBoardSlice)
+  const hash = useLocationHash()
   const blob = data?.board ?? null
   const rows = blob?.board ?? []
   // same taxonomy as src/components/EngineBoard.tsx:251-255 and Today's
@@ -80,6 +118,15 @@ export default function BoardColumn() {
   // One shared helper (src/lib/boardTaxonomy.ts) so this file, Today, and
   // CountsRail can never drift on what counts as what.
   const { sized, developing, watch, observations, nearMisses } = splitBoardRows(rows)
+
+  // …and the two scroll targets. Re-run on `rows.length` as well as the hash:
+  // the chip usually lands here before the board slice has painted, and there
+  // is nothing to scroll to until it has. `scrollIntoView` is optional-called —
+  // jsdom ships none, and this is chrome, not a behaviour worth crashing over.
+  useEffect(() => {
+    if (hash !== '#developing' && hash !== '#watch') return
+    document.getElementById(hash.slice(1))?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+  }, [hash, rows.length])
 
   return (
     <>
@@ -100,12 +147,21 @@ export default function BoardColumn() {
             </div>
           )}
 
-          {developing.length > 0 && <p className="sec-label">Developing — building over 2–4 weeks</p>}
+          {/* the ids Today's counts rail links to (D2) — one per chip */}
+          {developing.length > 0 && (
+            <p className="sec-label" id="developing">
+              Developing — building over 2–4 weeks
+            </p>
+          )}
           {developing.map(p => (
             <BoardThinRow key={p.id} p={p} note="developing" conviction={Math.abs(p.composite)} />
           ))}
 
-          {watch.length > 0 && <p className="sec-label">Watch — short-term observations</p>}
+          {watch.length > 0 && (
+            <p className="sec-label" id="watch">
+              Watch — short-term observations
+            </p>
+          )}
           {watch.map(p => (
             <BoardThinRow key={p.id} p={p} note="watch" conviction={Math.abs(p.composite)} />
           ))}
@@ -126,7 +182,7 @@ export default function BoardColumn() {
           render can never show yesterday's refusals beside today's date —
           without it, useSlice's own state would carry the OLD date's cached
           rows into the very same commit that already shows the NEW date. */}
-      {blob?.date && <RefusedSection key={blob.date} date={blob.date} />}
+      {blob?.date && <RefusedSection key={blob.date} date={blob.date} hash={hash} />}
     </>
   )
 }

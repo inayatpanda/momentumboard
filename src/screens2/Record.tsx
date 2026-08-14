@@ -23,6 +23,17 @@ import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
 const pct = (hits: number, n: number) => (n ? `${Math.round((hits / n) * 100)}%` : '—')
 const fmtExcess = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}%`
 
+/** The newest Brier point off a calibration blob. The wire shape is
+ * `{ date, mean, n }[]` (shared/engine/calibration.ts) but the slice types it
+ * `unknown[]`, and a bare number series is the shape an older blob carries —
+ * read both rather than printing NaN at a reader. */
+function latestBrier(brier: unknown[]): number | null {
+  const last = brier?.[brier.length - 1]
+  if (typeof last === 'number') return last
+  const mean = (last as { mean?: unknown } | undefined)?.mean
+  return typeof mean === 'number' ? mean : null
+}
+
 type Scorecard = NonNullable<EngineData['scorecard']>
 
 /* Two of byGrade's keys are not letters, and neither names a population the
@@ -86,6 +97,9 @@ function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
 function CryptoPanel({ crypto, rows }: { crypto: NonNullable<LearningSlice['crypto']>; rows: ReturnType<typeof flattenLedger> }) {
   const s = cryptoLedgerSummary(rows)
   const cold = crypto.gradedN < crypto.coldStartN
+  const cal = crypto.calibration
+  const buckets = cal ? Object.keys(cal.buckets ?? {}).length : 0
+  const brier = cal ? latestBrier(cal.brier) : null
   return (
     <section aria-label="Crypto scorecard">
       <p className="sec-label">Crypto — raw, no benchmark</p>
@@ -116,6 +130,23 @@ function CryptoPanel({ crypto, rows }: { crypto: NonNullable<LearningSlice['cryp
         subtracted, over fourteen crypto bars.
         {cold && ' Until it has watched itself about fifty times, every row grades C at half size: that is a designed floor, not a verdict on the asset.'}
       </p>
+      {/* THE COHORT'S OWN CALIBRATION (codex #4). It has one — served on the
+          learning slice as `crypto.calibration`, struck on the absolute basis —
+          and nothing rendered a character of it, so the only calibration on this
+          page was the equity one and a cohort reader had no way to know theirs
+          existed. Compact on purpose: a second plot beside the equity one would
+          read as two views of one measurement when they share no basis at all. */}
+      {cal && (
+        <p className="cc-reason rec-crypto-cal">
+          Its own calibration, on the absolute basis: <span className="num">{buckets}</span> probability {buckets === 1 ? 'bucket' : 'buckets'} filled
+          {brier != null && (
+            <>
+              , latest Brier <span className="num">{brier.toFixed(3)}</span>
+            </>
+          )}
+          .
+        </p>
+      )}
     </section>
   )
 }
@@ -125,6 +156,12 @@ function CalibrationSection({ calibration }: { calibration: LearningSlice['calib
   const referenceBase = calibration.referenceBase
   return (
     <section aria-label="Calibration" className="rec-calibration">
+      {/* NAMED AS THE EQUITY PARTITION TOO (D8). This plot is `engine-calibration`,
+          which the grading pass keeps every cohort row out of — the same
+          population the scorecard tiles above are about, and the header said so
+          while this said nothing. An unlabelled calibration plot under a labelled
+          equity scorecard reads as "and here is the whole engine's". */}
+      <p className="sec-label">Calibration · Equity — excess vs SPY</p>
       <CalibrationPlot buckets={calibration.buckets as Record<string, { n: number; hits: number }>} seeded={calibration.seeded} />
       <p className="cc-reason rec-calibration-context">
         {referenceBase != null ? (
@@ -133,34 +170,29 @@ function CalibrationSection({ calibration }: { calibration: LearningSlice['calib
             swept from years of history and fixed until the engine is re-seeded.
           </>
         ) : (
-          <>The grade bar is currently the engine's own pooled hit rate across every graded call, until a re-seed measures the ordinary-candidate rate directly.</>
+          /* "every graded call" was false the day the cohort started grading its
+             own (codex #4): this pooled rate is struck over the equity partition
+             alone, and a crypto row has never been in it. */
+          <>
+            The grade bar is currently the engine's own pooled hit rate across every graded equity call, until a re-seed measures the
+            ordinary-candidate rate directly.
+          </>
         )}
       </p>
     </section>
   )
 }
 
-/** The ledger: `ledger:7` by default, "Load 30 days" swaps to `ledger:30` —
- * its own slice key, its own fetch, mounted only once asked, exactly
- * PastCalls' DeepCalls/"load older calls" shape. Until the wider slice lands,
- * the default 7-day list stays on screen as the fallback rather than
- * blanking (same rule PastCalls' DeepCalls follows). */
-function Ledger30({ fallback }: { fallback: LedgerDay[] }) {
-  const { data } = useSlice('ledger:30', () => getLedgerDays(30))
-  return <LedgerDayCards days={data?.days ?? fallback} />
-}
-
 /** `days` is passed IN rather than fetched here (crypto-v2 wave): the crypto
  * panel rolls the same receipts, and two components calling `useSlice` on one
- * key would revalidate `ledger:7` twice for one screen. */
-function LedgerSection({ days }: { days: LedgerDay[] }) {
-  const [wide, setWide] = useState(false)
+ * key would revalidate one key twice for one screen. */
+function LedgerSection({ days, wide, onWiden }: { days: LedgerDay[]; wide: boolean; onWiden: () => void }) {
   return (
     <section aria-label="The ledger">
       <p className="sec-label">The ledger — the receipts</p>
-      {wide ? <Ledger30 fallback={days} /> : <LedgerDayCards days={days} />}
+      <LedgerDayCards days={days} />
       {!wide && (
-        <button className="stx-showmore" onClick={() => setWide(true)}>
+        <button className="stx-showmore" onClick={onWiden}>
           Load 30 days
         </button>
       )}
@@ -170,7 +202,16 @@ function LedgerSection({ days }: { days: LedgerDay[] }) {
 
 export default function Record() {
   const { data: learning } = useSlice('learning', getLearning)
-  const { data: ledger } = useSlice('ledger:7', () => getLedgerDays(7))
+  // THE WINDOW IS ONE DECISION, MADE HERE (codex #11). It used to live inside
+  // LedgerSection, which meant the cards below could be showing thirty days
+  // while the crypto panel above still rolled the seven it had been handed —
+  // one screen quoting two windows, with nothing on it saying which was which.
+  // Widening swaps the slice KEY rather than mounting a second hook: one slice
+  // at a time, still fetched only once asked, and `useSlice` holds the 7-day
+  // paint on screen until the wider one lands rather than blanking (the same
+  // rule PastCalls' DeepCalls follows).
+  const [wide, setWide] = useState(false)
+  const { data: ledger } = useSlice<{ days: LedgerDay[] }>(wide ? 'ledger:30' : 'ledger:7', () => getLedgerDays(wide ? 30 : 7))
   const days = ledger?.days ?? []
   return (
     <div className="rec2">
@@ -191,7 +232,7 @@ export default function Record() {
           <CalibrationSection calibration={learning.calibration} />
         </>
       )}
-      <LedgerSection days={days} />
+      <LedgerSection days={days} wide={wide} onWiden={() => setWide(true)} />
       <Regrets regrets={learning?.regrets ?? null} />
     </div>
   )

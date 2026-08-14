@@ -56,20 +56,42 @@ export function useCachedSparkline(symbol: string): number[] | undefined {
   return closes
 }
 
+/** The row's own slice: one `candles:SYM:3mo` per row, fetched if stale. Safe
+ * N times over because React fires the mounts in parallel and the store dedupes
+ * a shared key — but only at watchlist LENGTHS. See `sparkCachedOnly`. */
+function SparkLive({ symbol }: { symbol: string }) {
+  const { data } = useSlice<CandleSlice>(`candles:${symbol}:3mo`, () => getCandles(symbol, '3mo'))
+  const closes = sparkCloses(data)
+  return closes ? <Sparkline closes={closes} /> : null
+}
+
+/** Dexie only. The rail cards' bargain, offered to any list long enough to need
+ * it: a sparkline when the tape happens to be cached, silence when it is not. */
+function SparkCached({ symbol }: { symbol: string }) {
+  const closes = useCachedSparkline(symbol)
+  return closes ? <Sparkline closes={closes} /> : null
+}
+
 export function StockRow({
   symbol,
   name,
   quote,
   onRemove,
+  sparkCachedOnly,
 }: {
   symbol: string
   name?: string | null
   quote?: Quote | null
   /** Presence implies the watchlist context — renders a ✕ remove button. */
   onRemove?: () => void
+  /** NEVER fetch this row's candles — draw a sparkline only if the store
+   * already has the series (D3). A watchlist is a dozen rows and each one
+   * pulling its own 3-month series is a fair trade; Movers renders FORTY, and
+   * forty parallel candle requests on a screen whose sparklines are decoration
+   * is a burst of traffic nobody asked for. The rail cards in Stocks.tsx have
+   * always taken this deal; this is the same deal, offered as a prop. */
+  sparkCachedOnly?: boolean
 }) {
-  const { data } = useSlice<CandleSlice>(`candles:${symbol}:3mo`, () => getCandles(symbol, '3mo'))
-  const closes = sparkCloses(data)
   const up = quote && quote.changePct != null ? quote.changePct >= 0 : false
   return (
     <div className="card pressable stx-row">
@@ -81,7 +103,7 @@ export function StockRow({
           <span className="stx-sym">{symbol}</span>
           {name && <span className="stx-name">{name}</span>}
         </span>
-        {closes && <Sparkline closes={closes} />}
+        {sparkCachedOnly ? <SparkCached symbol={symbol} /> : <SparkLive symbol={symbol} />}
         <span className="stx-row-prices">
           <span className="num">{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
           {quote && quote.changePct != null && <span className={`pill ${up ? 'long' : 'short'}`}><span className="num">{fmtPct(quote.changePct)}</span></span>}

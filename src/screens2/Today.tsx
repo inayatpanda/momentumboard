@@ -12,7 +12,7 @@
 import { useSlice } from '../lib/useSlice'
 import { getBoardSlice } from '../lib/apiViews'
 import { splitBoardRows } from '../lib/boardTaxonomy'
-import { NO_SIZED_TODAY } from '../lib/copy'
+import { NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
 import { CountsRail } from './parts/CountsRail'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
@@ -27,7 +27,15 @@ export default function Today() {
   // hard rule, checked again there rather than trusted from here). Shared
   // taxonomy helper (src/lib/boardTaxonomy.ts) so Today, Board, and
   // CountsRail can never drift on what counts as "sized".
-  const { sized } = splitBoardRows(rows)
+  const { sized, developing, watch, observations } = splitBoardRows(rows)
+  // WHICH "nothing sized" SENTENCE (T13a). A day the engine looked at and
+  // published nothing at all is not the day it published five rows that cleared
+  // every gate and had nowhere to be placed — and until now both got the
+  // "nothing cleared its gates" line, printed directly above the rail counting
+  // the rows that did. Near misses are deliberately NOT counted here: they
+  // cleared no gate, so on a board of nothing but near misses the first
+  // sentence is the true one.
+  const clearedButUnsized = developing.length + watch.length + observations.length > 0
 
   return (
     <div className="today">
@@ -41,7 +49,7 @@ export default function Today() {
           <div className="skeleton" style={{ height: 118 }} />
         </>
       ) : sized.length === 0 ? (
-        <p className="cc-reason">{NO_SIZED_TODAY}</p>
+        <p className="cc-reason">{clearedButUnsized ? NO_SIZED_NO_ROUTE : NO_SIZED_TODAY}</p>
       ) : (
         <div className="today-cards">
           {sized.map(row => (

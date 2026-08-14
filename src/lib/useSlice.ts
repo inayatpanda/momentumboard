@@ -10,6 +10,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { isFresh, readSlice, revalidate, sliceEvents, type SliceEventKind, type SliceKey } from './store'
 import { reportSliceHealth } from '../shell/OfflinePill'
 
+/** Mints the per-hook id the offline registry is keyed on (D1). Module-level
+ * and monotonic — an id must be unique across every hook alive at once, which a
+ * key-derived one is not. */
+let hookSeq = 0
+
 export interface SliceState<T> {
   data: T | null
   fetchedAt: number | null
@@ -100,10 +105,23 @@ export function useSlice<T>(key: SliceKey, fetcher: () => Promise<T>): SliceStat
 
   // The app-wide offline pill (DS-13): every mounted slice reports its health;
   // the pill shows when any is offline, stamped with the oldest data age.
+  //
+  // Reported under THIS HOOK'S id, not the slice key (D1). Two components can
+  // read one key at once — the desk mounts Today and the BoardColumn, both on
+  // 'board' — and a key-keyed registry gave them a single shared row that either
+  // unmount deleted, silencing the survivor's offline state. The id is minted
+  // once per hook instance and never changes, including across a key change:
+  // one mounted reader is one row, and it is replaced, not duplicated.
+  const instanceId = useRef<string>('')
+  if (!instanceId.current) instanceId.current = `slice-${++hookSeq}`
   useEffect(() => {
-    reportSliceHealth(key, { offline, fetchedAt: rec.fetchedAt })
+    reportSliceHealth(instanceId.current, { key, offline, fetchedAt: rec.fetchedAt })
   }, [key, offline, rec.fetchedAt])
-  useEffect(() => () => reportSliceHealth(key, null), [key])
+  // unmount ONLY (no deps): the row belongs to the instance, not to the key.
+  useEffect(() => {
+    const id = instanceId.current
+    return () => reportSliceHealth(id, null)
+  }, [])
 
   return { data: rec.data, fetchedAt: rec.fetchedAt, refreshing, offline, refresh: () => void load(true) }
 }

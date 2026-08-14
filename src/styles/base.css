@@ -921,6 +921,18 @@
 .v2 .sp-fv-null {
   margin-top: 8px;
 }
+/* the factors a cohort's POLICY does not read (D9) — each line is the engine's
+   own reason, which is a different fact from "no data" and reads as one */
+.v2 .sp-fv-notread {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.v2 .sp-fv-notread li {
+  color: var(--text-dim);
+}
 
 /* --- the funnel path: dated steps down a rail ------------------------------ */
 .v2 .sp-path {

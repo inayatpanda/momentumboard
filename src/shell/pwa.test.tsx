@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8')
@@ -52,9 +52,55 @@ describe('OfflinePill', () => {
     expect(screen.queryByText(/offline/i)).not.toBeInTheDocument()
     const noon = new Date()
     noon.setHours(12, 30, 0, 0)
-    reportSliceHealth('board', { offline: true, fetchedAt: noon.getTime() })
+    act(() => reportSliceHealth('inst-1', { key: 'board', offline: true, fetchedAt: noon.getTime() }))
     await waitFor(() => expect(screen.getByText(/offline — showing 12:30 data/i)).toBeInTheDocument())
-    reportSliceHealth('board', { offline: false, fetchedAt: Date.now() })
+    act(() => reportSliceHealth('inst-1', { key: 'board', offline: false, fetchedAt: Date.now() }))
     await waitFor(() => expect(screen.queryByText(/offline/i)).not.toBeInTheDocument())
+    act(() => reportSliceHealth('inst-1', null))
+  })
+
+  // D1: the desk mounts Today and the BoardColumn together and both read
+  // 'board'. Keyed by slice key they shared ONE registry row, and either
+  // unmount deleted it — the survivor's offline state vanished with it.
+  it('two readers of one slice key are two rows: one unmounting leaves the other’s offline state standing', async () => {
+    const { reportSliceHealth, OfflinePill } = await import('./OfflinePill')
+    render(<OfflinePill />)
+    const noon = new Date()
+    noon.setHours(9, 15, 0, 0)
+    act(() => reportSliceHealth('today', { key: 'board', offline: true, fetchedAt: noon.getTime() }))
+    act(() => reportSliceHealth('column', { key: 'board', offline: false, fetchedAt: Date.now() }))
+    await waitFor(() => expect(screen.getByText(/offline — showing 09:15 data/i)).toBeInTheDocument())
+
+    act(() => reportSliceHealth('column', null)) // the column unmounts…
+    await new Promise(r => setTimeout(r, 0))
+    expect(screen.getByText(/offline — showing 09:15 data/i)).toBeInTheDocument() // …Today still says it
+
+    act(() => reportSliceHealth('today', null))
+    await waitFor(() => expect(screen.queryByText(/offline/i)).not.toBeInTheDocument())
+  })
+
+  // …and the whole point of the pill: it reports through a live hook, so a
+  // second mounted useSlice on the same key cannot silence the first.
+  it('a second mounted useSlice on the same key does not clear the first one’s report on unmount', async () => {
+    const { OfflinePill } = await import('./OfflinePill')
+    const { renderHook } = await import('@testing-library/react')
+    const { useSlice } = await import('../lib/useSlice')
+    const { db } = await import('../lib/db')
+    await db.slices.clear()
+    await db.slices.put({ key: 'board:d1', data: { v: 1 }, fetchedAt: Date.now() - 10 * 60_000 })
+
+    render(<OfflinePill />)
+    const a = renderHook(() => useSlice('board:d1', async () => Promise.reject(new Error('net down'))))
+    await waitFor(() => expect(a.result.current.offline).toBe(true))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/offline/i))
+
+    const b = renderHook(() => useSlice('board:d1', async () => Promise.reject(new Error('net down'))))
+    await waitFor(() => expect(b.result.current.offline).toBe(true))
+    b.unmount()
+
+    await new Promise(r => setTimeout(r, 0))
+    expect(screen.getByRole('status')).toHaveTextContent(/offline/i) // A is still mounted and still offline
+    a.unmount()
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
   })
 })

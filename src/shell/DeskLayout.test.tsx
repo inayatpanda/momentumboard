@@ -107,6 +107,8 @@ beforeEach(async () => {
   await db.slices.clear()
   await db.candles.clear()
   await writeSlice('board', mkBoardData([mkRow()]))
+  // the board column reads window.location.hash (D2) — leave no hash behind
+  window.history.pushState(null, '', '/app/')
   for (const s of Object.values(spies)) s.mockClear()
 })
 
@@ -218,6 +220,33 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     const pane = screen.getByRole('main')
     expect(within(pane).getByText(/board lives in the column/i)).toBeInTheDocument()
     expect(within(pane).queryByRole('heading', { name: /^board$/i })).not.toBeInTheDocument()
+  })
+
+  // D2: the pointer paragraph is the right answer for the PANE, but the chip
+  // that sent the reader here ("Refused") must still land somewhere. It lands
+  // in the column, which is mounted on the left the whole time.
+  it('at desk width /board#refused opens the COLUMN’s "engine said no" details', async () => {
+    setViewport(1440)
+    window.history.pushState(null, '', '/app/board#refused')
+    render(<AppShell locationHook={memoryLocation({ path: '/app/board' }).hook} />)
+    const col = await boardColumn()
+    const details = (await within(col).findByText(/the engine said no/i)).closest('details') as HTMLDetailsElement
+    expect(details.open).toBe(true)
+    // …and the pane still points rather than docking a second list
+    expect(within(screen.getByRole('main')).getByText(/board lives in the column/i)).toBeInTheDocument()
+  })
+
+  it('at desk width /board#developing scrolls the column’s developing heading into view', async () => {
+    setViewport(1440)
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrollIntoView, configurable: true, writable: true })
+    await writeSlice('board', mkBoardData([mkRow({ id: 'd1', sym: 'TSLA', watchOnly: true, horizon: 'developing', composite: -54 })]))
+    window.history.pushState(null, '', '/app/board#developing')
+    render(<AppShell locationHook={memoryLocation({ path: '/app/board' }).hook} />)
+    const col = await boardColumn()
+    expect(within(col).getByText(/developing — building/i)).toHaveAttribute('id', 'developing')
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   })
 
   it('below 1200px the analytics drawer does not exist at all', async () => {

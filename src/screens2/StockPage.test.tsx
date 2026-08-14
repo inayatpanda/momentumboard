@@ -443,6 +443,44 @@ describe('StockPage', () => {
       expect(nullLine).toHaveTextContent('social')
     })
 
+    // D9: a cohort row's social/channels/seasonality are null by POLICY — the
+    // owner's directive, quoted and dated, sits in each factor's own `detail` —
+    // and this page listed them under "no data", telling a crypto reader the
+    // engine's wiring had gaps where it had a decision.
+    it('shows the engine’s own reason for a factor nulled by policy, instead of calling it no data', async () => {
+      const directive = 'not read for crypto — owner directive 2026-08-14: chart parameters and a little major news — nothing else'
+      const factors = emptyFactors()
+      factors.technical = { score: 30, detail: 'above the 50d', weight: 1 }
+      factors.social = { score: null, detail: directive, weight: 1 }
+      factors.channels = { score: null, detail: directive, weight: 1 }
+      factors.seasonality = { score: null, detail: 'not read for crypto — the seasonality library counts a year in 252 sessions', weight: 1 }
+      await writeSlice('journey:BTC-USD', mkJourney({ sym: 'BTC-USD', boardRow: mkRow({ sym: 'BTC-USD', cohort: 'crypto', factors }) }))
+      withRouter('BTC-USD')
+
+      const votes = await screen.findByLabelText('Factor votes')
+      const lines = within(within(votes).getByLabelText('Factors not read')).getAllByRole('listitem')
+      expect(lines).toHaveLength(2) // one per DISTINCT reason — social and channels share theirs
+      expect(lines[0]).toHaveTextContent('social, channels')
+      expect(lines[0]).toHaveTextContent(/owner directive 2026-08-14/)
+      expect(lines[1]).toHaveTextContent(/252 sessions/)
+
+      // …and not one of them is reported as an absence as well
+      const nullLine = within(votes).getByText(/^no data:/i)
+      expect(nullLine).not.toHaveTextContent('social')
+      expect(nullLine).not.toHaveTextContent('seasonality')
+      expect(nullLine).toHaveTextContent('news tone') // the genuinely empty ones still say so
+    })
+
+    it('an equity row with no factor details is unchanged — one "no data" line, no reason list', async () => {
+      const factors = emptyFactors()
+      factors.technical = { score: 30, detail: 'above the 50d', weight: 1 }
+      await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow({ factors }) }))
+      withRouter('NVDA')
+      const votes = await screen.findByLabelText('Factor votes')
+      expect(within(votes).queryByLabelText('Factors not read')).not.toBeInTheDocument()
+      expect(within(votes).getByText(/^no data:/i)).toHaveTextContent('social')
+    })
+
     it('draws one bar per scored factor', async () => {
       const factors = emptyFactors()
       factors.technical = { score: 30, detail: '', weight: 1 }

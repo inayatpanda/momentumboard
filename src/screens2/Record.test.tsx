@@ -151,6 +151,27 @@ describe('Record', () => {
     })
   })
 
+  // D8: the calibration plot is `engine-calibration`, the SAME equity partition
+  // the tiles above are named for — and it carried no name at all, so it read as
+  // the whole engine's. Its fallback sentence claimed "every graded call" too,
+  // which stopped being true the day the cohort started grading its own.
+  describe('calibration', () => {
+    it('names the plot as the equity partition', async () => {
+      await seedLearning(mkLearning({ calibration: { buckets: {}, brier: [], seeded: true, modelVersion: null, referenceBase: 0.41, evidence: null } }))
+      withRouter()
+      const cal = await screen.findByLabelText('Calibration')
+      expect(within(cal).getByText(/Equity — excess vs SPY/)).toBeInTheDocument()
+    })
+
+    it('says the pooled rate is over equity calls, not "every graded call"', async () => {
+      await seedLearning(mkLearning({ calibration: { buckets: {}, brier: [], seeded: false, modelVersion: null, referenceBase: null, evidence: null } }))
+      withRouter()
+      const cal = await screen.findByLabelText('Calibration')
+      expect(within(cal).getByText(/every graded equity call/)).toBeInTheDocument()
+      expect(within(cal).queryByText(/across every graded call/)).not.toBeInTheDocument()
+    })
+  })
+
   // THE COHORT'S OWN PANE (finding 4). Excluded from every equity aggregate and
   // given none of its own, the crypto cohort's hit rate, average raw return,
   // calibration and independently earned rung all disappear at cutover.
@@ -189,6 +210,59 @@ describe('Record', () => {
       expect(within(panel).getByText(/12/)).toBeInTheDocument() // its own graded outcomes, against the ~50 cold start
       expect(within(panel).getByText(/R0/)).toBeInTheDocument() // the rung it earned itself
       expect(within(panel).queryByText(/SPY/i)).not.toBeInTheDocument() // there is no benchmark in this partition
+    })
+
+    // codex #4: the cohort HAS a calibration — served right there on the slice,
+    // struck on the absolute basis — and not a character of it rendered, so the
+    // only calibration on this page was the equity one.
+    it('renders the cohort’s own calibration compactly, named as the absolute basis', async () => {
+      await seedLearning(
+        mkLearning({
+          crypto: {
+            gradedN: 12,
+            coldStartN: 50,
+            rung: 0,
+            gradedAtRung: 12,
+            sinceDate: '2026-08-01',
+            calibration: {
+              buckets: { '0.4': { n: 6, hits: 3 }, '0.5': { n: 4, hits: 2 } },
+              brier: [{ date: '2026-08-13', mean: 0.212, n: 10 }],
+              seeded: false,
+              modelVersion: null,
+              referenceBase: null,
+              evidence: null,
+              basis: 'absolute',
+            },
+          },
+        }),
+      )
+      withRouter()
+      const panel = await screen.findByLabelText('Crypto scorecard')
+      const line = within(panel).getByText(/absolute basis/i)
+      expect(line).toHaveTextContent(/2 probability buckets filled/)
+      expect(line).toHaveTextContent(/latest Brier/)
+      expect(within(line).getByText('0.212')).toHaveClass('num')
+      expect(within(panel).queryByText(/SPY/i)).not.toBeInTheDocument() // still no benchmark in this partition
+    })
+
+    // codex #11: the window was LedgerSection's private state, so after
+    // "Load 30 days" the cards showed thirty and this panel still rolled seven.
+    it('rolls the SAME window the cards render — after Load 30 days the graded count widens', async () => {
+      const coin = (id: string, date: string, hit: boolean) =>
+        mkCall({ id, date, sym: 'BTC-USD', cohort: 'crypto', outcome10: { excessPct: hit ? 6 : -2, rawPct: hit ? 6 : -2, spyPct: 0, stopped: false, hit } })
+      await seedLearning(cryptoLearning())
+      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [coin('k1', '2026-08-10', true)] }])
+      await seedLedger('ledger:30', [
+        { date: '2026-08-10', predictions: [coin('k1', '2026-08-10', true)] },
+        { date: '2026-07-20', predictions: [coin('k2', '2026-07-20', true), coin('k3', '2026-07-20', false)] },
+      ])
+      withRouter()
+      const panel = await screen.findByLabelText('Crypto scorecard')
+      expect(await within(panel).findByText(/1 of 1 graded here/)).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: /load 30 days/i }))
+
+      expect(await within(screen.getByLabelText('Crypto scorecard')).findByText(/2 of 3 graded here/)).toBeInTheDocument()
     })
 
     it('renders no crypto panel at all when the partition has never moved', async () => {

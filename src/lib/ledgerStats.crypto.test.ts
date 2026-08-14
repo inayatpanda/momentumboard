@@ -48,9 +48,14 @@ const equity = [
 const coin = row({ sym: 'BTC-USD', cohort: 'crypto', capUsdM: null, outcome10: out(40, 0) })
 
 describe('a crypto row never enters an equity mean', () => {
-  it('reads the STAMP, not the symbol — a legacy crypto row was graded vs SPY and belongs in it', () => {
+  // D7: stamp OR symbol, because the SERVER's scorecard pass drops legacy
+  // crypto rows by symbol (engine.ts, `if (isCryptoSymbol(p.sym)) continue`).
+  // Keyed on the stamp alone, this pane kept a row the server's tile had
+  // dropped — two panes under one heading, rolling different populations.
+  it('reads the stamp OR the symbol, so the client and the server agree about one trade', () => {
     expect(isCryptoCohort(coin)).toBe(true)
-    expect(isCryptoCohort(row({ sym: 'BTC-USD', outcome10: out(3, 1) }))).toBe(false)
+    expect(isCryptoCohort(row({ sym: 'BTC-USD', outcome10: out(3, 1) }))).toBe(true) // legacy, unstamped
+    expect(isCryptoCohort(row({ sym: 'NVDA', outcome10: out(3, 1) }))).toBe(false)
   })
 
   it('leaves the topline avgExcess10 exactly where it was — while the CENSUS tiles count what the table shows', () => {

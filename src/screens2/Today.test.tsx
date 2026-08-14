@@ -13,7 +13,7 @@ import { db } from '../lib/db'
 import type { BoardSlice } from '../lib/apiViews'
 import type { EnginePrediction, IntradayFlag, IntradayFlagsBlob } from '../lib/api'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
-import { NO_SIZED_TODAY } from '../lib/copy'
+import { NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
 import { CountsRail } from './parts/CountsRail'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
@@ -304,6 +304,33 @@ describe('Today', () => {
 
   it('shows the empty-board sentence when nothing sized today', async () => {
     await db.slices.put({ key: 'board', data: mkBoardData([]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText(NO_SIZED_TODAY)).toBeInTheDocument()
+  })
+
+  // T13a: an observation-only day was told with the empty-board sentence —
+  // "nothing cleared its gates", printed directly above a rail counting rows
+  // that had. Two days, two sentences.
+  it('an observation-only day says the routes ran out, not that the gates did', async () => {
+    const observation = mkRow({ id: 'o1', sym: 'ASML', watchOnly: true, observation: true })
+    await db.slices.put({ key: 'board', data: mkBoardData([observation]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText(NO_SIZED_NO_ROUTE)).toBeInTheDocument()
+    expect(screen.queryByText(NO_SIZED_TODAY)).not.toBeInTheDocument()
+  })
+
+  it('a watch-only day says the same', async () => {
+    const watching = mkRow({ id: 'w1', sym: 'AMD', watchOnly: true, horizon: 'week' })
+    await db.slices.put({ key: 'board', data: mkBoardData([watching]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText(NO_SIZED_NO_ROUTE)).toBeInTheDocument()
+  })
+
+  // …but a board of nothing but near misses cleared no gate, so the original
+  // sentence is the true one there.
+  it('a near-miss-only day keeps the empty-board sentence', async () => {
+    const miss = mkRow({ id: 'n1', sym: 'PLTR', watchOnly: true, nearMiss: true })
+    await db.slices.put({ key: 'board', data: mkBoardData([miss]), fetchedAt: Date.now() })
     withRouter(<Today />)
     expect(await screen.findByText(NO_SIZED_TODAY)).toBeInTheDocument()
   })

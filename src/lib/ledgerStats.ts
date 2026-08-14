@@ -1,5 +1,6 @@
 import type { LedgerDay, LedgerPrediction } from './api'
 import { capCohort } from './format'
+import { isCryptoSymbol } from '../../shared/symbols'
 
 // The ledger table's row model + honest topline: flatten days newest-first,
 // and summarise ONLY what has actually been graded — open calls are counted,
@@ -32,10 +33,16 @@ export function statusOf(p: LedgerPrediction): LedgerStatus {
  * about one trade. The per-row table still SHOWS crypto rows; showing a row and
  * averaging it into a differently-defined mean are different acts.
  *
- * Keyed on the STAMP, never on the symbol: a legacy crypto row published before
- * the lane existed was graded against SPY, so its excess really is an excess and
- * it belongs in the equity mean it was measured in. */
-export const isCryptoCohort = (p: LedgerPrediction): boolean => p.cohort === 'crypto'
+ * STAMP OR SYMBOL, because the server says stamp-or-symbol (D7). The stamp is
+ * the honest key and a legacy crypto row published before the lane existed was
+ * genuinely graded against SPY — but `engine.ts`'s scorecard pass excludes those
+ * legacy rows BY SYMBOL (`if (isCryptoSymbol(p.sym)) continue`), so keying this
+ * pane on the stamp alone made the two halves of one number disagree about one
+ * trade: the server's scorecard tile dropped the row and the client's topline
+ * kept it, and a reader comparing the two panes was reading two different
+ * populations under one heading. Whether legacy rows SHOULD count is a real
+ * question; whether the two sides should answer it differently is not. */
+export const isCryptoCohort = (p: LedgerPrediction): boolean => p.cohort === 'crypto' || isCryptoSymbol(p.sym)
 const equityRows = (rows: LedgerPrediction[]) => rows.filter(r => !isCryptoCohort(r))
 
 export function flattenLedger(days: LedgerDay[], cap = 100): LedgerPrediction[] {

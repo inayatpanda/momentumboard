@@ -3,7 +3,7 @@
 // (`db.slices.put`) and asserts on the cached paint. Router wraps every
 // render in wouter's memoryLocation (src/shell/AppShell.test.tsx's pattern).
 
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -186,6 +186,33 @@ describe('Board', () => {
     withRouter(<Board />, '/app/board#refused')
     const details = await screen.findByText('AMD').then(() => document.getElementById('refused') as HTMLDetailsElement)
     expect(details.open).toBe(true)
+  })
+
+  // D2: Today's counts rail links `/board#developing` and `/board#watch`, and
+  // until now neither id existed anywhere — the chips scrolled to nothing.
+  it('the developing and watch headings carry the ids the counts rail links to', async () => {
+    await seedBoard([
+      mkRow({ id: 'd1', sym: 'TSLA', watchOnly: true, horizon: 'developing', composite: -54 }),
+      mkRow({ id: 'w1', sym: 'AMD', watchOnly: true, horizon: 'week', composite: 58 }),
+    ])
+    withRouter(<Board />)
+    expect(await screen.findByText(/developing — building/i)).toHaveAttribute('id', 'developing')
+    expect(screen.getByText(/watch — short-term/i)).toHaveAttribute('id', 'watch')
+  })
+
+  // …and the desk never unmounts this column, so a hash arriving UNDER it has
+  // to be honoured too — mount-only would answer the chip once a session.
+  it('opens the refused details when the hash changes under a mounted column', async () => {
+    await seedBoard([])
+    await seedFunnel('2026-08-14', mkFunnelData([mkFunnelRow({ key: 'AMD', gate: 'dead-zone-core' })]))
+    withRouter(<Board />)
+    await screen.findByText(/the engine said no/i)
+    const details = document.getElementById('refused') as HTMLDetailsElement
+    expect(details.open).toBe(false)
+
+    window.history.pushState(null, '', '/app/board#refused')
+    fireEvent(window, new Event('hashchange'))
+    await waitFor(() => expect((document.getElementById('refused') as HTMLDetailsElement).open).toBe(true))
   })
 
   it('the "engine said no" details starts collapsed with no hash', async () => {

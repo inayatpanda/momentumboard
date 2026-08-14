@@ -4,7 +4,7 @@
 // `writeSlice`, so `useSlice`'s Dexie-first paint shows it without a network
 // round trip.
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route, Router, Switch } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -98,6 +98,30 @@ describe('Movers', () => {
     fireEvent.click(screen.getByRole('button', { name: /show more/i }))
     expect(screen.getAllByText(/^SYM\d+$/)).toHaveLength(45)
     expect(screen.getByText('SYM44')).toBeInTheDocument()
+  })
+
+  // D3: forty rows, each of which USED to own a `candles:SYM:3mo` slice and
+  // fetch it — forty parallel requests for decoration, on a screen the reader
+  // opened to scan names. Cached-only now: a name already charted elsewhere
+  // still draws for free, and nothing else goes near the network.
+  it('renders forty rows without a single candle fetch, and still draws a cached sparkline', async () => {
+    const { getCandles } = await import('../lib/api')
+    const gainers = Array.from({ length: 45 }, (_, i) => mkMover(`SYM${i}`, 1))
+    await writeSlice('movers', { gainers, losers: [], actives: [], at: Date.now() })
+    // one name the app happens to have charted already
+    await writeSlice('candles:SYM3:3mo', {
+      candles: Array.from({ length: 30 }, (_, i) => ({ t: 1_700_000_000 + i * 86_400, o: 100, h: 102, l: 99, c: 100 + i, v: 1_000_000 })),
+    })
+    withRouter('/app/stocks/movers', 'movers')
+
+    await screen.findByText('SYM0')
+    expect(screen.getAllByText(/^SYM\d+$/)).toHaveLength(40)
+    await waitFor(() => expect(document.querySelectorAll('svg.spark')).toHaveLength(1)) // only the cached one
+    expect(getCandles).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /show more/i }))
+    expect(screen.getAllByText(/^SYM\d+$/)).toHaveLength(45)
+    expect(getCandles).not.toHaveBeenCalled()
   })
 
   it('never renders grade or probability text', async () => {

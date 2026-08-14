@@ -6,6 +6,13 @@
 // already owns its own per-row candles:SYM:3mo slice — Movers.tsx only shapes
 // a MoverRow into the Quote-ish prop StockRow expects.
 //
+// …and it asks those rows for CACHED sparklines only (D3). A watchlist row
+// fetching its own three months of tape is a fair trade at a dozen rows; this
+// page opens with FORTY, and forty parallel candle requests for decoration is a
+// burst of traffic nobody asked for — on a screen the reader reached to scan
+// names, not to chart them. A name already charted elsewhere still draws for
+// free, which is exactly the bargain the Stocks rail cards have always taken.
+//
 // Windowing is deliberately simple (no virtualiser dependency): render the
 // first PAGE rows, a "Show more" button reveals the rest. Switching gainers
 // <-> losers resets the window back to PAGE.
@@ -68,7 +75,7 @@ export default function Movers() {
         <>
           <div className="stx-watchlist">
             {shown.map(r => (
-              <StockRow key={r.sym} symbol={r.sym} name={r.name} quote={moverQuote(r)} />
+              <StockRow key={r.sym} symbol={r.sym} name={r.name} quote={moverQuote(r)} sparkCachedOnly />
             ))}
           </div>
           {visible < rows.length && (
