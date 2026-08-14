@@ -1,8 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import './styles/tokens.css' // v2 tokens + self-hosted @font-face — safe beside the legacy sheet
-import './index.css'
+import './styles/tokens.css' // v2 tokens + self-hosted @font-face
+import './styles/site.css' // public site + the legacy tokens the quant panels paint with
 import './lib/installPrompt' // register the beforeinstallprompt catcher before the event can fire
 
 // Licence-by-link: opening https://<site>/?key=<licence> unlocks this device

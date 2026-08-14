@@ -2426,10 +2426,10 @@ p {
     gap: 14px;
     margin-top: 14px;
   }
-  /* the four quant panels keep their own skin (index.css `.quant-*`, which
-     survives the cutover with the public site) — only the card shell and the
-     stacking are v2's business. The margin reset is the same one the retired
-     `.quant-grid` did: spacing here comes from the flex gap, once. */
+  /* the four quant panels keep their own skin (`.quant-*`, which lives in
+     src/styles/site.css since the deletion wave renamed index.css) — only the
+     card shell and the stacking are v2's business. The margin reset is the same
+     one the retired `.quant-grid` did: spacing comes from the flex gap, once. */
   .v2 .desk2-panels > .card {
     padding: 14px;
     margin-bottom: 0;

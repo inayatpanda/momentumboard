@@ -1,5 +1,31 @@
 /* =====================================================================
-   STREETSIGNAL DESIGN TOKENS
+   SITE + LEGACY-TOKEN STYLESHEET  (was src/index.css until the cutover
+   deletion wave, plan Task 24)
+   ---------------------------------------------------------------------
+   What still lives here after the legacy shell was deleted:
+
+     1. the design-token :root blocks below — the PUBLIC SITE's paper
+        identity, and the legacy token names (--blue --muted --panel
+        --line --faint --green --red --gold …) that the four surviving
+        quant panels still paint with. src/styles/base.css:2429 says so
+        explicitly: "the four quant panels keep their own skin
+        (index.css `.quant-*`, which survives the cutover with the
+        public site)".
+     2. the public website: .landing, the /engine /paper /ledger /faq
+        pages, and the .app-gate licence front door.
+     3. the shared primitives and survivor skins those two need
+        (.card .seg .menu-row .btn-primary .calc-* .alert-editor
+        .quant-* .cal-* .trow-* …).
+
+   CAUTION — this sheet is imported AFTER src/styles/tokens.css in
+   main.tsx, so its :root wins for the two token names that appear in
+   both: --bg and --text. That is pre-existing (it was true of index.css
+   before this rename) and is deliberately NOT changed here: the app
+   currently renders on --bg #0a0d0f / #f6f4ef from this file rather
+   than tokens.css's #0f1219 / #f6f7fc. Resolving that is a design
+   decision, not a deletion-wave one.
+
+   The v2 app's own element ground lives in src/styles/base.css.
    ---------------------------------------------------------------------
    Two themes drive everything off semantic CSS vars on :root[data-theme].
    The default follows the OS ('auto'); users pick light or dark in Settings.
@@ -478,28 +504,6 @@ p { text-wrap: pretty; }
   cursor: pointer;
 }
 
-/* ---------- toasts ---------- */
-.toasts {
-  position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(92vw, 480px);
-}
-.toast {
-  background: var(--panel-2);
-  border: 1px solid rgba(34, 201, 141, 0.5);
-  border-radius: 999px;
-  padding: 11px 18px;
-  font-size: 13.5px;
-  box-shadow: var(--shadow);
-  animation: rise 0.25s ease both;
-}
-
 /* ---------- ticker detail ---------- */
 .detail { padding: 12px 16px 16px; }
 .detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
@@ -724,86 +728,6 @@ p { text-wrap: pretty; }
   font-weight: 600;
 }
 
-/* ---------- trending strip ---------- */
-.trend-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 10px; scrollbar-width: none; }
-.trend-strip::-webkit-scrollbar { display: none; }
-.trend-chip {
-  flex: 0 0 auto;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-num);
-  white-space: nowrap;
-}
-.trend-chip em { font-style: normal; margin-left: 3px; }
-.trend-chip.mkt { border-style: dashed; color: var(--muted); }
-
-/* ---------- journal ---------- */
-.risk-banner {
-  background: var(--amber-soft);
-  border: 1px solid rgba(245, 184, 61, 0.5);
-  color: var(--amber);
-  border-radius: 12px;
-  padding: 9px 12px;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-.stats-row { display: flex; gap: 8px; margin: 10px 0; }
-.stats-row > div { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 8px; text-align: center; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03); }
-.stats-row strong { display: block; font-family: var(--font-num); font-size: 16px; }
-.stats-row span { color: var(--muted); font-size: 10px; }
-.playbook-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
-
-.trade-form { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
-.tf-row { display: flex; gap: 8px; margin-bottom: 8px; }
-.tf-row label, .tf-full { flex: 1; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.tf-full { display: flex; margin-bottom: 8px; }
-.trade-form input:not([type='checkbox']), .trade-form select {
-  background: var(--panel-2); border: 1px solid transparent; border-radius: 12px;
-  padding: 10px 12px; color: var(--text); font-family: var(--font-num); width: 100%; outline: none;
-}
-.trade-form input:focus, .trade-form select:focus { border-color: var(--blue); }
-.tf-bottom { align-items: center; justify-content: space-between; margin-bottom: 0; }
-.tf-check { flex-direction: row !important; align-items: center; gap: 6px !important; text-transform: none !important; font-size: 12px !important; }
-.trade-form button { background: var(--blue); border: none; border-radius: 10px; padding: 9px 16px; color: var(--on-accent); font-weight: 700; cursor: pointer; }
-
-.trade-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.trade-meta em { color: var(--faint); font-style: italic; }
-
-/* ---------- Desk: risk dial ---------- */
-.risk-dial { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
-.risk-dial-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.risk-dial-label { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
-.risk-dial-now { font-size: 13px; font-weight: 700; color: var(--blue); }
-.risk-dial-track { display: flex; gap: 6px; }
-.risk-rung {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px;
-  padding: 6px 2px; border: 1px solid var(--line); border-radius: 10px;
-  background: var(--bg); color: var(--faint);
-}
-.risk-rung-r { font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
-.risk-rung-pct { font-size: 11px; }
-.risk-rung.is-passed { color: var(--muted); }
-.risk-rung.is-current { color: var(--on-accent); background: var(--blue); border-color: var(--blue); }
-.risk-dial-meta { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-.risk-dial-meta > span:first-child { font-size: 12px; color: var(--muted); }
-.risk-dial-ev { font-size: 11px; color: var(--faint); }
-
-/* ---------- Desk: point-of-commitment calculator ---------- */
-.tf-engine { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.use-engine {
-  background: none; border: none; padding: 0; cursor: pointer;
-  color: var(--blue); font-weight: 700; font-size: 12px; letter-spacing: 0.01em;
-}
-.use-engine:hover { text-decoration: underline; }
-.tf-engine-lv { font-size: 11.5px; color: var(--faint); }
-.tf-size { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
-.tf-size-main { font-size: 13px; color: var(--text); }
-.tf-size-sub { color: var(--muted); font-weight: 400; }
-
 /* ---------- Desk: position P&L + engine second opinion ---------- */
 .card .pos-subpnl { display: block; font-size: 12px; font-weight: 600; margin-top: 1px; }
 .engine-read { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
@@ -820,26 +744,6 @@ p { text-wrap: pretty; }
 .closed-row { display: flex; justify-content: space-between; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; font-size: 13.5px; font-family: var(--font-num); }
 .empty-line { color: var(--faint); font-size: 13px; }
 .journal-io { display: flex; gap: 8px; margin-top: 16px; }
-
-/* ---------- Desk: T212 holdings (read-only tracking) ---------- */
-.t212-holdings { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
-.t212-holdings > summary {
-  cursor: pointer; list-style: none; padding: 9px 12px;
-  font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted);
-}
-.t212-holdings > summary::-webkit-details-marker { display: none; }
-.t212-holdings > summary::before { content: '▸'; color: var(--blue); margin-right: 8px; font-size: 10px; } /* blue only on the interactive marker */
-.t212-holdings[open] > summary::before { content: '▾'; }
-.t212-holdings > summary:hover { color: var(--text); }
-.t212-holdings-list { padding: 0 12px 4px; }
-.t212-holding-row {
-  display: grid; grid-template-columns: 64px 74px 1fr; align-items: baseline; gap: 8px;
-  padding: 5px 0; border-top: 1px solid var(--line); font-size: 12.5px;
-}
-.t212-h-sym { font-weight: 700; letter-spacing: 0.01em; }
-.t212-h-ppl { text-align: right; font-weight: 600; }
-.t212-h-stage { color: var(--muted); font-size: 11.5px; }
-.t212-holdings-foot { color: var(--faint); font-size: 11px; padding: 4px 12px 10px; margin: 0; }
 
 /* ---------- digest ---------- */
 .digest-section { margin-bottom: 18px; }
@@ -881,12 +785,6 @@ p { text-wrap: pretty; }
 .dot.picks { background: var(--blue); }
 .dot.alerts { background: var(--amber); }
 .dot.events { background: var(--red); }
-
-/* ---------- seasonality ---------- */
-.dow-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 6px; margin-top: 4px; }
-.dow-cell { background: var(--bg); border-radius: 10px; padding: 8px 4px; text-align: center; }
-.dow-avg { display: block; font-family: var(--font-num); font-size: 12.5px; font-weight: 600; }
-.dow-name { color: var(--muted); font-size: 10.5px; }
 
 /* ---------- micro-interactions (taste pass) ---------- */
 .mini-btn, .tab, .subtabs button, .sort-chips button, .addform button, .trade-form button, .range-pills button, .gear, .remove {
@@ -1286,52 +1184,6 @@ p { text-wrap: pretty; }
   font-feature-settings: 'tnum' 1;
 }
 .num { font-family: var(--font-num); white-space: nowrap; }
-
-/* ---------- GradeChip: rounded chip for engine letter grades ---------- */
-/* Reads as data, not a button: simple per-grade colour coding. A keeps a
-   green tint (positive semantic), B amber, C neutral. Shadow = ghosted/dashed. */
-.grade-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  font-weight: 700;
-  font-size: 12px;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  padding: 2px 8px;
-  border: 1px solid;
-  border-radius: 999px;
-  color: var(--text);
-}
-.grade-chip.g-a { color: var(--green); border-color: rgba(34, 201, 141, 0.5); background: var(--green-soft); }
-.grade-chip.g-b { color: var(--amber); border-color: rgba(245, 184, 61, 0.5); background: var(--amber-soft); }
-.grade-chip.g-c { color: var(--muted); border-color: var(--line); background: transparent; }
-.grade-chip .prov {
-  font-weight: 600;
-  font-size: 8px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  opacity: 0.75;
-}
-/* shadow grade: a ghosted "what-if", dashed and de-inked */
-.grade-chip.is-shadow {
-  border-style: dashed;
-  background: transparent;
-  opacity: 0.55;
-}
-
-/* ---------- The Board: header strip ---------- */
-.board-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-  margin: -2px 0 8px;
-  font-size: 11.5px;
-  letter-spacing: 0.01em;
-  color: var(--faint);
-}
-.board-strip .sep { opacity: 0.5; }
 
 /* ---------- The Ledger: receipts, shadow toggle, day groups ---------- */
 .ledger-shadow-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 12px; }
@@ -1979,35 +1831,6 @@ a.menu-row { text-decoration: none; }
 .ai-card .intel-ai-h { font-family: var(--font-ui); color: var(--text); font-size: 14px; margin: 0 0 6px; }
 .ai-card.intel-ai-pos { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
 .perf-row.intel-wl { border-color: color-mix(in srgb, var(--blue) 50%, var(--line)); }
-
-/* ---- Sector heatmap (display-only) ---- */
-.heat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 4px 0 10px; }
-.heat-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px 11px; border: 1px solid var(--line); border-radius: 12px; cursor: default; }
-.heat-name { font-size: 12.5px; line-height: 1.2; color: var(--text); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.heat-pct { font-family: var(--font-num); font-weight: 700; font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; }
-.heat-flat { background: var(--panel-2); }
-.heat-up-1 { background: color-mix(in srgb, var(--green) 8%, transparent); }
-.heat-up-2 { background: color-mix(in srgb, var(--green) 17%, transparent); }
-.heat-up-3 { background: color-mix(in srgb, var(--green) 28%, transparent); border-color: color-mix(in srgb, var(--green) 30%, var(--line)); }
-.heat-dn-1 { background: color-mix(in srgb, var(--red) 8%, transparent); }
-.heat-dn-2 { background: color-mix(in srgb, var(--red) 17%, transparent); }
-.heat-dn-3 { background: color-mix(in srgb, var(--red) 28%, transparent); border-color: color-mix(in srgb, var(--red) 30%, var(--line)); }
-
-/* ---- Ledger: cohort win-rate bars ---- */
-.led-cohort { padding: 11px 2px 13px; border-bottom: 1px solid var(--line); }
-.led-cohort:last-of-type { border-bottom: none; }
-.led-cohort-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 7px; }
-.led-cohort-label { display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 14px; }
-.led-cohort-pct { font-size: 14px; font-weight: 700; }
-.led-cohort-foot { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
-.led-n { color: var(--faint); font-size: 11px; font-weight: 400; }
-.led-meta { color: var(--muted); font-size: 13px; }
-.led-clickable { cursor: pointer; }
-.led-dim { opacity: 0.72; }
-.led-fine { font-size: 12px; }
-/* wide ledger table polish (keeps its .ledger-wrap horizontal scroll) */
-.led-table th { font-size: 11px; letter-spacing: 0.07em; }
-.led-table td, .led-table th { padding-top: 11px; padding-bottom: 10px; }
 
 /* ---- Research ---- */
 .ai-card .rsc-ai-h { font-family: var(--font-ui); color: var(--text); font-size: 14px; margin: 0 0 6px; }
