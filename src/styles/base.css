@@ -1169,3 +1169,142 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* --- intel --------------------------------------------------------------
+   The Intel screen (plan Task 19; CX-19): the paper + news desk + social
+   pulse, three independent cards — one section's failure never blanks the
+   other two. Tokens only, on top of .card/.pill/.sec-label/.cc-reason/.num/
+   .pressable/.skeleton/.stx-showmore already declared above. This is news's
+   ONLY home in the app (spec §3.5) — a side dish, so nothing here competes
+   visually with a call card. */
+.v2 .itl-section {
+  margin-bottom: 16px;
+}
+.v2 .itl-section .sec-label {
+  margin-top: 0;
+}
+
+/* the paper: edition pill + the sandboxed srcDoc iframe (CX-19) */
+.v2 .itl-edition-pill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.v2 iframe.itl-frame {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface-1);
+}
+.v2 details.itl-archive {
+  margin-top: 12px;
+}
+.v2 details.itl-archive > summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  list-style: none;
+}
+.v2 details.itl-archive > summary::-webkit-details-marker {
+  display: none;
+}
+.v2 .itl-archive-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* the news desk: one headline row per item, title above a meta line */
+.v2 .itl-news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2 .itl-news-row {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.v2 .itl-news-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.v2 a.itl-news-title {
+  display: block;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.v2 .itl-news-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* social pulse: the "also loud" chip row, the discoveries strip, the
+   trending pulse rows — trending symbols always link to /stock/SYM */
+.v2 .itl-loud-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.v2 .itl-discoveries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.v2 .itl-pulse-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 a.itl-pulse-row,
+.v2 a.itl-discovery {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  text-decoration: none;
+  color: inherit;
+}
+.v2 .itl-pulse-sym {
+  font-weight: 700;
+  font-size: 13.5px;
+  flex-shrink: 0;
+}
+.v2 .itl-pulse-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .itl-pulse-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.v2 a.itl-discovery .cc-reason {
+  flex-basis: 100%;
+  margin-top: 2px;
+}
