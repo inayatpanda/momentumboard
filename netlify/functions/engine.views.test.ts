@@ -92,6 +92,74 @@ describe('engine ?view= slices', () => {
     expect(user.data).toEqual(admin.data)
   })
 
+  describe('?view=journey&sym=', () => {
+    it('400s on a missing or malformed sym', async () => {
+      expect((await handler(req('?view=journey'))).status).toBe(400)
+      expect((await handler(req('?view=journey&sym=BAD%20SYM!'))).status).toBe(400)
+    })
+
+    it('merges funnel path, past calls, board row and open trace for one name', async () => {
+      await seed('funnel-trace-index', ['2026-08-12', '2026-08-13'])
+      await seed('funnel-trace:2026-08-13', {
+        date: '2026-08-13',
+        gates: { deadZone: 0.3 },
+        rows: {
+          'NVDA:long': { gate: 'entry-chase', side: 'long', core: 0.61, detail: 'ran +3.8% already' },
+          'TSLA:short': { gate: 'dead-zone-core', side: 'short', core: 0.2 },
+        },
+        counts: { notCandidate: 90 },
+        nearMisses: [{ sym: 'NVDA', core: 0.61, capUsdM: 3100, lastClose: 128, atrNow: 4, capacityPct: 1, stage: 'S2', factors: { momentum: { score: 1, weight: 2, detail: 'FACTOR-PROSE' } } }],
+        emptySides: {},
+      })
+      await seed('predictions-index', ['2026-08-11'])
+      await seed('predictions:2026-08-11', [
+        { id: 'p1', date: '2026-08-11', sym: 'NVDA', side: 'long', grade: 'A', composite: 1.4, postMortem: { cls: 'won', detail: 'ran to target', at: 1 }, outcome21: 9.2 },
+        { id: 'p2', date: '2026-08-11', sym: 'AMD', side: 'long', grade: 'B', composite: 1.1 },
+      ])
+      await seed('engine-board', { date: todayLondon(), board: [{ sym: 'NVDA', side: 'long', grade: 'A' }] })
+      await seed('open-trace', { date: todayLondon(), generatedAt: 1, entries: [{ sym: 'NVDA', verdict: 'weakening', progressPct: 40 }] })
+
+      const r = await body(await handler(req('?view=journey&sym=NVDA')))
+      const d = r.data as {
+        sym: string
+        boardRow: { sym: string } | null
+        openTrace: { verdict: string } | null
+        funnel: { date: string; rows: { key: string; gate: string; detail?: string }[]; nearMiss: { factors: Record<string, { score: number }> } | null }[]
+        calls: { sym: string; postMortem: { cls: string } | null; outcome21: number | null }[]
+      }
+      expect(d.sym).toBe('NVDA')
+      expect(d.boardRow?.sym).toBe('NVDA')
+      expect(d.openTrace?.verdict).toBe('weakening')
+      expect(d.funnel).toHaveLength(1) // 2026-08-12 has no trace blob → omitted
+      expect(d.funnel[0].date).toBe('2026-08-13')
+      expect(d.funnel[0].rows).toHaveLength(1)
+      expect(d.funnel[0].rows[0].gate).toBe('entry-chase')
+      expect(d.funnel[0].rows[0].detail).toBe('ran +3.8% already') // row detail KEPT
+      expect(d.funnel[0].nearMiss?.factors.momentum.score).toBe(1)
+      expect(JSON.stringify(d)).not.toContain('FACTOR-PROSE') // near-miss factor prose DROPPED
+      expect(JSON.stringify(d)).not.toContain('TSLA')
+      expect(d.calls).toHaveLength(1)
+      expect(d.calls[0].postMortem?.cls).toBe('won')
+      expect(d.calls[0].outcome21).toBe(9.2)
+    })
+
+    it('uppercases the sym and answers an unseen name with an empty journey', async () => {
+      const r = await body(await handler(req('?view=journey&sym=zzq')))
+      expect(r.ok).toBe(true)
+      expect(r.data).toMatchObject({ sym: 'ZZQ', boardRow: null, openTrace: null, funnel: [], calls: [] })
+    })
+
+    it('reads only the last 10 trace days', async () => {
+      const dates = Array.from({ length: 12 }, (_, i) => `2026-07-${String(i + 1).padStart(2, '0')}`)
+      await seed('funnel-trace-index', dates)
+      await seed('funnel-trace:2026-07-01', { date: '2026-07-01', gates: {}, rows: { NVDA: { gate: 'no-candles' } }, counts: { notCandidate: 0 }, nearMisses: [], emptySides: {} })
+      await seed('funnel-trace:2026-07-12', { date: '2026-07-12', gates: {}, rows: { NVDA: { gate: 'trimmed' } }, counts: { notCandidate: 0 }, nearMisses: [], emptySides: {} })
+      const r = await body(await handler(req('?view=journey&sym=NVDA')))
+      const d = r.data as { funnel: { date: string }[] }
+      expect(d.funnel.map(f => f.date)).toEqual(['2026-07-12']) // -01 fell outside the 10-day window
+    })
+  })
+
   it('legacy aggregate still serves without ?view — and keeps its admin gate', async () => {
     await seed('engine-board', { date: '2026-08-14', board: [] })
     await seed('holdings-reads', [{ sym: 'SECRET-HOLDING', quantity: 1 }])

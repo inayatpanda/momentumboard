@@ -7,6 +7,7 @@ import type { RosterEntry } from '../../shared/engine/roster'
 import type { ChannelCredState } from '../../shared/engine/channelCred'
 import { MISS_LEDGER_KEY, missLedgerSummary } from '../../shared/engine/missLedger'
 import { GATE_STATE_KEY, gateStateSummary } from '../../shared/engine/gateState'
+import { FUNNEL_TRACE_INDEX_KEY, funnelTraceKey, traceRowKey, type FunnelTrace, type FunnelNearMiss } from '../../shared/engine/funnelTrace'
 
 // Read-only aggregation of everything the engine knows: the board, the
 // scorecard, the learning state. The app renders this; the engine writes it.
@@ -114,13 +115,67 @@ async function viewBoard() {
   }
 }
 
+const SYM_RE = /^[A-Z0-9.\-]{1,12}$/
+
+/** Near-miss factor prose is ~85% of the record's bytes (recon §3.3a) — the
+ * journey ships score+weight only, the same projection ledgerRow applies. */
+const slimNearMiss = (m: FunnelNearMiss) => ({
+  ...m,
+  // FunnelNearMiss factors carry no weight (unlike Prediction's) — score only
+  factors: Object.fromEntries(Object.entries(m.factors ?? {}).map(([k, f]) => [k, { score: f.score }])),
+})
+
+/** ?view=journey&sym= — one name's whole story: today's board row, the open-trace
+ * verdict, its last-10-days funnel path, and every call on it in the 30-day
+ * ledger window. THE funnel's first HTTP door. */
+async function viewJourney(sym: string) {
+  const [traceIndex, predIndex, board, openTrace] = await Promise.all([
+    blobAppStore.read<string[]>(FUNNEL_TRACE_INDEX_KEY),
+    blobAppStore.read<string[]>('predictions-index'),
+    blobAppStore.read<{ date: string; board: Prediction[] }>('engine-board'),
+    blobAppStore.read<{ entries: { sym: string }[] }>('open-trace'),
+  ])
+  const traceDates = (traceIndex ?? []).slice(-10)
+  const traces = await Promise.all(traceDates.map(d => blobAppStore.read<FunnelTrace>(funnelTraceKey(d))))
+  const keys = [traceRowKey(sym), traceRowKey(sym, 'long'), traceRowKey(sym, 'short')]
+  const funnel = traceDates.flatMap((date, i) => {
+    const trace = traces[i]
+    if (!trace) return []
+    const rows = keys.filter(k => trace.rows?.[k]).map(k => ({ key: k, ...trace.rows[k] }))
+    const miss = (trace.nearMisses ?? []).find(m => m.sym === sym)
+    if (!rows.length && !miss) return []
+    return [{ date, rows, nearMiss: miss ? slimNearMiss(miss) : null }]
+  })
+
+  const predDates = (predIndex ?? []).slice(-30)
+  const predDays = await Promise.all(predDates.map(d => blobAppStore.read<Prediction[]>(`predictions:${d}`)))
+  const calls = predDays
+    .flatMap(day => (day ?? []).filter(p => p.sym === sym))
+    .map(p => ({ ...ledgerRow(p), postMortem: p.postMortem ?? null, outcome21: p.outcome21 ?? null }))
+    .reverse() // newest first
+
+  return {
+    sym,
+    boardRow: board?.board?.find(p => p.sym === sym) ?? null,
+    openTrace: openTrace?.entries?.find(e => e.sym === sym) ?? null,
+    funnel,
+    calls,
+  }
+}
+
 export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
   if (!auth) return new Response(JSON.stringify({ ok: false, error: 'unauthorised' }), { status: 401 })
 
-  const view = new URL(req.url).searchParams.get('view')
+  const url = new URL(req.url)
+  const view = url.searchParams.get('view')
   if (view !== null) {
     if (view === 'board') return json(await viewBoard())
+    if (view === 'journey') {
+      const sym = (url.searchParams.get('sym') ?? '').toUpperCase()
+      if (!SYM_RE.test(sym)) return json({ error: 'bad sym' }, 400)
+      return json(await viewJourney(sym))
+    }
     return json({ error: 'unknown view' }, 400)
   }
 
