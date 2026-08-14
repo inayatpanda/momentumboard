@@ -68,7 +68,7 @@ function RailMoverCard({ r, inWatchlist, onAdd }: { r: MoverRow; inWatchlist: bo
         <span className="stx-rail-card-top">{r.sym}</span>
         {closes && closes.length > 1 && <Sparkline closes={closes} width={100} height={26} />}
         <span className="num">{r.price != null ? r.price.toFixed(2) : '—'}</span>
-        {r.changePct != null && <span className={`pill ${up ? 'long' : 'short'}`}>{fmtPct(r.changePct)}</span>}
+        {r.changePct != null && <span className={`pill ${up ? 'long' : 'short'}`}><span className="num">{fmtPct(r.changePct)}</span></span>}
       </Link>
       {!inWatchlist && (
         <button className="stx-rail-add" onClick={() => onAdd(r.sym)} aria-label={`Add ${r.sym} to watchlist`}>

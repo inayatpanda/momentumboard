@@ -45,7 +45,7 @@ export function StockRow({
         {closes && <Sparkline closes={closes} />}
         <span className="stx-row-prices">
           <span className="num">{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
-          {quote && <span className={`pill ${up ? 'long' : 'short'}`}>{fmtPct(quote.changePct)}</span>}
+          {quote && <span className={`pill ${up ? 'long' : 'short'}`}><span className="num">{fmtPct(quote.changePct)}</span></span>}
         </span>
       </Link>
       {onRemove && (
