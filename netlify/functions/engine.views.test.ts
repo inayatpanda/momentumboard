@@ -272,6 +272,54 @@ describe('engine ?view= slices', () => {
     })
   })
 
+  describe('?view=verdict&sym=', () => {
+    const candleFix = (n = 60, gain = 0.6) =>
+      Array.from({ length: n }, (_, i) => ({ t: 1_700_000_000 + i * 86_400, o: 100 + i * gain - 0.3, h: 100 + i * gain + 0.8, l: 100 + i * gain - 0.9, c: 100 + i * gain, v: 1_000_000 }))
+
+    it('answers from cached candles, never mints a grade, and caches the verdict for 15 min', async () => {
+      const { setCached } = await import('./lib/cache')
+      await setCached('candles:ZAP:1y', { candles: candleFix(60, 0.6) }, 900)
+      await setCached('candles:SPY:1y', { candles: candleFix(60, 0) }, 900)
+      // Momentum-only weights: a monotonic synthetic rise legitimately reads
+      // 'exhausted' to technicalStage, so the technical factor would argue
+      // short — the fixture only controls relative strength, so only RS votes.
+      await seed('engine-weights', { base: { momentum: 2 }, current: { momentum: 2 }, history: [] })
+      await seed('engine-board', { date: '2026-08-14', regime: 'green', board: [] })
+
+      const first = await body(await handler(req('?view=verdict&sym=zap')))
+      const v = first.data as { sym: string; onDemand: boolean; lean: string; nulls: string[]; note: string }
+      expect(v.sym).toBe('ZAP')
+      expect(v.onDemand).toBe(true)
+      expect(v.lean).toBe('long')
+      expect(v.nulls).toContain('news')
+      expect(v.note).toContain('not one of today’s calls')
+      expect(first.data).not.toHaveProperty('grade')
+      expect(first.data).not.toHaveProperty('probability')
+
+      // Mutate the tape: a cached verdict must NOT recompute inside its TTL.
+      await setCached('candles:ZAP:1y', { candles: candleFix(60, -0.6) }, 900)
+      const second = await body(await handler(req('?view=verdict&sym=ZAP')))
+      expect(second.data).toEqual(first.data)
+
+      // …and nothing was ever written into the predictions record.
+      const rows = sqlite.prepare("SELECT key FROM blobs WHERE store='app' AND key LIKE 'predictions:%'").all<{ key: string }>()
+      expect((await rows).results ?? []).toHaveLength(0)
+    })
+
+    it('400s a malformed sym and reports unavailable when no tape can be fetched', async () => {
+      expect((await handler(req('?view=verdict&sym='))).status).toBe(400)
+      const realFetch = globalThis.fetch
+      globalThis.fetch = (() => Promise.reject(new Error('offline'))) as typeof fetch
+      try {
+        const r = await body(await handler(req('?view=verdict&sym=NOPE')))
+        expect(r.ok).toBe(true)
+        expect(r.data).toMatchObject({ sym: 'NOPE', unavailable: true })
+      } finally {
+        globalThis.fetch = realFetch
+      }
+    })
+  })
+
   it('legacy aggregate still serves without ?view — and keeps its admin gate', async () => {
     await seed('engine-board', { date: '2026-08-14', board: [] })
     await seed('holdings-reads', [{ sym: 'SECRET-HOLDING', quantity: 1 }])

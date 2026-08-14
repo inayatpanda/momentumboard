@@ -8,6 +8,12 @@ import type { ChannelCredState } from '../../shared/engine/channelCred'
 import { MISS_LEDGER_KEY, missLedgerExamples, missLedgerSummary } from '../../shared/engine/missLedger'
 import { GATE_STATE_KEY, gateStateStructured, gateStateSummary } from '../../shared/engine/gateState'
 import { FUNNEL_TRACE_INDEX_KEY, funnelTraceKey, traceRowKey, type FunnelTrace, type FunnelNearMiss } from '../../shared/engine/funnelTrace'
+import { onDemandVerdict, type OnDemandVerdict } from './lib/onDemandVerdict'
+import { getCached, setCached } from './lib/cache'
+import { fetchYahooChart } from './lib/yahoo'
+import type { Candle } from '../../shared/types'
+import type { FactorName } from '../../shared/engine/types'
+import type { RegimeColor } from '../../shared/types'
 
 // Read-only aggregation of everything the engine knows: the board, the
 // scorecard, the learning state. The app renders this; the engine writes it.
@@ -218,6 +224,41 @@ async function viewLearning() {
   }
 }
 
+const VERDICT_CACHE_MS = 15 * 60 * 1000
+
+/** ?view=verdict&sym= — the on-demand engine read for ANY symbol (DS-24: the
+ * cache lives HERE, the computation stays pure). Candles ride the same
+ * cache+yahoo path /api/market uses; the verdict itself is cached 15 min under
+ * `verdict-cache:{SYM}` and is NEVER written into predictions:*. */
+async function viewVerdict(sym: string) {
+  const cacheKey = `verdict-cache:${sym}`
+  const hit = await blobAppStore.read<{ at: number; verdict: OnDemandVerdict }>(cacheKey)
+  if (hit && Date.now() - hit.at < VERDICT_CACHE_MS) return hit.verdict
+
+  const candles = async (s: string): Promise<Candle[] | null> => {
+    const key = `candles:${s}:1y`
+    const cached = await getCached<{ candles: Candle[] }>(key)
+    if (cached?.candles?.length) return cached.candles
+    try {
+      const data = await fetchYahooChart(s, '1y')
+      await setCached(key, data, 900)
+      return data.candles?.length ? data.candles : null
+    } catch {
+      return null
+    }
+  }
+
+  const [weights, board] = await Promise.all([
+    blobAppStore.read<WeightsState>('engine-weights'),
+    blobAppStore.read<{ regime?: string }>('engine-board'),
+  ])
+  const regime: RegimeColor | 'unknown' =
+    board?.regime === 'green' || board?.regime === 'amber' || board?.regime === 'red' ? board.regime : 'unknown'
+  const verdict = await onDemandVerdict(sym, { candles }, { weights: (weights?.current ?? weights?.base ?? null) as Record<FactorName, number> | null, regime })
+  await blobAppStore.write(cacheKey, { at: Date.now(), verdict })
+  return verdict
+}
+
 /** ?view=funnel&date= — one day of "the engine said no", ranked by the
  * conviction each refusal stood on. Default = the newest trace day. */
 async function viewFunnel(date: string | null) {
@@ -268,6 +309,11 @@ export default async (req: Request) => {
       return json(await viewJourney(sym))
     }
     if (view === 'learning') return json(await viewLearning())
+    if (view === 'verdict') {
+      const sym = (url.searchParams.get('sym') ?? '').toUpperCase()
+      if (!SYM_RE.test(sym)) return json({ error: 'bad sym' }, 400)
+      return json(await viewVerdict(sym))
+    }
     if (view === 'funnel') {
       const date = url.searchParams.get('date')
       if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: 'bad date' }, 400)
