@@ -103,6 +103,19 @@
 //   GATES=off        npx tsx scripts/replay-window.ts --from … --out /tmp/on.json
 //   npx tsx scripts/replay-window.ts --wildcard-diff --ref /tmp/off.json --new /tmp/on.json
 //
+// EIGHTH MODE — `--spine crypto`: THE WEEKEND WALK (stage 1c phase B task B3). The
+// window mode again, on the OTHER clock: the walk's days come from BTC-USD's own
+// bars instead of SPY's, so Saturdays and Sundays are ordinary sessions and the
+// crypto lane can be replayed on the calendar it actually keeps. It turns the lane
+// ON by default (`CRYPTO=off` is then the lane-off arm), warms the three pairs into
+// `.replay-cache`, serves a crypto tape at its own 365-bar year, records each pass's
+// matured crypto grades, and carries the crypto partition's own two blobs in the
+// artefact beside the equity ones. The equity spine is untouched: on it the lane
+// stays off and every artefact is byte-identical to the one that shipped before B3.
+//   npx tsx scripts/replay-window.ts --spine crypto --from … --to … \
+//     --watchlist BTC-USD,ETH-USD,SOL-USD --out /tmp/crypto-on.json
+//   CRYPTO=off npx tsx scripts/replay-window.ts --spine crypto … --out /tmp/crypto-off.json
+//
 // `--symbols A,B,C` narrows the walk universe (default: the whole REPLAY_UNIVERSE) —
 // a targeted diagnostic run, and what lets the unit test walk a fixture universe.
 // Both are NEW-mode only; nothing above changes shape or output because of them, and
@@ -934,7 +947,13 @@ function makeDeps(ctx: { current: DayCtx }) {
     candles: async (sym: string) => {
       ctx.current.asked.add(sym.toUpperCase())
       const s = await sliced(sym)
-      return s ? s.slice(-ONE_YEAR_BARS) : null
+      // …at the depth THIS symbol's own clock counts a year in (`tailBarsFor`):
+      // 252 bars for an equity, as it has always been, and 365 for a coin, which
+      // is what production's `cachedCandles` (Yahoo `1y`) serves it. The crypto
+      // lane reaches this same dep — `cryptoCandleMap(deps.candles, …)` — so a
+      // 252-bar tail would hand the pair's capacity and momentum denominators
+      // fifty weeks of tape and call it a year.
+      return s ? s.slice(-tailBarsFor(sym)) : null
     },
     candles5y: sliced,
     // No point-in-time market-cap source exists for free. Every name therefore
@@ -1033,6 +1052,14 @@ export interface Row {
    * catalyst kind says a row IS one; this says what it was FOR. Absent on every
    * ordinary row and in every tree older than the field. */
   wildcard?: WildcardRecordLike
+  /** THE PARTITION THIS ROW BELONGS TO (Stage 1c B1's `Prediction.cohort`).
+   * Present ONLY on a crypto-lane row — an equity row has never carried it and
+   * still does not, so every artefact this harness has ever written is
+   * unchanged. It is the field the walk reads to know which GRADER a row's
+   * diagnostic outcome must be recomputed with: a crypto row measured against
+   * SPY over ten equity sessions is exactly the leak Phase A shipped to stop,
+   * and the harness would have re-introduced it in its own artefact. */
+  cohort?: string
   // ---- recomputed post-publication from the SAME calibration blob (HEAD only) ----
   /** The UNROUNDED curve read. `probability` on the row is this quantised to 2dp
    * (engine.ts), and the two are reported side by side on purpose: the curve can
@@ -1161,6 +1188,33 @@ export interface DayOut {
    * one day per pass IS the mechanism, and a summary at the end would hide a pass
    * that measured nothing. */
   missAccrued?: (MissDayLike & { date: string }) | null
+  /** THE CRYPTO ROWS THIS MORNING'S PASS GRADED (Stage 1c B3), each with the
+   * morning it published — so "grading matures on the crypto clock" is a number
+   * the artefact carries rather than a claim the evidence has to assert.
+   *
+   * Read per pass and not at walk end, because the CLOCK is the whole point: the
+   * final blobs say a row was graded, but only the pass that graded it says
+   * WHEN, and sixteen calendar days against the equity fourteen is the
+   * difference the crypto partition exists to keep. Present only on a run with
+   * the lane on; absent everywhere else, so no artefact this harness has already
+   * written moves. */
+  cryptoMatured?: CryptoMatured[]
+}
+
+/** One crypto row's maturity, as the pass that graded it saw it. */
+export interface CryptoMatured {
+  /** the morning the row PUBLISHED */
+  published: string
+  sym: string
+  side: 'long' | 'short'
+  hit: boolean
+  excessPct: number
+  stopped: boolean
+  /** publication → the pass that booked the outcome, in calendar days. The crypto
+   * clock's own arithmetic says 16 (`CRYPTO_PUBLISH_TO_GRADE_DAYS`); anything
+   * else is a tape gap or a walk that skipped a session, and the artefact should
+   * be able to say which. */
+  gradedAfterDays: number
 }
 
 // ----------------------------------------------- the funnel trace, in the walk --
@@ -2247,6 +2301,9 @@ const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
   // has no such field" to a reader of the JSON, and every ordinary row keeps the
   // shape it has always had.
   ...((p as { wildcard?: WildcardRecordLike }).wildcard ? { wildcard: (p as { wildcard?: WildcardRecordLike }).wildcard } : {}),
+  // …and the row's PARTITION, spread for the same reason (Stage 1c B1 stamps it
+  // on crypto-lane rows only, so an equity row's shape is exactly what it was).
+  ...((p as { cohort?: string }).cohort ? { cohort: (p as { cohort?: string }).cohort } : {}),
 })
 
 /** Recompute, from the SAME calibration blob the day's board was built against,
@@ -2580,21 +2637,59 @@ function emptyLearningState(generation: number): { calibration: CalibrationState
   }
 }
 
+/** THE PASS'S OWN RECORD OF WHAT MATURED ON THE CRYPTO CLOCK (Stage 1c B3).
+ *
+ * Called immediately after `gradeOutstanding`, with every morning the walk has
+ * already published. A crypto row that now carries `outcome10` and was not
+ * reported by an earlier pass matured HERE — so the gap between its publication
+ * date and this morning is the crypto clock's wall-clock cost, measured rather
+ * than asserted. `seen` is carried across passes so a row is reported once.
+ *
+ * Reads `cohort === 'crypto'` and not the symbol: the partition is the row's own
+ * stamp (B1), a legacy crypto row from before the lane carries no cohort and is
+ * NOT on the crypto basis, and the two must never be counted together. */
+async function maturedCryptoIn(
+  store: { read: <T>(key: string) => Promise<T | null> },
+  publishedDays: string[],
+  seen: Set<string>,
+  onDate: string,
+): Promise<CryptoMatured[]> {
+  const found: CryptoMatured[] = []
+  for (const d of publishedDays) {
+    for (const p of (await store.read<Prediction[]>(`predictions:${d}`)) ?? []) {
+      if ((p as { cohort?: string }).cohort !== 'crypto' || !p.outcome10) continue
+      const key = `${d}:${p.sym}:${p.side}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      found.push({
+        published: d,
+        sym: p.sym,
+        side: p.side,
+        hit: p.outcome10.hit,
+        excessPct: p.outcome10.excessPct,
+        stopped: p.outcome10.stopped,
+        gradedAfterDays: Math.round((Date.parse(`${onDate}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`)) / 86_400_000),
+      })
+    }
+  }
+  return found
+}
+
 export async function main() {
-  // THE CRYPTO LANE IS OFF IN THE WALK UNTIL IT HAS A SPINE (Stage 1c, B2 → B3).
+  // WHICH CLOCK THIS WALK KEEPS (Stage 1c B3 — the line B2 left pinned here).
   //
-  // This harness slices every tape on an EQUITY SESSION spine — `sliceBefore`,
-  // "everything that closed strictly before D", read off SPY's calendar — and a
-  // 24/7 series has no such calendar: two of the three pairs are not even in
-  // `.replay-cache`. Running the lane here would replay a cohort against a clock
-  // it does not keep, which is the precise failure Phase A shipped to stop.
-  //
-  // So the walk pins the house lever OFF unless the caller has set it
-  // explicitly. That is not a hidden default: `CRYPTO=off` is the lane's own
-  // documented off state, it restores the Phase-A guards exactly, and the whole
-  // point of the seam is that a run can prove which tree it is walking. B3 builds
-  // the crypto session spine and the fetch, and lifts this line.
-  if (typeof process !== 'undefined' && process.env && process.env.CRYPTO == null) process.env.CRYPTO = 'off'
+  // B2's pin read: "the crypto lane is off in the walk until it has a spine",
+  // because this harness sliced every tape on an EQUITY SESSION spine read off
+  // SPY's calendar and two of the three pairs were not even in `.replay-cache`.
+  // Both facts are now false. `--spine crypto` walks BTC-USD's own bars —
+  // Saturdays and Sundays are ordinary sessions there — and the warm step below
+  // fetches the pairs. So the pin becomes the house lever, with a default per
+  // mode and a refusal for the combination that would lie (`resolveCryptoLever`).
+  const spine = arg('spine', 'equity') as SpineKind
+  if (spine !== 'equity' && spine !== 'crypto') throw new Error(`BLOCKED: --spine takes 'equity' or 'crypto' (got ${spine})`)
+  const cryptoLever = resolveCryptoLever(spine, typeof process !== 'undefined' ? process.env?.CRYPTO : undefined)
+  if (typeof process !== 'undefined' && process.env) process.env.CRYPTO = cryptoLever.value
+  const cryptoOn = cryptoLever.value === 'on'
   const baseline = process.argv.includes('--baseline')
   // A-REACHABILITY PROBE (§15 criterion 4). The same window, the same board code,
   // the same everything — with ONE substitution: the calibration blob is replaced
@@ -2633,6 +2728,26 @@ export async function main() {
   // into --seed-out would serialise as a legitimate v3 artefact with no tell.
   if (seedOut && (plantA || baseline))
     throw new Error('BLOCKED: --seed-out cannot run with --plant-a or --baseline — a probe calibration is not a seed')
+  // THE CRYPTO SPINE IS A VALIDATION INSTRUMENT, NOT A SEED PIPELINE AND NOT A
+  // TREE COMPARISON. Each refusal is its own sentence because each is a
+  // different mistake:
+  //  · `--seed-out` — the committed seed is an EQUITY measurement swept over an
+  //    equity universe with crypto filtered out, and it is emitted from a walk on
+  //    the equity calendar. A seed measured over a spine with two extra days in
+  //    seven would carry equity buckets nobody asked for. Deep-seeding crypto is
+  //    a recorded follow-up with its own artefact; it is not this flag.
+  //  · `--baseline` — the pre-Stage-1 worktree has no crypto lane, no crypto
+  //    blob and no crypto module to load. A "baseline" on this spine would
+  //    compare a tree against a clock it has never heard of.
+  //  · `--plant-a` — it replants the EQUITY calibration every morning. On this
+  //    spine the crypto rows are priced from the crypto blob, so an
+  //    A-reachability claim read off such a run would be a claim about a cohort
+  //    the planted evidence says nothing about.
+  if (spine === 'crypto') {
+    if (seedOut) throw new Error('BLOCKED: --seed-out on the crypto spine — the seed is an equity measurement on the equity calendar; crypto deep-seeding is its own artefact (recorded follow-up)')
+    if (baseline) throw new Error('BLOCKED: --baseline on the crypto spine — the pre-Stage-1 tree has no crypto lane to walk')
+    if (plantA) throw new Error('BLOCKED: --plant-a on the crypto spine — it plants the EQUITY calibration, which prices no crypto row')
+  }
   // The floor: the walk starts from a blank stamped with THIS generation, and
   // loadState's swap fires whenever the committed seed announces a HIGHER one
   // (engine.ts). Emitting at or below the committed generation would let the
@@ -2721,7 +2836,16 @@ export async function main() {
   }
 
   // ---- warm the cache: the replay universe + the index/world series ----
-  const warm = [...new Set([...baseUniverse, 'SPY', 'QQQ', ...WORLD_TAPE_SYMS])]
+  // …and, on the crypto spine, THE THREE PAIRS — through this same cached path,
+  // one 5y fetch each, cached on disk like every other tape (recon §8.4: ETH was
+  // already here from the July walks; BTC and SOL have never been in any replay
+  // universe or cache). BTC-USD is warmed whether or not the reader watchlisted
+  // it and whether or not the lane is on: it is the SPINE's own series, so a run
+  // that skipped it would have no days to walk. A pair Yahoo will not serve is
+  // recorded MISSING exactly like an equity and the lane fails soft over it —
+  // which is the SOL case specifically, since `stooq.ts` maps BTC and ETH only
+  // and there is no fallback for it at all.
+  const warm = [...new Set([...baseUniverse, 'SPY', 'QQQ', ...WORLD_TAPE_SYMS, ...(spine === 'crypto' ? [CRYPTO_REGIME_SYM_MIRROR, ...CRYPTO_UNIVERSE_MIRROR] : [])])]
   console.log(`warming ${warm.length} symbols…`)
   let done = 0
   await Promise.all(
@@ -2734,9 +2858,33 @@ export async function main() {
 
   const spyFull = await fullHistory('SPY')
   if (!spyFull) throw new Error('BLOCKED: Yahoo would not serve SPY — cannot replay')
-  let days = tradingDays(spyFull, from, to)
+  // THE SPINE. SPY's sessions, or — on the crypto clock — BTC-USD's own bars.
+  // SPY is still fetched and still graded against on the equity side either way:
+  // what the spine decides is which MORNINGS the walk simulates, not what an
+  // equity row is measured with.
+  let cryptoSpineRead: CryptoSpineRead | null = null
+  let days: string[]
+  if (spine === 'crypto') {
+    const btcFull = await fullHistory(CRYPTO_REGIME_SYM_MIRROR)
+    if (!btcFull) throw new Error(`BLOCKED: no ${CRYPTO_REGIME_SYM_MIRROR} tape — the crypto spine IS its bars, so there is no window to walk`)
+    cryptoSpineRead = cryptoSpine(btcFull, from, to)
+    days = cryptoSpineRead.days
+  } else {
+    days = tradingDays(spyFull, from, to)
+  }
   if (limitDays) days = days.slice(0, limitDays)
-  console.log(`${days.length} trading days: ${days[0]} … ${days[days.length - 1]}`)
+  console.log(
+    `${days.length} ${spine === 'crypto' ? 'crypto sessions' : 'trading days'}: ${days[0]} … ${days[days.length - 1]}` +
+      (cryptoSpineRead
+        ? ` · ${cryptoSpineRead.weekend} of them weekend days the equity spine cannot have` +
+          (cryptoSpineRead.gaps.length ? ` · ⚠ ${cryptoSpineRead.gaps.length} MISSING crypto day(s) in the window: ${cryptoSpineRead.gaps.slice(0, 8).join(' ')}${cryptoSpineRead.gaps.length > 8 ? ' …' : ''}` : ' · no holes in the tape')
+        : ''),
+  )
+  if (spine === 'crypto')
+    console.log(
+      `crypto lane: ${cryptoLever.value.toUpperCase()} (${cryptoLever.source}) — ${cryptoLever.why}` +
+        ` · pairs warmed: ${CRYPTO_UNIVERSE_MIRROR.map(s => `${s}${missing.some(m => m.sym === s) ? '(MISSING)' : ''}`).join(' ')}`,
+    )
 
   // The dip lane is a Stage-1 module: in the pre-Stage-1 worktree the file does
   // not exist, and that absence IS the baseline. Existence is checked on disk
@@ -2877,6 +3025,11 @@ export async function main() {
    * WINDOW's, not the final morning's — a name the roster dropped in March was still
    * a candidate in March, and the sweep grades March. */
   const sweptUniverse = new Set<string>()
+  /** Every crypto row whose outcome has already been reported by an earlier
+   * pass's census — the census reports each maturity ONCE, on the morning it
+   * happened, which is what makes "sixteen days" a measurement rather than a
+   * restatement of the final blob. */
+  const cryptoMaturitySeen = new Set<string>()
 
   for (const date of days) {
     const t0 = Date.now()
@@ -2919,6 +3072,13 @@ export async function main() {
     // pass itself did the work (engine.ts's hook is its last statement). Read here
     // rather than at the end because the ACCRUAL — one matured day per pass, never
     // the same day twice — is a per-pass claim, and only a per-pass read can make it.
+    // …and THE CRYPTO ROWS THIS PASS JUST GRADED, on the same principle and for
+    // the same reason: `gradeOutstanding` is the crypto grader too, and the pass
+    // that books an outcome is the only witness to WHEN it matured. Every day
+    // already published is re-read (an in-memory store, so this is free) and any
+    // crypto row that now carries an outcome and did not before is reported
+    // once, against the morning it published.
+    const cryptoMatured = cryptoOn ? await maturedCryptoIn(store, out.map(d => d.date), cryptoMaturitySeen, date) : undefined
     const missLedgerNow = regretEnforced ? ((await store.read<MissLedgerLike>(MISS_LEDGER_KEY_MIRROR)) ?? null) : null
     const accrualViolations = regretEnforced ? missAccrualViolations(missLedgerPrev, missLedgerNow) : []
     const accruedDate = Object.keys(missLedgerNow?.days ?? {}).find(d => !missLedgerPrev?.days?.[d]) ?? null
@@ -3023,6 +3183,7 @@ export async function main() {
       baseRate,
       trace,
       missAccrued,
+      ...(cryptoMatured ? { cryptoMatured } : {}),
     })
     if (regretEnforced) {
       // the ledger's claims, settled against the walk's OWN record of the window:
@@ -3051,11 +3212,48 @@ export async function main() {
 
   // ---- outcomes, graded against the FULL untruncated history ----
   const spyGrade = spyFull
+  // …and A CRYPTO ROW IS RECOMPUTED ON ITS OWN BASIS, never against SPY. The
+  // harness's diagnostic grade is the one surface that could have re-introduced
+  // Phase A's leak inside the artefact itself: `gradePrediction(pred, cs, spy, 10)`
+  // is the SPY-benchmarked equity grader over ten equity sessions, and handing it
+  // a coin is exactly what the twelve ETH rows in the last pre-A1 walk were. So a
+  // row stamped `cohort: 'crypto'` is graded by `gradeCryptoPrediction` over the
+  // crypto horizons (7 / 14 bars), on the COMPLETED tape — the partial bar Yahoo
+  // is still writing today is cut at the same seam the engine cuts it at, so the
+  // diagnostic and the engine's own stored outcome are commensurable.
+  //
+  // Dynamically imported behind the on-disk guard, like the dip and velocity
+  // lanes: this file still has to load in the pre-Stage-1 worktree, where the
+  // module does not exist.
+  const cryptoGrader =
+    cryptoOn && existsSync(stageModule('cryptoCalibration.ts'))
+      ? ((await import('../shared/engine/cryptoCalibration')) as {
+          completedCryptoBars: (candles: Candle[], nowSec: number) => Candle[]
+          gradeCryptoPrediction: (
+            pred: { date: string; side: 'long' | 'short'; priceAtPrediction: number; stop: number },
+            candles: Candle[],
+            horizon: number,
+          ) => { hit: boolean; excessPct: number; stopped: boolean } | null
+        })
+      : null
+  // The cut is the RUN's own UTC day, not the window's end: this pass grades
+  // against the full untruncated tape on purpose (it reports outcomes the walk
+  // itself never lived to see), and the only bar that must not be in it is the
+  // one still being written.
+  const nowRunSec = Math.floor(Date.now() / 1000)
   for (const day of out) {
     for (const r of [...day.board, ...day.ledger]) {
       const cs = await fullHistory(r.sym)
       if (!cs) continue
       const pred = { date: day.date, side: r.side, priceAtPrediction: r.entry, stop: r.stop }
+      if (cryptoGrader && r.cohort === 'crypto') {
+        const tape = cryptoGrader.completedCryptoBars(cs, nowRunSec)
+        const c7 = cryptoGrader.gradeCryptoPrediction(pred, tape, CRYPTO_HORIZONS_MIRROR[0])
+        const c14 = cryptoGrader.gradeCryptoPrediction(pred, tape, CRYPTO_HORIZONS_MIRROR[1])
+        r.outcome5 = c7 ? { hit: c7.hit, excessPct: c7.excessPct, stopped: c7.stopped } : null
+        r.outcome10 = c14 ? { hit: c14.hit, excessPct: c14.excessPct, stopped: c14.stopped } : null
+        continue
+      }
       const o5 = gradePrediction(pred, cs, spyGrade, 5)
       const o10 = gradePrediction(pred, cs, spyGrade, 10)
       r.outcome5 = o5 ? { hit: o5.hit, excessPct: o5.excessPct, stopped: o5.stopped } : null
@@ -3172,6 +3370,24 @@ export async function main() {
     )
   }
 
+  // ---- ₿ THE CRYPTO LANE, over the window (Stage 1c B3) ----
+  // A summary of what the lane did and what its clock cost, printed beside the
+  // other lanes' lines so two logs can be told apart without opening the files.
+  if (cryptoOn) {
+    const matured = out.flatMap(d => (d.cryptoMatured ?? []).map(m => ({ ...m, on: d.date })))
+    const rows = out.flatMap(d => [...d.board, ...d.ledger].filter(r => r.cohort === 'crypto'))
+    const lags = [...new Set(matured.map(m => m.gradedAfterDays))].sort((a, b) => a - b)
+    console.log(
+      `crypto: ${rows.length} row(s) over ${days.length} crypto sessions · ` +
+        `${matured.length} matured on the crypto clock` +
+        (matured.length ? ` (${lags.join('/')} calendar days publication→grade; the clock says ${CRYPTO_PUBLISH_TO_GRADE_DAYS})` : '') +
+        ` · grades ${Object.entries(rows.reduce<Record<string, number>>((a, r) => ({ ...a, [r.grade ?? 'null']: (a[r.grade ?? 'null'] ?? 0) + 1 }), {}))
+          .sort()
+          .map(([g, n]) => `${g}:${n}`)
+          .join(' ')}`,
+    )
+  }
+
   // The calibration blob as it stood after the last graded day — the state the
   // monotonicity probe samples, so the curve the gate asserts on is the one this
   // window actually built rather than a fixture that resembles it.
@@ -3192,6 +3408,23 @@ export async function main() {
   // experiment slot's separability, so the controlled diff has to be able to read
   // them rather than take the engine's word for the split.
   const scorecardFinal = (await store.read<ScorecardLike>('engine-scorecard')) ?? null
+  // ---- the crypto spine's own three reads (Stage 1c B3) ----
+  // ALL FOUR FIELDS BELOW ARE SPREAD, not written: on the equity spine the
+  // artefact this harness produces is byte-identical to the one it produced
+  // before B3, which is the guarantee that lets the lane ship without re-running
+  // three stages of evidence. On the crypto spine they are present in BOTH arms
+  // — the lane-off arm needs them too, or the controlled diff would be comparing
+  // files of different shape.
+  //
+  //  · `weightsFinal` — the sixth equity blob. The other five are already here;
+  //    this one has never been read out of a window walk (only out of `--seed-out`)
+  //    and B3's whole claim is that NOT ONE equity blob byte moves when the lane
+  //    runs. A claim over five of six blobs is not the claim.
+  //  · the crypto partition's own two, beside the equity ones and never inside
+  //    them, exactly as the engine writes them.
+  const weightsFinal = spine === 'crypto' ? await store.read<WeightsState>('engine-weights') : null
+  const cryptoCalibrationFinal = spine === 'crypto' ? await store.read<CalibrationState>(CRYPTO_CALIB_KEY_MIRROR) : null
+  const cryptoRiskFinal = spine === 'crypto' ? await store.read<unknown>(CRYPTO_RISK_KEY_MIRROR) : null
   writeFileSync(
     outPath,
     JSON.stringify(
@@ -3227,6 +3460,20 @@ export async function main() {
         // of this file should not have to reconstruct the day's one deliberate
         // override by grepping a catalyst kind out of 800 rows.
         wildcards,
+        // …and the CLOCK this walk kept, with the lever's own state and the
+        // spine's holes (Stage 1c B3). Present only on the crypto spine, for the
+        // reason above — and present in both of its arms, so a reader of two
+        // files can tell which tree each one walked without opening the log.
+        ...(spine === 'crypto'
+          ? {
+              spine,
+              crypto: cryptoLever.value,
+              cryptoSpine: { days: days.length, weekend: cryptoSpineRead?.weekend ?? 0, gaps: cryptoSpineRead?.gaps ?? [] },
+              weightsFinal,
+              cryptoCalibrationFinal,
+              cryptoRiskFinal,
+            }
+          : {}),
       },
       null,
       1,
@@ -3578,6 +3825,17 @@ export interface RunFile {
   /** THE WINDOW'S EXPERIMENTS (Stage 3d), in walk order. Empty on a lane-off arm
    * and absent in any tree older than the slot. */
   wildcards?: WildcardTaken[]
+  /** Stage 1c B3 — the clock this walk kept, and the crypto partition's own two
+   * blobs beside the equity six. Absent on every equity-spine run, which is what
+   * keeps those artefacts byte-identical to the ones that shipped before B3. */
+  spine?: SpineKind
+  crypto?: 'on' | 'off'
+  cryptoSpine?: { days: number; weekend: number; gaps: string[] }
+  /** the sixth equity blob, carried so "not one equity blob byte moved" can be a
+   * measurement over all six rather than over the five that happened to be here */
+  weightsFinal?: WeightsState | null
+  cryptoCalibrationFinal?: CalibrationState | null
+  cryptoRiskFinal?: unknown
 }
 
 /** engine.ts's `engine-scorecard` blob, structurally (the mirror rule again). */
