@@ -30,7 +30,7 @@ const FEATURES: Feature[] = [
   },
   {
     title: 'Pundit accountability',
-    body: 'YouTube, Discord and Reddit stock-callers are tracked and credibility-scored against reality before their picks can touch the board.',
+    body: 'YouTube and Reddit stock-callers are tracked and credibility-scored against reality before their picks can touch the board.',
   },
   {
     title: 'Alerts where you live',
