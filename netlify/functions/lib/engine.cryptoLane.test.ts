@@ -9,7 +9,8 @@ import type { RosterEntry } from '../../../shared/engine/roster'
 import { RUNG_RISK_PCT } from '../../../shared/engine/riskLadder'
 import { DEFAULT_WEIGHTS } from '../../../shared/engine/composite'
 import { channelsFactor, socialFactor } from '../../../shared/engine/factors'
-import { CRYPTO_CHART_ONLY_DIRECTIVE, CRYPTO_SIZE_CAP, CRYPTO_WEIGHTS } from '../../../shared/engine/cryptoLane'
+import { CRYPTO_CHART_ONLY_DIRECTIVE, CRYPTO_RISK_KEY, CRYPTO_SIZE_CAP, CRYPTO_WEIGHTS } from '../../../shared/engine/cryptoLane'
+import { emptyCryptoCalibration } from '../../../shared/engine/cryptoCalibration'
 import { atr } from '../../../shared/indicators'
 
 // ₿ THE CRYPTO LANE IN buildBoard (Stage 1c Phase B, Task B2) — Phase-A
@@ -180,17 +181,18 @@ describe('the lane publishes a partitioned cohort onto the same board', () => {
     expect(row.instrument).toBeNull()
   })
 
-  it('a MAPPED tracker does not lift the label while the cap holds — routed-but-capped is still paper only', async () => {
-    // the trap this pins: `levMap` gains BTC-USD, but an instrument only mints
-    // on a full-size row and the cohort cap holds crypto at 0.5 until its own
-    // rung earns the full one — so the row must keep the paper-only label and
-    // say WHY, not publish as placeable with no instrument and no route named
+  it('a GEARED ticket alone still mints nothing on a capped row — the fractional mint reads the 1x fields only', async () => {
+    // a 2×/3× ETP is a full-conviction instrument: it only ever mints on a
+    // full-size row (`sizedFraction === 1`), and the cohort cap holds crypto at
+    // half until its own rung earns the full one. So a levMap carrying only a
+    // geared ticket leaves the row exactly where it was — paper only, and
+    // saying that no tracker is configured, which is the truth about what it
+    // could have held today.
     const { board } = await runDay(['BTC-USD'], { 'BTC-USD': { long2x: '3BTL.L' } })
     const row = cryptoOf(board.board)[0]
     expect(row.paperOnly).toBe(true)
     expect(row.instrument).toBeNull()
-    expect(row.note).toContain('tracker configured; it routes when the cohort\'s record earns the full rung')
-    expect(row.note).not.toContain('no BTC-USD tracker configured')
+    expect(row.note).toContain('paper only — no BTC-USD tracker configured yet')
   })
 
   it('says so in the reader’s own words — the cohort, the cold start, the route', async () => {
@@ -224,6 +226,118 @@ describe('the lane publishes a partitioned cohort onto the same board', () => {
     expect(row).toBeTruthy()
     expect(row.gate.startsWith('called-')).toBe(true)
     expect(row.detail).toContain('crypto cohort')
+  })
+})
+
+// --------------------------------------------------------- the 1× route --
+
+/** A crypto tape that rose all year, has been declining for a hundred bars, and
+ * ticks up on the last three on heavy volume: WEAK, not a falling knife (the
+ * knife needs the last close at the window's low), so the short clears the entry
+ * gates and the volume leg of the contract is paid. The short-side fixture. */
+const bearish = (() => {
+  const decline = (i: number) => (i < 300 ? 8_000 + i * 60 : 26_000 * (1 - 0.004 * (i - 300)))
+  return bars(i => (i >= N - 3 ? decline(N - 4) * (1 + 0.004 * (i - (N - 4))) : decline(i)), N, i => (i >= N - 2 ? 2_500_000 : 1_000_000))
+})()
+const bearTape: Partial<EngineDeps> = {
+  candles: async sym => {
+    asked.add(sym)
+    return sym === 'BTC-USD' ? bearish : sym === 'NVDA' || sym === 'XLK' ? shorty : flat
+  },
+}
+
+/** The cohort's own record, hand-wound to the state that releases the cap: rung
+ * 2, and forty of its own graded outcomes in this row's band. Under the
+ * fifty-outcome cliff the anchor is still the honest 0.5, so an 88% band grades
+ * A — which is the only way to reach a FULL-SIZE crypto row at all. */
+const earnedOut = async (store: AppStore) => {
+  await store.write(CRYPTO_RISK_KEY, { rung: 2, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
+  await store.write('crypto-calibration', { ...emptyCryptoCalibration(), buckets: { 'long:green:25-40': { n: 40, hits: 35 } } })
+}
+
+describe('the 1× route — the owner configures a tracker, and the row carries it', () => {
+  it('mints the tracker at HALF size: a 1× is leverage-free, so the leverage gate has nothing to say about it', async () => {
+    const { board } = await runDay(['BTC-USD'], { 'BTC-USD': { long1x: 'BTCE.DE' } })
+    const row = cryptoOf(board.board)[0]
+    expect(row.instrument).toEqual({ ticker: 'BTCE.DE', leverage: 1 })
+    expect(row.paperOnly).toBe(false) // the label lifts exactly when a route exists
+    expect(row.note).not.toContain('paper only')
+    // …AND THE CAP DID NOT MOVE. Routing is about whether the reader can place
+    // the row; the cohort cap is about how big it may be, and the two questions
+    // stay separate: still half the rung, still saying so.
+    expect(row.riskRung).toBe(0)
+    expect(row.riskPct).toBe(RUNG_RISK_PCT[0] * CRYPTO_SIZE_CAP)
+    expect(row.note).toContain('capped at 0.5× the rung')
+  })
+
+  it('a short with no short1x stays paper only — the short arm, exactly as today', async () => {
+    const { ledger } = await runDay(['BTC-USD'], { 'BTC-USD': { long1x: 'BTCE.DE' } }, bearTape)
+    const row = cryptoOf(ledger)[0]
+    expect(row.side).toBe('short')
+    expect(row.instrument).toBeNull() // a long tracker is no help to a short
+    expect(row.paperOnly).toBe(true)
+    expect(row.shadow).toBe(true) // an unroutable short is a shadow, still graded
+    expect(row.note).toContain('paper only — no BTC-USD inverse tracker configured yet')
+  })
+
+  it('…and a short WITH short1x routes the inverse tracker and leaves the shadow', async () => {
+    const { board } = await runDay(['BTC-USD'], { 'BTC-USD': { short1x: 'XBTS.L' } }, bearTape)
+    const row = cryptoOf(board.board)[0]
+    expect(row.side).toBe('short')
+    expect(row.instrument).toEqual({ ticker: 'XBTS.L', leverage: 1 })
+    expect(row.paperOnly).toBe(false)
+    expect(row.shadow).toBeUndefined()
+    expect(row.riskPct).toBe(RUNG_RISK_PCT[0] * CRYPTO_SIZE_CAP)
+  })
+
+  it('a FULL-size earn-out row still prefers the leveraged ticket', async () => {
+    const { board } = await runDay(['BTC-USD'], { 'BTC-USD': { long1x: 'BTCE.DE', long2x: '3BTL.L' } }, {}, earnedOut)
+    const row = cryptoOf(board.board)[0]
+    expect(row.grade).toBe('A')
+    expect(row.riskPct).toBe(RUNG_RISK_PCT[2]) // cap released, full tier
+    expect(row.instrument).toEqual({ ticker: '3BTL.L', leverage: 2 })
+    expect(row.note).not.toContain('capped at')
+  })
+
+  it('…and a FULL-size row with only a 1× configured routes the 1×', async () => {
+    const { board } = await runDay(['BTC-USD'], { 'BTC-USD': { long1x: 'BTCE.DE' } }, {}, earnedOut)
+    const row = cryptoOf(board.board)[0]
+    expect(row.riskPct).toBe(RUNG_RISK_PCT[2])
+    expect(row.instrument).toEqual({ ticker: 'BTCE.DE', leverage: 1 })
+    expect(row.paperOnly).toBe(false)
+  })
+
+  it('never invents a ticker: no route configured, no instrument, and the row says which', async () => {
+    const { board } = await runDay(['BTC-USD'])
+    const row = cryptoOf(board.board)[0]
+    expect(row.instrument).toBeNull()
+    expect(row.paperOnly).toBe(true)
+    expect(row.note).toContain('paper only — no BTC-USD tracker configured yet')
+  })
+
+  it('configuring the crypto route leaves the equity board byte-identical', async () => {
+    // the production shape of the change: the owner maps a tracker for a COIN.
+    // No equity entry carries a 1x field, so no equity row can read one — which
+    // is the whole of the equity-byte-identity argument, measured.
+    const plain = await runDay(['BTC-USD'])
+    const routed = await runDay(['BTC-USD'], { 'BTC-USD': { long1x: 'BTCE.DE', short1x: 'XBTS.L' } })
+    const equity = (rows: Prediction[]) => JSON.stringify(rows.filter(r => r.cohort !== 'crypto'))
+    expect(equity(routed.board.board)).toBe(equity(plain.board.board))
+    expect(equity(routed.ledger)).toBe(equity(plain.ledger))
+  })
+
+  it('an EQUITY short mapped to an inverse TRACKER is routable — recorded, because it is a real consequence', async () => {
+    // Not a leak: an inverse 1× tracker is as placeable in an ISA as an inverse
+    // ETP, so a short the owner has mapped one for is a short the reader can
+    // take. Nothing in production configures this today (no equity entry has a
+    // 1x field), and if the owner ever adds one this is what it will do —
+    // stated here rather than left to be discovered on a live board.
+    const { board } = await runDay(['BTC-USD'], { NVDA: { short1x: 'NVDA1S' } })
+    const nvda = board.board.find(r => r.sym === 'NVDA')!
+    expect(nvda.side).toBe('short')
+    expect(nvda.instrument).toEqual({ ticker: 'NVDA1S', leverage: 1 })
+    expect(nvda.watchOnly).toBeUndefined() // no longer an unroutable observation
+    expect(nvda.riskPct).toBeGreaterThan(0)
   })
 })
 

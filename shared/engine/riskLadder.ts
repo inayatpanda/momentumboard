@@ -141,7 +141,21 @@ export function cohortRungOf(state: RiskState, cohort: CapCohortOrUnknown): numb
   return state.rung
 }
 
-export type LevMap = Record<string, { long2x?: string; long3x?: string; short2x?: string; short3x?: string }>
+/** The owner's instrument map: an underlying → the ISA-eligible tickers that
+ * hold it. `long2x`/`long3x`/`short2x`/`short3x` are geared ETPs — full-conviction
+ * instruments, and the only thing `mapInstrument` will hand a full-size row.
+ *
+ * `long1x`/`short1x` are 1× SPOT/INVERSE TRACKERS (Stage 1c-R), and they are a
+ * different kind of thing: no gearing, so no daily-rebalance decay, so nothing
+ * for the risk ladder to withhold — holding one is holding the asset. That is
+ * why a 1× can mint on a row of any size (`spotInstrument`) where a geared
+ * ticket cannot. They exist for the crypto route (an ISA cannot hold a coin, but
+ * it can hold a cETN over one); no equity entry carries them today, which is
+ * what makes every equity behaviour here byte-identical.
+ *
+ * The engine never invents a ticker — every value in this map is the owner's
+ * own instrument decision, configured through `AppConfig.levMap`. */
+export type LevMap = Record<string, { long1x?: string; long2x?: string; long3x?: string; short1x?: string; short2x?: string; short3x?: string }>
 
 /** Route instruments (leveraged/inverse ETPs) are what mapInstrument RETURNS —
  * they must never enter the candidate pool as underlyings. A held 3CON.L
@@ -154,7 +168,7 @@ export function isRouteEtp(sym: string, levMap: LevMap): boolean {
   const s = sym.toUpperCase()
   if (/^\d/.test(s)) return true
   for (const m of Object.values(levMap)) {
-    if ([m.long2x, m.long3x, m.short2x, m.short3x].some(t => t?.toUpperCase() === s)) return true
+    if ([m.long1x, m.long2x, m.long3x, m.short1x, m.short2x, m.short3x].some(t => t?.toUpperCase() === s)) return true
   }
   return false
 }
@@ -166,6 +180,29 @@ export function leverageAllowed(rung: number, grade: 'A' | 'B' | 'C'): 0 | 2 | 3
   return 0
 }
 
+/** THE 1× TICKET, and nothing else: the spot tracker on the long side, the
+ * inverse tracker on the short one. No grade, no rung — a 1× tracker carries no
+ * leverage, so `leverageAllowed` (which exists to decide who may hold a
+ * DECAYING geared ETP) has nothing to say about it, and the row's size is
+ * decided where every row's size is decided.
+ *
+ * Separate from `mapInstrument` rather than a flag inside it because the two
+ * answer different questions: "which geared instrument has this row earned?"
+ * and "is there a way to simply hold this thing?". The engine mints one below
+ * full size and the other only at it. */
+export function spotInstrument(side: 'long' | 'short', sym: string, levMap: LevMap): { ticker: string; leverage: number } | null {
+  const t = levMap[sym]?.[side === 'long' ? 'long1x' : 'short1x']
+  return t ? { ticker: t, leverage: 1 } : null
+}
+
+/** The instrument a FULL-SIZE row routes through: the best geared ticket the
+ * rung and the grade allow, and — when no geared ticket fires, for want of
+ * permission or for want of a mapping — the 1× tracker, if one is configured.
+ *
+ * The fall-through is what keeps the earn-out honest: a crypto row that has
+ * earned the full rung, on a pair the owner has mapped only a spot tracker for,
+ * routes that tracker rather than silently publishing as unplaceable. Every
+ * leveraged answer above it is the answer it always was. */
 export function mapInstrument(
   side: 'long' | 'short',
   sym: string,
@@ -173,14 +210,16 @@ export function mapInstrument(
   rung: number,
   levMap: LevMap,
 ): { ticker: string; leverage: number } | null {
-  const max = leverageAllowed(rung, grade)
-  if (!max) return null
   const m = levMap[sym]
   if (!m) return null
+  const max = leverageAllowed(rung, grade)
   if (max === 3) {
     const t3 = side === 'long' ? m.long3x : m.short3x
     if (t3) return { ticker: t3, leverage: 3 }
   }
-  const t2 = side === 'long' ? m.long2x : m.short2x
-  return t2 ? { ticker: t2, leverage: 2 } : null
+  if (max >= 2) {
+    const t2 = side === 'long' ? m.long2x : m.short2x
+    if (t2) return { ticker: t2, leverage: 2 }
+  }
+  return spotInstrument(side, sym, levMap)
 }

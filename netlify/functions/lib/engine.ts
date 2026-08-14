@@ -101,7 +101,7 @@ import { GATE_STATE_KEY, advanceGateState, effectiveGates, gateEligibility, gate
 import { classifyOutcome, postMortemKey } from '../../../shared/engine/postMortem'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
-import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, RUNG_RISK_PCT, type CohortRung, type RiskState } from '../../../shared/engine/riskLadder'
+import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, spotInstrument, RUNG_RISK_PCT, type CohortRung, type RiskState } from '../../../shared/engine/riskLadder'
 import { capCohortOf, SMALL_CAP_MAX_USD_M, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
@@ -1876,8 +1876,13 @@ export async function buildBoard(
     // below, where `shadow` is assembled). Read HERE because it is one of the three
     // things that can be known about this row BEFORE the grade — and the
     // population the grade is read from has to be one of them.
+    // …and `short1x` counts (Stage 1c-R): an inverse TRACKER is as placeable in
+    // an ISA as an inverse ETP, so a short the owner has mapped one for is
+    // routable. Inert for equity — no equity entry carries a 1x field — and it
+    // is what makes a crypto short's `short1x` mean anything at all: without it
+    // the field would configure a route the pre-grade shadow test refuses.
     const shortRoute = (cfg.levMap ?? {})[call.sym]
-    const unshortable = call.side === 'short' && !(shortRoute?.short2x || shortRoute?.short3x)
+    const unshortable = call.side === 'short' && !(shortRoute?.short1x || shortRoute?.short2x || shortRoute?.short3x)
     // WHOSE HISTORY THIS ROW IS READ AGAINST — AND WHOSE IT WILL JOIN
     // [stage 3c — the provenance partition; the discriminator re-ratified after
     // the Task-1 review].
@@ -2048,7 +2053,21 @@ export async function buildBoard(
     const rung = crypto ? crypto.rung : cohortRungOf(risk, cohort)
     // sizedFraction === 1 implies tierFraction === 1, i.e. fullTrade, so `grade` is
     // non-null here for exactly the reason it was under the old `fullTrade` test.
-    const instrument = sizedFraction === 1 ? mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {}) : null
+    // …and BELOW full size, a CRYPTO row mints its 1× tracker (Stage 1c-R). The
+    // `sizedFraction === 1` gate exists because a 2-3× ETP is a full-conviction
+    // instrument — geared, daily-rebalanced, decaying — and handing one to a
+    // row the engine deliberately made small gives back the exposure the cap
+    // just took away. A 1× tracker is none of those things: it is the asset,
+    // and the fraction is the SIZE it is held at, which is the ordinary
+    // arithmetic every share position already obeys. Written as a crypto-only
+    // arm rather than by weakening the equity gate: the gate's argument about
+    // geared ETPs is untouched, and no equity row can reach this call.
+    const instrument =
+      sizedFraction === 1
+        ? mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {})
+        : crypto && sizedFraction > 0
+          ? spotInstrument(call.side, call.sym, cfg.levMap ?? {})
+          : null
     const callThemes = themesOf(call.sym)
     const id = `${today}:${call.sym}:${call.side}`
     if (routeBlocked) routeBlockedShorts.add(id)
@@ -2086,12 +2105,13 @@ export async function buildBoard(
       // PAPER ONLY: a row the reader can read but not place. A short qualifies
       // because an ISA cannot place one without an inverse ETP — and so does
       // EVERY crypto row that carries no instrument, on the same sentence and
-      // for the same reason. NOT `!crypto.routed`: a mapped tracker in levMap
-      // is a route that EXISTS, not a route this row carries — instruments only
-      // mint at sizedFraction 1 and the cohort cap holds crypto at 0.5 until
-      // its own rung earns the full one, so a routed-but-capped row would
-      // otherwise publish as placeable with no instrument and no route named.
-      // The test is the instrument on THIS row, nothing upstream of it.
+      // for the same reason. The test is THE INSTRUMENT ON THIS ROW, never a
+      // key upstream in levMap: a configured route that did not mint (a geared
+      // ticket on a capped row, a long tracker under a short call) is not a
+      // route this row carries. Since Stage 1c-R a crypto row with a 1× tracker
+      // for its side DOES mint at half size, so the label lifts exactly when a
+      // real, placeable instrument appears on the row — and not one moment
+      // earlier.
       paperOnly: !watchOnly && !instrument && (call.side === 'short' || !!crypto),
       // The stamp must describe what the call ACTUALLY got. The composite loop
       // re-scores with worldMult before publishing; a LANE composite is structural
@@ -3331,7 +3351,12 @@ export async function buildBoard(
           })
           continue
         }
-        drafts.push({ sym, call: drafted, routed: !!(cfg.levMap ?? {})[sym] })
+        // ROUTED = THIS SIDE'S OWN 1× TRACKER EXISTS, which is exactly the
+        // instrument `publishCall` will mint for the row (a geared ticket needs
+        // a full-size row, and the cohort cap forbids one until the record
+        // earns it). Asking the same question the mint asks is what keeps the
+        // voice and the row's `paperOnly` from ever disagreeing.
+        drafts.push({ sym, call: drafted, routed: !!spotInstrument(drafted.side, sym, cfg.levMap ?? {}) })
       }
 
       // ONE ROW PER SIDE (the ratified slot rule). Cut BEFORE publication, not
@@ -3345,7 +3370,7 @@ export async function buildBoard(
             trace.record(d.sym, 'slot-cut', { side, source: 'watchlist', detail: 'crypto cohort · one row per side, and a stronger pair took it' })
             continue
           }
-          const voice = cryptoVoice({ sym: d.sym, gradedN: cryptoGradedN, routed: d.routed, sizeCap: cap })
+          const voice = cryptoVoice({ sym: d.sym, side: d.call.side, gradedN: cryptoGradedN, routed: d.routed, sizeCap: cap })
           const row = publishCall(
             {
               ...d.call,

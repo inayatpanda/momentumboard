@@ -369,27 +369,33 @@ describe('the name alias — what makes the crypto news factor real at all', () 
 describe('the voice — cohort-labelled, and the cold start explained rather than left to look like a verdict', () => {
   it('quotes the cliff the code actually uses, and names the count so far', () => {
     expect(CRYPTO_COLD_START_N).toBe(50)
-    const v = cryptoVoice({ sym: 'BTC-USD', gradedN: 7, routed: false, sizeCap: 0.5 })
+    const v = cryptoVoice({ sym: 'BTC-USD', side: 'long', gradedN: 7, routed: false, sizeCap: 0.5 })
     expect(v.note).toContain('crypto cohort')
     expect(v.note).toContain('7 of the ~50 outcomes it needs')
     expect(v.note).toContain('designed floor, not a verdict')
   })
 
-  it('the route sentence has THREE states — unmapped, mapped-but-capped, and earning the label off', () => {
-    // no tracker: the plain sentence
-    expect(cryptoVoice({ sym: 'BTC-USD', gradedN: 7, routed: false, sizeCap: 0.5 }).note).toContain('paper only — no BTC-USD tracker configured yet')
-    // tracker configured, cap still 0.5: STILL paper only — an instrument only
-    // mints on a full-size row, so a configured route is a promise, not a route
-    // this row carries, and dropping the label here published a placeable-
-    // looking row with no instrument on it
-    const capped = cryptoVoice({ sym: 'BTC-USD', gradedN: 7, routed: true, sizeCap: 0.5 }).note
-    expect(capped).toContain('paper only — BTC-USD tracker configured; it routes when the cohort\'s record earns the full rung')
-    // only the earned full rung drops the sentence
-    expect(cryptoVoice({ sym: 'BTC-USD', gradedN: 64, routed: true, sizeCap: 1 }).note).not.toContain('paper only')
+  it('the route sentence tracks THE ROW’S OWN INSTRUMENT — not a promise about a future rung', () => {
+    // no tracker for this side: the plain sentence
+    expect(cryptoVoice({ sym: 'BTC-USD', side: 'long', gradedN: 7, routed: false, sizeCap: 0.5 }).note).toContain('paper only — no BTC-USD tracker configured yet')
+    // a SHORT names the instrument it is actually missing — a configured long1x
+    // is no help to it, and "no tracker configured" would be false about the row
+    expect(cryptoVoice({ sym: 'BTC-USD', side: 'short', gradedN: 7, routed: false, sizeCap: 0.5 }).note).toContain('paper only — no BTC-USD inverse tracker configured yet')
+    // ROUTED AT HALF SIZE IS STILL ROUTED (Stage 1c-R). A 1× tracker is
+    // leverage-free, so it mints at any sized fraction: the cap is about SIZE,
+    // never about the label, and the row carries a real instrument the reader
+    // can place. The old middle state — "configured; it routes when the record
+    // earns the full rung" — described a levMap key that minted nothing, and
+    // that state no longer exists.
+    const capped = cryptoVoice({ sym: 'BTC-USD', side: 'long', gradedN: 7, routed: true, sizeCap: 0.5 }).note
+    expect(capped).not.toContain('paper only')
+    expect(capped).not.toContain('earns the full rung')
+    expect(capped).toContain('capped at 0.5× the rung') // the SIZE sentence stays
+    expect(cryptoVoice({ sym: 'BTC-USD', side: 'long', gradedN: 64, routed: true, sizeCap: 1 }).note).not.toContain('paper only')
   })
 
   it('drops the cold-start explanation once the cohort has its own record', () => {
-    const warm = cryptoVoice({ sym: 'ETH-USD', gradedN: 64, routed: true, sizeCap: 1 })
+    const warm = cryptoVoice({ sym: 'ETH-USD', side: 'long', gradedN: 64, routed: true, sizeCap: 1 })
     expect(warm.note).toContain('64 graded outcomes of its own')
     expect(warm.note).not.toContain('designed floor')
     expect(warm.note).not.toContain('capped at')

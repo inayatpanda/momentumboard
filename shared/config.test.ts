@@ -15,6 +15,14 @@ describe('validateConfig engine fields', () => {
     expect(cfg.riskRungOverride).toBe(2)
     expect(cfg.favouriteChannels).toEqual(['Stocks with Josh'])
   })
+  it('carries the 1× tracker fields through — the crypto route the owner configures (Stage 1c-R)', () => {
+    // an entry made of nothing but 1x fields must SURVIVE: it is the whole
+    // configuration of a crypto row's route, and a validator that dropped it
+    // would leave the lane permanently paper-only with no error anywhere
+    const cfg = validateConfig({ ...minimal, levMap: { 'btc-usd': { long1x: 'btce.de', short1x: 'xbts.l' } } })!
+    expect(cfg.levMap).toEqual({ 'BTC-USD': { long1x: 'BTCE.DE', short1x: 'XBTS.L' } })
+  })
+
   it('rejects out-of-range override; absent fields stay absent', () => {
     const cfg = validateConfig({ ...minimal, riskRungOverride: 5 })!
     expect(cfg.riskRungOverride).toBeNull()

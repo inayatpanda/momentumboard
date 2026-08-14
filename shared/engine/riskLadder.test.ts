@@ -8,6 +8,7 @@ import {
   leverageAllowed,
   mapInstrument,
   migrateRisk,
+  spotInstrument,
   RUNG_RISK_PCT,
   type CohortRung,
   type OutcomeLite,
@@ -172,12 +173,52 @@ describe('leverage gating', () => {
     expect(mapInstrument('short', 'NVDA', 'B', 1, levMap)).toBeNull()
   })
 
+  it('mapInstrument falls through to the 1× ticket only when no leveraged one fires', () => {
+    // the leveraged ticket still wins wherever the ladder allows one — a 1x
+    // field cannot demote a route the rung and the grade already earned
+    expect(mapInstrument('long', 'X', 'A', 2, { X: { long1x: 'SPOT', long2x: 'L2' } })).toEqual({ ticker: 'L2', leverage: 2 })
+    expect(mapInstrument('long', 'X', 'A', 3, { X: { long1x: 'SPOT', long2x: 'L2', long3x: 'L3' } })).toEqual({ ticker: 'L3', leverage: 3 })
+    // …and a full-size row with ONLY a 1× configured routes it
+    expect(mapInstrument('long', 'X', 'A', 2, { X: { long1x: 'SPOT' } })).toEqual({ ticker: 'SPOT', leverage: 1 })
+    // LEVERAGE-FREE, SO THE LEVERAGE LADDER HAS NOTHING TO SAY ABOUT IT: a 1×
+    // tracker is the asset, so `leverageAllowed` — which exists to decide who
+    // may hold a DECAYING geared ETP — is not asked. A grade-C row at rung 0
+    // would take a plain share; this is the ISA-shaped way to hold one.
+    expect(mapInstrument('long', 'X', 'C', 0, { X: { long1x: 'SPOT' } })).toEqual({ ticker: 'SPOT', leverage: 1 })
+    expect(mapInstrument('short', 'X', 'B', 1, { X: { short1x: 'INV' } })).toEqual({ ticker: 'INV', leverage: 1 })
+    // …per side, and never across it
+    expect(mapInstrument('short', 'X', 'A', 2, { X: { long1x: 'SPOT' } })).toBeNull()
+  })
+
+  it('spotInstrument reads ONLY the 1x fields — a geared ticket is not a tracker', () => {
+    const levMap = { 'BTC-USD': { long1x: 'BTCE.DE' }, NVDA: { long2x: 'LNVD', short3x: '3SNV' } }
+    expect(spotInstrument('long', 'BTC-USD', levMap)).toEqual({ ticker: 'BTCE.DE', leverage: 1 })
+    expect(spotInstrument('short', 'BTC-USD', levMap)).toBeNull() // no short1x configured
+    expect(spotInstrument('long', 'NVDA', levMap)).toBeNull() // a 2× ETP is not a spot tracker
+    expect(spotInstrument('short', 'NVDA', levMap)).toBeNull()
+    expect(spotInstrument('long', 'TSLA', levMap)).toBeNull() // no entry at all
+  })
+
+  it('every leveraged answer is the answer it was — no equity entry carries a 1x field', () => {
+    const levMap = { NVDA: { short3x: '3SNV', short2x: 'SNVD', long2x: 'LNVD' } }
+    expect(mapInstrument('short', 'NVDA', 'A', 3, levMap)).toEqual({ ticker: '3SNV', leverage: 3 })
+    expect(mapInstrument('short', 'NVDA', 'A', 1, levMap)).toEqual({ ticker: 'SNVD', leverage: 2 })
+    expect(mapInstrument('long', 'NVDA', 'A', 3, levMap)).toEqual({ ticker: 'LNVD', leverage: 2 })
+    expect(mapInstrument('short', 'NVDA', 'B', 1, levMap)).toBeNull() // the grade withholds it
+    expect(mapInstrument('long', 'NVDA', 'C', 3, levMap)).toBeNull() // …and C never unlocks one
+    expect(mapInstrument('short', 'TSLA', 'A', 3, levMap)).toBeNull() // no mapping
+  })
+
   it('risk per idea follows the rung', () => {
     expect(RUNG_RISK_PCT).toEqual([1.0, 1.25, 1.5, 2.0])
   })
 
   it('isRouteEtp flags levMap route tickers and digit-prefixed LSE ETPs, never ordinary equities', () => {
-    const levMap = { NVDA: { short3x: '3SNV.L', long2x: 'LNVD.L' } }
+    const levMap = { NVDA: { short3x: '3SNV.L', long2x: 'LNVD.L' }, 'BTC-USD': { long1x: 'BTCE.DE', short1x: 'XBTS.L' } }
+    // the 1× trackers are route tickers like any other: a held spot tracker must
+    // never circle back into the candidate pool as an underlying
+    expect(isRouteEtp('BTCE.DE', levMap)).toBe(true)
+    expect(isRouteEtp('xbts.l', levMap)).toBe(true)
     expect(isRouteEtp('3SNV.L', levMap)).toBe(true) // a configured route
     expect(isRouteEtp('lnvd.l', levMap)).toBe(true) // case-insensitive
     expect(isRouteEtp('3CON.L', {})).toBe(true) // digit prefix — LSE ETP naming, even unconfigured

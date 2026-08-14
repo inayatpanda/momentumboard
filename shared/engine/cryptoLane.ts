@@ -444,26 +444,28 @@ export const CRYPTO_COLD_START_N = 50
  * engine's opinion of bitcoin; this is the difference between a designed floor
  * and a judgement, said out loud on the row itself.
  *
- * ROUTING IS THE SECOND SENTENCE, and it has THREE states, not two. No tracker
- * in `levMap`: paper only, said plainly. Tracker configured but the cohort cap
- * still at 0.5: STILL paper only — an instrument only mints on a full-size row
- * (engine.ts `mapInstrument` under `sizedFraction === 1`), so a configured
- * route is a promise about the future, not a route this morning's row carries,
- * and the sentence says which. Only a row that can actually mint its
- * instrument drops the label. The capped-short precedent throughout: labelled
- * honestly rather than shown as a placeable trade. */
-export function cryptoVoice(input: { sym: string; gradedN: number; routed: boolean; sizeCap: number }): { note: string; detail: string } {
+ * ROUTING IS THE SECOND SENTENCE, and since Stage 1c-R it has TWO states, not
+ * three. `routed` means THIS ROW'S OWN 1× TRACKER EXISTS — the tracker for the
+ * side it is calling, mintable at any size because a 1× carries no leverage —
+ * so the label lifts exactly when the row carries an instrument the reader can
+ * place, and no sentence is needed for a row that names its own instrument.
+ * Without one: paper only, said plainly, naming what is missing (a SHORT with
+ * no `short1x` is missing an INVERSE tracker, and a configured long tracker is
+ * no help to it).
+ *
+ * THE STATE THAT DIED: "tracker configured; it routes when the cohort's record
+ * earns the full rung". It described a levMap key that minted nothing on a
+ * capped row — true while only geared ETPs could be configured, and retired by
+ * the 1× route. The SIZE sentence below is untouched: the cap is about how big
+ * the row may be, never about whether it can be placed. */
+export function cryptoVoice(input: { sym: string; side: 'long' | 'short'; gradedN: number; routed: boolean; sizeCap: number }): { note: string; detail: string } {
   const cold = input.gradedN < CRYPTO_COLD_START_N
   const cohort =
     `crypto cohort — its own calibration, its own 14-bar clock, its own tape` +
     (cold
       ? `; this cohort has graded ${input.gradedN} of the ~${CRYPTO_COLD_START_N} outcomes it needs, so C at half size is the designed floor, not a verdict`
       : `; ${input.gradedN} graded outcomes of its own now price it`)
-  const route = !input.routed
-    ? ` · paper only — no ${input.sym} tracker configured yet`
-    : input.sizeCap < 1
-      ? ` · paper only — ${input.sym} tracker configured; it routes when the cohort's record earns the full rung`
-      : ''
+  const route = input.routed ? '' : ` · paper only — no ${input.sym} ${input.side === 'short' ? 'inverse ' : ''}tracker configured yet`
   const cap = input.sizeCap < 1 ? ` · capped at ${input.sizeCap}× the rung until the cohort's own record earns the full one` : ''
   return { note: `${cohort}${route}${cap}`, detail: `${cohort}${route}` }
 }
