@@ -64,6 +64,11 @@ export function ledgerRow(p: Prediction) {
     // that after the row has aged out of today's board into this projection.
     // (nearMiss deliberately absent: a near miss never enters the ledger.)
     observation: p.observation ?? false,
+    // …and the experiment slot's record (Stage 3d), on the same argument as
+    // `observation` above: it is a ROW KIND, and the ledger's own by-grade
+    // breakdown cannot keep a wildcard out of the letter buckets without it.
+    // Small and bounded (a gate name, a rung, one sentence, one count).
+    wildcard: p.wildcard,
     note: p.note,
     // The engine's own two sentences (voice.ts). They ride the slim
     // projection for the same reason `note` does: this is the ONLY

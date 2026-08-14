@@ -346,3 +346,91 @@ All four runs enforced them daily and none threw: 21/21 sessions **funnel-trace 
 **The acceptance window's short-side B grades will largely NOT materialise on the first mornings, and that is the mechanism working rather than a regression.** Arm B's `LEVMAP_MIRROR` is a 38-name model of the owner's map (US both-directions, UK long-only); production's real `levMap` is a handful of inverse ETPs (`3SMI.L`/`3LAL.L`), so it routes *far* fewer shorts than the walk did. A short with no route is `unshortable` — a pre-grade shadow — and under the partition a shadow row is priced against shadow evidence and carries no size, so it can neither be published as a sized B nor accrue into the sized short slice. Ten of the thirteen sized-trade Bs in the shipped arm are shorts; production will only see their like on the names it can actually place.
 
 **Nothing is lost by that, and nothing is faked to cover it.** The generation-4 seed already carries the historical sized short record the walk measured (short buckets 3,748 rows, 2,365 of them sized), so the moment a real routed short grades, it reads a curve that has evidence underneath it rather than falling to a provisional base — and the live sized short slice grows from real routed shorts only. The reader-facing consequence is a board that is long-heavier and B-thinner than the acceptance table for as long as the routable universe stays small; the fix for that is the owner's ISA route list, not the engine's read.
+
+---
+
+## Stage 3d Task 3 — 🃏 the experiment slot proves itself: deterministic, solitary, causal
+
+**Date:** 2026-08-14 · **Window:** the acceptance window, 2026-07-14 … 2026-08-11 (21 sessions) · **Arms:** `GATES=off` + regret ON on both sides; `WILDCARD=off` (lane-off) vs the lane live, run **twice**. **API calls: 0** (warm `.replay-cache`). **Command:** `replay-window.ts --wildcard-diff --ref <off>.json --new <on>.json` over `replay-window.ts --from 2026-07-14 --to 2026-08-11`. **Artefacts:** `/private/tmp/.../t3/{off,on-1,on-2}.{json,log}`, `wcdiff.log`.
+
+### The experiments the window took
+
+| # | session | date | name | side | rung | gate under test | gate evidence at choice | core | grade / p | size | outcome (engine) | post-mortem | booked |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 1 | 2026-07-14 | **ORCL** | short | 1 | `entry-wait` | **0** priced / 0 unpriced | −41.2 | C / 0.45 | 0.25% (**paper**) | **HIT +7.8pp**, stop never touched | `won` | ✅ true |
+| 2 | 12 | 2026-07-29 | **KO** | long | 1 | `expected-move` | **0** priced / 0 unpriced | +20.8 | C / 0.42 | 0.25% | still open at walk end (tape: miss −6.1pp) | — | — (nothing owed) |
+
+Both hypotheses are template-built from numbers and reached the row verbatim, e.g. *"entry-wait has 0 priced outcomes and 0 unpriced in the miss ledger, none of them causal; this takes the short it blocked, core read −41.2, for one real outcome with a stop."*
+
+**ORCL is PAPER MONEY and the evidence says so on the row.** A short wildcard passes the routability filter (the name *has* an inverse ETP) but `mapInstrument` is reached only at `sizedFraction === 1`, and a quarter can never be that — so it publishes `instrument: null`, `paperOnly: true`. **The one causal sample this window bought sits on a row an ISA could not have placed.** The causal evidence is real; the P&L is not, and will not be until quarter-size short routing exists.
+
+### Cadence: FEW — and it is the one-slot invariant doing it, not luck
+
+**2 experiments in 21 sessions**, exactly 11 sessions apart. Task 2's concern — *"the lane fires readily on thin fixtures; with an empty miss ledger every gate reads `gateEvidenceN 0`, so the slot spends on the first eligible day"* — is **confirmed as to day one and refuted as to cadence**:
+
+- It *does* spend on session 1. With no matured trace days yet the ledger is empty, every gate ties at thinness 0, and `byThinnestGate` degenerates to `byConviction` — so the gate under test was chosen *by the row* (the highest-|core| single-gate-blocked candidate) rather than by an evidence gap. That is the concern, live.
+- It then **cannot fire again for 11 sessions**, and did not. The second pick, on session 12, was *not* degenerate: by then the ledger held a matured day, `dead-zone-core` carried 346 attributed outcomes and `expected-move` genuinely carried **0** — the thinness preference discriminated correctly and bought the unmeasured gate over the measured one. The mechanism works the moment it has anything to work with.
+- **The degeneracy is a cold-ledger artefact, not a live condition.** Production's miss ledger has been accruing since 3b shipped; a fresh walk's session 1 is the only place every gate ties.
+
+**Recommendation (RECORDED, not implemented — the plan says adjudicate and record):** **do NOT add a minimum-evidence floor to rung 1.** A floor ("only test a gate with ≥ k measured outcomes") inverts the rung's own rationale — the slot exists to buy evidence where there is least of it — and would permanently starve exactly the gates nothing has ever measured (`dead-zone-context` has read 0 across two independent windows). The exposure a floor would address is bounded already: one mediocre pick, once, at cold start, for 11 sessions.
+
+**The cheaper fix, if the owner wants one:** make rung 1's all-zero case an explicit tie-break instead of an incidental one — when every candidate's `gateEvidenceN` is 0, prefer the gate that refused the MOST rows in that day's trace (the gate whose unmeasured-ness is costing the most), then conviction. It needs no data the day does not already have, it cannot starve an unmeasured gate, and it is strictly better than "whichever gate the highest-conviction row happened to carry". One function, `wildcardLane.ts`, and its determinism is unaffected (the sort stays total).
+
+**Also recorded: rungs 2 and 3 never fired.** Rung 1 found a candidate on both occasions, so the unmeasured-rung and catalyst-nominee arms are still pinned only by fixtures. They are unexercised on live-shaped data.
+
+### The one-slot invariant, and the `.slice(-10)` boundary — asserted in-walk
+
+The slot is held by a scan over `predictions-index … .slice(-10)`, so it has a boundary and the walk now asserts it rather than assuming it (`wildcardViolations`, enforced daily by the harness, which throws on the first violation):
+
+- **The two release conditions coincide exactly.** An experiment published on session *i* falls out of the lookback on session *i + 10 + 1*, and the engine first grades it at ten sessions on session *i + 10 + 1*. `WILDCARD_SLOT_LOOKBACK === POSTMORTEM_HORIZON` is now a pinned constant relation, checked as an invariant and as a unit test: **while they are equal the slot is always released by the OUTCOME and never merely by the window sliding out from under it.** Task 2's judgment 10 ("a wildcard whose tape never arrived stops holding the slot once it leaves the window") is therefore a bound that costs nothing in the ordinary case — and if anyone shortens the lookback, un-graded release becomes the *normal* path and the walk says so out loud.
+- **The window exercised the boundary at its tightest point.** ORCL published on session 1 and graded on session 12; KO seated on session 12 — the *first session it legally could*. The invariant is not vacuously satisfied here; it is satisfied with zero slack.
+- Also pinned in-walk over the window: one wildcard row per day, both cuts naming the same one; `riskPct > 0`; `accrual: 'sized'`; never shadow, watch-only, near-miss or contract-claiming; `instrument: null` (leverage structurally unreachable at 0.25); a real falsifying stop; the trace coding it `called-wildcard` with `priorGate` remembering the gate under test.
+
+### Determinism
+
+The lane-on walk was run **twice**. Every byte of both run files is identical except each day's wall-clock `ms` — same experiments, same rungs, same gates, same hypotheses, same levels, same outcomes, and the `--wildcard-diff` output is character-identical across the two.
+
+### The controlled diff — lane-off vs lane-live
+
+**806 matched keys · 4 rows only the lane-on arm has, all 4 the experiments (board + ledger) · 0 rows only the lane-off arm has · 0 near-miss displacements** (no near-miss row shared a chart with either experiment in this window, so the splice never fired — its handling is pinned by fixture).
+
+**Split at the accrual, because the ratified design opens exactly one channel.** A wildcard is the reader's money at a quarter of the rung, so its graded outcome accrues into `engine-calibration` like any sized row's (plan, Global Constraints: *"its calibration accrual is normal"*). A whole-window byte-identity claim is therefore incompatible with the design the moment an experiment grades inside the window, and the guard is split rather than waved at:
+
+| | ordinary rows moved | verdict |
+|---|---|---|
+| sessions 1–11 (**before** any experiment graded) | **0** | **the seating perturbs nothing** — the lane publishes after both cuts and changes no ordinary row on the day it seats, which is the real claim about selection |
+| sessions 12–21 (after ORCL's outcome reached the blob) | 386 | the one observation the design lets through |
+
+Every one of those 386 moves is on a **read-derived** field and nothing else: `pRaw`/`pPooled`/`pSized` 386, `nEff` 82, `probability` 11, `grade` 2, `gradeUncapped` 2. **Zero** moves on composite, entry/stop/target, expected move, setup family, accrual stamp, risk rung, catalyst, thesis or size. The harness fails the run on any move outside the read set, and on any size move not standing behind a grade move.
+
+**The single grade change, traced to the last decimal.** `2026-08-03 MU short C → B` (one row, both cuts). The B threshold is anchor + 0.05 = **0.4658**; MU's unrounded read is **0.46512** lane-off and **0.46605** lane-on. One extra graded sized short in `short:amber:40-55` (n 395→396, hits 198→199) moved it 0.0009 across the line. `riskPct` is 0 on both — it is a watch row, so no size moved with it.
+
+**The separable records held, byte for byte.**
+
+| record | lane-off | lane-on | reading |
+|---|---|---|---|
+| `byGrade` | C 161 / shadow 49 / B 5 | C 161 / shadow 49 / B 5 **+ `wildcard {n:1,hits:1}`** | its own 🃏 key; **C did not fatten by one** |
+| `byRegime` | — | **delta 0** | the live/skill pane never sees the experiment |
+| `bySetup` | — | **+1** (`continuation`) | the shape pane counts it — the most honest sample the family has |
+| `byPostMortem` | — | **delta 0** | the win is stamped `won` and excluded — a win is not one of the ways the engine loses |
+| lifetime counters | — | **delta 0** | `skillGraded` refuses it |
+| Brier trail | — | **length delta 0** | not a forecast the engine stood behind |
+| `risk-state` | — | **identical** | no rung, no ladder evidence, no factor IC |
+
+**And the causal column is a SUBSTITUTION, not an addition — the cleanest possible reading of "one event, one lever".**
+
+| gate | causal | stopless `cost` | movable `sidedCost`/`sidedSaved` |
+|---|---|---|---|
+| `entry-wait` (the slot tested it) | **n 1, hits 1**, example tagged `wildcard: true`, `hit: true` | **−1** | **+0 / +0** |
+
+In the lane-off arm ORCL's 2026-07-14 refusal was priced as a *stopless* miss (`cost` 2). In the lane-on arm the row was published, so `called-wildcard` puts it in `MISS_SKIP_GATES` and the miss walk never prices it — `cost` falls to 1 — while `accrueCausalOutcome` charges the same event once as a **real, stopped, sided** outcome. The gate's movable evidence count is *unchanged*; only the quality of the measurement behind it improved. That is exactly what the slot was built to do, and no gate the slot never visited moved its stopless population at all.
+
+**One further ledger-side difference, named rather than glossed:** the miss walk's 40-fetch budget counts a name already in the candle cache as free, and the lane-on arm's grading pass warms one extra name — so on 2026-07-17 the budget reached one refusal further (`checked +1`, `unpriced −1`, `slot-cut unchecked 9→8`; that row landed inside the ±5pp band, so no gate's cost or saved moved). It makes the ledger *more* complete on that day, never less, and changes no gate's verdict.
+
+### The verdict
+
+**PASS.** Every difference between the two arms is one of four named things: the experiment rows, their causal ledger entry, their own separable records, or the sized-calibration accrual the design ratified — and that last one moves read-derived fields only, from session 12 on, to a total of one grade. Nothing the lane was not given moved. `unclassified` has no equivalent here because there is no unclassified: the harness fails the run outright on a forbidden field, an unearned size, an unexplained row on either side, or a broken slot invariant.
+
+**Supporting evidence from a second, independent window:** the two-year `--seed-out` walk in the suite now runs these same invariants over **27 experiments** and passes every one — one slot throughout, every graded experiment booked with its receipt, every gate's causal count equal to the experiments graded against it, and no double-book (the fix wave's documented one-blob-write residual is now an asserted inequality rather than an unwatched risk).
+
+**The honest scoreboard at n=1.** One booked causal outcome, a hit, on a paper-only short. The standing warning that experiments lose more often than the board is neither confirmed nor contradicted by a single sample, and the slot's own record says so.

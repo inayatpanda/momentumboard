@@ -445,6 +445,13 @@ export interface LedgerPrediction {
   // rides the slim projection so a historical observation keeps its containment
   // (a near miss needs no equivalent: they never enter the ledger at all)
   observation?: boolean
+  // …and the EXPERIMENT SLOT's record (stage 3d), carried for the same reason:
+  // the accountability pane rolls these rows by grade, and a wildcard's letter is
+  // not why it published. Without this the ledger's own breakdown files it under
+  // the letter while `engine-scorecard` gives it its own key — two panes over one
+  // trade, disagreeing. (Absent on every ordinary row and on every row published
+  // before the slot existed.)
+  wildcard?: { gate: string; priority: number; hypothesis: string; gateEvidenceN: number; booked?: boolean }
   note: string
   // the engine's two sentences, carried into the ledger so a historical card can
   // still be read against what price then did (optional — see EnginePrediction)

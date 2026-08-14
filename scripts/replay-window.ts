@@ -94,6 +94,15 @@
 // the new run's own miss ledger.
 //   npx tsx scripts/replay-window.ts --classify --ref /tmp/pre.json --new /tmp/post.json
 //
+// SEVENTH MODE — `--wildcard-diff --ref <off.json> --new <on.json>`: THE EXPERIMENT
+// SLOT'S SHIP GATE (stage 3d task 3). Two runs of ONE window, `WILDCARD=off` against
+// the lane live, everything else held: the experiments taken and their cadence, the
+// one-slot and causal invariants, and the controlled diff that decides whether the
+// lane changed anything it was not given. Pure counters over two JSONs.
+//   WILDCARD=off GATES=off npx tsx scripts/replay-window.ts --from … --out /tmp/off.json
+//   GATES=off        npx tsx scripts/replay-window.ts --from … --out /tmp/on.json
+//   npx tsx scripts/replay-window.ts --wildcard-diff --ref /tmp/off.json --new /tmp/on.json
+//
 // `--symbols A,B,C` narrows the walk universe (default: the whole REPLAY_UNIVERSE) —
 // a targeted diagnostic run, and what lets the unit test walk a fixture universe.
 // Both are NEW-mode only; nothing above changes shape or output because of them, and
@@ -886,6 +895,13 @@ export interface Row {
    * gate, so it has no belief to state. */
   thesis: string | null
   falsifier: string | null
+  /** THE EXPERIMENT SLOT'S RECORD (stage 3d, types.ts's `Prediction['wildcard']`),
+   * carried whole because every number the walk has to report about a wildcard —
+   * which gate it tested, which rung chose it, the evidence gap it was spent to
+   * close, whether the ledger has been paid — lives here and nowhere else. The
+   * catalyst kind says a row IS one; this says what it was FOR. Absent on every
+   * ordinary row and in every tree older than the field. */
+  wildcard?: WildcardRecordLike
   // ---- recomputed post-publication from the SAME calibration blob (HEAD only) ----
   /** The UNROUNDED curve read. `probability` on the row is this quantised to 2dp
    * (engine.ts), and the two are reported side by side on purpose: the curve can
@@ -1033,6 +1049,13 @@ export interface TraceRow {
   side?: 'long' | 'short'
   source?: string
   detail?: string
+  /** THE CODE THIS ROW CARRIED BEFORE THE LAST `revise` OVERWROTE IT
+   * (funnelTrace.ts). Stage 3a wrote it for the `shadow-capped ← route-blocked`
+   * attribution; Stage 3d relies on it for the one record that says which gate an
+   * experiment overrode, since the publication overwrites the row itself. */
+  priorGate?: string
+  /** the row's core read, carried by the recorder on every row that produced one */
+  core?: number
 }
 export interface DayTrace {
   rows: Record<string, TraceRow>
@@ -1250,6 +1273,13 @@ export interface MissExampleLike {
   gate: string
   /** the row died before a side existed and was scored BOTH ways */
   bare?: boolean
+  /** THE ONE ROW THE ENGINE ACTUALLY TOOK (stage 3d). Stamped on causal
+   * examples and nowhere else, so a human reading a gate's examples back can
+   * tell the experiment from the dozens of refusals measured beside it. */
+  wildcard?: true
+  /** …and whether the reader's quarter-size position came good. Present only on
+   * a causal example — a miss example had no stop and no position. */
+  hit?: boolean
 }
 export interface MissGateStatLike {
   cost: number
@@ -1258,6 +1288,16 @@ export interface MissGateStatLike {
   savedExcessSum: number
   unchecked: number
   examples: MissExampleLike[]
+  /** THE HYGIENIC SIDED COUNTS (stage 3b) — the only numbers allowed to move a
+   * gate, and the ones a causal outcome adds to (missLedger.ts). Optional
+   * because a gate charged only by the bare-mirror path carries neither. */
+  sidedCost?: number
+  sidedSaved?: number
+  /** THE EXPERIMENT'S OWN COLUMN (stage 3d, missLedger.ts's `MissCausal`) —
+   * real, stopped, sided outcomes on trades this gate refused. Absent until the
+   * wildcard slot has been spent on this gate, and a surface printing "0 causal"
+   * would read as a verdict, so absence is kept as absence. */
+  causal?: { n: number; hits: number; examples: MissExampleLike[] }
 }
 export interface MissDayLike {
   checked: number
@@ -1535,6 +1575,491 @@ export interface PostMortemCensus {
   sentences: number
 }
 
+// ================= THE EXPERIMENT SLOT, OVER A WINDOW (stage 3d task 3) ========
+//
+// Stage 3d publishes ONE blocked trade at a time, at quarter size, so a gate can
+// be charged a real stopped outcome instead of another stopless upper bound. Three
+// claims have to survive a window rather than a fixture, and all three are made
+// here, against the walk's OWN record of what the reader was handed:
+//
+//   · SOLITARY — one row a day, and no second experiment until the previous one
+//     closes. That invariant is enforced in the engine by a scan over
+//     `predictions-index … .slice(-10)`, so it has a BOUNDARY, and the boundary is
+//     asserted below rather than assumed (see `WILDCARD_SLOT_LOOKBACK`).
+//   · CAUSAL — every experiment the engine graded reaches the miss ledger's causal
+//     column, on the gate it was chosen to test, tagged, with the receipt stamped.
+//   · SEPARABLE — see `wildcardControlledDiff`, which does that half against a
+//     lane-off arm of the same window.
+
+/** engine.ts's outstanding scan reads the last ten dated prediction blobs
+ * (`predictions-index … .slice(-10)`), and that number is INLINE there — nothing
+ * exports it, so this is a mirror with no import to drift against. It is checked
+ * below against `POSTMORTEM_HORIZON_MIRROR` instead, which is the check that
+ * matters: the two constants together decide whether the slot is released by the
+ * experiment's OUTCOME or merely by the window sliding out from under it. */
+export const WILDCARD_SLOT_LOOKBACK = 10
+
+/** types.ts's `Prediction['wildcard']`, structurally (see `Row.wildcard`). */
+export interface WildcardRecordLike {
+  gate: string
+  priority: number
+  hypothesis: string
+  gateEvidenceN: number
+  /** the tri-state receipt: absent = nothing owed, false = the ledger is owed
+   * this outcome, true = the ledger has it. */
+  booked?: boolean
+}
+
+/** ONE EXPERIMENT, as the window saw it. */
+export interface WildcardTaken {
+  /** the walk index of the session it published on — the unit the one-slot
+   * arithmetic is done in, because the slot counts SESSIONS and not dates. */
+  at: number
+  date: string
+  sym: string
+  side: 'long' | 'short'
+  gate: string
+  priority: number
+  hypothesis: string
+  gateEvidenceN: number
+  composite: number
+  probability: number
+  grade: string
+  riskPct: number
+  setup: string | null
+  regime: string
+  /** MEASUREMENT, NOT A TRADE THE READER TOOK. `mapInstrument` is reached only at
+   * `sizedFraction === 1` and a wildcard is capped at 0.25, so every short
+   * wildcard publishes `instrument: null` and is paper money (wildcardLane.ts's
+   * routability note). The causal evidence is real either way; the P&L is not. */
+  paperOnly: boolean
+  /** THE ENGINE'S OWN GRADE at ten sessions, read back off the prediction blob —
+   * null when the window ended before the horizon closed. This is the one that
+   * decides whether the ledger is owed anything. */
+  outcome: { hit: boolean; excessPct: number; stopped: boolean } | null
+  /** …and the harness's forward walk over the full tape, which can answer for a
+   * row the engine never reached. Reported, never charged. */
+  tapeOutcome: { hit: boolean; excessPct: number; stopped: boolean } | null
+  postMortem: string | null
+  booked?: boolean
+}
+
+const isWildcardRow = (r: Row): boolean => r.catalyst === WILDCARD_CATALYST_KIND_MIRROR
+
+/** Every experiment the window took, in walk order. Read off the BOARD (the
+ * ledger carries the same row) and deduplicated by key, so a name published on
+ * both cuts is one experiment and not two. */
+export function wildcardCensus(days: { date: string; board: Row[]; ledger: Row[] }[]): WildcardTaken[] {
+  const out: WildcardTaken[] = []
+  for (const [at, d] of days.entries()) {
+    const seen = new Set<string>()
+    for (const r of [...d.board, ...d.ledger]) {
+      if (!isWildcardRow(r)) continue
+      const key = `${r.sym.toUpperCase()}:${r.side}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({
+        at,
+        date: d.date,
+        sym: r.sym,
+        side: r.side,
+        gate: r.wildcard?.gate ?? '(no record)',
+        priority: r.wildcard?.priority ?? 0,
+        hypothesis: r.wildcard?.hypothesis ?? '',
+        gateEvidenceN: r.wildcard?.gateEvidenceN ?? -1,
+        composite: r.composite,
+        probability: r.probability,
+        grade: r.grade,
+        riskPct: r.riskPct,
+        setup: r.setup,
+        regime: r.regime,
+        paperOnly: r.side === 'short' && !r.instrument,
+        outcome: r.storedOutcome10 ?? null,
+        tapeOutcome: r.outcome10 ?? null,
+        postMortem: r.postMortem?.cls ?? null,
+        booked: r.wildcard?.booked,
+      })
+    }
+  }
+  return out
+}
+
+/** WHAT THE SLOT MAY NEVER DO, over a window. Every claim is settled against the
+ * walk's own record — the rows the reader got, the trace the funnel wrote and the
+ * ledger the engine left — never against a re-derivation of the lane's choice. */
+export function wildcardViolations(
+  days: { date: string; board: Row[]; ledger: Row[]; trace?: DayTrace }[],
+  ledger: MissLedgerLike | null | undefined,
+): string[] {
+  const v: string[] = []
+  const census = wildcardCensus(days)
+
+  // (a) THE BOUNDARY, ASSERTED. The slot is held by a scan over the last
+  // WILDCARD_SLOT_LOOKBACK dated blobs, so an experiment stops holding it after
+  // that many sessions WHETHER OR NOT it graded — the documented honest bound
+  // (engine.ts). What makes that bound cost nothing is the arithmetic here: a row
+  // published on session i is first gradeable on session i + horizon + 1, and it
+  // falls out of the lookback on session i + lookback + 1. While the two are
+  // EQUAL, the slot is always released by the outcome and never by the window.
+  // Shorten the lookback and every experiment would release un-graded — the
+  // cadence contract would change silently, and the causal sample the slot exists
+  // to buy would be a coin toss on whether the tape arrived in time.
+  if (WILDCARD_SLOT_LOOKBACK < POSTMORTEM_HORIZON_MIRROR)
+    v.push(
+      `the one-slot lookback (${WILDCARD_SLOT_LOOKBACK}) is shorter than the grading horizon (${POSTMORTEM_HORIZON_MIRROR}) — ` +
+        'the slot would release on the window rather than on the experiment, and un-graded experiments would become the normal path',
+    )
+
+  // (b) ONE ROW A DAY, and both cuts telling the same story about it.
+  for (const d of days) {
+    const b = d.board.filter(isWildcardRow)
+    const l = d.ledger.filter(isWildcardRow)
+    if (b.length > 1) v.push(`${d.date}: ${b.length} wildcard rows on one board (${b.map(r => `${r.sym} ${r.side}`).join(', ')}) — the experiment slot is ONE row`)
+    if (l.length > 1) v.push(`${d.date}: ${l.length} wildcard rows in one ledger — the experiment slot is ONE row`)
+    if (b.length === 1 && l.length === 1 && `${b[0].sym}:${b[0].side}` !== `${l[0].sym}:${l[0].side}`)
+      v.push(`${d.date}: the board's experiment is ${b[0].sym} ${b[0].side} and the ledger's is ${l[0].sym} ${l[0].side}`)
+  }
+
+  // (c) THE SHAPE OF AN EXPERIMENT, on the row and in the funnel's record.
+  for (const d of days) {
+    for (const r of d.board.filter(isWildcardRow)) {
+      const key = `${d.date}:${r.sym}:${r.side}`
+      if (!r.wildcard) v.push(`${key}: a wildcard row with no wildcard record — the catalyst kind says what it is and nothing says what it was for`)
+      if (r.riskPct <= 0) v.push(`${key}: riskPct ${r.riskPct} — an experiment with no size buys no causal evidence`)
+      if (r.accrual !== 'sized') v.push(`${key}: accrual '${r.accrual}' — a wildcard is the reader's money and books as sized`)
+      if (r.shadow) v.push(`${key}: published as a shadow — a shadowed experiment was declined, not seated`)
+      if (r.watchOnly) v.push(`${key}: watch-only — an experiment with no position measures nothing`)
+      if (r.nearMiss) v.push(`${key}: still flagged a near miss — the wildcard replaced that row, it did not join it`)
+      if (r.contract) v.push(`${key}: claims an evidence contract — a wildcard is published without one, deliberately`)
+      if (r.instrument) v.push(`${key}: routed to ${r.instrument} — a quarter-size row can never reach mapInstrument, so leverage is structurally impossible`)
+      if (!(Math.abs(r.stop - r.entry) > 0) || (r.side === 'long' ? r.stop >= r.entry : r.stop <= r.entry))
+        v.push(`${key}: entry ${r.entry} stop ${r.stop} — an experiment without a falsifier is not one`)
+      const t = d.trace?.rows[`${r.sym.toUpperCase()}:${r.side}`]
+      if (!t) v.push(`${key}: no trace row — the funnel has no record of the day's one deliberate override`)
+      else {
+        if (t.gate !== 'called-wildcard') v.push(`${key}: the trace codes it '${t.gate}' — a seated experiment is 'called-wildcard'`)
+        if (r.wildcard && t.priorGate !== r.wildcard.gate)
+          v.push(`${key}: the row tests '${r.wildcard.gate}' and the trace remembers '${t.priorGate}' — the gate under test may never be re-derived`)
+      }
+    }
+  }
+
+  // (d) ONE SLOT ACROSS DAYS — the invariant the whole cadence rests on.
+  for (let i = 1; i < census.length; i++) {
+    const prev = census[i - 1]
+    const next = census[i]
+    const released = prev.at + WILDCARD_SLOT_LOOKBACK + 1
+    if (next.at < released)
+      v.push(
+        `${next.date} spent the slot ${released - next.at} session(s) early — ${prev.sym} ${prev.side} (${prev.date}) was still open, ` +
+          'and two experiments running at once is exactly the confounding the slot exists to avoid',
+      )
+  }
+
+  // (e) THE CAUSAL EVIDENCE LANDED, and nothing else did.
+  //
+  // COUNTED ON `n`, CHECKED ON THE EXAMPLES THAT SURVIVED. `causal.examples` is a
+  // BOUNDED TAIL — `.slice(-MISS_EXAMPLES_PER_GATE)` in missLedger.ts, the same
+  // bound the miss examples live under — so over a long window the early
+  // experiments are legitimately evicted from it while `n` and `hits` keep every
+  // one. An invariant that looked for each graded experiment's example would
+  // therefore fire on a two-year walk for doing exactly what it was built to do.
+  // The population claim is made on the counters, which are complete; the
+  // provenance claims are made on whichever examples are still there.
+  const gates = Object.entries(ledger?.gates ?? {})
+  const byRow = new Map(census.map(w => [`${w.date}:${w.sym.toUpperCase()}:${w.side}`, w]))
+  let causalTotal = 0
+  for (const [gate, stat] of gates) {
+    const c = stat.causal
+    if (!c) continue
+    causalTotal += c.n
+    // the gate's causal count IS the experiments this window graded against it —
+    // no more (a double-book) and no fewer (a lost write with no receipt behind it)
+    const mine = census.filter(w => w.gate === gate && w.outcome)
+    if (c.n !== mine.length)
+      v.push(`${gate}: ${c.n} causal outcome(s) booked and ${mine.length} experiment(s) graded against it — the column and the window disagree`)
+    if (c.hits !== mine.filter(w => w.outcome!.hit).length)
+      v.push(`${gate}: ${c.hits} causal hit(s) booked and ${mine.filter(w => w.outcome!.hit).length} experiment(s) hit`)
+    if (c.hits > c.n) v.push(`${gate}: causal hits ${c.hits} exceeds causal n ${c.n}`)
+    // the sided counts are what a gate may actually MOVE on, and a causal outcome
+    // is one of each kind — a hit is a sided cost, a miss a sided save
+    if ((stat.sidedCost ?? 0) < c.hits) v.push(`${gate}: ${c.hits} causal hit(s) but sidedCost ${stat.sidedCost ?? 0} — the causal outcome never reached the counts that move a gate`)
+    if ((stat.sidedSaved ?? 0) < c.n - c.hits) v.push(`${gate}: ${c.n - c.hits} causal miss(es) but sidedSaved ${stat.sidedSaved ?? 0}`)
+    for (const ex of c.examples) {
+      if (ex.wildcard !== true) v.push(`${gate}: a causal example (${ex.date} ${ex.sym}) is not tagged as the experiment it was`)
+      if (typeof ex.hit !== 'boolean') v.push(`${gate}: a causal example (${ex.date} ${ex.sym}) records no hit — the whole point is that this one had a position`)
+      const w = byRow.get(`${ex.date}:${String(ex.sym).toUpperCase()}:${ex.side}`)
+      if (!w) v.push(`${gate}: a causal example (${ex.date} ${ex.sym} ${ex.side}) names a row this window never published`)
+      else {
+        if (w.gate !== gate) v.push(`${gate}: charged ${ex.date} ${ex.sym}, which was published to test '${w.gate}'`)
+        if (w.outcome && ex.hit !== w.outcome.hit) v.push(`${gate}: ${ex.date} ${ex.sym} booked hit=${ex.hit} and the engine graded hit=${w.outcome.hit}`)
+      }
+    }
+  }
+  // THE RECEIPT'S OWN BOUND (fix-wave F-4's residual, asserted here for the first
+  // time): the ledger can hold at most one causal sample per experiment ever
+  // published. A double-book — the one-blob-write window between the ledger write
+  // and the receipt — shows up as this inequality failing and nowhere else.
+  if (causalTotal > census.length)
+    v.push(`the ledger holds ${causalTotal} causal outcome(s) and the window published ${census.length} experiment(s) — an outcome was booked twice`)
+  for (const w of census) {
+    const gate = gates.find(([g]) => g === w.gate)?.[1]
+    const named = (gate?.causal?.examples ?? []).some(e => e.date === w.date && String(e.sym).toUpperCase() === w.sym.toUpperCase() && e.side === w.side)
+    if (w.outcome && !gate?.causal) v.push(`${w.date}:${w.sym}:${w.side}: the engine graded it and '${w.gate}' carries no causal column at all — the slot bought nothing`)
+    if (w.outcome && w.booked !== true) v.push(`${w.date}:${w.sym}:${w.side}: graded and booked=${String(w.booked)} — the receipt is what makes a lost write recoverable`)
+    if (!w.outcome && named) v.push(`${w.date}:${w.sym}:${w.side}: charged to '${w.gate}' before the engine ever graded it`)
+    if (!w.outcome && w.booked === true) v.push(`${w.date}:${w.sym}:${w.side}: stamped booked with no grade behind it`)
+    // an experiment is post-mortemed on EVERY closure, win or lose — the whole
+    // asymmetry the slot was added to end (postMortemViolations pins the general
+    // rule; this pins that a WINNING experiment is the case it was widened for)
+    if (w.outcome?.hit && w.postMortem !== 'won') v.push(`${w.date}:${w.sym}:${w.side}: won and reads '${w.postMortem}' — a winning experiment is examined too`)
+  }
+  return v
+}
+
+// ---------------------------------------- the controlled diff: lane on / off --
+//
+// The separability claim, measured rather than asserted: run the SAME window
+// twice, once with `WILDCARD=off`, and the two arms may differ in four ways and
+// no others —
+//
+//   1. the experiment rows themselves (and, at a key a wildcard took, the near
+//      miss it replaced — both sides of that chart, which is the splice's own
+//      one-direction-per-chart rule),
+//   2. the miss ledger's causal column,
+//   3. the separable records (`byGrade`'s 🃏 key, `bySetup`, the post-mortems),
+//   4. …and THE ONE CHANNEL THE RATIFIED DESIGN OPENS ON PURPOSE: a wildcard is
+//      the reader's money at a quarter of the rung, so its graded outcome accrues
+//      into `engine-calibration` exactly as any sized row's does (plan, Global
+//      Constraints: "its calibration accrual is normal"). From the session that
+//      outcome lands, the two arms are reading a curve that differs by one
+//      observation, and ordinary rows priced against it legitimately move.
+//
+// So the guard is split at that session rather than waved at. BEFORE the first
+// experiment grades, the arms must be byte-identical — that is the real claim
+// about SELECTION, and it is where a lane that perturbed the board would show.
+// AFTER it, only the read may move: probabilities, the grades derived from them,
+// and the sizes derived from those. A composite, a level, a setup family, an
+// accrual stamp or a rung moving is a lane reaching somewhere it was never given.
+
+/** What a calibration read may legitimately move. */
+export const WILDCARD_READ_FIELDS: ReadonlySet<string> = new Set([
+  'probability', 'grade', 'gradeUncapped', 'pRaw', 'pPooled', 'pSized', 'nEff', 'belowEvidence',
+])
+/** …and what a moved GRADE may then move, on that row and only if it did. */
+export const WILDCARD_GRADE_DERIVED_FIELDS: ReadonlySet<string> = new Set(['riskPct', 'watchOnly', 'instrument'])
+
+export interface WildcardRowDelta {
+  key: string
+  where: 'board' | 'ledger'
+  /** the walk index of the row's session — which side of the accrual it sits on */
+  at: number
+  fields: string[]
+}
+
+export interface WildcardControlledDiff {
+  shared: number
+  /** keys only the lane-ON arm has. Every one must be an experiment. */
+  newOnly: { key: string; where: 'board' | 'ledger'; wildcard: boolean }[]
+  /** keys only the lane-OFF arm has. Every one must be a near miss on a chart the
+   * experiment took that session — the splice clears BOTH sides of it. */
+  refOnly: { key: string; where: 'board' | 'ledger'; displaced: boolean }[]
+  /** a key where the experiment stands in the near miss's place */
+  replaced: { key: string; where: 'board' | 'ledger' }[]
+  /** the walk index of the first session an experiment's outcome could have
+   * reached the calibration, or null when none graded inside the window */
+  firstAccrual: number | null
+  /** matched rows that moved BEFORE that session — MUST be empty */
+  early: WildcardRowDelta[]
+  /** …and at or after it: allowed, and only through the read */
+  late: WildcardRowDelta[]
+  /** every field that moved anywhere, with its count */
+  fields: Record<string, number>
+  /** moves no accrual can explain — a failure whenever they happen */
+  forbidden: WildcardRowDelta[]
+  /** grade-derived moves on a row whose grade did not move — also a failure */
+  unearned: WildcardRowDelta[]
+  passed: boolean
+}
+
+export function wildcardControlledDiff(ref: RunFile, neu: RunFile): WildcardControlledDiff {
+  const census = wildcardCensus(neu.days)
+  const atOf = new Map(neu.days.map((d, i) => [d.date, i]))
+  // The first session an experiment's outcome could have reached the blob: the
+  // engine grades a row published on session i at i + horizon + 1 (the harness's
+  // own arithmetic, see `gradedOn`). Only experiments the engine actually graded
+  // count — a row the window ended on top of accrued nothing.
+  const graded = census.filter(w => w.outcome).map(w => w.at + POSTMORTEM_HORIZON_MIRROR + 1)
+  const firstAccrual = graded.length ? Math.min(...graded) : null
+  const wildcardSyms = new Map<string, Set<string>>()
+  for (const w of census) wildcardSyms.set(w.date, (wildcardSyms.get(w.date) ?? new Set()).add(w.sym.toUpperCase()))
+
+  const out: WildcardControlledDiff = {
+    shared: 0, newOnly: [], refOnly: [], replaced: [], firstAccrual,
+    early: [], late: [], fields: {}, forbidden: [], unearned: [], passed: false,
+  }
+  for (const where of ['board', 'ledger'] as const) {
+    const a = new Map(flatten(ref, where).map(r => [keyOf(r), r]))
+    const b = new Map(flatten(neu, where).map(r => [keyOf(r), r]))
+    for (const [key, rb] of b)
+      if (!a.has(key)) out.newOnly.push({ key, where, wildcard: isWildcardRow(rb) })
+    for (const [key, ra] of a) {
+      if (b.has(key)) continue
+      const [date, sym] = key.split(':')
+      out.refOnly.push({ key, where, displaced: !!ra.nearMiss && !!wildcardSyms.get(date)?.has(sym.toUpperCase()) })
+    }
+    for (const [key, ra] of a) {
+      const rb = b.get(key)
+      if (!rb) continue
+      out.shared++
+      const at = atOf.get(key.split(':')[0]) ?? 0
+      if (isWildcardRow(rb) || isWildcardRow(ra)) {
+        // the experiment standing where the near miss stood. Anything else at a
+        // shared key would mean the lane took a name the board had published.
+        if (isWildcardRow(rb) && ra.nearMiss) out.replaced.push({ key, where })
+        else out.forbidden.push({ key, where, at, fields: ['catalyst'] })
+        continue
+      }
+      const moved = [...new Set([...Object.keys(ra), ...Object.keys(rb)])].filter(
+        f => JSON.stringify(ra[f as keyof Row]) !== JSON.stringify(rb[f as keyof Row]),
+      )
+      if (!moved.length) continue
+      for (const f of moved) out.fields[f] = (out.fields[f] ?? 0) + 1
+      const delta: WildcardRowDelta = { key, where, at, fields: moved }
+      ;(firstAccrual != null && at >= firstAccrual ? out.late : out.early).push(delta)
+      const gradeMoved = moved.includes('grade')
+      const bad = moved.filter(f => !WILDCARD_READ_FIELDS.has(f) && !WILDCARD_GRADE_DERIVED_FIELDS.has(f))
+      const unearned = gradeMoved ? [] : moved.filter(f => WILDCARD_GRADE_DERIVED_FIELDS.has(f))
+      if (bad.length) out.forbidden.push({ key, where, at, fields: bad })
+      if (unearned.length) out.unearned.push({ key, where, at, fields: unearned })
+    }
+  }
+  out.passed =
+    out.newOnly.every(n => n.wildcard) &&
+    out.refOnly.every(r => r.displaced) &&
+    out.early.length === 0 &&
+    out.forbidden.length === 0 &&
+    out.unearned.length === 0
+  return out
+}
+
+/** THE SEPARABLE RECORDS, differenced. The scorecard has already answered this
+ * question once for shadows, and 3d's rule is that a wildcard takes the same
+ * treatment — so the diff is the check that it did: a new `byGrade` key rather
+ * than a fatter `C`, `byRegime` untouched, `bySetup` counting the shape, the
+ * lifetime counters and the Brier trail refusing the experiment outright. */
+export interface WildcardSeparability {
+  byGradeWildcard: { n: number; hits: number } | null
+  /** letters that moved between the arms — every one is a real, named grade */
+  lettersMoved: string[]
+  byRegimeDelta: number
+  bySetupDelta: number
+  byPostMortemDelta: Record<string, number>
+  lifetimeDelta: number
+  brierLenDelta: number
+  totalGradedDelta: number
+  /** calibration buckets that differ, and by how much */
+  buckets: { key: string; nDelta: number; hitsDelta: number; shadowNDelta: number }[]
+  evidenceDelta: { seed: number; live: number; shadow: number }
+}
+
+export function wildcardSeparability(ref: RunFile, neu: RunFile): WildcardSeparability {
+  const a = ref.scorecardFinal ?? null
+  const b = neu.scorecardFinal ?? null
+  const sum = (o: Record<string, { n: number }> | undefined): number => Object.values(o ?? {}).reduce((s, x) => s + x.n, 0)
+  const pm: Record<string, number> = {}
+  for (const k of new Set([...Object.keys(a?.byPostMortem ?? {}), ...Object.keys(b?.byPostMortem ?? {})])) {
+    const d = (b?.byPostMortem?.[k] ?? 0) - (a?.byPostMortem?.[k] ?? 0)
+    if (d) pm[k] = d
+  }
+  const cal = (r: RunFile) => (r.calibrationFinal ?? null) as (CalibrationState & { evidence?: Record<string, { n: number }> }) | null
+  const ca = cal(ref)
+  const cb = cal(neu)
+  const buckets: WildcardSeparability['buckets'] = []
+  for (const key of new Set([...Object.keys(ca?.buckets ?? {}), ...Object.keys(cb?.buckets ?? {})])) {
+    const x = (ca?.buckets ?? {})[key] as { n?: number; hits?: number; shadowN?: number } | undefined
+    const y = (cb?.buckets ?? {})[key] as { n?: number; hits?: number; shadowN?: number } | undefined
+    const d = { key, nDelta: (y?.n ?? 0) - (x?.n ?? 0), hitsDelta: (y?.hits ?? 0) - (x?.hits ?? 0), shadowNDelta: (y?.shadowN ?? 0) - (x?.shadowN ?? 0) }
+    if (d.nDelta || d.hitsDelta || d.shadowNDelta) buckets.push(d)
+  }
+  const ev = (c: ReturnType<typeof cal>, k: string): number => c?.evidence?.[k]?.n ?? 0
+  return {
+    byGradeWildcard: b?.byGrade?.wildcard ? { n: b.byGrade.wildcard.n, hits: b.byGrade.wildcard.hits } : null,
+    lettersMoved: [...new Set([...Object.keys(a?.byGrade ?? {}), ...Object.keys(b?.byGrade ?? {})])]
+      .filter(k => k !== 'wildcard' && (a?.byGrade?.[k]?.n ?? 0) !== (b?.byGrade?.[k]?.n ?? 0)),
+    byRegimeDelta: sum(b?.byRegime) - sum(a?.byRegime),
+    bySetupDelta: sum(b?.bySetup) - sum(a?.bySetup),
+    byPostMortemDelta: pm,
+    lifetimeDelta: (b?.lifetime?.live.graded ?? 0) + (b?.lifetime?.shadow.graded ?? 0) - (a?.lifetime?.live.graded ?? 0) - (a?.lifetime?.shadow.graded ?? 0),
+    brierLenDelta: (cb?.brier?.length ?? 0) - (ca?.brier?.length ?? 0),
+    totalGradedDelta: (b?.totalGraded ?? 0) - (a?.totalGraded ?? 0),
+    buckets,
+    evidenceDelta: { seed: ev(cb, 'seed') - ev(ca, 'seed'), live: ev(cb, 'live') - ev(ca, 'live'), shadow: ev(cb, 'shadow') - ev(ca, 'shadow') },
+  }
+}
+
+/** THE LEDGER, DIFFERENCED — and the identity worth looking for in it.
+ *
+ * A wildcard does not ADD evidence to the gate it tested. It SUBSTITUTES: the row
+ * is published, so `called-wildcard` puts it in `MISS_SKIP_GATES` and the miss
+ * walk never prices it — the stopless `cost`/`saved` population loses exactly that
+ * row — while `accrueCausalOutcome` charges the same event once, as a real stopped
+ * outcome, into the same `sidedCost`/`sidedSaved` counts that are allowed to move
+ * a gate. One event, one lever, better instrument. So on a visited gate `cost` can
+ * only ever FALL and the sided counts typically do not move at all; what changed
+ * is the quality of the measurement behind them, which is the whole argument for
+ * the slot's existence.
+ *
+ * A gate the slot never visited has no such story and may not move at all. */
+export interface WildcardLedgerDelta {
+  gates: {
+    gate: string
+    visited: boolean
+    costDelta: number
+    savedDelta: number
+    uncheckedDelta: number
+    sidedCostDelta: number
+    sidedSavedDelta: number
+    causal: { n: number; hits: number } | null
+  }[]
+  days: { date: string; checkedDelta: number; uncheckedDelta: number; missesDelta: number }[]
+}
+
+export function wildcardLedgerDelta(ref: RunFile, neu: RunFile): WildcardLedgerDelta {
+  const visited = new Set((neu.wildcards ?? wildcardCensus(neu.days)).map(w => w.gate))
+  const A = ref.missLedgerFinal
+  const B = neu.missLedgerFinal
+  const gates: WildcardLedgerDelta['gates'] = []
+  for (const gate of new Set([...Object.keys(A?.gates ?? {}), ...Object.keys(B?.gates ?? {})])) {
+    const a = A?.gates?.[gate]
+    const b = B?.gates?.[gate]
+    const d = {
+      gate,
+      visited: visited.has(gate),
+      costDelta: (b?.cost ?? 0) - (a?.cost ?? 0),
+      savedDelta: (b?.saved ?? 0) - (a?.saved ?? 0),
+      uncheckedDelta: (b?.unchecked ?? 0) - (a?.unchecked ?? 0),
+      sidedCostDelta: (b?.sidedCost ?? 0) - (a?.sidedCost ?? 0),
+      sidedSavedDelta: (b?.sidedSaved ?? 0) - (a?.sidedSaved ?? 0),
+      causal: b?.causal ? { n: b.causal.n, hits: b.causal.hits } : null,
+    }
+    if (d.costDelta || d.savedDelta || d.uncheckedDelta || d.sidedCostDelta || d.sidedSavedDelta || d.causal) gates.push(d)
+  }
+  const days: WildcardLedgerDelta['days'] = []
+  for (const date of new Set([...Object.keys(A?.days ?? {}), ...Object.keys(B?.days ?? {})])) {
+    const a = A?.days?.[date]
+    const b = B?.days?.[date]
+    const d = {
+      date,
+      checkedDelta: (b?.checked ?? 0) - (a?.checked ?? 0),
+      uncheckedDelta: (b?.unchecked ?? 0) - (a?.unchecked ?? 0),
+      missesDelta: (b?.misses ?? 0) - (a?.misses ?? 0),
+    }
+    if (d.checkedDelta || d.uncheckedDelta || d.missesDelta) days.push(d)
+  }
+  return { gates: gates.sort((x, y) => x.gate.localeCompare(y.gate)), days: days.sort((x, y) => x.date.localeCompare(y.date)) }
+}
+
 const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
   sym: p.sym,
   side: p.side,
@@ -1564,6 +2089,11 @@ const rowOf = (p: Prediction, where: 'board' | 'ledger'): Row => ({
   instrument: p.instrument?.ticker ?? null,
   thesis: (p as { thesis?: string }).thesis ?? null,
   falsifier: (p as { falsifier?: string }).falsifier ?? null,
+  // …and the experiment's record, spread rather than defaulted: `undefined`
+  // serialises to nothing either way, but an absent KEY is what says "this tree
+  // has no such field" to a reader of the JSON, and every ordinary row keeps the
+  // shape it has always had.
+  ...((p as { wildcard?: WildcardRecordLike }).wildcard ? { wildcard: (p as { wildcard?: WildcardRecordLike }).wildcard } : {}),
 })
 
 /** Recompute, from the SAME calibration blob the day's board was built against,
@@ -2077,6 +2607,17 @@ export async function main() {
         : 'regret: absent (pre-Stage-3b tree) — no miss ledger, no post-mortems',
   )
 
+  // …and Stage 3d's experiment slot, detected the same way. `WILDCARD=off` is the
+  // lane's own seam and `REGRET=off` silences it too (a wildcard whose causal
+  // write-back is dead is an experiment with no readout, wildcardLane.ts), so the
+  // walk asks BOTH questions before it claims to be measuring the lane at all.
+  const wildcardOff = process.env.WILDCARD === 'off' || regretOff || !existsSync(stageModule('wildcardLane.ts'))
+  console.log(
+    wildcardOff
+      ? `wildcard: STUBBED (${process.env.WILDCARD === 'off' ? 'WILDCARD=off' : regretOff ? 'REGRET=off silences it' : 'pre-Stage-3d tree'}) — the lane-off arm of the controlled diff`
+      : 'wildcard: present — the walk enforces the one-slot, shape and causal invariants over the window',
+  )
+
   const { store } = makeStore()
   await store.write('config', {
     watchlist: [],
@@ -2335,6 +2876,14 @@ export async function main() {
         if (!p) continue // a near miss is on the board and never in the prediction blob
         r.storedOutcome10 = p.outcome10 ? { hit: p.outcome10.hit, excessPct: p.outcome10.excessPct, stopped: p.outcome10.stopped } : null
         if (p.postMortem) r.postMortem = p.postMortem as PostMortemLike
+        // …and the EXPERIMENT'S RECEIPT, for exactly the reason the two above are
+        // re-read here: `rowOf` snapshots the row the morning it published, and
+        // `wildcard.booked` is stamped ELEVEN sessions later by the pass that
+        // grades it. A snapshot can only ever say `undefined`, so the harness must
+        // take the record as the blob finally holds it or it would be checking the
+        // receipt against the moment before there was anything to receipt.
+        const rec = (p as { wildcard?: WildcardRecordLike }).wildcard
+        if (rec) r.wildcard = rec
       }
       // THE MORNING THE ENGINE GRADED THESE ROWS, and therefore the exact tape its
       // classifier held: a pass on walk day k sees bars strictly before day k, so a
@@ -2392,6 +2941,32 @@ export async function main() {
     )
   }
 
+  // ---- 🃏 THE EXPERIMENT SLOT, over the window (stage 3d task 3) ----
+  // Enforced HERE and not per day, for the same reason the post-mortems are: the
+  // causal write-back and the receipt are stamped eleven sessions after the row
+  // published, so a day-D snapshot structurally cannot carry them. These are the
+  // final blobs and the rows as they finally stand. `WILDCARD=off` (the parity
+  // arm) publishes none, so the census is empty and every check passes vacuously —
+  // an absence, not a zero.
+  let wildcards: WildcardTaken[] = []
+  if (!wildcardOff) {
+    wildcards = wildcardCensus(out)
+    const violations = wildcardViolations(out, missLedgerFinal)
+    if (violations.length)
+      throw new Error(
+        `BLOCKED: the experiment slot broke its own contract — ${violations.length} violation(s):\n  ` +
+          `${violations.slice(0, 25).join('\n  ')}${violations.length > 25 ? `\n  …and ${violations.length - 25} more` : ''}`,
+      )
+    console.log(
+      `wildcard: ${wildcards.length} experiment(s) in ${days.length} sessions` +
+        (wildcards.length
+          ? ` — ${wildcards
+              .map(w => `${w.date} ${w.sym} ${w.side} p${w.priority} ${w.gate}[n=${w.gateEvidenceN}]${w.paperOnly ? ' (paper)' : ''} ${w.outcome ? (w.outcome.hit ? `HIT +${w.outcome.excessPct}pp` : `miss ${w.outcome.excessPct}pp`) : 'open'}`)
+              .join(' · ')}`
+          : ' — the slot went unspent'),
+    )
+  }
+
   // The calibration blob as it stood after the last graded day — the state the
   // monotonicity probe samples, so the curve the gate asserts on is the one this
   // window actually built rather than a fixture that resembles it.
@@ -2408,6 +2983,10 @@ export async function main() {
   // any run with `GATES=off`, and on any window whose evidence never reached the
   // eligibility bar.
   const gateStateFinal = await store.read<unknown>(GATE_STATE_KEY_MIRROR)
+  // …and the honesty pane (Stage 3d): three of its four roll-ups carry the
+  // experiment slot's separability, so the controlled diff has to be able to read
+  // them rather than take the engine's word for the split.
+  const scorecardFinal = (await store.read<ScorecardLike>('engine-scorecard')) ?? null
   writeFileSync(
     outPath,
     JSON.stringify(
@@ -2432,6 +3011,13 @@ export async function main() {
         // reads either, and a run with `REGRET=off` writes null for both.
         missLedgerFinal,
         postMortemCensus,
+        scorecardFinal,
+        // …and the window's experiments, in walk order (Stage 3d). Derivable from
+        // `days` — `wildcardCensus` does exactly that — and carried anyway,
+        // because it is the table the ship evidence is written from and a reader
+        // of this file should not have to reconstruct the day's one deliberate
+        // override by grepping a catalyst kind out of 800 rows.
+        wildcards,
       },
       null,
       1,
@@ -2774,6 +3360,26 @@ export interface RunFile {
   /** Stage 3c — the gates as feedback left them. Null on `GATES=off` and on any
    * window whose evidence never reached the eligibility bar. */
   gateStateFinal?: unknown
+  /** THE HONESTY PANE as the window left it (`engine-scorecard`). Carried since
+   * Stage 3d because three of the four panes answer a SEPARABILITY question about
+   * the experiment slot — its own `byGrade` key, its exclusion from `byRegime`,
+   * its inclusion in `bySetup` — and a controlled diff that could not read them
+   * would be asserting the separation instead of measuring it. */
+  scorecardFinal?: ScorecardLike | null
+  /** THE WINDOW'S EXPERIMENTS (Stage 3d), in walk order. Empty on a lane-off arm
+   * and absent in any tree older than the slot. */
+  wildcards?: WildcardTaken[]
+}
+
+/** engine.ts's `engine-scorecard` blob, structurally (the mirror rule again). */
+export interface ScorecardLike {
+  byGrade: Record<string, { n: number; hits: number; sumExcess: number }>
+  byRegime: Record<string, { n: number; hits: number }>
+  bySetup: Record<string, { n: number; hits: number; sumExcess: number }>
+  byPostMortem: Record<string, number>
+  totalGraded: number
+  lifetime?: { live: { graded: number; hits: number }; shadow: { graded: number; hits: number } }
+  brierTail?: { date: string; mean: number; n: number }[]
 }
 
 export type Keyed = Row & { date: string }
@@ -3820,6 +4426,97 @@ async function classifyMain(): Promise<void> {
   if (failed) process.exitCode = 1
 }
 
+// ------------------------------- main: the wildcard controlled diff (3d t3) --
+//
+//   npx tsx scripts/replay-window.ts --wildcard-diff --ref /tmp/off.json --new /tmp/on.json
+//
+// SEVENTH MODE, and the ship gate for the experiment slot. Pure counters over two
+// runs of ONE window — `WILDCARD=off` and the lane live, everything else held —
+// asking the only question that matters about a lane that publishes rows: does it
+// change anything it was not given? The verdict and the reasoning behind the split
+// are at `wildcardControlledDiff`.
+async function wildcardDiffMain(): Promise<void> {
+  const refPath = arg('ref', '')
+  const newPath = arg('new', '')
+  if (!refPath || refPath.startsWith('--') || !newPath || newPath.startsWith('--'))
+    throw new Error('BLOCKED: --wildcard-diff needs --ref <run.json> (WILDCARD=off) and --new <run.json> (the lane live)')
+  const ref = JSON.parse(readFileSync(refPath, 'utf8')) as RunFile
+  const neu = JSON.parse(readFileSync(newPath, 'utf8')) as RunFile
+  console.log(`wildcard controlled diff: ref=${refPath} (${ref.commit}) vs new=${newPath} (${neu.commit}) · ${ref.from}..${ref.to}`)
+
+  const census = neu.wildcards ?? wildcardCensus(neu.days)
+  console.log(`\nTHE EXPERIMENTS — ${census.length} in ${neu.days.length} sessions`)
+  for (const w of census)
+    console.log(
+      `  ${w.date} (session ${w.at + 1}) ${w.sym} ${w.side} · rung ${w.priority} · gate ${w.gate} (evidence n=${w.gateEvidenceN}) · ` +
+        `core ${w.composite} · ${w.grade} p=${w.probability} · risk ${w.riskPct}%${w.paperOnly ? ' · PAPER (no quarter-size short route)' : ''}\n` +
+        `      ${w.outcome ? `${w.outcome.hit ? 'HIT' : 'MISS'} ${w.outcome.excessPct >= 0 ? '+' : ''}${w.outcome.excessPct}pp${w.outcome.stopped ? ' (stopped)' : ''} · post-mortem '${w.postMortem}' · booked ${String(w.booked)}` : `still open at walk end (tape says ${w.tapeOutcome ? `${w.tapeOutcome.hit ? 'HIT' : 'MISS'} ${w.tapeOutcome.excessPct}pp` : 'nothing yet'})`}\n` +
+        `      "${w.hypothesis}"`,
+    )
+  const gaps = census.slice(1).map((w, i) => w.at - census[i].at)
+  console.log(
+    `  cadence: ${gaps.length ? `${gaps.join(', ')} session(s) between experiments` : 'one experiment, no gap to measure'} · ` +
+      `the slot releases at ${WILDCARD_SLOT_LOOKBACK + 1} sessions (lookback) and the horizon grades at ${POSTMORTEM_HORIZON_MIRROR + 1} — ` +
+      `${WILDCARD_SLOT_LOOKBACK === POSTMORTEM_HORIZON_MIRROR ? 'the same session, so the slot is always released by the OUTCOME' : 'DIFFERENT sessions'}`,
+  )
+
+  const d = wildcardControlledDiff(ref, neu)
+  console.log(
+    `\nROWS — ${d.shared} matched keys · ${d.newOnly.length} lane-on only (${d.newOnly.filter(n => n.wildcard).length} experiments) · ` +
+      `${d.refOnly.length} lane-off only (${d.refOnly.filter(r => r.displaced).length} near misses the experiment displaced) · ${d.replaced.length} replaced in place`,
+  )
+  for (const n of d.newOnly) console.log(`  + ${n.where} ${n.key}${n.wildcard ? ' — the experiment' : '  ⚠ NOT AN EXPERIMENT'}`)
+  for (const r of d.refOnly) console.log(`  − ${r.where} ${r.key}${r.displaced ? ' — a near miss on the chart the experiment took' : '  ⚠ UNEXPLAINED REMOVAL'}`)
+  console.log(
+    `\nTHE ACCRUAL CHANNEL — first experiment outcome reaches the calibration on session ${d.firstAccrual == null ? 'never (none graded in-window)' : d.firstAccrual + 1}` +
+      ` (${d.firstAccrual == null ? '—' : (neu.days[d.firstAccrual]?.date ?? '?')})`,
+  )
+  console.log(`  ordinary rows moved BEFORE it: ${d.early.length} — ${d.early.length ? 'THE LANE PERTURBED THE BOARD' : 'none, the seating changes nothing beside it'}`)
+  console.log(`  ordinary rows moved AFTER it:  ${d.late.length} — the one observation the ratified design lets through`)
+  console.log(`  fields moved: ${Object.entries(d.fields).sort((a, b) => b[1] - a[1]).map(([f, n]) => `${f} ${n}`).join(' · ') || 'none'}`)
+  for (const f of d.forbidden) console.log(`  ⚠ FORBIDDEN ${f.where} ${f.key} — ${f.fields.join(', ')}`)
+  for (const u of d.unearned) console.log(`  ⚠ UNEARNED ${u.where} ${u.key} — ${u.fields.join(', ')} moved with no grade change behind it`)
+  const gradeMoves = [...d.early, ...d.late].filter(x => x.fields.includes('grade'))
+  console.log(`  grade changes: ${gradeMoves.length}${gradeMoves.length ? ` — ${gradeMoves.map(g => `${g.where} ${g.key}`).join(' · ')}` : ''}`)
+
+  const s = wildcardSeparability(ref, neu)
+  console.log('\nTHE SEPARABLE RECORDS')
+  console.log(`  byGrade '🃏 wildcard': ${s.byGradeWildcard ? `n ${s.byGradeWildcard.n}, hits ${s.byGradeWildcard.hits}` : 'absent'} · letters moved: ${s.lettersMoved.join(', ') || 'none'}`)
+  console.log(`  byRegime delta ${s.byRegimeDelta} (must be 0 — the live/skill pane) · bySetup delta ${s.bySetupDelta} (the shape pane counts it)`)
+  console.log(`  byPostMortem delta: ${Object.entries(s.byPostMortemDelta).map(([k, n]) => `${k} ${n > 0 ? '+' : ''}${n}`).join(' · ') || 'none — a win is not one of the ways the engine loses'}`)
+  console.log(`  lifetime delta ${s.lifetimeDelta} (must be 0) · Brier trail length delta ${s.brierLenDelta} (must be 0) · totalGraded delta ${s.totalGradedDelta}`)
+  console.log(`  calibration buckets moved: ${s.buckets.map(b => `${b.key} n${b.nDelta >= 0 ? '+' : ''}${b.nDelta}/hits${b.hitsDelta >= 0 ? '+' : ''}${b.hitsDelta}/shadowN${b.shadowNDelta >= 0 ? '+' : ''}${b.shadowNDelta}`).join(' · ') || 'none'}`)
+  console.log(`  evidence delta: seed ${s.evidenceDelta.seed} · live ${s.evidenceDelta.live} · shadow ${s.evidenceDelta.shadow}`)
+
+  console.log('\nTHE CAUSAL COLUMN — and the substitution behind it')
+  const led = wildcardLedgerDelta(ref, neu)
+  for (const g of led.gates)
+    console.log(
+      `  ${g.gate}${g.visited ? ' (the slot tested it)' : ''}: causal ${g.causal ? `n ${g.causal.n} hits ${g.causal.hits}` : 'none'} · ` +
+        `stopless cost ${g.costDelta >= 0 ? '+' : ''}${g.costDelta} saved ${g.savedDelta >= 0 ? '+' : ''}${g.savedDelta} · ` +
+        `MOVABLE sidedCost ${g.sidedCostDelta >= 0 ? '+' : ''}${g.sidedCostDelta} sidedSaved ${g.sidedSavedDelta >= 0 ? '+' : ''}${g.sidedSavedDelta} · unpriced ${g.uncheckedDelta >= 0 ? '+' : ''}${g.uncheckedDelta}`,
+    )
+  for (const [gate, stat] of Object.entries(neu.missLedgerFinal?.gates ?? {}))
+    for (const ex of stat.causal?.examples ?? []) console.log(`      ${gate} ← ${ex.date} ${ex.sym} ${ex.side} hit=${ex.hit} excess ${ex.excessPct}pp wildcard=${ex.wildcard}`)
+  if (led.days.length)
+    console.log(
+      `  day accounting moved on ${led.days.length}: ${led.days.map(x => `${x.date} checked${x.checkedDelta >= 0 ? '+' : ''}${x.checkedDelta}/unpriced${x.uncheckedDelta >= 0 ? '+' : ''}${x.uncheckedDelta}/misses${x.missesDelta >= 0 ? '+' : ''}${x.missesDelta}`).join(' · ')}`,
+    )
+  // A gate the slot never went near may not move its stopless population at all.
+  // (`unchecked` is exempt and says why in the readout: the miss walk's 40-fetch
+  // budget counts a name already in the candle cache as free, and the experiment's
+  // own grading warms one, so the budget can reach one refusal further. That makes
+  // the ledger more complete on that day, never less, and moves no gate's verdict.)
+  const strayed = led.gates.filter(g => !g.visited && (g.costDelta || g.savedDelta || g.sidedCostDelta || g.sidedSavedDelta))
+  for (const g of strayed) console.log(`  ⚠ ${g.gate} moved and the slot never tested it`)
+
+  const invariants = wildcardViolations(neu.days, neu.missLedgerFinal)
+  for (const x of invariants) console.log(`  ⚠ ${x}`)
+  const ok = d.passed && !invariants.length && !strayed.length && s.byRegimeDelta === 0 && s.lifetimeDelta === 0 && s.brierLenDelta === 0
+  console.log(`\nVERDICT: ${ok ? 'the experiment slot is separable — every difference is the experiment, its causal entry, its own records, or the accrual the design ratified' : 'BLOCKED — see the flags above'}`)
+  if (!ok) process.exitCode = 1
+}
+
 // Importable for the unit test (vitest sets VITEST); executed as a script otherwise.
 if (!process.env.VITEST)
   await (process.argv.includes('--velocity-probe')
@@ -3828,4 +4525,6 @@ if (!process.env.VITEST)
       ? aggregateMain()
       : process.argv.includes('--classify')
         ? classifyMain()
-        : main())
+        : process.argv.includes('--wildcard-diff')
+          ? wildcardDiffMain()
+          : main())

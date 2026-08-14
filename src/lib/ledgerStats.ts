@@ -38,7 +38,7 @@ export interface LedgerSummary {
 }
 
 export interface GradeBucket {
-  key: string // 'A' | 'B' | 'C' | 'shadow'
+  key: string // 'A' | 'B' | 'C' | 'shadow' | 'wildcard'
   n: number
   graded: number
   hits: number
@@ -48,12 +48,21 @@ export interface GradeBucket {
 
 /** Per-grade breakdown: do the tiers actually separate? Shadows are their own
  * bucket regardless of stored grade — they were suppressed calls, and mixing
- * them into A/B/C would flatter or damn the wrong tier. */
+ * them into A/B/C would flatter or damn the wrong tier.
+ *
+ * …and so is the EXPERIMENT SLOT (stage 3d), on the same argument and the same
+ * precedence: a wildcard published BECAUSE the engine's own gates said no, so its
+ * letter (stamped `grade ?? 'C'`) is not why it is on the board, and folding it
+ * into C makes C mean two things. `engine-scorecard` settled this once for the
+ * server-side pane; this is the client-side roll of the same rows, and the two
+ * must not disagree about the same trade. Shadow still wins the tie — "the reader
+ * was never offered this" is the stronger statement, and a shadowed wildcard was
+ * declined rather than seated (engine.ts). */
 export function gradeBreakdown(rows: LedgerPrediction[]): GradeBucket[] {
-  const keys = ['A', 'B', 'C', 'shadow'] as const
+  const keys = ['A', 'B', 'C', 'shadow', 'wildcard'] as const
   return keys
     .map(key => {
-      const bucket = rows.filter(r => (key === 'shadow' ? r.shadow : !r.shadow && r.grade === key))
+      const bucket = rows.filter(r => (key === 'shadow' ? r.shadow : key === 'wildcard' ? !r.shadow && !!r.wildcard : !r.shadow && !r.wildcard && r.grade === key))
       const graded = bucket.filter(r => r.outcome10)
       const hits = graded.filter(r => r.outcome10!.hit).length
       const sum = graded.reduce((s, r) => s + r.outcome10!.excessPct, 0)

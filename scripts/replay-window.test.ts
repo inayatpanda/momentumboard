@@ -27,7 +27,7 @@ import { THEMES } from '../shared/engine/themes'
 import { bannedTokensIn, composeThesis } from '../shared/engine/voice'
 import { classifyLoser } from '../shared/engine/postMortem'
 import { isRouteEtp } from '../shared/engine/riskLadder'
-import type { DayTrace, Keyed, MissGateStatLike, MissLedgerLike, PostMortemLike, PrecedenceSample, ProbeContext, RegretContext, Row, RunFile, SeedArtefact } from './replay-window'
+import type { DayTrace, Keyed, MissGateStatLike, MissLedgerLike, PostMortemLike, PrecedenceSample, ProbeContext, RegretContext, Row, RunFile, SeedArtefact, WildcardRecordLike } from './replay-window'
 import {
   WALK_ABSENT_FACTORS,
   classifyDiff,
@@ -40,7 +40,14 @@ import {
   GATE_STATE_KEY_MIRROR,
   MISS_SKIP_GATE_MIRROR,
   POSTMORTEM_CLASS_MIRROR,
+  POSTMORTEM_HORIZON_MIRROR,
   WILDCARD_CATALYST_KIND_MIRROR,
+  WILDCARD_SLOT_LOOKBACK,
+  wildcardCensus,
+  wildcardControlledDiff,
+  wildcardLedgerDelta,
+  wildcardSeparability,
+  wildcardViolations,
   expectedCalledGates,
   missAccrualViolations,
   missCandidateCount,
@@ -2188,6 +2195,370 @@ describe('the walk measures regret — and the board still never noticed', () =>
       JSON.stringify(r.days.map(d => ({ date: d.date, regime: d.regime, rosterSize: d.rosterSize, baseRate: d.baseRate, shape: d.shape, board: d.board.map(strip), ledger: d.ledger.map(strip) })))
     expect(published(off)).toBe(published(live))
   }, 180_000)
+})
+
+// ---------------------------------------------------------------------------
+// 🃏 THE EXPERIMENT SLOT, OVER A WINDOW (stage 3d task 3)
+//
+// The lane's own choice is pinned in wildcardLane.test.ts and its seating in
+// engine.wildcard.test.ts. What is pinned HERE is the instrument the window proof
+// is made with: the census that reads the experiments back out of a walk, the
+// invariants that decide whether a window is allowed to stand, and the controlled
+// diff against a lane-off arm. Every one of them is driven with a healthy fixture
+// AND a broken one, because an invariant nobody has watched fire is a comment.
+// ---------------------------------------------------------------------------
+
+const wcRecord = (over: Partial<WildcardRecordLike> = {}): WildcardRecordLike => ({
+  gate: 'entry-wait', priority: 1, hypothesis: 'entry-wait has 0 priced outcomes…', gateEvidenceN: 0, ...over,
+})
+
+/** A seated experiment: quarter size, sized accrual, no contract, a real stop. */
+const wcRow = (over: Partial<Keyed> = {}): Keyed =>
+  row({
+    sym: 'WILD', side: 'long', grade: 'C', riskPct: 0.25, composite: 22, catalyst: 'wildcard',
+    contract: false, setup: 'continuation', wildcard: wcRecord(), ...over,
+  })
+
+/** …and the funnel's record of one: the publication overwrote the refusal, and
+ * `priorGate` is the only thing left that remembers what it was. */
+const wcTrace = (sym = 'WILD', side: 'long' | 'short' = 'long', over: Partial<DayTrace['rows'][string]> = {}): DayTrace => ({
+  rows: { [`${sym}:${side}`]: { gate: 'called-wildcard', side, detail: 'experiment — quarter size', priorGate: 'entry-wait', ...over } },
+  counts: { notCandidate: 0 },
+})
+
+type WalkDay = { date: string; board: Keyed[]; ledger: Keyed[]; trace?: DayTrace }
+/** N sessions of nothing, so an experiment can be dropped onto one of them. */
+const blankWalk = (n: number): WalkDay[] =>
+  Array.from({ length: n }, (_, i) => ({ date: `2026-07-${String(i + 1).padStart(2, '0')}`, board: [], ledger: [], trace: { rows: {}, counts: { notCandidate: 0 } } }))
+
+const seat = (days: WalkDay[], at: number, over: Partial<Keyed> = {}, sym = 'WILD', side: 'long' | 'short' = 'long'): WalkDay[] => {
+  const r = wcRow({ sym, side, date: days[at].date, ...over })
+  days[at] = { ...days[at], board: [...days[at].board, r], ledger: [...days[at].ledger, { ...r, where: 'ledger' }], trace: wcTrace(sym, side) }
+  return days
+}
+
+const causalLedger = (
+  gate: string,
+  examples: { date: string; sym: string; side: 'long' | 'short'; excessPct: number; hit: boolean; wildcard?: true }[],
+): MissLedgerLike => ({
+  days: {},
+  gates: {
+    [gate]: {
+      cost: 0, costExcessSum: 0, saved: 0, savedExcessSum: 0, unchecked: 0, examples: [],
+      sidedCost: examples.filter(e => e.hit).length,
+      sidedSaved: examples.filter(e => !e.hit).length,
+      causal: {
+        n: examples.length,
+        hits: examples.filter(e => e.hit).length,
+        examples: examples.map(e => ({ ...e, gate, wildcard: e.wildcard ?? (true as const) })),
+      },
+    },
+  },
+})
+
+const graded = { hit: true, excessPct: 7.8, stopped: false }
+
+describe('wildcardCensus — the experiments, read back out of a walk', () => {
+  it('reads the record off the row, stamps the session, and dedupes the two cuts', () => {
+    const days = seat(blankWalk(3), 1, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'cleared the bar', at: 1 } })
+    const c = wildcardCensus(days)
+    expect(c).toHaveLength(1)
+    expect(c[0]).toMatchObject({ at: 1, date: '2026-07-02', sym: 'WILD', side: 'long', gate: 'entry-wait', priority: 1, gateEvidenceN: 0, riskPct: 0.25 })
+    expect(c[0].outcome).toEqual(graded)
+    expect(c[0].postMortem).toBe('won')
+  })
+  it('a SHORT experiment is paper money — a quarter can never reach mapInstrument', () => {
+    const long = wildcardCensus(seat(blankWalk(2), 0, {}, 'WILD', 'long'))[0]
+    const short = wildcardCensus(seat(blankWalk(2), 0, { composite: -22 }, 'WILD', 'short'))[0]
+    expect(long.paperOnly).toBe(false)
+    expect(short.paperOnly).toBe(true)
+    // …and a routed short would not be, which is what makes the flag a reading
+    expect(wildcardCensus(seat(blankWalk(2), 0, { composite: -22, instrument: 'SQQQ' }, 'WILD', 'short'))[0].paperOnly).toBe(false)
+  })
+  it('an ordinary row is never an experiment, whatever else it carries', () => {
+    const days = blankWalk(2)
+    days[0].board.push(row({ riskPct: 0.25, contract: false, catalyst: 'dip' }))
+    expect(wildcardCensus(days)).toEqual([])
+  })
+})
+
+describe('wildcardViolations — what the slot may never do over a window', () => {
+  const clean = () => seat(blankWalk(4), 1, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) })
+  const ledgerFor = (date = '2026-07-02') => causalLedger('entry-wait', [{ date, sym: 'WILD', side: 'long', excessPct: 7.8, hit: true }])
+
+  it('a clean window says nothing', () => {
+    expect(wildcardViolations(clean(), ledgerFor())).toEqual([])
+  })
+
+  it('THE BOUNDARY: the one-slot lookback is not shorter than the grading horizon', () => {
+    // The identity that makes the honest bound cost nothing — the slot is
+    // released by the OUTCOME on the same session the window would have released
+    // it anyway. Asserted as a constant relation so a change to either fires.
+    expect(WILDCARD_SLOT_LOOKBACK).toBeGreaterThanOrEqual(POSTMORTEM_HORIZON_MIRROR)
+    expect(WILDCARD_SLOT_LOOKBACK).toBe(POSTMORTEM_HORIZON_MIRROR)
+  })
+
+  it('one row a day, and both cuts telling the same story', () => {
+    const two = clean()
+    two[1] = { ...two[1], board: [...two[1].board, wcRow({ sym: 'OTHER', date: two[1].date })] }
+    expect(wildcardViolations(two, ledgerFor()).some(v => /2 wildcard rows on one board/.test(v))).toBe(true)
+    const disagree = clean()
+    disagree[1] = { ...disagree[1], ledger: [wcRow({ sym: 'OTHER', where: 'ledger', date: disagree[1].date })] }
+    expect(wildcardViolations(disagree, ledgerFor()).some(v => /the board's experiment is WILD long and the ledger's is OTHER/.test(v))).toBe(true)
+  })
+
+  it('ONE SLOT ACROSS DAYS — and the .slice(-10) boundary is where it is tested', () => {
+    // released exactly at lookback + 1 sessions: legal, and the whole cadence
+    const atRelease = seat(seat(blankWalk(30), 0, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) }), WILDCARD_SLOT_LOOKBACK + 1, {}, 'LATER')
+    const led = causalLedger('entry-wait', [{ date: atRelease[0].date, sym: 'WILD', side: 'long', excessPct: 7.8, hit: true }])
+    expect(wildcardViolations(atRelease, led).filter(v => /spent the slot/.test(v))).toEqual([])
+    // …and ONE session earlier is two experiments running at once
+    const early = seat(seat(blankWalk(30), 0, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) }), WILDCARD_SLOT_LOOKBACK, {}, 'LATER')
+    expect(wildcardViolations(early, led).some(v => /spent the slot 1 session\(s\) early/.test(v))).toBe(true)
+  })
+
+  it('the shape of an experiment: size, accrual, contract, stop, and the funnel record', () => {
+    const bad = (over: Partial<Keyed>, trace?: DayTrace) => {
+      const d = seat(blankWalk(4), 1, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }), ...over })
+      if (trace) d[1] = { ...d[1], trace }
+      return wildcardViolations(d, ledgerFor())
+    }
+    expect(bad({ riskPct: 0 }).some(v => /an experiment with no size/.test(v))).toBe(true)
+    expect(bad({ accrual: 'shadow' }).some(v => /books as sized/.test(v))).toBe(true)
+    expect(bad({ shadow: true }).some(v => /declined, not seated/.test(v))).toBe(true)
+    expect(bad({ watchOnly: true }).some(v => /measures nothing/.test(v))).toBe(true)
+    expect(bad({ nearMiss: true }).some(v => /replaced that row/.test(v))).toBe(true)
+    expect(bad({ contract: true }).some(v => /claims an evidence contract/.test(v))).toBe(true)
+    expect(bad({ instrument: 'L3AL' }).some(v => /leverage is structurally impossible/.test(v))).toBe(true)
+    expect(bad({ stop: 10 }).some(v => /without a falsifier/.test(v))).toBe(true)
+    expect(bad({}, { rows: {}, counts: { notCandidate: 0 } }).some(v => /no trace row/.test(v))).toBe(true)
+    expect(bad({}, wcTrace('WILD', 'long', { gate: 'called-half' })).some(v => /a seated experiment is 'called-wildcard'/.test(v))).toBe(true)
+    expect(bad({}, wcTrace('WILD', 'long', { priorGate: 'dead-zone-core' })).some(v => /may never be re-derived/.test(v))).toBe(true)
+    expect(bad({ wildcard: undefined }).some(v => /nothing says what it was for/.test(v))).toBe(true)
+  })
+
+  it('the causal evidence landed — on the right gate, tagged, with the receipt', () => {
+    // graded and never charged: the slot bought nothing
+    expect(wildcardViolations(clean(), { days: {}, gates: {} }).some(v => /carries no causal column at all/.test(v))).toBe(true)
+    // charged before the engine ever graded it
+    const open = seat(blankWalk(4), 1)
+    expect(wildcardViolations(open, ledgerFor()).some(v => /before the engine ever graded it/.test(v))).toBe(true)
+    // graded, charged, and no receipt
+    const noReceipt = seat(blankWalk(4), 1, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 } })
+    expect(wildcardViolations(noReceipt, ledgerFor()).some(v => /booked=undefined/.test(v))).toBe(true)
+    // the wrong gate
+    expect(
+      wildcardViolations(clean(), causalLedger('dead-zone-core', [{ date: '2026-07-02', sym: 'WILD', side: 'long', excessPct: 7.8, hit: true }]))
+        .some(v => /published to test 'entry-wait'/.test(v)),
+    ).toBe(true)
+    // the example disagreeing with the engine's own grade
+    expect(
+      wildcardViolations(clean(), causalLedger('entry-wait', [{ date: '2026-07-02', sym: 'WILD', side: 'long', excessPct: -3, hit: false }]))
+        .some(v => /booked hit=false and the engine graded hit=true/.test(v)),
+    ).toBe(true)
+    // an untagged causal example — the one thing that tells the taken row from the measured ones
+    const untagged = causalLedger('entry-wait', [{ date: '2026-07-02', sym: 'WILD', side: 'long', excessPct: 7.8, hit: true }])
+    untagged.gates['entry-wait'].causal!.examples[0].wildcard = undefined
+    expect(wildcardViolations(clean(), untagged).some(v => /not tagged as the experiment it was/.test(v))).toBe(true)
+    // …and the causal outcome never reaching the counts that can move a gate
+    const unsided = ledgerFor()
+    unsided.gates['entry-wait'].sidedCost = 0
+    expect(wildcardViolations(clean(), unsided).some(v => /never reached the counts that move a gate/.test(v))).toBe(true)
+  })
+
+  it("THE RECEIPT'S OWN BOUND: the ledger can never hold more causal samples than the window published", () => {
+    // the fix wave's documented residual — the one-blob-write window between the
+    // ledger write and the receipt — showing up as an inequality and nowhere else
+    const doubled = causalLedger('entry-wait', [
+      { date: '2026-07-02', sym: 'WILD', side: 'long', excessPct: 7.8, hit: true },
+      { date: '2026-07-02', sym: 'WILD', side: 'long', excessPct: 7.8, hit: true },
+    ])
+    const v = wildcardViolations(clean(), doubled)
+    expect(v.some(x => /an outcome was booked twice/.test(x))).toBe(true)
+    // …and the per-gate count says the same thing one level down
+    expect(v.some(x => /2 causal outcome\(s\) booked and 1 experiment\(s\) graded/.test(x))).toBe(true)
+  })
+
+  it('a WINNING experiment is examined too — that asymmetry is what the slot ended', () => {
+    const won = seat(blankWalk(4), 1, { storedOutcome10: graded, postMortem: { cls: 'stopped', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) })
+    expect(wildcardViolations(won, ledgerFor()).some(v => /won and reads 'stopped'/.test(v))).toBe(true)
+  })
+
+  it('a lane-off window has nothing to say — an absence, not a zero', () => {
+    expect(wildcardViolations(blankWalk(21), null)).toEqual([])
+  })
+})
+
+describe('wildcardControlledDiff — the lane changes nothing it was not given', () => {
+  /** two arms of one window: the same ordinary rows, day by day. */
+  const arms = (n: number): { off: WalkDay[]; on: WalkDay[] } => ({ off: blankWalk(n), on: blankWalk(n) })
+  const ordinary = (days: WalkDay[], at: number, over: Partial<Keyed> = {}): WalkDay[] => {
+    days[at] = { ...days[at], board: [...days[at].board, row({ date: days[at].date, ...over })], ledger: [...days[at].ledger, row({ date: days[at].date, where: 'ledger', ...over })] }
+    return days
+  }
+  const runOf = (days: WalkDay[], extra: Partial<RunFile> = {}): RunFile =>
+    ({ mode: 'new', commit: 'x', from: days[0].date, to: days[days.length - 1].date, days, ...extra }) as unknown as RunFile
+
+  it('the experiment is the only new row, and nothing else moves', () => {
+    const { off, on } = arms(4)
+    ordinary(off, 0); ordinary(on, 0)
+    seat(on, 1)
+    const d = wildcardControlledDiff(runOf(off), runOf(on))
+    expect(d.newOnly.map(n => n.key)).toEqual(['2026-07-02:WILD:long', '2026-07-02:WILD:long'])
+    expect(d.newOnly.every(n => n.wildcard)).toBe(true)
+    expect(d.early).toEqual([])
+    expect(d.late).toEqual([])
+    expect(d.passed).toBe(true)
+  })
+
+  it('a row moving BEFORE the first outcome accrues is the lane perturbing the board', () => {
+    const { off, on } = arms(30)
+    seat(on, 0, { storedOutcome10: graded })
+    ordinary(off, 2, { probability: 0.45 }); ordinary(on, 2, { probability: 0.46 })
+    const d = wildcardControlledDiff(runOf(off), runOf(on))
+    expect(d.firstAccrual).toBe(POSTMORTEM_HORIZON_MIRROR + 1)
+    expect(d.early.map(e => e.key)).toEqual(['2026-07-03:AAA:long', '2026-07-03:AAA:long'])
+    expect(d.passed).toBe(false)
+  })
+
+  it('…and the SAME move after it is the one channel the design ratified', () => {
+    const { off, on } = arms(30)
+    seat(on, 0, { storedOutcome10: graded })
+    const at = POSTMORTEM_HORIZON_MIRROR + 2
+    ordinary(off, at, { probability: 0.45, grade: 'C' }); ordinary(on, at, { probability: 0.46, grade: 'B' })
+    const d = wildcardControlledDiff(runOf(off), runOf(on))
+    expect(d.early).toEqual([])
+    expect(d.late.map(l => l.fields.sort())).toEqual([['grade', 'probability'], ['grade', 'probability']])
+    expect(d.fields).toMatchObject({ probability: 2, grade: 2 })
+    expect(d.passed).toBe(true)
+  })
+
+  it('a composite, a level or an accrual stamp moving is a lane reaching where it was never given', () => {
+    const { off, on } = arms(30)
+    seat(on, 0, { storedOutcome10: graded })
+    const at = POSTMORTEM_HORIZON_MIRROR + 2
+    ordinary(off, at, { composite: 40 }); ordinary(on, at, { composite: 41 })
+    const d = wildcardControlledDiff(runOf(off), runOf(on))
+    expect(d.forbidden.map(f => f.fields)).toEqual([['composite'], ['composite']])
+    expect(d.passed).toBe(false)
+  })
+
+  it('a size may move only behind a grade that moved', () => {
+    const { off, on } = arms(30)
+    seat(on, 0, { storedOutcome10: graded })
+    const at = POSTMORTEM_HORIZON_MIRROR + 2
+    ordinary(off, at, { riskPct: 1 }); ordinary(on, at, { riskPct: 0.5 })
+    expect(wildcardControlledDiff(runOf(off), runOf(on)).unearned.map(u => u.fields)).toEqual([['riskPct'], ['riskPct']])
+    const b = arms(30)
+    seat(b.on, 0, { storedOutcome10: graded })
+    ordinary(b.off, at, { riskPct: 1, grade: 'B' }); ordinary(b.on, at, { riskPct: 0.5, grade: 'C' })
+    const d = wildcardControlledDiff(runOf(b.off), runOf(b.on))
+    expect(d.unearned).toEqual([])
+    expect(d.forbidden).toEqual([])
+    expect(d.passed).toBe(true)
+  })
+
+  it('the near miss the experiment displaced is accounted for — in place, and on the other side', () => {
+    const { off, on } = arms(4)
+    // same key: the near miss stood where the experiment now stands
+    ordinary(off, 1, { sym: 'WILD', nearMiss: true, riskPct: 0, contract: false })
+    // …and the OTHER side of the same chart, which the splice also clears
+    off[1] = { ...off[1], board: [...off[1].board, row({ sym: 'WILD', side: 'short', composite: -12, nearMiss: true, date: off[1].date })] }
+    seat(on, 1)
+    const d = wildcardControlledDiff(runOf(off), runOf(on))
+    expect(d.replaced.map(r => r.key)).toEqual(['2026-07-02:WILD:long', '2026-07-02:WILD:long'])
+    expect(d.refOnly.map(r => r.key)).toEqual(['2026-07-02:WILD:short'])
+    expect(d.refOnly.every(r => r.displaced)).toBe(true)
+    expect(d.passed).toBe(true)
+  })
+
+  it('…and a row the lane-off arm had for any OTHER reason fails the diff', () => {
+    const { off, on } = arms(4)
+    ordinary(off, 1, { sym: 'GONE' })
+    seat(on, 1)
+    const d = wildcardControlledDiff(runOf(off), runOf(on))
+    expect(d.refOnly.map(r => ({ key: r.key, displaced: r.displaced }))).toEqual([
+      { key: '2026-07-02:GONE:long', displaced: false },
+      { key: '2026-07-02:GONE:long', displaced: false },
+    ])
+    expect(d.passed).toBe(false)
+  })
+})
+
+describe('wildcardSeparability — the records that must stay apart', () => {
+  const card = (over: Partial<NonNullable<RunFile['scorecardFinal']>> = {}) =>
+    ({ byGrade: { C: { n: 10, hits: 4, sumExcess: 3 } }, byRegime: { amber: { n: 10, hits: 4 } }, bySetup: { continuation: { n: 10, hits: 4, sumExcess: 3 } }, byPostMortem: { 'continuation:amber:stopped': 2 }, totalGraded: 10, lifetime: { live: { graded: 8, hits: 3 }, shadow: { graded: 2, hits: 1 } }, ...over }) as NonNullable<RunFile['scorecardFinal']>
+  const cal = (n: number, brier: number) =>
+    ({ buckets: { 'short:amber:40-55': { n, hits: n - 1, shadowN: 3 } }, brier: Array.from({ length: brier }, () => ({ date: 'd', mean: 0.2, n: 1 })), evidence: { seed: { n: 100 }, live: { n }, shadow: { n: 5 } } }) as unknown as RunFile['calibrationFinal']
+  const runOf = (cardArg: RunFile['scorecardFinal'], calArg: RunFile['calibrationFinal']): RunFile =>
+    ({ mode: 'new', commit: 'x', from: 'a', to: 'b', days: [], scorecardFinal: cardArg, calibrationFinal: calArg }) as unknown as RunFile
+
+  it('the experiment gets its OWN key, the live pane never sees it, and the shape pane does', () => {
+    const off = runOf(card(), cal(10, 4))
+    const on = runOf(
+      card({
+        byGrade: { C: { n: 10, hits: 4, sumExcess: 3 }, wildcard: { n: 1, hits: 1, sumExcess: 7.8 } },
+        bySetup: { continuation: { n: 11, hits: 5, sumExcess: 10.8 } },
+        totalGraded: 11,
+      }),
+      cal(11, 4),
+    )
+    const s = wildcardSeparability(off, on)
+    expect(s.byGradeWildcard).toEqual({ n: 1, hits: 1 })
+    expect(s.lettersMoved).toEqual([]) // C did not fatten — that is the whole point
+    expect(s.byRegimeDelta).toBe(0)
+    expect(s.bySetupDelta).toBe(1)
+    expect(s.byPostMortemDelta).toEqual({}) // a win is not one of the ways it loses
+    expect(s.lifetimeDelta).toBe(0)
+    expect(s.brierLenDelta).toBe(0)
+    expect(s.totalGradedDelta).toBe(1)
+    expect(s.buckets).toEqual([{ key: 'short:amber:40-55', nDelta: 1, hitsDelta: 1, shadowNDelta: 0 }])
+    expect(s.evidenceDelta).toEqual({ seed: 0, live: 1, shadow: 0 })
+  })
+
+  it('a wildcard folded into C, into the live pane, or into the Brier trail is visible here', () => {
+    const off = runOf(card(), cal(10, 4))
+    const leaky = runOf(card({ byGrade: { C: { n: 11, hits: 5, sumExcess: 10.8 } }, byRegime: { amber: { n: 11, hits: 5 } }, lifetime: { live: { graded: 9, hits: 4 }, shadow: { graded: 2, hits: 1 } } }), cal(11, 5))
+    const s = wildcardSeparability(off, leaky)
+    expect(s.byGradeWildcard).toBeNull()
+    expect(s.lettersMoved).toEqual(['C'])
+    expect(s.byRegimeDelta).toBe(1)
+    expect(s.lifetimeDelta).toBe(1)
+    expect(s.brierLenDelta).toBe(1)
+  })
+})
+
+describe('wildcardLedgerDelta — the substitution, not an addition', () => {
+  const led = (gate: string, over: Partial<MissGateStatLike>): MissLedgerLike => ({
+    days: { '2026-07-14': { checked: 10, unchecked: 1, misses: 3 } },
+    gates: { [gate]: { cost: 2, costExcessSum: 14, saved: 1, savedExcessSum: -7, unchecked: 0, examples: [], sidedCost: 2, sidedSaved: 1, ...over } },
+  })
+  const runOf = (ledger: MissLedgerLike, wildcards: RunFile['wildcards'] = []): RunFile =>
+    ({ mode: 'new', commit: 'x', from: 'a', to: 'b', days: [], missLedgerFinal: ledger, wildcards }) as unknown as RunFile
+
+  it('the tested gate loses a stopless row and gains a causal one — the movable counts do not move', () => {
+    const off = runOf(led('entry-wait', {}))
+    const on = runOf(
+      led('entry-wait', { cost: 1, costExcessSum: 6.5, causal: { n: 1, hits: 1, examples: [] } }),
+      [{ gate: 'entry-wait' } as NonNullable<RunFile['wildcards']>[number]],
+    )
+    const d = wildcardLedgerDelta(off, on)
+    expect(d.gates).toEqual([
+      { gate: 'entry-wait', visited: true, costDelta: -1, savedDelta: 0, uncheckedDelta: 0, sidedCostDelta: 0, sidedSavedDelta: 0, causal: { n: 1, hits: 1 } },
+    ])
+  })
+  it('a gate the slot never tested is reported as strayed if it moved at all', () => {
+    const off = runOf(led('dead-zone-core', {}))
+    const on = runOf(led('dead-zone-core', { cost: 3, sidedCost: 3 }), [{ gate: 'entry-wait' } as NonNullable<RunFile['wildcards']>[number]])
+    const [g] = wildcardLedgerDelta(off, on).gates
+    expect(g).toMatchObject({ gate: 'dead-zone-core', visited: false, costDelta: 1, sidedCostDelta: 1 })
+  })
+  it('a day whose accounting moved is surfaced with its arithmetic', () => {
+    const off = runOf(led('entry-wait', {}))
+    const on = runOf(led('entry-wait', {}))
+    on.missLedgerFinal!.days['2026-07-14'] = { checked: 9, unchecked: 1, misses: 2 }
+    expect(wildcardLedgerDelta(off, on).days).toEqual([{ date: '2026-07-14', checkedDelta: -1, uncheckedDelta: 0, missesDelta: -1 }])
+  })
 })
 
 describe('flatten', () => {

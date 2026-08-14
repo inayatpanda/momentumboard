@@ -234,7 +234,16 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
           {byGrade.map(b => (
             <CohortBar
               key={b.key}
-              label={b.key === 'shadow' ? <span className="badge">shadow</span> : <GradeChip grade={b.key as 'A' | 'B' | 'C'} provisional={false} />}
+              // …and the experiment slot names itself rather than borrowing a
+              // letter it never earned (stage 3d — the same label EnginePanel
+              // prints, so the two panes read as one).
+              label={
+                b.key === 'shadow'
+                  ? <span className="badge">shadow</span>
+                  : b.key === 'wildcard'
+                    ? <span className="badge warn">🃏 wildcard</span>
+                    : <GradeChip grade={b.key as 'A' | 'B' | 'C'} provisional={false} />
+              }
               n={b.n}
               graded={b.graded}
               hitRate={b.hitRate}

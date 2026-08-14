@@ -63,6 +63,25 @@ describe('gradeBreakdown', () => {
   it('drops empty buckets', () => {
     expect(gradeBreakdown([]).length).toBe(0)
   })
+  // THE EXPERIMENT SLOT (stage 3d). `engine-scorecard` already gives a wildcard
+  // its own byGrade key — the letter is not why the row published — and this
+  // client-side roll of the same rows was still filing it under its stored
+  // letter, so the two panes disagreed about the same trade. A wildcard's grade
+  // is stamped `grade ?? 'C'`, so the leak was always INTO C, the bucket the
+  // reader is most likely to be judging the engine's floor by.
+  it('an experiment gets its own bucket, never the letter it was stamped with', () => {
+    const wc = pred({ id: 'w', grade: 'C', wildcard: { gate: 'entry-wait', priority: 1, hypothesis: 'h', gateEvidenceN: 0 }, outcome10: out(7.8, true) })
+    const b = gradeBreakdown([pred({ id: '1', grade: 'C', outcome10: out(-1, false) }), wc])
+    expect(b.map(x => x.key)).toEqual(['C', 'wildcard'])
+    expect(b.find(x => x.key === 'C')).toMatchObject({ n: 1, graded: 1, hits: 0 })
+    expect(b.find(x => x.key === 'wildcard')).toMatchObject({ n: 1, graded: 1, hits: 1, avgExcess10: 7.8 })
+  })
+  it('…and a shadow still wins over the wildcard key, exactly as it does in the scorecard', () => {
+    // "the reader was never offered this" is the stronger statement, and a
+    // shadowed wildcard was declined rather than seated (engine.ts).
+    const b = gradeBreakdown([pred({ id: 's', grade: 'C', shadow: true, wildcard: { gate: 'entry-wait', priority: 1, hypothesis: 'h', gateEvidenceN: 0 }, outcome10: out(1, true) })])
+    expect(b.map(x => x.key)).toEqual(['shadow'])
+  })
 })
 
 describe('capClassBreakdown', () => {
