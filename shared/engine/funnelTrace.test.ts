@@ -208,6 +208,28 @@ describe('funnelTraceRecorder', () => {
     expect(built(r).nearMisses).toEqual([])
   })
 
+  it('rows() hands back the WHOLE map, keyed as build() keys it, and a copy', () => {
+    // The wildcard lane (Stage 3d) is the first thing in this engine that reads
+    // the record to make a decision, and "blocked by exactly one gate" is a
+    // question about a NAME across both sides — so it needs the map, not a key.
+    const r = funnelTraceRecorder()
+    r.record('aaa', 'dead-zone-core', { side: 'long', core: 12 })
+    r.record('BBB', 'expected-move', { side: 'short' })
+    r.record('ccc', 'no-candles')
+    expect(Object.keys(r.rows()).sort()).toEqual(['AAA:long', 'BBB:short', 'CCC'])
+    expect(r.rows()['AAA:long']).toMatchObject({ gate: 'dead-zone-core', side: 'long', core: 12 })
+    // …and it is a COPY: a caller cannot reach in and rewrite a verdict
+    const snapshot = r.rows()
+    snapshot['AAA:long'].gate = 'called-full'
+    expect(r.gateOf('AAA', 'long')).toBe('dead-zone-core')
+    // the keys are exactly what build() will write, so the two can never disagree
+    expect(Object.keys(r.rows()).sort()).toEqual(Object.keys(built(r).rows))
+  })
+
+  it('a stubbed recorder holds no rows — so nothing downstream can select from a record that does not exist', () => {
+    expect(noopFunnelTraceRecorder().rows()).toEqual({})
+  })
+
   it('the called-* family — including the split zero-size codes — is the set a publication is terminal against', () => {
     expect([...PUBLISHED_GATES].sort()).toEqual([
       'called-below-base',
@@ -216,6 +238,10 @@ describe('funnelTraceRecorder', () => {
       'called-observation',
       'called-shadow',
       'called-watch',
+      // the experiment slot's publication (Stage 3d) — the reader gets this row,
+      // at a quarter of the rung, and `WILDCARD_INELIGIBLE_GATES` is built from
+      // this very set so the slot can never re-offer a name it has already taken
+      'called-wildcard',
       'route-blocked',
     ])
   })

@@ -10,7 +10,9 @@ import {
   MISS_FETCH_BUDGET,
   MISS_HORIZON,
   MISS_LEDGER_DAYS_MAX,
+  DOUBLE_BOOKED_GATES,
   MISS_SKIP_GATES,
+  accrueCausalOutcome,
   accrueMissDay,
   accrueMissEvent,
   accrueUnchecked,
@@ -479,5 +481,104 @@ describe('regretDisabled — the parity seam', () => {
         vi.unstubAllEnvs()
       }
     }
+  })
+})
+
+// THE CAUSAL COLUMN (Stage 3d) — the one thing in this ledger that is not an
+// upper bound. Everything else here measures what a REFUSED name went on to do
+// with no position and no stop; this measures what happened to a reader who was
+// actually in it, at a quarter of the rung, with the stop the engine published.
+describe('accrueCausalOutcome — a graded wildcard charged to the gate it overrode', () => {
+  const ev = (over: Partial<Parameters<typeof accrueCausalOutcome>[1]> = {}) => ({
+    date: '2026-08-14',
+    sym: 'ACME',
+    side: 'long' as const,
+    excessPct: 6.2,
+    gate: 'dead-zone-core' as GateCode,
+    hit: true,
+    ...over,
+  })
+
+  it('a win books a sided COST — the gate refused a trade that then paid, with a stop', () => {
+    const l = emptyMissLedger()
+    accrueCausalOutcome(l, ev())
+    const g = l.gates['dead-zone-core']!
+    expect(g.causal).toMatchObject({ n: 1, hits: 1 })
+    expect(g.sidedCost).toBe(1)
+    expect(g.sidedSaved ?? 0).toBe(0)
+  })
+
+  it('a loss books a sided SAVE — both directions, or the slot could only ever argue one way', () => {
+    const l = emptyMissLedger()
+    accrueCausalOutcome(l, ev({ hit: false, excessPct: -4.1 }))
+    const g = l.gates['dead-zone-core']!
+    expect(g.causal).toMatchObject({ n: 1, hits: 0 })
+    expect(g.sidedSaved).toBe(1)
+    expect(g.sidedCost ?? 0).toBe(0)
+  })
+
+  it('leaves the STOPLESS columns alone — two measurements, taken two different ways', () => {
+    const l = emptyMissLedger()
+    // a stopless miss first, so the columns start non-empty and a leak would show
+    accrueMissEvent(l, { date: '2026-08-01', sym: 'OTHER', side: 'long', excessPct: 9, gate: 'dead-zone-core' })
+    const before = { cost: l.gates['dead-zone-core']!.cost, sum: l.gates['dead-zone-core']!.costExcessSum, saved: l.gates['dead-zone-core']!.saved }
+    accrueCausalOutcome(l, ev())
+    const g = l.gates['dead-zone-core']!
+    expect(g.cost).toBe(before.cost)
+    expect(g.costExcessSum).toBe(before.sum)
+    expect(g.saved).toBe(before.saved)
+    // …and the consequence, stated rather than hidden: the sided count may now
+    // exceed the stopless one, which IS the causal column showing through
+    expect(g.sidedCost).toBe(2)
+  })
+
+  it('TAGS every example, and bounds them exactly as the miss examples are bounded', () => {
+    const l = emptyMissLedger()
+    for (let i = 0; i < MISS_EXAMPLES_PER_GATE + 3; i++) accrueCausalOutcome(l, ev({ sym: `W${i}` }))
+    const g = l.gates['dead-zone-core']!
+    expect(g.causal!.n).toBe(MISS_EXAMPLES_PER_GATE + 3) // the COUNT is the accounting
+    expect(g.causal!.examples).toHaveLength(MISS_EXAMPLES_PER_GATE) // …the tail is for a human
+    expect(g.causal!.examples.every(x => x.wildcard === true)).toBe(true)
+    expect(g.causal!.examples.at(-1)!.sym).toBe(`W${MISS_EXAMPLES_PER_GATE + 2}`) // newest wins
+  })
+
+  it('mints a gate the ledger has never heard of — the slot can be the first thing to charge one', () => {
+    const l = emptyMissLedger()
+    accrueCausalOutcome(l, ev({ gate: 'entry-chase' }))
+    expect(l.gates['entry-chase']!.causal).toMatchObject({ n: 1, hits: 1 })
+    expect(l.gates['entry-chase']!.unchecked).toBe(0)
+  })
+
+  it('reaches gateAttribution — so a causal outcome argues on the day it grades, with no maturation lag', () => {
+    const l = emptyMissLedger()
+    accrueCausalOutcome(l, ev())
+    accrueCausalOutcome(l, ev({ hit: false, excessPct: -7 }))
+    const a = gateAttribution(l).find(x => x.gate === 'dead-zone-core')!
+    expect(a).toMatchObject({ cost: 1, saved: 1, n: 2 })
+  })
+
+  it('a wildcard can never be charged to a DOUBLE-BOOKED gate — those are publications, and the lane refuses them', () => {
+    // Not an assertion about this function, which will book anywhere it is told,
+    // but about the pair of sets that make it impossible upstream: every
+    // double-booked gate is a `called-*` code, and every `called-*` code is
+    // ineligible for selection (wildcardLane.ts builds its exclusion from
+    // PUBLISHED_GATES).
+    for (const g of DOUBLE_BOOKED_GATES) expect(g.startsWith('called-')).toBe(true)
+  })
+
+  it('the summary carries the causal pair only when there is one — a gate no experiment touched says nothing', () => {
+    const l = emptyMissLedger()
+    accrueMissEvent(l, { date: '2026-08-01', sym: 'OTHER', side: 'long', excessPct: 9, gate: 'expected-move' })
+    expect(missLedgerSummary(l, 5)!.topGates.find(g => g.gate === 'expected-move')!.causal).toBeUndefined()
+    accrueCausalOutcome(l, ev({ gate: 'expected-move' }))
+    accrueCausalOutcome(l, ev({ gate: 'expected-move', hit: false, excessPct: -8 }))
+    expect(missLedgerSummary(l, 5)!.topGates.find(g => g.gate === 'expected-move')!.causal).toEqual({ n: 2, hits: 1 })
+  })
+})
+
+describe('MISS_SKIP_GATES — the wildcard is not miss-checkable', () => {
+  it('refuses to charge a stopless copy of the fortnight it already measured for real', () => {
+    expect(missCheckable('called-wildcard')).toBe(false)
+    expect(MISS_SKIP_GATES.has('called-wildcard')).toBe(true)
   })
 })

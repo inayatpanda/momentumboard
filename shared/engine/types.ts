@@ -150,6 +150,21 @@ export interface EngineCall {
  *                       in the Task-2 fix wave, for the same reason: it is on the
  *                       board because the side was empty, not because a grade
  *                       sized it to zero
+ *   called-wildcard ... the EXPERIMENT SLOT published it (Stage 3d): a row a gate
+ *                       had already refused, taken at quarter size on purpose so
+ *                       the gate can be charged a REAL outcome instead of another
+ *                       stopless upper bound. ADDED because none of the size codes
+ *                       fit and pooling it with one of them would have been a lie
+ *                       in both directions: called-half names a TIER the row never
+ *                       earned (its `sizeCap` is a lane's ceiling, and the three
+ *                       existing size codes name the conviction/evidence tier while
+ *                       a cap rides `detail` — the velocity door's precedent), and
+ *                       called-watch names a zero-size row when this one carries a
+ *                       quarter of the rung in real money. The row's own trace
+ *                       `priorGate` keeps the gate it overrode, which is the whole
+ *                       record. Miss-skipped (missLedger.ts): its outcome reaches
+ *                       that gate as CAUSAL evidence instead, and one event may
+ *                       never move two levers
  *
  * composeCall owns eight of these (no-data … entry-reversal); the rest are the
  * engine's own, wired in Stage 3a Task 2. Additions are allowed when a code path
@@ -179,6 +194,7 @@ export type GateCode =
   | 'called-watch'
   | 'called-below-base'
   | 'called-observation'
+  | 'called-wildcard'
 
 /** A refusal that says which gate refused. `side` is the direction the core was
  * arguing for when it died, and is null only when there was no core read to have
@@ -292,6 +308,40 @@ export interface Prediction extends GradedCall {
   // trade, no "use engine levels", no agreement/conflict read, never counted as
   // one of the day's live calls.
   observation?: true
+  /** THE EXPERIMENT SLOT'S RECORD (Stage 3d, shared/engine/wildcardLane.ts).
+   *
+   * Present ONLY on a wildcard row: a trade a gate had already refused, published
+   * at quarter size so the gate can be charged a real, stopped, sided outcome
+   * instead of another stopless upper bound. It is the row's separable tag (spec
+   * §4.1) beside `catalyst.kind === 'wildcard'`, and it is the ONE thing the
+   * causal write-back reads.
+   *
+   * `gate` is stored AT PUBLICATION and never re-derived. The trace row for this
+   * (name, side) is overwritten by the publication itself — `called-wildcard`
+   * over whatever refused it — so ten sessions later there is nothing left in the
+   * trace to re-derive it FROM, and a grading pass that guessed would charge the
+   * causal outcome to the wrong gate for ever. Stored, once, by the run that made
+   * the choice.
+   *
+   * Purely a record on the board's side: nothing about sizing, grading or
+   * calibration reads it. The ladder and the factor-IC exclusions key off the
+   * catalyst kind (engine.ts), not this. */
+  wildcard?: {
+    /** The gate under test — the code this row's own trace row carried before the
+     * publication overwrote it. The causal outcome is charged HERE. */
+    gate: GateCode
+    /** Which rung of the ladder chose it (wildcardLane.ts): 1 exactly-one-gate,
+     * 2 an unmeasured (cohort, side, regime) rung, 3 a catalyst nominee that just
+     * missed the dead zone. */
+    priority: 1 | 2 | 3
+    /** The sentence, template-built from numbers at selection (house rule — it
+     * reaches the paper). Also carried as the catalyst's `reason`. */
+    hypothesis: string
+    /** `sidedCost + sidedSaved + unchecked` for that gate on the day of the
+     * choice — the evidence gap the slot was spent to close, frozen so the panel
+     * and the paper quote the number the decision was actually made on. */
+    gateEvidenceN: number
+  }
   worldTape?: { tone: string; mult: number } // overnight world-tape nudge applied to this call's conviction (bounded ±10/−15%)
   overlay?: { flag: 'boost' | 'caution' | 'veto'; reason: string }
   catalyst?: { kind: string; reason: string } // a market-moving news/event that put this name in play (catalyst.ts)

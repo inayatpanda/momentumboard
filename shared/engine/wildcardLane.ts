@@ -51,6 +51,33 @@ import { round1, type GateCode } from './types'
 // choice stands on is an argument, so a test can hand it a day and a replay can
 // hand it a thousand.
 
+/** THE PARITY SEAM (Stage 3d Task 2), mirroring `FUNNEL_TRACE=off`
+ * (funnelTrace.ts), `REGRET=off` (missLedger.ts) and `GATES=off` (gateState.ts)
+ * down to the guard on `process`.
+ *
+ * This lane is the FIRST thing in the engine that reads the funnel's record to
+ * make a decision, and the first that publishes a row on the strength of it — so
+ * the two parity claims already banked need a switch of their own to stay claims
+ * about what they say they are. The 3a walk proves the board is byte-identical
+ * with the RECORDER stubbed out; the 3b walk proves the same with the REGRET
+ * machinery off. Both would now be measuring this lane instead, exactly as 3c's
+ * gate feedback had to be switched off inside them for the same reason.
+ *
+ * With `WILDCARD=off` the engine behaves precisely as the pre-3d tree did: no
+ * selection, no experiment row, no causal write-back — because there is nothing
+ * to write back about. Nothing in production sets it.
+ *
+ * Opt-in and read per call rather than cached at import, for the same reason
+ * `regretDisabled` is: a run that sets it after the module loaded must still be
+ * honoured, and nothing here is hot. */
+export function wildcardDisabled(): boolean {
+  try {
+    return typeof process !== 'undefined' && process.env?.WILDCARD === 'off'
+  } catch {
+    return false
+  }
+}
+
 /** The quarter-size cap, owned here the way `VELOCITY_DOOR_CAP` is owned by
  * velocityLane.ts. It travels through `publishCall`'s EXISTING `sizeCap`
  * parameter (engine.ts) where `sizedFraction = Math.min(tierFraction, sizeCap)` —

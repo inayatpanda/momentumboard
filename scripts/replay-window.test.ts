@@ -40,6 +40,7 @@ import {
   GATE_STATE_KEY_MIRROR,
   MISS_SKIP_GATE_MIRROR,
   POSTMORTEM_CLASS_MIRROR,
+  WILDCARD_CATALYST_KIND_MIRROR,
   expectedCalledGates,
   missAccrualViolations,
   missCandidateCount,
@@ -1759,6 +1760,13 @@ describe('the walk carries the trace — and the board never noticed', () => {
       // point of 3c and it has its own switch, so the parity claim is made with
       // that switch off and remains a claim about the RECORDER.
       vi.stubEnv('GATES', 'off')
+      // …and the WILDCARD SLOT off in both arms, for the identical reason one
+      // stage later (Stage 3d, wildcardLane.ts). That lane READS the trace to
+      // choose a row and then publishes it, so with the recorder stubbed it
+      // cannot choose at all — and this comparison would stop being about the
+      // recorder's side effects and become a comparison of two different boards.
+      // It has its own switch precisely so this claim can stay what it says it is.
+      vi.stubEnv('WILDCARD', 'off')
       const fresh = (await import('./replay-window')) as typeof import('./replay-window')
       // 1) the recorder live — the walk asserts the invariant itself, day by day,
       //    and throws if it is ever false. Reaching the next line IS that assertion.
@@ -1850,6 +1858,14 @@ describe('MISS_SKIP_GATE_MIRROR / POSTMORTEM_CLASS_MIRROR — the drift guards',
     expect(src).toContain(`export const MISS_LEDGER_KEY = '${MISS_LEDGER_KEY_MIRROR}'`)
     expect(src).toContain(`export const MISS_LEDGER_DAYS_MAX = ${MISS_LEDGER_DAYS_MAX_MIRROR}`)
   })
+  it('carries the catalyst kind the wildcard slot stamps — two readings in the harness key off it', () => {
+    const src = readFileSync(join(process.cwd(), 'shared', 'engine', 'catalyst.ts'), 'utf8')
+    expect(src).toContain(`export const WILDCARD_CATALYST_KIND = '${WILDCARD_CATALYST_KIND_MIRROR}'`)
+    // …and the two readings really do use it: the called-* class of a wildcard
+    // row, and the post-mortem rule that lets a WINNING one carry an explanation
+    expect(expectedCalledGates(row({ catalyst: WILDCARD_CATALYST_KIND_MIRROR }))).toEqual(['called-wildcard'])
+  })
+
   it('carries the gate-state key the artefact reads the moved gates out of', () => {
     const src = readFileSync(join(process.cwd(), 'shared', 'engine', 'gateState.ts'), 'utf8')
     expect(src).toContain(`export const GATE_STATE_KEY = '${GATE_STATE_KEY_MIRROR}'`)
@@ -1858,7 +1874,11 @@ describe('MISS_SKIP_GATE_MIRROR / POSTMORTEM_CLASS_MIRROR — the drift guards',
     const src = readFileSync(join(process.cwd(), 'shared', 'engine', 'postMortem.ts'), 'utf8')
     const line = src.slice(src.indexOf('export const POSTMORTEM_CLASSES'))
     const declared = [...line.slice(0, line.indexOf('\n')).matchAll(/'([a-z-]+)'/g)].map(m => m[1])
-    expect(declared.length).toBe(5)
+    // five in the LOSER precedence, plus `won` — the wildcard slot's win branch
+    // (Stage 3d), which sits outside the precedence and is assigned by
+    // `classifyOutcome` alone. The order still matters for the first five.
+    expect(declared.length).toBe(6)
+    expect(declared.slice(0, 5)).toEqual(['stopped', 'thesis-break', 'market-drag', 'news-reversal', 'adverse-move'])
     expect([...POSTMORTEM_CLASS_MIRROR]).toEqual(declared) // ORDER too — it is the precedence
   })
 })
@@ -2093,6 +2113,12 @@ describe('the walk measures regret — and the board still never noticed', () =>
       // armed would turn a claim about the regret machinery into a claim about
       // the gates. (`gateStateFinal` in the artefact is null under this flag.)
       vi.stubEnv('GATES', 'off')
+      // …and the WILDCARD SLOT off in both arms, one stage further on. `REGRET=off`
+      // silences that lane too (an experiment whose causal write-back is dead has
+      // no readout), so with it armed in one arm only, run 1 could publish a row
+      // run 2 never had — and this comparison is about the regret machinery's side
+      // effects, not about a lane that lives downstream of it.
+      vi.stubEnv('WILDCARD', 'off')
       const fresh = (await import('./replay-window')) as typeof import('./replay-window')
       const runOnce = async (out: string) => {
         process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', walkSyms.join(','), '--out', out]

@@ -23,8 +23,31 @@ export const DIP_CATALYST_KIND = 'dip'
 // factor stack.
 export const VELOCITY_CATALYST_KIND = 'velocity' as const
 
+// …and for the EXPERIMENT SLOT (wildcardLane.ts): the one row a day the engine
+// publishes BECAUSE a gate refused it, at quarter size, to buy the causal
+// evidence a refusal can never produce. It is not a lane in the dip/velocity
+// sense — nothing about it is a screen — but it is a lane in every sense the two
+// behaviours below care about, and in one more:
+//   3. the RISK LADDER's rung counters skip it (engine.ts). A wildcard is the
+//      engine deliberately overriding its own no; letting that outcome earn or
+//      lose the reader's rung would let an experiment set the size of every
+//      ordinary call.
+// The kind is also the row's own separable tag (spec §4.1: "tagged `wildcard` so
+// its record stays separable"), and the discriminator the ladder checks — see
+// engine.ts, which tests THIS literal rather than the whole family, because a dip
+// and a velocity row DO move the rung and must go on doing so.
+export const WILDCARD_CATALYST_KIND = 'wildcard' as const
+
 export interface CatalystTag {
-  kind: 'news' | 'event' | 'ipo' | 'listing' | 'earnings' | typeof DIP_CATALYST_KIND | typeof VELOCITY_CATALYST_KIND
+  kind:
+    | 'news'
+    | 'event'
+    | 'ipo'
+    | 'listing'
+    | 'earnings'
+    | typeof DIP_CATALYST_KIND
+    | typeof VELOCITY_CATALYST_KIND
+    | typeof WILDCARD_CATALYST_KIND
   side: 'long' | 'short' | null // null = "in play", no clean direction — relaxes the gate but casts no vote
   reason: string
   strength: number // 0..100 — how direct/material the catalyst is
@@ -42,7 +65,14 @@ export interface CatalystTag {
 // Both used to test the dip literal, which quietly meant "every future lane
 // starts out mis-learning until someone remembers this file". Membership is the
 // contract now: add a lane's kind here and both behaviours follow it for free.
-export const LANE_CATALYST_KINDS: ReadonlySet<string> = new Set([DIP_CATALYST_KIND, VELOCITY_CATALYST_KIND])
+//
+// The WILDCARD joins on the same two arguments, one word different: its
+// composite is the gate-free CORE read carried verbatim off the near-miss row
+// (engine.ts), so no factor cast a vote on the row that published and no
+// worldMult was ever applied to it. Booking its outcome into factor IC would
+// train the stack on a number it did not produce, and printing a world-tape
+// multiplier beside it would advertise an adjustment that never happened.
+export const LANE_CATALYST_KINDS: ReadonlySet<string> = new Set([DIP_CATALYST_KIND, VELOCITY_CATALYST_KIND, WILDCARD_CATALYST_KIND])
 
 // The gates composeCall applies, parameterised by the reader's risk appetite.
 // The dead zone and calibration grading still apply, so "aggressive" widens the

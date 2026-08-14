@@ -31,6 +31,13 @@ export function EnginePanel() {
   // ledger exists to end (missLedger.ts). Null until a trace day matures, and
   // then the pane says nothing rather than printing a confident zero.
   const worstGate = missLedger?.topGates[0] ?? null
+  // …and the one kind of evidence in that ledger that is NOT an upper bound: the
+  // gates the wildcard slot has actually overridden, with a real stop and real
+  // size (Stage 3d). Shown as its own line rather than folded into the gate line,
+  // because "7 refusals that ran +5pp" and "2 trades we took and 1 paid" are two
+  // different claims and the second is the stronger one. Absent until an
+  // experiment has graded — which is most of the first month, by design.
+  const causalGates = (missLedger?.topGates ?? []).filter(g => g.causal)
   const lastRungChange = riskState?.history.at(-1)
   const brier = scorecard?.brierTail ?? []
   const brierTrend =
@@ -133,6 +140,18 @@ export function EnginePanel() {
               </span>
             </div>
           )}
+          {/* THE CAUSAL COLUMN (Stage 3d): what the experiment slot has taken and
+              how it went. Real outcomes with real stops, so unlike the line above
+              these are not upper bounds on anything — which is the whole reason
+              the slot exists. */}
+          {causalGates.map(g => (
+            <div key={`causal-${g.gate}`} className="perf-row" title="Quarter-size experiments: rows this gate refused and the engine took anyway, with a stop. Real outcomes, not upper bounds.">
+              <span>🃏 Wildcard vs {g.gate}</span>
+              <span>
+                {g.causal!.hits}/{g.causal!.n} paid
+              </span>
+            </div>
+          ))}
           {/* WHAT THAT EVIDENCE MOVED. One line per notch, and one for a gate
               that earned a notch and could not have it — the machinery is built
               and the evidence moves it on its own clock, so a held gate says so

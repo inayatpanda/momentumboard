@@ -123,6 +123,12 @@ export const PUBLISHED_GATES: ReadonlySet<GateCode> = new Set<GateCode>([
   'called-watch',
   'called-below-base',
   'called-observation',
+  // …and the experiment slot's own publication (Stage 3d). It joins for the
+  // ordinary reason — the reader got this row, at a quarter of the rung, in real
+  // money — and for one that matters more downstream: `WILDCARD_INELIGIBLE_GATES`
+  // (wildcardLane.ts) is built from this set, so a name the slot has already
+  // taken can never be offered to the slot again as a "blocked trade".
+  'called-wildcard',
   'route-blocked',
 ])
 
@@ -153,6 +159,20 @@ export interface FunnelTraceRecorder {
   /** Does this NAME hold a row on any key — either side, or side-free? The
    * not-candidate count asks exactly this and must never ask about one key. */
   hasRow(sym: string): boolean
+  /** EVERY row standing right now, keyed the way `build` will key them — a COPY,
+   * for the same reason `rowAt` hands back one.
+   *
+   * Added for the wildcard lane (Stage 3d), which is the first thing in this
+   * engine that READS the record to make a decision, and needs the whole map
+   * rather than one key: "blocked by exactly one gate" is a question about a NAME
+   * across both sides. It deliberately does not go through `build`, which is the
+   * end-of-run serialisation and takes the day's near misses and empty sides —
+   * calling that early to read a map would make the trace's one write depend on
+   * an earlier, throwaway one.
+   *
+   * The no-op recorder answers `{}`, which is honest and load-bearing: with
+   * `FUNNEL_TRACE=off` there is no record, so nothing can be selected from it. */
+  rows(): Record<string, FunnelTraceRow>
   size(): number
   build(input: { date: string; gates: Gates; nearMisses: FunnelNearMiss[]; emptySides: FunnelTrace['emptySides'] }): FunnelTrace
 }
@@ -210,6 +230,7 @@ export function noopFunnelTraceRecorder(): FunnelTraceRecorder {
     rowAt: () => null,
     gateOf: () => null,
     hasRow: () => false,
+    rows: () => ({}),
     size: () => 0,
     // `disabled: true` is the tombstone (final 3a review): an empty day from a
     // stubbed recorder must never read as "the engine refused nothing".
@@ -248,6 +269,11 @@ export function funnelTraceRecorder(): FunnelTraceRecorder {
     hasRow(sym) {
       const bare = sym.toUpperCase()
       return rows.has(bare) || rows.has(`${bare}:long`) || rows.has(`${bare}:short`)
+    },
+    rows() {
+      // one level of copying, exactly as `rowAt` does: a caller re-reading the
+      // map cannot reach in and re-write a verdict
+      return Object.fromEntries([...rows.entries()].map(([k, v]) => [k, { ...v }]))
     },
     size() {
       return rows.size

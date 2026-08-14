@@ -1048,14 +1048,14 @@ export const GATE_CODE_MIRROR: ReadonlySet<string> = new Set([
   'dead-zone-core', 'dead-zone-context', 'capacity-data', 'expected-move',
   'entry-wait', 'entry-chase', 'entry-reversal', 'evidence-fail', 'dip-refused',
   'grade-watchonly', 'route-blocked', 'diversity', 'slot-cut', 'shadow-capped',
-  'called-full', 'called-half', 'called-shadow', 'called-watch', 'called-below-base', 'called-observation',
+  'called-full', 'called-half', 'called-shadow', 'called-watch', 'called-below-base', 'called-observation', 'called-wildcard',
 ])
 
 /** THE READER GOT THIS ROW. Mirrors `PUBLISHED_GATES`: the size decisions, the
  * promotion that fills an empty side, and the route-blocked shadow that still
  * reaches the ledger. */
 const PUBLISHED_GATE_CODES: ReadonlySet<string> = new Set([
-  'called-full', 'called-half', 'called-shadow', 'called-watch', 'called-below-base', 'called-observation', 'route-blocked',
+  'called-full', 'called-half', 'called-shadow', 'called-watch', 'called-below-base', 'called-observation', 'called-wildcard', 'route-blocked',
 ])
 
 /** The gates that fire BEFORE a side exists and therefore key on the bare name:
@@ -1071,8 +1071,15 @@ const SIDE_FREE_GATES: ReadonlySet<string> = new Set(['trimmed', 'no-candles', '
  * them (the engine records that distinction by id, deliberately — "the ledger must
  * not grow a field that means why we hid it"). Both are one size class: zero,
  * ledger-only. */
-export function expectedCalledGates(r: Pick<Row, 'shadow' | 'watchOnly' | 'belowBase' | 'observation' | 'grade' | 'contract'>): string[] {
+export function expectedCalledGates(r: Pick<Row, 'shadow' | 'watchOnly' | 'belowBase' | 'observation' | 'grade' | 'contract' | 'catalyst'>): string[] {
   if (r.shadow) return ['called-shadow', 'route-blocked']
+  // The EXPERIMENT SLOT (Stage 3d) — read off the row's own catalyst tag, which
+  // is the same discriminator the engine's ladder and factor-IC exclusions use.
+  // It sits above the size classes because its code names WHY the row published
+  // rather than what size it earned: the row is on the board at a quarter of the
+  // rung precisely because a gate refused it, and none of full/half/watch can say
+  // that. Below `shadow` because a wildcard that shadowed was never seated.
+  if (r.catalyst === WILDCARD_CATALYST_KIND_MIRROR) return ['called-wildcard']
   if (r.observation) return ['called-observation']
   if (r.watchOnly) return r.belowBase ? ['called-below-base'] : ['called-watch']
   // sized: full is A/B ON the core-data contract; everything else sized is half
@@ -1194,6 +1201,11 @@ export function traceViolations(day: { date: string; board: Row[]; ledger: Row[]
 // are drift-guarded in replay-window.test.ts against the modules' own source,
 // exactly like GATE_CODE_MIRROR.
 
+/** catalyst.ts `WILDCARD_CATALYST_KIND` — the tag the experiment slot stamps on
+ * its one row a day (Stage 3d). Two readings in this file key off it: the
+ * called-* class a wildcard row must carry, and the post-mortem rule that makes
+ * it the only population examined on a WIN. Drift-guarded in the suite. */
+export const WILDCARD_CATALYST_KIND_MIRROR = 'wildcard'
 /** missLedger.ts `MISS_LEDGER_KEY`. */
 export const MISS_LEDGER_KEY_MIRROR = 'miss-ledger'
 /** gateState.ts `GATE_STATE_KEY`. */
@@ -1204,12 +1216,17 @@ export const GATE_STATE_KEY_MIRROR = 'gate-state'
 export const MISS_EXCESS_MIN_MIRROR = 5
 /** missLedger.ts `MISS_SKIP_GATES` — the rows a miss may never be charged for:
  * the two SIZED publications (the reader got the row and a size; it grades in the
- * ledger already) and the three shadow shapes (an audition the engine
- * deliberately withheld, which also grades already, with a real published stop). */
-export const MISS_SKIP_GATE_MIRROR: ReadonlySet<string> = new Set(['called-full', 'called-half', 'called-shadow', 'route-blocked', 'shadow-capped'])
+ * ledger already), the three shadow shapes (an audition the engine deliberately
+ * withheld, which also grades already, with a real published stop) — and the
+ * WILDCARD (Stage 3d), whose real, stopped outcome is charged to the gate it
+ * overrode as CAUSAL evidence, so a stopless copy of the same fortnight must
+ * never be charged beside it. */
+export const MISS_SKIP_GATE_MIRROR: ReadonlySet<string> = new Set(['called-full', 'called-half', 'called-shadow', 'called-wildcard', 'route-blocked', 'shadow-capped'])
 /** postMortem.ts `POSTMORTEM_CLASSES`, IN PRECEDENCE ORDER — the order is the
- * definition, so the mirror is an array and the drift guard compares it ordered. */
-export const POSTMORTEM_CLASS_MIRROR: readonly string[] = ['stopped', 'thesis-break', 'market-drag', 'news-reversal', 'adverse-move']
+ * definition, so the mirror is an array and the drift guard compares it ordered.
+ * `won` is the sixth and is NOT part of that precedence: it is the wildcard's
+ * win branch (Stage 3d), assigned by `classifyOutcome` and by nothing else. */
+export const POSTMORTEM_CLASS_MIRROR: readonly string[] = ['stopped', 'thesis-break', 'market-drag', 'news-reversal', 'adverse-move', 'won']
 /** missLedger.ts `MISS_LEDGER_DAYS_MAX` — the retained day window. The ONE way a
  * measured day may legally vanish between two passes is `recordMissDay` pruning
  * the oldest once this many are held. */
@@ -1416,12 +1433,18 @@ export function postMortemViolations(days: { date: string; board: Row[]; ledger:
         if (pm) v.push(`${key}: carries a post-mortem although the engine never graded it`)
         continue
       }
-      if (r.storedOutcome10.hit) {
+      // …with ONE population examined either way: the wildcard slot (Stage 3d),
+      // which is post-mortemed on every closure because an experiment whose
+      // successes go unexamined is not an experiment. So a winning wildcard MUST
+      // carry one, a winning anything-else must not, and both then fall through
+      // to the same shape checks below.
+      const experiment = r.catalyst === WILDCARD_CATALYST_KIND_MIRROR
+      if (r.storedOutcome10.hit && !experiment) {
         if (pm) v.push(`${key}: won and still carries a post-mortem — winners get nothing`)
         continue
       }
       if (!pm) {
-        v.push(`${key}: the engine graded it a loser and it explains nothing`)
+        v.push(`${key}: the engine graded it ${r.storedOutcome10.hit ? 'a winning experiment' : 'a loser'} and it explains nothing`)
         continue
       }
       if (!POSTMORTEM_CLASS_MIRROR.includes(pm.cls)) v.push(`${key}: '${pm.cls}' is not a declared post-mortem class`)

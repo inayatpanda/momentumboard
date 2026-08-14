@@ -110,8 +110,14 @@ export function regretDisabled(): boolean {
  *    the reader — charging the cap would blame a sampling budget for a decision
  *    made elsewhere. Until the 3a `priorGate` rider lands, this population is
  *    measured by NOTHING; a 3c reader must not assume grading covers it
- *    (3b final review, Important 3). */
-export const MISS_SKIP_GATES: ReadonlySet<GateCode> = new Set<GateCode>(['called-full', 'called-half', 'called-shadow', 'route-blocked', 'shadow-capped'])
+ *    (3b final review, Important 3).
+ *  - `called-wildcard` — the EXPERIMENT SLOT took this exact row (Stage 3d). It
+ *    is sized, it is graded, and ten sessions later its REAL outcome is charged
+ *    to the gate that had refused it, as `causal` evidence and as one sided
+ *    outcome (see `accrueCausalOutcome`). Miss-checking it as well would charge
+ *    that same gate a second, stopless copy of the same fortnight — one event,
+ *    two levers, and the better measurement drowned by the worse one. */
+export const MISS_SKIP_GATES: ReadonlySet<GateCode> = new Set<GateCode>(['called-full', 'called-half', 'called-shadow', 'called-wildcard', 'route-blocked', 'shadow-capped'])
 
 export const missCheckable = (gate: GateCode): boolean => !MISS_SKIP_GATES.has(gate)
 
@@ -129,6 +135,44 @@ export interface MissExample {
    * save for the same gate, so 3c must compute sided-only ratios by excluding
    * these (Task-1 review, Important 2). */
   bare?: boolean
+  /** THE TAG (spec §4.1: "tagged `wildcard` so its record stays separable"). Set
+   * on the examples inside `causal` and nowhere else, so a human reading a gate's
+   * examples back can tell the one row the engine actually TOOK from the dozens
+   * it merely measured. */
+  wildcard?: true
+  /** Did the reader's quarter-size position come good? Present only on a causal
+   * example, because it is the only kind that HAD a position: `hit` is
+   * gradePrediction's own verdict, over the same ten sessions, with the published
+   * stop walked. A miss example has no stop and therefore no such answer. */
+  hit?: boolean
+}
+
+/** THE CAUSAL COLUMN — the only evidence in this ledger that is not an upper
+ * bound (Stage 3d).
+ *
+ * Everything else here measures what a refused name went on to do WITHOUT a
+ * position: no stop was ever published for it, so the excess is what was
+ * available rather than what would have been got (rule 2 of the header). The
+ * wildcard slot buys the other kind, one row at a time: it takes a trade a gate
+ * refused, at a quarter of the rung, with a real stop, and ten sessions later
+ * this is where that outcome lands.
+ *
+ * ADDITIVE and OPTIONAL. Absent means "no experiment has ever graded against this
+ * gate", which is the true state of every gate on the day this ships and must
+ * never read as "the experiments all failed".
+ *
+ * The counts are the accounting; `hits` is how many of them the reader would have
+ * WON. The pair is deliberately not reduced to a rate here — n is small by
+ * construction (one slot, ~weekly) and a "50%" printed off two rows is the kind
+ * of number that gets believed. */
+export interface MissCausal {
+  /** Graded wildcard outcomes charged to this gate. */
+  n: number
+  /** …of which the reader's position hit. A gate whose refusals keep winning
+   * when overridden is the spec's "strongest trigger" for loosening it. */
+  hits: number
+  /** Newest winning, bounded exactly as the miss examples are. */
+  examples: MissExample[]
 }
 
 export interface MissGateStat {
@@ -160,6 +204,9 @@ export interface MissGateStat {
    * from a gate that blocked nothing worth having (Task-1 review, Important 1). */
   unchecked: number
   examples: MissExample[]
+  /** THE EXPERIMENT'S OWN RECORD against this gate (Stage 3d) — see MissCausal.
+   * Written only by `accrueCausalOutcome`, never by the miss walk. */
+  causal?: MissCausal
 }
 
 export interface MissDay {
@@ -294,6 +341,44 @@ export function accrueMissEvent(ledger: MissLedger, ev: MissExample): 'cost' | '
   return kind
 }
 
+/** BOOKS ONE GRADED WILDCARD against the gate it overrode (Stage 3d).
+ *
+ * The one place causal evidence enters this ledger, and it does two things at
+ * once, deliberately:
+ *
+ *  1. `causal` — the separable record: n, hits, and a bounded tail of tagged
+ *     examples. Nothing else in the ledger can be read as causal, and nothing
+ *     here can be mistaken for the stopless columns beside it.
+ *  2. `sidedCost` / `sidedSaved` — the HYGIENIC counts `gateAttribution` reads
+ *     and the only numbers allowed to move a gate. A wildcard that HIT is a
+ *     sided cost: the gate refused a trade that then paid, with a stop, at a
+ *     size the reader carried. One that did not is a sided save. This is what
+ *     "the strongest trigger for §4.3's bounded loosening" means mechanically —
+ *     a causal outcome reaches eligibility on the day it grades, with no
+ *     ten-session miss-maturation lag behind it.
+ *
+ * What it deliberately does NOT touch is `cost` / `saved` / `costExcessSum` /
+ * `savedExcessSum`. Those are the STOPLESS population and its mean excess: a
+ * ±5pp bar over a fortnight nobody was in. This outcome was measured at the hit
+ * bar with the published stop walked, so folding it in would corrupt
+ * `avgCostExcessPct` with a number computed a different way, and the summary line
+ * would quietly stop meaning one thing. The consequence is stated rather than
+ * hidden: `sidedCost` may exceed `cost` on a gate the slot has visited, and that
+ * inequality is the causal column showing through.
+ *
+ * A gate that has never been heard of is minted here exactly as `accrueUnchecked`
+ * mints one — the slot can perfectly well be the first thing that ever charged
+ * it. */
+export function accrueCausalOutcome(ledger: MissLedger, ev: MissExample & { hit: boolean }): void {
+  const g = (ledger.gates[ev.gate] ??= { cost: 0, costExcessSum: 0, saved: 0, savedExcessSum: 0, unchecked: 0, examples: [] })
+  const c = (g.causal ??= { n: 0, hits: 0, examples: [] })
+  c.n++
+  if (ev.hit) c.hits++
+  c.examples = [...c.examples, { ...ev, wildcard: true as const }].slice(-MISS_EXAMPLES_PER_GATE)
+  if (ev.hit) g.sidedCost = (g.sidedCost ?? 0) + 1
+  else g.sidedSaved = (g.sidedSaved ?? 0) + 1
+}
+
 /** An unpriced row still charges its gate's `unchecked` column — a gate that
  * was never measured must never read as a gate that cost nothing. */
 export function accrueUnchecked(ledger: MissLedger, gate: GateCode): void {
@@ -365,6 +450,12 @@ export interface MissGateLine {
    * numbers are already counted somewhere else". Absent on every other gate, so
    * the shape of an ordinary line never changed. */
   doubleBooked?: true
+  /** THE CAUSAL COLUMN (Stage 3d), when the experiment slot has ever graded
+   * against this gate: how many quarter-size overrides it has taken and how many
+   * of them the reader would have won. Absent otherwise — a gate no experiment
+   * has visited says nothing rather than printing a confident 0/0, and every
+   * ordinary line is byte-identical to what it always was. */
+  causal?: { n: number; hits: number }
 }
 
 /** THE ELIGIBILITY READ (Stage 3c, gateState.ts consumes it). Per gate: the
@@ -441,6 +532,10 @@ export function missLedgerSummary(raw: unknown, topN = 3): MissLedgerSummary | n
       unchecked: g.unchecked ?? 0,
       // …and whether this gate's numbers are already counted elsewhere
       ...(DOUBLE_BOOKED_GATES.has(gate) ? { doubleBooked: true as const } : {}),
+      // …and what the experiment slot has actually TAKEN against it (Stage 3d).
+      // Only when there is something to say: `n` of 0 is a gate no wildcard has
+      // ever tested, and a surface printing "0 causal" would read as a verdict.
+      ...(g.causal?.n ? { causal: { n: g.causal.n, hits: g.causal.hits ?? 0 } } : {}),
     }))
     // by cost, then by the size of what it cost, THEN by unchecked — so on a
     // day where every gate shows cost 0, the gate with 40 unpriced refusals

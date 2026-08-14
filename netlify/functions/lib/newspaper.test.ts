@@ -461,7 +461,12 @@ describe('the paper is told what it lost — the two accountability keys and whe
   })
 
   it('drops LAST: the smallest keys in the document are the last things the paper loses', () => {
-    expect(COMPOSE_DROP_ORDER.slice(-5)).toEqual(['previousEditions', 'missLedger', 'postMortems', 'gateNotes', 'gateMoves'])
+    // …and the day's EXPERIMENT (Stage 3d) sits between the two gate keys: it is
+    // reader money on a row the engine's own gates refused, so it outlives every
+    // ordinary key — but not `gateMoves`, because the wildcard ROW itself rides
+    // `engineBoard`, which is not droppable at all, and a gate notch has no such
+    // second carrier.
+    expect(COMPOSE_DROP_ORDER.slice(-6)).toEqual(['previousEditions', 'missLedger', 'postMortems', 'gateNotes', 'wildcard', 'gateMoves'])
     // and they are really in the order the compose pipe uses: with everything
     // droppable gone, these two are still standing
     const obj = {
@@ -480,6 +485,35 @@ describe('the paper is told what it lost — the two accountability keys and whe
     // the announcement outlives every other droppable key: a threshold the
     // engine moved on itself is the one thing a reader cannot learn elsewhere
     expect(parsed.gateMoves[0]).toContain('dead zone 25 → 22.5')
+  })
+
+  it('the day’s EXPERIMENT survives the drop, and the writer is told never to print it as a call', () => {
+    const wildcard = {
+      label: '🃏 Wildcard',
+      sym: 'GLW',
+      side: 'long',
+      entry: 44.1,
+      stop: 42.1,
+      riskPct: 0.25,
+      gate: 'expected-move',
+      hypothesis: 'expected-move has 0 priced outcomes and 0 unpriced in the miss ledger, none of them causal.',
+      warning: 'Experiments lose more often than the board does.',
+    }
+    const { json, dropped } = buildDataJson(
+      { engineBoard: 'B'.repeat(400), candidateReads: 'c'.repeat(400), previousEditions: 'p'.repeat(400), wildcard },
+      [...COMPOSE_DROP_ORDER],
+      900,
+    )
+    expect(dropped).toEqual(['candidateReads', 'previousEditions'])
+    expect(JSON.parse(json).wildcard).toEqual(wildcard)
+
+    const voice = SECTIONS.find(s => s.key === 'voice')!
+    expect(voice.brief).toContain('wildcard')
+    // the two non-negotiables: the hypothesis and the warning are QUOTED, and the
+    // row is never dressed up as the engine's best thought
+    expect(voice.brief).toMatch(/hypothesis.*VERBATIM/)
+    expect(voice.brief).toMatch(/warning.*VERBATIM/)
+    expect(voice.brief).toMatch(/never describe it as a call/)
   })
 
   it('the writer is TOLD about them, with the unchecked caveat attached — data with no instruction is the same silence', () => {

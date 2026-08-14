@@ -4,6 +4,7 @@ import { callLlm } from './lib/llm'
 import { composePrompt, parseComposed, buildNewspaperHtml, boardExportRows, constrainIdeasToBoard, validateNominations, mergeNominations, paperPostMortems, COMPOSE_DROP_ORDER, PAPER_POSTMORTEM_DAYS, type StoredNomination } from './lib/newspaper'
 import { missLedgerSummary, MISS_LEDGER_KEY } from '../../shared/engine/missLedger'
 import { gateAnnouncement, GATE_STATE_KEY } from '../../shared/engine/gateState'
+import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
 import { cachedQuote, cachedCandles, cachedCompanyName } from './lib/marketCache'
 import { regimeFromCandles } from '../../shared/setups'
 import type { AppConfig } from '../../shared/config'
@@ -215,6 +216,36 @@ export default async (req: Request) => {
     // an empty list is noise in a budgeted prompt
     const gateMoves = gateAnnounce?.moves.length ? gateAnnounce.moves : null
     const gateNotes = gateAnnounce?.notes.length ? gateAnnounce.notes : null
+    // …and the fourth: the day's EXPERIMENT, when there is one (Stage 3d,
+    // wildcardLane.ts). At most one row on the board is not a call at all — it is
+    // a trade the engine's own gates refused, taken at a quarter of the rung to
+    // buy the causal evidence a refusal can never produce — and a paper that
+    // printed it as an ordinary idea would have mis-sold reader money.
+    //
+    // Read off the SAME board blob the ideas are drawn from and only when that
+    // blob is today's, so the paper can never announce yesterday's experiment;
+    // null when the slot went unspent, which is most mornings by design. Every
+    // string here is the engine's own — the hypothesis was template-built from
+    // numbers at selection, and the label and the warning are constants — so the
+    // writer quotes rather than composes.
+    const wildcard = await grab(async () => {
+      const b = await blobAppStore.read<{ date: string; board: Prediction[] }>('engine-board')
+      if (!b || b.date !== dateISO || !Array.isArray(b.board)) return null
+      const row = b.board.find(p => p.wildcard)
+      return row?.wildcard
+        ? {
+            label: WILDCARD_LABEL,
+            sym: row.sym,
+            side: row.side,
+            entry: row.entry,
+            stop: row.stop,
+            riskPct: row.riskPct,
+            gate: row.wildcard.gate,
+            hypothesis: row.wildcard.hypothesis,
+            warning: WILDCARD_WARNING,
+          }
+        : null
+    })
 
     // ---- deterministic paper extras: rotation tables, social board, charts ----
     const { SECTOR_MEMBERS, SECTORS, returnOver } = await import('./lib/sectors')
@@ -346,6 +377,9 @@ export default async (req: Request) => {
         // beside the standing status of any gate that could not move
         gateMoves,
         gateNotes,
+        // …and the one row on today's board that is an experiment rather than a
+        // call, with the hypothesis it is testing and the standing warning
+        wildcard,
       },
       // least critical first; the tail is a promise about what the paper never
       // loses. Owned by newspaper.ts so the tail is testable — see the comment

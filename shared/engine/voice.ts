@@ -374,6 +374,38 @@ export function dipThesis(input: { sym: string; dropPct: number; stop: number; n
   return { thesis: `Long ${input.sym} — hit ${round1(input.dropPct)}% and holding${clause}. ${falsifier}`, falsifier }
 }
 
+/** THE EXPERIMENT'S LABEL, one exported constant because four surfaces print it
+ * — the row's thesis and note here, the board card's badge, the panel line and
+ * the paper's brief — and a reader who learns to recognise one glyph must find
+ * the same glyph everywhere. Spec §4.1: "distinctly labelled". */
+export const WILDCARD_LABEL = '🃏 Wildcard'
+
+/** …and the STANDING WARNING, printed on every wildcard row without exception
+ * and never softened by how good the particular row looks. The slot exists to
+ * take trades the engine's own gates refused, so it will lose more often than the
+ * board does — and the one thing that must never happen is a reader meeting one
+ * of these rows without being told that in the row's own words. */
+export const WILDCARD_WARNING = 'Experiments lose more often than the board does.'
+
+/** The wildcard's two sentences.
+ *
+ *   "🃏 Wildcard · Long GLW — quarter size, testing a gate: dead-zone-core has 7
+ *    priced outcomes and 40 unpriced in the miss ledger, none of them causal;
+ *    this takes the long it blocked, core read 23.1, for one real outcome with a
+ *    stop. Experiments lose more often than the board does. Wrong if it closes
+ *    below 42.10."
+ *
+ * The hypothesis arrives already built, from numbers only (wildcardLane.ts) — it
+ * is quoted here, never composed, so the sentence the choice was made on is the
+ * sentence the reader gets. */
+export function wildcardThesis(input: { sym: string; side: 'long' | 'short'; stop: number; hypothesis: string }): { thesis: string; falsifier: string } {
+  const falsifier = fixedFalsifier(input.side, input.stop)
+  return {
+    thesis: `${WILDCARD_LABEL} · ${sideWord(input.side)} ${input.sym} — quarter size, testing a gate: ${input.hypothesis} ${WILDCARD_WARNING} ${falsifier}`,
+    falsifier,
+  }
+}
+
 const DOOR_PHRASE = {
   early: 'the first paid break of its 20-session high',
   confirmation: 'an established run that has paused without breaking',

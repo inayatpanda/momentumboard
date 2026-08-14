@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { VELOCITY_SHADOW_FIRST, buildBoard, gradeOutstanding, traceOpenIdeas, type EngineDeps } from './engine'
 import type { OpenTraceEntry } from '../../../shared/engine/openTrace'
 import { memoryStore } from './store'
@@ -14,6 +14,19 @@ import type { TrendDay } from '../../../shared/engine/hypeCluster'
 import type { EmptySideReason } from '../../../shared/engine/types'
 import type { InsiderSummary } from './insiders'
 import type { FundMoves } from './edgar'
+
+/** THE EXPERIMENT SLOT, SWITCHED OFF (Stage 3d, shared/engine/wildcardLane.ts).
+ *
+ * Four fixtures below are claims about the NEAR-MISS mechanism — "an empty side
+ * still names what came closest" — and the wildcard lane reads the very same
+ * near-miss list to choose its one row a day. On a day the slot is spent, the
+ * name it takes yields its near-miss row (they would otherwise share an id), so
+ * those fixtures would be measuring the wildcard instead of the thing they are
+ * named after. The lane has its own seam for exactly this, mirroring `GATES=off`
+ * inside the parity walks; the adjudication it performs is pinned on its own, on
+ * these same fixtures with the lane LIVE, in engine.wildcard.test.ts. */
+const wildcardOff = () => vi.stubEnv('WILDCARD', 'off')
+afterEach(() => vi.unstubAllEnvs())
 
 const T0 = Date.parse('2025-06-02') / 1000
 const mk = (fn: (i: number) => number, days = 260): Candle[] =>
@@ -821,6 +834,7 @@ describe('buildBoard', () => {
   })
 
   it('a day where every candidate dies at the gates still NAMES the nearest misses', async () => {
+    wildcardOff() // the near-miss mechanism, on its own — see the note on the helper
     const store = memoryStore()
     await store.write('config', {
       watchlist: [{ symbol: 'CALM' }, { symbol: 'RISE' }, { symbol: 'DROP' }],
@@ -908,6 +922,7 @@ describe('buildBoard', () => {
   })
 
   it('near misses only fill an EMPTY side — a side with a real row is left alone', async () => {
+    wildcardOff()
     const store = memoryStore()
     await store.write('config', {
       watchlist: [{ symbol: 'RISE' }],
@@ -2874,6 +2889,7 @@ describe('buildBoard', () => {
   })
 
   it('a SIZED velocity long suppresses the same-sym short NEAR MISS — a shadowed one leaves it standing [C10, F3]', async () => {
+    wildcardOff()
     // A watchlist name is evaluated whatever it looks like, so the composite really
     // does read this chart: its −21.3 core dies in the dead zone and the name lands
     // in the near-miss list as the closest thing to a short.
@@ -3538,6 +3554,7 @@ describe('thesis + falsifier — who gets a voice and who does not', () => {
     })
 
   it('a NEAR MISS carries neither: it cleared no gate, so there is no belief to state', async () => {
+    wildcardOff() // …and the wildcard, which DOES carry both, is pinned in engine.wildcard.test.ts
     const store = memoryStore()
     await store.write('config', { watchlist: [{ symbol: 'RISE' }], rules: [], ytChannels: [], levMap: {} })
     await store.write('engine-calibration', calWith('short:amber:55-70'))

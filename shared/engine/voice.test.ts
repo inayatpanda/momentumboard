@@ -11,6 +11,9 @@ import {
   stagePhrase,
   trailFalsifier,
   velocityThesis,
+  wildcardThesis,
+  WILDCARD_LABEL,
+  WILDCARD_WARNING,
 } from './voice'
 import {
   catalystFactor,
@@ -311,6 +314,31 @@ describe('velocityThesis — the door, what paid for it, and a falsifier that MO
       expect(bannedTokensIn(falsifier), falsifier).toEqual([])
       expect(thesis.endsWith(falsifier)).toBe(true)
     }
+  })
+})
+
+describe('wildcardThesis — the experiment says what it is, every time', () => {
+  const hypothesis = 'dead-zone-core has 7 priced outcomes and 40 unpriced in the miss ledger, none of them causal; this takes the long it blocked, core read 23.1, for one real outcome with a stop.'
+
+  it('carries the label, the hypothesis VERBATIM, the standing warning and the falsifier', () => {
+    const { thesis, falsifier } = wildcardThesis({ sym: 'GLW', side: 'long', stop: 42.1, hypothesis })
+    expect(thesis).toBe(`${WILDCARD_LABEL} · Long GLW — quarter size, testing a gate: ${hypothesis} ${WILDCARD_WARNING} ${fixedFalsifier('long', 42.1)}`)
+    expect(falsifier).toBe(fixedFalsifier('long', 42.1))
+    expect(thesis.endsWith(falsifier)).toBe(true)
+  })
+
+  it('the WARNING is unconditional — there is no shape of row that omits it', () => {
+    for (const side of ['long', 'short'] as const) {
+      const { thesis } = wildcardThesis({ sym: 'GLW', side, stop: side === 'long' ? 42.1 : 61.4, hypothesis: 'x.' })
+      expect(thesis).toContain(WILDCARD_WARNING)
+      expect(thesis).toContain(WILDCARD_LABEL)
+    }
+  })
+
+  it('is clean — the sentence reaches the paper and the DOM like every other one here', () => {
+    const { thesis, falsifier } = wildcardThesis({ sym: 'GLW', side: 'short', stop: 61.4, hypothesis })
+    expect(bannedTokensIn(thesis), thesis).toEqual([])
+    expect(bannedTokensIn(falsifier), falsifier).toEqual([])
   })
 })
 

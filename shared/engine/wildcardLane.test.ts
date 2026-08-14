@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   WILDCARD_INELIGIBLE_GATES,
   WILDCARD_NEAR_DEAD_ZONE,
@@ -6,6 +6,7 @@ import {
   gateEvidenceN,
   rungSizedN,
   selectWildcard,
+  wildcardDisabled,
   type WildcardInputs,
 } from './wildcardLane'
 import type { CatalystTag } from './catalyst'
@@ -384,5 +385,32 @@ describe('the arithmetic the ladder stands on', () => {
   it('the wildcard is quarter size, and that is a cap below 1 — leverage is structurally unreachable', () => {
     expect(WILDCARD_SIZE_CAP).toBe(0.25)
     expect(WILDCARD_SIZE_CAP).toBeLessThan(1)
+  })
+})
+
+describe('wildcardDisabled — the parity seam', () => {
+  it('is OFF by default and reads only the exact opt-in string', () => {
+    // The default is what production runs: nothing has to be set for the slot to
+    // be live. The seam exists so the 3a and 3b parity walks stay claims about
+    // the recorder and the regret machinery rather than about this lane, which
+    // reads the one and writes into the other.
+    expect(wildcardDisabled()).toBe(false)
+    for (const v of ['off', 'OFF', 'false', '0', '1', 'on', '', 'offf']) {
+      vi.stubEnv('WILDCARD', v)
+      try {
+        expect(`${v}:${wildcardDisabled()}`).toBe(`${v}:${v === 'off'}`)
+      } finally {
+        vi.unstubAllEnvs()
+      }
+    }
+  })
+})
+
+describe('WILDCARD_INELIGIBLE_GATES tracks the publication set', () => {
+  it('a name the slot has ALREADY taken can never be offered to it again', () => {
+    // `called-wildcard` joined PUBLISHED_GATES (funnelTrace.ts) and this set is
+    // built from that one, so the exclusion came for free — which is the whole
+    // point of deriving it rather than re-listing it.
+    expect(WILDCARD_INELIGIBLE_GATES.has('called-wildcard')).toBe(true)
   })
 })

@@ -396,6 +396,13 @@ export interface EnginePrediction {
   themes?: string[]
   capUsdM?: number | null
   catalyst?: { kind: string; reason: string }
+  // THE EXPERIMENT SLOT'S RECORD (Stage 3d, shared/engine/wildcardLane.ts) —
+  // present on at most one row a day and absent on every other. This row is on
+  // the board BECAUSE a gate refused it: it carries a quarter of the rung, a real
+  // stop, and a hypothesis about the gate named here. Every surface that shows it
+  // must show it AS an experiment — the thesis carries the label and the standing
+  // warning, and this is what a card branches on.
+  wildcard?: { gate: string; priority: number; hypothesis: string; gateEvidenceN: number }
 }
 
 // A prediction's realised outcome over one horizon: side-adjusted excess vs SPY,

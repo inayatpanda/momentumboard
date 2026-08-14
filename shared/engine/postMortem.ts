@@ -57,8 +57,19 @@ import { round2, type PredOutcome } from './types'
 // deterministic class standing.
 
 /** The five names, in precedence order. `news-reversal` sits where the spec puts
- * it (recon §4.1) and is assigned only by the LLM pass — see the header. */
-export const POSTMORTEM_CLASSES = ['stopped', 'thesis-break', 'market-drag', 'news-reversal', 'adverse-move'] as const
+ * it (recon §4.1) and is assigned only by the LLM pass — see the header.
+ *
+ * …and a SIXTH that is not in the precedence at all: `won`. Stage 3d's wildcard
+ * slot is post-mortemed on EVERY closure, win or lose (spec §4.1), because an
+ * experiment whose successes go unexamined is not an experiment — the whole
+ * point of overriding a gate is to find out what happened, and "it worked" is
+ * half of what can happen. `classifyLoser` cannot say that: handed a winner its
+ * total order would return `market-drag` — "beat the tape and still missed the
+ * bar" — about a row that cleared the bar, which is simply false. So the winning
+ * branch is its own name, assigned by `classifyOutcome` below and by nothing
+ * else. No ordinary row can reach it: the caller still stamps winners with
+ * nothing at all, exactly as it always has. */
+export const POSTMORTEM_CLASSES = ['stopped', 'thesis-break', 'market-drag', 'news-reversal', 'adverse-move', 'won'] as const
 export type PostMortemClass = (typeof POSTMORTEM_CLASSES)[number]
 
 /** The CALIBRATED horizon, and the same window `gradePrediction` walked to decide
@@ -215,6 +226,24 @@ export function classifyLoser(pred: PostMortemRow, o: PredOutcome, candles: Cand
   }
 
   return { cls: 'adverse-move', detail: `no level broke — it simply went the other way: ${nums}` }
+}
+
+/** THE UNCONDITIONAL READ — a class for a closure whichever way it went.
+ *
+ * `classifyLoser` above is the engine's ordinary hook and stays loser-only:
+ * winners get no post-mortem, no LLM sentence, and no row in the how-we-lose
+ * roll-up. The ONE population that is examined either way is the wildcard slot
+ * (spec §4.1: "mandatory post-mortem win or lose"), and this is the predicate it
+ * uses — the same site in the grading pass, a different question.
+ *
+ * A winner's line is the numbers and the fact the stop held, and NOTHING about
+ * why: the honest thing an outcome can say about a hypothesis it confirmed is
+ * that it confirmed it. Whether one causal win should move a gate is the miss
+ * ledger's arithmetic (`accrueCausalOutcome`), not a sentence's. */
+export function classifyOutcome(pred: PostMortemRow, o: PredOutcome, candles: Candle[]): { cls: PostMortemClass; detail: string } {
+  if (!o.hit) return classifyLoser(pred, o, candles)
+  const nums = `${signed(o.rawPct)}% vs SPY ${signed(o.spyPct)}%, excess ${signed(o.excessPct)}pp`
+  return { cls: 'won', detail: `cleared the bar with the ${pred.stop} stop ${o.stopped ? 'hit on the way' : 'never touched'} — ${nums}` }
 }
 
 /** The scorecard's key: setup family × regime × class, exactly the aggregation the

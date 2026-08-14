@@ -395,6 +395,17 @@ export const COMPOSE_DROP_ORDER = [
   // …the standing status of a gate that is eligible and cannot move — true on
   // any morning, so it is the one of this pair that may be lost…
   'gateNotes',
+  // …then the day's WILDCARD (Stage 3d): the one row on the board that is an
+  // experiment rather than a call, its hypothesis, and the standing warning. It
+  // sits this near the tail because it is reader money placed on a row the
+  // engine's own gates refused, and a paper that printed it as an ordinary idea
+  // would have mis-sold it. It does NOT outlive `gateMoves`, for a reason that
+  // is about carriers rather than importance: the wildcard row rides
+  // `engineBoard`, which is not in this list at all and is therefore never
+  // dropped, so the 🃏 label, the note and the falsifier reach the reader whatever
+  // happens here — what this key adds is the hypothesis and the instruction to
+  // name the row as an experiment. A gate notch has no such second carrier.
+  'wildcard',
   // …and last of all, the one key that reports a CHANGE the engine made to
   // itself TODAY: a gate that moved. It is at most three sentences, it can never
   // rescue an overflow, and a move the paper failed to announce is the one thing
@@ -676,7 +687,7 @@ NO-SIGNAL DAYS: the reader values a real explanation — signalWhy is 3-5 tight 
   {
     key: 'voice',
     fields: ['editorial', 'honestClose'],
-    brief: 'editorial (The Long View): 1-2 TIGHT paragraphs of well-established market history or a great investor\'s principle that rhymes with TODAY\'s tape — tied explicitly to current conditions, no invented statistics, and never a principle used in a recent edition (see previousEditions). honestClose: confidence grade, what proves today wrong, what was unverifiable — three crisp sentences, and at most one more IF the data earns it: when postMortems is present, spend that sentence on the most recent SIZED loss, using its `why` in plain English and never the class name verbatim; when missLedger is present you may add its misses count and worst gate, but ONLY together with that gate\'s unchecked number — an unmeasured gate must never be written as a costless one, and the excesses are stopless upper bounds, so never call one a realised profit missed; when gateMoves is present, spend one more sentence stating the move VERBATIM from that line (the engine changed one of its own thresholds TODAY on measured evidence) — never reword the numbers, never claim a result for it, and never say a gate moved that is not in that list; gateNotes is STATUS and never news — a gate listed there has NOT moved and its threshold is unchanged, so never write it as a change, and mention it at most in passing.',
+    brief: 'editorial (The Long View): 1-2 TIGHT paragraphs of well-established market history or a great investor\'s principle that rhymes with TODAY\'s tape — tied explicitly to current conditions, no invented statistics, and never a principle used in a recent edition (see previousEditions). honestClose: confidence grade, what proves today wrong, what was unverifiable — three crisp sentences, and at most one more IF the data earns it: when postMortems is present, spend that sentence on the most recent SIZED loss, using its `why` in plain English and never the class name verbatim; when missLedger is present you may add its misses count and worst gate, but ONLY together with that gate\'s unchecked number — an unmeasured gate must never be written as a costless one, and the excesses are stopless upper bounds, so never call one a realised profit missed; when gateMoves is present, spend one more sentence stating the move VERBATIM from that line (the engine changed one of its own thresholds TODAY on measured evidence) — never reword the numbers, never claim a result for it, and never say a gate moved that is not in that list; gateNotes is STATUS and never news — a gate listed there has NOT moved and its threshold is unchanged, so never write it as a change, and mention it at most in passing; when wildcard is present the board carries ONE experiment — say so in that sentence using its `label`, its `hypothesis` VERBATIM and its `warning` VERBATIM, and never describe it as a call, a conviction idea or the engine\'s best thought: it is a trade the engine\'s own gates refused, taken at quarter size to find out what happens.',
     shape: '{"editorial":"...","honestClose":"..."}',
   },
 ]

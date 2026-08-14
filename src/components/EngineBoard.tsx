@@ -84,8 +84,15 @@ function Call({ p }: { p: EnginePrediction }) {
         {/* a near miss was never scored — its base-rate probability is a placeholder, not a read */}
         <span style={{ color: 'var(--muted)', fontSize: 12, flexShrink: 0 }}>{p.nearMiss ? `~${p.expectedMovePct}%` : `${Math.round(p.probability * 100)}% · ~${p.expectedMovePct}%`}</span>
       </div>
-      {(p.setup || p.smallCap || p.capUsdM != null || (p.themes ?? []).length > 0 || p.earningsRisk) && (
+      {(p.setup || p.smallCap || p.capUsdM != null || (p.themes ?? []).length > 0 || p.earningsRisk || p.wildcard) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {/* THE EXPERIMENT (Stage 3d), first and warned. This row is on the
+              board BECAUSE a gate refused it — it is quarter-size reader money
+              buying the engine one causal outcome — so it must never be read as
+              an ordinary idea the cards beside it. The thesis line already
+              carries the label, the hypothesis and the standing warning; this is
+              the chip that finds it at a glance. */}
+          {p.wildcard && <span className="badge warn" title={`Experiment · testing the ${p.wildcard.gate} gate`}>🃏 wildcard</span>}
           {p.setup && <span className="badge">{p.setup}</span>}
           {(capBand(p.capUsdM) ?? (p.smallCap ? 'small cap' : null)) && (
             <span className="badge warn">{capBand(p.capUsdM) ?? 'small cap'}</span>

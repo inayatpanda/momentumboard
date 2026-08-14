@@ -104,6 +104,32 @@ describe('EngineBoard', () => {
     data.board!.board = [prediction]
   })
 
+  // THE EXPERIMENT (Stage 3d). This row is on the board BECAUSE a gate refused
+  // it — quarter-size reader money buying the engine one causal outcome — so a
+  // card that looked like every other card would have mis-sold it.
+  it('badges a wildcard as an experiment, and leaves every ordinary row unbadged', async () => {
+    data.board!.board = [
+      {
+        ...prediction,
+        id: 'wild',
+        sym: 'WILD',
+        riskPct: 0.25,
+        paperOnly: false,
+        thesis: '🃏 Wildcard · Short WILD — quarter size, testing a gate: expected-move has 0 priced outcomes. Experiments lose more often than the board does. Wrong if it closes above 178.2.',
+        wildcard: { gate: 'expected-move', priority: 1, hypothesis: 'expected-move has 0 priced outcomes.', gateEvidenceN: 0 },
+      },
+      prediction,
+    ]
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText('🃏 wildcard')).toBeInTheDocument())
+    expect(screen.getAllByText('🃏 wildcard')).toHaveLength(1) // the ordinary row beside it is untouched
+    expect(screen.getByText('🃏 wildcard').getAttribute('title')).toContain('expected-move')
+    // the warning is not a badge — it rides the row's own sentence, where a
+    // reader cannot miss it
+    expect(screen.getByText(/Experiments lose more often than the board does/)).toBeInTheDocument()
+    data.board!.board = [prediction]
+  })
+
   it('names no observation section when the board has none', async () => {
     render(<EngineBoard />)
     await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument())

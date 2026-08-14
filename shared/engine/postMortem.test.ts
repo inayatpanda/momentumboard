@@ -3,7 +3,7 @@ import type { Candle } from '../types'
 import { DIP_CATALYST_KIND, VELOCITY_CATALYST_KIND } from './catalyst'
 import { gradePrediction } from './calibration'
 import { effectiveVelocityStop } from './velocityLane'
-import { POSTMORTEM_CLASSES, classifyLoser, type PostMortemRow } from './postMortem'
+import { POSTMORTEM_CLASSES, classifyLoser, classifyOutcome, type PostMortemRow } from './postMortem'
 import type { PredOutcome } from './types'
 
 const T0 = Date.parse('2026-01-05') / 1000
@@ -181,5 +181,35 @@ describe('classifyLoser — the pinned total order', () => {
     const { detail } = classifyLoser(row(), o, t)
     expect(detail).toContain(dateOf(ENTRY_IDX))
     expect(detail).toContain('session 1')
+  })
+})
+
+// THE UNCONDITIONAL READ (Stage 3d). `classifyLoser` above stays loser-only and
+// is the engine's ordinary hook; the wildcard slot is the one population examined
+// either way, because an experiment whose successes go unexamined is not one.
+describe('classifyOutcome — a class for a closure whichever way it went', () => {
+  const won = { hit: true, stopped: false, excessPct: 6.2, rawPct: 6.2, spyPct: 0 }
+  const lost = { hit: false, stopped: false, excessPct: -4.4, rawPct: -4.4, spyPct: 0 }
+  const pred: PostMortemRow = { side: 'long', date: dateOf(ENTRY_IDX), stop: 90 }
+
+  it('gives a WINNER its own name — the loser order would have called it market-drag, which is false', () => {
+    // the trap this exists for, spelled out: the loser precedence answers
+    // `excess >= 0` with "beat the tape and still missed the bar", about a row
+    // that cleared the bar
+    expect(classifyLoser(pred, won, flat).cls).toBe('market-drag')
+    const out = classifyOutcome(pred, won, flat)
+    expect(out.cls).toBe('won')
+    expect(out.detail).toContain('cleared the bar')
+    expect(out.detail).toContain('90')
+    expect(out.detail).toContain('+6.2pp')
+  })
+
+  it('delegates every LOSER to classifyLoser, byte for byte — the win branch adds, it never replaces', () => {
+    expect(classifyOutcome(pred, lost, flat)).toEqual(classifyLoser(pred, lost, flat))
+  })
+
+  it('`won` is declared, and sits OUTSIDE the loser precedence', () => {
+    expect(POSTMORTEM_CLASSES).toContain('won')
+    expect(POSTMORTEM_CLASSES.slice(0, 5)).toEqual(['stopped', 'thesis-break', 'market-drag', 'news-reversal', 'adverse-move'])
   })
 })
