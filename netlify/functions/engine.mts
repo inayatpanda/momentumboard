@@ -169,6 +169,28 @@ async function viewJourney(sym: string) {
   }
 }
 
+/** ?view=funnel&date= — one day of "the engine said no", ranked by the
+ * conviction each refusal stood on. Default = the newest trace day. */
+async function viewFunnel(date: string | null) {
+  const index = (await blobAppStore.read<string[]>(FUNNEL_TRACE_INDEX_KEY)) ?? []
+  const day = date ?? index[index.length - 1] ?? null
+  if (!day) return { date: null, missing: true, rows: [], nearMisses: [] }
+  const trace = await blobAppStore.read<FunnelTrace>(funnelTraceKey(day))
+  if (!trace) return { date: day, missing: true, rows: [], nearMisses: [] }
+  const rows = Object.entries(trace.rows ?? {})
+    .map(([key, r]) => ({ key, ...r }))
+    .sort((a, b) => (b.core ?? Number.NEGATIVE_INFINITY) - (a.core ?? Number.NEGATIVE_INFINITY))
+  return {
+    date: day,
+    gates: trace.gates,
+    counts: trace.counts,
+    emptySides: trace.emptySides,
+    disabled: trace.disabled ?? false,
+    rows,
+    nearMisses: (trace.nearMisses ?? []).map(slimNearMiss),
+  }
+}
+
 /** ?view=ledger&days=N — the Track record's food, same day shape as the
  * aggregate's `ledger` key so the client type is shared. Newest first. */
 async function viewLedger(days: number) {
@@ -195,6 +217,11 @@ export default async (req: Request) => {
       const sym = (url.searchParams.get('sym') ?? '').toUpperCase()
       if (!SYM_RE.test(sym)) return json({ error: 'bad sym' }, 400)
       return json(await viewJourney(sym))
+    }
+    if (view === 'funnel') {
+      const date = url.searchParams.get('date')
+      if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: 'bad date' }, 400)
+      return json(await viewFunnel(date))
     }
     if (view === 'ledger') {
       const raw = url.searchParams.get('days')

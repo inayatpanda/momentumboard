@@ -197,6 +197,41 @@ describe('engine ?view= slices', () => {
     })
   })
 
+  describe('?view=funnel', () => {
+    it('defaults to the newest trace day; rows ranked by core desc, nulls last; near-miss prose stripped', async () => {
+      await seed('funnel-trace-index', ['2026-08-12', '2026-08-13'])
+      await seed('funnel-trace:2026-08-13', {
+        date: '2026-08-13',
+        gates: { deadZone: 0.3 },
+        rows: {
+          'AAA:long': { gate: 'diversity', side: 'long', core: 0.3 },
+          BBB: { gate: 'no-candles' },
+          'CCC:short': { gate: 'slot-cut', side: 'short', core: 0.9 },
+        },
+        counts: { notCandidate: 42 },
+        nearMisses: [{ sym: 'DDD', core: 0.5, capUsdM: null, lastClose: 10, atrNow: 1, capacityPct: null, stage: null, factors: { momentum: { score: 2, detail: 'NM-PROSE' } } }],
+        emptySides: { short: 'no-candidates' },
+      })
+      const r = await body(await handler(req('?view=funnel')))
+      const d = r.data as { date: string; rows: { key: string; core?: number }[]; nearMisses: unknown[]; counts: { notCandidate: number }; gates: { deadZone: number }; emptySides: { short: string } }
+      expect(d.date).toBe('2026-08-13')
+      expect(d.rows.map(x => x.key)).toEqual(['CCC:short', 'AAA:long', 'BBB'])
+      expect(d.counts.notCandidate).toBe(42)
+      expect(d.gates.deadZone).toBe(0.3)
+      expect(d.emptySides.short).toBe('no-candidates')
+      expect(d.nearMisses).toHaveLength(1)
+      expect(JSON.stringify(d)).not.toContain('NM-PROSE')
+    })
+
+    it('honours ?date=, 400s a malformed one, and flags a day with no trace', async () => {
+      await seed('funnel-trace-index', ['2026-08-12', '2026-08-13'])
+      expect((await handler(req('?view=funnel&date=13-08-2026'))).status).toBe(400)
+      const r = await body(await handler(req('?view=funnel&date=2026-08-12')))
+      expect(r.ok).toBe(true)
+      expect(r.data).toMatchObject({ date: '2026-08-12', missing: true, rows: [], nearMisses: [] })
+    })
+  })
+
   it('legacy aggregate still serves without ?view — and keeps its admin gate', async () => {
     await seed('engine-board', { date: '2026-08-14', board: [] })
     await seed('holdings-reads', [{ sym: 'SECRET-HOLDING', quantity: 1 }])
