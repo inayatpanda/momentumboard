@@ -170,6 +170,16 @@ function technicalPhrase(f: FactorScore, side: 'long' | 'short'): string | null 
 /** 21-session relative strength vs SPY, in points rather than in the factor's
  * own shorthand. */
 function momentumPhrase(f: FactorScore): string | null {
+  // …and the CRYPTO partition's own sentence (Stage 1c Phase B), because the
+  // equity one would be a plain falsehood on a crypto row: `cryptoMomentumFactor`
+  // measures an ABSOLUTE move against the pair's own typical travel, and there is
+  // no S&P in it to outperform. Read off the detail's own shape, exactly as every
+  // other phrase in this file is — the factor writes one sentence, this reads it.
+  const crypto = /(\d+)-bar move ([+-]?\d+(?:\.\d+)?)% vs its own typical/.exec(f.detail)
+  if (crypto) {
+    const move = Number(crypto[2])
+    return `${round1(Math.abs(move))}% ${move >= 0 ? 'up' : 'down'} over the last ${crypto[1]} bars, a big move against its own usual travel`
+  }
   const pp = num(f.detail, /([+-]?\d+(?:\.\d+)?)pp/)
   if (pp == null) return null
   const mag = round1(Math.abs(pp))

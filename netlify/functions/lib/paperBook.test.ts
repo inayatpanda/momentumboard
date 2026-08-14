@@ -177,6 +177,17 @@ describe('runPaperBook — the marker survives the day it was opened', () => {
     expect(day2.closed).toHaveLength(0) // the published stop was never touched
     expect(day2.positions).toHaveLength(1)
   })
+
+  it('refuses the CRYPTO cohort — every mark and exit here is struck off the raw, still-moving tape', async () => {
+    const store = memoryStore()
+    const coin = { ...runningBoardRow, id: '2026-07-01:BTC-USD:long', sym: 'BTC-USD', cohort: 'crypto', trail: undefined } as unknown as Prediction
+    const equity = { ...runningBoardRow, id: '2026-07-01:DIPR:long', sym: 'DIPR', trail: undefined } as unknown as Prediction
+    await store.write('engine-board', { date: '2026-07-01', board: [coin, equity] })
+    const day1 = await runPaperBook(store, { candles: async () => runningTape().slice(0, 9) }, Date.parse('2026-07-01T12:00:00Z') / 1000)
+    // the equity row opened; the coin did not, and the book's equity curve
+    // therefore never moves for a bar that has not closed
+    expect(day1.positions.map(p => p.sym)).toEqual(['DIPR'])
+  })
 })
 
 describe('closeOutMonth', () => {

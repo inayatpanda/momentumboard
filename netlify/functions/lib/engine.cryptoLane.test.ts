@@ -181,6 +181,14 @@ describe('the lane publishes a partitioned cohort onto the same board', () => {
     expect(row.evidence.detail).toContain('crypto cohort')
   })
 
+  it('never claims to have beaten a benchmark it has none of — the thesis, the book and the ledger all know', async () => {
+    const { board } = await runDay(['BTC-USD'])
+    const row = cryptoOf(board.board)[0]
+    for (const s of [row.thesis ?? '', row.falsifier ?? '', row.note, row.evidence.detail]) {
+      expect(s).not.toMatch(/S&P|SPY|outperformance|underperformance/)
+    }
+  })
+
   it('takes the 1.5×ATR stop arm — CHOSEN, because a 24/7 pair is the opposite of a gapping small cap', async () => {
     const { board } = await runDay(['BTC-USD'])
     const row = cryptoOf(board.board)[0]

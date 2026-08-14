@@ -210,7 +210,20 @@ export async function runPaperBook(store: AppStore, deps: { candles: (sym: strin
   // records built for it — the scorecard's own 🃏 key, the causal ledger, the
   // board's marked row — and the book is deliberately not one of them.
   const boardBlob = await store.read<{ date: string; board: Prediction[] }>('engine-board').catch(() => null)
-  const live = (boardBlob?.board ?? []).filter(b => !b.shadow && !b.watchOnly)
+  // …and NOT the crypto cohort, which is the one row kind this book must refuse
+  // (Stage 1c Phase B). Not on the "an ISA could never place it" argument above —
+  // that argument is settled and it lets paperOnly shorts in — but on the tape:
+  // every mark, every stop walk and every exit here is struck off
+  // `deps.candles(sym)`, which for a coin is the RAW Yahoo series INCLUDING
+  // today's still-moving 00:00-UTC bar. The crypto partition has a candle seam
+  // whose whole purpose is that nothing is ever measured against a bar that has
+  // not closed (cryptoCalibration.ts, `completedCryptoBars`), and this book does
+  // not go through it: a crypto position would be stopped out on a price six
+  // hours old and marked at another, and the equity curve the reader trusts would
+  // move for a reason no closed bar supports. The row still publishes, still
+  // grades on its own clock and still teaches the crypto partition. Wiring the
+  // book to the crypto seam is a recorded follow-up, not a line to slip in here.
+  const live = (boardBlob?.board ?? []).filter(b => !b.shadow && !b.watchOnly && b.cohort !== 'crypto')
   for (const call of live) {
     if (book.positions.length >= MAX_OPEN) break
     if (book.positions.some(p => p.sym === call.sym && p.side === call.side)) continue
