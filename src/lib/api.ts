@@ -224,9 +224,6 @@ export interface IpoRow {
 export const getIpos = () =>
   apiGet<{ upcoming: IpoRow[]; recent: IpoRow[]; at: number }>('/api/market?type=ipos')
 
-export const getT212 = () =>
-  apiGet<{ unconfigured?: boolean; positions?: { symbol: string; quantity: number; averagePrice: number; currentPrice: number; pplPct: number | null }[]; at?: number }>('/api/t212')
-
 export const getTickerBrief = (symbol: string) =>
   apiGet<{ sym: string; brief: string; at: number }>(`/api/market?type=brief&symbol=${encodeURIComponent(symbol)}`)
 
@@ -241,27 +238,6 @@ export async function putLlmKey(groqKey: string) {
     headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
     body: JSON.stringify({ groqKey }),
   })
-  if (!res.ok) throw new Error('failed')
-}
-
-// BYO Trading 212: licensees connect their own read-only key pair; the owner's
-// stays in server env. The server validates against T212 before storing.
-export const getT212KeyStatus = () => apiGet<{ connected: boolean; source: 'env' | 'own' | null }>('/api/t212?view=key')
-
-export async function putT212Key(apiKey: string, secret: string) {
-  const res = await fetch('/api/t212', {
-    method: 'PUT',
-    headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
-    body: JSON.stringify({ apiKey, secret }),
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error === 't212-rejected' ? 'rejected' : 'failed')
-  }
-}
-
-export async function deleteT212Key() {
-  const res = await fetch('/api/t212', { method: 'DELETE', headers: { 'x-app-token': getToken() ?? '' } })
   if (!res.ok) throw new Error('failed')
 }
 
@@ -509,8 +485,8 @@ export interface LedgerDay {
 }
 
 // One held name as the engine reads it: the daily stage/quality opinion plus the
-// live P&L% and size. Read-only tracking — journalling for stop alerts stays the
-// existing T212 import button.
+// live P&L% and size. Engine-side only — the broker integration that once fed
+// the client was removed at cutover; this is written by the predict run.
 export interface HoldingRead {
   sym: string
   stage: string | null
@@ -671,8 +647,9 @@ export interface EngineData {
     avgExcess10: number | null
   }[]
   newsToneHistory?: { date: string; score: number; label: string }[]
-  // the engine's daily read-only opinion on every REAL T212 holding (null until the
-  // first predict run writes it). Powers the Desk's read-only holdings-tracking pane.
+  // the engine's daily read-only opinion on every held name (null until the first
+  // predict run writes it). No client surface reads this since the Desk's
+  // holdings pane went at cutover; the engine still writes it.
   holdingsReads?: HoldingRead[] | null
   scorecard: {
     byGrade: Record<string, { n: number; hits: number; sumExcess: number }>

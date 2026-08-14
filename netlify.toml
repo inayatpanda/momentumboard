@@ -115,11 +115,6 @@
   status = 200
 
 [[redirects]]
-  from = "/api/t212"
-  to = "/.netlify/functions/t212"
-  status = 200
-
-[[redirects]]
   from = "/download/*"
   to = "/.netlify/functions/download?platform=:splat"
   status = 200

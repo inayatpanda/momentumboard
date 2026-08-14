@@ -31,7 +31,7 @@ const fnRedirects = () =>
 describe('the route table is complete', () => {
   it('registers EVERY netlify/functions/*.mts, and nothing that does not exist', () => {
     expect(HANDLER_NAMES).toEqual(onDisk())
-    expect(HANDLER_NAMES.length).toBe(23)
+    expect(HANDLER_NAMES.length).toBe(22)
   })
 
   // The point of the whole file: a function with no pretty path is still
@@ -83,9 +83,17 @@ describe('resolveRoute', () => {
     expect(at('/api/engine')).toBe('engine')
     expect(at('/api/config?view=runlog')).toBe('config-sync')
     expect(at('/api/licences?check=1')).toBe('licences')
-    expect(at('/api/t212?view=key')).toBe('t212')
     expect(at('/report?list')).toBe('report')
     expect(at('/api/export')).toBe('helm-export')
+  })
+
+  // The broker endpoint was retired at cutover (CX-21). The two parity tests
+  // above only walk whichever side you edited, so neither would notice a
+  // half-revert; this one fails outright if /api/t212 is ever routed again.
+  it('does not route the retired /api/t212 endpoint', () => {
+    const at = (p: string) => resolveRoute(new URL(`https://thestreetsignal.rqai.co.uk${p}`))?.name ?? null
+    expect(at('/api/t212')).toBe(null)
+    expect(at('/api/t212?view=key')).toBe(null)
   })
 
   it('tolerates a trailing slash', () => {

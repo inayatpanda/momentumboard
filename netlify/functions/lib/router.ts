@@ -37,7 +37,7 @@ import { configureStoreFromEnv } from './storeProvider'
  * The second parameter is typed `never` on purpose. The handlers spell it
  * `_context: Context` (Netlify's own type) and never read it; `never` is
  * assignable to every one of those spellings under `strictFunctionTypes`, so
- * this constraint accepts all 23 files unchanged AND still fails the build if
+ * this constraint accepts all 22 files unchanged AND still fails the build if
  * one of them ever stops exporting a default. `any` would accept anything at
  * all, including a module with no handler in it. */
 export type HandlerModule = { default: (req: Request, ctx: never) => Response | Promise<Response> }
@@ -65,7 +65,6 @@ export const HANDLERS = {
   push: () => import('../push.mts'),
   report: () => import('../report.mts'),
   'report-compose-background': () => import('../report-compose-background.mts'),
-  t212: () => import('../t212.mts'),
   'telegram-webhook': () => import('../telegram-webhook.mts'),
   'video-analyze-background': () => import('../video-analyze-background.mts'),
   watchdog: () => import('../watchdog.mts'),
@@ -91,7 +90,6 @@ export const EXACT_ROUTES: Readonly<Record<string, HandlerName>> = {
   '/api/backup': 'backup',
   '/api/push': 'push',
   '/api/licences': 'licences',
-  '/api/t212': 't212',
 }
 
 /** Prefix routes. netlify.toml's `/download/*` carries the splat into a query
