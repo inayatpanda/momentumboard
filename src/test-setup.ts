@@ -1,4 +1,7 @@
 import '@testing-library/jest-dom'
+// IndexedDB for the v2 slice store tests (jsdom ships none). Harmless for
+// tests that never touch it.
+import 'fake-indexeddb/auto'
 
 // jsdom in this environment doesn't expose Web Storage, so `localStorage` is
 // undefined and any test that touches it throws. Provide a minimal in-memory

@@ -25,18 +25,42 @@ export interface RuleItem {
   createdAt: number
 }
 
+/** One cached record in the v2 local-first layer (plan Task 8): a view slice,
+ * a candle series, or a quote batch, stamped with when it was fetched. */
+export interface SliceRow {
+  key: string
+  data: unknown
+  fetchedAt: number
+}
+
 class MBDatabase extends Dexie {
   watchlist!: Table<WatchItem, string>
   settings!: Table<{ key: string; value: string }, string>
   rules!: Table<RuleItem, string>
   trades!: Table<Trade, string>
   notes!: Table<NoteItem, string>
+  slices!: Table<SliceRow, string>
+  candles!: Table<SliceRow, string>
+  quotes!: Table<SliceRow, string>
   constructor() {
     super('momentumboard')
     this.version(1).stores({ watchlist: 'symbol', settings: 'key' })
     this.version(2).stores({ watchlist: 'symbol', settings: 'key', rules: 'id, symbol' })
     this.version(3).stores({ watchlist: 'symbol', settings: 'key', rules: 'id, symbol', trades: 'id, symbol, openedAt' })
     this.version(4).stores({ watchlist: 'symbol', settings: 'key', rules: 'id, symbol', trades: 'id, symbol, openedAt', notes: 'id, at' })
+    // v5 (PWA rebuild): the local-first cache tables. Every v4 table is
+    // re-declared IDENTICALLY — installed users' journals/watchlists survive
+    // (CX-5; the upgrade test drives this against a real populated v4 DB).
+    this.version(5).stores({
+      watchlist: 'symbol',
+      settings: 'key',
+      rules: 'id, symbol',
+      trades: 'id, symbol, openedAt',
+      notes: 'id, at',
+      slices: '&key, fetchedAt',
+      candles: '&key, fetchedAt',
+      quotes: '&key, fetchedAt',
+    })
   }
 }
 
