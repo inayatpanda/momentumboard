@@ -51,6 +51,21 @@ import {
 } from '../../../shared/engine/calibration'
 import { pickDiverse } from '../../../shared/engine/select'
 import { isCryptoSymbol } from '../../../shared/symbols'
+import {
+  CRYPTO_CALIB_KEY,
+  CRYPTO_HORIZONS,
+  cryptoCandlesVia,
+  gradeCryptoPrediction,
+  loadCryptoCalibration,
+  updateCryptoCalibration,
+  type CryptoCalibrationState,
+} from '../../../shared/engine/cryptoCalibration'
+import {
+  CRYPTO_RISK_KEY,
+  cryptoCombinedFor,
+  cryptoDisabled,
+  loadCryptoRisk,
+} from '../../../shared/engine/cryptoLane'
 import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder, type FunnelTrace } from '../../../shared/engine/funnelTrace'
 import {
   MISS_LEDGER_KEY,
@@ -67,7 +82,7 @@ import { GATE_STATE_KEY, advanceGateState, effectiveGates, gateEligibility, gate
 import { classifyOutcome, postMortemKey } from '../../../shared/engine/postMortem'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
-import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, RUNG_RISK_PCT, type RiskState } from '../../../shared/engine/riskLadder'
+import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, RUNG_RISK_PCT, type CohortRung, type RiskState } from '../../../shared/engine/riskLadder'
 import { capCohortOf, SMALL_CAP_MAX_USD_M, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
@@ -407,6 +422,33 @@ async function loadState(store: AppStore, today: string) {
   return { weights, calibration, channelCred }
 }
 
+/** THE CRYPTO PARTITION'S OWN TWO BLOBS (Stage 1c Phase B), read exactly the way
+ * `loadState` reads the equity pair one function up — two keys, two reads, two
+ * writes. Nothing here opens `seed.json`: the committed seed was swept over an
+ * equity universe with crypto explicitly filtered out, so it is not evidence
+ * about a coin, and the crypto partition's honest cold start is EMPTY (B1,
+ * `emptyCryptoCalibration`).
+ *
+ * Both loaders refuse a blob they cannot trust rather than patching it: the
+ * calibration goes cold without its `basis` brand (an equity blob written under
+ * this key would otherwise hand the partition 8,500 SPY-benchmarked rows), and
+ * the ladder goes cold on a malformed rung (permission to size is never
+ * recovered from a broken record). */
+async function loadCryptoState(store: AppStore, today: string): Promise<{ cal: CryptoCalibrationState; risk: CohortRung }> {
+  return {
+    cal: loadCryptoCalibration(await store.read<CalibrationState>(CRYPTO_CALIB_KEY)),
+    risk: loadCryptoRisk(await store.read<CohortRung>(CRYPTO_RISK_KEY), today),
+  }
+}
+
+/** IS THE CALIBRATION GETTING BETTER? — the precondition every rung promotion
+ * carries (riskLadder.ts). Lifted out of the equity pass verbatim so the crypto
+ * ladder can ask the same question of its OWN trail: two ladders reading one
+ * rule, rather than one rule written twice and drifting. Ten points before it
+ * can say no, so a young trail never blocks a promotion on absence of evidence. */
+const brierImprovingOf = (b: { mean: number }[]): boolean =>
+  b.length >= 10 ? b.slice(-5).reduce((s, x) => s + x.mean, 0) / 5 <= b.slice(-10, -5).reduce((s, x) => s + x.mean, 0) / 5 : true
+
 const mapLimit = async <T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> => {
   const out: R[] = []
   for (let i = 0; i < items.length; i += limit) {
@@ -567,6 +609,39 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     if (!candleCache.has(sym)) candleCache.set(sym, await deps.candles(sym))
     return candleCache.get(sym) ?? null
   }
+  // ---- PHASE-A RELAXATION 1 of 3: THE CRYPTO PARTITION GRADES ITSELF ----
+  // Phase A grades a crypto row against SPY and lets it teach nothing (the
+  // containment: "watched, never graded against a market it doesn't trade in").
+  // That stays true for every LEGACY crypto row — the ones already in the ledger,
+  // struck on a clock the asset does not keep. What is relaxed here, and only
+  // here, is the row the CRYPTO LANE published and stamped `cohort: 'crypto'`:
+  // it grades on the crypto basis (absolute, 14 crypto bars, entry at the first
+  // bar opening after the call, stop exposure from the publication bar) and
+  // accrues into the crypto blob. The equity skips below are untouched — a
+  // crypto row still teaches the equity calibration, the factor IC, the Brier
+  // trail, the rung streams, the panes and the gate ledger exactly nothing.
+  //
+  // The seam is `cryptoCandlesVia` (B1): completed bars only, so a run at 06:00
+  // and a run at 23:59 grade the identical series and nothing is ever measured
+  // against a bar that is still moving. It wraps the CACHED fetcher, so the crypto
+  // path costs no extra call.
+  const cryptoCandlesOf = cryptoCandlesVia(getCandles, nowSec)
+  const cryptoBarCache = new Map<string, Candle[] | null>()
+  const getCryptoCandles = async (sym: string) => {
+    if (!cryptoBarCache.has(sym)) cryptoBarCache.set(sym, await cryptoCandlesOf(sym))
+    return cryptoBarCache.get(sym) ?? null
+  }
+  const cryptoOff = cryptoDisabled()
+  const { cal: cryptoCal, risk: cryptoRisk } = await loadCryptoState(store, today)
+  /** Every crypto-lane row whose 14-bar grade landed in THIS pass — the crypto
+   * partition's own `newlyGraded`, feeding its own Brier trail. There is no
+   * wildcard column: the experiment slot refuses crypto outright
+   * (`wildcardLane.ts`), and that exclusion is a Phase-A guard that STAYS. */
+  const cryptoGraded: { probability: number; outcome10?: PredOutcome; shadow: boolean }[] = []
+  /** …and the crypto ladder's own evidence window and its own newly-graded
+   * count, the exact shape `allOutcomes` / `newByCohort` have for equities. */
+  const cryptoOutcomes: OutcomeLite[] = []
+  let cryptoNewActionable = 0
 
   let graded = 0
   // per-cohort tally of NON-shadow calls graded THIS run — feeds each sleeve's
@@ -630,19 +705,34 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     predictionsByDate.set(date, preds)
     let changed = false
     for (const pred of preds) {
-      const candles = await getCandles(pred.sym)
+      // WHICH PARTITION MEASURES THIS ROW — decided once, here, and it decides
+      // the tape, the clock, the basis and the blob together. `cohort` is the
+      // stamp the crypto lane wrote at publication (types.ts): a row without it
+      // is an equity row OR a legacy crypto row, and both take the path they
+      // have always taken. `CRYPTO=off` collapses this to the legacy answer, so
+      // the lever restores the Phase-A tree exactly rather than approximately.
+      const cryptoLaneRow = !cryptoOff && pred.cohort === 'crypto'
+      const candles = cryptoLaneRow ? await getCryptoCandles(pred.sym) : await getCandles(pred.sym)
       if (!candles) continue
+      /** The three lenses, on whichever clock owns this row. Crypto's are 7 / 14
+       * / 29 CRYPTO BARS — the ×7/5 images of a week, the calibrated horizon and
+       * a month — and they land in the same three fields because renaming them
+       * would rewrite every stored row for a cosmetic gain. `outcome10` is the
+       * calibrated one in both partitions, which is what keeps every "learn at
+       * the 10 field" site below correct without a second test. */
+      const gradeAt = (lens: 0 | 1 | 2, equityHorizon: 5 | 10 | 21) =>
+        cryptoLaneRow ? gradeCryptoPrediction(pred, candles, CRYPTO_HORIZONS[lens]) : gradePrediction(pred, candles, spy, equityHorizon)
       // grading stores all three lenses (5/10/21d); only the 10-session outcome
       // — the CALIBRATED horizon (reader holds 1-2wk+) — feeds the learning loop.
       if (!pred.outcome5) {
-        const o = gradePrediction(pred, candles, spy, 5)
+        const o = gradeAt(0, 5)
         if (o) {
           pred.outcome5 = o
           changed = true
         }
       }
       if (!pred.outcome10) {
-        const o = gradePrediction(pred, candles, spy, 10)
+        const o = gradeAt(1, 10)
         if (o) {
           pred.outcome10 = o
           // CONTAINMENT (1c A1): a legacy crypto row RESOLVES — its outcomes
@@ -697,6 +787,19 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // THE calibrated grade: calibration buckets, factor-IC weights, the
           // Brier trail and the risk-ladder counters all learn here, at 10d.
           if (!cryptoRow) updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
+          // …and the OTHER partition learns here, in its own object, under its
+          // own key (Phase-A relaxation 1 — see the seam at the top of this
+          // function). `updateCryptoCalibration` forces `capUsdM` to null, so
+          // the row books the cohortless key that is the only scheme this blob
+          // will ever hold; everything else the equity path does — the
+          // sized/shadow sub-counts, the setup-family buckets, the evidence
+          // counters — happens INSIDE the crypto state. Nothing pools: the two
+          // objects have no key in common and no read walks both.
+          if (cryptoLaneRow) {
+            updateCryptoCalibration(cryptoCal, pred, o)
+            cryptoGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow })
+            if (!pred.shadow && !pred.watchOnly) cryptoNewActionable++
+          }
           // …but NOT factor IC for a lane call — ANY lane (LANE_CATALYST_KINDS,
           // catalyst.ts). A lane call carries a constant technical placeholder
           // (dipLane.ts, velocityLane.ts) rather than a measured factor vote, so
@@ -721,7 +824,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // ~a month — the reader's stated holding period tops out around 4 weeks,
       // so the ledger keeps the month-scale truth alongside the 5d/10d reads
       if (!pred.outcome21) {
-        const o = gradePrediction(pred, candles, spy, 21)
+        const o = gradeAt(2, 21)
         if (o) {
           pred.outcome21 = o
           changed = true
@@ -737,6 +840,14 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // exclusion was written for.
       if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym))
         allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: !!pred.instrument, cohort: capCohortOf(pred.capUsdM) })
+      // …and the crypto ladder's evidence window, which is the SAME sentence
+      // over a disjoint population: the crypto stream never enters `allOutcomes`
+      // (the guard one line up is unconditional and stays that way) and the
+      // equity stream never enters this one. Same rule about which rows count —
+      // actionable only, no shadows, no watch rows — so counter and window
+      // cannot drift apart here either.
+      if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !cryptoOff && pred.cohort === 'crypto')
+        cryptoOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: !!pred.instrument })
       // THE DEBT COLLECTION (Stage 3d fix wave). Read off the ROW rather than off
       // "did it grade in this pass", which is what makes a failed ledger write
       // recoverable: a row graded last time whose blob write threw still says
@@ -802,13 +913,20 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     const mean = brierPoint(skillGraded)
     if (mean != null) calibration.brier = [...calibration.brier, { date: today, mean: Math.round(mean * 1000) / 1000, n: skillGraded.length }].slice(-250)
   }
+  // …and the crypto partition's OWN trail, in its own blob, off its own graded
+  // rows. It exists for one reason: `brierImproving` is a precondition of every
+  // rung promotion, so a crypto ladder reading the equity trail would have its
+  // sizing gated by how well the engine forecast equities — the contamination
+  // this partition exists to prevent, arriving through the one door nobody
+  // watches. Nothing filters wildcards out of it because nothing can be one: the
+  // experiment slot refuses crypto, and that Phase-A exclusion stays.
+  if (cryptoGraded.length) {
+    const mean = brierPoint(cryptoGraded)
+    if (mean != null) cryptoCal.brier = [...cryptoCal.brier, { date: today, mean: Math.round(mean * 1000) / 1000, n: cryptoGraded.length }].slice(-250)
+  }
   w = maybeNudgeWeights(w, today)
 
-  const b = calibration.brier
-  const brierImproving =
-    b.length >= 10
-      ? b.slice(-5).reduce((s, x) => s + x.mean, 0) / 5 <= b.slice(-10, -5).reduce((s, x) => s + x.mean, 0) / 5
-      : true
+  const brierImproving = brierImprovingOf(calibration.brier)
   // Risk ladder: the COMBINED rung stays the full non-shadow stream (top-level,
   // exactly as before — back-compat for every app screen reading riskState.rung),
   // and each cap-class sleeve earns its own rung from its own outcomes, pooling to
@@ -828,6 +946,35 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       small: computeCohortRung(risk.cohorts!.small, cohortRecent('small'), newByCohort.small, combinedNext, brierImproving, override, today),
     },
   }
+
+  // ---- THE CRYPTO RUNG STREAM: its own instance, never the equity ladder ----
+  // `computeCohortRung` verbatim, with the two arguments that would have carried
+  // equity evidence across the partition chosen rather than inherited:
+  //
+  //  · `combined` is the CRYPTO ladder itself (`cryptoCombinedFor`). For an
+  //    equity sleeve, mirroring the combined rung while thin is right — the whole
+  //    book's record is still evidence about a young large-cap sleeve. For crypto
+  //    it would hand a cold cohort the sizing that 8,500 SPY-benchmarked outcomes
+  //    paid for. Mirroring itself is a no-op that keeps `gradedAtRung` honest
+  //    until it has twenty of its own and stands on them.
+  //  · `override` is NULL. `cfg.riskRungOverride` is the owner pinning THE BOOK;
+  //    letting it pin this ladder too would hand the crypto cohort a rung its own
+  //    record never earned, and the half-size cap is released by exactly that
+  //    record (`cryptoSizeCap`). The owner's pin governs the money it was aimed
+  //    at; the crypto cohort earns its own or stays at half.
+  //
+  // With `CRYPTO=off` the whole stream is inert: no outcome enters it, no count,
+  // and the blob is not written at all — the ladder the lever restores is the one
+  // that existed before it, byte for byte.
+  const nextCryptoRisk = computeCohortRung(
+    cryptoRisk,
+    cryptoOutcomes.slice(-60),
+    cryptoNewActionable,
+    cryptoCombinedFor(cryptoRisk),
+    brierImprovingOf(cryptoCal.brier),
+    null,
+    today,
+  )
 
   // channels: their calls get graded by the same yardstick as ours
   const extracts = ((await store.read<ExtractLike[]>('video-extracts')) ?? []).slice(-120)
@@ -958,6 +1105,26 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   await store.write('engine-calibration', calibration)
   await store.write('channel-credibility', credResult.state)
   await store.write('risk-state', nextRisk)
+  // …and the crypto partition's two, beside them and never inside them.
+  //
+  // WRITTEN ONLY WHEN THE PARTITION ACTUALLY MOVED — the `advanceGates`
+  // precedent, and here it carries a second claim: a grading pass on an
+  // equity-only ledger writes the SAME set of blobs it wrote before this lane
+  // existed, so "which blobs does a pass touch?" stays a question with the old
+  // answer for every deploy that has never seen a crypto row. Two triggers,
+  // because there are two ways it can move: a fresh grade (which accrued into
+  // the calibration), or a rung step off evidence banked on an earlier pass.
+  //
+  // With `CRYPTO=off` neither can happen — no row was graded on the crypto
+  // basis, no outcome entered the stream — so the lever leaves the footprint of
+  // the pre-lane tree exactly.
+  const cryptoMoved = cryptoGraded.length > 0 || JSON.stringify(nextCryptoRisk) !== JSON.stringify(cryptoRisk)
+  if (!cryptoOff && cryptoMoved) {
+    await store.write(CRYPTO_CALIB_KEY, cryptoCal)
+    await store.write(CRYPTO_RISK_KEY, nextCryptoRisk)
+    if (cryptoGraded.length)
+      console.log(`CRYPTO: ${cryptoGraded.length} graded on the crypto clock — rung R${nextCryptoRisk.rung}, ${cryptoCal.evidence?.live?.n ?? 0} live outcomes on the partition`)
+  }
 
   // LAST in the pass, and wrapped whole. Every learning blob above is durable by
   // now, so a miss-ledger failure — a missing trace, an upstream 503 on a candle
