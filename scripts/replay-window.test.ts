@@ -1731,6 +1731,17 @@ describe('traceViolations — the consistency invariant, per day', () => {
     expect(traceViolations(traceDay({ trace: bare })).join('\n')).toMatch(/'dead-zone-core' names a side's fate/)
   })
 
+  // The A1 residual A2's parity arm found. `crypto-contained` is recorded in
+  // addSource — the candidate door, before any composite and so before any side —
+  // so a BARE key is the only legal shape, and the walk threw on its first
+  // refused coin until the mirror learned that.
+  it('treats crypto-contained as the door gate it is: bare only, never sided', () => {
+    expect(traceViolations(traceDay({ trace: traceOf({ 'BTC-USD': { gate: 'crypto-contained' } }) }))).toEqual([])
+    expect(traceViolations(traceDay({ trace: traceOf({ 'BTC-USD:long': { gate: 'crypto-contained', side: 'long' } }) })).join('\n')).toMatch(
+      /'crypto-contained' fires before a side exists/,
+    )
+  })
+
   it('refuses a near miss that reached the ledger — board-only is the contract', () => {
     const ledger = [row({ sym: 'CCC', side: 'long', nearMiss: true, where: 'ledger' })]
     const trace = traceOf({ 'CCC:long': { gate: 'dead-zone-core', side: 'long' } })
@@ -2587,4 +2598,110 @@ describe('flatten', () => {
     expect(flatten(run, 'board').map(keyOf)).toEqual(['2026-07-14:AAA:long'])
     expect(flatten(run, 'ledger').map(keyOf)).toEqual(['2026-07-15:AAA:long'])
   })
+})
+
+// ============ STAGE-1c PHASE A TASK A2: THE CONTAINMENT PARITY WALK ============
+// A1 shut the doors; this proves it shut them WITHOUT moving anything else.
+//
+// The claim is made the way every claim since 3a has been: run one window twice
+// and diff. The arms differ in ONE thing — the reader's watchlist carries coins
+// in the second — and the leak the recon found (§8.0) is exactly that door:
+// `starter.ts` ships BTC-USD/ETH-USD → `cfg.watchlist` → `addSource(sym,
+// 'watchlist')` at candidate priority 1, ahead of the roster and the sleeve.
+//
+// NOT VACUOUS, and the fixture is built to prove it: BOTH coins get a real,
+// admissible tape in the temp cache, so "nothing happened" cannot be blamed on
+// missing candles. The engine can see them; it refuses them.
+describe('crypto containment — the reader may watch a coin and the equity walk never notices', () => {
+  it('walks the same window with and without a crypto watchlist and publishes byte-identical output', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'replay-crypto-'))
+    const ts = busDays(320)
+    const write = (sym: string, candles: Candle[]) =>
+      writeFileSync(join(dir, `${sym.replace(/[^A-Za-z0-9]/g, '_')}.json`), JSON.stringify({ sym, range: '5y', at: Date.now(), candles }))
+    for (const [i, sym] of CONTEXT_SYMS.entries()) write(sym, tape(ts, 24 + (i % 37) * 9, 0.01 + (i % 9) * 0.008, 6 + (i % 5), i * 0.41))
+    write('AAA', tape(ts, 40, 0.22, 9, 0.7))
+    write('BBB', tape(ts, 90, -0.06, 8, 2.1))
+    const walkSyms = ['AAA', 'BBB', ...SWEEP_SYMS.slice(0, 12)]
+    for (const [i, sym] of SWEEP_SYMS.slice(0, 12).entries()) {
+      const [drift, swing] = SWEEP_SHAPES[i % SWEEP_SHAPES.length]
+      write(sym, tape(ts, 30 + (i % 11) * 7, drift, swing, i * 0.37))
+    }
+    write('SPY', tape(ts, 480, 0.04, 1.2))
+    write('QQQ', tape(ts, 400, 0.05, 1.6))
+    // THE COINS, with tapes shaped like the leads — high capacity, big swings, the
+    // profile that walks a name onto a board. If the guard were absent these would
+    // publish, which is the whole point of giving them a tape at all.
+    write('BTC-USD', tape(ts, 61_000, 0.19, 9, 1.1))
+    write('ETH-USD', tape(ts, 1_800, 0.21, 11, 0.3))
+
+    const from = iso(ts[320 - 25])
+    const to = iso(ts[319])
+    const argv = process.argv
+    const logged: string[] = []
+    const quiet = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void logged.push(a.map(String).join(' ')))
+    const cleanPath = join(dir, 'no-watchlist.json')
+    const coinPath = join(dir, 'crypto-watchlist.json')
+    const runOnce = async (out: string, watchlist: string | null, fresh: { main: () => Promise<void> }) => {
+      process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', walkSyms.join(','), '--out', out, ...(watchlist ? ['--watchlist', watchlist] : [])]
+      await fresh.main()
+    }
+    try {
+      vi.resetModules()
+      vi.stubEnv('REPLAY_CACHE_DIR', dir)
+      // Both feedback loops off in BOTH arms, for the reason the 3a parity test
+      // states: a gate notch or a spent experiment slot would change every later
+      // day's board and the comparison would stop being about the guard.
+      vi.stubEnv('GATES', 'off')
+      vi.stubEnv('WILDCARD', 'off')
+      const fresh = (await import('./replay-window')) as typeof import('./replay-window')
+      await runOnce(cleanPath, null, fresh)
+      await runOnce(coinPath, 'BTC-USD,ETH-USD', fresh)
+    } finally {
+      quiet.mockRestore()
+      vi.unstubAllEnvs()
+      process.argv = argv
+    }
+
+    const clean = JSON.parse(readFileSync(cleanPath, 'utf8')) as RunFile & { watchlist?: string[] }
+    const coin = JSON.parse(readFileSync(coinPath, 'utf8')) as RunFile & { watchlist?: string[] }
+
+    // the arms are self-describing — an artefact says which door was open
+    expect(clean.watchlist).toEqual([])
+    expect(coin.watchlist).toEqual(['BTC-USD', 'ETH-USD'])
+    expect(logged).toContain('watchlist: empty — the walk screens, nobody watches')
+    expect(logged).toContain("watchlist: BTC-USD, ETH-USD — the reader's own door is open (2 crypto)")
+
+    // the walk actually walked, and actually published
+    expect(coin.days.length).toBeGreaterThan(10)
+    expect(coin.days.some(d => d.board.length > 0)).toBe(true)
+
+    // 1) PARITY — every reader-facing row, the roster size, the day's shape and
+    //    the learning blobs are byte-identical. The trace is deliberately NOT in
+    //    this projection: recording the refusal is the one thing that changed.
+    const published = (r: RunFile) =>
+      JSON.stringify({
+        days: r.days.map(d => ({ date: d.date, regime: d.regime, shape: d.shape, rosterSize: d.rosterSize, board: d.board, ledger: d.ledger, baseRate: d.baseRate, missAccrued: d.missAccrued })),
+        calibrationFinal: r.calibrationFinal,
+        riskFinal: r.riskFinal,
+        missLedgerFinal: r.missLedgerFinal,
+        gateStateFinal: r.gateStateFinal,
+        postMortemCensus: r.postMortemCensus,
+      })
+    expect(published(coin)).toBe(published(clean))
+
+    // 2) NOT VACUOUS — the coins were in front of the engine every single day and
+    //    were refused at the door, by name, under their own gate code, with the
+    //    door they came through recorded.
+    const cryptoRows = coin.days.flatMap(d => Object.entries(d.trace?.rows ?? {}).filter(([k]) => isCryptoSymbol(k.split(':')[0])))
+    expect(cryptoRows.length).toBe(coin.days.length * 2)
+    expect([...new Set(cryptoRows.map(([, r]) => (r as { gate: string }).gate))]).toEqual(['crypto-contained'])
+    expect([...new Set(cryptoRows.map(([, r]) => (r as { source?: string }).source))]).toEqual(['watchlist'])
+    // …and the clean arm has none, so the delta really is the refusal and nothing else
+    expect(clean.days.flatMap(d => Object.keys(d.trace?.rows ?? {}).filter(k => isCryptoSymbol(k.split(':')[0])))).toEqual([])
+
+    // 3) CONTAINED EVERYWHERE ELSE — never a published row, never a roster member,
+    //    never a graded outcome, in either arm.
+    for (const r of [...flatten(coin, 'board'), ...flatten(coin, 'ledger')]) expect(isCryptoSymbol(r.sym), `${r.sym} reached the reader`).toBe(false)
+    expect(JSON.stringify(coin.calibrationFinal)).toBe(JSON.stringify(clean.calibrationFinal))
+  }, 240_000)
 })

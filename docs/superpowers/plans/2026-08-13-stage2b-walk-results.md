@@ -434,3 +434,126 @@ In the lane-off arm ORCL's 2026-07-14 refusal was priced as a *stopless* miss (`
 **Supporting evidence from a second, independent window:** the two-year `--seed-out` walk in the suite now runs these same invariants over **27 experiments** and passes every one — one slot throughout, every graded experiment booked with its receipt, every gate's causal count equal to the experiments graded against it, and no double-book (the fix wave's documented one-blob-write residual is now an asserted inequality rather than an unwatched risk).
 
 **The honest scoreboard at n=1.** One booked causal outcome, a hit, on a paper-only short. The standing warning that experiments lose more often than the board is neither confirmed nor contradicted by a single sample, and the slot's own record says so.
+
+## Stage 1c Phase A — the contamination audit: what the equity record was measured with
+
+**Date:** 2026-08-14 · **Instrument:** `scripts/crypto-audit.ts` (read-only; artefact or live-D1) · **Windows:** the acceptance window 2026-07-14 … 2026-08-11 (21 sessions), audited on the **pre-A1** artefact of record and re-walked **post-A1** in two arms. **API calls: 0** (warm `.replay-cache`).
+
+Task A1 shut twelve doors. This is the question A1 could not answer: **how much crypto got through before they shut, and what did it teach on the way.** Two artefacts, and the contrast between them is the evidence.
+
+### The source of record
+
+`.replay-cache/replay-new.json` — the Stage-3d acceptance walk at commit `b606c1a`, **pre-A1**, 21 sessions, universe 144. It is the only live-shaped record of the leak, because `ETH-USD` rode `MIRROR_EXTRAS` into every non-seed walk (recon §8.0) and A1 has since removed it from every mode. **12 crypto rows** (6 distinct calls, each on the board and in the ledger) — all `ETH-USD`, all long, all grade C, 2026-07-17 … 07-28. No BTC-USD, no SOL-USD: neither has ever been in the replay universe or the cache.
+
+**Invocation:** `npx tsx scripts/crypto-audit.ts --artefact .replay-cache/replay-new.json [--json out.json]`
+
+### 1. What actually taught — five rows, not six
+
+| date | side | regime | composite | setup | accrual | risk% | the engine's own grade |
+|---|---|---|---|---|---|---|---|
+| 2026-07-17 | long | amber | 36.4 | continuation | sized | 0 | miss +0.8pp |
+| 2026-07-20 | long | amber | 31.4 | continuation | sized | 0 | **HIT +1.0pp** |
+| 2026-07-22 | long | amber | 36.6 | continuation | sized | 0 | miss −7.5pp |
+| 2026-07-23 | long | amber | 38.4 | continuation | sized | **0.5** | miss −6.6pp |
+| 2026-07-27 | long | amber | 27.7 | continuation | sized | 0 | miss −6.4pp (stopped) |
+| 2026-07-28 | long | amber | 38.1 | reversal | sized | **0.5** | **never graded** — taught nothing |
+
+**6 rows of 454 in the ledger (1.32%); 5 graded, 1 hit, Σ −18.7pp.** The sixth is the audit's sharpest methodological point: its `storedOutcome10` is `null` (the walk ended before its tenth session), while the harness's *recomputed* `outcome10` reads −3.0pp over the untruncated tape. A census reading the recomputed field would have credited the `reversal` family with an increment that was never made. **The audit reads `storedOutcome10` whenever the key exists, including when it is null**, and a test pins that.
+
+### 2. Calibration — small, and permanently un-attributable
+
+| what | crypto put in | the bucket now | crypto share |
+|---|---|---|---|
+| `long:amber:25-40` (the legacy cohortless key — crypto has no cap, so it books to the **pooled** rungs the whole ladder falls back to) | **+5 n / +1 hit** | 1,022 n / 443 hits | **0.49%** of n, 0.23% of hits |
+| `continuation:long:25-40` (the family curve that **moves published probability** since 3c) | **+5 n / +1 hit** | 1,209 n / 500 hits | **0.41%** |
+| `evidence.live` | **+5 n / +1 hit** | 166 n / 77 hits | **3.01%** |
+| Brier trail | 5 rows inside the daily means over 10 recorded days | — | not a subtractable term |
+| `reversal:long:*` | **nothing** | — | the ungraded row was the only reversal |
+
+**THE BOUND, stated on the page and not in a footnote.** A bucket is two integers; the blob holds no record of which row incremented it. These numbers are an *attribution of contribution*, recomputed from the rows by the grader's own key arithmetic (`bucketKeyFor` is pinned equal to `updateCalibration` on seven fixtures) — **not a subtraction**. They cannot be un-attributed: every read struck against the bucket while the increment stood — a grade, a published probability, a setup blend — has already happened.
+
+### 3. Factor IC — bounded by the source, exact against live D1
+
+The artefact's row projection drops the factor vector, so the per-factor split is **unrecoverable from it**. The bound: **5 graded rows × at most 10 factor columns**, and `gradedSinceNudge` moved by exactly **5** — a third of a `NUDGE_EVERY` step, whatever those rows voted. Against live D1 the rows carry `factors`, and the audit replays `updateIcStats`' own admission test (including the per-factor `ZERO_IS_A_READING` table and a reading's own silence veto) for an **exact** per-factor increment. That is the one section that gets materially sharper at ship time.
+
+### 4. The risk ladder — one slot in twenty, and the decision survives it
+
+Only **one** crypto outcome ever reached `allOutcomes`: the 2026-07-23 sized row (risk 0.5%, miss −6.6pp). The other four were watch-only and the sixth never graded.
+
+- **The 2026-08-05 promote was crypto-free.** The 07-23 row's tenth SPY session is 2026-08-06, so it first graded on the 08-07 pass — after the promote. Its evidence line (`earned: 36 graded at R0, hit rate 60%`) is uncontaminated.
+- **The 2026-08-11 demote was not.** Reconstructing `allOutcomes` from the artefact reproduces the engine's own evidence string exactly — `cold: hit rate 35% over last 20`, 7 hits in 20 — and **one of those twenty slots is the crypto row**. Remove it and the window reads 7/19 = **36.8%**, still under the 45% demote bar: **the demote stands either way.** What crypto moved was the number printed beside the decision, not the decision.
+
+This is the honest shape of the whole finding: the contamination is small, it is real, and where it can be counterfactualled it did not flip anything.
+
+### 5. The gate ledger — the one place the contamination is load-bearing
+
+21 crypto trace rows over the window. Two were publications (`called-half`, skipped by construction under `MISS_SKIP_GATES`); ten fell on days the ledger never matured. **Nine were refusals on measured days**, and each one is a row the miss walk priced and charged to an equity gate:
+
+| gate | crypto refusals | gate's lifetime `unchecked` | verdict |
+|---|---|---|---|
+| `called-watch` | **4** (07-17, 07-20, 07-22, 07-27) | **0** | **PROVEN priced** — a gate that never left a row unpriced did not leave these unpriced |
+| `slot-cut` | 4 (07-15, 16, 21, 24) | 9 | 0–4 priced; the rest sit under the 40-fetch budget |
+| `dead-zone-core` | 1 (07-14) | 2 | 0–1 priced |
+
+Classified against the same ±5pp band the miss walk uses, off each row's own graded excess (`missExcess` mirrors `gradePrediction` line for line minus the stop walk, so the two are commensurable):
+
+**2 proven `saved` events** (07-22 at −7.5pp, 07-27 at −6.4pp) and 2 inside the band (+0.8, +1.0 — they still moved `checked`). The ledger's own bounded `examples` array independently preserves one of them: *2026-07-27 ETH-USD long −6.4pp charged to `called-watch`*. Those two are **permanently inside** `called-watch`'s `saved` 33 / `sidedSaved` 33 / `savedExcessSum` −371.7 — **6.1% of the count, 3.7% of the sum** — and the per-gate counters are lifetime and never pruned.
+
+**But no threshold moved.** `gateStateFinal` is `null` over the window: no gate reached `GATE_MIN_ATTRIBUTED` with a `GATE_COST_RATIO` of 2 (`dead-zone-core`, the biggest, reads 189:157 = 1.20). **Contaminated evidence that has not yet changed a published constant** is a much smaller finding than contaminated evidence that has — and the audit reports the difference explicitly rather than leaving the reader to infer it.
+
+### 6. The reader-facing cost nobody had counted
+
+`ETH-USD` took **one of the three long TRADE slots** on 2 of 21 sessions, at 0.5% risk:
+
+| session | the three long trades the reader was given |
+|---|---|
+| 2026-07-23 | **ETH-USD** @0.5 · LCID @0.5 · NFLX @0.5 |
+| 2026-07-28 | DDOG @0.5 · ZS @0.5 · **ETH-USD** @0.5 |
+
+The board's caps are hard (3 trades/side), so on those two mornings an equity long was displaced by a coin the engine could not honestly grade. **Which** equity long is not recoverable — the counterfactual board was never computed — so this is named and not quantified.
+
+### 7. ⚠️ The artefact bounds the REPLAY-shaped record. Live D1 may be worse.
+
+The replay universe carried `ETH-USD` only. **Production's starter watchlist ships BOTH `BTC-USD` and `ETH-USD`** (`src/lib/starter.ts`), and the watchlist door admits at candidate priority 1 — ahead of the roster, the catalysts and the core sleeve. So live D1 has had a second coin in front of `composeCall` every morning that the replay never saw, over a far longer history than 21 sessions. **The numbers above are a lower bound on production.** The controller runs the audit against live D1 at ship time:
+
+```
+CLOUDFLARE_ACCOUNT_ID=… STORE_BACKEND=d1 npx tsx scripts/crypto-audit.ts --live --days 250 --json /tmp/crypto-audit-live.json
+```
+
+(D1 id from `wrangler.toml`; credential from `CLOUDFLARE_API_TOKEN` or `npx wrangler login`. The store is wrapped so **every write path throws** — `readOnly`, pinned by a test — and every read is fail-soft: a missing blob is reported, never fatal. `--days` bounds the `predictions-index` walk; 250 is the index's own depth.)
+
+### The parity walk — 21 real sessions, one door, nothing else moved
+
+A1's engine test proved one fixture day. This proves the acceptance window, on the real tape, through the door the leak actually used.
+
+**Arms:** the same window walked twice at HEAD, differing in one thing — `--watchlist BTC-USD,ETH-USD` (a new, non-crypto-specific seam: the reader's own door, replayed). **Production-shaped in both arms** — funnel trace live, regret live, the wildcard slot live, gate feedback live. Not `GATES=off`/`WILDCARD=off`: the arms turn out to be identical, so the confounders had nothing to confound.
+
+**Command:** `npx tsx scripts/replay-window.ts --from 2026-07-14 --to 2026-08-11 --out clean.json` vs the same `+ --watchlist BTC-USD,ETH-USD --out coin.json`.
+
+| | result |
+|---|---|
+| board, ledger, day shape, roster size, base rate, dips, velocity, watched, candidates asked, miss accrued | **byte-identical, all 21 days** |
+| `calibrationFinal`, `riskFinal`, `gateStateFinal`, `missLedgerFinal`, `postMortemCensus`, `scorecardFinal`, `wildcards`, `universe`, `missing` | **byte-identical** |
+| the two experiments the window bought | identical — ORCL short 07-14 (HIT +7.8pp), KO long 07-29 (open) |
+| funnel trace rows | 2,787 → 2,829: **delta exactly 42 = 21 sessions × 2 coins** |
+| those 42 rows | **all** `crypto-contained`, **all** `source: watchlist` |
+| the trace with crypto keys stripped | **identical on every one of the 21 days**, `counts.notCandidate` included |
+| `.replay-cache` after the run | **no `BTC_USD.json`, no `SOL_USD.json`** — the refusal happens at the door, upstream of the candle fetch. Zero API calls. |
+
+**Not vacuous.** Both coins had a real, admissible tape available and were in front of `addSource` on every session; the engine saw them 42 times and refused them 42 times, by name, under their own gate code. The suite carries the same claim hermetically (`scripts/replay-window.test.ts`, a 25-day fixture walk with two coin tapes shaped like the leads, so "nothing happened" cannot be blamed on missing candles).
+
+### The A1 residual the parity arm found — and this is why the arm exists
+
+The containment walk **threw on its very first refused coin**:
+
+```
+BLOCKED: the funnel trace disagrees with the board on 2025-02-17 — 2 violation(s):
+  BTC-USD: 'crypto-contained' names a side's fate and may not be side-free
+  ETH-USD: 'crypto-contained' names a side's fate and may not be side-free
+```
+
+`crypto-contained` is recorded in `addSource` — the candidate door, upstream of any composite and therefore of any side — so a **bare** `SYM` key is its only legal shape. A1 taught `GATE_CODE_MIRROR` and `MISS_SKIP_GATE_MIRROR` the new code and not `SIDE_FREE_GATES`, and the gap was invisible until a walk actually refused something. Fixed in the harness (a mirror, not the engine — nothing the reader sees moved) and pinned in both directions.
+
+### The verdict
+
+**Phase A's containment is proved, and the damage is measured.** In the live-shaped record of the acceptance window: **6 crypto rows, 5 of which taught; +5n/+1h into one pooled calibration bucket (0.49%) and one setup family (0.41%); 3.01% of the window's live evidence; 5 rows in the Brier means; 5/15 of an IC nudge step; one of the twenty slots that decided a rung demotion (which stands without it); 2 proven `saved` events permanently inside `called-watch`'s movable evidence (6.1% of its saved count); and two of twenty-one mornings where a coin held one of the three long trade slots.** None of it can be un-attributed; none of it, where a counterfactual is computable, changed a decision. **The live-D1 run is the one that matters, because production watched two coins and the replay watched one.**

@@ -1087,7 +1087,16 @@ const PUBLISHED_GATE_CODES: ReadonlySet<string> = new Set([
 
 /** The gates that fire BEFORE a side exists and therefore key on the bare name:
  * the two trims, the candle miss, and the tape that produced no read at all. */
-const SIDE_FREE_GATES: ReadonlySet<string> = new Set(['trimmed', 'no-candles', 'no-data'])
+/** Codes that fire BEFORE a side is decided, and must therefore carry none.
+ *
+ * `crypto-contained` (stage 1c A1) joins them because it is recorded in
+ * `addSource` — the candidate door, upstream of any composite, so upstream of any
+ * direction. A1 taught `GATE_CODE_MIRROR` and `MISS_SKIP_GATE_MIRROR` the new
+ * code and not this set, and the residual was invisible until a walk actually
+ * refused a coin: the very first day of A2's containment arm threw the trace
+ * invariant on both names. It is a mirror fix, not an engine one — nothing the
+ * reader sees moved — and it is exactly what the parity arm exists to find. */
+const SIDE_FREE_GATES: ReadonlySet<string> = new Set(['trimmed', 'no-candles', 'no-data', 'crypto-contained'])
 
 /** The called-* code `publishCall` must have written for a row of this shape —
  * derived from what the READER can see on the row itself, never from the trace.
@@ -2498,6 +2507,31 @@ export async function main() {
   // containment (1c A1): crypto is out of the walk universe in EVERY mode —
   // an unguarded baseline walk graded ETH against SPY for weeks.
   const baseUniverse = seedUniverse(askedUniverse)
+  /** THE READER'S OWN WATCHLIST, replayed — `--watchlist BTC-USD,ETH-USD`
+   * [stage 1c A2].
+   *
+   * The universe above is the walk's SCREEN; the watchlist is a different door
+   * entirely, and it is the one production's crypto leak came through
+   * (`starter.ts` ships BTC-USD/ETH-USD → `cfg.watchlist` → `addSource(sym,
+   * 'watchlist')` at candidate priority 1, ahead of the roster and the sleeve).
+   * `seedUniverse` cannot reach it — a watchlist name is fetched by symbol at the
+   * door, not drawn from the screened list — so a walk that only strips the
+   * universe proves nothing about the door the leak actually used.
+   *
+   * This flag exists so the containment claim can be made the way every claim
+   * since 3a has been made: run the same window twice, once with the door
+   * carrying coins and once without, and diff. NOT crypto-specific — it takes any
+   * symbols — because a seam that only accepts the thing under test is a seam
+   * that can only ever confirm it. Empty (the default) is byte-for-byte the
+   * walk that shipped before this line. */
+  const watchlistRaw = process.argv.includes('--watchlist') ? arg('watchlist', '') : null
+  if (watchlistRaw === '' || watchlistRaw?.startsWith('--'))
+    throw new Error(`BLOCKED: --watchlist needs a comma-separated list${watchlistRaw ? ` (got the next flag, ${watchlistRaw})` : ''}`)
+  const watchlist = (watchlistRaw ?? '')
+    .split(',')
+    .map(s => s.trim().toUpperCase())
+    .filter(Boolean)
+    .map(symbol => ({ symbol, category: isCryptoSymbol(symbol) ? 'Crypto' : 'Replay' }))
   let commit = 'unknown'
   try {
     commit = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim()
@@ -2624,9 +2658,20 @@ export async function main() {
       : 'wildcard: present — the walk enforces the one-slot, shape and causal invariants over the window',
   )
 
+  // …and the READER'S DOOR (stage 1c A2). Printed beside the other seams because
+  // it is one: the containment arm of the crypto audit is a walk whose config
+  // carries coins, and a reader of two logs must be able to tell the arms apart
+  // without opening the artefacts.
+  console.log(
+    watchlist.length
+      ? `watchlist: ${watchlist.map(w => w.symbol).join(', ')} — the reader's own door is open (${watchlist.filter(w => isCryptoSymbol(w.symbol)).length} crypto)`
+      : 'watchlist: empty — the walk screens, nobody watches',
+  )
+
   const { store } = makeStore()
   await store.write('config', {
-    watchlist: [],
+    // `[]` unless `--watchlist` named names — the reader's own door, replayed.
+    watchlist,
     rules: [],
     ytChannels: [],
     capital: 5000,
@@ -3006,6 +3051,10 @@ export async function main() {
         // the universe actually walked — identical to REPLAY_UNIVERSE.length in
         // every mode that does not narrow or filter it
         universe: baseUniverse.length,
+        // …and the OTHER door (stage 1c A2): the symbols `--watchlist` put in
+        // front of `addSource`, so an artefact says which arm of the containment
+        // diff it is instead of leaving the reader to infer it from the log.
+        watchlist: watchlist.map(w => w.symbol),
         modelVersion: ENGINE_MODEL_VERSION,
         missing,
         days: out,
