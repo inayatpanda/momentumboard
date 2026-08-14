@@ -28,7 +28,7 @@ import { AlertEditor } from '../components/AlertEditor'
 import { PositionCalculator } from '../components/PositionCalculator'
 import { VerdictHero } from './parts/VerdictHero'
 import { FactorVotes } from './parts/FactorVotes'
-import { FunnelPath } from './parts/FunnelPath'
+import { FunnelPath, funnelDayKind, isPublishedGate } from './parts/FunnelPath'
 import { PastCalls } from './parts/PastCalls'
 import { OpenTraceCard } from './parts/OpenTraceCard'
 
@@ -80,8 +80,10 @@ function Catalysts({ sym }: { sym: string }) {
       {items.length === 0 ? (
         <p className="cc-reason">No recent headlines for this name.</p>
       ) : (
-        items.map(n => (
-          <a className="card sp-news pressable" key={n.url} href={n.url} target="_blank" rel="noreferrer">
+        /* two wires can carry the SAME url (a syndicated headline) — keying on
+           the url alone drops the duplicate rather than showing both */
+        items.map((n, i) => (
+          <a className="card sp-news pressable" key={`${n.url}-${i}`} href={n.url} target="_blank" rel="noreferrer">
             <span className="sp-news-title">{n.title}</span>
             <span className="sp-news-src">{hostOf(n.url)}</span>
           </a>
@@ -108,15 +110,32 @@ export default function StockPage({ sym }: { sym: string }) {
   const row = journey?.boardRow ?? null
   const quote = chart?.quote ?? null
   const candles = chart?.candles ?? []
-  // The engine looked at this name and refused it: the most recent funnel day
-  // carrying a gate that is not a publication.
-  const refusal = useMemo(() => {
-    for (const day of [...(journey?.funnel ?? [])].sort((a, b) => b.date.localeCompare(a.date))) {
-      const r = day.rows.find(x => !x.gate.startsWith('called-'))
-      if (r) return { date: day.date, row: r }
-    }
-    return null
+  // WHAT THE HERO MAY SAY, AND FROM WHICH DAY (Task 17 review, C1).
+  //
+  // Only the NEWEST funnel day speaks for the hero. The old memo scanned every
+  // day for the first non-publication row, so a Monday refusal outlived a
+  // Tuesday call: the page said "Not today — refused" about a name the engine
+  // had since published. Older days are history and the funnel path below
+  // already tells them, in order.
+  //
+  // And a day is judged WHOLE, by funnelDayKind (the same per-day precedence
+  // FunnelPath's dots use): a day carrying ANY `called-*` row PUBLISHED, even
+  // if its other side was refused. A refusal row from a day that published is
+  // not a refusal — it is one side of a day the engine acted on.
+  const newest = useMemo(() => {
+    const days = [...(journey?.funnel ?? [])].sort((a, b) => b.date.localeCompare(a.date))
+    return days[0] ?? null
   }, [journey])
+  const newestKind = newest ? funnelDayKind(newest) : null
+  const refusalRow = newest && newestKind === 'refused' ? newest.rows.find(r => !isPublishedGate(r.gate)) : null
+  const refusal = newest && refusalRow ? { date: newest.date, row: refusalRow } : null
+  // Published on the newest day, and gone from today's board: an honest line
+  // about that day, with no grade — the letter belongs to that day's row.
+  const publishedRow = newest && newestKind === 'published' ? newest.rows.find(r => isPublishedGate(r.gate)) : null
+  const published = newest && publishedRow && !row ? { date: newest.date, gate: publishedRow.gate } : null
+  // …and a day that only ever looked: the nearest miss is a real verdict, not
+  // an absence, so it must not fall through to the no-read line.
+  const nearMissDate = newest && newestKind === 'seen' && newest.nearMiss && !row ? newest.date : null
   // Nothing at all in the scan's record of today: fall through to on demand.
   const unscanned = journey != null && row == null && journey.calls.length === 0 && journey.funnel.length === 0
   // a near miss's levels are synthetic orientation, not a designed trade —
@@ -180,7 +199,7 @@ export default function StockPage({ sym }: { sym: string }) {
       ) : (
         <>
           {/* 2 — the verdict */}
-          <VerdictHero row={row} refusal={refusal} resolved />
+          <VerdictHero row={row} refusal={refusal} published={published} nearMissDate={nearMissDate} resolved />
           {/* 3 — the factor votes */}
           <FactorVotes factors={row?.factors} />
           {/* 4 — the funnel path */}
@@ -199,13 +218,18 @@ export default function StockPage({ sym }: { sym: string }) {
         <p className="sec-label">Price alerts</p>
         <AlertEditor symbol={sym} rules={rules} onSave={saveRule} onDelete={deleteRule} />
       </section>
-      <PositionCalculator
-        key={`${sym}-${row?.entry ?? quote?.price ?? 'none'}`}
-        defaultEntry={row?.entry ?? quote?.price ?? null}
-        defaultStop={row?.stop ?? null}
-        riskClass="normal"
-        capital={capital}
-      />
+      {/* the calculator names its own inputs but not itself — a screen reader
+          walking this page's landmarks needs to know what this block IS, so it
+          is wrapped rather than edited (it is shared with other screens) */}
+      <section aria-label="Position size">
+        <PositionCalculator
+          key={`${sym}-${row?.entry ?? quote?.price ?? 'none'}`}
+          defaultEntry={row?.entry ?? quote?.price ?? null}
+          defaultStop={row?.stop ?? null}
+          riskClass="normal"
+          capital={capital}
+        />
+      </section>
       <Catalysts sym={sym} />
     </div>
   )

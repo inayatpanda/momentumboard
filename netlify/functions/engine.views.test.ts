@@ -232,6 +232,26 @@ describe('engine ?view= slices', () => {
       expect((dflt.data as { days: unknown[] }).days).toHaveLength(3) // only 3 seeded, default window is 7
     })
 
+    // THE GRADE LAW OUTLIVES THE BOARD (Task 17 review, I4). A watch-only row
+    // and a below-base row were never sized, so they never earned a letter —
+    // and the projection dropped both flags, which meant a reader's history
+    // showed them with a grade pill the day after they aged off the board.
+    it('carries watchOnly and belowBase, so a never-sized row stays never-sized in history', async () => {
+      await seed('predictions-index', ['2026-08-13'])
+      await seed('predictions:2026-08-13', [
+        { id: 'w', date: '2026-08-13', sym: 'WATCH', side: 'long', grade: 'B', watchOnly: true },
+        { id: 'b', date: '2026-08-13', sym: 'UNDER', side: 'long', grade: 'C', belowBase: true },
+        { id: 's', date: '2026-08-13', sym: 'SIZED', side: 'long', grade: 'A' },
+      ])
+      const r = await body(await handler(req('?view=ledger&days=1')))
+      const rows = (r.data as { days: { predictions: { sym: string; watchOnly: boolean; belowBase: boolean }[] }[] }).days[0].predictions
+      const bySym = Object.fromEntries(rows.map(p => [p.sym, p]))
+      expect(bySym.WATCH).toMatchObject({ watchOnly: true, belowBase: false })
+      expect(bySym.UNDER).toMatchObject({ watchOnly: false, belowBase: true })
+      // …and a row with neither flag says so explicitly, rather than going absent
+      expect(bySym.SIZED).toMatchObject({ watchOnly: false, belowBase: false })
+    })
+
     it('the legacy aggregate ledger rows now carry postMortem too (same projection)', async () => {
       await seedDays()
       const r = await body(await handler(req()))

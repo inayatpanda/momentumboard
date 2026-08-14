@@ -9,19 +9,29 @@
 // sitting behind before the one it ended on — so it renders as "was: {label}"
 // rather than as a second, contradictory step.
 
+import type { GateCode } from '../../../shared/engine/types'
+import { PUBLISHED_GATES } from '../../../shared/engine/funnelTrace'
 import type { JourneySlice } from '../../lib/apiViews'
 import { GATE_LABELS } from '../../lib/gateLabels'
 
-type Day = JourneySlice['funnel'][number]
+export type FunnelDay = JourneySlice['funnel'][number]
+export type FunnelDayKind = 'published' | 'refused' | 'seen'
 
-const isPublished = (gate: string) => gate.startsWith('called-')
+/** Did this gate PUBLISH the row? Asked of the engine's own set, not of the
+ * `called-` prefix, so a future publishing gate cannot silently read as a
+ * refusal here. */
+export const isPublishedGate = (gate: GateCode) => PUBLISHED_GATES.has(gate)
 
-const kindOf = (day: Day): 'published' | 'refused' | 'seen' => {
-  if (day.rows.some(r => isPublished(r.gate))) return 'published'
+/** THE PER-DAY LAW, exported because the hero obeys it too (Task 17 review,
+ * C1): a day carrying ANY published row is a PUBLICATION day, whatever else
+ * happened to the name's other side that morning. Only a day with rows and no
+ * publication is a refusal; a day with no rows at all was merely looked at. */
+export const funnelDayKind = (day: FunnelDay): FunnelDayKind => {
+  if (day.rows.some(r => isPublishedGate(r.gate))) return 'published'
   return day.rows.length > 0 ? 'refused' : 'seen'
 }
 
-export function FunnelPath({ days }: { days: Day[] }) {
+export function FunnelPath({ days }: { days: FunnelDay[] }) {
   // The server hands these newest-first already; sorting defensively costs
   // nothing and means a re-ordered projection can never silently invert the
   // reader's sense of "what happened most recently".
@@ -35,7 +45,7 @@ export function FunnelPath({ days }: { days: Day[] }) {
       ) : (
         <ol className="sp-path">
           {ordered.map(day => (
-            <li className="sp-step" key={day.date} data-kind={kindOf(day)}>
+            <li className="sp-step" key={day.date} data-kind={funnelDayKind(day)}>
               <span className="sp-dot" aria-hidden="true" />
               <div className="sp-step-body">
                 <span className="sp-step-date num">{day.date}</span>

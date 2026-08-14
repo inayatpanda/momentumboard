@@ -653,8 +653,11 @@
 
 /* --- stock page --------------------------------------------------------------
    THE journey page (plan Task 17): chart → verdict hero → factor votes →
-   funnel path → past calls → the open call → utilities. Tokens only, on top
-   of .card/.pill/.seg/.convbar/.sec-label/.cc-*/.num/.skeleton/.pressable.
+   funnel path → past calls → the open call → utilities. Tokens only, built on
+   the existing primitives: card, pill, seg, convbar, sec-label, the cc- family,
+   num, skeleton and pressable. (NOTE: no glob star before a slash anywhere in
+   this comment — one such pair here closed the block early and silently ate
+   the rule that follows it.)
 
    TWO COLOUR LAWS live here, and nothing on this page may bend them:
    • --long/--short are DIRECTION and P&L only (the side word, the header's

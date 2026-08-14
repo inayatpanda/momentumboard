@@ -92,6 +92,17 @@ function mkCall(overrides: Partial<JourneyCall> = {}): JourneyCall {
 
 const mkJourney = (o: Partial<JourneySlice> = {}): JourneySlice => ({ sym: 'NVDA', boardRow: null, openTrace: null, funnel: [], calls: [], ...o })
 
+const mkNearMiss = (sym = 'NVDA'): JourneySlice['funnel'][number]['nearMiss'] => ({
+  sym,
+  core: 41.2,
+  capUsdM: 3100,
+  lastClose: 128,
+  atrNow: 4,
+  capacityPct: 100,
+  stage: 'basing',
+  factors: { momentum: { score: 2 } },
+})
+
 const mkTrace = (o: Partial<OpenTraceEntry> = {}): OpenTraceEntry => ({
   id: 't1',
   sym: 'NVDA',
@@ -197,12 +208,93 @@ describe('StockPage', () => {
     expect(hero.textContent).not.toMatch(/\d+%/)
   })
 
+  // the funnel carries a day ONLY when that day held a row or a near miss for
+  // the name (netlify/functions/engine.mts:185) — so "in the ledger, absent
+  // from every trace day" is the honest shape of a scanned-nothing page. The
+  // old fixture here seeded an empty-rows/no-near-miss day the server never
+  // emits, which is what let the stale-refusal bug hide (Task 17 review).
   it('a scanned name with no call and no refusal today says so, rather than sitting on a skeleton', async () => {
-    await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall()], funnel: [{ date: '2026-08-14', rows: [], nearMiss: null }] }))
+    await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall()], funnel: [] }))
     withRouter('NVDA')
     const hero = await screen.findByLabelText("The engine's verdict")
     expect(within(hero).getByText(/no read today/i)).toBeInTheDocument()
     expect(hero.querySelector('.skeleton')).toBeNull()
+  })
+
+  // C1 — THE HERO SPEAKS FOR THE NEWEST DAY ONLY. The memo used to walk every
+  // funnel day for the first non-publication row, so a Monday refusal outlived
+  // a Tuesday call and the page said "Not today" about a name it had published.
+  describe('the newest funnel day, and only that day, speaks for the hero', () => {
+    it('a Monday refusal does NOT survive a Tuesday call — the hero names the call, with no grade', async () => {
+      await writeSlice(
+        'journey:NVDA',
+        mkJourney({
+          funnel: [
+            { date: '2026-08-10', rows: [{ key: 'NVDA:long', gate: 'entry-chase', side: 'long', core: 58.4, detail: 'already ran three sessions' }], nearMiss: null },
+            { date: '2026-08-11', rows: [{ key: 'NVDA:long', gate: 'called-full', side: 'long', core: 62 }], nearMiss: null },
+          ],
+        }),
+      )
+      withRouter('NVDA')
+      const hero = await screen.findByLabelText("The engine's verdict")
+      expect(within(hero).queryByText(/Not today/i)).not.toBeInTheDocument()
+      expect(within(hero).queryByText(/already ran — refused to chase/)).not.toBeInTheDocument()
+      expect(within(hero).getByText(/called at full size/i)).toBeInTheDocument()
+      expect(within(hero).getByText(/2026-08-11/)).toBeInTheDocument()
+      expect(within(hero).getByText(/not on today's board/i)).toBeInTheDocument()
+      expect(within(hero).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+      expect(hero.textContent).not.toMatch(/\d+%/)
+    })
+
+    it('a day that called one side and refused the other is a PUBLICATION day, not a refusal', async () => {
+      await writeSlice(
+        'journey:NVDA',
+        mkJourney({
+          funnel: [
+            {
+              date: '2026-08-14',
+              rows: [
+                { key: 'NVDA:long', gate: 'called-half', side: 'long', core: 55 },
+                { key: 'NVDA:short', gate: 'dead-zone-core', side: 'short', core: -12 },
+              ],
+              nearMiss: null,
+            },
+          ],
+        }),
+      )
+      withRouter('NVDA')
+      const hero = await screen.findByLabelText("The engine's verdict")
+      expect(within(hero).queryByText(/Not today/i)).not.toBeInTheDocument()
+      expect(within(hero).queryByText(/below the conviction bar/)).not.toBeInTheDocument()
+      expect(within(hero).getByText(/called at half size/i)).toBeInTheDocument()
+    })
+
+    it('the newest day being a near miss is a verdict of its own, not a no-read', async () => {
+      await writeSlice('journey:NVDA', mkJourney({ funnel: [{ date: '2026-08-14', rows: [], nearMiss: mkNearMiss() }] }))
+      withRouter('NVDA')
+      const hero = await screen.findByLabelText("The engine's verdict")
+      expect(within(hero).getByText(/nearest miss today/i)).toBeInTheDocument()
+      expect(within(hero).queryByText(/no read today/i)).not.toBeInTheDocument()
+      expect(within(hero).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+    })
+  })
+
+  it('a wildcard row carries the label and the standing warning even when it was never sized', async () => {
+    await writeSlice(
+      'journey:NVDA',
+      mkJourney({ boardRow: mkRow({ watchOnly: true, wildcard: { gate: 'entry-chase', priority: 1, hypothesis: 'chase is too strict', gateEvidenceN: 12 } }) }),
+    )
+    withRouter('NVDA')
+    const hero = await screen.findByLabelText("The engine's verdict")
+    expect(within(hero).getByText(/🃏 Wildcard/)).toBeInTheDocument()
+    expect(within(hero).getByText(/Experiments lose more often than the board does\./)).toBeInTheDocument()
+    expect(within(hero).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+  })
+
+  it('names the position-size block for a screen reader', async () => {
+    await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
+    withRouter('NVDA')
+    expect(await screen.findByLabelText('Position size')).toBeInTheDocument()
   })
 
   describe('an unscanned symbol falls through to the on-demand verdict', () => {
@@ -217,7 +309,10 @@ describe('StockPage', () => {
         { name: 'technical', score: 12, detail: 'above the 50d' },
         { name: 'momentum', score: -4, detail: 'faded' },
       ],
-      nulls: ['news tone', 'social'],
+      // the SERVER's shape: raw engine keys (onDemandVerdict emits FactorName),
+      // never the reader's words — the old fixture pre-labelled them and so
+      // could never have caught the raw 'smartMoney' the page was printing.
+      nulls: ['news', 'smartMoney', 'social'],
       lastClose: 214.5,
       atr: 6.2,
       note: 'This is an on-demand read on a name the engine never scanned today.',
@@ -236,6 +331,24 @@ describe('StockPage', () => {
       expect(within(hero).getByText(/2 factors computed/i)).toBeInTheDocument()
       expect(within(hero).getByText(/no calibrated grade — on-demand read/i)).toBeInTheDocument()
       expect(within(hero).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+    })
+
+    it("prints the server's null factors in the reader's words, never as engine keys", async () => {
+      withRouter('TSLA')
+      const votes = await screen.findByLabelText('Factor votes')
+      const nullLine = within(votes).getByText(/^no data:/i)
+      expect(nullLine).toHaveTextContent('news tone')
+      expect(nullLine).toHaveTextContent('smart money')
+      expect(nullLine).toHaveTextContent('social')
+      expect(nullLine.textContent).not.toMatch(/smartMoney/)
+    })
+
+    it('counts one computed factor as "1 factor", not "1 factors"', async () => {
+      await writeSlice('verdict:TSLA', { ...verdict, computed: [{ name: 'technical', score: 12, detail: 'above the 50d' }] })
+      withRouter('TSLA')
+      const hero = await screen.findByLabelText("The engine's verdict")
+      await waitFor(() => expect(within(hero).getByText(/1 factor computed/i)).toBeInTheDocument())
+      expect(hero.textContent).not.toMatch(/1 factors/)
     })
 
     it('replaces the funnel path with "not in today\'s scan universe"', async () => {
@@ -324,6 +437,40 @@ describe('StockPage', () => {
       withRouter('NVDA')
       const past = await screen.findByLabelText('Past calls')
       expect(within(past).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+    })
+
+    // I4: the projection carries watchOnly/belowBase now, so the grade law
+    // survives a row ageing off the board into this list.
+    it('a watch-only past call never shows a grade either', async () => {
+      await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall({ watchOnly: true })] }))
+      withRouter('NVDA')
+      const past = await screen.findByLabelText('Past calls')
+      expect(within(past).getByText('2026-07-28')).toBeInTheDocument()
+      expect(within(past).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+    })
+
+    it('a below-base past call never shows a grade either', async () => {
+      await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall({ belowBase: true })] }))
+      withRouter('NVDA')
+      const past = await screen.findByLabelText('Past calls')
+      expect(within(past).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+    })
+
+    it('an old row carrying neither flag keeps its grade — the record cannot tell it apart', async () => {
+      await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall()] }))
+      withRouter('NVDA')
+      const past = await screen.findByLabelText('Past calls')
+      expect(within(past).getByLabelText('Grade A')).toBeInTheDocument()
+    })
+
+    // I5: the list only ever holds a WINDOW, and the way to widen it must be
+    // offered exactly when the window looks empty.
+    it('says which window is empty, and still offers the longer one', async () => {
+      await writeSlice('journey:NVDA', mkJourney({ calls: [] }))
+      withRouter('NVDA')
+      const past = await screen.findByLabelText('Past calls')
+      expect(within(past).getByText(/no calls on this name in the last 30 days/i)).toBeInTheDocument()
+      expect(within(past).getByRole('button', { name: /load older calls/i })).toBeInTheDocument()
     })
 
     it('"load older calls" swaps to the deep journey slice', async () => {

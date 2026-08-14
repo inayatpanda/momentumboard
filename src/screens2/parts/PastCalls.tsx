@@ -18,8 +18,14 @@ import { getJourney, type JourneyCall } from '../../lib/apiViews'
 import type { PredOutcome } from '../../lib/api'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
 
-/** A ledger row that was never a live size carries no honest letter. */
-const wasSized = (c: JourneyCall) => !c.shadow && !c.observation
+/** A ledger row that was never a live size carries no honest letter — and
+ * `watchOnly`/`belowBase` are two more ways a row never got one (Task 17
+ * review, I4: the projection now carries them, so this page stops printing a
+ * grade on a row the board itself refused to grade).
+ * NOTE: rows PUBLISHED BEFORE those fields existed carry neither, so they read
+ * as undefined → falsy → sized, exactly as they did before. There is nothing in
+ * the record that can tell an old watch row from an old sized one. */
+const wasSized = (c: JourneyCall) => !c.shadow && !c.observation && !c.watchOnly && !c.belowBase
 
 const signed = (pct: number) => `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%`
 
@@ -62,9 +68,12 @@ function CallRow({ c }: { c: JourneyCall }) {
   )
 }
 
-function CallList({ calls }: { calls: JourneyCall[] }) {
+/** The empty line is WINDOW-QUALIFIED (Task 17 review, I5): this list only
+ * ever holds the last `days` days, so "never published a call on this name"
+ * was a claim about all of history the page had no way of making. */
+function CallList({ calls, days }: { calls: JourneyCall[]; days: number }) {
   const rows = [...calls].sort((a, b) => b.date.localeCompare(a.date))
-  if (rows.length === 0) return <p className="cc-reason">The engine has never published a call on this name.</p>
+  if (rows.length === 0) return <p className="cc-reason">No calls on this name in the last {days} days.</p>
   return (
     <>
       {rows.map(c => (
@@ -79,16 +88,25 @@ function CallList({ calls }: { calls: JourneyCall[] }) {
  * asking for more history must never blank the history already on screen. */
 function DeepCalls({ sym, fallback }: { sym: string; fallback: JourneyCall[] }) {
   const { data } = useSlice(`journey:${sym}:deep`, () => getJourney(sym, 250))
-  return <CallList calls={data?.calls ?? fallback} />
+  return <CallList calls={data?.calls ?? fallback} days={DEEP_DAYS} />
 }
+
+/** The two windows the journey slice serves — the shallow default and the one
+ * "load older calls" asks for. Named so the empty line can say which it means. */
+const SHALLOW_DAYS = 30
+const DEEP_DAYS = 250
 
 export function PastCalls({ sym, calls }: { sym: string; calls: JourneyCall[] }) {
   const [deep, setDeep] = useState(false)
   return (
     <section aria-label="Past calls">
       <p className="sec-label">Past calls</p>
-      {deep ? <DeepCalls sym={sym} fallback={calls} /> : <CallList calls={calls} />}
-      {!deep && calls.length > 0 && (
+      {deep ? <DeepCalls sym={sym} fallback={calls} /> : <CallList calls={calls} days={SHALLOW_DAYS} />}
+      {/* offered even on an EMPTY list (Task 17 review, I5): "no calls in the
+          last 30 days" is precisely when a reader wants the longer window, and
+          hiding the button there made the 30-day silence look like all of
+          history. It goes only once the deep list is the one on screen. */}
+      {!deep && (
         <button className="stx-showmore" onClick={() => setDeep(true)}>
           Load older calls
         </button>

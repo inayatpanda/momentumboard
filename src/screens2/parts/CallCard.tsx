@@ -10,22 +10,14 @@
 
 import { Link } from 'wouter'
 import type { EnginePrediction } from '../../lib/api'
+import { rowKind, unsizedReason } from '../../lib/boardTaxonomy'
 import { fmtRiskPct, sizeLabel } from '../../lib/format'
 import { Sparkline } from '../../components/Sparkline'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
 
-/** nearMiss and observation rows are always `watchOnly` on the wire, but a
- * card must not trust that wiring to hold — the reader-facing rule ("never
- * for nearMiss/observation/watch") is checked directly against each flag. */
-const isSizedLive = (row: EnginePrediction) => !row.watchOnly && !row.nearMiss && !row.observation
-
-/** The one-line reason a row without a grade carries instead — same three
- * cases the old board ternary named, worded for this card. */
-function reasonLine(row: EnginePrediction): string {
-  if (row.nearMiss) return 'Nearest miss — cleared no gate, no grade, no size.'
-  if (row.observation) return 'Cleared every gate, but no ISA route — observation only, no size.'
-  return row.belowBase ? 'Tracking — below the grade bar today, no size yet.' : 'Watch — no size yet.'
-}
+// The row-kind law (which shape is this, and what does it say instead of a
+// grade) lives in src/lib/boardTaxonomy.ts — ONE copy, shared with VerdictHero.
+// It used to be duplicated here, and the duplicate had drifted (Task 17 review).
 
 // `spark` is an OPTIONAL second prop, not part of the row: the board slice
 // (Task 13's only sanctioned data source — the amendment killed the extra
@@ -33,7 +25,8 @@ function reasonLine(row: EnginePrediction): string {
 // today. The prop exists so a future caller with candles in hand (the Board
 // screen, Task 14) can hand them in without this component changing shape.
 export function CallCard({ row, spark }: { row: EnginePrediction; spark?: number[] }) {
-  const sized = isSizedLive(row)
+  const kind = rowKind(row)
+  const sized = kind === 'sized-live'
   const pct = Math.round(row.probability * 100)
   // composite is signed and effectively unbounded past the grade bar; the bar
   // is decoration, not a measurement, so it clamps rather than overflows.
@@ -84,7 +77,7 @@ export function CallCard({ row, spark }: { row: EnginePrediction; spark?: number
           <span className="num">{sizingNote}</span>
         </div>
       ) : (
-        <p className="cc-reason">{reasonLine(row)}</p>
+        <p className="cc-reason">{unsizedReason(kind, row.belowBase)}</p>
       )}
     </Link>
   )

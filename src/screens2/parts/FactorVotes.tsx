@@ -58,7 +58,10 @@ export function FactorVotes({ factors, computed, nulls }: { factors?: EnginePred
   const { votes, missing } = toVotes(factors, computed)
   // `nulls` (the verdict's own list) wins when the caller has one — it is the
   // server's account of what could not be scored, not our inference from it.
-  const noData = nulls && nulls.length > 0 ? nulls : missing
+  // It arrives as ENGINE KEYS ('smartMoney'), so it goes through labelOf like
+  // every other name on this page; printing the keys raw put camelCase engine
+  // internals in front of the reader (Task 17 review, I3).
+  const noData = nulls && nulls.length > 0 ? nulls.map(labelOf) : missing
   const max = Math.max(1, ...votes.map(v => Math.abs(v.value)))
 
   return (

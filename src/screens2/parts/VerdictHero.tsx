@@ -1,5 +1,8 @@
 // VerdictHero (plan Task 17) — the one card that answers "would the engine
-// trade this name?", in four mutually exclusive shapes.
+// trade this name?", in six mutually exclusive shapes: sized+live, on the board
+// unsized, refused today, published on the newest funnel day but off today's
+// board, the day's nearest miss, and the on-demand read — with a plain
+// "no read today" behind all of them.
 //
 // THE HARD RULE (CX-13), enforced here rather than trusted from the caller: a
 // letter grade and a calibrated probability are reads on evidence that only a
@@ -8,24 +11,23 @@
 // never a grade, never a probability, not even a softened one. Same semantics
 // as src/components/EngineBoard.tsx:70-121, worded for this page.
 
+import type { GateCode } from '../../../shared/engine/types'
 import type { EnginePrediction } from '../../lib/api'
 import type { JourneyFunnelRow, VerdictRead } from '../../lib/apiViews'
+import { rowKind, unsizedReason } from '../../lib/boardTaxonomy'
 import { GATE_LABELS } from '../../lib/gateLabels'
 import { fmtRiskPct, sizeLabel } from '../../lib/format'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
 
 const sideWord = (s: 'long' | 'short') => (s === 'long' ? 'Long' : 'Short')
 
-/** Sized/live, and therefore gradeable — checked against every unsized flag
- * directly, never inferred from `watchOnly` alone. */
-const isSizedLive = (row: EnginePrediction) => !row.watchOnly && !row.nearMiss && !row.observation
+// Which shape a row is, and the one line an unsized shape carries instead of a
+// grade, are ONE law shared with CallCard: src/lib/boardTaxonomy.ts. Two copies
+// is how the two cards drifted apart in the first place (Task 17 review, I7).
 
-/** The one-line reason an ungraded row carries instead of a grade. */
-function reasonLine(row: EnginePrediction): string {
-  if (row.nearMiss) return 'Nearest miss — cleared no gate, so no grade, no probability and no size.'
-  if (row.observation) return 'Cleared every gate, but no ISA route — observation only, no size.'
-  return row.belowBase ? 'Tracking — below its own historical hit rate today, no size yet.' : 'Watch — no size yet.'
-}
+/** A gate label opens a sentence here, so it is spoken with a capital — the
+ * labels themselves stay lower-case for the mid-sentence uses everywhere else. */
+const openWith = (label: string) => label.charAt(0).toUpperCase() + label.slice(1)
 
 const Q = <p className="sec-label">Would the engine trade it?</p>
 
@@ -48,6 +50,8 @@ function Levels({ row }: { row: EnginePrediction }) {
 export function VerdictHero({
   row,
   refusal,
+  published,
+  nearMissDate,
   verdict,
   onWatch,
   watched,
@@ -55,6 +59,12 @@ export function VerdictHero({
 }: {
   row?: EnginePrediction | null
   refusal?: { date: string; row: JourneyFunnelRow } | null
+  /** the NEWEST funnel day published this name, but it is not on today's board:
+   * an honest "it was called, on that day" — never a grade, because the grade
+   * belongs to that day's row and this page is not showing that day's row */
+  published?: { date: string; gate: GateCode } | null
+  /** …and the newest funnel day looked at it and called nothing at all */
+  nearMissDate?: string | null
   verdict?: VerdictRead | null
   onWatch?: () => void
   watched?: boolean
@@ -69,8 +79,20 @@ export function VerdictHero({
     </section>
   )
 
+  // The experiment slot's standing warning belongs to the ROW, not to the row's
+  // size: a wildcard watch row is every bit as experimental as a sized one, and
+  // the sized-only rendering hid the warning from exactly the rows least able to
+  // afford losing it (Task 17 review, I6 — CallCard has always done it this way).
+  const wildcard = row?.wildcard ? (
+    <div className="cc-wildcard">
+      <span className="pill">{WILDCARD_LABEL}</span>
+      <span>{WILDCARD_WARNING}</span>
+    </div>
+  ) : null
+
   // 1 — SIZED AND LIVE: the only surface in the app that may print both.
-  if (row && isSizedLive(row)) {
+  const kind = row ? rowKind(row) : null
+  if (row && kind === 'sized-live') {
     const conviction = Math.max(0, Math.min(100, Math.abs(row.composite)))
     return shell(
       <>
@@ -91,12 +113,7 @@ export function VerdictHero({
           <span>conviction</span>
           <span className="num">{Math.round(Math.abs(row.composite))}</span>
         </div>
-        {row.wildcard && (
-          <div className="cc-wildcard">
-            <span className="pill">{WILDCARD_LABEL}</span>
-            <span>{WILDCARD_WARNING}</span>
-          </div>
-        )}
+        {wildcard}
         <Levels row={row} />
         <p className="cc-reason num">
           risk {fmtRiskPct(row.riskPct)}%
@@ -109,14 +126,15 @@ export function VerdictHero({
   }
 
   // 2 — ON THE BOARD, BUT UNSIZED: its own reason, no grade, no probability.
-  if (row) {
+  if (row && kind) {
     return shell(
       <>
         {Q}
         <div className="sp-hero-top">
           <span className={`sp-side ${row.side}`}>{sideWord(row.side)}</span>
         </div>
-        <p className="cc-reason">{reasonLine(row)}</p>
+        <p className="cc-reason">{unsizedReason(kind, row.belowBase)}</p>
+        {wildcard}
         <div className="convbar">
           <i style={{ width: `${Math.max(0, Math.min(100, Math.abs(row.composite)))}%` }} />
         </div>
@@ -160,6 +178,37 @@ export function VerdictHero({
     )
   }
 
+  // 3b — PUBLISHED, BUT NOT TODAY (Task 17 review, C1): the newest funnel day
+  // called this name and today's board does not carry it. Saying "no read
+  // today" here would bury a publication the reader can see two sections down;
+  // saying it WITH a grade would lend that day's letter to a row this page is
+  // not showing. So: what it was called at, when, and that it is gone.
+  if (published) {
+    return shell(
+      <>
+        {Q}
+        <p className="sp-verdict-line">
+          {openWith(GATE_LABELS[published.gate])} on <span className="num">{published.date}</span> — not on today's board.
+        </p>
+        <p className="cc-reason">That call belongs to its own day. Today the engine is not publishing this name, so there is no grade to print here — the call itself is below, in past calls.</p>
+      </>,
+    )
+  }
+
+  // 3c — LOOKED AT, CALLED NOTHING: the day's nearest miss. It is a real thing
+  // the engine did, and it is not "no read".
+  if (nearMissDate) {
+    return shell(
+      <>
+        {Q}
+        <p className="sp-verdict-line">Nearest miss today — the engine looked, and this came closest without a call.</p>
+        <p className="cc-reason">
+          Recorded on <span className="num">{nearMissDate}</span> — no gate cleared, so no grade, no probability and no size.
+        </p>
+      </>,
+    )
+  }
+
   // 4 — ON DEMAND: a name today's scan never looked at. Its honesty note is
   // printed verbatim; the "no calibrated grade" line is not negotiable.
   if (verdict) {
@@ -180,7 +229,9 @@ export function VerdictHero({
                 <b className="num">{verdict.core.toFixed(1)}</b>
               </div>
             )}
-            <p className="cc-reason num">{computed} factors computed</p>
+            <p className="cc-reason num">
+              {computed} factor{computed === 1 ? '' : 's'} computed
+            </p>
             <p className="cc-reason">no calibrated grade — on-demand read</p>
           </>
         )}

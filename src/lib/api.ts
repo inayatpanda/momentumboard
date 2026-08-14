@@ -447,6 +447,13 @@ export interface LedgerPrediction {
   // rides the slim projection so a historical observation keeps its containment
   // (a near miss needs no equivalent: they never enter the ledger at all)
   observation?: boolean
+  // the other two ways a row was never sized, carried on the same argument as
+  // `observation` (Task 17 review, I4): a grade pill on a historical watch row
+  // is the CX-13 rule breaking silently. OPTIONAL because rows published before
+  // the projection carried them have neither — and nothing in the record can
+  // tell one of those apart from a row that really was sized.
+  watchOnly?: boolean
+  belowBase?: boolean
   // …and the EXPERIMENT SLOT's record (stage 3d), carried for the same reason:
   // the accountability pane rolls these rows by grade, and a wildcard's letter is
   // not why it published. Without this the ledger's own breakdown files it under

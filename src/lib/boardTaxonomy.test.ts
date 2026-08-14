@@ -5,7 +5,7 @@
 // that can drift.
 
 import { describe, expect, it } from 'vitest'
-import { splitBoardRows, type BoardRowSplit } from './boardTaxonomy'
+import { rowKind, splitBoardRows, unsizedReason, type BoardRowSplit } from './boardTaxonomy'
 import type { EnginePrediction } from './api'
 
 const FACTOR_NAMES = ['technical', 'momentum', 'sector', 'social', 'channels', 'insiders', 'news', 'seasonality', 'smartMoney', 'catalyst'] as const
@@ -62,5 +62,37 @@ describe('splitBoardRows', () => {
       const memberships = buckets.filter(b => split[b].includes(row))
       expect(memberships, `${row.id} landed in [${memberships.join(', ')}]`).toHaveLength(1)
     }
+  })
+})
+
+// The ROW-KIND LAW (Task 17 review, I7): CallCard and VerdictHero each carried
+// their own copy of it and the copies had already drifted apart on the wording.
+// One source, one set of sentences, both cards rewired onto it.
+describe('rowKind', () => {
+  it('names each shape, with nearMiss and observation beating a bare watchOnly', () => {
+    expect(rowKind(mkRow())).toBe('sized-live')
+    expect(rowKind(mkRow({ watchOnly: true }))).toBe('watch')
+    expect(rowKind(mkRow({ watchOnly: true, observation: true }))).toBe('observation')
+    expect(rowKind(mkRow({ watchOnly: true, nearMiss: true }))).toBe('near-miss')
+    // a near miss beats an observation on the same row: it cleared no gate at all
+    expect(rowKind(mkRow({ watchOnly: true, nearMiss: true, observation: true }))).toBe('near-miss')
+  })
+
+  it('refuses "sized-live" to a nearMiss/observation row even when watchOnly is missing from the wire', () => {
+    expect(rowKind(mkRow({ nearMiss: true }))).toBe('near-miss')
+    expect(rowKind(mkRow({ observation: true }))).toBe('observation')
+  })
+})
+
+describe('unsizedReason', () => {
+  it('gives each unsized kind its own sentence, and never a grade or a probability', () => {
+    expect(unsizedReason('near-miss')).toBe('Nearest miss — cleared no gate, so no grade, no probability and no size.')
+    expect(unsizedReason('observation')).toBe('Cleared every gate, but no ISA route — observation only, no size.')
+    expect(unsizedReason('watch')).toBe('Watch — no size yet.')
+    expect(unsizedReason('watch', true)).toBe('Tracking — below its own historical hit rate today, no size yet.')
+  })
+
+  it('has nothing to say about a sized row — that one carries its grade instead', () => {
+    expect(unsizedReason('sized-live')).toBe('')
   })
 })

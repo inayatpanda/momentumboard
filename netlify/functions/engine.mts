@@ -71,6 +71,13 @@ export function ledgerRow(p: Prediction) {
     // that after the row has aged out of today's board into this projection.
     // (nearMiss deliberately absent: a near miss never enters the ledger.)
     observation: p.observation ?? false,
+    // …and the other two ways a row was never sized. Without them a historical
+    // watch row (or a row published under its own historical hit rate) arrives
+    // on the journey page indistinguishable from a live sized call, and gets a
+    // grade pill it never earned — the CX-13 rule, lost the moment a row aged
+    // out of the board into this projection (Task 17 review, I4).
+    watchOnly: p.watchOnly ?? false,
+    belowBase: p.belowBase ?? false,
     // …and the experiment slot's record (Stage 3d), on the same argument as
     // `observation` above: it is a ROW KIND, and the ledger's own by-grade
     // breakdown cannot keep a wildcard out of the letter buckets without it.
