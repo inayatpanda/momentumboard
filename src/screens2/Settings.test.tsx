@@ -75,7 +75,7 @@ describe('Settings', () => {
     expect(screen.queryByText('Your AI key')).not.toBeInTheDocument()
   })
 
-  it('the "Classic shell" row removes mb-shell and reloads (dies at cutover — plan Task 24)', async () => {
+  it('the "Classic shell" row sets mb-shell=v1 and reloads (post-flip: v1 is the opt-out; row dies with the flag)', async () => {
     asNonAdmin()
     localStorage.setItem('mb-shell', 'v2')
     // jsdom throws "Not implemented: navigation" on a real location.reload —
@@ -90,7 +90,7 @@ describe('Settings', () => {
       render(<Settings />)
       const row = await screen.findByText('Classic shell')
       row.closest('button')!.click()
-      expect(localStorage.getItem('mb-shell')).toBeNull()
+      expect(localStorage.getItem('mb-shell')).toBe('v1')
       expect(reload).toHaveBeenCalledTimes(1)
     } finally {
       Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })

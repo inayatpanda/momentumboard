@@ -239,7 +239,7 @@ export function ShellFlagRow() {
       type="button"
       className="menu-row"
       onClick={() => {
-        localStorage.removeItem('mb-shell')
+        localStorage.setItem('mb-shell', 'v1') // post-flip: v1 is the opt-OUT
         location.reload()
       }}
     >

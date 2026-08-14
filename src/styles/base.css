@@ -4,6 +4,48 @@
    Every numeric gets .num (tabular figures); colours come from tokens only.
    ========================================================================== */
 
+/* --- element-level ground (blocker B2) --------------------------------------
+   The v2 shell silently inherited these from src/index.css, which the cutover
+   deletes. Ported here so the shell stands alone: the focus ring (WCAG 2.4.7),
+   form-control font inheritance, the body ground, and the horizontal-scroll
+   safety net (`clip`, not `hidden` — keeps position:sticky working). */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  overflow-x: clip;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button,
+input {
+  font: inherit;
+}
+/* keyboard users get a real ring; mouse/touch users never see it */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
+}
+
 .v2,
 .v2 * {
   box-sizing: border-box;

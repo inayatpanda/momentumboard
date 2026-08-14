@@ -41,7 +41,9 @@ describe('useSlice', () => {
   it('an HTTP failure is not "offline" — the pill is a connectivity claim (walkthrough A2)', async () => {
     await db.slices.put({ key: 'board:http', data: { v: 1 }, fetchedAt: Date.now() - 200_000 })
     const { result } = renderHook(() => useSlice<{ v: number }>('board:http', async () => Promise.reject(new Error('http-404'))))
-    await waitFor(() => expect(result.current.refreshing).toBe(false))
+    // wait for the cached paint (refreshing starts false, so it can't be the marker)
+    await waitFor(() => expect(result.current.data).toEqual({ v: 1 }))
+    await new Promise(r => setTimeout(r, 30)) // let the rejection land
     expect(result.current.offline).toBe(false) // a 404 while online is a server answer, not lost connectivity
     expect(result.current.data).toEqual({ v: 1 }) // the stale paint still stays
 
