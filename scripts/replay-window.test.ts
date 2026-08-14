@@ -987,10 +987,24 @@ describe('bornBelowCensus', () => {
 // mixture, and a seed whose two halves disagree on their generation installs one half.
 
 describe('seedUniverse — crypto is out of the deep-seed population', () => {
-  it('drops the crypto pairs (stage 1c is unbuilt: a crypto row would book into the EQUITY buckets)', () => {
-    expect(REPLAY_UNIVERSE).toContain('ETH-USD') // the trap is live in the harness today
+  it('drops the crypto pairs (a crypto row would book into the EQUITY buckets and grade against SPY)', () => {
+    // MIRROR_EXTRAS still records what the live window's board actually named,
+    // ETH-USD included — that record is the damage audit's input (task A2). What
+    // changed in stage 1c phase A is that the WALK no longer feeds it to the
+    // engine, in any mode: see the unconditional filter below.
+    expect(REPLAY_UNIVERSE).toContain('ETH-USD')
     expect(seedUniverse(REPLAY_UNIVERSE)).not.toContain('ETH-USD')
     expect(seedUniverse(['AAPL', 'BTC-USD', 'SOL-USD', 'RR.L'])).toEqual(['AAPL', 'RR.L'])
+  })
+
+  it('the walk applies it in EVERY mode, not just --seed-out — containment is not optional', () => {
+    // Read off the source rather than a run: the two composition seams are one
+    // line each, and a mode-gated filter is exactly the regression this pins.
+    const src = readFileSync(join(process.cwd(), 'scripts', 'replay-window.ts'), 'utf8')
+    expect(src).not.toMatch(/seedOut \? seedUniverse\(/) // the old mode-gated base universe
+    expect(src).not.toMatch(/if \(seedOut\) universe = seedUniverse\(/) // …and the old daily one
+    expect(src).toMatch(/const baseUniverse = seedUniverse\(askedUniverse\)/)
+    expect(src).toMatch(/universe = seedUniverse\(universe\)/)
   })
   it('keeps BT-A.L — an exchange suffix outranks the dash, which exchangeFor tests FIRST', () => {
     // Stage-3a Task 3 fixed exchangeFor itself (suffix first), so the local

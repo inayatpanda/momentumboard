@@ -4,6 +4,7 @@ import { LANE_CATALYST_KINDS, type CatalystTag } from './catalyst'
 import { PUBLISHED_GATES, type FunnelNearMiss, type FunnelTraceRow } from './funnelTrace'
 import type { GateAttribution } from './missLedger'
 import { isRouteEtp, type LevMap } from './riskLadder'
+import { isCryptoSymbol } from '../symbols'
 import { round1, type GateCode } from './types'
 
 // THE EXPERIMENT SLOT — one blocked trade, taken on purpose.
@@ -103,11 +104,15 @@ export const WILDCARD_NEAR_DEAD_ZONE = 5
  * that names a SAMPLING BUDGET rather than a decision: `pickShadow` dropped the
  * row past the per-side budget, so what blocked it is not a gate the experiment
  * could test, and the trace's `priorGate` (not the code) is where its real denial
- * lives.
+ * lives. `crypto-contained` joins for a third reason (Stage 1c Phase A): the
+ * refusal it names is not a GATE the slot could argue with. There is no threshold
+ * to loosen, no cost to charge and no equity gate that would learn anything from
+ * the outcome — the engine simply does not trade that market yet, and spending the
+ * week's one causal sample there would buy the ladder nothing.
  *
  * This is a GLOBAL exclusion, not a rung-1 discrimination: a row the reader
  * already has is not a blocked trade at any priority. */
-export const WILDCARD_INELIGIBLE_GATES: ReadonlySet<GateCode> = new Set<GateCode>([...PUBLISHED_GATES, 'shadow-capped'])
+export const WILDCARD_INELIGIBLE_GATES: ReadonlySet<GateCode> = new Set<GateCode>([...PUBLISHED_GATES, 'shadow-capped', 'crypto-contained'])
 
 /** THE BOARD'S CAPACITY VERDICTS — the two codes that mean "no room", not "no".
  * `diversity` is the sector/correlation gate declining ANOTHER one of these, and
@@ -332,6 +337,13 @@ function wildcardPool(inputs: WildcardInputs): WildcardCandidate[] {
     // core read IS the side it was arguing for
     const side: 'long' | 'short' = m.core >= 0 ? 'long' : 'short'
     const key = `${sym}:${side}`
+    // CRYPTO IS CONTAINED (Stage 1c Phase A) — belt over the gate exclusion below,
+    // and the belt is the load-bearing one: this pool is drawn from `nearMisses`,
+    // whose rows carry whatever code the composite's refusal wrote, not the
+    // containment code. A crypto name typically dies on ONE gate with an extreme
+    // core, which is precisely rung 1's favourite — so without this the slot would
+    // preferentially spend itself on the one market the engine does not trade.
+    if (isCryptoSymbol(sym)) continue
     if (ex.earningsSyms?.has(sym) || ex.earningsSyms?.has(baseSymOf(sym))) continue
     if (ex.publishedKeys?.has(key)) continue
     if (ex.liveSyms?.has(sym)) continue

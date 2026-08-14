@@ -1,3 +1,4 @@
+import { isCryptoSymbol } from '../symbols'
 import { round2 } from './types'
 import { WILDCARD_MARK } from './voice'
 
@@ -63,6 +64,17 @@ export function checkCallCrossings(
 
   const alerts: CrossAlert[] = []
   for (const c of calls) {
+    // CRYPTO IS CONTAINED (Stage 1c Phase A, shared/symbols.ts). The engine no
+    // longer publishes a crypto call at all, so post-guard this scan has no crypto
+    // rows to scan — it is the belt for the ones already in the ten-day ledger
+    // window, which must not go on issuing execution advice ("execution says
+    // exit") on a market the engine has stood itself down from.
+    //
+    // IT GUARDS THE SIZED-ROW SCAN AND NOTHING ELSE. The reader's own watchlist
+    // keeps every price it had: alert-check still quotes BTC-USD, still reads its
+    // 24/7 session (rvol.ts) and still fires the reader's price/RVOL/RSI rules on
+    // it. Watching a coin was never the problem.
+    if (isCryptoSymbol(c.sym)) continue
     const price = prices.get(c.sym)
     if (price == null || !Number.isFinite(price)) continue
     const long = c.side === 'long'

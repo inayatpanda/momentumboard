@@ -95,6 +95,18 @@ export interface EngineCall {
  *
  *   not-candidate ..... never entered the day's `sources` map at all (engine.ts) —
  *                       counted, never listed: the universe is unbounded
+ *   crypto-contained .. a crypto pair, refused admission to the candidate pool
+ *                       (Stage 1c Phase A, `isCryptoSymbol` in shared/symbols.ts).
+ *                       ADDED rather than folded into `not-candidate`, and the
+ *                       reason is Phase B: the crypto lane RELAXES this refusal at
+ *                       named sites, and a relaxation whose before/after diff is a
+ *                       count nobody can attribute proves nothing. It is also not
+ *                       true to `not-candidate`'s meaning — that code is a COUNT of
+ *                       names the run never listed, where this one is a named
+ *                       decision about a named name. Miss-skipped (missLedger.ts)
+ *                       and wildcard-ineligible (wildcardLane.ts): SPY is not the
+ *                       market this name trades in, so neither mechanism may price
+ *                       what the refusal cost
  *   trimmed ........... entered, then cut by the roster trim or the 180-name budget
  *   no-candles ........ the tape never arrived — no candles, or fewer than 30
  *                       sessions of them (engine.ts). ADDED in Stage 3a Task 2 and
@@ -171,6 +183,7 @@ export interface EngineCall {
  * demands one; removals are not — a persisted trace reads these back. */
 export type GateCode =
   | 'not-candidate'
+  | 'crypto-contained'
   | 'trimmed'
   | 'no-candles'
   | 'no-data'

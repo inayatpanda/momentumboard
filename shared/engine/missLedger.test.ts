@@ -143,6 +143,22 @@ describe('the adjudication — which rows are even miss candidates', () => {
     for (const g of ['called-watch', 'called-below-base', 'called-observation'] as GateCode[]) expect(missCheckable(g)).toBe(true)
   })
 
+  it('never checks a CONTAINED crypto row — SPY is not the market it trades in (stage 1c phase A)', () => {
+    expect(missCheckable('crypto-contained')).toBe(false)
+    expect(MISS_SKIP_GATES.has('crypto-contained')).toBe(true)
+    // …and the belt under that brace: a crypto name in the trace under ANY code —
+    // a row written before the guard shipped — is refused by the SYMBOL too.
+    const cands = missCandidates(
+      traceOf({
+        'BTC-USD:long': { gate: 'dead-zone-core', side: 'long' },
+        'ETH-USD': { gate: 'trimmed' },
+        'BT-A.L:long': { gate: 'dead-zone-core', side: 'long' }, // a venue suffix is not a coin
+        'AAA:long': { gate: 'dead-zone-core', side: 'long' },
+      }),
+    )
+    expect(cands.map(c => c.sym).sort()).toEqual(['AAA', 'BT-A.L'])
+  })
+
   it('checks every ordinary refusal', () => {
     for (const g of ['trimmed', 'no-candles', 'no-data', 'dead-zone-core', 'dead-zone-context', 'evidence-fail', 'dip-refused', 'diversity', 'slot-cut'] as GateCode[])
       expect(missCheckable(g)).toBe(true)

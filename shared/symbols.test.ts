@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exchangeFor, isYahooSymbol, type Exchange } from './symbols'
+import { exchangeFor, isCryptoSymbol, isYahooSymbol, type Exchange } from './symbols'
 import { isMarketOpen, sessionElapsedFraction } from './rvol'
 import { DEFAULT_CORE_SLEEVE } from './engine/coreSleeve'
 import { CATEGORY_UNIVERSE } from '../src/lib/universe'
@@ -68,6 +68,32 @@ describe('exchangeFor — the suffix is read before the dash', () => {
   it('leaves the ETH-USD pair in the replay universe classified as crypto', () => {
     expect(REPLAY_UNIVERSE).toContain('ETH-USD')
     expect(exchangeFor('ETH-USD')).toBe('CRYPTO')
+  })
+})
+
+describe('isCryptoSymbol — THE CONTAINMENT PREDICATE (stage 1c phase A)', () => {
+  it('answers true for the three majors and every quote-currency pair the classifier knows', () => {
+    for (const s of ['BTC-USD', 'ETH-USD', 'SOL-USD', 'BTC-GBP', 'SOL-USDT', 'DOGE-EUR', 'ETH-BTC']) expect([s, isCryptoSymbol(s)]).toEqual([s, true])
+  })
+
+  it('answers false for every symbol this app actually ships — no equity is ever contained by accident', () => {
+    const wrongly = SHIPPED_UNIVERSE.filter(s => isCryptoSymbol(s) !== (exchangeFor(s) === 'CRYPTO')).sort()
+    expect(wrongly).toEqual([])
+    // …and the two shapes that made the naive predicate wrong, named
+    expect(isCryptoSymbol('BT-A.L')).toBe(false) // a venue suffix outranks the dash
+    expect(isCryptoSymbol('BRK-B')).toBe(false) // a share class is not a coin
+    expect(isCryptoSymbol('3LAL.L')).toBe(false) // a route ETP is not a coin either
+    expect(isCryptoSymbol('AAPL')).toBe(false)
+  })
+
+  it('is case-insensitive the way every key in this engine is upper-cased', () => {
+    expect(isCryptoSymbol('btc-usd')).toBe(true)
+    expect(isCryptoSymbol('bt-a.l')).toBe(false)
+  })
+
+  it('is the SAME function the replay harness exports — one predicate, not two', async () => {
+    const { isCryptoSymbol: replayCopy } = await import('../scripts/replay-window')
+    expect(replayCopy).toBe(isCryptoSymbol)
   })
 })
 

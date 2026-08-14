@@ -63,6 +63,38 @@ describe('updateRoster', () => {
   })
 })
 
+// Stage 1c phase A. The roster is the engine's hunting ground, and the watchlist
+// rides into it UNCONDITIONALLY — which is exactly how BTC-USD/ETH-USD reached
+// priority-1 candidacy from the shipped starter list. The reader keeps watching
+// the price; the roster refuses the name.
+describe('updateRoster contains crypto', () => {
+  it('refuses a crypto candidate however well it qualifies', () => {
+    const { roster, joined } = updateRoster([], [cand('BTC-USD'), cand('GOOD')], [], '2026-07-02')
+    expect(joined).toEqual(['GOOD'])
+    expect(roster.map(r => r.sym)).toEqual(['GOOD'])
+  })
+
+  it('refuses the watchlist ride-through — the one door with no gate in front of it', () => {
+    const { roster } = updateRoster([], [], ['BTC-USD', 'ETH-USD', 'NVDA'], '2026-07-02')
+    expect(roster.map(r => r.sym)).toEqual(['NVDA'])
+  })
+
+  it('purges a member that joined before the guard existed, and says why', () => {
+    const stored: RosterEntry[] = [
+      { sym: 'ETH-USD', joined: '2026-05-01', source: 'watchlist', capUsdM: null, lastCapacity: 40, lastQualified: '2026-07-02' },
+      { sym: 'NVDA', joined: '2026-05-01', source: 'screener', capUsdM: 5000, lastCapacity: 9, lastQualified: '2026-07-02' },
+    ]
+    const { roster, dropped } = updateRoster(stored, [], ['ETH-USD'], '2026-07-02')
+    expect(roster.map(r => r.sym)).toEqual(['NVDA'])
+    expect(dropped).toEqual([{ sym: 'ETH-USD', why: 'crypto — contained until the crypto cohort exists' }])
+  })
+
+  it('leaves every equity shape the classifier could confuse for a coin exactly where it was', () => {
+    const { roster } = updateRoster([], [cand('BT-A.L'), cand('BRK-B')], [], '2026-07-02')
+    expect(roster.map(r => r.sym).sort()).toEqual(['BRK-B', 'BT-A.L'])
+  })
+})
+
 // The roster sheds the LARGEST caps first when full — but large caps are the
 // only names with a leveraged/inverse route on an ISA, so the trim was quietly
 // evicting exactly the names the reader can trade. Live on 2026-07-28: not one

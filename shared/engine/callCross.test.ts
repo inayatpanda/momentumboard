@@ -25,6 +25,21 @@ describe('checkCallCrossings — crossings', () => {
     expect(fired['2026-07-08:SOFI:long:stop']).toBe(NOW)
   })
 
+  // Stage 1c phase A, site 11. The engine no longer publishes a crypto call, so
+  // this is the belt: a row written before the guard shipped must not go on
+  // sending execution advice on a market the engine has contained. WATCHING is
+  // untouched — quotes, charts and the reader's own price/RVOL alert rules all
+  // run on a crypto watchlist symbol exactly as before (shared/alerts.test.ts).
+  it('a contained crypto row is never scanned for a crossing — and the equity beside it still is', () => {
+    const coin = call({ id: '2026-07-08:BTC-USD:long', sym: 'BTC-USD', stop: 60_000, target: 70_000 })
+    const { alerts, fired } = checkCallCrossings([coin, call()], prices({ 'BTC-USD': 59_000, SOFI: 14.15 }), {}, NOW)
+    expect(alerts.map(a => a.sym)).toEqual(['SOFI'])
+    expect(Object.keys(fired)).toEqual(['2026-07-08:SOFI:long:stop'])
+    // …and a venue suffix is not a coin: BT-A.L keeps its pings
+    const uk = call({ id: '2026-07-08:BT-A.L:long', sym: 'BT-A.L', stop: 100, target: 130 })
+    expect(checkCallCrossings([uk], prices({ 'BT-A.L': 99 }), {}, NOW).alerts.map(a => a.sym)).toEqual(['BT-A.L'])
+  })
+
   it('long through the target reads as target reached', () => {
     const { alerts } = checkCallCrossings([call()], prices({ SOFI: 16.8 }), {}, NOW)
     expect(alerts).toHaveLength(1)

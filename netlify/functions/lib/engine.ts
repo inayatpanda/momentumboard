@@ -50,6 +50,7 @@ import {
   type WeightsState,
 } from '../../../shared/engine/calibration'
 import { pickDiverse } from '../../../shared/engine/select'
+import { isCryptoSymbol } from '../../../shared/symbols'
 import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder, type FunnelTrace } from '../../../shared/engine/funnelTrace'
 import {
   MISS_LEDGER_KEY,
@@ -644,6 +645,15 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
         const o = gradePrediction(pred, candles, spy, 10)
         if (o) {
           pred.outcome10 = o
+          // CONTAINMENT (1c A1): a legacy crypto row RESOLVES — its outcomes
+          // fill so the ledger's history completes and the row stops being
+          // outstanding — but it TEACHES nothing. Its grade was struck against
+          // SPY on a clock the asset doesn't keep; booking it anywhere the
+          // equity engine learns (calibration, IC, Brier, rungs, panes, the
+          // gate ledger, the paper's sentence) would be learning from a
+          // measurement the engine now knows was malformed. Phase B gives
+          // crypto its own everything.
+          const cryptoRow = isCryptoSymbol(pred.sym)
           // EVERY LOSER EXPLAINS ITSELF (postMortem.ts). Deterministic, pure, and
           // computed here because here is the only place the loss and the tape
           // that caused it are both in scope — it rides the store.write below for
@@ -663,7 +673,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // unchanged, and gives a winner the one class the loser order cannot
           // honestly produce.
           const wildcardRow = isWildcardRow(pred)
-          if ((!o.hit || wildcardRow) && !regretDisabled()) {
+          if ((!o.hit || wildcardRow) && !regretDisabled() && !cryptoRow) {
             pred.postMortem = { ...classifyOutcome(pred, o, candles), at: nowSec }
             // …and if the reader had money on it, queue it for the paper's one
             // sentence. Queued, not asked: the ask happens after every grade in
@@ -679,18 +689,22 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // same `store.write` the grade does: the debt and the outcome that
           // created it become durable in one operation, or neither does. The
           // collection pass below is what turns it into a queued write.
-          if (wildcardRow && pred.wildcard && !regretDisabled()) pred.wildcard.booked = false
+          // …a CRYPTO wildcard (legacy only — the pool refuses coins now) owes
+          // the ledger nothing: its outcome is SPY-malformed, so charging any
+          // equity gate with it would be exactly the contamination A1 stops.
+          // `booked` stays absent — no debt is ever minted, none can go unsettled.
+          if (wildcardRow && pred.wildcard && !regretDisabled() && !cryptoRow) pred.wildcard.booked = false
           // THE calibrated grade: calibration buckets, factor-IC weights, the
           // Brier trail and the risk-ladder counters all learn here, at 10d.
-          updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
+          if (!cryptoRow) updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
           // …but NOT factor IC for a lane call — ANY lane (LANE_CATALYST_KINDS,
           // catalyst.ts). A lane call carries a constant technical placeholder
           // (dipLane.ts, velocityLane.ts) rather than a measured factor vote, so
           // booking its outcome would train the technical factor's IC on the
           // lane's P&L — a signal it never cast. Calibration buckets and setup
           // buckets above still accrue: only factor-IC is excluded.
-          if (!LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '')) w = updateIcStats(w, pred, o)
-          newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow, wildcard: wildcardRow })
+          if (!LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '') && !cryptoRow) w = updateIcStats(w, pred, o)
+          if (!cryptoRow) newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow, wildcard: wildcardRow })
           graded++
           // …and the risk ladder's graded-at-rung counter, which the WILDCARD is
           // blind to (Stage 3d). A wildcard is the engine deliberately overriding
@@ -700,7 +714,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // that is tested and not the whole lane family — a dip and a velocity
           // row are ordinary trades the reader carries at full weight, and they
           // go on moving the rung exactly as they always have.
-          if (!pred.shadow && !pred.watchOnly && !wildcardRow) newByCohort[capCohortOf(pred.capUsdM)]++
+          if (!pred.shadow && !pred.watchOnly && !wildcardRow && !cryptoRow) newByCohort[capCohortOf(pred.capUsdM)]++
           changed = true
         }
       }
@@ -721,7 +735,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // published because it did not. The counter and this evidence window must
       // exclude the same stream or the two drift apart by exactly the rows the
       // exclusion was written for.
-      if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred))
+      if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym))
         allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: !!pred.instrument, cohort: capCohortOf(pred.capUsdM) })
       // THE DEBT COLLECTION (Stage 3d fix wave). Read off the ROW rather than off
       // "did it grade in this pass", which is what makes a failed ledger write
@@ -870,6 +884,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     const preds = predictionsByDate.get(date) ?? (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     for (const p of preds) {
       if (!p.outcome10) continue
+      // CONTAINMENT (1c A1): a legacy crypto row's outcome was struck against
+      // SPY on the wrong clock — it appears in NO pane. Phase B gives the
+      // cohort its own panes.
+      if (isCryptoSymbol(p.sym)) continue
       const wildcardRow = isWildcardRow(p)
       // shadow first, for the same reason `preGradeShadow` stands over the
       // publish override: "the reader was never offered this" is the stronger
@@ -1171,6 +1189,16 @@ export async function buildBoard(
   const addSource = (sym: string, source: string, capUsdM: number | null = null) => {
     const key = sym.toUpperCase()
     offered.add(key)
+    // CONTAINMENT (stage 1c, phase A): a crypto pair is WATCHED, never a
+    // candidate — until the lane exists it would be scored on equity factors,
+    // graded against SPY on a 5-day clock it doesn't keep, and its refusals
+    // would feed the gate ledger that tunes equity thresholds. Refused at THE
+    // door (every door calls addSource), recorded once in the trace so the
+    // audit and Phase B's relaxation both have a named line to diff.
+    if (isCryptoSymbol(key)) {
+      trace.record(key, 'crypto-contained', { source, detail: 'crypto pair — watched, never a candidate until the lane exists (stage 1c)' })
+      return
+    }
     // leveraged/inverse ETPs are ROUTES, never underlyings — a held 3CON.L
     // (bought as the route of an earlier short) must not circle back in as a
     // fresh candidate through the holdings/watchlist doors (see isRouteEtp)
@@ -3024,8 +3052,11 @@ export async function buildBoard(
   // fail-soft: a name the engine can't read gets null stage, not a thrown run.
   let holdingsCount = 0
   if (holdings) {
-    const held = holdings.slice(0, ROSTER_MAX)
-    holdingsCount = held.length
+    // CONTAINMENT (1c A1): a held coin is counted (the reader owns it) but the
+    // engine neither fetches its tape nor writes it a technical read — no
+    // equity-factor lens on a 24/7 asset, and no candle spend on a contained name.
+    const held = holdings.slice(0, ROSTER_MAX).filter(p => !isCryptoSymbol(p.symbol))
+    holdingsCount = holdings.slice(0, ROSTER_MAX).length
     const reads = await mapLimit(held, 8, async p => {
       const candles = candleMap.get(p.symbol) ?? (await deps.candles(p.symbol).catch(() => null))
       const readable = candles != null && candles.length >= 30

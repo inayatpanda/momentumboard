@@ -254,6 +254,24 @@ describe('selectWildcard — the exclusions', () => {
     expect(sel).toBeNull()
   })
 
+  it('a crypto near miss is never pooled — the slot may not spend itself on a market the gate does not govern', () => {
+    // Doubly refused, and the test proves BOTH layers: the code the containment
+    // guard writes is ineligible, AND the symbol is refused whatever code it
+    // carries (a trace row written before the guard shipped).
+    expect(WILDCARD_INELIGIBLE_GATES.has('crypto-contained')).toBe(true)
+    for (const gate of ['crypto-contained', 'dead-zone-core'] as GateCode[]) {
+      const sel = selectWildcard(
+        p1Inputs({
+          nearMisses: [miss('BTC-USD', 40)], // the loudest read of the day
+          traceRows: { 'BTC-USD:long': row(gate, 'long') },
+        }),
+      )
+      expect(sel).toBeNull()
+    }
+    // …and the equity beside it is untouched: containment refuses a coin, not a lane
+    expect(selectWildcard(p1Inputs({ nearMisses: [miss('BTC-USD', 40), miss('AAA', 23)], traceRows: { 'BTC-USD:long': row('dead-zone-core', 'long'), 'AAA:long': row('dead-zone-core', 'long') } }))?.candidate.sym).toBe('AAA')
+  })
+
   it('a publication on the OTHER side is not a second gate — the blocked side stays rung-1 eligible', () => {
     // The mixed case the trace's per-key precedence promises: blocked long at the
     // dead zone, the dip long shadowed (called-shadow) or capped on the short key.

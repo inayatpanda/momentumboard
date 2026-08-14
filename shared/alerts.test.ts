@@ -50,6 +50,25 @@ describe('price rules', () => {
   })
 })
 
+// THE OTHER HALF OF CONTAINMENT (stage 1c phase A): the engine refuses a coin as
+// a CANDIDATE; the reader goes on watching it. Nothing on the alert path is
+// symbol-filtered — a crypto watchlist symbol still gets a quote, a 24/7 open
+// market (rvol.ts) and every rule the reader wrote for it.
+describe('watching a coin is untouched by containment', () => {
+  it('a crypto watchlist symbol fires its price rule and its built-in RVOL rule like any other name', () => {
+    const rule = { id: 'c1', symbol: 'BTC-USD', kind: 'priceAbove' as const, level: 60_000 }
+    const coin = (over: Partial<TickerSnapshot> = {}) => snap({ symbol: 'BTC-USD', price: 59_000, ...over })
+    const c = cfg({ rules: [rule], watchlist: ['BTC-USD'] })
+    let out = evaluateAlerts(c, input({ tickers: [coin()] }), emptyAlertState())
+    expect(out.events).toHaveLength(0)
+    out = evaluateAlerts(c, input({ tickers: [coin({ price: 61_000 })] }), out.state)
+    expect(out.events.map(e => e.symbol)).toEqual(['BTC-USD'])
+    // …and the built-in RVOL rule, which needs no rule of the reader's at all
+    out = evaluateAlerts(c, input({ tickers: [coin({ price: 61_000, rvol: 2.4 })] }), out.state)
+    expect(out.events.map(e => e.tier)).toEqual(['batched'])
+  })
+})
+
 describe('built-in ticker rules', () => {
   it('RVOL crossing 2 queues a batched event with hysteresis re-arm at 1.5', () => {
     let out = evaluateAlerts(cfg(), input({ tickers: [snap({ rvol: 2.4 })] }), emptyAlertState())

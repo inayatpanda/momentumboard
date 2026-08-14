@@ -1,4 +1,5 @@
 import type { Candle } from '../types'
+import { isCryptoSymbol } from '../symbols'
 
 // The engine's own hunting ground: names with demonstrated capacity to move,
 // auto-curated daily. Small caps get reserved slots — that's where the best
@@ -56,12 +57,30 @@ export function updateRoster(
   const joined: string[] = []
   const dropped: { sym: string; why: string }[] = []
 
+  // CRYPTO IS CONTAINED (Stage 1c Phase A, shared/symbols.ts `isCryptoSymbol`).
+  // The guard lives HERE, in the roster itself, and not only at the caller,
+  // because the watchlist rides into the roster UNCONDITIONALLY a few lines down
+  // — the one door with no gate in front of it, and precisely how the shipped
+  // starter list's BTC-USD/ETH-USD reached priority-1 candidacy. A caller-side
+  // filter would have to remember both entrances; this one cannot be bypassed.
+  //
+  // A stored member from before the guard is DROPPED rather than left to age out,
+  // with its own reason, exactly as the route-ETP purge in engine.ts does: the
+  // roster is what the engine re-examines every morning, so a name it may never
+  // call has no business sitting in it. The reader's watchlist is untouched.
+  for (const e of [...bySym.values()]) {
+    if (!isCryptoSymbol(e.sym)) continue
+    bySym.delete(e.sym)
+    dropped.push({ sym: e.sym, why: 'crypto — contained until the crypto cohort exists' })
+  }
+
   const qualifies = (c: RosterCandidate) =>
     c.capacityPct != null && c.capacityPct >= JOIN_CAPACITY &&
     c.dollarVol20d != null && c.dollarVol20d >= MIN_DOLLAR_VOL &&
     c.price != null && c.price >= MIN_PRICE
 
   for (const c of candidates) {
+    if (isCryptoSymbol(c.sym)) continue
     const existing = bySym.get(c.sym)
     if (existing) {
       if (c.capUsdM != null) existing.capUsdM = c.capUsdM
@@ -77,8 +96,9 @@ export function updateRoster(
     }
   }
 
-  // watchlist rides along unconditionally
+  // watchlist rides along unconditionally — except a coin (see the guard above)
   for (const sym of watchlist) {
+    if (isCryptoSymbol(sym)) continue
     if (!bySym.has(sym)) bySym.set(sym, { sym, joined: today, source: 'watchlist', capUsdM: null, lastCapacity: null, lastQualified: today })
   }
 

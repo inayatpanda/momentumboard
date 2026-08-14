@@ -1,4 +1,5 @@
 import type { Candle } from '../types'
+import { isCryptoSymbol } from '../symbols'
 import type { FunnelTrace } from './funnelTrace'
 import { round1, type GateCode } from './types'
 
@@ -116,8 +117,15 @@ export function regretDisabled(): boolean {
  *    to the gate that had refused it, as `causal` evidence and as one sided
  *    outcome (see `accrueCausalOutcome`). Miss-checking it as well would charge
  *    that same gate a second, stopless copy of the same fortnight — one event,
- *    two levers, and the better measurement drowned by the worse one. */
-export const MISS_SKIP_GATES: ReadonlySet<GateCode> = new Set<GateCode>(['called-full', 'called-half', 'called-shadow', 'called-wildcard', 'route-blocked', 'shadow-capped'])
+ *    two levers, and the better measurement drowned by the worse one.
+ *  - `crypto-contained` — the engine REFUSED a crypto pair as a candidate (Stage
+ *    1c Phase A). Every number in this module is an excess against SPY over ten
+ *    SPY sessions, and a seven-day-a-week series does not share that clock or that
+ *    benchmark: "the containment gate cost us 12pp" would be a measurement of the
+ *    wrong market, charged to a gate that governs equity calls. Refused here, and
+ *    refused again by SYMBOL in `missCandidates` — the belt that also covers the
+ *    250-day tail of trace rows written before this shipped. */
+export const MISS_SKIP_GATES: ReadonlySet<GateCode> = new Set<GateCode>(['called-full', 'called-half', 'called-shadow', 'called-wildcard', 'route-blocked', 'shadow-capped', 'crypto-contained'])
 
 export const missCheckable = (gate: GateCode): boolean => !MISS_SKIP_GATES.has(gate)
 
@@ -306,6 +314,12 @@ export function missCandidates(trace: FunnelTrace): MissCandidate[] {
   for (const [key, row] of Object.entries(trace.rows ?? {})) {
     if (!row || !missCheckable(row.gate)) continue
     const sym = key.split(':')[0]
+    // …and the same refusal read off the NAME (Stage 1c Phase A). The gate skip
+    // above covers rows the containment guard wrote; this covers the ones it did
+    // not — a crypto refusal recorded under `dead-zone-core` before the guard
+    // shipped, and the trace index is 250 days deep. Both layers, because the
+    // cost of a miss here is a stopless SPY excess charged to an equity gate.
+    if (isCryptoSymbol(sym)) continue
     const own = typeof row.core === 'number' && Number.isFinite(row.core) ? Math.abs(row.core) : null
     out.push({ key, sym, side: row.side ?? null, gate: row.gate, rank: own ?? rank.get(sym) ?? 0 })
   }

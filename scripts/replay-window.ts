@@ -142,7 +142,7 @@ import {
 } from '../shared/engine/calibration'
 import { seedFromHistory } from '../shared/engine/backtest'
 import { DEFAULT_WEIGHTS } from '../shared/engine/composite'
-import { exchangeFor } from '../shared/symbols'
+import { isCryptoSymbol } from '../shared/symbols'
 import { leverageAllowed, type LevMap } from '../shared/engine/riskLadder'
 import { buildBoard, gradeOutstanding } from '../netlify/functions/lib/engine'
 
@@ -280,7 +280,10 @@ export const LEVMAP_MIRROR: LevMap = {
 // Delegates cleanly since Stage-3a Task 3: exchangeFor reads the suffix before
 // the dash, so the local no-dot guard (which existed to keep BT-A.L out of the
 // crypto bucket) is no longer load-bearing — kept as belt over braces.
-export const isCryptoSymbol = (sym: string): boolean => !sym.includes('.') && exchangeFor(sym) === 'CRYPTO'
+// ONE predicate, not two: containment (stage 1c A1) made shared/symbols.ts the
+// canonical home; the replay re-exports it so the two can never drift.
+export { isCryptoSymbol } from '../shared/symbols'
+// …and imports it for its own use below (a re-export binds nothing locally).
 
 /** The population a v3 seed may measure: the walk universe with crypto removed. */
 export const seedUniverse = (syms: string[] = REPLAY_UNIVERSE): string[] => syms.filter(s => !isCryptoSymbol(s))
@@ -1072,6 +1075,7 @@ export const GATE_CODE_MIRROR: ReadonlySet<string> = new Set([
   'entry-wait', 'entry-chase', 'entry-reversal', 'evidence-fail', 'dip-refused',
   'grade-watchonly', 'route-blocked', 'diversity', 'slot-cut', 'shadow-capped',
   'called-full', 'called-half', 'called-shadow', 'called-watch', 'called-below-base', 'called-observation', 'called-wildcard',
+  'crypto-contained',
 ])
 
 /** THE READER GOT THIS ROW. Mirrors `PUBLISHED_GATES`: the size decisions, the
@@ -1244,7 +1248,7 @@ export const MISS_EXCESS_MIN_MIRROR = 5
  * WILDCARD (Stage 3d), whose real, stopped outcome is charged to the gate it
  * overrode as CAUSAL evidence, so a stopless copy of the same fortnight must
  * never be charged beside it. */
-export const MISS_SKIP_GATE_MIRROR: ReadonlySet<string> = new Set(['called-full', 'called-half', 'called-shadow', 'called-wildcard', 'route-blocked', 'shadow-capped'])
+export const MISS_SKIP_GATE_MIRROR: ReadonlySet<string> = new Set(['called-full', 'called-half', 'called-shadow', 'called-wildcard', 'route-blocked', 'shadow-capped', 'crypto-contained'])
 /** postMortem.ts `POSTMORTEM_CLASSES`, IN PRECEDENCE ORDER — the order is the
  * definition, so the mirror is an array and the drift guard compares it ordered.
  * `won` is the sixth and is NOT part of that precedence: it is the wildcard's
@@ -2491,7 +2495,9 @@ export async function main() {
     ? symbolsRaw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
     : null
   const askedUniverse = symbolsArg ?? REPLAY_UNIVERSE
-  const baseUniverse = seedOut ? seedUniverse(askedUniverse) : askedUniverse
+  // containment (1c A1): crypto is out of the walk universe in EVERY mode —
+  // an unguarded baseline walk graded ETH against SPY for weeks.
+  const baseUniverse = seedUniverse(askedUniverse)
   let commit = 'unknown'
   try {
     commit = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim()
@@ -2682,7 +2688,7 @@ export async function main() {
     // The roster is built by this walk out of this universe, so it cannot introduce
     // a crypto name — but the filter is the seed's contract, not an inference about
     // where the roster came from, so it is applied where the universe is composed.
-    if (seedOut) universe = seedUniverse(universe)
+    universe = seedUniverse(universe) // every mode — containment (1c A1), not a seed nicety
     const bars = new Map<string, Candle[]>()
     for (const sym of universe) {
       const full = await fullHistory(sym)
