@@ -21,6 +21,7 @@ import {
   gradeCryptoPrediction,
   loadCryptoCalibration,
   updateCryptoCalibration,
+  type CryptoCalibrationState,
   type LookbackScaling,
 } from './cryptoCalibration'
 import { CALIB_DEF_VERSION, gradeFor, gradePrediction, updateCalibration, type CalibrationState } from './calibration'
@@ -79,14 +80,43 @@ describe('the crypto partition — its own blob, its own state', () => {
     expect(loadCryptoCalibration(null).buckets).toEqual({})
     expect(loadCryptoCalibration(undefined).buckets).toEqual({})
 
-    const stored: CalibrationState = { buckets: { 'long:green:55-70': { n: 4, hits: 3 } }, brier: [], defVersion: CRYPTO_CALIB_DEF_VERSION }
+    const stored: CryptoCalibrationState = { basis: 'absolute', buckets: { 'long:green:55-70': { n: 4, hits: 3 } }, brier: [], defVersion: CRYPTO_CALIB_DEF_VERSION }
     const kept = loadCryptoCalibration(stored)
     expect(kept.buckets['long:green:55-70']).toEqual({ n: 4, hits: 3 })
     expect(kept.setupBuckets).toEqual({}) // migrateCalibration ran
     expect(kept.evidence).toBeTruthy()
+    // absent seedGeneration means 0 HERE — the equity "absent means 1" is for
+    // blobs that predate generations, and this namespace has none. Were the
+    // migration's ??= 1 to win, a generation-1 crypto seed could never land.
+    expect(kept.seedGeneration).toBe(0)
 
     const stale = loadCryptoCalibration({ buckets: { 'long:green:55-70': { n: 9, hits: 9 } }, brier: [], defVersion: 2 })
     expect(stale.buckets).toEqual({}) // a different hit definition is not evidence — and there is no seed to fall back to
+  })
+
+  it('REFUSES the equity blob: same defVersion, no basis brand — cold, never adopted', () => {
+    // the exact state a wrong-key write would hand this loader: defVersion 3,
+    // cohort-prefixed keys, the equity anchor
+    const equityShaped: CalibrationState = {
+      buckets: { 'large:long:green:55-70': { n: 8526, hits: 3545 } },
+      brier: [],
+      defVersion: CALIB_DEF_VERSION,
+      referenceBase: 0.4158,
+    }
+    const loaded = loadCryptoCalibration(equityShaped)
+    expect(loaded.buckets).toEqual({}) // not one equity row crosses
+    expect(loaded.referenceBase).toBeUndefined() // 0.4158 must never appear here
+    expect(loaded.basis).toBe('absolute')
+  })
+
+  it('is branded at birth, and the brand survives an update and a store round-trip', () => {
+    const s = emptyCryptoCalibration()
+    expect(s.basis).toBe('absolute')
+    const updated = updateCryptoCalibration(s, { side: 'long', regime: 'green', composite: 60, accrual: 'sized' }, { excessPct: 3, rawPct: 3, spyPct: 0, stopped: false, hit: true })
+    expect(updated.basis).toBe('absolute')
+    // serialise → parse → load: what the D1 blob path will actually do
+    const reloaded = loadCryptoCalibration(JSON.parse(JSON.stringify(updated)))
+    expect(reloaded.buckets['long:green:55-70']).toEqual({ n: 1, hits: 1, shadowN: 0, shadowHits: 0 })
   })
 })
 
@@ -174,6 +204,27 @@ describe('the absolute basis — no benchmark, on either side', () => {
     const wicked = gradeCryptoPrediction(call({ stop: 95 }), maturedSeries(105).map(c => ({ ...c, l: 90 })))!
     expect(wicked).toMatchObject({ stopped: false, hit: true })
   })
+
+  it('a close through the stop ON PUBLICATION DAY is a stop — the reader was holding from 06:00', () => {
+    // D (2026-08-15, index 1) closes at 80, straight through the 90 stop; the
+    // tape then recovers to 105 by the outcome bar. The return leg never sees
+    // bar D; the stop leg must, or this grades a −20% close-through a hit.
+    const breachD = [100, 80, ...Array(14).fill(100), 105]
+    expect(gradeCryptoPrediction(call({ stop: 90 }), bars('2026-08-14', breachD))!).toMatchObject({ stopped: true, hit: false })
+    // …and symmetrically for a short: D spikes through the buy-stop
+    const spikeD = [100, 120, ...Array(14).fill(100), 95]
+    expect(gradeCryptoPrediction(call({ side: 'short', stop: 110 }), bars('2026-08-14', spikeD))!).toMatchObject({ stopped: true, hit: false })
+  })
+
+  it('…while the publication bar still never sets the BASE, and a gap over it degrades to the entry bar', () => {
+    // same shape, stop below D's close: the return bases at D+1's open (100),
+    // not D's 80 — the two legs read different first bars off one tape
+    const dipD = [100, 80, ...Array(14).fill(100), 105]
+    expect(gradeCryptoPrediction(call({ stop: 70 }), bars('2026-08-14', dipD))!).toMatchObject({ stopped: false, rawPct: 5, hit: true })
+    // a tape with no bar on D at all: the stop scan starts where the tape does
+    const gapped = bars('2026-08-14', [100, ...Array(15).fill(100), 105]).filter(c => c.t !== utc('2026-08-15'))
+    expect(gradeCryptoPrediction(call({ stop: 90 }), gapped)!).toMatchObject({ stopped: false, hit: true })
+  })
 })
 
 describe('the crypto clock — fourteen bars, and the entry bar is the one after the call', () => {
@@ -233,6 +284,10 @@ describe('the candle seam — completed bars only, whatever the hour', () => {
     const once = completedCryptoBars(series, now)
     expect(completedCryptoBars(once, now)).toEqual(once)
     expect(completedCryptoBars(series.slice(0, -1), now).length).toBe(4)
+  })
+
+  it('throws on a millisecond clock rather than failing soft to an empty tape', () => {
+    expect(() => completedCryptoBars(series, (utc('2026-08-14') + 6 * 3600) * 1000)).toThrow(/milliseconds/)
   })
 
   it('the wrapper cuts on the way out — and REFUSES a non-crypto symbol rather than re-cutting it', async () => {
@@ -309,6 +364,9 @@ describe('a crypto grade never touches equity state', () => {
     for (let i = 0; i < 60; i++) updateCryptoCalibration(crypto, cryptoRow, outcome)
     const equity: CalibrationState = { buckets: {}, setupBuckets: {}, brier: [] }
     expect(cryptoBaseHitRate(crypto).n).toBe(60)
+    // …and the equity state cannot even be ASKED: the basis brand makes the
+    // wrong-state call a compile error, not a runtime discovery
+    // @ts-expect-error — CalibrationState lacks the crypto basis brand
     expect(cryptoBaseHitRate(equity).n).toBe(0)
   })
 })

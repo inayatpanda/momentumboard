@@ -174,6 +174,18 @@ const DAY_SEC = 86_400
 
 const zero = () => ({ n: 0, hits: 0 })
 
+/** THE CRYPTO BLOB'S BRAND. `basis` is a discriminator, not data: both
+ * partitions answer to defVersion 3, so a version check alone cannot tell the
+ * equity blob from the crypto one — and an equity blob stored under the crypto
+ * key would hand this partition 8,500 SPY-benchmarked rows and the 0.4158
+ * anchor it exists to never inherit. The brand closes that at both layers:
+ * `loadCryptoCalibration` goes cold on a blob that does not carry it, and the
+ * wrappers below accept only the branded type, so handing them the equity
+ * state is a compile error rather than a runtime discovery. */
+export interface CryptoCalibrationState extends CalibrationState {
+  basis: 'absolute'
+}
+
 /** A cold crypto partition. EMPTY, by ratified decision: no seed walk ships in
  * 1c (deep-seeding crypto is a recorded follow-up), so `baseHitRate` reads its
  * hard 0.5 under fifty outcomes, `gradeBaseRate` inherits that, and every
@@ -185,9 +197,12 @@ const zero = () => ({ n: 0, hits: 0 })
  * `seedGeneration: 0` means "no crypto seed artefact has ever installed here",
  * so a future generation-1 crypto seed can land exactly once under the equity
  * install rule (`seedGen > storedGen`). The equity contract's "absent means 1"
- * does not apply: this namespace has no legacy blobs to be compatible with. */
-export function emptyCryptoCalibration(): CalibrationState {
+ * does not apply — this namespace has no legacy blobs to be compatible with —
+ * and the LOADER enforces that, because `migrateCalibration` would otherwise
+ * backfill the equity default into an absent field. */
+export function emptyCryptoCalibration(): CryptoCalibrationState {
   return {
+    basis: 'absolute',
     buckets: {},
     setupBuckets: {},
     brier: [],
@@ -204,19 +219,31 @@ export function emptyCryptoCalibration(): CalibrationState {
  * generation to swap, so a blob written under a different outcome definition
  * goes COLD rather than being replaced by an artefact that does not exist.
  *
+ * TWO refusals, not one. A wrong `defVersion` is a different hit definition; a
+ * missing `basis` brand is a different BLOB — the equity state carries the same
+ * defVersion, so the brand is the only thing standing between this partition
+ * and silently adopting the whole equity record if a write ever lands under
+ * the wrong key. Cold is the honest answer to both.
+ *
  * It reads only what it is given. Nothing here opens `seed.json`, and that is a
  * structural claim about the partition, not an omission: the committed seed was
  * swept over an equity universe with crypto explicitly filtered out
  * (`replay-window.ts` `seedUniverse`), so it is not evidence about a coin. */
-export function loadCryptoCalibration(stored: CalibrationState | null | undefined): CalibrationState {
+export function loadCryptoCalibration(stored: CalibrationState | null | undefined): CryptoCalibrationState {
   if (!stored || stored.defVersion !== CRYPTO_CALIB_DEF_VERSION) return emptyCryptoCalibration()
-  return migrateCalibration(stored)
+  if ((stored as Partial<CryptoCalibrationState>).basis !== 'absolute') return emptyCryptoCalibration()
+  // Absent means 0 HERE: `migrateCalibration`'s `??= 1` is the equity contract
+  // for blobs that predate generations, and this namespace has none. Stamp
+  // before migrating, or the backfill guesses 1 and a future generation-1
+  // crypto seed can never land (`1 > 1` is false).
+  stored.seedGeneration ??= 0
+  return migrateCalibration(stored) as CryptoCalibrationState
 }
 
 /** The crypto cohort's own pooled base rate — `baseHitRate` over the CRYPTO
  * state. Same arithmetic, same fifty-observation cliff, a different population.
  * Nothing filters: the state IS the filter. */
-export const cryptoBaseHitRate = (state: CalibrationState, population: BucketPopulation = 'pooled'): { rate: number; n: number } =>
+export const cryptoBaseHitRate = (state: CryptoCalibrationState, population: BucketPopulation = 'pooled'): { rate: number; n: number } =>
   baseHitRate(state, population)
 
 /** THE CRYPTO GRADE ANCHOR. `gradeBaseRate` unchanged, over the crypto state:
@@ -225,7 +252,7 @@ export const cryptoBaseHitRate = (state: CalibrationState, population: BucketPop
  * it), so this is the legacy fallback path — the same one every equity blob
  * took before the reference was swept. The equity 0.4158 must never appear
  * here: it was measured on a universe crypto was filtered out of. */
-export const cryptoGradeBaseRate = (state: CalibrationState): number => gradeBaseRate(state)
+export const cryptoGradeBaseRate = (state: CryptoCalibrationState): number => gradeBaseRate(state)
 
 /** Calibrated probability, off the CRYPTO ladder.
  *
@@ -242,7 +269,7 @@ export const cryptoGradeBaseRate = (state: CalibrationState): number => gradeBas
  *    coin); leaving the door open would let a stray cap split the crypto
  *    evidence into rungs that can never fill. */
 export function cryptoProbabilityFor(
-  state: CalibrationState,
+  state: CryptoCalibrationState,
   side: 'long' | 'short',
   regime: string,
   absComposite: number,
@@ -267,7 +294,7 @@ export function cryptoProbabilityFor(
  * mechanisms, which is what makes the partition a partition rather than an
  * amputation. */
 export function updateCryptoCalibration(
-  state: CalibrationState,
+  state: CryptoCalibrationState,
   pred: {
     side: string
     regime: string
@@ -280,8 +307,10 @@ export function updateCryptoCalibration(
     riskPct?: number
   },
   outcome: PredOutcome,
-): CalibrationState {
-  return updateCalibration(state, { ...pred, capUsdM: null }, outcome)
+): CryptoCalibrationState {
+  // `updateCalibration` mutates and returns the state it was handed, so the
+  // brand survives the round-trip and the cast states a fact.
+  return updateCalibration(state, { ...pred, capUsdM: null }, outcome) as CryptoCalibrationState
 }
 
 // ---- the grade ----
@@ -306,13 +335,23 @@ export function updateCryptoCalibration(
  * The equity rule ("the base is the entry SESSION's open") is honest because
  * the paper publishes pre-open: the bar being measured had not started when the
  * call was made. A crypto bar starts at 00:00 UTC and the engine publishes at
- * ~06:00 UTC (`daily-paper.yml`), so the publication day's own bar is already
- * six hours old — basing the grade on its open would credit every call with six
- * hours of move the reader could not have taken (recon §2.3). So the entry bar
- * is the first bar that OPENS STRICTLY AFTER the call's date: the day after.
- * It is the conservative side of the trade-off (the reader could have entered
- * at 06:00 and this measures from midnight-after), and conservative is the only
- * acceptable direction — the other one is a lookahead on every row.
+ * ~06:00 UTC (`daily-paper.yml`), so the honest fill is a price INSIDE the
+ * publication day's bar — which a daily OHLC does not contain. Both candidate
+ * proxies miss it in opposite directions: D's open is six hours BEFORE the
+ * fill, D+1's open eighteen hours after it. The 00:00→06:00 move is not a
+ * lookahead — the engine's inputs stop at D−1's close, so that move is unknown
+ * to it either way — but it is not neutral either: for a momentum engine the
+ * six-hour drift correlates with the side just picked, so basing at D's open
+ * would hand every call a small optimistic credit. The entry bar is therefore
+ * the first bar that OPENS STRICTLY AFTER the call's date: the return leg
+ * forfeits the publication-day move rather than claiming move it cannot place,
+ * and forfeiting is the conservative side of the trade.
+ *
+ * THE STOP DOES NOT SHARE THIS ENTRY. The reader is holding from ~06:00 on D,
+ * so D's close is the first close under exposure — the stop walk below starts
+ * at the publication day's own bar, not at the return leg's entry. The two
+ * legs face opposite directions of conservatism on purpose: the return is what
+ * the engine may claim, the stop is what the reader lived through.
  *
  * Written as `t >= dayEpoch + one day` rather than `t > dayEpoch` so the intent
  * survives the assumption: the two are identical for a series whose bars are
@@ -345,8 +384,15 @@ export function gradeCryptoPrediction(
   // Close-based, exactly as the equity grader is and for the same reason: a
   // wick through the stop is survivable noise, and the level that counts is the
   // PUBLISHED stop, not a trail the books may have re-read since.
+  //
+  // The scan starts at the PUBLICATION DAY'S bar (see the entry-bar note
+  // above): a close through the stop on the day the call went out is a stop
+  // the reader took, and starting at D+1 would grade it a clean hit. On a
+  // gapped tape the first bar at-or-after D is the entry bar itself, and the
+  // scan degrades to the return leg's window.
+  const stopFrom = candles.findIndex(c => c.t >= dayEpoch)
   let stopped = false
-  for (let i = entryIdx; i <= entryIdx + horizon; i++) {
+  for (let i = stopFrom; i <= entryIdx + horizon; i++) {
     if (pred.side === 'long' ? candles[i].c <= pred.stop : candles[i].c >= pred.stop) {
       stopped = true
       break
@@ -374,6 +420,11 @@ export function gradeCryptoPrediction(
  * idempotent, and it makes crypto's "today" mean yesterday's completed day: the
  * same relationship equities already have. */
 export const completedCryptoBars = (candles: Candle[], nowSec: number): Candle[] => {
+  // SECONDS, loudly. A millisecond clock here would put "today" three
+  // millennia out, drop every bar, and fail SOFT to an empty tape — the one
+  // failure mode worse than throwing, because nothing downstream would know.
+  // A unit confusion is a programming error, and it gets an error.
+  if (nowSec > 1e11) throw new Error(`completedCryptoBars: nowSec ${nowSec} looks like milliseconds`)
   const startOfTodayUtc = Math.floor(nowSec / DAY_SEC) * DAY_SEC
   return candles.filter(c => c.t < startOfTodayUtc)
 }
@@ -525,9 +576,31 @@ export const CRYPTO_LOOKBACKS = {
 
   // ── minimum-history guards. Derived, not independent: each one exists to
   // guarantee the longest window inside its function is computable, so it moves
-  // with the windows it protects.
+  // with the windows it protects. Guards written as `window + k` follow their
+  // window by construction (only the named constant is listed, the same rule
+  // as the lanes' inline slices): momentum's `closes.length < 22` is ret
+  // window + 1 and swingCapacity's `usable.length < window + 30` carries the
+  // buffer row below.
   minHistory30: { equity: 30, crypto: cryptoLookback(30), rule: 'scaled', site: 'technicals.ts technicalStage guard' },
   setupsMinHistory25: { equity: 25, crypto: cryptoLookback(25), rule: 'scaled', site: 'setups.ts detectSetups guard' },
+  momentumGuardWindow21: { equity: 21, crypto: cryptoLookback(21), rule: 'scaled', site: 'factors.ts momentumFactor guard (closes.length < ret window + 1)' },
+  swingCapacityGuardBuffer30: { equity: 30, crypto: cryptoLookback(30), rule: 'scaled', site: 'indicators.ts swingCapacity guard (usable.length < window + buffer)' },
+
+  // ── the open-trace clock. Not an indicator, but the one other place that
+  // walks an entry bar and a horizon over a tape — and it currently holds the
+  // equity answers to BOTH questions this module re-answers: GRADE_HORIZON 10
+  // and an entry of `t >= dayEpoch` (the publication day). Fed a crypto row
+  // unchanged, the trace and the grade would disagree about the entry bar AND
+  // the maturity date in front of a reader. B2 either hands it the crypto
+  // clock or keeps crypto rows out of it — a decision, not a discovery.
+  openTraceGradeHorizon10: {
+    equity: 10,
+    crypto: CRYPTO_GRADE_HORIZON,
+    rule: 'horizon',
+    site: 'openTrace.ts GRADE_HORIZON / entry findIndex / gradesInSessions',
+    why:
+      'The window IS the holding period (swingCapacityWindow10\'s claim, one layer up), so it is pinned to CRYPTO_GRADE_HORIZON. Its entry rule must match gradeCryptoPrediction — return leg based at the first bar OPENING after the call, stop exposure from the publication bar — and `gradesInSessions` counts crypto BARS, which are calendar days, not sessions.',
+  },
 
   // ── capacity. TWO windows, and NEITHER is a plain ×7/5.
   swingCapacityWindow10: {
@@ -568,6 +641,12 @@ export const CRYPTO_NOT_A_CLOCK: { name: string; value: number; site: string; wh
     value: 3,
     site: 'velocityLane.ts UP_DAYS_MIN',
     why: 'A COUNT inside a window that does scale (RUN_WINDOW 5 → 7), so it is the one entry here that is not simply invariant: preserving the fraction gives 4 of 7 (0.571) against today\'s 3 of 5 (0.600), and which of those the confirmation door means is a judgement B2 must make with the number in front of it, not a multiplication.',
+  },
+  {
+    name: 'stopMult 1.5×ATR',
+    value: 1.5,
+    site: 'composite.ts levelsFor (stopMult = smallCap ? 2 : 1.5)',
+    why: 'A MULTIPLE of an ATR that is already on the crypto clock once atr14 scales to 20 — and the single highest-leverage dimensionless ratio in the lane, because it sets the very close-through rate gradeCryptoPrediction walks. One cohort consequence, stated so B2 chooses it rather than inherits it: `smallCap` reads capUsdM, which is null for a coin, so crypto lands on the 1.5 arm by default.',
   },
   {
     name: 'volumeConfirmed 1.3×',

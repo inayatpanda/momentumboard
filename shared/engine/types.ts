@@ -258,9 +258,9 @@ export interface GradedCall extends EngineCall {
 }
 
 export interface PredOutcome {
-  excessPct: number // side-adjusted, vs SPY over the same window
+  excessPct: number // side-adjusted; vs SPY over the window for an EQUITY row, the raw move itself for a CRYPTO row (absolute basis — cryptoCalibration.ts)
   rawPct: number
-  spyPct: number
+  spyPct: number // structurally 0 on a crypto row: nothing was subtracted — never render it as a benchmark there
   stopped: boolean
   hit: boolean
 }
