@@ -39,6 +39,13 @@ describe('missLedgerExamples', () => {
     expect(dz.examples).toHaveLength(2)
     expect(dz.examples[0]).toMatchObject({ sym: 'PLTR', date: '2026-08-04', excessPct: 6.1 })
     expect(dz.causal).toEqual({ n: 4, hits: 1 })
+    // cost/saved are EVENT COUNTS (CX-15) — the averages carry the magnitudes,
+    // and both averages travel so the UI can never print a count with "pp" on it.
+    expect(dz.cost).toBe(2)
+    expect(dz.avgCostExcessPct).toBe(7.7) // 15.3 / 2, rounded to 1dp
+    expect(dz.avgSavedExcessPct).toBe(2) // 2.0 / 1
+    const ec = r.topGates.find(g => g.gate === 'entry-chase')!
+    expect(ec.avgSavedExcessPct).toBeNull() // saved 0 → no average, never a zero
   })
 
   it('returns null on an empty ledger, exactly like the summary', () => {

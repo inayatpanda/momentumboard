@@ -6,8 +6,8 @@ import type { RiskState } from '../../shared/engine/riskLadder'
 import type { RosterEntry } from '../../shared/engine/roster'
 import type { ChannelCredState } from '../../shared/engine/channelCred'
 import { MISS_LEDGER_KEY, missLedgerExamples, missLedgerSummary } from '../../shared/engine/missLedger'
-import { GATE_STATE_KEY, gateStateStructured, gateStateSummary } from '../../shared/engine/gateState'
-import { FUNNEL_TRACE_INDEX_KEY, funnelTraceKey, traceRowKey, type FunnelTrace, type FunnelNearMiss } from '../../shared/engine/funnelTrace'
+import { GATE_STATE_KEY, gateStateStructured, gateStateSummary, type GateOverride } from '../../shared/engine/gateState'
+import { FUNNEL_TRACE_INDEX_KEY, PUBLISHED_GATES, funnelTraceKey, traceRowKey, type FunnelTrace, type FunnelNearMiss } from '../../shared/engine/funnelTrace'
 import { onDemandVerdict, type OnDemandVerdict } from './lib/onDemandVerdict'
 import { getCached, setCached } from './lib/cache'
 import { fetchYahooChart } from './lib/yahoo'
@@ -140,7 +140,7 @@ const slimNearMiss = (m: FunnelNearMiss) => ({
 /** ?view=journey&sym= — one name's whole story: today's board row, the open-trace
  * verdict, its last-10-days funnel path, and every call on it in the 30-day
  * ledger window. THE funnel's first HTTP door. */
-async function viewJourney(sym: string) {
+async function viewJourney(sym: string, days = 30) {
   const [traceIndex, predIndex, board, openTrace] = await Promise.all([
     blobAppStore.read<string[]>(FUNNEL_TRACE_INDEX_KEY),
     blobAppStore.read<string[]>('predictions-index'),
@@ -159,7 +159,7 @@ async function viewJourney(sym: string) {
     return [{ date, rows, nearMiss: miss ? slimNearMiss(miss) : null }]
   })
 
-  const predDates = (predIndex ?? []).slice(-30)
+  const predDates = (predIndex ?? []).slice(-days)
   const predDays = await Promise.all(predDates.map(d => blobAppStore.read<Prediction[]>(`predictions:${d}`)))
   const calls = predDays
     .flatMap(day => (day ?? []).filter(p => p.sym === sym))
@@ -210,10 +210,12 @@ async function viewLearning() {
     blobAppStore.read<{ date: string; joined: string[]; dropped: { sym: string; why: string }[] }[]>('engine-roster-log'),
     blobAppStore.read<ChannelCredState>('channel-credibility'),
     blobAppStore.read<CalibrationState>('engine-calibration'),
-    blobAppStore.read<{ riskAppetite?: 'moderate' | 'aggressive' | null }>('config'),
+    blobAppStore.read<{ riskAppetite?: 'moderate' | 'aggressive' | null; gateOverride?: GateOverride | null }>('config'),
   ])
   return {
-    gateState: gateStateStructured(gateStateBlob, config?.riskAppetite ?? null),
+    // Config rides along so `current` is the engine's OWN effective value —
+    // appetite preset, earned delta, owner pin, bounds clamp, all of it (CX-14).
+    gateState: gateStateStructured(gateStateBlob, { riskAppetite: config?.riskAppetite ?? null, gateOverride: config?.gateOverride ?? null }),
     gateLines: gateStateSummary(gateStateBlob),
     regrets: missLedgerExamples(missLedgerBlob),
     weights: projectWeights(weights),
@@ -264,19 +266,23 @@ async function viewVerdict(sym: string) {
 async function viewFunnel(date: string | null) {
   const index = (await blobAppStore.read<string[]>(FUNNEL_TRACE_INDEX_KEY)) ?? []
   const day = date ?? index[index.length - 1] ?? null
-  if (!day) return { date: null, missing: true, rows: [], nearMisses: [] }
+  if (!day) return { date: null, missing: true, refusals: [], published: [], nearMisses: [] }
   const trace = await blobAppStore.read<FunnelTrace>(funnelTraceKey(day))
-  if (!trace) return { date: day, missing: true, rows: [], nearMisses: [] }
-  const rows = Object.entries(trace.rows ?? {})
-    .map(([key, r]) => ({ key, ...r }))
-    .sort((a, b) => (b.core ?? Number.NEGATIVE_INFINITY) - (a.core ?? Number.NEGATIVE_INFINITY))
+  if (!trace) return { date: day, missing: true, refusals: [], published: [], nearMisses: [] }
+  const rows = Object.entries(trace.rows ?? {}).map(([key, r]) => ({ key, ...r }))
   return {
     date: day,
     gates: trace.gates,
     counts: trace.counts,
     emptySides: trace.emptySides,
     disabled: trace.disabled ?? false,
-    rows,
+    // A published row is NOT a refusal (CX-1): "the engine said no" must never
+    // list a call it made. Refusals rank by |core| — a strong short's signed
+    // core is negative, and conviction is magnitude, not sign (CX-2).
+    refusals: rows
+      .filter(r => !PUBLISHED_GATES.has(r.gate))
+      .sort((a, b) => (b.core == null ? Number.NEGATIVE_INFINITY : Math.abs(b.core)) - (a.core == null ? Number.NEGATIVE_INFINITY : Math.abs(a.core))),
+    published: rows.filter(r => PUBLISHED_GATES.has(r.gate)),
     nearMisses: (trace.nearMisses ?? []).map(slimNearMiss),
   }
 }
@@ -306,7 +312,12 @@ export default async (req: Request) => {
     if (view === 'journey') {
       const sym = (url.searchParams.get('sym') ?? '').toUpperCase()
       if (!SYM_RE.test(sym)) return json({ error: 'bad sym' }, 400)
-      return json(await viewJourney(sym))
+      // ?days= widens the calls window up to the full retained index (CX-16) —
+      // the StockPage's "load older calls" path. Default stays the 30-day read.
+      const rawDays = url.searchParams.get('days')
+      const parsedDays = rawDays === null || rawDays === '' ? 30 : Number(rawDays)
+      const days = Math.min(250, Math.max(1, Number.isFinite(parsedDays) ? Math.floor(parsedDays) : 30))
+      return json(await viewJourney(sym, days))
     }
     if (view === 'learning') return json(await viewLearning())
     if (view === 'verdict') {

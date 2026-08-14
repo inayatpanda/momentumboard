@@ -566,24 +566,33 @@ export interface GateStructuredEntry {
   gate: TunableGate
   label: string
   base: number
+  /** The EFFECTIVE value — effectiveGateValues' own arithmetic (pin-aware,
+   * clamped, kill-switch-aware), never re-derived here (CX-14). */
   current: number
+  /** Present only when the owner's config pin is what `current` is. */
+  override?: number
   bounds: { min: number; max: number }
   history: { date: string; from: number; to: number; why: string }[]
   blocked?: { why: 'cadence' | 'override' | 'bound'; date: string }
 }
 
-export function gateStateStructured(raw: unknown, appetite?: 'moderate' | 'aggressive' | null): { gates: GateStructuredEntry[] } {
+export function gateStateStructured(
+  raw: unknown,
+  cfg?: { riskAppetite?: 'moderate' | 'aggressive' | null; gateOverride?: GateOverride | null } | null,
+): { gates: GateStructuredEntry[] } {
   const state = normaliseGateState(raw)
+  const effective = effectiveGateValues(cfg?.riskAppetite, state, cfg?.gateOverride)
   return {
     gates: TUNABLE_GATES.map(gate => {
       const b = GATE_BOUNDS[gate]
       const d = state.gates[gate]
-      const base = baseGateValue(gate, appetite)
+      const pin = cfg?.gateOverride?.[gate]
       return {
         gate,
         label: b.label,
-        base,
-        current: base + (d?.delta ?? 0),
+        base: baseGateValue(gate, cfg?.riskAppetite),
+        current: effective[gate],
+        ...(typeof pin === 'number' && Number.isFinite(pin) ? { override: pin } : {}),
         bounds: { min: b.min, max: b.max },
         history: d?.history ?? [],
         ...(d?.blocked ? { blocked: d.blocked } : {}),

@@ -619,12 +619,24 @@ export async function accrueMissDay(ledger: MissLedger, trace: FunnelTrace, spy:
  * ordering — same code path, so the two can never disagree — but each top gate
  * keeps its named examples and the default topN widens. The summary stays the
  * paper's and the legacy panel's read, untouched. */
-export function missLedgerExamples(raw: unknown, topN = 8): (Omit<MissLedgerSummary, 'topGates'> & { topGates: (MissGateLine & { examples: MissExample[] })[] }) | null {
+export function missLedgerExamples(
+  raw: unknown,
+  topN = 8,
+): (Omit<MissLedgerSummary, 'topGates'> & { topGates: (MissGateLine & { examples: MissExample[]; avgSavedExcessPct: number | null })[] }) | null {
   const summary = missLedgerSummary(raw, topN)
   if (!summary) return null
   const l = normaliseMissLedger(raw)
   return {
     ...summary,
-    topGates: summary.topGates.map(g => ({ ...g, examples: l.gates[g.gate]?.examples ?? [] })),
+    // `cost`/`saved` are EVENT COUNTS; the averages carry the magnitudes
+    // (CX-15) — both travel so no surface ever prints a count with "pp" on it.
+    topGates: summary.topGates.map(g => {
+      const stat = l.gates[g.gate]
+      return {
+        ...g,
+        examples: stat?.examples ?? [],
+        avgSavedExcessPct: stat?.saved ? round1((stat.savedExcessSum ?? 0) / stat.saved) : null,
+      }
+    }),
   }
 }

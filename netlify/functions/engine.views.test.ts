@@ -149,6 +149,19 @@ describe('engine ?view= slices', () => {
       expect(r.data).toMatchObject({ sym: 'ZZQ', boardRow: null, openTrace: null, funnel: [], calls: [] })
     })
 
+    it('widens the calls window on ?days= — the full retained index is reachable (CX-16)', async () => {
+      const dates = Array.from({ length: 40 }, (_, i) => `2026-06-${String((i % 30) + 1).padStart(2, '0')}x${i}`.slice(0, 10)).map((_, i) => {
+        const d = new Date(Date.UTC(2026, 5, 1) + i * 86_400_000)
+        return d.toISOString().slice(0, 10)
+      })
+      await seed('predictions-index', dates)
+      await seed(`predictions:${dates[2]}`, [{ id: 'old', date: dates[2], sym: 'NVDA', side: 'long' }])
+      const dflt = await body(await handler(req('?view=journey&sym=NVDA')))
+      expect((dflt.data as { calls: unknown[] }).calls).toHaveLength(0) // outside the default 30
+      const wide = await body(await handler(req('?view=journey&sym=NVDA&days=250')))
+      expect((wide.data as { calls: { id: string }[] }).calls.map(c => c.id)).toEqual(['old'])
+    })
+
     it('reads only the last 10 trace days', async () => {
       const dates = Array.from({ length: 12 }, (_, i) => `2026-07-${String(i + 1).padStart(2, '0')}`)
       await seed('funnel-trace-index', dates)
@@ -198,24 +211,28 @@ describe('engine ?view= slices', () => {
   })
 
   describe('?view=funnel', () => {
-    it('defaults to the newest trace day; rows ranked by core desc, nulls last; near-miss prose stripped', async () => {
+    it('splits refusals from published rows; refusals rank by |core| desc, nulls last; near-miss prose stripped', async () => {
       await seed('funnel-trace-index', ['2026-08-12', '2026-08-13'])
       await seed('funnel-trace:2026-08-13', {
         date: '2026-08-13',
         gates: { deadZone: 0.3 },
         rows: {
-          'AAA:long': { gate: 'diversity', side: 'long', core: 0.3 },
+          'AAA:long': { gate: 'diversity', side: 'long', core: 22 },
           BBB: { gate: 'no-candles' },
-          'CCC:short': { gate: 'slot-cut', side: 'short', core: 0.9 },
+          // a strong SHORT refusal: signed core NEGATIVE, conviction highest (CX-2)
+          'CCC:short': { gate: 'slot-cut', side: 'short', core: -31 },
+          // a PUBLISHED row must never appear among the refusals (CX-1)
+          'EEE:long': { gate: 'called-full', side: 'long', core: 40 },
         },
         counts: { notCandidate: 42 },
         nearMisses: [{ sym: 'DDD', core: 0.5, capUsdM: null, lastClose: 10, atrNow: 1, capacityPct: null, stage: null, factors: { momentum: { score: 2, detail: 'NM-PROSE' } } }],
         emptySides: { short: 'no-candidates' },
       })
       const r = await body(await handler(req('?view=funnel')))
-      const d = r.data as { date: string; rows: { key: string; core?: number }[]; nearMisses: unknown[]; counts: { notCandidate: number }; gates: { deadZone: number }; emptySides: { short: string } }
+      const d = r.data as { date: string; refusals: { key: string }[]; published: { key: string; gate: string }[]; nearMisses: unknown[]; counts: { notCandidate: number }; gates: { deadZone: number }; emptySides: { short: string } }
       expect(d.date).toBe('2026-08-13')
-      expect(d.rows.map(x => x.key)).toEqual(['CCC:short', 'AAA:long', 'BBB'])
+      expect(d.refusals.map(x => x.key)).toEqual(['CCC:short', 'AAA:long', 'BBB'])
+      expect(d.published).toEqual([{ key: 'EEE:long', gate: 'called-full', side: 'long', core: 40 }])
       expect(d.counts.notCandidate).toBe(42)
       expect(d.gates.deadZone).toBe(0.3)
       expect(d.emptySides.short).toBe('no-candidates')
@@ -228,7 +245,7 @@ describe('engine ?view= slices', () => {
       expect((await handler(req('?view=funnel&date=13-08-2026'))).status).toBe(400)
       const r = await body(await handler(req('?view=funnel&date=2026-08-12')))
       expect(r.ok).toBe(true)
-      expect(r.data).toMatchObject({ date: '2026-08-12', missing: true, rows: [], nearMisses: [] })
+      expect(r.data).toMatchObject({ date: '2026-08-12', missing: true, refusals: [], published: [], nearMisses: [] })
     })
   })
 

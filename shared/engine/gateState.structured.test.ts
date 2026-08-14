@@ -43,4 +43,19 @@ describe('gateStateStructured', () => {
     expect(dz.current).toBe(baseGateValue('deadZone'))
     expect(dz.history).toEqual([])
   })
+
+  it("honours the owner's pin: an override IS the current value, and is surfaced", () => {
+    const s = gateStateStructured({ gates: { deadZone: { delta: -2.5, history: [] } } }, { riskAppetite: null, gateOverride: { deadZone: 21 } })
+    const dz = s.gates.find(g => g.gate === 'deadZone')!
+    expect(dz.current).toBe(21)
+    expect(dz.override).toBe(21)
+    const unpinned = s.gates.find(g => g.gate === 'minExpectedMovePct')!
+    expect(unpinned.override).toBeUndefined()
+  })
+
+  it('clamps the effective value into the ratified bounds, exactly as the engine does', () => {
+    const s = gateStateStructured({ gates: { deadZone: { delta: -100, history: [] } } })
+    const dz = s.gates.find(g => g.gate === 'deadZone')!
+    expect(dz.current).toBe(GATE_BOUNDS.deadZone.min)
+  })
 })
