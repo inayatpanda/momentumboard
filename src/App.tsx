@@ -24,6 +24,9 @@ const Quant = lazy(() => import('./screens/Quant').then(m => ({ default: m.Quant
 const Positions = lazy(() => import('./screens/Positions').then(m => ({ default: m.Positions })))
 
 const ScreenFallback = () => <p className="empty-line" style={{ padding: 24 }}>Loading…</p>
+// The v2 shell (PWA rebuild) — behind localStorage['mb-shell']='v2' until the
+// cutover flip (plan Task 24). Lazy so the legacy bundle carries none of it.
+const AppShell = lazy(() => import('./shell/AppShell'))
 import { NavContext, TabBar } from './components/TabBar'
 import { useIsWide } from './hooks/useIsWide'
 import { clearToken, getToken, validateAccess } from './lib/api'
@@ -203,6 +206,16 @@ export default function App() {
   // different things, especially inside the desktop shell)
   if (!licensed) {
     return <AppGate onUnlocked={enterApp} />
+  }
+
+  // licensed + flagged → the v2 shell owns everything from here (licence and
+  // the public site stay THIS component's job — DS-8)
+  if (localStorage.getItem('mb-shell') === 'v2') {
+    return (
+      <Suspense fallback={<ScreenFallback />}>
+        <AppShell />
+      </Suspense>
+    )
   }
 
   // the Desk is full-bleed content-wise, but it KEEPS the navigation rail —
