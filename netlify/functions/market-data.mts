@@ -106,7 +106,10 @@ export const askCountKey = (auth: { level: string; ns: string }, day = new Date(
 /** Counts this ask, and returns a 429 Response when the caller is over the day's
  * cap (null means "carry on"). Counted BEFORE the work: the point is to stop a
  * runaway from spending, and a loop that fails late spends just the same. */
-async function bumpAskCount(auth: { level: string; ns: string }): Promise<Response | null> {
+async function bumpAskCount(auth: { level: string; ns: string; house?: boolean }): Promise<Response | null> {
+  // The owner's own devices ride free: the cap protects the server keys from a
+  // runaway licensee, and admin/house ARE the keys' owner (final wave, T18).
+  if (auth.level === 'admin' || auth.house) return null
   const key = askCountKey(auth)
   const used = (await getCached<number>(key)) ?? 0
   if (used >= ASK_SERVER_DAILY_CAP)

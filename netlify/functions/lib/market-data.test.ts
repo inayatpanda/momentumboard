@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ASK_SERVER_DAILY_CAP, askCountKey, boardEvidenceLine, parseAskContext, routeRequest } from '../market-data.mts'
 import type { Candle, Quote } from '../../../shared/types'
 
@@ -8,6 +8,17 @@ import type { Candle, Quote } from '../../../shared/types'
 // `./llm` from here, one directory up).
 const llmMock = vi.hoisted(() => ({ callLlm: vi.fn() }))
 vi.mock('./llm', () => llmMock)
+
+// The cap suite needs a USER-level caller (admin/house are exempt — final
+// wave, T18). A mutable pass-through: null = the real authenticate.
+const authOverride = vi.hoisted(() => ({ value: null as null | { level: 'admin' | 'user'; ns: string; house?: boolean } }))
+vi.mock('./auth', async () => {
+  const actual = await vi.importActual<typeof import('./auth')>('./auth')
+  return {
+    ...actual,
+    authenticate: async (...args: Parameters<typeof actual.authenticate>) => authOverride.value ?? actual.authenticate(...args),
+  }
+})
 
 const q = (symbol: string): Quote => ({ symbol, price: 1, prevClose: 1, changePct: 0, currency: 'USD', todayVolume: null, asOf: 0, source: 'finnhub' })
 const env = { APP_TOKEN: 'secret', FINNHUB_API_KEY: 'fk' }
@@ -225,6 +236,7 @@ describe('market-data ask — the server-side daily cap (T18)', () => {
   const mkCandles = (n = 40): Candle[] =>
     Array.from({ length: n }, (_, i) => ({ t: 1_700_000_000 + i * 86_400, o: 100 + i, h: 101 + i, l: 99 + i, c: 100 + i, v: 1_000_000 }))
   const admin = { level: 'admin', ns: '' }
+  const user = { level: 'user' as const, ns: 'u:deadbeef:' }
   const ask = () =>
     routeRequest(new URL('http://x/api/market?type=ask&symbol=NVDA&q=hello'), new Headers({ 'x-app-token': 'secret' }), env, {
       ...deps,
@@ -234,24 +246,41 @@ describe('market-data ask — the server-side daily cap (T18)', () => {
   beforeEach(async () => {
     llmMock.callLlm.mockReset()
     llmMock.callLlm.mockResolvedValue({ text: 'An answer.' })
+    authOverride.value = user // the cap is a USER control; admin/house are exempt
     const { setCached } = await import('./cache')
     await setCached('candles:NVDA:1y', { candles: mkCandles() }, 900)
     await setCached('candles:SPY:1y', { candles: mkCandles() }, 900)
     await setCached('candles:QQQ:1y', { candles: mkCandles() }, 900)
     await setCached('quote:NVDA', q('NVDA'), 60)
-    await setCached(askCountKey(admin), 0, 60) // today's counter, reset per test
+    await setCached(askCountKey(user), 0, 60) // today's counter, reset per test
   })
 
-  it('counts every ask under a per-caller, per-day key', async () => {
+  afterEach(() => {
+    authOverride.value = null
+  })
+
+  it('counts every licensee ask under a per-caller, per-day key', async () => {
     const { getCached } = await import('./cache')
     await ask()
     await ask()
-    expect(await getCached<number>(askCountKey(admin))).toBe(2)
+    expect(await getCached<number>(askCountKey(user))).toBe(2)
+  })
+
+  it('never counts the owner: admin and house asks bypass the cap entirely', async () => {
+    const { getCached, setCached } = await import('./cache')
+    authOverride.value = { level: 'admin', ns: '' }
+    await setCached(askCountKey(admin), ASK_SERVER_DAILY_CAP, 60) // even a full counter
+    const res = await ask()
+    expect(res.status).toBe(200)
+    expect(await getCached<number>(askCountKey(admin))).toBe(ASK_SERVER_DAILY_CAP) // untouched
+    authOverride.value = { level: 'user', ns: 'u:cafef00d:', house: true }
+    expect((await ask()).status).toBe(200)
+    expect(await getCached<number>(askCountKey({ level: 'user', ns: 'u:cafef00d:' }))).toBeNull()
   })
 
   it('the ask past the cap 429s with a plain sentence, and never reaches the model', async () => {
     const { setCached } = await import('./cache')
-    await setCached(askCountKey(admin), ASK_SERVER_DAILY_CAP, 60) // 100 spent — this is the 101st
+    await setCached(askCountKey(user), ASK_SERVER_DAILY_CAP, 60) // 100 spent — this is the 101st
     const res = await ask()
     expect(res.status).toBe(429)
     const body = await res.json()
@@ -262,12 +291,12 @@ describe('market-data ask — the server-side daily cap (T18)', () => {
   })
 
   it('a new day is a new counter — yesterday being full says nothing about today', async () => {
-    const { setCached } = await import('./cache')
+    const { getCached, setCached } = await import('./cache')
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
-    await setCached(askCountKey(admin, yesterday), ASK_SERVER_DAILY_CAP, 60)
+    await setCached(askCountKey(user, yesterday), ASK_SERVER_DAILY_CAP, 60)
     const res = await ask()
-    expect(res.status).toBe(200)
-    expect(llmMock.callLlm).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(200) // not 429 — yesterday's full counter is not today's
+    expect(await getCached<number>(askCountKey(user))).toBe(1) // counted under TODAY's key
   })
 
   it('keys on the licensee’s namespace hash, never on the token itself', () => {
