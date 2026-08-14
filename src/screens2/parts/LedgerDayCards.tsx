@@ -28,7 +28,7 @@ function LedgerCard({ c }: { c: JourneyCall }) {
   // LedgerPrediction doc comment), so `nearMiss` is always false here; the
   // shared law still reads watchOnly/observation off the wire directly.
   const kind = rowKind({ watchOnly: c.watchOnly, nearMiss: false, observation: c.observation })
-  const sized = kind === 'sized-live' && !c.shadow
+  const sized = kind === 'sized-live' && !c.shadow && !c.belowBase
   const pm = c.postMortem?.sentence ?? c.postMortem?.detail ?? null
   return (
     <div className="card rec-ledger-card">

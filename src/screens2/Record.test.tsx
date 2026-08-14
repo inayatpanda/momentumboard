@@ -178,6 +178,27 @@ describe('Record', () => {
       fireEvent.click(within(ledger).getByRole('button', { name: /load 30 days/i }))
       expect(await within(ledger).findByText('OLDCO')).toBeInTheDocument()
     })
+
+    it('renders NO grade pill on a belowBase row, and shows one on a normal sized row', async () => {
+      const sizedCall = mkCall({ id: 'sized2', sym: 'AAPL', belowBase: false, grade: 'A' })
+      const belowBaseCall = mkCall({ id: 'below1', sym: 'MSFT', belowBase: true, grade: 'B' })
+      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [sizedCall, belowBaseCall] }])
+      withRouter()
+      const ledger = await screen.findByLabelText('The ledger')
+      expect(await within(ledger).findByText('AAPL')).toBeInTheDocument()
+      expect(within(ledger).getByLabelText('Grade A')).toBeInTheDocument()
+      expect(within(ledger).queryByLabelText('Grade B')).not.toBeInTheDocument()
+    })
+
+    it('renders shadow label and no grade pill on a shadow row', async () => {
+      const shadowCall = mkCall({ id: 'shadow1', sym: 'TSLA', shadow: true, grade: 'A' })
+      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [shadowCall] }])
+      withRouter()
+      const ledger = await screen.findByLabelText('The ledger')
+      expect(await within(ledger).findByText('TSLA')).toBeInTheDocument()
+      expect(within(ledger).getByText(/shadow — never a live size/)).toBeInTheDocument()
+      expect(within(ledger).queryByLabelText('Grade A')).not.toBeInTheDocument()
+    })
   })
 
   describe('regrets', () => {
@@ -228,6 +249,14 @@ describe('Record', () => {
       expect(link.getAttribute('href')).toBe('/app/stock/PLTR')
       expect(within(link).getByText(/04 Aug/)).toBeInTheDocument()
       expect(within(link).getByText(/ran \+6\.1pp/)).toBeInTheDocument()
+    })
+
+    it('renders the caveat note when unchecked > 0 even with empty topGates', async () => {
+      const noteText = '3 of 8 refusals went unpriced — an unmeasured gate is not a costless one; excesses are stopless upper bounds.'
+      await seedLearning(mkLearning({ regrets: mkRegrets({ unchecked: 3, topGates: [], note: noteText }) }))
+      withRouter()
+      const regrets = await screen.findByLabelText('Regrets')
+      expect(await within(regrets).findByText(noteText)).toBeInTheDocument()
     })
   })
 })
