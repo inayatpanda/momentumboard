@@ -13,21 +13,22 @@
 // Rail cards (movers/losers) NEVER fetch candles — useCachedSparkline is a
 // raw Dexie read (readSlice), never a `useSlice`/network call, so a symbol
 // already charted elsewhere shows a sparkline for free and nothing else
-// waits on one. Watchlist rows are different: StockRow (parts/StockRow.tsx)
-// owns its own `candles:SYM:3mo` slice per row — see that file for why that
-// is safe to do N times in parallel.
+// waits on one. It now lives in parts/StockRow.tsx beside the record shape it
+// decodes: two files each holding their own opinion of what a `candles:*` row
+// looks like is exactly the drift B1 had to unpick. Watchlist rows are
+// different: StockRow owns its own `candles:SYM:3mo` slice per row — see that
+// file for why that is safe to do N times in parallel.
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'wouter'
 import { db, type WatchItem } from '../lib/db'
 import { useSlice } from '../lib/useSlice'
-import { readSlice } from '../lib/store'
 import { getQuotes, getMovers, getSectors, type MoverRow } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPct } from '../lib/format'
 import { Sparkline } from '../components/Sparkline'
-import type { Candle, Quote } from '../../shared/types'
-import { StockRow } from './parts/StockRow'
+import type { Quote } from '../../shared/types'
+import { StockRow, useCachedSparkline } from './parts/StockRow'
 import { HRail } from './parts/HRail'
 import { sectorSign, SectorTileBody } from './parts/SectorTile'
 
@@ -41,23 +42,6 @@ function RailSkeleton() {
       <div className="skeleton stx-rail-card" aria-hidden="true" />
     </>
   )
-}
-
-/** Rail cards never fetch — they read whatever the slice store already has
- * cached for this symbol (Dexie only, no network) so a sparkline shows up
- * for free when another part of the app already pulled it. */
-function useCachedSparkline(symbol: string): number[] | undefined {
-  const [closes, setCloses] = useState<number[] | undefined>(undefined)
-  useEffect(() => {
-    let alive = true
-    readSlice<Candle[]>(`candles:${symbol}:3mo`).then(rec => {
-      if (alive && rec && rec.data.length > 1) setCloses(rec.data.slice(-30).map(c => c.c))
-    })
-    return () => {
-      alive = false
-    }
-  }, [symbol])
-  return closes
 }
 
 function RailMoverCard({ r, inWatchlist, onAdd }: { r: MoverRow; inWatchlist: boolean; onAdd: (sym: string) => void }) {

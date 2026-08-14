@@ -465,6 +465,15 @@ describe('engine ?view= slices', () => {
       // …and nothing was ever written into the predictions record.
       const rows = sqlite.prepare("SELECT key FROM blobs WHERE store='app' AND key LIKE 'predictions:%'").all<{ key: string }>()
       expect((await rows).results ?? []).toHaveLength(0)
+
+      // B4: the verdict cache belongs to the CACHE store, where rows carry a TTL
+      // and the sweep can collect them — never the durable app store, which
+      // would keep a permanent row per symbol any reader ever asked about.
+      const cached = await sqlite.prepare("SELECT key, expires_at FROM blobs WHERE store='cache' AND key LIKE 'verdict-cache:%'").all<{ key: string; expires_at: number | null }>()
+      expect((cached.results ?? []).map(r => r.key)).toEqual(['verdict-cache:ZAP'])
+      expect(cached.results![0].expires_at).toBeGreaterThan(Date.now())
+      const durable = await sqlite.prepare("SELECT key FROM blobs WHERE store='app' AND key LIKE 'verdict-cache:%'").all<{ key: string }>()
+      expect(durable.results ?? []).toHaveLength(0)
     })
 
     // FINDING 1: this view's arithmetic is the equity engine's — equity windows,
@@ -481,8 +490,10 @@ describe('engine ?view= slices', () => {
       expect(v.lean).toBe('none')
       expect(v.core).toBeNull()
       expect(v.note).toMatch(/crypto lane/i)
-      // contained BEFORE any work: no verdict cache entry, no candle fetch
-      const rows = await sqlite.prepare("SELECT key FROM blobs WHERE store='app' AND key LIKE 'verdict-cache:%'").all<{ key: string }>()
+      // contained BEFORE any work: no verdict cache entry (B4 moved it to the
+      // cache store — check there, and in the durable one for good measure), no
+      // candle fetch
+      const rows = await sqlite.prepare("SELECT key FROM blobs WHERE key LIKE 'verdict-cache:%'").all<{ key: string }>()
       expect(rows.results ?? []).toHaveLength(0)
     })
 

@@ -645,5 +645,32 @@ describe('StockPage', () => {
       fireEvent.click(within(pills).getByRole('button', { name: '1y' }))
       await waitFor(() => expect(getCandles).toHaveBeenCalledWith('NVDA', '1y'))
     })
+
+    // B1: `candles:SYM:3mo` has TWO writers — this page's 3mo range and every
+    // watchlist row's own sparkline slice. They used to disagree about the
+    // shape (bare array vs the whole `{candles, quote}` payload), so whichever
+    // cached first left the other rendering a skeleton for the full 15-minute
+    // TTL. One record, seeded once, must now serve both.
+    it('one seeded candles:NVDA:3mo record feeds BOTH a StockRow sparkline and the page’s 3mo chart', async () => {
+      const { getCandles } = await import('../lib/api')
+      const { StockRow } = await import('./parts/StockRow')
+      await seedCandles('NVDA', '3mo')
+      await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
+
+      const row = render(
+        <Router base="/app" hook={memoryLocation({ path: '/app/stocks' }).hook}>
+          <StockRow symbol="NVDA" quote={null} />
+        </Router>,
+      )
+      await waitFor(() => expect(row.container.querySelector('svg.spark')).toBeInTheDocument())
+      expect(getCandles).not.toHaveBeenCalled() // the seeded record is fresh — no second trip
+      row.unmount()
+
+      withRouter('NVDA')
+      const pills = await screen.findByRole('group', { name: /chart range/i })
+      fireEvent.click(within(pills).getByRole('button', { name: '3mo' }))
+      expect(await screen.findByTestId('price-chart')).toBeInTheDocument()
+      expect(getCandles).not.toHaveBeenCalledWith('NVDA', '3mo')
+    })
   })
 })

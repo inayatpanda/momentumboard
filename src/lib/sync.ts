@@ -1,11 +1,25 @@
 import { db } from './db'
 import { apiGet, getToken } from './api'
+import { invalidateSlices } from './store'
 import type { AppConfig } from '../../shared/config'
 import type { Trade } from '../../shared/journal'
 
 // Cross-device sync: every change PUSHES immediately (configMirror/portfolioMirror);
 // this PULLS on app launch so a second device starts from the server state.
 // Single-user-per-licence, so last-push-wins is the honest, simple model.
+//
+// AND IT INVALIDATES (DS-10/CX-22, wired here at the final wave). A pull that
+// changed the watchlist changed what the engine's board is ABOUT — the server
+// scans the synced universe — and what the learning slice has graded. The old
+// shell answered that with App.tsx's `syncTick`, which remounts legacy screens
+// and means nothing at all to a v2 `useSlice`: a phone that just inherited its
+// desktop's watchlist would have sat on the previous device's board for the
+// slice's full TTL. The invalidation lives INSIDE the sync, not in one caller's
+// effect, so both shells are served by the one hook and neither can forget it.
+
+/** The slices a config/journal pull can invalidate. Deliberately short: these
+ * two are the only ones whose CONTENT is a function of the synced state. */
+const SYNC_INVALIDATES = ['board', 'learning']
 
 export async function syncFromServer(): Promise<boolean> {
   if (!getToken()) return false
@@ -50,5 +64,8 @@ export async function syncFromServer(): Promise<boolean> {
   } catch {
     /* offline start is fine — local data stands */
   }
+  // outside the try: an invalidation must still fire for the writes that DID
+  // land before a later call threw.
+  if (changed) invalidateSlices(SYNC_INVALIDATES)
   return changed
 }

@@ -337,12 +337,20 @@ async function viewLearning() {
   }
 }
 
-const VERDICT_CACHE_MS = 15 * 60 * 1000
+const VERDICT_CACHE_SEC = 15 * 60
 
 /** ?view=verdict&sym= — the on-demand engine read for ANY symbol (DS-24: the
  * cache lives HERE, the computation stays pure). Candles ride the same
  * cache+yahoo path /api/market uses; the verdict itself is cached 15 min under
- * `verdict-cache:{SYM}` and is NEVER written into predictions:*. */
+ * `verdict-cache:{SYM}` and is NEVER written into predictions:*.
+ *
+ * IN THE CACHE STORE, not the app store (final wave, B4). This used to
+ * `blobAppStore.write` a hand-rolled `{ at, verdict }` envelope, which put a row
+ * per symbol ever asked about into the DURABLE store — the one nothing expires
+ * and nothing sweeps, holding a permanent record of every name any reader ever
+ * typed. `setCached` is the same 15 minutes with the TTL the store itself
+ * enforces and the cron sweep collects, and it is the very mechanism the
+ * candles two lines below already use. */
 async function viewVerdict(sym: string) {
   // THE CRYPTO CONTAINMENT (crypto-v2 wave, finding 1), before the cache and
   // before every read: this desk's factors are the equity engine's, so a coin
@@ -351,8 +359,8 @@ async function viewVerdict(sym: string) {
   // contained answer costs no blob read, no candle fetch and no cache write.
   if (isCryptoSymbol(sym)) return containedCryptoVerdict(sym)
   const cacheKey = `verdict-cache:${sym}`
-  const hit = await blobAppStore.read<{ at: number; verdict: OnDemandVerdict }>(cacheKey)
-  if (hit && Date.now() - hit.at < VERDICT_CACHE_MS) return hit.verdict
+  const hit = await getCached<OnDemandVerdict>(cacheKey)
+  if (hit) return hit
 
   const candles = async (s: string): Promise<Candle[] | null> => {
     const key = `candles:${s}:1y`
@@ -374,7 +382,7 @@ async function viewVerdict(sym: string) {
   const regime: RegimeColor | 'unknown' =
     board?.regime === 'green' || board?.regime === 'amber' || board?.regime === 'red' ? board.regime : 'unknown'
   const verdict = await onDemandVerdict(sym, { candles }, { weights: (weights?.current ?? weights?.base ?? null) as Record<FactorName, number> | null, regime })
-  await blobAppStore.write(cacheKey, { at: Date.now(), verdict })
+  await setCached(cacheKey, verdict, VERDICT_CACHE_SEC)
   return verdict
 }
 

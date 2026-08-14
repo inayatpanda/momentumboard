@@ -38,13 +38,23 @@ export function useSlice<T>(key: SliceKey, fetcher: () => Promise<T>): SliceStat
     async (force: boolean) => {
       const myGen = gen.current
       const live = () => alive.current && gen.current === myGen
+      // THE FETCHER IS PINNED TO THE KEY, at entry (final wave, found by B1's
+      // one-record test). `revalidate` awaits its own cache read before it
+      // invokes the fetcher, so reading `fetcherRef.current` down there read
+      // whatever the LATEST render had installed — which, after an in-place key
+      // change, is the NEW key's closure. StockPage's range pills made that
+      // concrete: click 3mo while the 6mo load is between its two awaits and
+      // the 3mo payload was fetched and written under `candles:SYM:6mo`, wrong
+      // bytes under a live key for the full TTL. The generation guard could not
+      // catch it — it only gates setState, and this corruption is a WRITE.
+      const fetcher = fetcherRef.current
       const cached = await readSlice<T>(key)
       if (cached && live()) setRec({ data: cached.data, fetchedAt: cached.fetchedAt })
       if (!force && isFresh(cached, key)) return
       if (!live()) return
       setRefreshing(true)
       try {
-        await revalidate(key, () => fetcherRef.current(), { force })
+        await revalidate(key, fetcher, { force })
         const fresh = await readSlice<T>(key)
         if (live() && fresh) {
           setRec({ data: fresh.data, fetchedAt: fresh.fetchedAt })

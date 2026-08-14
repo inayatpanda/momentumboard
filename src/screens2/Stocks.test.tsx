@@ -53,6 +53,9 @@ const mkQuote = (symbol: string, overrides: Partial<Quote> = {}): Quote => ({
   ...overrides,
 })
 
+const mkCandles = (n = 30) =>
+  Array.from({ length: n }, (_, i) => ({ t: 1_700_000_000 + i * 86_400, o: 100, h: 102, l: 99, c: 100 + i, v: 1_000_000 }))
+
 // A minimal router: `/stocks` mounts the screen under test, `/stock/:sym`
 // stands in for the real (stubbed elsewhere) journey page so a search
 // submit's navigation is directly observable.
@@ -158,6 +161,20 @@ describe('Stocks', () => {
     it('shows an empty-watchlist line once Dexie has resolved with nothing', async () => {
       withRouter()
       expect(await screen.findByText(/your watchlist is empty/i)).toBeInTheDocument()
+    })
+
+    // B1: the one shape every `candles:*` record now holds — the whole
+    // `{candles, quote}` payload getCandles returns, exactly what StockPage's
+    // chart slice writes under this very key. A row must paint its sparkline
+    // straight off it, and must not re-fetch a record that is already fresh.
+    it('paints the sparkline from a cached {candles, quote} record without a second fetch', async () => {
+      await db.watchlist.put({ symbol: 'NVDA', addedAt: 1, riskClass: 'normal' })
+      await writeSlice('quotes:NVDA', [mkQuote('NVDA')])
+      await writeSlice('candles:NVDA:3mo', { candles: mkCandles(), quote: mkQuote('NVDA') })
+      withRouter()
+      expect(await screen.findByText('NVDA')).toBeInTheDocument()
+      await waitFor(() => expect(document.querySelector('svg.spark')).toBeInTheDocument())
+      expect(getCandles).not.toHaveBeenCalled()
     })
   })
 

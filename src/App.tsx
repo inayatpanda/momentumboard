@@ -143,6 +143,12 @@ export default function App() {
   // phone ↔ desktop: pull server state on launch; screens remount when it lands.
   // Starter seeding runs AFTER the pull, so an existing watchlist is never
   // polluted — a truly first launch gets the classics instead of a blank page.
+  //
+  // `syncTick` is THIS shell's mechanism and stays exactly as it was: the legacy
+  // screens hold their own state and only a remount refreshes them. The v2
+  // screens need nothing from here — `syncFromServer` announces its own slice
+  // invalidation (DS-10/CX-22, src/lib/sync.ts), so both shells are served
+  // whichever one is mounted.
   useEffect(() => {
     if (!licensed || surface !== 'app') return
     syncFromServer().then(async changed => {
