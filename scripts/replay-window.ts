@@ -1578,7 +1578,12 @@ export function enrichFromCalibration(rows: Row[], cal: CalibrationState | null,
       nEff?: number
       belowEvidence?: boolean
     }
-    if (read.nEff == null) return // pre-stage-2 read path — no curve to report on
+    // pre-stage-2 read path — no curve to report on. PER ROW, not per run: this
+    // was a `return`, so one unusual row (a state no curve was ever built for)
+    // silently left every LATER row un-enriched and the diff read them as
+    // unchanged. A row the read path cannot price is one row's worth of missing
+    // evidence, never the rest of the window's.
+    if (read.nEff == null) continue
     r.pRaw = read.p
     r.nEff = read.nEff
     r.belowEvidence = !!read.belowEvidence

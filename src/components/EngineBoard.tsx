@@ -316,14 +316,20 @@ export function EngineBoard() {
       })()}
       <EventRadar radar={data?.eventRadar ?? null} />
       {/* THE TWO NUMBERS, SAID APART [spec §9]. The percentage on a row is the
-          engine's own measured hit rate for calls like it; the letter is that
+          engine's own measured hit rate for calls like it — and, since the
+          provenance partition, sized like it: a row that carried real size is
+          priced against the record of rows that carried real size, so the
+          sentence says "sized like it" out loud rather than letting a reader
+          assume a population that includes calls nobody was ever offered. The
+          paper and the print edition say the same thing in boardFootnote
+          (newspaper.ts), which is the one source both of those read. The letter is that
           percentage against a FIXED bar — how often an ordinary candidate clears the
           same test. Which bar is in force is a fact about the loaded seed, not a
           slogan, so the sentence reads the blob: `referenceBase` when a seed swept
           one, the engine's own pooled rate when none has (gradeBaseRate). */}
       <p className="empty-line" style={{ fontSize: 11 }}>
         Grades are calibrated on the engine's own graded history: a hit must beat SPY by ≥1pp over the horizon, and stops are judged on daily closes — an
-        intraday wick through is survivable. The percentage on a row is how often calls like it have actually landed. The letter is that percentage against
+        intraday wick through is survivable. The percentage on a row is how often calls like it — sized like it — have actually landed. The letter is that percentage against
         the grade bar
         {data?.calibration?.referenceBase != null ? (
           <>

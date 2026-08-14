@@ -35,7 +35,9 @@ import type { GateCode } from './types'
 //     past, however much evidence arrives, and a stored blob from any source is
 //     clamped into them on the way out (`effectiveGateValues`) as well as on the
 //     way in (`advanceGateState`) — a corrupt or hand-edited delta can widen
-//     nothing.
+//     nothing. A gate STANDING on one says so (`blocked.why === 'bound'`): the
+//     refusal is the owner's ratified range, not a clock, and the note may not
+//     borrow the cadence's.
 //  5. ANNOUNCEMENT. Every move writes a history entry AND a line, and the same
 //     line is what the runlog, the engine panel and the paper print. One
 //     sentence, three surfaces, no chance of them disagreeing.
@@ -150,8 +152,15 @@ export interface GateDelta {
    * The panel says so once; a note repeated every morning is noise, and the
    * plan's own self-review asked for exactly one statement (the evidence for the
    * dead zone justifies the machinery, not an immediate move — the notch arrives
-   * on the evidence's clock, not the deploy's). */
-  blocked?: { why: 'cadence' | 'override'; date: string }
+   * on the evidence's clock, not the deploy's).
+   *
+   * `bound` is the third reason and the one with no clock behind it: the gate is
+   * eligible, nothing is pinning it and the cadence is served, but the notch it
+   * earned would leave the range the owner ratified. Silence there was fine on the
+   * day it happened and a lie a fortnight later, because the last note the gate
+   * wrote — a cadence hold — stayed on the panel promising a notch on a clock that
+   * would never deliver one. */
+  blocked?: { why: 'cadence' | 'override' | 'bound'; date: string }
 }
 
 export interface GateState {
@@ -198,7 +207,7 @@ export function normaliseGateState(raw: unknown): GateState {
       delta: d.delta,
       ...(lastMoveDate != null ? { lastMoveDate } : {}),
       history,
-      ...(blocked && (blocked.why === 'cadence' || blocked.why === 'override') && isDate(blocked.date)
+      ...(blocked && (blocked.why === 'cadence' || blocked.why === 'override' || blocked.why === 'bound') && isDate(blocked.date)
         ? { blocked: { why: blocked.why, date: blocked.date } }
         : {}),
     }
@@ -361,7 +370,7 @@ export interface GateMove {
 
 export interface GateNote {
   gate: TunableGate
-  why: 'cadence' | 'override'
+  why: 'cadence' | 'override' | 'bound'
   line: string
 }
 
@@ -395,8 +404,10 @@ export function advanceGateState(
 
   const values = effectiveGateValues(opts.appetite, state, opts.overrides)
 
-  /** The blocked note is written ONCE per gate per reason (see GateDelta). */
-  const block = (gate: TunableGate, why: 'cadence' | 'override', line: string) => {
+  /** The blocked note is written ONCE per gate per reason (see GateDelta) — and
+   * REPLACED when the reason changes, so a gate that has walked onto its bound
+   * stops printing the cadence note it wrote on the way there. */
+  const block = (gate: TunableGate, why: 'cadence' | 'override' | 'bound', line: string) => {
     const prev = next.gates[gate]
     if (prev?.blocked?.why === why) return
     next.gates[gate] = { delta: prev?.delta ?? 0, ...(prev?.lastMoveDate != null ? { lastMoveDate: prev.lastMoveDate } : {}), history: prev?.history ?? [], blocked: { why, date: opts.date } }
@@ -424,6 +435,25 @@ export function advanceGateState(
       block(e.gate, 'override', `${b.label} is eligible to ${e.direction} (${e.why}) but is pinned at ${from} by the owner's override`)
       continue
     }
+    const sign = e.direction === 'loosen' ? b.loosen : -b.loosen
+    const to = clamp(snap(from + sign * b.notch), b.min, b.max)
+    // AT THE BOUND — and asked BEFORE the clock, because a gate that cannot move
+    // at all must never be described by a cadence. "A gate resting on a hard bound
+    // is the mechanism working, not a decision being withheld" was true and still
+    // said nothing: the note the gate wrote on its way here — a cadence hold —
+    // stayed on the panel promising a notch on a window that had already closed
+    // (the shipped AGGRESSIVE preset starts on this bound for BOTH loosenable
+    // gates, so this is the first refusal production can earn). Writing the bound
+    // note REPLACES that claim rather than joining it, and the sentence carries no
+    // clock of its own: nothing but the owner widening the range can move it.
+    if (to === from) {
+      block(
+        e.gate,
+        'bound',
+        `${b.label} is eligible to ${e.direction} (${e.why}) but stands at its hard bound of ${from} — the evidence points beyond the range the owner ratified`,
+      )
+      continue
+    }
     // THE CLOCK. Counted, not subtracted — and the note quotes the count it
     // actually read, so a held gate can never claim a window that is not running.
     const since = cur?.lastMoveDate != null ? sessionsSince(sessionIndex, cur.lastMoveDate) : null
@@ -435,12 +465,6 @@ export function advanceGateState(
       )
       continue
     }
-
-    const sign = e.direction === 'loosen' ? b.loosen : -b.loosen
-    const to = clamp(snap(from + sign * b.notch), b.min, b.max)
-    // AT THE BOUND: no move, and no note either — a gate resting on a hard bound
-    // is the mechanism working, not a decision being withheld.
-    if (to === from) continue
     // …and the pair invariant, checked against the TIGHTEST dead zone any
     // appetite could hand this state, so an appetite switch can never be the
     // thing that breaks it. Unreachable under the bounds above (cap 16 vs dead
@@ -486,7 +510,9 @@ export function gateStateSummary(raw: unknown, max = 3): GateStateSummary | null
     .map(([gate, d]) =>
       d.blocked!.why === 'override'
         ? `${GATE_BOUNDS[gate].label}: eligible to move on ${d.blocked!.date}, pinned by the owner's override`
-        : `${GATE_BOUNDS[gate].label}: eligible to move on ${d.blocked!.date}, held by the cadence — one notch per ${GATE_CADENCE_SESSIONS} sessions, so the evidence moves it on its own clock`,
+        : d.blocked!.why === 'bound'
+          ? `${GATE_BOUNDS[gate].label}: eligible to move on ${d.blocked!.date}, at its bound — the evidence points beyond the range the owner ratified`
+          : `${GATE_BOUNDS[gate].label}: eligible to move on ${d.blocked!.date}, held by the cadence — one notch per ${GATE_CADENCE_SESSIONS} sessions, so the evidence moves it on its own clock`,
     )
   return moves.length || notes.length ? { moves, notes } : null
 }
@@ -523,7 +549,9 @@ export function gateAnnouncement(raw: unknown, date: string): GateStateSummary |
     .map(([gate, d]) =>
       d.blocked!.why === 'override'
         ? `${GATE_BOUNDS[gate].label}: eligible to move, pinned by the owner since ${d.blocked!.date} — the threshold is unchanged`
-        : `${GATE_BOUNDS[gate].label}: eligible to move, waiting on the cadence since ${d.blocked!.date} — the threshold is unchanged`,
+        : d.blocked!.why === 'bound'
+          ? `${GATE_BOUNDS[gate].label}: eligible to move, at its bound since ${d.blocked!.date} — the evidence points beyond the range the owner ratified, and the threshold is unchanged`
+          : `${GATE_BOUNDS[gate].label}: eligible to move, waiting on the cadence since ${d.blocked!.date} — the threshold is unchanged`,
     )
   return moves.length || notes.length ? { moves, notes } : null
 }

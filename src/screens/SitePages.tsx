@@ -114,6 +114,13 @@ export function EnginePage() {
         mood or with a good month: it is measured once, when the engine is seeded from history, and only a re-seed can move it.
       </p>
       <p>
+        The bar holding still does not mean the letters do. A grade can shift when the evidence underneath it is re-partitioned — the
+        engine deciding a call should be priced against a narrower, truer slice of its own record — or when one of the gates the calls
+        must pass moves a notch. Those are the only two ways it happens, and neither is quiet: a gate move is announced in the morning
+        paper on the day it is taken, and an evidence shift shows up as the numbers themselves, in the probability on the card and in
+        the calibration plot that checks it.
+      </p>
+      <p>
         Size then follows conviction <em>and</em> evidence together, in three tiers. <b>A</b> or <b>B</b> on the full
         evidence contract is a full-size trade — at most three per side per day, each with entry, invalidation, target and the risk
         the engine's track record has earned. When exactly one of the two is short — a <b>C</b> that clears the full contract, or an
@@ -131,8 +138,12 @@ export function EnginePage() {
         "No qualified trades" is a result, not a failure.
       </p>
       <p>
-        Calls are also stamped by setup family — trend continuation, pullback/reversal, exhaustion fade — because a breakout long and
-        a knife-catch fail in different ways, and their records should never be allowed to blur.
+        Calls also carry a setup family — trend continuation, pullback/reversal, exhaustion fade — and the family is no longer only a
+        stamp on the card. Once a family has thirty graded outcomes from calls that were actually <em>sized</em>, it earns a curve of
+        its own, read at that call's own conviction, and that reading becomes <b>30%</b> of the published probability; the engine's
+        pooled ladder is the other 70%. Below thirty the family stays silent rather than guessing, and the curve only ever rises with
+        conviction, so a stronger read can never be priced lower than a weaker one. A breakout long and a knife-catch fail in
+        different ways, and their records are never allowed to blur.
       </p>
 
       <h2>Both directions, honestly</h2>
@@ -208,16 +219,21 @@ export function LedgerPage() {
       </p>
       <h2>Nothing resets, nothing hides</h2>
       <p>
-        Outcomes fill calibration buckets that become tomorrow's probabilities, and a lifetime scorecard that never resets. Even the
-        calls the engine suppressed are graded in the shadows — a bucket that has proven it loses can only earn its way back with
-        evidence. The open book traces every live call daily until its grade lands; the calibration plot shows whether a "67%" has
-        actually been hitting 67% of the time.
+        Outcomes fill calibration buckets that become tomorrow's probabilities, and a lifetime scorecard that never resets. The calls
+        the engine suppressed are still graded in the shadows and still learning — but they no longer set the odds on the rows you
+        could have acted on. A call that carried real size is priced against the record of calls that carried real size; the shadows
+        are priced against the shadows. Nothing is discarded, and nothing a reader was never offered is allowed to flatter the number
+        beside something they were. The open book traces every live call daily until its grade lands; the calibration plot shows
+        whether a "67%" has actually been hitting 67% of the time.
       </p>
       <h2>The learning loop</h2>
       <p>
-        Factors that keep being right slowly earn weight; factors that keep being wrong decay — all bounded, all evidenced, and a
-        factor with a long enough losing record is allowed to decay to zero. Weight changes are journalled with the evidence that
-        caused them. What does <em>not</em> move while all that happens is the grade bar: it is the market's ordinary odds, measured
+        Factors that keep being right slowly earn weight; factors that keep being wrong lose it — all bounded, all evidenced, and
+        every factor stays inside a hard band around the weight it was ratified with: never more than half again, and never less
+        than half. A long losing record parks a factor at half weight and leaves it there; it can never switch one off. That floor
+        is deliberate rather than timid — a self-tuning loop that is allowed to zero its own instruments can stop measuring the
+        very thing it was built to measure, and then learn from a record it wrote blind. Weight changes are journalled with the
+        evidence that caused them. What does <em>not</em> move while all that happens is the grade bar: it is the market's ordinary odds, measured
         once when the engine is seeded from history and then held fixed, so that an A this quarter means what an A meant last
         quarter. A better engine earns better letters against the same yardstick instead of moving the yardstick with itself — and
         the only thing that can move it is a re-seed, which re-measures the whole thing from the tape.

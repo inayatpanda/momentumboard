@@ -44,7 +44,14 @@ describe('EnginePanel — the gates that moved', () => {
 
     // the held gate: the machinery is built, the evidence moves it on its own clock
     expect(screen.getByText('Gate held')).toBeInTheDocument()
-    expect(screen.getByText(/one notch per 20 sessions/).textContent).toContain('own clock')
+    expect(screen.getByText(/held by the cadence/).textContent).toContain('own clock')
+    // THE STANDING EXPLANATION beside the rows: a reader who sees a published
+    // threshold change is told the rule that let it change, and the rule's own
+    // constants are read from the mechanism rather than retyped in the copy.
+    const rule = screen.getByText(/How a threshold moves/)
+    expect(rule.textContent).toContain('at most one notch per 20 sessions')
+    expect(rule.textContent).toContain('30 attributed outcomes')
+    expect(rule.textContent).toContain('floor and a ceiling it cannot be argued past')
     // …and it renders with no scorecard and no miss ledger at all
     expect(screen.queryByText('Graded predictions')).not.toBeInTheDocument()
     expect(screen.queryByText('Misses (10d)')).not.toBeInTheDocument()

@@ -356,7 +356,8 @@ async function loadState(store: AppStore, today: string) {
   if (seedInstallable && seedGen > storedGen) {
     console.log(
       `CALIBRATION: seed generation ${storedGen} → ${seedGen} — replacing ` +
-        `${calibration.evidence?.live?.n ?? 0} live rows with the deeper seed (they are inside its window)`,
+        `${calibration.evidence?.live?.n ?? 0} live rows with the deeper seed ` +
+          `(those inside its window are re-measured by the walk; later rows re-accrue from here — every grade stands in the ledger either way)`,
     )
     calibration = clone(seedCal)
   }

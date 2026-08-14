@@ -810,7 +810,10 @@ const num = (v: number | null | undefined, dp = 1) => (v == null ? '·' : v.toFi
  * "paper-only calls" on a board with none is the same kind of small dishonesty
  * as the one it exists to prevent. Exported so the tests can read it directly. */
 export function boardFootnote(board: readonly BoardRow[]): string {
-  const parts = ["Calibrated on the engine's own graded history, excess vs S&amp;P."]
+  // The partition, in the same reader words the app's board uses (EngineBoard):
+  // a sized row's percentage is the record of rows that carried size, not of every
+  // row the engine ever thought about.
+  const parts = ["Calibrated on the engine's own graded history — calls like it, sized like it — excess vs S&amp;P."]
   // An observation is NOT one of these: it cleared everything and is fully graded,
   // so explaining it as "grade C or thin evidence" would be a true sentence about
   // a different row — the one dishonesty this footer exists to avoid.

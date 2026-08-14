@@ -254,6 +254,88 @@ describe('advanceGateState', () => {
     })
   })
 
+  // THE BOUND SPEAKS (stage 3c ship wave, review Important 2 + Minor 1). A gate
+  // standing on a hard bound with the evidence still pointing outward used to
+  // `continue` in silence — which is fine on the day it happens and a lie a
+  // fortnight later, because the LAST note it wrote stays on the panel. That note
+  // is a cadence hold, and a cadence hold claims a clock: "one notch per 20
+  // sessions", on a gate no clock will ever move.
+  describe('a gate on its hard bound', () => {
+    it('flips the stale cadence note to a BOUND note — the clock stops being claimed', () => {
+      const base = idx(100)
+      // 25 → 22.5, then held inside the window (the cadence note is written)…
+      const first = advanceGateState(null, elig('deadZone', 190, 12), base, OPTS).state
+      const held1 = advanceGateState(first, elig('deadZone', 190, 12), plus(base, OPTS.date, 1), { date: shift(OPTS.date, 1) }).state
+      expect(held1.gates.deadZone!.blocked!.why).toBe('cadence')
+      // …the window closes, 22.5 → 20 (the floor), and the note is cleared by the move…
+      const d2 = shift(OPTS.date, GATE_CADENCE_SESSIONS + 1)
+      const second = advanceGateState(held1, elig('deadZone', 190, 12), idx(INDEX_MAX, d2), { date: d2 }).state
+      expect(second.gates.deadZone!.blocked).toBeUndefined()
+      expect(effectiveGates({}, second).deadZone).toBe(GATE_BOUNDS.deadZone.min)
+      // …and four months later the evidence still says loosen. It cannot.
+      const d3 = shift(d2, 120)
+      const { state, moves, notes } = advanceGateState(second, elig('deadZone', 190, 12), idx(INDEX_MAX, d3), { date: d3 })
+      expect(moves).toEqual([])
+      expect(notes.map(n => n.why)).toEqual(['bound'])
+      expect(state.gates.deadZone!.blocked).toEqual({ why: 'bound', date: d3 })
+      expect(state.gates.deadZone!.delta).toBe(-5) // the notches it earned are untouched
+    })
+
+    it('never claims a clock — on the note, in the panel and in the paper', () => {
+      const d = shift(OPTS.date, 200)
+      const { state, notes } = advanceGateState(null, elig('deadZone', 190, 12), idx(INDEX_MAX, d), { ...OPTS, date: d, appetite: 'aggressive' })
+      const printed = [notes[0].line, gateStateSummary(state)!.notes[0], gateAnnouncement(state, d)!.notes[0]]
+      for (const line of printed) {
+        expect(line).toContain('bound')
+        expect(line).toContain('the evidence points beyond the range the owner ratified')
+        expect(line).not.toContain(`one notch per ${GATE_CADENCE_SESSIONS} sessions`)
+        expect(line).not.toContain('cadence')
+        expect(line).not.toMatch(/→/)
+      }
+    })
+
+    // THE SHIPPED APPETITE. Every other advance test in this file runs at
+    // moderate, where both loosenable gates start mid-range; production runs
+    // aggressive, where `deadZone` and `minExpectedMovePct` BOTH start on their
+    // loosen bound — so the very first loosen verdict production can earn is the
+    // one that cannot be served, and it must not be served silently.
+    it('is where the AGGRESSIVE preset already stands: a loosen verdict moves nothing, and says so', () => {
+      expect(AGGRESSIVE_GATES.deadZone).toBe(GATE_BOUNDS.deadZone.min)
+      expect(AGGRESSIVE_GATES.minExpectedMovePct).toBe(GATE_BOUNDS.minExpectedMovePct.min)
+      const eligibility = gateEligibility([
+        attrib({ gate: 'dead-zone-core', cost: 190, saved: 12, n: 202 }),
+        attrib({ gate: 'expected-move', cost: 90, saved: 10, n: 100 }),
+      ])
+      const { state, moves, notes } = advanceGateState(null, eligibility, idx(100), { ...OPTS, appetite: 'aggressive' })
+      expect(moves).toEqual([])
+      expect(notes.map(n => n.gate).sort()).toEqual(['deadZone', 'minExpectedMovePct'])
+      expect(notes.every(n => n.why === 'bound')).toBe(true)
+      // nothing silent, and nothing moved: the published gates are still the preset
+      expect(JSON.stringify(effectiveGates({ riskAppetite: 'aggressive' }, state))).toBe(JSON.stringify(AGGRESSIVE_GATES))
+      expect(gateStateSummary(state)!.notes).toHaveLength(2)
+    })
+
+    it('says it ONCE, like every other block — and a TIGHTEN verdict still moves the gate off the bound', () => {
+      const a = advanceGateState(null, elig('deadZone', 190, 12), idx(100), { ...OPTS, appetite: 'aggressive' })
+      const b = advanceGateState(a.state, elig('deadZone', 190, 12), plus(idx(100), OPTS.date, 1), { ...OPTS, appetite: 'aggressive' })
+      expect(b.notes).toEqual([])
+      expect(b.state.gates.deadZone!.blocked).toEqual(a.state.gates.deadZone!.blocked)
+      // the evidence turns: the same gate on the same bound may move the other way,
+      // and the move clears the note rather than leaving a bound claim behind it.
+      const d = shift(OPTS.date, 2)
+      const turned = advanceGateState(b.state, elig('deadZone', 12, 190), idx(INDEX_MAX, d), { ...OPTS, date: d, appetite: 'aggressive' })
+      expect(turned.moves[0]).toMatchObject({ gate: 'deadZone', from: 20, to: 22.5, direction: 'tighten' })
+      expect(turned.state.gates.deadZone!.blocked).toBeUndefined()
+    })
+
+    it('is a reason the stored blob may carry — and anything else is still dropped', () => {
+      const stored = { gates: { deadZone: { delta: -5, history: [], blocked: { why: 'bound', date: OPTS.date } } } }
+      expect(normaliseGateState(stored).gates.deadZone!.blocked).toEqual({ why: 'bound', date: OPTS.date })
+      const junk = { gates: { deadZone: { delta: -5, history: [], blocked: { why: 'vibes', date: OPTS.date } } } }
+      expect(normaliseGateState(junk).gates.deadZone!.blocked).toBeUndefined()
+    })
+  })
+
   it('says the cadence refusal ONCE — the panel note is a statement, not a drumbeat', () => {
     const base = idx(100)
     const first = advanceGateState(null, elig('deadZone', 190, 12), base, OPTS)

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
 import { getEngine, type EngineData } from '../lib/api'
+// The numbers in the gate paragraph below are READ from the mechanism, never
+// retyped beside it: a threshold rule the panel describes wrongly is worse than
+// one it does not describe at all.
+import { GATE_CADENCE_SESSIONS, GATE_COST_RATIO, GATE_MIN_ATTRIBUTED } from '../../shared/engine/gateState'
 import { LedgerCard } from './LedgerCard'
 import { CalibrationPlot } from './CalibrationPlot'
 
@@ -145,6 +149,16 @@ export function EnginePanel() {
               <span>{line}</span>
             </div>
           ))}
+          {gateState && (
+            <p className="empty-line" style={{ fontSize: 11 }}>
+              How a threshold moves: the miss ledger prices every refusal ten sessions later and charges it to the gate that made
+              it. A gate whose refusals have cost more than they saved — by more than {GATE_COST_RATIO}×, over at least{' '}
+              {GATE_MIN_ATTRIBUTED} attributed outcomes of its own — earns one notch, never two, and at most one notch per{' '}
+              {GATE_CADENCE_SESSIONS} sessions. Saves earn a notch the other way on the same evidence. Every threshold has a floor
+              and a ceiling it cannot be argued past however much evidence arrives; a gate standing on one says so here rather than
+              moving. Each notch is written into the record with the evidence that bought it, and announced in that morning's paper.
+            </p>
+          )}
         </div>
       )}
 

@@ -261,7 +261,9 @@ export function Ledger({ onBack, onOpen }: { onBack: () => void; onOpen: (symbol
             />
           ))}
           <p className="empty-line led-fine">
-            Large- vs small-cap ($2B split, matching the engine's own flag). Calibration stays pooled — this is a display-only lens on whether the edge holds up across cohorts.
+            Large- vs small-cap ($2B split, matching the engine's own flag). The ladder still pools <em>across</em> these cohorts, exactly as before —
+            large and small read the same curve — while inside a bucket a sized row reads the sized slice of its record. This split is a display-only
+            lens on whether the edge holds up across cohorts; it prices nothing.
           </p>
         </section>
       )}
