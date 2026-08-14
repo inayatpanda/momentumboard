@@ -18,10 +18,10 @@ export function CountsRail({ board }: { board: EnginePrediction[] }) {
   return (
     <div className="hrail">
       <Link href="/board#developing" className="pill pressable">
-        Developing · {developing}
+        Developing · <span className="num">{developing}</span>
       </Link>
       <Link href="/board#watch" className="pill pressable">
-        Watch · {watch}
+        Watch · <span className="num">{watch}</span>
       </Link>
       <Link href="/board#refused" className="pill pressable">
         Refused

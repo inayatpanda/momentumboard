@@ -137,8 +137,10 @@ describe('CountsRail', () => {
       mkRow({ id: 'nm1', watchOnly: true, nearMiss: true }), // excluded from both counts
     ]
     withRouter(<CountsRail board={board} />)
-    expect(screen.getByText(/developing.*2/i)).toBeInTheDocument()
-    expect(screen.getByText(/watch.*1/i)).toBeInTheDocument()
+    expect(screen.getByText(/developing/i)).toBeInTheDocument()
+    expect(screen.getByText('2')).toHaveClass('num')
+    expect(screen.getByText(/watch/i)).toBeInTheDocument()
+    expect(screen.getByText('1')).toHaveClass('num')
     expect(screen.getByText(/^refused$/i)).toBeInTheDocument()
   })
 })
@@ -158,7 +160,7 @@ describe('YesterdayStrip', () => {
 
 describe('Today', () => {
   it('paints a cached board slice without waiting for the network', async () => {
-    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() - 200_000 })
     withRouter(<Today />)
     expect(await screen.findByText('NVDA')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: /today/i })).toBeInTheDocument()
