@@ -102,8 +102,10 @@ function NewsSection() {
       ) : (
         <>
           <div className="itl-news-list">
-            {data.slice(0, visible).map(item => (
-              <div key={item.url} className="itl-news-row">
+            {data.slice(0, visible).map((item, i) => (
+              // url+index: the desk's stored array has no URL-level dedup, so a
+              // re-triaged URL can appear twice (same fix as StockPage's catalysts)
+              <div key={`${item.url}-${i}`} className="itl-news-row">
                 <a className="itl-news-title" href={item.url} target="_blank" rel="noreferrer">
                   {item.title}
                 </a>
