@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#0a0d0f" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Inter:opsz,wght@14..32,400..800&display=swap" rel="stylesheet" />
+    <!-- Fonts are self-hosted (recon §2.6 row 0a: the Google origin was
+         render-blocking and dead offline). Faces declared in src/styles/tokens.css. -->
+    <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin />
     <title>StreetSignal</title>
     <script>
       // Theme boot: applied before first paint to avoid flash.
@@ -17,7 +17,7 @@
         var dark = pref === 'dark' || (pref === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.dataset.theme = dark ? 'dark' : 'light'
         var meta = document.querySelector('meta[name="theme-color"]')
-        if (meta) meta.setAttribute('content', dark ? '#0a0d0f' : '#f6f4ef')
+        if (meta) meta.setAttribute('content', dark ? '#10131f' : '#f6f7fc')
       })()
     </script>
   </head>

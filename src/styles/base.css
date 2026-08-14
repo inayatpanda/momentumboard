@@ -1,0 +1,154 @@
+/* ============================================================================
+   STREETSIGNAL v2 BASE — primitives for the new shell only (imported by
+   AppShell, NOT main.tsx, so the legacy shell is untouched until cutover).
+   Every numeric gets .num (tabular figures); colours come from tokens only.
+   ========================================================================== */
+
+.v2,
+.v2 * {
+  box-sizing: border-box;
+}
+
+.v2 {
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  min-height: 100dvh;
+}
+
+.v2 .num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- card: the soft-glass surface ---------------------------------------- */
+.v2 .card {
+  background: var(--surface-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 14px;
+}
+
+/* --- pills & chips -------------------------------------------------------- */
+.v2 .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.v2 .pill.accent {
+  background: linear-gradient(135deg, var(--accent-soft), var(--accent));
+  color: var(--surface-1);
+  border: none;
+}
+.v2 .pill.long {
+  color: var(--long);
+}
+.v2 .pill.short {
+  color: var(--short);
+}
+
+/* --- segmented control ----------------------------------------------------- */
+.v2 .seg {
+  display: flex;
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 3px;
+  border: 1px solid var(--border);
+}
+.v2 .seg > button {
+  flex: 1;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.v2 .seg > button[aria-pressed='true'] {
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* --- conviction bar -------------------------------------------------------- */
+.v2 .convbar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  position: relative;
+  overflow: hidden;
+}
+.v2 .convbar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--accent-bar);
+}
+
+/* --- skeletons shaped like content ---------------------------------------- */
+@keyframes v2-shimmer {
+  0% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
+.v2 .skeleton {
+  background: var(--surface-2);
+  border-radius: 10px;
+  animation: v2-shimmer 1.4s ease-in-out infinite;
+  color: transparent;
+  user-select: none;
+}
+
+/* --- horizontal snap rail (T212 Discover) ---------------------------------- */
+.v2 .hrail {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.v2 .hrail::-webkit-scrollbar {
+  display: none;
+}
+.v2 .hrail > * {
+  scroll-snap-align: start;
+  flex: none;
+}
+
+/* --- section label --------------------------------------------------------- */
+.v2 .sec-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 18px 0 8px;
+}
+
+/* --- press feedback -------------------------------------------------------- */
+.v2 .pressable {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.v2 .pressable:active {
+  transform: scale(0.985);
+}

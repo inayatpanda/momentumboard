@@ -19,8 +19,8 @@ export default defineConfig({
         name: 'StreetSignal',
         short_name: 'StreetSignal',
         description: 'Watchlist, setups and alerts for swing trading. Informs; does not predict.',
-        theme_color: '#0a0d0f',
-        background_color: '#0a0d0f',
+        theme_color: '#10131f',
+        background_color: '#10131f',
         display: 'standalone',
         // Only `/app/` is in scope: typing the root domain remains a website
         // visit even when StreetSignal is installed on the device.
