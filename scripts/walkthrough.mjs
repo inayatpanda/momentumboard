@@ -434,11 +434,11 @@ async function runViewport(vp, results) {
     await send('Runtime.enable')
     await send('Network.enable')
     await send('Emulation.setDeviceMetricsOverride', { width: vp.width, height: vp.height, deviceScaleFactor: 1, mobile: false })
-    // The flag + the licence, before a single byte of app code runs. Wrapped:
-    // about:blank is an opaque origin and localStorage throws there.
+    // The licence, before a single byte of app code runs. Wrapped: about:blank
+    // is an opaque origin and localStorage throws there. (No shell flag any
+    // more — the v2 shell is the only shell since the cutover deletion wave.)
     await send('Page.addScriptToEvaluateOnNewDocument', {
       source: `try {
-        localStorage.setItem('mb-shell', 'v2');
         localStorage.setItem('mb-token', ${JSON.stringify(TOKEN)});
         localStorage.setItem('mb-token-at', String(Date.now()));
       } catch (e) {}`,

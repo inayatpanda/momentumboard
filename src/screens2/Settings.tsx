@@ -11,7 +11,7 @@
 // it out in words).
 
 import { AdminUnlock, LicenceManager, LicenceStatusRow, useIsAdmin } from './parts/SettingsAdmin'
-import { AppearanceGroup, ByoAiKey, NotificationRow, ReportRecipients, ShellFlagRow } from './parts/SettingsExtras'
+import { AppearanceGroup, ByoAiKey, NotificationRow, ReportRecipients } from './parts/SettingsExtras'
 import { InstallRow } from './parts/InstallRow'
 
 export default function Settings() {
@@ -40,7 +40,6 @@ export default function Settings() {
       <section className="menu-group">
         <div className="menu-title">App</div>
         <InstallRow />
-        <ShellFlagRow />
       </section>
     </div>
   )
