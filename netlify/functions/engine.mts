@@ -81,9 +81,48 @@ export function ledgerRow(p: Prediction) {
   }
 }
 
+/** Today, Europe/London — the same stamp the intraday-flags guard has always
+ * used inline; hoisted so the view slices apply the identical guard. */
+const londonToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date())
+
+// ---------------------------------------------------------------------------
+// VIEW SLICES (PWA rebuild). Each view does ONLY its own reads and serves a
+// narrow projection; the no-view aggregate below is unchanged and slated for
+// deletion once the v2 shell has a clean production day (plan Task 26).
+// Views are ALL-USERS by design: nothing privileged (holdingsReads) may ever
+// ride one — the auth-split test drives that with a real licence.
+// ---------------------------------------------------------------------------
+
+/** ?view=board — what Today/Board render: ~6 reads instead of ~50. */
+async function viewBoard() {
+  const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration] = await Promise.all([
+    blobAppStore.read('engine-board'),
+    blobAppStore.read<{ date: string }>('intraday-flags'),
+    blobAppStore.read('event-radar'),
+    blobAppStore.read('engine-run-status'),
+    blobAppStore.read('risk-state'),
+    blobAppStore.read<{ referenceBase?: number | null }>('engine-calibration'),
+  ])
+  return {
+    board: board ?? null,
+    // only today's flags — a stale blob from a prior session must not show as live
+    intradayFlags: intradayFlagsBlob && intradayFlagsBlob.date === londonToday() ? intradayFlagsBlob : null,
+    eventRadar: eventRadar ?? null,
+    runStatus: runStatus ?? null,
+    riskState: riskState ?? null,
+    referenceBase: calibration?.referenceBase ?? null,
+  }
+}
+
 export default async (req: Request) => {
   const auth = await authenticate(req.headers, { APP_TOKEN: process.env.APP_TOKEN }, blobAppStore)
   if (!auth) return new Response(JSON.stringify({ ok: false, error: 'unauthorised' }), { status: 401 })
+
+  const view = new URL(req.url).searchParams.get('view')
+  if (view !== null) {
+    if (view === 'board') return json(await viewBoard())
+    return json({ error: 'unknown view' }, 400)
+  }
 
   const [board, scorecard, weights, calibration, riskState, roster, rosterLog, channelCred, newsToneHistory, holdingsReads, predIndex, openTrace, runStatus] = await Promise.all([
     blobAppStore.read<{
@@ -158,7 +197,7 @@ export default async (req: Request) => {
     openTrace: openTrace ?? null,
     eventRadar: eventRadar ?? null,
     // only today's flags — a stale blob from a prior session must not show as live
-    intradayFlags: intradayFlagsBlob && intradayFlagsBlob.date === new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date()) ? intradayFlagsBlob : null,
+    intradayFlags: intradayFlagsBlob && intradayFlagsBlob.date === londonToday() ? intradayFlagsBlob : null,
     runStatus: runStatus ?? null,
     patternScore,
     ledger,
