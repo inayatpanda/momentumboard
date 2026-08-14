@@ -62,7 +62,21 @@ export const CONFIRM_VOL_MULT = 2
 export const RUN_WINDOW = 5
 /** Confirmation leg A: a five-session move this size is a move, full stop. */
 export const RUN_TRIGGER_PCT = 15
-/** Confirmation leg B: this many of the last RUN_WINDOW sessions closing up. */
+/** Confirmation leg B: this many of the last RUN_WINDOW sessions closing up.
+ *
+ * IT IS NOT RE-DERIVED FOR CRYPTO, BECAUSE THE LANE DOES NOT ADMIT CRYPTO — the
+ * decision, recorded where it lives (Stage 1c Phase B, B1's binding 3). The
+ * velocity and dip lanes iterate `candidateSyms` and `dipReads`, both drawn from
+ * `sources`, which the containment guard in `addSource` refuses a coin entry to
+ * and which Phase B did NOT relax: the crypto lane is a separate pass over its
+ * own universe, and it publishes a composite call, never a lane one.
+ *
+ * The number is recorded here rather than left implicit because it is the one
+ * entry in `CRYPTO_NOT_A_CLOCK` that is not simply invariant. `RUN_WINDOW` (5)
+ * would scale to 7 on a 24/7 tape, and 3-of-5 (0.600) is not 4-of-7 (0.571) —
+ * so a future stage that DOES open this door to crypto has to choose which
+ * fraction the confirmation means, with both numbers in front of it, rather than
+ * multiply this constant by 1.4. */
 export const UP_DAYS_MIN = 3
 /** Entry timing, both doors: buy the pause, never the Nth green candle. */
 export const MAX_GREEN_STREAK = 2
