@@ -286,7 +286,10 @@ describe('StockPage', () => {
     )
     withRouter('NVDA')
     const hero = await screen.findByLabelText("The engine's verdict")
-    expect(within(hero).getByText(/🃏 Wildcard/)).toBeInTheDocument()
+    // findByText: the section container mounts before its slice-painted
+    // content — a sync getByText raced it under parallel suite load (flake
+    // seen twice in full-suite runs, never standalone)
+    expect(await within(hero).findByText(/🃏 Wildcard/)).toBeInTheDocument()
     expect(within(hero).getByText(/Experiments lose more often than the board does\./)).toBeInTheDocument()
     expect(within(hero).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
   })
@@ -428,7 +431,7 @@ describe('StockPage', () => {
       await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall({ wildcard: { gate: 'entry-chase', priority: 1, hypothesis: 'chase is too strict', gateEvidenceN: 12 } })] }))
       withRouter('NVDA')
       const past = await screen.findByLabelText('Past calls')
-      expect(within(past).getByText(/🃏 Wildcard/)).toBeInTheDocument()
+      expect(await within(past).findByText(/🃏 Wildcard/)).toBeInTheDocument()
       expect(within(past).getByText(/Experiments lose more often than the board does\./)).toBeInTheDocument()
     })
 
