@@ -400,6 +400,195 @@
   padding-bottom: 14px;
 }
 
+/* --- stocks -------------------------------------------------------------------
+   Search + watchlist rows + T212-Discover-style rails (plan Task 15). Tokens
+   only, on top of .card/.pill/.hrail/.sec-label/.num/.pressable/.skeleton
+   already declared above — long/short stay reserved for change direction,
+   sector tint is the ONLY new use of them (never a third hue). */
+.v2 .stx h1 {
+  font-size: 22px;
+  margin: 0 0 14px;
+}
+.v2 .stx-search {
+  display: flex;
+  gap: 8px;
+}
+.v2 .stx-search input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.v2 .stx-search button {
+  border: none;
+  border-radius: 12px;
+  padding: 0 16px;
+  background: linear-gradient(135deg, var(--accent-soft), var(--accent));
+  color: var(--surface-1);
+  font-weight: 700;
+  cursor: pointer;
+}
+.v2 .stx-search-error {
+  margin: 6px 2px 0;
+  font-size: 12.5px;
+  color: var(--short);
+}
+
+/* watchlist rows */
+.v2 .stx-watchlist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.v2 .stx-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 10px 10px 14px;
+}
+.v2 .stx-row-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+.v2 .stx-avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  background: hsl(var(--h) 60% 45%);
+}
+.v2 .stx-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.v2 .stx-sym {
+  font-weight: 700;
+  font-size: 14px;
+}
+.v2 .stx-name {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .stx-row-prices {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.v2 .stx-remove {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 6px;
+}
+
+/* rails (Top movers / Top losers / Sectors) */
+.v2 .stx-rail-section {
+  margin-top: 18px;
+}
+.v2 .stx-rail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.v2 .stx-seeall {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+.v2 .stx-rail-card {
+  width: 128px;
+  padding: 10px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.v2 .stx-rail-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-decoration: none;
+  color: inherit;
+}
+.v2 .stx-rail-card-top {
+  font-weight: 700;
+  font-size: 13px;
+}
+.v2 .stx-rail-add {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* sector tiles: name + rs21, tinted by sign — --long/--short at low alpha
+   via color-mix, mixed against a SOLID surface (--surface-1), never the
+   .card gradient (color-mix cannot blend a gradient). */
+.v2 .stx-sector-tile {
+  width: 118px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+.v2 .stx-sector-tile[data-sign='pos'] {
+  background: color-mix(in srgb, var(--long) 14%, var(--surface-1));
+}
+.v2 .stx-sector-tile[data-sign='neg'] {
+  background: color-mix(in srgb, var(--short) 14%, var(--surface-1));
+}
+.v2 .stx-sector-name {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .stx-sector-rs {
+  font-size: 15px;
+  font-weight: 700;
+}
+
 /* the yesterday strip */
 .v2 .cc-yesterday {
   display: flex;
