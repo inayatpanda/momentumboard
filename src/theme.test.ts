@@ -32,6 +32,15 @@ describe('token system + fonts', () => {
     }
   })
 
+  it('tokens.css loads AFTER site.css so the v2 palette wins the --bg/--text collision', () => {
+    const main = read('src/main.tsx')
+    const siteAt = main.indexOf("import './styles/site.css'")
+    const tokensAt = main.indexOf("import './styles/tokens.css'")
+    expect(siteAt).toBeGreaterThan(-1)
+    expect(tokensAt).toBeGreaterThan(-1)
+    expect(tokensAt).toBeGreaterThan(siteAt) // last import wins equal-specificity :root vars
+  })
+
   it('self-hosted font files exist and @font-face points at them', () => {
     const css = read('src/styles/tokens.css')
     expect(css).toContain('@font-face')
