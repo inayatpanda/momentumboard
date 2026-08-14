@@ -1525,16 +1525,84 @@ export interface RegretContext {
    * never appear as a miss, read off the ROW's own `riskPct` rather than off the
    * gate code the ledger is being checked for. */
   sized: Record<string, Set<string>>
+  /** The walked dates the ledger's own selection rule CAN reach
+   * (`priceableTraceDates`). Identical to `dates` on the equity spine and on
+   * every context built without a tape, which is why nothing that predates the
+   * crypto spine changes: it is only on a spine carrying days SPY has no bar for
+   * that the two lists differ. OPTIONAL, and absent reads as `dates`: a context
+   * built by hand (a fixture) is asserting about a walk with one day per
+   * session, which is the case the field was invented to stop assuming. */
+  priceable?: string[]
 }
 
-export function regretContextOf(days: { date: string; board: Row[]; ledger: Row[]; trace?: DayTrace }[]): RegretContext {
+/** WHICH WALK DAYS THE MISS LEDGER CAN EVER PRICE — the harness's mirror of
+ * `maturedTraceDate` + `accrueMissLedger`'s guard, and a finding rather than a
+ * convenience (B3; recorded in the walk-results doc).
+ *
+ * The engine picks the day to price by mapping every trace date onto a SPY BAR
+ * INDEX (`spy.findIndex(c => c.t >= epoch)`) and taking the newest, then returns
+ * without pricing anything if that day is already in the ledger — it never falls
+ * back to an older unpriced one. Two walk dates that land on the same SPY bar
+ * are therefore ONE slot: the earlier wins it, the later is unreachable forever.
+ *
+ * On the equity spine that is unreachable-by-construction — one session, one bar
+ * — which is why the invariant could always be stated over the walk's own dates.
+ * On the crypto spine every Saturday, every Sunday and every US market holiday
+ * collapses onto the session that follows it, so the ledger's measured days are
+ * a strict subset of the walked ones BY DESIGN. Asserting contiguity over the
+ * walk's dates there would fail a correct run, and — worse — would hide the real
+ * claim, which is that no day the engine COULD have priced was skipped.
+ *
+ * Indices are stable under `sliceBefore` (it drops from the end only), so the
+ * full tape gives the same buckets the engine's truncated one does. */
+export function priceableTraceDates(dates: readonly string[], spy: Candle[] | null | undefined): string[] {
+  if (!spy?.length) return [...dates]
+  const out: string[] = []
+  let best = -1
+  for (const d of dates) {
+    const epoch = Date.parse(d) / 1000
+    if (!Number.isFinite(epoch)) continue
+    const idx = spy.findIndex(c => c.t >= epoch)
+    if (idx === -1) continue // no session at or after it — never selectable
+    if (idx > best) {
+      best = idx
+      out.push(d)
+    }
+  }
+  return out
+}
+
+/** THE WALK DAY THE ENGINE FIRST GRADED A ROW PUBLISHED ON `dates[i]` — eleven
+ * SPY sessions on, expressed in whatever days the spine happens to keep.
+ *
+ * The rule itself is unchanged and is the engine's: a pass on day k sees bars
+ * strictly before k, so a row published at session s is first gradeable by the
+ * pass at session s + 11. What changes on the crypto spine is that a walk day is
+ * no longer a session — eleven sessions is fifteen calendar days across two
+ * weekends — so the day is FOUND by session count rather than assumed at
+ * `i + 11`. Without a tape, and on the equity spine with one, the answer is
+ * exactly `dates[i + 11]`: the two agree by construction, and the equity walks
+ * that shipped before B3 are unaffected. */
+export function gradedOnDate(dates: readonly string[], spy: Candle[] | null | undefined, i: number, horizon = POSTMORTEM_HORIZON_MIRROR): string {
+  const last = dates[dates.length - 1]
+  if (!spy?.length) return dates[i + horizon + 1] ?? last
+  const sessionOf = (d: string) => spy.findIndex(c => c.t >= Date.parse(d) / 1000)
+  const from = sessionOf(dates[i])
+  if (from === -1) return dates[i + horizon + 1] ?? last
+  const want = from + horizon + 1
+  for (let j = i + 1; j < dates.length; j++) if (sessionOf(dates[j]) >= want) return dates[j]
+  return last
+}
+
+export function regretContextOf(days: { date: string; board: Row[]; ledger: Row[]; trace?: DayTrace }[], spy?: Candle[] | null): RegretContext {
   const traces: RegretContext['traces'] = {}
   const sized: RegretContext['sized'] = {}
   for (const d of days) {
     traces[d.date] = d.trace
     sized[d.date] = new Set([...d.board, ...d.ledger].filter(r => r.riskPct > 0).map(r => `${r.sym.toUpperCase()}:${r.side}`))
   }
-  return { dates: days.map(d => d.date), traces, sized }
+  const dates = days.map(d => d.date)
+  return { dates, traces, sized, priceable: priceableTraceDates(dates, spy) }
 }
 
 /** The rows in a day's trace a miss may be charged for — every row whose gate is
@@ -1568,6 +1636,11 @@ export const missCandidateCount = (t?: DayTrace): number =>
  *     matured day each time, so over a contiguous walk the measured days are the
  *     oldest N walked dates with no gap. A hole means a matured day was skipped
  *     and never revisited — the one failure mode of "newest first, one per pass".
+ *     …over the days the rule can REACH (`ctx.priceable`): the ledger's clock is
+ *     SPY's, so on a spine carrying days SPY has no bar for, several walk dates
+ *     share one session and only the earliest of them is ever selectable. That
+ *     is the walk's finding, not its licence — a reachable day with no entry is
+ *     still a violation, and a priced day that was NOT reachable is a new one.
  * (c) THE ACCOUNTING CLOSES. Per day, checked + unchecked = the day's candidate
  *     count. Over the window, Σ gate.unchecked = Σ day.unchecked and Σ gate.cost
  *     = Σ day.misses — the same events counted along two different axes, so a row
@@ -1586,13 +1659,19 @@ export function missLedgerViolations(ledger: MissLedgerLike | null | undefined, 
     if (MISS_SKIP_GATE_MIRROR.has(gate))
       v.push(`miss ledger charges '${gate}' — a row the reader got a size on (or a shadow that grades already) can never be a miss`)
 
-  // (b) the days
+  // (b) the days — contiguous over the days the ledger's own rule can REACH
+  // (`priceable`, which is `dates` itself on every equity-spine walk). A day the
+  // engine could never have selected is not a hole; a day it could have and did
+  // not still is.
   for (const d of days) if (!ctx.dates.includes(d)) v.push(`miss-ledger day ${d} is not a day this walk walked — the ledger measured a morning that never happened`)
+  const reachable = ctx.priceable ?? ctx.dates
+  for (const d of days) if (ctx.dates.includes(d) && !reachable.includes(d)) v.push(`miss-ledger day ${d} is a day the ledger's own selection rule can never reach — it collapses onto a later session's bar`)
   const walked = days.filter(d => ctx.dates.includes(d))
-  if (walked.length) {
-    const first = ctx.dates.indexOf(walked[0])
-    const expected = ctx.dates.slice(first, first + walked.length)
-    for (const d of expected) if (!ledger.days[d]) v.push(`miss-ledger has no entry for ${d}, a matured trace day between ${walked[0]} and ${walked[walked.length - 1]} — a day that matured and was never measured is never revisited`)
+  const priced = walked.filter(d => reachable.includes(d))
+  if (priced.length) {
+    const first = reachable.indexOf(priced[0])
+    const expected = reachable.slice(first, first + priced.length)
+    for (const d of expected) if (!ledger.days[d]) v.push(`miss-ledger has no entry for ${d}, a matured trace day between ${priced[0]} and ${priced[priced.length - 1]} — a day that matured and was never measured is never revisited`)
   }
 
   // (c) the accounting
@@ -1668,12 +1747,26 @@ export function missAccrualViolations(prev: MissLedgerLike | null | undefined, n
  * prediction blob at walk end, never the harness's independent regrade: the
  * question is whether the engine classified what the engine graded. A row the
  * walk could not read back at all (`storedOutcome10` undefined — a near miss, or
- * a pre-Stage-3b tree) is skipped rather than failed. */
+ * a pre-Stage-3b tree) is skipped rather than failed.
+ *
+ * …AND A CRYPTO ROW IS NOT ONE OF THEM, by the same exclusion the engine states
+ * at the accrual (`!cryptoRow` guards the post-mortem stamp, engine.ts): the
+ * classifier reads `market-drag` and `news-reversal` off SPY, and the ledger it
+ * feeds is SPY-benchmarked, so a coin has nothing to explain itself WITH. The
+ * walk asserted the opposite until the lane first graded one — the crypto spine
+ * found it, exactly as A1's parity arm found `SIDE_FREE_GATES`. Corrected here,
+ * in the harness's mirror; nothing the reader sees moves. */
 export function postMortemViolations(days: { date: string; board: Row[]; ledger: Row[] }[]): string[] {
   const v: string[] = []
   for (const day of days) {
     for (const r of day.ledger) {
       if (r.storedOutcome10 === undefined) continue
+      if (r.cohort === 'crypto') {
+        // …and the exclusion is asserted in BOTH directions: a crypto row that
+        // somehow carried one would mean the engine's own guard had failed.
+        if (r.postMortem) v.push(`${day.date}:${r.sym}:${r.side}: a crypto row carries a post-mortem — the classifier reads SPY, and the partition is excluded from it`)
+        continue
+      }
       const key = `${day.date}:${r.sym}:${r.side}`
       const pm = r.postMortem
       if (!r.storedOutcome10) {
@@ -3188,7 +3281,11 @@ export async function main() {
     if (regretEnforced) {
       // the ledger's claims, settled against the walk's OWN record of the window:
       // the traces it captured and the sizes the reader was actually given.
-      const violations = [...accrualViolations, ...missLedgerViolations(missLedgerNow, regretContextOf(out))]
+      // …with SPY's own series handed in, because the ledger's clock is SPY's:
+      // on the crypto spine several walk days share one session and only the
+      // earliest is ever selectable (`priceableTraceDates`). On the equity spine
+      // the two lists are identical and this argument changes nothing.
+      const violations = [...accrualViolations, ...missLedgerViolations(missLedgerNow, regretContextOf(out, spyFull))]
       if (violations.length)
         throw new Error(
           `BLOCKED: the miss ledger disagrees with the walk on ${date} — ${violations.length} violation(s):\n  ` +
@@ -3293,7 +3390,12 @@ export async function main() {
       // row published on walk day i is first gradeable at 10 sessions when
       // i + 10 <= k - 1 — that is, on walk day i + 11. Re-classifying against any
       // other tape would compare the engine's answer with a question it never asked.
-      const gradedOn = days[i + POSTMORTEM_HORIZON_MIRROR + 1] ?? days[days.length - 1]
+      // …counted in SPY SESSIONS and expressed in the spine's own days
+      // (`gradedOnDate`), because "walk day i + 11" is only the same statement
+      // when one walk day is one session. On the crypto spine eleven sessions is
+      // fifteen calendar days, and a re-derivation handed a tape four days short
+      // cannot find the session the engine's own detail line names.
+      const gradedOn = gradedOnDate(days, spyFull, i)
       for (const p of preds) {
         if (!p.outcome10) continue
         census.graded++
