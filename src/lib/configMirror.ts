@@ -1,5 +1,5 @@
 import { db, getCapital, getChannels } from './db'
-import { putConfig } from './api'
+import { isSharedFreeToken, putConfig } from './api'
 
 let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -15,6 +15,9 @@ if (typeof document !== 'undefined') {
 
 /** Debounced push of the local watchlist + rules + settings to the server config (read by the alert checker). */
 export function mirrorConfig(delayMs = 400) {
+  // Free-tier DMG devices never push: they share one server namespace, and a
+  // push from any install would clobber every other one's (sync.ts's twin).
+  if (isSharedFreeToken()) return
   clearTimeout(timer)
   timer = setTimeout(async () => {
     const [watch, ruleItems, capital, ytChannels, noteItems] = await Promise.all([db.watchlist.toArray(), db.rules.toArray(), getCapital(), getChannels(), db.notes.toArray()])

@@ -5,6 +5,28 @@ import type { MissLedgerSummary } from '../../shared/engine/missLedger'
 import type { GateStateSummary } from '../../shared/engine/gateState'
 
 export const getToken = () => localStorage.getItem('mb-token')
+
+// --- THE DMG FREE TIER (owner decision, 2026-08-15) -------------------------
+// The desktop build bakes a SHARED licence token (VITE_FREE_TOKEN, set only in
+// .env.dmg — never in web builds) so the app opens with no gate. Revoking that
+// one licence server-side flips every free DMG back to the licence door.
+
+/** Seed the shared token on a tokenless device. An explicit personal unlock
+ * (?key= link, typed key) always wins — this only fills silence. */
+export function seedFreeTierToken(): void {
+  const free = import.meta.env.VITE_FREE_TOKEN
+  if (!free || localStorage.getItem('mb-token')) return
+  localStorage.setItem('mb-token', free)
+  localStorage.setItem('mb-token-at', String(Date.now()))
+}
+
+/** Is this device on the shared free token? Free devices are SYNC-ISOLATED:
+ * they all share one server namespace, so config push/pull would cross-
+ * pollinate watchlists between installs (sync.ts / configMirror.ts no-op). */
+export function isSharedFreeToken(): boolean {
+  const free = import.meta.env.VITE_FREE_TOKEN
+  return !!free && getToken() === free
+}
 export const setToken = (t: string) => localStorage.setItem('mb-token', t)
 export const clearToken = () => localStorage.removeItem('mb-token')
 

@@ -8,7 +8,7 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const api = vi.hoisted(() => ({ apiGet: vi.fn(), getToken: vi.fn((): string | null => 'tok') }))
+const api = vi.hoisted(() => ({ apiGet: vi.fn(), getToken: vi.fn((): string | null => 'tok'), isSharedFreeToken: vi.fn(() => false) }))
 vi.mock('./api', () => api)
 
 import { db } from './db'

@@ -14,7 +14,7 @@
 // header at all and therefore stays same-origin-only.
 
 import { describe, expect, it, vi } from 'vitest'
-import { onRequest, TAURI_ORIGINS } from './_middleware'
+import { onRequest, TAURI_ORIGINS } from './cors'
 import type { PagesContext } from '../netlify/functions/lib/router'
 
 /** A Pages context, hand-built: `onRequest` is a plain function, so nothing

@@ -22,3 +22,4 @@ docs/AUDIT-*.md
 .superpowers/walkthrough/
 # miniflare's local state, written by `wrangler pages dev` (the walkthrough)
 .wrangler/
+.env.dmg

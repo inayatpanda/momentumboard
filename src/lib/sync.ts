@@ -1,5 +1,5 @@
 import { db } from './db'
-import { apiGet, getToken } from './api'
+import { apiGet, getToken, isSharedFreeToken } from './api'
 import { invalidateSlices } from './store'
 import type { AppConfig } from '../../shared/config'
 import type { Trade } from '../../shared/journal'
@@ -23,6 +23,9 @@ const SYNC_INVALIDATES = ['board', 'learning']
 
 export async function syncFromServer(): Promise<boolean> {
   if (!getToken()) return false
+  // Free-tier DMG devices share ONE server namespace — pulling it would hand
+  // this device another install's watchlist. They stay purely local.
+  if (isSharedFreeToken()) return false
   let changed = false
   try {
     const cfg = await apiGet<AppConfig | null>('/api/config')

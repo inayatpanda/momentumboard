@@ -21,11 +21,14 @@
 //     no response re-wrap, so the browser's default same-origin rule stands
 //     exactly as it did before this file existed.
 //
-// A note on placement: at the root of `functions/` this runs ahead of BOTH
-// entry points (`api/[[route]].ts` and `report.ts`) and ahead of static assets.
-// That breadth is the point — `/report` is a server path too, which is why
-// `x-report-token` is in the allowed header set — and the cost is bounded,
-// because the non-Tauri path returns the downstream response untouched.
+// A note on placement (revised after the first cut sat at functions/
+// _middleware.ts): a ROOT middleware creates a /* Functions route, so every
+// static asset request billed a Function invocation for a pass-through. This
+// module is now a LIBRARY: `functions/api/_middleware.ts` applies it to
+// /api/* (the scoped middleware costs nothing on assets), and `report.ts`
+// wraps its own handler with `withCors` — /report is a server path too, which
+// is why `x-report-token` is in the allowed header set. Static assets never
+// touch Functions at all.
 //
 // The security headers on the responses themselves are NOT this file's job:
 // lib/router.ts attaches `FUNCTION_RESPONSE_HEADERS` to every function answer,
@@ -69,31 +72,38 @@ const varyOnOrigin = (headers: Headers): void => {
   headers.append('Vary', 'Origin')
 }
 
-export const onRequest = async (ctx: PagesContext): Promise<Response> => {
-  const origin = allowedOrigin(ctx.request)
+/** Wrap any Pages handler in the Tauri CORS policy. The two call shapes —
+ * a middleware's `ctx.next!()` and a terminal handler — are the same wrap. */
+export const withCors =
+  (handler: (ctx: PagesContext) => Promise<Response>) =>
+  async (ctx: PagesContext): Promise<Response> => {
+    const origin = allowedOrigin(ctx.request)
 
-  // Not the desktop shell: this file is not here. Note the response is returned
-  // AS IS, not copied — a root middleware is on the path of every asset.
-  if (!origin) return ctx.next!()
+    // Not the desktop shell: this file is not here. The response is returned
+    // AS IS, not copied.
+    if (!origin) return handler(ctx)
 
-  // The preflight is answered here rather than passed down: it carries no
-  // token and no body, and a handler has nothing useful to say about it.
-  if (ctx.request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Headers': ALLOW_HEADERS,
-        'Access-Control-Allow-Methods': ALLOW_METHODS,
-        'Access-Control-Max-Age': MAX_AGE,
-        Vary: 'Origin',
-      },
-    })
+    // The preflight is answered here rather than passed down: it carries no
+    // token and no body, and a handler has nothing useful to say about it.
+    if (ctx.request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Headers': ALLOW_HEADERS,
+          'Access-Control-Allow-Methods': ALLOW_METHODS,
+          'Access-Control-Max-Age': MAX_AGE,
+          Vary: 'Origin',
+        },
+      })
+    }
+
+    const res = await handler(ctx)
+    const headers = new Headers(res.headers)
+    headers.set('Access-Control-Allow-Origin', origin)
+    varyOnOrigin(headers)
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
   }
 
-  const res = await ctx.next!()
-  const headers = new Headers(res.headers)
-  headers.set('Access-Control-Allow-Origin', origin)
-  varyOnOrigin(headers)
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
-}
+/** The /api/* middleware shape (functions/api/_middleware.ts re-exports it). */
+export const onRequest = withCors(ctx => ctx.next!())

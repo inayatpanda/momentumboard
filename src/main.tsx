@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { seedFreeTierToken } from './lib/api'
 // ORDER IS LOAD-BEARING: site.css first, tokens.css second. The two collide on
 // --bg/--text (equal :root specificity, last-wins), and tokens.css must win —
 // the owner rejected the legacy cream light theme outright, and the public
@@ -27,6 +28,12 @@ if (key) {
   history.replaceState(null, '', path + (params.size ? `?${params}` : ''))
 }
 navigator.storage?.persist?.().catch(() => {})
+
+// The DMG free tier: a tokenless desktop install seeds the shared licence and
+// opens straight onto Today — no gate. SYNCHRONOUS and after the ?key= consume
+// above, so App() never sees a tokenless first render and a personal unlock
+// link always wins. No-op in web builds (no VITE_FREE_TOKEN).
+seedFreeTierToken()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
