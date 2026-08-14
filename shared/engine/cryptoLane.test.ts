@@ -354,6 +354,14 @@ describe('the name alias — what makes the crypto news factor real at all', () 
     expect(cryptoTitleMatches('ETH-USD', ['Bethesda ships a patch', 'Ethanol prices slide'])).toEqual([])
   })
 
+  it('reads the concatenated pair spellings — "BTCUSD" has no boundary after the C and the bare alias cannot see it [codex 1c-R]', () => {
+    expect(cryptoTitleMatches('BTC-USD', ['BTCUSD tests 100k resistance'])).toHaveLength(1)
+    expect(cryptoTitleMatches('ETH-USD', ['ETHUSDT funding flips negative'])).toHaveLength(1)
+    expect(cryptoTitleMatches('SOL-USD', ['SOLUSD breaks the range'])).toHaveLength(1)
+    // …and the pair forms never cross: a bitcoin pair headline is not an ether read
+    expect(cryptoTitleMatches('ETH-USD', ['BTCUSD tests 100k resistance'])).toEqual([])
+  })
+
   it('is exhaustive over the universe — a fourth pair cannot be added without an alias', () => {
     expect(Object.keys(CRYPTO_NEWS_ALIASES).sort()).toEqual([...CRYPTO_UNIVERSE].sort())
     for (const sym of CRYPTO_UNIVERSE) expect(CRYPTO_NEWS_ALIASES[sym].length).toBeGreaterThan(0)

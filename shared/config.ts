@@ -65,7 +65,13 @@ export function validateConfig(raw: unknown): AppConfig | null {
     : undefined
   const levMap: LevMap = {}
   if (c.levMap && typeof c.levMap === 'object') {
-    for (const [sym, m] of Object.entries(c.levMap).slice(0, 40)) {
+    // 80, and the number is a TRUNCATION CLIFF, not a quota (codex 1c-R
+    // finding 2): entries past it are dropped SILENTLY, and the map sits
+    // around forty real routes today — at the old cap of 40, adding the three
+    // crypto pairs would have discarded whichever route sorted last, with no
+    // error anywhere. The bound exists only so a garbage blob cannot balloon
+    // the config; it must stay far above any real book.
+    for (const [sym, m] of Object.entries(c.levMap).slice(0, 80)) {
       if (!m || typeof m !== 'object') continue
       const entry: LevMap[string] = {}
       // `long1x`/`short1x` are the 1× spot/inverse trackers the crypto route
@@ -145,7 +151,14 @@ export function validateConfig(raw: unknown): AppConfig | null {
     ytChannels: c.ytChannels,
     capital: typeof c.capital === 'number' ? c.capital : 5000,
     notes,
-    levMap: Object.keys(levMap).length ? levMap : undefined,
+    // PRESENCE, not emptiness, decides (codex 1c-R finding 3): a caller that
+    // SENT a levMap keeps it even when it validated to {} — an explicit empty
+    // map is "clear my routes", and collapsing it to undefined made the last
+    // route uncorrectable (config-sync preserves stored on absence, so a
+    // withdrawn tracker stayed executable forever). The phone mirror never
+    // sends the key at all, so its syncs still preserve — the exact
+    // riskRungOverride contract, one field over.
+    levMap: c.levMap && typeof c.levMap === 'object' ? levMap : undefined,
     coreSleeve: coreSleeve && coreSleeve.length ? coreSleeve : undefined,
     riskRungOverride,
     gateOverride,

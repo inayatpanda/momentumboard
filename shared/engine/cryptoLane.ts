@@ -305,9 +305,13 @@ export const CRYPTO_WEIGHTS: Readonly<Record<FactorName, number>> = Object.freez
  * a regex below without escaping, and anything needing an escape does not belong
  * in a list of asset names. */
 export const CRYPTO_NEWS_ALIASES: Record<(typeof CRYPTO_UNIVERSE)[number], readonly string[]> = {
-  'BTC-USD': ['bitcoin', 'btc'],
-  'ETH-USD': ['ethereum', 'ether', 'eth'],
-  'SOL-USD': ['solana', 'sol'],
+  // the concatenated pair forms (btcusd, ethusdt…) are real headline spellings
+  // — "\bbtc\b" cannot see "BTCUSD" because no boundary follows the C (codex,
+  // 1c-R) — and they are the SAFEST aliases in the list: nothing else spells
+  // that way
+  'BTC-USD': ['bitcoin', 'btc', 'btcusd', 'btcusdt'],
+  'ETH-USD': ['ethereum', 'ether', 'eth', 'ethusd', 'ethusdt'],
+  'SOL-USD': ['solana', 'sol', 'solusd', 'solusdt'],
 }
 
 /** WORD-BOUNDED, EXACTLY AS THE BASE-TICKER MATCH ALREADY IS. `sol` and `eth`

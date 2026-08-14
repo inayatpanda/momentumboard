@@ -184,7 +184,11 @@ describe('EngineBoard', () => {
     await waitFor(() => expect(screen.getByText('BTC-USD')).toBeInTheDocument())
     fireEvent.click(screen.getByText('evidence'))
     expect(screen.getByText(/XBTS.L 1x/)).toBeInTheDocument() // the route IS shown…
-    expect(screen.queryByText(/decay daily/)).toBeNull() // …the false decay clock is not
+    expect(screen.queryByText(/decay daily/)).toBeNull() // …the false decay clock is not…
+    // …but the UNDERLYING-levels half survives: the board prints the asset's
+    // levels beside a tracker that prints its own price, and dropping the
+    // whole warning for 1× told the reader nothing about which to exit on
+    expect(screen.getByText(/levels above are the underlying/)).toBeInTheDocument()
     data.board!.board = [prediction]
   })
 })

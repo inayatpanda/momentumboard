@@ -138,9 +138,17 @@ function Call({ p }: { p: EnginePrediction }) {
               </div>
             ))}
           {/* the decay warning belongs to GEARED routes only — a 1× tracker is
-              the asset, with no daily reset to compound and no hold clock */}
-          {p.instrument && p.instrument.leverage > 1 && (
-            <div style={{ marginTop: 3, color: 'var(--faint)' }}>Leveraged ETPs decay daily — max hold 10 sessions; exit on the UNDERLYING levels above, not the ETP price.</div>
+              the asset, with no daily reset to compound and no hold clock. The
+              UNDERLYING-levels half applies to EVERY tracker: the levels above
+              are the asset's, and a 1× cETN prints its own (often differently
+              denominated) price — dropping the whole line for 1× told the
+              reader nothing about which numbers to exit on (codex, 1c-R). */}
+          {p.instrument && (
+            <div style={{ marginTop: 3, color: 'var(--faint)' }}>
+              {p.instrument.leverage > 1
+                ? 'Leveraged ETPs decay daily — max hold 10 sessions; exit on the UNDERLYING levels above, not the ETP price.'
+                : 'Tracker route — the levels above are the underlying asset’s; exit on them, not the tracker’s own print, which may be denominated differently.'}
+            </div>
           )}
         </div>
       )}

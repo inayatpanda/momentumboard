@@ -311,6 +311,13 @@ describe('deterministic board table in the paper', () => {
     expect(sized).not.toContain('Nearest-miss rows cleared NO gate')
   })
 
+  it('the footer splits the paper-only story by its CAUSE — a crypto pair with no tracker is not the ladder\'s doing [codex 1c-R]', () => {
+    const coin = { ...board[0], sym: 'BTC-USD', cohort: 'crypto' as const, paperOnly: true, watchOnly: undefined }
+    const crypto = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [coin] })
+    expect(crypto).toContain('no tracker route is configured for the pair')
+    expect(crypto).not.toContain('the risk ladder has not unlocked') // no rung can mint an unconfigured route
+  })
+
   it('an ordinary watch row keeps its grade and probability', () => {
     const watch = { ...nearMissRow, sym: 'WTCH', nearMiss: false, provisional: false }
     const html = buildNewspaperHtml(composed, 'Thursday, 2 July 2026', { engineBoard: [watch] })
@@ -440,6 +447,17 @@ describe('fallbackIdeasFromBoard', () => {
     expect(ideas).toHaveLength(2) // top 2 only
     expect(ideas[0]).toMatchObject({ ticker: 'IREN', side: 'short', playbook: 'S', entry: '38.82', invalidation: '46.16', target: '29.03', conviction: 'C', predictionId: '2026-07-02:IREN:short' })
     expect(ideas[0].caseText).toContain('Paper-only')
+  })
+
+  it('states the ROW\'S paper-only reason — a crypto pair with no tracker is not waiting on the ladder [codex 1c-R]', () => {
+    const board = [
+      { id: 'b', sym: 'BTC-USD', side: 'long' as const, cohort: 'crypto' as const, entry: 60000, stop: 55000, target: 70000, probability: 0.5, grade: 'C' as const, expectedMovePct: 8, instrument: null, paperOnly: true, note: 'crypto cohort.' },
+      { id: 'n', sym: 'NOK', side: 'short' as const, entry: 12.07, stop: 13.42, target: 10.26, probability: 0.5, grade: 'C' as const, expectedMovePct: 5.1, instrument: null, paperOnly: true, note: 'weak.' },
+    ]
+    const ideas = fallbackIdeasFromBoard(board as never)
+    expect(ideas[0].caseText).toContain('no tracker route is configured for this pair')
+    expect(ideas[0].caseText).not.toContain('risk ladder') // no rung can mint an unconfigured route
+    expect(ideas[1].caseText).toContain('until the risk ladder unlocks the route') // the equity story is still the equity story
   })
 })
 
@@ -586,6 +604,9 @@ describe('the paper is told what it lost — the two accountability keys and whe
     // or inverse tracker — the exact overstatement 1c-R exists to remove
     expect(ideas.brief).toMatch(/ONLY when the leverage is above 1/)
     expect(ideas.brief).toMatch(/1x entry is a plain spot\/inverse tracker/)
+    // …and the paper-only reason is the row's own — the writer must never
+    // blame the risk ladder for a crypto route nobody configured
+    expect(ideas.brief).toMatch(/NEVER attribute a missing crypto route to the risk ladder/)
   })
 
   it('the writer is TOLD about them, with the unchecked caveat attached — data with no instruction is the same silence', () => {

@@ -23,6 +23,23 @@ describe('validateConfig engine fields', () => {
     expect(cfg.levMap).toEqual({ 'BTC-USD': { long1x: 'BTCE.DE', short1x: 'XBTS.L' } })
   })
 
+  it('a real-book-sized levMap survives whole — the truncation cliff sits far above it [codex 1c-R]', () => {
+    // ~40 real routes + the crypto pairs sat ON the old cap of 40: whichever
+    // entry sorted last was dropped with no error anywhere. 45 must round-trip.
+    const big = Object.fromEntries(Array.from({ length: 45 }, (_, i) => [`SYM${i}`, { long2x: `T${i}` }]))
+    expect(Object.keys(validateConfig({ ...minimal, levMap: big })!.levMap!)).toHaveLength(45)
+  })
+
+  it('an EXPLICIT empty levMap means "clear my routes" — presence, not emptiness, decides [codex 1c-R]', () => {
+    // {} must survive as {} so the sync merge REPLACES the stored map: collapsing
+    // it to undefined made a withdrawn tracker uncorrectable (absence preserves).
+    expect(validateConfig({ ...minimal, levMap: {} })!.levMap).toEqual({})
+    // …an entry-that-validates-to-nothing is still a SENT map, so it clears too
+    expect(validateConfig({ ...minimal, levMap: { junk: null } })!.levMap).toEqual({})
+    // …and ABSENCE still reads as undefined, so a phone sync preserves
+    expect(validateConfig(minimal)!.levMap).toBeUndefined()
+  })
+
   it('rejects out-of-range override; absent fields stay absent', () => {
     const cfg = validateConfig({ ...minimal, riskRungOverride: 5 })!
     expect(cfg.riskRungOverride).toBeNull()
