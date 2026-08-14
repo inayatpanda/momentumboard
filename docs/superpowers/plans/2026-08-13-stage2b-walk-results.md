@@ -673,6 +673,8 @@ All three ratified sentences are present on all 68 rows (cohort, cold start, pap
 
 The lane-on walk was run **twice**. Normalising only `commit` and each day's wall-clock `ms`, the two 20.4 MB artefacts are **byte-identical over all 13,643,855 normalised bytes** — same crypto rows, same maturities, same buckets, same Brier trail, same rung, same slot cuts. Component shas (crypto rows `638a306b94dc0a70`, crypto calibration `38656fc3d922ecfa`, crypto risk `d9b37a69ec6da4e2`, `cryptoMatured` `3901b959beb5288e`) match across the two runs.
 
+Scope, stated (review): determinism is **per cache state** — the claim is "the same cached tape walks to the same bytes", and a refetch that extends a tape is a new cache state with new bytes. It is NOT scoped to a UTC day: the cache's crypto tapes are cut at their own **fetch** timestamp (`completedCryptoTail`, keyed to the file's `at` stamp on write and again on read), so a cached tape means the same bars however long it sits, and crossing a UTC midnight between runs changes nothing. That cut is also what retires the class of defect the review named — a stale cache "growing" a completed bar at midnight whose close was actually frozen mid-session at fetch time.
+
 ### (e) One row per side, and the cut that proves it
 
 **Max crypto rows per side per day: 1** — board and ledger, all 133 days, no exceptions.

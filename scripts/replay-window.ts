@@ -825,6 +825,20 @@ async function fetchWithRetry(sym: string): Promise<{ candles: Candle[] | null; 
   return { candles: null, error: 'retries-exhausted' }
 }
 
+/** The COMPLETED-BAR cut, keyed to the FETCH clock rather than the run clock
+ * (cryptoCalibration.ts `completedCryptoBars`, mirrored like the constants
+ * above). A crypto tape fetched at 11:00 UTC carries the fetch day's own bar
+ * eleven hours in progress, and Yahoo keeps updating it all day — so the bar
+ * is dropped against the moment the tape was TAKEN, at write and again at
+ * read (the file's own `at` stamp). Cutting at the run clock instead would
+ * make a stale cache grow a "completed" bar at the next UTC midnight: a close
+ * frozen mid-session, silently graded. With the fetch-time cut a cached tape
+ * means the same bars forever, however long it sits. */
+export const completedCryptoTail = (candles: Candle[], fetchedAtSec: number): Candle[] => {
+  const dayStart = Math.floor(fetchedAtSec / 86_400) * 86_400
+  return candles.filter(c => c.t < dayStart)
+}
+
 /** Full (untruncated) history for a symbol: disk cache → Yahoo. A symbol Yahoo
  * will not serve is recorded as MISSING and stays null forever — a replay never
  * synthesises a price it could not fetch. */
@@ -836,23 +850,27 @@ function fullHistory(sym: string): Promise<Candle[] | null> {
     const file = cacheFile(key)
     if (existsSync(file)) {
       try {
-        const j = JSON.parse(readFileSync(file, 'utf8')) as { candles?: Candle[]; missing?: boolean; error?: string }
+        const j = JSON.parse(readFileSync(file, 'utf8')) as { candles?: Candle[]; missing?: boolean; error?: string; at?: number }
         if (j.missing) {
           missing.push({ sym: key, error: j.error ?? 'unknown' })
           return null
         }
-        if (Array.isArray(j.candles)) return j.candles
+        // the read-side belt: files written before the write-side cut existed
+        // (or by anything else) still get the fetch-day bar dropped
+        if (Array.isArray(j.candles)) return isCryptoSymbol(key) && typeof j.at === 'number' ? completedCryptoTail(j.candles, j.at / 1000) : j.candles
       } catch {
         /* corrupt cache entry — refetch */
       }
     }
-    const { candles, error } = await fetchWithRetry(key)
-    if (!candles || !candles.length) {
+    const { candles: fetched, error } = await fetchWithRetry(key)
+    if (!fetched || !fetched.length) {
       missing.push({ sym: key, error: error ?? 'empty' })
       writeFileSync(file, JSON.stringify({ sym: key, missing: true, error: error ?? 'empty' }))
       return null
     }
-    writeFileSync(file, JSON.stringify({ sym: key, range: '5y', at: Date.now(), candles }))
+    const at = Date.now()
+    const candles = isCryptoSymbol(key) ? completedCryptoTail(fetched, at / 1000) : fetched
+    writeFileSync(file, JSON.stringify({ sym: key, range: '5y', at, candles }))
     return candles
   })()
   memo.set(key, p)
@@ -1561,7 +1579,7 @@ export interface RegretContext {
  *
  * Indices are stable under `sliceBefore` (it drops from the end only), so the
  * full tape gives the same buckets the engine's truncated one does. */
-export function priceableTraceDates(dates: readonly string[], spy: Candle[] | null | undefined): string[] {
+export function priceableTraceDates(dates: readonly string[], spy: Candle[] | null | undefined, horizon = 10): string[] {
   if (!spy?.length) return [...dates]
   const out: string[] = []
   let best = -1
@@ -1569,7 +1587,14 @@ export function priceableTraceDates(dates: readonly string[], spy: Candle[] | nu
     const epoch = Date.parse(d) / 1000
     if (!Number.isFinite(epoch)) continue
     const idx = spy.findIndex(c => c.t >= epoch)
-    if (idx === -1) continue // no session at or after it — never selectable
+    // BOTH of the engine's refusals (missLedger.ts `maturedTraceDate`): no
+    // session at or after the date, and a date whose stopless window has not
+    // matured (`idx + horizon >= spy.length`, MISS_HORIZON = 10 mirrored like
+    // every other engine constant here). The mirror previously copied only the
+    // first, which made `priceable` a superset near the window's end —
+    // conservative for the contiguity check, but a mirror that claims a rule
+    // must carry the whole rule.
+    if (idx === -1 || idx + horizon >= spy.length) continue
     if (idx > best) {
       best = idx
       out.push(d)

@@ -62,6 +62,7 @@ import {
   postMortemViolations,
   precedenceViolations,
   gradedOnDate,
+  completedCryptoTail,
   priceableTraceDates,
   regretContextOf,
   traceViolations,
@@ -2024,22 +2025,51 @@ describe('priceableTraceDates — the miss ledger is a SPY-SESSION mechanism, an
    * equity spine that cannot happen (one walk day, one SPY bar). On the crypto
    * spine every Saturday, Sunday and US holiday collapses onto the next session,
    * and this function is the harness's mirror of the consequence. */
+  // horizon 0 in the collapse tests: the four-bar fixture isolates the
+  // SLOT-COLLAPSE arm; the engine's other refusal (maturity) has its own pin
+  // below, on a tape long enough to show the boundary.
   const spy = [day('2026-07-01', 1), day('2026-07-02', 1), day('2026-07-06', 1), day('2026-07-07', 1)]
   it('is every walk day on the equity spine — one session, one bar, nothing collapses', () => {
     const dates = ['2026-07-01', '2026-07-02', '2026-07-06', '2026-07-07']
-    expect(priceableTraceDates(dates, spy)).toEqual(dates)
+    expect(priceableTraceDates(dates, spy, 0)).toEqual(dates)
   })
   it('COLLAPSES the weekend and the holiday onto the session that follows them — the earliest wins the slot', () => {
     // 07-03 US holiday · 07-04 Sat · 07-05 Sun · 07-06 Mon — four dates, ONE bar
     const dates = ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06', '2026-07-07']
-    expect(priceableTraceDates(dates, spy)).toEqual(['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-07'])
+    expect(priceableTraceDates(dates, spy, 0)).toEqual(['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-07'])
   })
   it('drops a date the tape has no session at or after — it can never be selected', () => {
-    expect(priceableTraceDates(['2026-07-07', '2026-08-01'], spy)).toEqual(['2026-07-07'])
+    expect(priceableTraceDates(['2026-07-07', '2026-08-01'], spy, 0)).toEqual(['2026-07-07'])
+  })
+  it('drops a date whose stopless window has not MATURED — the engine\'s second refusal, mirrored whole', () => {
+    // 15 sessions; with the real MISS_HORIZON (10) only an index with ten more
+    // bars after it survives: idx 0..4 mature, idx 5+ do not. The mirror
+    // previously copied only the no-session arm, leaving `priceable` a
+    // superset near the window's end.
+    const tape15 = Array.from({ length: 15 }, (_, i) => day(new Date(Date.UTC(2026, 6, 1 + i)).toISOString().slice(0, 10), 1))
+    const dates = tape15.map(c => new Date(c.t * 1000).toISOString().slice(0, 10))
+    expect(priceableTraceDates(dates, tape15)).toEqual(dates.slice(0, 5))
+    expect(priceableTraceDates(dates, tape15, 0)).toEqual(dates)
   })
   it('falls back to the dates themselves without a tape, and the context defaults the same way', () => {
     expect(priceableTraceDates(['2026-07-04'], null)).toEqual(['2026-07-04'])
     expect(regretContextOf([{ date: '2026-07-14', board: [], ledger: [] }]).priceable).toEqual(['2026-07-14'])
+  })
+})
+
+describe('completedCryptoTail — the cache is cut at the FETCH clock, not the run clock', () => {
+  const bars = [day('2026-08-12', 1), day('2026-08-13', 1), { t: Date.parse('2026-08-14T00:00:00Z') / 1000, o: 1, h: 1, l: 1, c: 1, v: 1 }]
+  it('drops the fetch day\'s own bar — eleven hours in progress is not a close', () => {
+    const fetchedAt = Date.parse('2026-08-14T11:17:00Z') / 1000
+    expect(completedCryptoTail(bars, fetchedAt).map(c => c.t)).toEqual(bars.slice(0, 2).map(c => c.t))
+  })
+  it('keeps the same bar once a LATER fetch has seen it close — and a stale cache never grows it back', () => {
+    // fetched on the 15th: the 08-14 bar is complete and stays. The cut is a
+    // property of the FILE (its `at` stamp), so re-reading the 08-14-fetched
+    // copy after midnight still drops the frozen bar — the review's stale-
+    // cache scenario cannot occur.
+    const fetchedNextDay = Date.parse('2026-08-15T00:05:00Z') / 1000
+    expect(completedCryptoTail(bars, fetchedNextDay).length).toBe(3)
   })
 })
 
