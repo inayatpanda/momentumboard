@@ -883,8 +883,18 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // over a disjoint population: the crypto stream never enters `allOutcomes`
       // (the guard one line up is unconditional and stays that way) and the
       // equity stream never enters this one. Same rule about which rows count —
-      // actionable only, no shadows, no watch rows — so counter and window
-      // cannot drift apart here either.
+      // actionable only, no shadows, no watch rows.
+      //
+      // ONE KNOWN ASYMMETRY, stated rather than denied: a row graded DURING a
+      // CRYPTO=off window filled its outcome on the crypto basis but accrued
+      // nowhere (calibration, Brier and `cryptoNewActionable` all live inside
+      // the fill block, which runs once) — yet this window re-scans every
+      // lever-on pass, so such a row re-enters the evidence here while the
+      // counters above never saw it. Direction is conservative only: the extra
+      // rows can feed demotion's last-20 hit rate, never promotion (that needs
+      // `gradedAtRung`, which they never moved), and at rung 0 demotion floors.
+      // The alternative — marking outcomes with the lever state they graded
+      // under — buys a field on every row to close a drift that cannot promote.
       if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !cryptoOff && pred.cohort === 'crypto')
         cryptoOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: !!pred.instrument })
       // THE DEBT COLLECTION (Stage 3d fix wave). Read off the ROW rather than off
@@ -1847,7 +1857,7 @@ export async function buildBoard(
     sizeCap = 1,
     trail?: Prediction['trail'],
     wildcard?: Prediction['wildcard'],
-    crypto?: { state: CryptoCalibrationState; anchor: number; rung: number; regime: RegimeColor | 'unknown'; routed: boolean } | null,
+    crypto?: { state: CryptoCalibrationState; anchor: number; rung: number; regime: RegimeColor | 'unknown' } | null,
   ): Prediction => {
     // cap-class cohort drives BOTH the calibration lookup (its own buckets first,
     // then pooled) and the risk rung below. Unknown cap pools to the cohortless
@@ -3323,7 +3333,7 @@ export async function buildBoard(
             cap,
             undefined,
             undefined,
-            { state: cryptoCal, anchor: cryptoAnchor, rung: cryptoRisk.rung, regime: cryptoRegime, routed: d.routed },
+            { state: cryptoCal, anchor: cryptoAnchor, rung: cryptoRisk.rung, regime: cryptoRegime },
           )
           // SEATED BY HAND, because both collections were assembled above: a
           // live crypto row joins the ranking exactly as a promoted observation

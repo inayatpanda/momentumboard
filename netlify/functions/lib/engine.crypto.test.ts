@@ -199,7 +199,11 @@ describe('site 1 — candidate admission refuses crypto at EVERY door', () => {
       expect(board.some(b => isCryptoKey(b.sym))).toBe(false)
       expect(ledger.some(p => isCryptoKey(p.sym))).toBe(false)
       const row = Object.entries(trace.rows).find(([k]) => isCryptoKey(k))!
-      expect(row[1]).toMatchObject({ gate: 'crypto-contained', source })
+      // …and the detail names the RIGHT refusal: these are all lane pairs
+      // arriving with an empty watchlist, so the sentence is "the lane serves
+      // it, nobody watchlisted it" — never "outside the universe", which would
+      // be false about BTC-USD from a screener
+      expect(row[1]).toMatchObject({ gate: 'crypto-contained', source, detail: expect.stringContaining('the lane serves but the reader has not watchlisted') })
       expect([...fetched].filter(isCryptoKey)).toEqual([])
     })
   }
