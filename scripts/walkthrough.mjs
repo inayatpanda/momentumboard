@@ -236,16 +236,19 @@ function stopsFor(vp) {
         ['hard-loaded hash deep link served the SPA', `!document.getElementById('main-frame-error')`],
         ['hash survived the round trip', `location.hash === '#refused'`],
         // The <details> only exists once the board slice yields a DATE (the
-        // funnel day pairs with the board's own date, DS-17). The preview
-        // store has no board, so the honest answer there is "still loading" —
-        // what must never happen is a board screen that renders neither.
+        // funnel day pairs with the board's own date, DS-17). Against the
+        // empty preview store the board has THREE honest states: the section
+        // (opened by the hash), the loading skeleton, or — since fix A1 — the
+        // resolved-empty "No board yet" sentence. What must never happen is a
+        // board screen that renders none of them.
         [
-          'refused section open, or the board honestly mid-load',
+          'refused section open, mid-load, or the honest no-board-yet state',
           `(() => {
             const d = document.querySelector('details#refused')
             if (d) return d.open === true || 'refused section present but the #refused hash did not open it'
             if (document.querySelectorAll('.skeleton').length > 0) return true
-            return 'no refused section and no skeleton — the board rendered nothing at all'
+            if (/No board yet/i.test(document.body.textContent ?? '')) return true
+            return 'no refused section, no skeleton, no no-board-yet sentence — the board rendered nothing at all'
           })()`,
         ],
       ],
