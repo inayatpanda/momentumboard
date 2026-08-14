@@ -107,6 +107,30 @@ describe('AskSheet', () => {
       expect(onCloseSpy).toHaveBeenCalledTimes(1)
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     })
+
+    it('focuses the input when the sheet opens', async () => {
+      render(<Harness />)
+      const input = await screen.findByLabelText(/ask a question about nvda/i)
+      await waitFor(() => expect(document.activeElement).toBe(input))
+    })
+
+    it('restores focus to the trigger button when closing via Escape', async () => {
+      const triggerButton = document.createElement('button')
+      triggerButton.textContent = 'Ask the desk'
+      document.body.appendChild(triggerButton)
+      triggerButton.focus()
+
+      const onCloseSpy = vi.fn()
+      render(<Harness onCloseSpy={onCloseSpy} />)
+      const input = await screen.findByLabelText(/ask a question about nvda/i)
+      expect(document.activeElement).toBe(input)
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      await waitFor(() => expect(document.activeElement).toBe(triggerButton))
+
+      document.body.removeChild(triggerButton)
+    })
   })
 
   describe('every request carries the context block', () => {
@@ -224,10 +248,54 @@ describe('buildAskContext', () => {
     expect(ctx.openTrace).toEqual({ status: 'in-play', verdict: 'still-on' })
   })
 
+  it('a refusal carries openTrace when one exists', () => {
+    const refusalRow: JourneyFunnelRow = { key: 'NVDA:long', gate: 'entry-chase', side: 'long', core: 58.4 }
+    const ctx = buildAskContext({
+      sym: 'NVDA',
+      refusal: { date: '2026-08-14', row: refusalRow },
+      openTrace: { verdict: 'still-on', status: 'in-play' } as never,
+    })
+    expect(ctx.state).toBe('refused')
+    expect(ctx.openTrace).toEqual({ status: 'in-play', verdict: 'still-on' })
+  })
+
+  it('an on-demand read carries openTrace when one exists', () => {
+    const verdict: VerdictRead = {
+      sym: 'TSLA', onDemand: true, at: '2026-08-14T09:00:00Z', lean: 'long', core: 41.2, stage: 'basing',
+      computed: [], nulls: [], lastClose: 214.5, atr: 6.2, note: 'on-demand note',
+    }
+    const ctx = buildAskContext({
+      sym: 'TSLA',
+      verdict,
+      openTrace: { verdict: 'still-on', status: 'in-play' } as never,
+    })
+    expect(ctx.state).toBe('on-demand')
+    expect(ctx.openTrace).toEqual({ status: 'in-play', verdict: 'still-on' })
+  })
+
+  it('a near-miss carries openTrace when one exists', () => {
+    const ctx = buildAskContext({
+      sym: 'NVDA',
+      nearMissDate: '2026-08-14',
+      openTrace: { verdict: 'still-on', status: 'in-play' } as never,
+    })
+    expect(ctx.state).toBe('near-miss')
+    expect(ctx.openTrace).toEqual({ status: 'in-play', verdict: 'still-on' })
+  })
+
   it('nothing at all: no-read, every field null', () => {
     const ctx = buildAskContext({ sym: 'NVDA' })
     expect(ctx.state).toBe('no-read')
     expect(ctx.grade).toBeNull()
     expect(ctx.core).toBeNull()
+  })
+
+  it('no-read carries openTrace when one exists', () => {
+    const ctx = buildAskContext({
+      sym: 'NVDA',
+      openTrace: { verdict: 'still-on', status: 'in-play' } as never,
+    })
+    expect(ctx.state).toBe('no-read')
+    expect(ctx.openTrace).toEqual({ status: 'in-play', verdict: 'still-on' })
   })
 })

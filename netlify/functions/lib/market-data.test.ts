@@ -191,4 +191,22 @@ describe('market-data ask — CX-20 pins the sheet\'s verdict context', () => {
     const prompt = llmMock.callLlm.mock.calls[0][0] as string
     expect(prompt).not.toContain('ground truth')
   })
+
+  it('a context exceeding 2000 chars is ignored entirely — no context block, ask still succeeds', async () => {
+    const hugeContext = { sym: 'NVDA', note: 'x'.repeat(2100) } // exceeds 2000-char cap
+    const res = await askCall(`type=ask&symbol=NVDA&q=${encodeURIComponent('Good entry here?')}&context=${encodeURIComponent(JSON.stringify(hugeContext))}`)
+    expect(res.status).toBe(200)
+    const prompt = llmMock.callLlm.mock.calls[0][0] as string
+    expect(prompt).not.toContain('ground truth')
+    expect(prompt).not.toContain(JSON.stringify(hugeContext))
+  })
+
+  it('a normal-sized context under 2000 chars is carried in the prompt', async () => {
+    const context = { sym: 'NVDA', state: 'sized', grade: 'A', side: 'long', core: 62, note: 'x'.repeat(1900) } // just under cap
+    const res = await askCall(`type=ask&symbol=NVDA&q=${encodeURIComponent('Good entry here?')}&context=${encodeURIComponent(JSON.stringify(context))}`)
+    expect(res.status).toBe(200)
+    const prompt = llmMock.callLlm.mock.calls[0][0] as string
+    expect(prompt).toContain('ground truth')
+    expect(prompt).toContain(JSON.stringify(context))
+  })
 })

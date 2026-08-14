@@ -12,7 +12,7 @@
 // two cards on this page could someday tell the reader two different things
 // about the same name.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { GateCode } from '../../../shared/engine/types'
 import type { EnginePrediction, OpenTraceEntry } from '../../lib/api'
@@ -69,10 +69,10 @@ export function buildAskContext({ sym, row, refusal, published, nearMissDate, ve
     const sized = rowKind(row) === 'sized-live'
     return { sym, state: sized ? 'sized' : 'unsized', grade: sized ? row.grade : null, side: row.side, core: row.composite, gateLabel: null, openTrace: openTraceCtx }
   }
-  if (refusal) return { sym, state: 'refused', grade: null, side: refusal.row.side ?? null, core: refusal.row.core ?? null, gateLabel: GATE_LABELS[refusal.row.gate], openTrace: null }
+  if (refusal) return { sym, state: 'refused', grade: null, side: refusal.row.side ?? null, core: refusal.row.core ?? null, gateLabel: GATE_LABELS[refusal.row.gate], openTrace: openTraceCtx }
   if (published) return { sym, state: 'published-elsewhere', grade: null, side: null, core: null, gateLabel: GATE_LABELS[published.gate], openTrace: openTraceCtx }
-  if (nearMissDate) return { sym, state: 'near-miss', grade: null, side: null, core: null, gateLabel: null, openTrace: null }
-  if (verdict) return { sym, state: 'on-demand', grade: null, side: verdict.lean === 'none' ? null : verdict.lean, core: verdict.core, gateLabel: null, openTrace: null }
+  if (nearMissDate) return { sym, state: 'near-miss', grade: null, side: null, core: null, gateLabel: null, openTrace: openTraceCtx }
+  if (verdict) return { sym, state: 'on-demand', grade: null, side: verdict.lean === 'none' ? null : verdict.lean, core: verdict.core, gateLabel: null, openTrace: openTraceCtx }
   return { sym, state: 'no-read', grade: null, side: null, core: null, gateLabel: null, openTrace: openTraceCtx }
 }
 
@@ -89,6 +89,8 @@ export function AskSheet({ open, onClose, ...hero }: AskHeroState & { open: bool
   const [turns, setTurns] = useState<Turn[]>([])
   const [error, setError] = useState<string | null>(null)
   const [count, setCount] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const triggerElementRef = useRef<Element | null>(null)
 
   // Rebuilt from whatever the page already has in hand — never a fetch of its
   // own — but stable across a session, so every follow-up pins the SAME block.
@@ -118,6 +120,22 @@ export function AskSheet({ open, onClose, ...hero }: AskHeroState & { open: bool
       setQ('')
       setTurns([])
       setError(null)
+    }
+  }, [open])
+
+  // Focus management: capture the trigger element when opening, focus the input,
+  // and restore focus to the trigger on close (if still in document).
+  useEffect(() => {
+    if (open) {
+      triggerElementRef.current = document.activeElement as Element
+      inputRef.current?.focus()
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (open) return
+    if (triggerElementRef.current && triggerElementRef.current.ownerDocument.contains(triggerElementRef.current)) {
+      ;(triggerElementRef.current as HTMLElement).focus()
     }
   }, [open])
 
@@ -192,6 +210,7 @@ export function AskSheet({ open, onClose, ...hero }: AskHeroState & { open: bool
                 }}
               >
                 <input
+                  ref={inputRef}
                   value={q}
                   onChange={e => setQ(e.target.value)}
                   placeholder={`Ask about ${sym}…`}

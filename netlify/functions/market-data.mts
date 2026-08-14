@@ -28,9 +28,11 @@ export function boardEvidenceLine(
 /** CX-20: decode the v2 Ask sheet's `context` param (the journey page's own
  * hero-state summary). Fail-soft — an absent or malformed param is simply "no
  * context", never a 400; a reader must not lose the whole answer because one
- * param round-tripped oddly. */
+ * param round-tripped oddly. Hard cap at 2000 chars to prevent unbounded context
+ * strings from inflating the prompt. */
 export function parseAskContext(raw: string | null): unknown | null {
   if (!raw) return null
+  if (raw.length > 2000) return null
   try {
     return JSON.parse(raw)
   } catch {
