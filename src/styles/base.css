@@ -650,3 +650,381 @@
 .v2 .cc-yesterday b {
   color: var(--text);
 }
+
+/* --- stock page --------------------------------------------------------------
+   THE journey page (plan Task 17): chart → verdict hero → factor votes →
+   funnel path → past calls → the open call → utilities. Tokens only, on top
+   of .card/.pill/.seg/.convbar/.sec-label/.cc-*/.num/.skeleton/.pressable.
+
+   TWO COLOUR LAWS live here, and nothing on this page may bend them:
+   • --long/--short are DIRECTION and P&L only (the side word, the header's
+     change, an outcome pill). Never decoration.
+   • the factor bars are indigo ONLY (--accent-bar / --accent-soft) — a factor
+     voting against the trade is not a loss, and painting it red would teach
+     the reader that it is. Its sign is carried by which side of the centre
+     line it grows from, and by its own signed number. */
+.v2 .sp-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.v2 .sp-head h1 {
+  font-size: 24px;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.v2 .sp-name {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
+.v2 .sp-px {
+  font-size: 15px;
+  font-weight: 600;
+  flex: none;
+}
+
+/* the chart, pinned above everything the engine has to say */
+.v2 .sp-chart .seg {
+  margin-bottom: 10px;
+}
+.v2 .sp-chart-skel {
+  height: 260px;
+}
+
+/* --- the verdict hero ------------------------------------------------------ */
+.v2 .sp-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.v2 .sp-hero .sec-label {
+  margin: 0;
+}
+.v2 .sp-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.v2 .sp-side {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.v2 .sp-side.long {
+  color: var(--long);
+}
+.v2 .sp-side.short {
+  color: var(--short);
+}
+.v2 .sp-side.flat {
+  color: var(--text-dim);
+}
+.v2 .sp-prob {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.v2 .sp-verdict-line {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.v2 .sp-refuse-detail,
+.v2 .sp-note,
+.v2 .sp-thesis {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.v2 .sp-note {
+  color: var(--text);
+}
+.v2 .sp-core-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 700;
+}
+.v2 .sp-watch-btn {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+.v2 .sp-watch-btn:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+/* --- factor votes: signed bars from a centre line -------------------------- */
+.v2 .sp-fv {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.v2 .sp-fv-row {
+  display: grid;
+  grid-template-columns: 84px 1fr 52px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.v2 .sp-fv-name {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .sp-fv-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+/* the centre line the votes grow from */
+.v2 .sp-fv-track::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 1px;
+  background: var(--border);
+}
+.v2 .sp-fv-track > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+}
+.v2 .sp-fv-track > i.pos {
+  background: var(--accent-bar);
+}
+.v2 .sp-fv-track > i.neg {
+  background: var(--accent-soft);
+}
+.v2 .sp-fv-val {
+  text-align: right;
+  color: var(--text-dim);
+}
+.v2 .sp-fv-null {
+  margin-top: 8px;
+}
+
+/* --- the funnel path: dated steps down a rail ------------------------------ */
+.v2 .sp-path {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 6px;
+  border-left: 1px solid var(--border);
+}
+.v2 .sp-step {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  padding: 0 0 14px 10px;
+}
+.v2 .sp-step:last-child {
+  padding-bottom: 0;
+}
+.v2 .sp-dot {
+  position: absolute;
+  left: -11px;
+  top: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+/* SEMANTIC dots: accent = it made the board that day; warn = a gate refused
+   it; dim = the engine looked and recorded nothing but a near miss. */
+.v2 .sp-step[data-kind='published'] .sp-dot {
+  background: var(--accent);
+}
+.v2 .sp-step[data-kind='refused'] .sp-dot {
+  background: var(--warn);
+}
+.v2 .sp-step[data-kind='seen'] .sp-dot {
+  background: var(--border);
+}
+.v2 .sp-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.v2 .sp-step-date {
+  font-size: 12px;
+  font-weight: 700;
+}
+.v2 .sp-step-gate {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+/* --- past calls + the open call -------------------------------------------- */
+.v2 .sp-call,
+.v2 .sp-trace {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.v2 .sp-trace {
+  margin-top: 14px;
+}
+.v2 .sp-call-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.v2 .sp-call-date {
+  font-size: 13px;
+  font-weight: 700;
+}
+.v2 .sp-call-out {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v2 .sp-pm {
+  margin: 0;
+  font-style: italic;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.v2 .sp-trace-line {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* --- catalysts strip -------------------------------------------------------- */
+.v2 a.sp-news {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 12px;
+  text-decoration: none;
+  color: inherit;
+}
+.v2 .sp-news-title {
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.v2 .sp-news-src {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+/* --- the reused utilities, restyled for v2 ---------------------------------
+   AlertEditor and PositionCalculator are the ORIGINAL components (their logic
+   is proven and their own tests still cover it); only their skin is v2's,
+   since the legacy stylesheet is not loaded inside the new shell. */
+.v2 .alert-editor,
+.v2 .calc-inputs {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.v2 .alert-editor label,
+.v2 .calc-inputs label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.v2 .alert-editor input,
+.v2 .calc-inputs input {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.v2 .alert-editor button {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+.v2 .calc {
+  display: block;
+  margin-top: 18px;
+}
+.v2 .calc h3 {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+}
+.v2 .calc-sub {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 11px;
+}
+.v2 .calc-out {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.v2 .calc-out > div {
+  display: flex;
+  flex-direction: column;
+}
+.v2 .calc-out strong {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.v2 .calc-out span {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.v2 .calc-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.v2 .calc-warn {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--warn);
+}
