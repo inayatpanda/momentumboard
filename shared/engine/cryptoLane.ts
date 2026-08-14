@@ -152,6 +152,12 @@ export const cryptoCapacity = (closes: number[]): number | null => swingCapacity
  * to collide. Adding a fourth `RegimeColor` would instead be a compile error at
  * `LONG_REGIME_MULT` and in the UI's copy table — a cost with no benefit the
  * blob boundary is not already paying. */
+/** WHOSE TAPE THE COHORT'S REGIME IS. Named rather than inlined because the
+ * lane must fetch it even when the reader watches only ETH: the regime is BTC's,
+ * so a run that skipped BTC would price an ETH call against `unknown` and fail
+ * its evidence contract for want of a fetch nobody made. */
+export const CRYPTO_REGIME_SYMBOL = 'BTC-USD'
+
 export function cryptoRegimeFrom(btc: Candle[] | null | undefined): RegimeColor | 'unknown' {
   if (!btc || btc.length < CRYPTO_INDEX_MIN_BARS) return 'unknown'
   return regimeFromCandles(btc, btc, CRYPTO_INDEX_WINDOWS)

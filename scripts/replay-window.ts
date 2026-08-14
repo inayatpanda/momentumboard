@@ -1358,7 +1358,19 @@ export function regretContextOf(days: { date: string; board: Row[]; ledger: Row[
 /** The rows in a day's trace a miss may be charged for — every row whose gate is
  * not on the skip list. `checked + unchecked` for that day must equal it exactly:
  * a truncation nobody can see is the silence Stage 3 exists to end. */
-export const missCandidateCount = (t?: DayTrace): number => Object.values(t?.rows ?? {}).filter(r => !MISS_SKIP_GATE_MIRROR.has(r.gate)).length
+/** …and it mirrors BOTH of `missCandidates`' skips, not just the gate one.
+ *
+ * The ledger drops a refusal two ways (missLedger.ts): its GATE is a skip gate,
+ * or its NAME is a crypto pair — "both layers, because the cost of a miss here
+ * is a stopless SPY excess charged to an equity gate". Mirroring only the first
+ * was invisible while every crypto trace row carried `crypto-contained` (itself
+ * a skip gate), and became a false accounting violation the moment the crypto
+ * lane started writing ordinary gate codes on its own names (Stage 1c Phase B):
+ * the invariant would report "a population went missing" about rows the ledger
+ * is DESIGNED never to see. A mirror that does not mirror is worse than no
+ * mirror — it fails on the feature rather than on the bug. */
+export const missCandidateCount = (t?: DayTrace): number =>
+  Object.entries(t?.rows ?? {}).filter(([key, r]) => !MISS_SKIP_GATE_MIRROR.has(r.gate) && !isCryptoSymbol(key.split(':')[0])).length
 
 /** THE MISS LEDGER'S INVARIANTS, over the whole window. Returns every violation
  * so a failure names the row rather than just failing.
@@ -2441,6 +2453,20 @@ function emptyLearningState(generation: number): { calibration: CalibrationState
 }
 
 export async function main() {
+  // THE CRYPTO LANE IS OFF IN THE WALK UNTIL IT HAS A SPINE (Stage 1c, B2 → B3).
+  //
+  // This harness slices every tape on an EQUITY SESSION spine — `sliceBefore`,
+  // "everything that closed strictly before D", read off SPY's calendar — and a
+  // 24/7 series has no such calendar: two of the three pairs are not even in
+  // `.replay-cache`. Running the lane here would replay a cohort against a clock
+  // it does not keep, which is the precise failure Phase A shipped to stop.
+  //
+  // So the walk pins the house lever OFF unless the caller has set it
+  // explicitly. That is not a hidden default: `CRYPTO=off` is the lane's own
+  // documented off state, it restores the Phase-A guards exactly, and the whole
+  // point of the seam is that a run can prove which tree it is walking. B3 builds
+  // the crypto session spine and the fetch, and lifts this line.
+  if (typeof process !== 'undefined' && process.env && process.env.CRYPTO == null) process.env.CRYPTO = 'off'
   const baseline = process.argv.includes('--baseline')
   // A-REACHABILITY PROBE (§15 criterion 4). The same window, the same board code,
   // the same everything — with ONE substitution: the calibration blob is replaced

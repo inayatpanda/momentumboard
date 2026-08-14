@@ -1,4 +1,4 @@
-import type { Candle } from '../../../shared/types'
+import type { Candle, RegimeColor } from '../../../shared/types'
 import type { AppStore } from './store'
 import { validateConfig, type AppConfig } from '../../../shared/config'
 import { atr, swingCapacity } from '../../../shared/indicators'
@@ -54,16 +54,30 @@ import { isCryptoSymbol } from '../../../shared/symbols'
 import {
   CRYPTO_CALIB_KEY,
   CRYPTO_HORIZONS,
+  CRYPTO_UNIVERSE,
+  cryptoBaseHitRate,
+  cryptoCandleMap,
   cryptoCandlesVia,
+  cryptoGradeBaseRate,
+  cryptoProbabilityFor,
   gradeCryptoPrediction,
   loadCryptoCalibration,
   updateCryptoCalibration,
   type CryptoCalibrationState,
 } from '../../../shared/engine/cryptoCalibration'
 import {
+  CRYPTO_REGIME_SYMBOL,
   CRYPTO_RISK_KEY,
+  CRYPTO_TECH_WINDOWS,
+  cryptoCapacity,
   cryptoCombinedFor,
   cryptoDisabled,
+  cryptoLaneOwns,
+  cryptoMomentumFactor,
+  cryptoRegimeFrom,
+  cryptoSizeCap,
+  cryptoUniverseFor,
+  cryptoVoice,
   loadCryptoRisk,
 } from '../../../shared/engine/cryptoLane'
 import { FUNNEL_TRACE_INDEX_KEY, FUNNEL_TRACE_INDEX_MAX, funnelTraceKey, funnelTraceRecorder, type FunnelTrace } from '../../../shared/engine/funnelTrace'
@@ -1285,6 +1299,12 @@ export async function buildBoard(
   // Rows are keyed (name, side-or-none), so a chart the engine argued both ways
   // about — a lane long over a demoted composite short — keeps both verdicts.
   const trace = funnelTraceRecorder()
+  // WHICH PAIRS THE CRYPTO LANE OWNS TODAY (Stage 1c Phase B) — the reader's own
+  // watchlist narrowed to the three the partition is defined over, and EMPTY
+  // whenever `CRYPTO=off`. Computed here, before the first door, because
+  // `addSource`'s containment guard has to know whether a name it is refusing as
+  // an equity candidate is going somewhere else or nowhere at all.
+  const cryptoUniverse = cryptoDisabled() ? [] : cryptoUniverseFor(watchSyms)
 
   const [spy, qqq] = await Promise.all([deps.candles('SPY'), deps.candles('QQQ')])
   if (!spy) throw new Error('no SPY candles — engine cannot run')
@@ -1362,8 +1382,29 @@ export async function buildBoard(
     // would feed the gate ledger that tunes equity thresholds. Refused at THE
     // door (every door calls addSource), recorded once in the trace so the
     // audit and Phase B's relaxation both have a named line to diff.
+    // ---- PHASE-A RELAXATION 2 of 3: THE LANE CLAIMS ITS OWN NAMES ----
+    // The REFUSAL is untouched: a crypto pair is still never an equity
+    // candidate, never fetched here, never on the roster, never in the breadth
+    // read, never scored on equity factors against an equity regime. What is
+    // relaxed is narrower and is about the RECORD: when the crypto lane will
+    // evaluate this exact name today, this door stops writing `crypto-contained`
+    // over it, because the name was not contained — it was routed. The lane
+    // writes the row's real fate a few hundred lines below, through the same
+    // `publishCall` every other row goes through.
+    //
+    // Everything else still records `crypto-contained` exactly as it did, and
+    // says which universe it fell outside of: a pair the partition is not
+    // defined over (DOGE-EUR, ETH-BTC), one the reader has not asked to watch,
+    // and every pair at all when `CRYPTO=off`. The Phase-A trace row is the
+    // lever's off state and stays reachable by all three routes.
     if (isCryptoSymbol(key)) {
-      trace.record(key, 'crypto-contained', { source, detail: 'crypto pair — watched, never a candidate until the lane exists (stage 1c)' })
+      if (!cryptoLaneOwns(key, cryptoUniverse))
+        trace.record(key, 'crypto-contained', {
+          source,
+          detail: cryptoDisabled()
+            ? 'crypto pair — the lane is off (CRYPTO=off); watched, never a candidate'
+            : `crypto pair outside the lane's universe (${CRYPTO_UNIVERSE.join(', ')}) — watched, never a candidate`,
+        })
       return
     }
     // leveraged/inverse ETPs are ROUTES, never underlyings — a held 3CON.L
@@ -1759,6 +1800,14 @@ export async function buildBoard(
   // accrual stamp, the levels, the trace — and its size is `sizeCap`'s business
   // like any other lane's cap. Returns the published row so the assembly can seat
   // it after the cuts.
+  // crypto: THE OTHER PARTITION'S THREE ANSWERS (Stage 1c Phase B), handed in
+  // rather than looked up, so this closure keeps exactly one calibration read,
+  // one anchor and one rung lookup instead of growing a branch per artefact.
+  // Present ONLY on a crypto-lane row: `state` is the crypto blob (branded, so
+  // the equity state is a compile error here), `anchor` its own grade base,
+  // `rung` its own ladder's, `regime` BTC's tape computed before this call and
+  // never relabelled after, and `routed` whether the owner has actually mapped a
+  // tracker for this pair yet.
   const publishCall = (
     call: EngineCall,
     capUsdM: number | null,
@@ -1767,11 +1816,18 @@ export async function buildBoard(
     sizeCap = 1,
     trail?: Prediction['trail'],
     wildcard?: Prediction['wildcard'],
+    crypto?: { state: CryptoCalibrationState; anchor: number; rung: number; regime: RegimeColor | 'unknown'; routed: boolean } | null,
   ): Prediction => {
     // cap-class cohort drives BOTH the calibration lookup (its own buckets first,
     // then pooled) and the risk rung below. Unknown cap pools to the cohortless
     // path and the combined rung — never guessed into a sleeve.
     const cohort = capCohortOf(capUsdM)
+    // THE TAPE THIS ROW WAS CALLED INTO, and the bucket key it will teach. For
+    // an equity row it is the run's own SPY+QQQ read; for a crypto row it is
+    // BTC's, computed before `composeCall` saw it and carried through unchanged
+    // — the ratified rule is "never relabelled after", and this is the one place
+    // the stamp is written.
+    const rowRegime = crypto ? crypto.regime : regime
     // A SHORT the reader can't ROUTE is not a takeable call (the full argument is
     // below, where `shadow` is assembled). Read HERE because it is one of the three
     // things that can be known about this row BEFORE the grade — and the
@@ -1825,8 +1881,19 @@ export async function buildBoard(
     // takes 0.3 of the price (spec §4.3(c)). It moves `p` only — nEff and the
     // evidence flags stay the ladder's — and it is inert on a pooled read, so a
     // shadow's price is untouched by it. See probabilityFor's `blendSetup`.
-    const { p, provisional, nEff, belowEvidence } = probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort, population, call.setup)
-    const grade = gradeFor(p, nEff, gradeAnchor, belowEvidence)
+    // …and a CRYPTO row reads the SAME ladder over a different object: the
+    // cohort argument is un-passable in `cryptoProbabilityFor` (B1 pins it to
+    // 'unknown', which inside a blob where every key is a crypto key reads
+    // "this regime, then all regimes, then my own base rate"), and the grade is
+    // measured from the crypto partition's own anchor. The equity 0.4158 must
+    // never appear here — it was swept over a universe crypto was filtered out
+    // of. On a cold partition both numbers are the honest 0.5, which is what
+    // makes every crypto row a C at half size until the cohort has watched
+    // itself ~50 times.
+    const { p, provisional, nEff, belowEvidence } = crypto
+      ? cryptoProbabilityFor(crypto.state, call.side, rowRegime, Math.abs(call.composite), population, call.setup)
+      : probabilityFor(calibration, call.side, regime, Math.abs(call.composite), cohort, population, call.setup)
+    const grade = gradeFor(p, nEff, crypto ? crypto.anchor : gradeAnchor, belowEvidence)
     // grade null = calibration sees no edge in this bucket. The call stays off
     // the paper — but it MUST enter the ledger as a shadow, or buckets below
     // 50% can never earn their way back up (nothing would ever get graded).
@@ -1930,7 +1997,11 @@ export async function buildBoard(
     const routeShadowed = unshortable && !call.earningsRisk && !forceShadow && (grade != null || call.evidence.contract)
     const routeBlocked = routeShadowed && grade != null && (grade !== 'C' || call.evidence.contract)
 
-    const rung = cohortRungOf(risk, cohort)
+    // …and the crypto row trades at the CRYPTO ladder's rung, never the equity
+    // book's. `cohortRungOf` would send it to the combined rung (its cap is
+    // null, so its cohort is 'unknown'), which is precisely the inheritance the
+    // partition exists to refuse.
+    const rung = crypto ? crypto.rung : cohortRungOf(risk, cohort)
     // sizedFraction === 1 implies tierFraction === 1, i.e. fullTrade, so `grade` is
     // non-null here for exactly the reason it was under the old `fullTrade` test.
     const instrument = sizedFraction === 1 ? mapInstrument(call.side, call.sym, grade!, rung, cfg.levMap ?? {}) : null
@@ -1943,7 +2014,7 @@ export async function buildBoard(
       id,
       date: today,
       modelVersion: ENGINE_MODEL_VERSION,
-      regime,
+      regime: rowRegime,
       priceAtPrediction: call.entry,
       themes: callThemes.length ? callThemes : undefined,
       catalyst: cat ? { kind: cat.kind, reason: cat.reason } : undefined,
@@ -1968,14 +2039,30 @@ export async function buildBoard(
       riskRung: rung,
       riskPct: shadow || watchOnly ? 0 : RUNG_RISK_PCT[rung] * sizedFraction,
       instrument,
-      paperOnly: call.side === 'short' && !watchOnly && !instrument,
+      // PAPER ONLY: a row the reader can read but not place. A short qualifies
+      // because an ISA cannot place one without an inverse ETP — and so does
+      // EVERY crypto row until the owner maps a real tracker, on the same
+      // sentence and for the same reason. It is the capped-short precedent
+      // applied to a cohort whose route does not exist yet, said out loud on the
+      // row rather than left for the reader to discover at the broker.
+      paperOnly: !watchOnly && !instrument && (call.side === 'short' || (!!crypto && !crypto.routed)),
       // The stamp must describe what the call ACTUALLY got. The composite loop
       // re-scores with worldMult before publishing; a LANE composite is structural
       // (depth-derived in dipLane.ts, run-derived in velocityLane.ts) and never
       // sees the nudge at all. Printing 1.1 on a lane row would advertise a
       // conviction adjustment that was never applied — so every lane row records
       // the multiplier it truly ran at: 1.
-      worldTape: { tone: tone.tone, mult: LANE_CATALYST_KINDS.has(cat?.kind ?? '') ? 1 : worldMult(tone.tone, call.side) },
+      // …and a CRYPTO row records 1 for the same reason a lane row does: the
+      // world tape is Asia/Europe indices, US futures and the VIX (worldTape.ts)
+      // — an equity-session read with nothing to say about a 24/7 pair — so the
+      // crypto lane never applies the nudge, and printing anything but 1 here
+      // would advertise an adjustment that was never made.
+      worldTape: { tone: tone.tone, mult: crypto || LANE_CATALYST_KINDS.has(cat?.kind ?? '') ? 1 : worldMult(tone.tone, call.side) },
+      // WHICH PARTITION MEASURED THIS ROW (types.ts) — present only here, and it
+      // is what the grading pass reads to decide the clock, the basis and the
+      // blob. Absent on every equity row, so an ordinary board serialises
+      // byte-for-byte as it did.
+      ...(crypto ? { cohort: 'crypto' as const } : {}),
       // THE EXPERIMENT'S SEPARABLE RECORD (Stage 3d), on exactly the rows that
       // are one and absent everywhere else — so no field on an ordinary row moved
       // and the serialisation of a normal board is byte-for-byte what it was.
@@ -2028,7 +2115,12 @@ export async function buildBoard(
       {
         side: call.side,
         source: sources.get(call.sym.toUpperCase())?.source,
-        detail: wildcardLive
+        // …with the COHORT named first on a crypto row. The gate taxonomy has no
+        // crypto code and deliberately gains none — the row published exactly
+        // like any other, at the size its own grade and its own cap allowed —
+        // but a trace read back next quarter must be able to tell which
+        // partition's calibration priced it without re-parsing the symbol.
+        detail: (crypto ? 'crypto cohort · ' : '') + (wildcardLive
           ? `experiment — quarter size, testing ${wildcard!.gate}`
           : routeShadowed
             ? `no ISA short route${routeBlocked ? ' — promotable to an observation' : ''}`
@@ -2040,7 +2132,7 @@ export async function buildBoard(
                   : unshortable
                     ? 'no ISA short route'
                     : 'graded null on a failed evidence contract'
-              : `grade ${grade ?? 'null'}${call.evidence.contract ? '' : ', contract failed'}${belowBase ? ', below base rate' : ''}${sizeCap < 1 ? `, lane cap ${sizeCap}` : ''}`,
+              : `grade ${grade ?? 'null'}${call.evidence.contract ? '' : ', contract failed'}${belowBase ? ', below base rate' : ''}${sizeCap < 1 ? `, lane cap ${sizeCap}` : ''}`),
       },
     )
     return row
@@ -3024,6 +3116,211 @@ export async function buildBoard(
     }
   }
 
+  // ---- ₿ THE CRYPTO LANE: a partitioned cohort riding the same board ----
+  //
+  // PHASE-A RELAXATION 3 of 3, and the one the other two exist for. Everything
+  // above this line is the equity engine, unchanged: crypto never entered
+  // `sources`, `candleMap`, the roster, the breadth read, the near-miss list,
+  // the wildcard pool or either 3-per-side cut. The lane runs HERE for exactly
+  // the reason the wildcard does — after both cuts, so "never consumes an equity
+  // slot" is structural rather than a rule somebody has to remember, and before
+  // `trace.build`, so its rows are in the day's record.
+  //
+  // WHAT MAKES IT A PARTITION AND NOT A UNIVERSE EXTENSION:
+  //  · its own tape — `cryptoCandleMap` (B1): completed bars only, so the run at
+  //    05:35 and the run at 07:35 read the identical series and nothing is scored
+  //    against a bar that is still moving.
+  //  · its own clock — `CRYPTO_TECH_WINDOWS`, threaded from B1's adjudicated
+  //    table, so "the 50-day" is 70 crypto bars and the RSI period is still 14.
+  //  · its own tape read — BTC's regime, computed BEFORE `composeCall` and fed
+  //    in, never relabelled after.
+  //  · its own calibration and its own rung, read from the crypto blobs.
+  //  · its own momentum denominator — absolute, because the grade is absolute.
+  //  · ONE ROW PER SIDE, capped at half the rung, paper-only until a tracker
+  //    exists.
+  //
+  // Fail-soft in full, the wildcard's own pattern: the board, both cuts and every
+  // equity row are already decided by the time this runs, so a lane failure costs
+  // the day's crypto rows and nothing the reader was owed.
+  /** The sides a crypto row seated on — read at the board write, so the
+   * empty-side copy cannot tell the reader "nothing tradeable on the long side"
+   * over a row they can see. Exactly the wildcard's `wildcardSide` problem. */
+  const cryptoSides = new Set<'long' | 'short'>()
+  if (cryptoUniverse.length) {
+    try {
+      // BTC's tape is fetched whether or not the reader watches it: the cohort's
+      // regime is BTC's, and an ETH call priced against `unknown` would fail its
+      // evidence contract for want of a fetch nobody made.
+      const wanted = [...new Set([CRYPTO_REGIME_SYMBOL, ...cryptoUniverse])]
+      const cryptoTapes = await cryptoCandleMap(deps.candles, nowSec, wanted)
+      const cryptoRegime = cryptoRegimeFrom(cryptoTapes.get(CRYPTO_REGIME_SYMBOL))
+      const { cal: cryptoCal, risk: cryptoRisk } = await loadCryptoState(store, today)
+      const cryptoAnchor = cryptoGradeBaseRate(cryptoCal)
+      const cryptoGradedN = cryptoBaseHitRate(cryptoCal).n
+      const cap = cryptoSizeCap(cryptoRisk.rung)
+      console.log(`CRYPTO: lane on for ${cryptoUniverse.join(', ')} — BTC tape ${cryptoRegime}, ${cryptoGradedN} graded outcomes, cap ${cap}× at R${cryptoRisk.rung}`)
+
+      const drafts: { sym: string; call: EngineCall; routed: boolean }[] = []
+      for (const sym of cryptoUniverse) {
+        const candles = cryptoTapes.get(sym)
+        if (!candles || candles.length < CRYPTO_TECH_WINDOWS.minHistory) {
+          trace.record(sym, 'no-candles', { source: 'watchlist', detail: `crypto cohort — no completed tape, or fewer than ${CRYPTO_TECH_WINDOWS.minHistory} bars of one` })
+          continue
+        }
+        const read = technicalStage(sym, candles, CRYPTO_TECH_WINDOWS)
+        if (!read) {
+          trace.record(sym, 'no-data', { source: 'watchlist', detail: 'crypto cohort — no technical stage read off the tape' })
+          continue
+        }
+        const closes = candles.map(c => c.c)
+        // THE FACTOR TABLE FOR A COIN, and every null in it is a decision.
+        //  · technical  — the same `technicalFactor`, over a read taken on the
+        //                 crypto clock. A core factor and a contract leg.
+        //  · momentum   — absolute, 29 bars, in the pair's own travel. The other
+        //                 contract leg, and the reason it exists (recon §2.4).
+        //  · sector     — there is no crypto sector ETF. A real null.
+        //  · seasonality— NOT READ: `seasonalitySummary` divides its history by
+        //                 252 sessions, which reports a 5-year crypto tape as
+        //                 7.2 years and lets the library call a tendency
+        //                 "reliable" on data it never had (B1's
+        //                 `seasonalityYear252`). A wrong number is worse than no
+        //                 number in a CORE family.
+        //  · smartMoney — 13F filings do not hold coins.
+        //  · insiders   — Form 4s do not either.
+        //  · catalyst   — the news-catalyst LLM can nominate a pair, and the tag
+        //                 also RELAXES the expected-move floor. Deliberately not
+        //                 wired in B2: that is a gate relaxation, and this task
+        //                 relaxes only the sites it builds.
+        //  · social / channels / news — REAL reads that happen to cover crypto:
+        //                 the crowd names BTC, pundits voice sides on it, and the
+        //                 headline scan matches the pair's base ticker. All three
+        //                 are CONTEXT, capped at `gates.contextMaxPts`, so none of
+        //                 them can create a call or flip its side.
+        const factors: Record<FactorName, FactorScore> = {
+          technical: technicalFactor(read),
+          momentum: cryptoMomentumFactor(closes),
+          sector: sectorFactor(null),
+          social: socialFactor(socialBySym.get(sym) ?? null, read.rsi),
+          channels: channelsFactor(stancesBySym.get(sym) ?? [], credOf),
+          insiders: insiderFactor(undefined),
+          news: newsFactor(titleMatches(sym)),
+          seasonality: { score: null, detail: 'not read for crypto — the seasonality library counts a year in 252 sessions' },
+          smartMoney: smartMoneyFactor(null),
+          catalyst: catalystFactor(null),
+        }
+        // …and `capUsdM: null` is CHOSEN here, not merely absent (B1's
+        // `CRYPTO_NOT_A_CLOCK`, stopMult): a coin has no market cap, so
+        // `levelsFor` puts the stop at 1.5×ATR rather than the small-cap 2×.
+        // That is the right arm — the widening exists for names that GAP on thin
+        // books, and a 24/7 pair with continuous liquidity is the opposite case
+        // — and it is the single highest-leverage ratio in the lane, because it
+        // sets the close-through rate `gradeCryptoPrediction` walks.
+        //
+        // `earningsWithinHorizon: false` is likewise chosen, and it closes a real
+        // trap: `earningsSet.has(baseSym('BTC-USD'))` strips to 'BTC', so a real
+        // equity ticker BTC printing results would have shadowed every bitcoin
+        // call for as long as it was on the calendar. A coin has no print.
+        //
+        // NO SECOND PASS. The equity loop re-scores with the world-tape nudge;
+        // the crypto lane does not, because that tape is equity indices, US
+        // futures and the VIX. The row records mult 1, which is the truth.
+        const drafted = composeCall({
+          sym,
+          factors,
+          weights: weights.current,
+          regime: cryptoRegime,
+          capacityPct: cryptoCapacity(closes),
+          atr: atr(candles, CRYPTO_TECH_WINDOWS.atr)[candles.length - 1],
+          lastClose: closes[closes.length - 1],
+          entryQuality: read.entryQuality,
+          stage: read.stage,
+          earningsWithinHorizon: false,
+          capUsdM: null,
+          gates,
+          catalyst: null,
+          volumeConfirmed: read.volumeConfirmed,
+          // THE EVIDENCE CONTRACT, FOR A COIN [decided, per B1's binding 4].
+          // `confirmingLeg` is `sector || breadth || volume`, and a crypto row
+          // has no sector ETF and no honest breadth vote (three pairs, against
+          // `breadthAbove50`'s ten-series floor) — so it collapses to VOLUME
+          // CONFIRMED, and `famAgree >= 2` runs over the two core factors that
+          // can score at all. The contract therefore MEANS, for a crypto row:
+          // "the chart read and the month's absolute move both point this way,
+          // BTC's tape is known, and today's volume paid for it." That is
+          // reachable — which is the whole point, because an unreachable
+          // contract is the A-grade bug in a different costume — and it is
+          // strictly harder than the equity version in one respect: an equity
+          // row can pass on breadth alone, where this one cannot.
+          breadthKnown: false,
+        })
+        if (isRejection(drafted)) {
+          trace.record(sym, drafted.gate, {
+            side: drafted.side,
+            source: 'watchlist',
+            detail: `crypto cohort · ${drafted.detail ?? ''}`,
+            core: coreCompositeOf(factors, weights.current, cryptoRegime),
+          })
+          continue
+        }
+        drafts.push({ sym, call: drafted, routed: !!(cfg.levMap ?? {})[sym] })
+      }
+
+      // ONE ROW PER SIDE (the ratified slot rule). Cut BEFORE publication, not
+      // after, so a pair that lost the slot never reaches the ledger at all —
+      // the shadow budget and the equity cuts both work that way, and a
+      // published-then-discarded row is the `shadow-capped` silence again.
+      for (const side of ['long', 'short'] as const) {
+        const ofSide = drafts.filter(d => d.call.side === side).sort((a, b) => Math.abs(b.call.composite) - Math.abs(a.call.composite))
+        for (const [i, d] of ofSide.entries()) {
+          if (i > 0) {
+            trace.record(d.sym, 'slot-cut', { side, source: 'watchlist', detail: 'crypto cohort · one row per side, and a stronger pair took it' })
+            continue
+          }
+          const voice = cryptoVoice({ sym: d.sym, gradedN: cryptoGradedN, routed: d.routed, sizeCap: cap })
+          const row = publishCall(
+            {
+              ...d.call,
+              note: `${d.call.note} · ${voice.note}`,
+              evidence: { ...d.call.evidence, detail: `${d.call.evidence.detail} · ${voice.detail}` },
+            },
+            null,
+            null,
+            false,
+            cap,
+            undefined,
+            undefined,
+            { state: cryptoCal, anchor: cryptoAnchor, rung: cryptoRisk.rung, regime: cryptoRegime, routed: d.routed },
+          )
+          // SEATED BY HAND, because both collections were assembled above: a
+          // live crypto row joins the ranking exactly as a promoted observation
+          // and a wildcard do, and a shadowed one joins the shadow set so the
+          // ledger still grades it. Without this a crypto shadow would appear in
+          // nothing at all and its `called-shadow` code would be a publication
+          // that never happened.
+          if (row.shadow) {
+            // …and the shadow dedup applies to it like anything else: a crypto
+            // short the route blocks every morning must not enter the ledger
+            // seven times a week while its first copy is still ungraded.
+            if (outstandingShadowKeys.has(`${row.sym}:${row.side}`)) {
+              const at = board.indexOf(row)
+              if (at !== -1) board.splice(at, 1)
+              trace.revise(row.sym, 'shadow-capped', { side: row.side, source: 'watchlist', detail: 'crypto cohort · already outstanding as an ungraded shadow' })
+              continue
+            }
+            shadows.push(row)
+          } else {
+            liveCalls.push(row)
+            cryptoSides.add(row.side)
+          }
+          console.log(`CRYPTO: ${row.sym} ${row.side} — grade ${row.grade}, ${row.riskPct}% risk${row.shadow ? ' (shadow)' : ''}${row.paperOnly ? ', paper only' : ''}`)
+        }
+      }
+      if (cryptoSides.size) liveCalls.sort((a, b) => (a.watchOnly ? 1 : 0) - (b.watchOnly ? 1 : 0) || Math.abs(b.composite) - Math.abs(a.composite))
+    } catch (e) {
+      console.log('CRYPTO: lane skipped —', String(e).slice(0, 160))
+    }
+  }
+
   // …and the two published collections, assembled LAST so the experiment is in
   // both: the board the reader sees, and the ledger that will grade it.
   const live = [...liveCalls, ...nearMissRows]
@@ -3070,7 +3367,14 @@ export async function buildBoard(
   // side for that reason, that is what the record is for, and the walk reads it.
   // Nothing about the gate is lost on the board either — the row carries the gate
   // it overrode in `wildcard.gate`, and the trace row keeps it as `priorGate`.
-  const shownEmptySides = wildcardSide ? Object.fromEntries(Object.entries(emptySides).filter(([s]) => s !== wildcardSide)) : emptySides
+  // …and a CRYPTO row seated on an empty side does exactly the same thing to
+  // that sentence, so it is dropped on the same rule. A board that says "nothing
+  // tradeable on the long side today" above a half-size bitcoin call is a board
+  // the reader can see is lying — and the funnel's own `emptySides` still goes
+  // into the trace untouched below, because the ORDINARY funnel really did empty
+  // that side and that is what the record is for.
+  const filledSides = new Set<string>([...cryptoSides, ...(wildcardSide ? [wildcardSide] : [])])
+  const shownEmptySides = filledSides.size ? Object.fromEntries(Object.entries(emptySides).filter(([s]) => !filledSides.has(s))) : emptySides
   // the paper and the app see only live calls; shadows exist to be graded
   await store.write('engine-board', {
     date: today,
