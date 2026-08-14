@@ -30,6 +30,7 @@ import { isRouteEtp } from '../shared/engine/riskLadder'
 import type { DayTrace, Keyed, MissGateStatLike, MissLedgerLike, PostMortemLike, PrecedenceSample, ProbeContext, RegretContext, Row, RunFile, SeedArtefact } from './replay-window'
 import {
   WALK_ABSENT_FACTORS,
+  classifyDiff,
   enrichFromCalibration,
   shippedRead,
   GATE_CODE_MIRROR,
@@ -803,6 +804,126 @@ describe('enrichFromCalibration — the row is re-read in its own population, wi
   it('the uncapped grade is struck from the SIZED read too — the census counts what the board did', () => {
     const r = enrich(row({ accrual: 'sized' }))
     expect(r.gradeUncapped).toBe(gradeFor(sized.p, sized.nEff, 0.37, false))
+  })
+
+  // ---- the controlled diff's instrument [stage 3c task 5] ----
+  it('records the two counterfactual reads: the mechanisms peeled off one at a time', () => {
+    const r = enrich(row({ accrual: 'sized', setup: 'continuation' }))
+    expect(r.pPooled).toBe(pooled.p) // no partition, no family — the pre-3c read
+    expect(r.pSized).toBe(sized.p) // the partition, and nothing else
+    expect(r.pRaw).toBe(probabilityFor(cal, 'long', 'green', 47.5, 'unknown', 'sized', 'continuation').p) // …and the family
+    // NON-VACUOUS: the three are three different numbers on this fixture, which is
+    // what makes `pSized − pPooled` and `pRaw − pSized` the two mechanisms.
+    expect(new Set([r.pPooled, r.pSized, r.pRaw]).size).toBe(3)
+  })
+  it('a SHADOW row shows both mechanisms contributing nothing — it is priced in the pool either way', () => {
+    const r = enrich(row({ accrual: 'shadow', setup: 'continuation' }))
+    expect(r.pPooled).toBe(pooled.p)
+    expect(r.pSized).toBe(pooled.p)
+    expect(r.pRaw).toBe(pooled.p)
+  })
+  it('a near miss is left undecomposed — it went through no read path at all', () => {
+    const r = enrich(row({ accrual: 'sized', nearMiss: true }))
+    expect(r.pPooled).toBeUndefined()
+    expect(r.pSized).toBeUndefined()
+    expect(r.pRaw).toBeUndefined()
+  })
+})
+
+// ============ THE CONTROLLED DIFF — every changed grade has a name (3c t5) ======
+// The stage's acceptance gate: two arms of the same binary over the same window,
+// differing only in whether their calibration carried the partition's sub-counts.
+// Pinned on hand-built rows because the classifier is pure — and because the FAIL
+// path (a row that changed with nothing to explain it) is the one behaviour a
+// replay can never be relied upon to produce on demand.
+describe('classifyDiff — the sanctioned paths, and the loud failure', () => {
+  const pair = (over: Partial<Keyed>, refOver: Partial<Keyed> = {}) => {
+    const base = row({ pPooled: 0.4, pSized: 0.4, pRaw: 0.4, probability: 0.4, grade: 'C', nEff: 500, ...refOver })
+    return { ref: base, neu: row({ ...base, ...over }) }
+  }
+  const one = (over: Partial<Keyed>, refOver: Partial<Keyed> = {}) => {
+    const { ref, neu } = pair(over, refOver)
+    return classifyDiff([ref], [neu])
+  }
+
+  it('names the PARTITION when the sized read moved the price', () => {
+    const d = one({ pSized: 0.43, pRaw: 0.43, probability: 0.43, nEff: 300 })
+    expect(d.histogram.partition).toBe(1)
+    expect(d.changed[0].fields).toEqual(['probability'])
+    expect(d.changed[0].terms.partition).toBeCloseTo(0.03, 12)
+    expect(d.unclassified).toEqual([])
+  })
+  it('names the BLEND when the family moved the price on top of an unchanged sized read', () => {
+    const d = one({ pRaw: 0.42, probability: 0.42, grade: 'B' })
+    expect(d.histogram.blend).toBe(1)
+    expect(d.changed[0].grade).toBe('C→B')
+    expect(d.changed[0].terms.blend).toBeCloseTo(0.02, 12)
+  })
+  it('names the WEIGHTS-LOOP when the row’s own |composite| moved — the input, upstream of every curve', () => {
+    const d = one({ composite: 40.2, pPooled: 0.41, pSized: 0.41, pRaw: 0.41, probability: 0.41 })
+    expect(d.histogram['weights-loop']).toBe(1)
+    expect(d.maxCompositeMove).toBeCloseTo(0.2, 12)
+  })
+  it('names the PARTITION on a same-price row whose evidence MASS changed — nEff feeds the grade directly', () => {
+    const d = one({ nEff: 300, grade: 'B' })
+    expect(d.histogram.partition).toBe(1)
+    expect(d.changed[0].why).toMatch(/different mass/)
+  })
+  it('FAILS LOUDLY on a change with nothing to explain it — the whole point of the exercise', () => {
+    const d = one({ riskPct: 0.5 })
+    expect(d.histogram.unclassified).toBe(1)
+    expect(d.unclassified[0].risk).toBe('1→0.5')
+    expect(d.unclassified[0].why).toMatch(/NOTHING on 2026-07-14 carries a sanctioned cause/)
+  })
+  it('…and admits that same row as a BOARD-ECHO once another row on that day has a cause', () => {
+    const { ref: r1, neu: n1 } = pair({ riskPct: 0.5 })
+    const { ref: r2, neu: n2 } = pair({ sym: 'BBB', pSized: 0.43, pRaw: 0.43, probability: 0.43 }, { sym: 'BBB' })
+    const d = classifyDiff([r1, r2], [n1, n2])
+    expect(d.histogram).toMatchObject({ partition: 1, 'board-echo': 1, unclassified: 0 })
+  })
+  it('refuses a BOARD-ECHO whose cause is on a DIFFERENT day — the risk budget is shared within a day, not across the window', () => {
+    const { ref: r1, neu: n1 } = pair({ riskPct: 0.5 })
+    const { ref: r2, neu: n2 } = pair({ date: '2026-07-15', sym: 'BBB', pSized: 0.43, pRaw: 0.43, probability: 0.43 }, { date: '2026-07-15', sym: 'BBB' })
+    const d = classifyDiff([r1, r2], [n1, n2])
+    expect(d.histogram).toMatchObject({ partition: 1, 'board-echo': 0, unclassified: 1 })
+  })
+  it('names CURVE-DRIFT when the shared pooled read itself moved — but only after something caused it', () => {
+    const alone = one({ pPooled: 0.42, pSized: 0.42, pRaw: 0.42, probability: 0.42 })
+    expect(alone.histogram).toMatchObject({ 'curve-drift': 0, unclassified: 1 })
+    const { ref: r1, neu: n1 } = pair({ date: '2026-07-15', pPooled: 0.42, pSized: 0.42, pRaw: 0.42, probability: 0.42 }, { date: '2026-07-15' })
+    const { ref: r2, neu: n2 } = pair({ sym: 'BBB', pSized: 0.43, pRaw: 0.43, probability: 0.43 }, { sym: 'BBB' })
+    const d = classifyDiff([r1, r2], [n1, n2])
+    expect(d.histogram).toMatchObject({ partition: 1, 'curve-drift': 1, unclassified: 0 })
+  })
+  it('reads a PRE-3c reference row as pooled-and-unblended rather than as a gap — that tree had neither mechanism', () => {
+    const ref = row({ pRaw: 0.4, probability: 0.4, accrual: null, nEff: 500 }) // no pPooled, no pSized: the fields did not exist
+    const neu = row({ pPooled: 0.4, pSized: 0.43, pRaw: 0.45, probability: 0.45, nEff: 300 })
+    const d = classifyDiff([ref], [neu])
+    expect(d.changed[0].terms.partition).toBeCloseTo(0.03, 12)
+    expect(d.changed[0].terms.blend).toBeCloseTo(0.02, 12)
+    expect(d.changed[0].terms.curve).toBeCloseTo(0, 12)
+    // the arm audit says so out loud: that reference arm ran neither mechanism
+    expect(d.refPartitioned).toBe(0)
+    expect(d.refBlended).toBe(0)
+  })
+  it('AUDITS THE REFERENCE ARM — a reference that had begun to partition is reported, not assumed away', () => {
+    const ref = row({ pPooled: 0.4, pSized: 0.41, pRaw: 0.415, probability: 0.42 })
+    const d = classifyDiff([ref], [row({ ...ref })])
+    expect(d.refPartitioned).toBe(1)
+    expect(d.refBlended).toBe(1)
+    expect(d.changed).toEqual([]) // …and an identical row is still not a change
+  })
+  it('reports the rows only one arm published, and never counts them as changes', () => {
+    const d = classifyDiff([row({ sym: 'OLD' }), row({ sym: 'BOTH' })], [row({ sym: 'BOTH' }), row({ sym: 'NEW' })])
+    expect(d.shared).toBe(1)
+    expect(d.newOnly).toEqual(['2026-07-14:NEW:long'])
+    expect(d.refOnly).toEqual(['2026-07-14:OLD:long'])
+    expect(d.changed).toEqual([])
+  })
+  it('a row that did not move is not in the diff at all, however far its internals drifted', () => {
+    const d = one({ pPooled: 0.2, pSized: 0.25, pRaw: 0.4 })
+    expect(d.changed).toEqual([])
+    expect(d.histogram.unclassified).toBe(0)
   })
 })
 

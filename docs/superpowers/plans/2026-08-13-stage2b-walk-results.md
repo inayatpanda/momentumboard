@@ -263,3 +263,80 @@ The naive repair is worse than the state it fixes: writing `shadowN: 0` on a siz
 - **(c)** not re-run as a controlled key-by-key diff, unchanged from the previous cut's reason: the two artefacts do not share a row population (799 → 806 rows).
 
 **What did not change.** The refusal semantics (absent sub-counts still refuse, per band), the mix weight, `nEff`/`provisional`/`belowEvidence` (still the ladder's, never blended), the pooled read (a shadow is still priced by the pure ladder), and every legacy blob's byte-identical behaviour. CALIB/MODEL stay at 3: what a hit IS has not moved, and the blend was already part of model 3.
+
+---
+
+## Stage 3c Task 5 — the controlled diff: every changed grade has a name
+
+**Date:** 2026-08-14 · **Window:** the acceptance window, 2026-07-14 … 2026-08-11 (21 sessions) · **Command:** `replay-window.ts --classify --ref <arm>.json --new <arm>.json`, over runs of `replay-window.ts --from 2026-07-14 --to 2026-08-11` · **API calls: 0** · **Artefacts:** `/tmp/stage3c/t5/{acc-3bship,acc-pre3c,acc-pre3c-code,acc-gen4,acc-gen4-gatesON}.{json,log}`.
+
+### The arms, and the adjudication that picked them
+
+Stage 3c changes published numbers by design, so the gate is not "nothing moved" — it is that **everything that moved has a name, computed rather than asserted**. `enrichFromCalibration` now records, beside the shipped read, the same read with each mechanism withdrawn (`pPooled` = pooled + no family = the pre-3c read; `pSized` = the partition only; `pRaw` = what shipped), *against the blob the board was actually built on*. The two differences ARE the two mechanisms, per row, in probability points. `classifyDiff` differences them across two arms and hands every changed row one of: **partition · blend · weights-loop · curve-drift · board-echo · unclassified**, the last of which fails the run.
+
+Three arms were built, all with the SAME `LEVMAP_MIRROR`, the same candle cache, gates off (or absent) on both sides and regret on both sides:
+
+| arm | code | evidence | what it is |
+|---|---|---|---|
+| **A1 — 3b-shipped** | `d46eb70` (pre-3c) in a worktree, the mirror byte-copied in | its own committed **generation 3** | what the reader was actually being shown before this batch |
+| **A2 — legacy-blob** | HEAD | generation 4 with every `shadowN`/`shadowHits` **stripped** | the byte-identity construction: a blob with no sub-counts reads exactly as pre-3c |
+| **A3 — pre-3c code, batch evidence** | `d46eb70`, mirror in | the shipped **generation 4** file, unmodified | **the controlled diff proper** — the only thing different from the shipped arm is the CODE |
+| **B — shipped** | HEAD (`2146e41`) | committed generation 4 | what the batch publishes |
+
+**A2 was measured and rejected as the primary arm, and the reason is a finding.** A stripped blob is pre-3c *at day one only*: at HEAD `updateCalibration` stamps sub-counts on every partition-aware accrual, so the walk **re-partitions its own blob** the moment its first outcomes mature. Measured per session, the reference arm's rows showing a live partition: `07-14 … 07-28: 0/34 … 0/39` — then `07-29: 36/41`, and 30–36 of every day after. There is no data-only way to hold the partition off across a window at HEAD; a pre-3c reference needs pre-3c CODE. A3 is that arm, and its audit is clean: **0 rows partitioned, 0 rows blended, largest |composite| move 0.0000** — pre-3c code never writes a sub-count, so its blob cannot wake the mechanism behind its own back.
+
+### The classified diff — A3 → B (mechanisms isolated, evidence identical)
+
+| | matched keys | changed | partition | blend | weights-loop | curve-drift | board-echo | **unclassified** |
+|---|---|---|---|---|---|---|---|---|
+| board | 349 | 198 | 144 | 54 | 0 | 0 | 0 | **0** |
+| ledger | 450 | 204 | 147 | 57 | 0 | 0 | 0 | **0** |
+| **total** | | **402** | **291** | **111** | **0** | **0** | **0** | **0** |
+
+**Twelve grade changes, each named**, identical on both cuts: ten `B → C` from the **blend** (`QCOM` ×2, `INTC` ×2, `MU` ×3, `TSLA` ×2, `IBM` — every one a short) and two from the **partition** (`2026-07-31 KLAC long C → B`, `2026-08-11 AMD short B → C`). Seven rows are published by the shipped arm and not by the reference (3 board, 4 ledger: `IBM short` watch rows on three dates, plus a `BA long` and a `PRU.L short` shadow) and **none in the other direction** — no sized trade among them.
+
+**The weights loop was silent.** Handed the same IC evidence, the two arms nudged identically: `max |Δ|composite||` = 0.0000 over 799 rows. Task 2's brakes never bound over 21 sessions — they are insurance, and this window did not need to draw on it.
+
+**Direction, measured over all 806 shipped rows.** The partition moves p by a mean of +0.05pp (longs −0.06pp, shorts +0.07pp) and at most ±2.6pp; the blend by a mean of −0.015pp and at most ±2.6pp. Small moves, concentrated at the B threshold (anchor + 0.05 = 0.4658), which is where a grade lives.
+
+**And the honest consequence, stated plainly:** reading generation 4's own evidence with pre-3c code — pooled, unblended — yields **more** B grades than the shipped read does (board-graded 26 B vs 16 B; sized trades 18 B vs 13 B). The two mechanisms NET REMOVE ten Bs on this window. That is the unmasking working: those Bs were priced against a population that included rows nobody was ever offered, and the shorts among them are exactly where the shadow slice was fattest. The batch's B-count improvement over what shipped is carried by the regenerated evidence (Task 4's own gate), not by the two read mechanisms.
+
+### The classified diff — A1 → B (ships-vs-shipped, the reader-facing before/after)
+
+| | matched keys | changed | partition | blend | weights-loop | curve-drift | board-echo | **unclassified** |
+|---|---|---|---|---|---|---|---|---|
+| board | 349 | 311 | 141 | 2 | 113 | 55 | 0 | **0** |
+| ledger | 450 | 367 | 142 | 2 | 140 | 83 | 0 | **0** |
+| **total** | | **678** | **283** | **4** | **253** | **138** | **0** | **0** |
+
+Every row still has a name, and the two extra columns are the two things A3 holds fixed. **curve-drift** is the generation swap itself — gen-3's buckets against gen-4's, evidence whose change was measured by Task 4's payoff gate. **weights-loop** is the same swap one level up: both seeds carry the *identical frozen vector* (`current ≡ base ≡ DEFAULT`, verified factor by factor), but their IC evidence differs (technical 5194/49 vs 7033/104, momentum 5099/144 vs 7076/61, …), so the in-window nudge loop lands in different places — `max |Δ|composite||` = **1.2 points** on a 20–70 scale, 253 rows, 8 grade changes. Reported, bounded, and gone the moment the evidence is held fixed (A3: zero).
+
+**Grade histograms across the arms** (board+ledger · board-graded · sized board trades · of those, shorts):
+
+| arm | board + ledger | board-graded | trades | trade shorts |
+|---|---|---|---|---|
+| A1 — 3b-shipped | 801 — 26 B / 775 C | 350 — 10 B / 340 C | 119 — 9 B / 110 C | 56 — 8 B / 48 C |
+| A3 — pre-3c code on gen-4 | 799 — 60 B / 739 C | 349 — 26 B / 323 C | 120 — 18 B / 102 C | 57 — 15 B / 42 C |
+| **B — shipped** | **806 — 40 B / 766 C** | **352 — 16 B / 336 C** | **123 — 13 B / 110 C** | **60 — 10 B / 50 C** |
+
+### The first gate-eligibility readout on live-shaped data, gates ARMED
+
+A side-run of arm B with the gates on (`GATES` unset — the production setting) produced **output byte-identical to the gates-off arm** apart from each day's wall-clock `ms`: same board, same ledger, same calibration blob, same miss ledger, same risk state. `gate-state` after the window is **null** — the hook writes only on a real change, and there was none. The trace records one gate set for all 21 sessions: `deadZone 20 · minExpectedMovePct 1` (the aggressive preset).
+
+| gate | source | cost | saved | n | unpriced | verdict |
+|---|---|---|---|---|---|---|
+| `deadZone` | dead-zone-core | 189 | 157 | 346 | 2 | **HELD** — 346 attributed outcomes, but the ratio is 1.20 and loosening needs 2× |
+| `minExpectedMovePct` | expected-move | 1 | 0 | 1 | 0 | **INELIGIBLE** — 1 attributed outcome, under the 30 bar |
+| `contextCap` | dead-zone-context | 0 | 0 | 0 | 0 | **INELIGIBLE — unmeasured**, exactly as Task 3 predicted it would stay until live evidence accrues |
+
+Reported for hygiene, not tunable: `entry-wait 2/1 · slot-cut 41/53 [9 unpriced] · called-watch 38/33 [double-booked] · trimmed 0/0 [7 unpriced] · diversity 0/4 · dip-refused 1/4`. **Both markers surface**: `called-watch` carries the double-booked flag (its outcomes already steer calibration — one event may not move two levers), and `trimmed` reads 0/0 with 7 unpriced because every one of its rows is a `bare` mirror pair, excluded from the sided counts by the hygiene rule while its unpriced column keeps saying so.
+
+This reproduces Task 3's live-shaped finding on a second, independent window: **the dead zone's +526pp of net cost lives in magnitude, not in count.** By its own count-based rule it has not earned a notch.
+
+### The in-walk invariants, over the window
+
+All four runs enforced them daily and none threw: 21/21 sessions **funnel-trace consistent** (2,796 trace rows, 1,320 carrying `core`, 822 carrying `priorGate` — including **367 `shadow-capped ← route-blocked`**, the attribution 3b shipped with nothing measuring it); the **miss ledger** accrued 10 matured days, one per pass, never twice, with `checked + unchecked` equal to the day's candidates on every one (990 priced, 18 unpriced, 297 misses); **post-mortems 115/115 losers of 215 graded**, 20 re-derived against the tape with the pinned precedence order holding. 0/21 blank boards and 0/21 zero-trade days on every arm.
+
+### The verdict
+
+**Every changed row in both comparisons has a name; `unclassified` is 0 in all four cuts.** The batch's own numbers stand as Task 4 recorded them (`referenceBase` 0.4158 for a fifth measurement, 0 monotonicity violations over 810 shipped reads on both blobs, 0 published same-day inversions), and the gates that could have moved under them did not, because on this evidence none of them has earned it.

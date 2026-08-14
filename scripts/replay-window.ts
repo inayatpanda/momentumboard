@@ -84,6 +84,16 @@
 //     replica of the row in front of the reader.
 //   npx tsx scripts/replay-window.ts --from 2024-08-12 --to 2026-08-11 \
 //     --seed-out /tmp/seed-candidate.json --seed-generation 2 --out /tmp/walk.json
+//
+// SIXTH MODE — `--classify --ref <run.json> --new <run.json>`: THE CONTROLLED DIFF
+// (stage 3c task 5). Matched-key attribution over `{grade, riskPct, probability}`
+// between two runs, every changed row handed one of the sanctioned causes
+// (`classifyDiff` below) — and a run that cannot name one fails. Pure counters over
+// two JSONs plus the gate arithmetic, so it opens no store and asks the engine for
+// nothing it did not already record. Also prints the gate-eligibility readout off
+// the new run's own miss ledger.
+//   npx tsx scripts/replay-window.ts --classify --ref /tmp/pre.json --new /tmp/post.json
+//
 // `--symbols A,B,C` narrows the walk universe (default: the whole REPLAY_UNIVERSE) —
 // a targeted diagnostic run, and what lets the unit test walk a fixture universe.
 // Both are NEW-mode only; nothing above changes shape or output because of them, and
@@ -882,6 +892,27 @@ export interface Row {
    * be perfectly continuous while the STORED number is a staircase with finer
    * steps, and only the pair says which of those is true. */
   pRaw?: number
+  /** THE SAME READ WITH THIS STAGE'S TWO MECHANISMS PEELED OFF, one at a time,
+   * against the SAME blob the board was built on [stage 3c task 5 — the
+   * controlled diff's instrument].
+   *
+   *   `pPooled` — pooled population, no family: EXACTLY what `probabilityFor`
+   *               answered before the partition and the blend existed, so it is
+   *               the pre-3c read of this row on this evidence.
+   *   `pSized`  — the row's OWN population, still no family: the partition
+   *               applied and nothing else.
+   *   `pRaw`    — above: the row's population AND its family — what shipped.
+   *
+   * The two differences are therefore the two mechanisms, per row, in probability
+   * points: `pSized − pPooled` is the partition's contribution and `pRaw − pSized`
+   * is the blend's. Recorded at publication time rather than reconstructed later
+   * because the blob moves every morning — a post-hoc recomputation off the final
+   * state would attribute today's row to a curve it was never priced on.
+   *
+   * Both are undefined in a pre-stage-2 tree (the enrichment returns before them)
+   * and on a near miss (no read path at all). */
+  pPooled?: number
+  pSized?: number
   /** Observations straddling this read. Undefined in a pre-stage-2 tree. */
   nEff?: number
   /** The read was handed DOWN from the lowest band this rung has ever graded. */
@@ -1557,6 +1588,11 @@ export function enrichFromCalibration(rows: Row[], cal: CalibrationState | null,
       baseRate,
       false,
     )
+    // …and the two counterfactual reads the controlled diff is built on (see Row).
+    // Same state, same conviction, same rung ladder — only the population and the
+    // family are withdrawn, which is precisely what stage 3c added.
+    r.pPooled = (probabilityFor(cal, r.side, r.regime, Math.abs(r.composite), 'unknown', 'pooled', null) as unknown as { p: number }).p
+    r.pSized = (probabilityFor(cal, r.side, r.regime, Math.abs(r.composite), 'unknown', population, null) as unknown as { p: number }).p
   }
 }
 
@@ -2707,6 +2743,9 @@ export interface RunFile {
   /** Stage 3b, both ADDITIVE and both null on a `REGRET=off` parity run. */
   missLedgerFinal?: MissLedgerLike | null
   postMortemCensus?: PostMortemCensus | null
+  /** Stage 3c — the gates as feedback left them. Null on `GATES=off` and on any
+   * window whose evidence never reached the eligibility bar. */
+  gateStateFinal?: unknown
 }
 
 export type Keyed = Row & { date: string }
@@ -2899,6 +2938,242 @@ export function diffKeys(ref: string[], neu: string[]): DiffSets {
 export function sleeveKeys(keys: string[]): string[] {
   const sleeve = new Set(SLEEVE_MIRROR.map(s => s.toUpperCase()))
   return keys.filter(k => sleeve.has((k.split(':')[1] ?? '').toUpperCase()))
+}
+
+// ------------------------------------------- the controlled diff (stage 3c) --
+//
+// THE BATCH'S SHIP EVIDENCE. Stage 3c changes published numbers BY DESIGN, so the
+// acceptance gate cannot be "nothing moved" — it is "everything that moved has a
+// name, computed rather than asserted". Two arms of the SAME binary over the SAME
+// window with the SAME dependencies (one levMap mirror, gates off on both, regret
+// on both) differ in exactly one thing: whether the calibration blob they were
+// handed carries the partition's sub-counts. By the byte-identity pins a blob
+// without them reads exactly as the pre-3c tree read — no partition, no blend —
+// so the reference arm IS the shipped 3b behaviour, on this batch's own evidence.
+
+/** WHY A ROW MOVED. The first three are the stage's own mechanisms and are the
+ * only ones that change BEHAVIOUR; the last two are second-order and admitted
+ * only against a proven first-order cause (see `classifyDiff`). */
+export type DiffCause =
+  /** the row's sized read differs from its pooled one — the provenance partition */
+  | 'partition'
+  /** the family's isotonic curve moved the price — the setup blend */
+  | 'blend'
+  /** the row's own |composite| moved: the IC nudge loop, reading two arms' worth of
+   * slightly different observations. Sanctioned by the plan's brakes (bounded
+   * per-factor weights, the minDisagree floor) and BOUNDED here — the histogram
+   * reports the largest move it saw, so a loop that slipped its bands is visible. */
+  | 'weights-loop'
+  /** SECOND ORDER — no mechanism on this row: the POOLED curve underneath it has
+   * moved, so the two arms are reading different evidence. Two things do that, and
+   * the count means different things under each: the arms were handed different
+   * SEEDS (a generation swap — the evidence itself is the change, already measured
+   * by its own payoff gate), or they published different boards on earlier days and
+   * booked different outcomes into the same buckets. Admitted only when a
+   * first-order cause exists on this date or an earlier one. */
+  | 'curve-drift'
+  /** SECOND ORDER — no read-side movement at all: this row differs because another
+   * row on the SAME DAY did (the risk budget is shared, slots compete, the ladder
+   * rung multiplies every size). Admitted only when a first-order cause exists on
+   * that same date. */
+  | 'board-echo'
+  /** nothing above explains it. The walk fails loudly. */
+  | 'unclassified'
+
+export const DIFF_CAUSES: DiffCause[] = ['partition', 'blend', 'weights-loop', 'curve-drift', 'board-echo', 'unclassified']
+
+/** The four movements a row's price can be decomposed into, all in probability
+ * points and all signed new-minus-reference. `partition` and `blend` are each
+ * arm's OWN mechanism contribution differenced, not a re-derivation: a reference
+ * arm that had begun to partition mid-window shows up here as a smaller
+ * difference rather than as a hidden one. */
+export interface DiffTerms {
+  /** |composite| moved — the read's INPUT, upstream of every curve */
+  composite: number
+  /** (pSized − pPooled) new, minus the same in the reference */
+  partition: number
+  /** (pRaw − pSized) new, minus the same in the reference */
+  blend: number
+  /** pPooled new − pPooled reference: the shared curve's own drift */
+  curve: number
+  /** observations straddling the read — the mass `gradeFor` prices an A or B on */
+  nEff: number
+}
+
+export interface RowDiff {
+  key: string
+  cause: DiffCause
+  /** which of the three published numbers moved */
+  fields: ('grade' | 'riskPct' | 'probability')[]
+  grade: string | null
+  risk: string | null
+  probability: string | null
+  terms: DiffTerms
+  why: string
+}
+
+export interface ClassifiedDiff {
+  /** keys present in BOTH arms — the population the attribution is made over */
+  shared: number
+  changed: RowDiff[]
+  histogram: Record<DiffCause, number>
+  unclassified: RowDiff[]
+  /** Rows the new arm published and the reference did not, and the reverse. Outside
+   * a matched-key diff by construction; reported because a diff that silently
+   * dropped them would be measuring a population it chose. */
+  newOnly: string[]
+  refOnly: string[]
+  /** THE ARM AUDIT. How many REFERENCE rows show any partition (`pSized ≠ pPooled`)
+   * or any blend (`pRaw ≠ pSized`) at all — i.e. how far the reference arm drifted
+   * away from pre-3c behaviour by accruing sub-counts of its own during the window.
+   * Zero is a perfect arm; the number is published either way. */
+  refPartitioned: number
+  refBlended: number
+  /** the largest |Δ|composite|| seen — the weights loop's own bound, measured */
+  maxCompositeMove: number
+}
+
+const EPS = 1e-9
+
+/** The three reads a row carries, feature-detected.
+ *
+ * A ROW FROM A PRE-3c TREE CARRIES ONLY `pRaw`, AND THAT IS NOT A GAP: before the
+ * partition and the blend existed, this harness's recomputation WAS the pooled,
+ * unblended read (see `enrichFromCalibration`'s own note). So such a row's two
+ * counterfactuals are its own read — the arm contributed zero from both mechanisms
+ * because it HAD neither, which is exactly what a reference arm is for. Detected on
+ * the row rather than from the file's commit, the same way the enrichment detects
+ * the tree it is running in.
+ *
+ * `null` = no read path at all (a near miss, or a pre-stage-2 tree) — a row that
+ * cannot be decomposed and must not be quietly credited to a mechanism. */
+const readsOf = (r: Keyed): { pooled: number; sized: number; shipped: number } | null =>
+  r.pRaw == null ? null : { pooled: r.pPooled ?? r.pRaw, sized: r.pSized ?? r.pRaw, shipped: r.pRaw }
+
+/** MATCHED-KEY, PER-ROW ATTRIBUTION over `{grade, riskPct, probability}`.
+ *
+ * Pure — two arrays of rows in, the histogram and the failures out — so the
+ * arithmetic is pinned in the unit test rather than in a replay.
+ *
+ * The order of the tests is causal, not cosmetic. A moved |composite| is upstream
+ * of every curve in this engine, so it is named first and the read-side terms below
+ * it are reported but not credited; the two mechanisms come next, largest
+ * contribution first; the shared curve's own drift after them; and a row with no
+ * read-side movement whatsoever is a board effect, not a pricing one.
+ *
+ * THE SECOND-ORDER CLASSES CARRY A CONDITION, which is what keeps them from being
+ * a place to put anything awkward. `board-echo` is admitted only if some other row
+ * on the SAME DATE carries a first-order cause (the risk budget is shared within a
+ * day and nowhere else); `curve-drift` only if a first-order cause exists on that
+ * date or an earlier one (a bucket cannot drift before something changed what was
+ * booked into it). Fail those conditions and the row is `unclassified` — which is
+ * the whole point of the exercise. */
+export function classifyDiff(ref: Keyed[], neu: Keyed[]): ClassifiedDiff {
+  const R = new Map(ref.map(r => [keyOf(r), r]))
+  const N = new Map(neu.map(r => [keyOf(r), r]))
+  const shared = [...N.keys()].filter(k => R.has(k)).sort()
+  const changed: RowDiff[] = []
+  let refPartitioned = 0
+  let refBlended = 0
+  let maxCompositeMove = 0
+  for (const r of R.values()) {
+    const reads = readsOf(r)
+    if (!reads) continue
+    if (Math.abs(reads.sized - reads.pooled) > EPS) refPartitioned++
+    if (Math.abs(reads.shipped - reads.sized) > EPS) refBlended++
+  }
+  for (const key of shared) {
+    const a = R.get(key)!
+    const b = N.get(key)!
+    const fields: RowDiff['fields'] = []
+    if (a.grade !== b.grade) fields.push('grade')
+    if (a.riskPct !== b.riskPct) fields.push('riskPct')
+    if (a.probability !== b.probability) fields.push('probability')
+    const dComposite = Math.abs(b.composite) - Math.abs(a.composite)
+    if (Math.abs(dComposite) > Math.abs(maxCompositeMove)) maxCompositeMove = dComposite
+    if (!fields.length) continue
+    const ra = readsOf(a)
+    const rb = readsOf(b)
+    const enriched = ra != null && rb != null
+    const terms: DiffTerms = {
+      composite: dComposite,
+      partition: enriched ? rb.sized - rb.pooled - (ra.sized - ra.pooled) : 0,
+      blend: enriched ? rb.shipped - rb.sized - (ra.shipped - ra.sized) : 0,
+      curve: enriched ? rb.pooled - ra.pooled : 0,
+      nEff: (b.nEff ?? 0) - (a.nEff ?? 0),
+    }
+    const row: RowDiff = {
+      key,
+      cause: 'unclassified',
+      fields,
+      grade: a.grade === b.grade ? null : `${a.grade}→${b.grade}`,
+      risk: a.riskPct === b.riskPct ? null : `${a.riskPct}→${b.riskPct}`,
+      probability: a.probability === b.probability ? null : `${a.probability}→${b.probability}`,
+      terms,
+      why: '',
+    }
+    if (Math.abs(dComposite) > EPS) {
+      row.cause = 'weights-loop'
+      row.why = `|composite| ${a.composite.toFixed(2)} → ${b.composite.toFixed(2)}`
+    } else if (!enriched) {
+      // A near miss is never enriched (it went through no read path), and neither is
+      // any row from a pre-stage-2 tree. Either way there is no decomposition to
+      // make, and a row that changed without one has not been explained.
+      row.cause = 'unclassified'
+      row.why = 'the row carries no read decomposition (a near miss, or a tree older than the instrument)'
+    } else {
+      const magnitude = Math.max(Math.abs(terms.partition), Math.abs(terms.blend), Math.abs(terms.curve))
+      if (magnitude <= EPS) {
+        // The price did not move at all. Either the partition changed the evidence
+        // MASS without changing the value it read (nEff feeds the grade directly),
+        // or nothing on this row's own read moved and the difference came from the
+        // day around it.
+        if (terms.nEff !== 0 && b.accrual === 'sized') {
+          row.cause = 'partition'
+          row.why = `same price, ${a.nEff} → ${b.nEff} observations — the sized slice is a different mass`
+        } else {
+          row.cause = 'board-echo'
+          row.why = 'identical read on this row — the day around it differs'
+        }
+      } else if (Math.abs(terms.blend) === magnitude) {
+        row.cause = 'blend'
+        row.why = `the family moved p by ${(terms.blend * 100).toFixed(2)}pp`
+      } else if (Math.abs(terms.partition) === magnitude) {
+        row.cause = 'partition'
+        row.why = `the sized read moved p by ${(terms.partition * 100).toFixed(2)}pp (nEff ${a.nEff} → ${b.nEff})`
+      } else {
+        row.cause = 'curve-drift'
+        row.why = `the pooled curve itself moved ${(terms.curve * 100).toFixed(2)}pp under this read`
+      }
+    }
+    changed.push(row)
+  }
+  // …and now the two second-order classes must answer for themselves.
+  const dateOf = (k: string): string => k.split(':')[0] ?? ''
+  const firstOrder = new Set(changed.filter(c => c.cause === 'partition' || c.cause === 'blend' || c.cause === 'weights-loop').map(c => dateOf(c.key)))
+  const firstOrderDates = [...firstOrder].sort()
+  for (const c of changed) {
+    if (c.cause === 'board-echo' && !firstOrder.has(dateOf(c.key))) {
+      c.cause = 'unclassified'
+      c.why = `${c.why} — and NOTHING on ${dateOf(c.key)} carries a sanctioned cause`
+    }
+    if (c.cause === 'curve-drift' && !firstOrderDates.some(d => d <= dateOf(c.key))) {
+      c.cause = 'unclassified'
+      c.why = `${c.why} — and no sanctioned cause exists on or before ${dateOf(c.key)}`
+    }
+  }
+  const histogram = Object.fromEntries(DIFF_CAUSES.map(c => [c, changed.filter(x => x.cause === c).length])) as Record<DiffCause, number>
+  return {
+    shared: shared.length,
+    changed,
+    histogram,
+    unclassified: changed.filter(c => c.cause === 'unclassified'),
+    newOnly: [...N.keys()].filter(k => !R.has(k)).sort(),
+    refOnly: [...R.keys()].filter(k => !N.has(k)).sort(),
+    refPartitioned,
+    refBlended,
+    maxCompositeMove,
+  }
 }
 
 // ------------------------------------------------------------------ the voice --
@@ -3439,6 +3714,90 @@ async function aggregateMain() {
   console.log(`\nwrote ${outPath}`)
 }
 
+// ---------------------------------------- main: the controlled diff (3c t5) --
+//
+//   npx tsx scripts/replay-window.ts --classify --ref /tmp/acc-pre3c.json --new /tmp/acc-gen4.json
+//
+// SIXTH MODE. Pure counters again — it opens no store and asks no engine anything
+// except the gate arithmetic, which is imported dynamically so this file still
+// runs in the pre-Stage-1 baseline worktree (gateState.ts does not exist there).
+//
+// It prints three things and one verdict: the classified per-row histogram over
+// every matched board and ledger row, the ARM AUDIT (how faithfully the reference
+// arm reproduced pre-3c behaviour), and — off the new run's own miss ledger — the
+// gate-eligibility readout, which is the first time that arithmetic has been asked
+// of live-shaped data with the gates armed. The verdict is `unclassified === 0`.
+async function classifyMain(): Promise<void> {
+  const refPath = arg('ref', '')
+  const newPath = arg('new', '')
+  if (!refPath || refPath.startsWith('--') || !newPath || newPath.startsWith('--'))
+    throw new Error('BLOCKED: --classify needs --ref <run.json> (the pre-3c arm) and --new <run.json> (the shipped arm)')
+  const ref = JSON.parse(readFileSync(refPath, 'utf8')) as RunFile
+  const neu = JSON.parse(readFileSync(newPath, 'utf8')) as RunFile
+  console.log(`controlled diff: ref=${refPath} (${ref.commit}) vs new=${newPath} (${neu.commit}) · ${ref.from}..${ref.to}`)
+
+  const per = (['board', 'ledger'] as const).map(where => ({ where, d: classifyDiff(flatten(ref, where), flatten(neu, where)) }))
+  const total = Object.fromEntries(DIFF_CAUSES.map(c => [c, per.reduce((s, p) => s + p.d.histogram[c], 0)])) as Record<DiffCause, number>
+  for (const { where, d } of per) {
+    console.log(
+      `\n${where}: ${d.shared} matched keys · ${d.changed.length} changed · ${d.newOnly.length} new-only · ${d.refOnly.length} ref-only\n` +
+        `  ${DIFF_CAUSES.map(c => `${c} ${d.histogram[c]}`).join(' · ')}`,
+    )
+    console.log(`  arm audit — reference rows showing a partition: ${d.refPartitioned} · showing a blend: ${d.refBlended} · largest |composite| move: ${d.maxCompositeMove.toFixed(4)}`)
+    for (const c of DIFF_CAUSES.filter(x => x !== 'unclassified')) {
+      const ex = d.changed.filter(x => x.cause === c).slice(0, 3)
+      for (const e of ex) console.log(`    [${c}] ${e.key} ${[e.grade, e.risk, e.probability].filter(Boolean).join(' · ')} — ${e.why}`)
+    }
+    const gradeMoves = d.changed.filter(x => x.grade)
+    console.log(`  grade changes: ${gradeMoves.length}${gradeMoves.length ? ` — ${gradeMoves.map(g => `${g.key} ${g.grade} [${g.cause}]`).join(' · ')}` : ''}`)
+    for (const u of d.unclassified) console.log(`  UNCLASSIFIED ${u.key} ${[u.grade, u.risk, u.probability].filter(Boolean).join(' · ')} — ${u.why}`)
+  }
+  console.log(`\nTOTAL — ${DIFF_CAUSES.map(c => `${c} ${total[c]}`).join(' · ')}`)
+  const rung = (r: RunFile): unknown => (r.riskFinal as { rung?: number } | null | undefined)?.rung ?? null
+  console.log(`risk ladder rung: ref ${rung(ref)} · new ${rung(neu)}${rung(ref) === rung(neu) ? '' : ' — EVERY size is multiplied differently'}`)
+
+  // ---- the gate-eligibility readout, on live-shaped data ----
+  // Every tunable gate is reported, including the ones with nothing to say: a gate
+  // that has never been measured must be visible AS unmeasured rather than absent.
+  if (neu.missLedgerFinal && existsSync(stageModule('gateState.ts'))) {
+    const { gateEligibility, GATE_MIN_ATTRIBUTED, GATE_COST_RATIO } = await import('../shared/engine/gateState')
+    const { gateAttribution } = await import('../shared/engine/missLedger')
+    const attribution = gateAttribution(neu.missLedgerFinal)
+    const byGate = new Map(attribution.map(a => [a.gate, a]))
+    console.log(`\ngate eligibility — ${GATE_MIN_ATTRIBUTED} attributed outcomes minimum, cost > ${GATE_COST_RATIO}× saved to loosen (and the reverse to tighten)`)
+    for (const e of gateEligibility(attribution)) {
+      const a = byGate.get(e.source)
+      const verdict = e.doubleBooked
+        ? 'INELIGIBLE — double-booked (its outcomes already steer calibration; one event may not move two levers)'
+        : e.n === 0
+          ? 'INELIGIBLE — unmeasured (and an unmeasured gate is not a costless one)'
+          : e.n < GATE_MIN_ATTRIBUTED
+            ? `INELIGIBLE — ${e.n} attributed outcomes, under the ${GATE_MIN_ATTRIBUTED} bar`
+            : e.direction
+              ? `ELIGIBLE — ${e.direction}`
+              : `HELD — the ratio does not clear ${GATE_COST_RATIO}×`
+      console.log(`  ${e.gate} (${e.source}): cost ${e.cost} · saved ${e.saved} · n ${e.n} · unpriced ${a?.unchecked ?? 0} — ${verdict}`)
+    }
+    // …and every OTHER gate the ledger attributed, with its markers. None of these
+    // is tunable, so none can move — but a gate carrying the double-booked marker
+    // or a pile of unpriced refusals is exactly what the hygiene rules exist for,
+    // and a readout that showed only the three movable ones would hide them.
+    const rest = attribution.filter(x => !gateEligibility(attribution).some(e => e.source === x.gate))
+    console.log(`  not tunable, reported for hygiene: ${rest.map(x => `${x.gate} ${x.cost}/${x.saved}${x.doubleBooked ? ' [double-booked]' : ''}${x.unchecked ? ` [${x.unchecked} unpriced]` : ''}`).join(' · ')}`)
+    console.log(`  gate-state after the window: ${JSON.stringify(neu.gateStateFinal ?? null)}`)
+  }
+
+  const failed = per.reduce((s, p) => s + p.d.unclassified.length, 0)
+  console.log(`\nVERDICT: ${failed ? `BLOCKED — ${failed} changed row(s) with no name` : 'every changed row has a name'}`)
+  if (failed) process.exitCode = 1
+}
+
 // Importable for the unit test (vitest sets VITEST); executed as a script otherwise.
 if (!process.env.VITEST)
-  await (process.argv.includes('--velocity-probe') ? probeMain() : process.argv.includes('--aggregate') ? aggregateMain() : main())
+  await (process.argv.includes('--velocity-probe')
+    ? probeMain()
+    : process.argv.includes('--aggregate')
+      ? aggregateMain()
+      : process.argv.includes('--classify')
+        ? classifyMain()
+        : main())
