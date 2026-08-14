@@ -27,6 +27,13 @@ import { THEMES } from '../shared/engine/themes'
 import { bannedTokensIn, composeThesis } from '../shared/engine/voice'
 import { classifyLoser } from '../shared/engine/postMortem'
 import { isRouteEtp } from '../shared/engine/riskLadder'
+import {
+  CRYPTO_CALIB_KEY,
+  CRYPTO_GRADE_HORIZON,
+  CRYPTO_HORIZONS,
+  CRYPTO_UNIVERSE,
+} from '../shared/engine/cryptoCalibration'
+import { CRYPTO_CAPACITY_LOOKBACK, CRYPTO_REGIME_SYMBOL, CRYPTO_RISK_KEY } from '../shared/engine/cryptoLane'
 import type { DayTrace, Keyed, MissGateStatLike, MissLedgerLike, PostMortemLike, PrecedenceSample, ProbeContext, RegretContext, Row, RunFile, SeedArtefact, WildcardRecordLike } from './replay-window'
 import {
   WALK_ABSENT_FACTORS,
@@ -57,6 +64,16 @@ import {
   traceViolations,
   MIRROR_EXTRAS,
   PROD_GAINERS_DEPTH,
+  CRYPTO_CALIB_KEY_MIRROR,
+  CRYPTO_HORIZONS_MIRROR,
+  CRYPTO_PUBLISH_TO_GRADE_DAYS,
+  CRYPTO_REGIME_SYM_MIRROR,
+  CRYPTO_RISK_KEY_MIRROR,
+  CRYPTO_UNIVERSE_MIRROR,
+  CRYPTO_YEAR_BARS,
+  cryptoSpine,
+  resolveCryptoLever,
+  tailBarsFor,
   aReachableState,
   bornBelowCensus,
   brierOf,
@@ -182,6 +199,86 @@ describe('tradingDays', () => {
   it('takes the window from a real index series, deduped and sorted', () => {
     const index = [day('2026-07-13', 1), day('2026-07-14', 1), day('2026-07-14', 1), day('2026-07-17', 1), day('2026-08-12', 1)]
     expect(tradingDays(index, '2026-07-14', '2026-08-11')).toEqual(['2026-07-14', '2026-07-17'])
+  })
+})
+
+describe('cryptoSpine — the crypto walk runs on the PAIR’S OWN bars, not SPY’s', () => {
+  /** A crypto bar is stamped 00:00 UTC, one per calendar day (recon §8.4: ETH’s
+   * five-year day-of-week histogram is perfectly flat at 261 apiece). */
+  const utc = (iso: string, c = 1): Candle => ({ t: Date.parse(`${iso}T00:00:00Z`) / 1000, o: c, h: c, l: c, c, v: 1 })
+  it('is the tape’s own calendar days, deduped, sorted and inside the window', () => {
+    const tape = [utc('2026-07-02'), utc('2026-07-04'), utc('2026-07-04'), utc('2026-07-03'), utc('2026-07-09')]
+    expect(cryptoSpine(tape, '2026-07-03', '2026-07-04').days).toEqual(['2026-07-03', '2026-07-04'])
+  })
+  it('CARRIES THE WEEKEND — the days the equity spine structurally cannot have', () => {
+    // 2026-07-03 Fri · 04 Sat · 05 Sun · 06 Mon
+    const tape = ['2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06'].map(d => utc(d))
+    const s = cryptoSpine(tape, '2026-07-03', '2026-07-06')
+    expect(s.days).toEqual(['2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06'])
+    expect(s.weekend).toBe(2)
+    // …and SPY's spine over the same window has neither of them
+    const spy = [day('2026-07-03', 1), day('2026-07-06', 1)]
+    expect(tradingDays(spy, '2026-07-03', '2026-07-06')).toEqual(['2026-07-03', '2026-07-06'])
+  })
+  it('REPORTS ITS HOLES rather than skipping them — an exchange that never closes has no holidays', () => {
+    const tape = [utc('2026-07-03'), utc('2026-07-06')]
+    const s = cryptoSpine(tape, '2026-07-03', '2026-07-06')
+    expect(s.days).toEqual(['2026-07-03', '2026-07-06'])
+    // the two missing days are a TAPE DEFECT, not a closed market — the difference
+    // between this and `tradingDays`, which is right to be silent about a holiday
+    expect(s.gaps).toEqual(['2026-07-04', '2026-07-05'])
+    expect(s.weekend).toBe(0)
+  })
+  it('is empty, and gapless, on an empty window', () => {
+    expect(cryptoSpine([], '2026-07-04', '2026-07-03')).toEqual({ days: [], gaps: [], weekend: 0 })
+  })
+})
+
+describe('tailBarsFor — a calendar year of a 24/7 tape is 365 bars, not 252', () => {
+  it('hands crypto its own year and every equity the trading one', () => {
+    expect(tailBarsFor('BTC-USD')).toBe(CRYPTO_YEAR_BARS)
+    expect(tailBarsFor('eth-usd')).toBe(365)
+    expect(tailBarsFor('AAPL')).toBe(252)
+    expect(tailBarsFor('BT-A.L')).toBe(252) // the LSE name that reads as CRYPTO to a naive predicate
+  })
+  it('is exactly the lookback the crypto capacity read is denominated in', () => {
+    // starve this and `cryptoMomentumFactor`'s denominator is measured over fifty
+    // weeks of a tape production reads a full year of (`cachedCandles` = Yahoo 1y)
+    expect(CRYPTO_YEAR_BARS).toBe(CRYPTO_CAPACITY_LOOKBACK)
+  })
+})
+
+describe('resolveCryptoLever — the pin becomes a lever, and refuses the one combination that lies', () => {
+  it('defaults OFF on the equity spine — every mode that shipped before B3 is untouched', () => {
+    expect(resolveCryptoLever('equity', undefined)).toMatchObject({ value: 'off', source: 'default' })
+    expect(resolveCryptoLever('equity', 'off')).toMatchObject({ value: 'off', source: 'caller' })
+  })
+  it('REFUSES the lane on an equity spine — that walk grades a cohort on a clock it does not keep', () => {
+    expect(() => resolveCryptoLever('equity', 'on')).toThrow(/BLOCKED/)
+    expect(() => resolveCryptoLever('equity', '1')).toThrow(/--spine crypto/)
+  })
+  it('defaults ON on the crypto spine — the mode exists for the lane', () => {
+    expect(resolveCryptoLever('crypto', undefined)).toMatchObject({ value: 'on', source: 'default' })
+    expect(resolveCryptoLever('crypto', 'on')).toMatchObject({ value: 'on', source: 'caller' })
+  })
+  it('and CRYPTO=off on the crypto spine is the lane-off arm of the controlled diff', () => {
+    expect(resolveCryptoLever('crypto', 'off')).toMatchObject({ value: 'off', source: 'caller' })
+  })
+})
+
+describe('the crypto mirrors — the harness may not import the lane, so it copies it and the copy is checked', () => {
+  it('matches the modules the engine actually runs', () => {
+    expect(CRYPTO_UNIVERSE_MIRROR).toEqual([...CRYPTO_UNIVERSE])
+    expect(CRYPTO_REGIME_SYM_MIRROR).toBe(CRYPTO_REGIME_SYMBOL)
+    expect(CRYPTO_CALIB_KEY_MIRROR).toBe(CRYPTO_CALIB_KEY)
+    expect(CRYPTO_RISK_KEY_MIRROR).toBe(CRYPTO_RISK_KEY)
+    expect(CRYPTO_HORIZONS_MIRROR).toEqual([...CRYPTO_HORIZONS])
+    expect(CRYPTO_HORIZONS_MIRROR[1]).toBe(CRYPTO_GRADE_HORIZON)
+  })
+  it('and the clock arithmetic the evidence quotes: a call dated D grades on D+16’s run', () => {
+    // entry is the first bar OPENING after D (D+1), plus the 14-bar horizon lands
+    // the outcome bar on D+15, which must be COMPLETE — so the pass is D+16's.
+    expect(CRYPTO_PUBLISH_TO_GRADE_DAYS).toBe(CRYPTO_GRADE_HORIZON + 2)
   })
 })
 

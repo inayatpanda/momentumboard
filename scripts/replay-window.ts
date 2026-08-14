@@ -322,6 +322,134 @@ export function tradingDays(index: Candle[], fromISO: string, toISO: string): st
   return out.sort()
 }
 
+// ------------------------------------------------------- the crypto spine --
+// STAGE 1c PHASE B TASK B3. Everything below is MIRRORED from the crypto
+// modules rather than imported, for the reason every mirror in this file exists:
+// a static import of `shared/engine/crypto*.ts` would not resolve in the
+// pre-Stage-1 baseline worktree this harness still has to load in. Each mirror is
+// drift-guarded against the real module in replay-window.test.ts, exactly like
+// GATE_CODE_MIRROR and MISS_LEDGER_KEY_MIRROR. The two places that need the
+// crypto FUNCTIONS (the grade recomputation at walk end) import them
+// dynamically, behind the same `existsSync(stageModule(…))` guard the dip and
+// velocity lanes use.
+
+/** cryptoCalibration.ts `CRYPTO_UNIVERSE` — the three pairs the partition is
+ * defined over. */
+export const CRYPTO_UNIVERSE_MIRROR: string[] = ['BTC-USD', 'ETH-USD', 'SOL-USD']
+/** cryptoLane.ts `CRYPTO_REGIME_SYMBOL` — whose tape the cohort's regime is, and
+ * therefore the tape the crypto spine is cut from. */
+export const CRYPTO_REGIME_SYM_MIRROR = 'BTC-USD'
+/** cryptoCalibration.ts `CRYPTO_CALIB_KEY` / cryptoLane.ts `CRYPTO_RISK_KEY`. */
+export const CRYPTO_CALIB_KEY_MIRROR = 'crypto-calibration'
+export const CRYPTO_RISK_KEY_MIRROR = 'crypto-risk'
+/** cryptoCalibration.ts `CRYPTO_HORIZONS` — a week, the graded horizon and a
+ * month, in CRYPTO bars. The middle one is `CRYPTO_GRADE_HORIZON`. */
+export const CRYPTO_HORIZONS_MIRROR: number[] = [7, 14, 29]
+/** PUBLICATION TO OUTCOME, in calendar days, and the number the evidence quotes.
+ * A call dated D takes its entry at the first bar OPENING after D (D+1), its
+ * outcome bar is fourteen bars later (D+15), and that bar must be COMPLETE
+ * before the grader may read it (`completedCryptoBars`) — so the pass that
+ * grades it is D+16's. Sixteen against the equity fourteen: the crypto clock is
+ * SLOWER in wall-clock terms even though its horizon is longer in bars. */
+export const CRYPTO_PUBLISH_TO_GRADE_DAYS = CRYPTO_HORIZONS_MIRROR[1] + 2
+
+/** A CALENDAR year of a 24/7 tape (cryptoCalibration.ts
+ * `swingCapacityLookback250.crypto`), and the depth the replay must serve a
+ * crypto pair at. Production reads `cachedCandles` = Yahoo `1y` = ~366 daily
+ * bars for a coin; the harness's own 252-bar tail is a TRADING year, so serving
+ * crypto at 252 would quietly measure the pair's typical travel — the
+ * denominator `cryptoMomentumFactor` is expressed in — over fifty weeks of a
+ * tape production reads a full year of. */
+export const CRYPTO_YEAR_BARS = 365
+
+/** How deep a tape this symbol's own clock wants. Equities keep the 252-bar
+ * trading year they have always had; nothing about an equity run moves. */
+export const tailBarsFor = (sym: string): number => (isCryptoSymbol(sym) ? CRYPTO_YEAR_BARS : ONE_YEAR_BARS)
+
+export interface CryptoSpineRead {
+  /** The walk's days, in order — one per crypto session the tape carries. */
+  days: string[]
+  /** Calendar days inside the window the tape does NOT carry. */
+  gaps: string[]
+  /** How many of `days` are Saturdays or Sundays — the days the equity spine
+   * structurally cannot have, and the ones B3 exists to walk. */
+  weekend: number
+}
+
+/** THE CRYPTO SESSION SPINE — the pair's own bars, never SPY's.
+ *
+ * `tradingDays` derives the equity spine from a real index series "so holidays
+ * are handled by the exchange itself". The same construction is right here and
+ * means something different: a crypto session IS a UTC calendar day, the venue
+ * never closes, and the pair's own bars are the only honest record of which days
+ * it traded. Sat and Sun are ordinary sessions.
+ *
+ * THE ONE PLACE IT DIVERGES FROM `tradingDays` is what a missing day means. For
+ * SPY a gap is Thanksgiving — correct, expected, and rightly silent. For BTC
+ * there is no such thing as a closed day, so a gap is a TAPE DEFECT (a bad
+ * fetch, a Stooq fallback that served 300 rows instead of 365) and the walk must
+ * be able to say so on the page rather than quietly walking a shorter window
+ * than the operator asked for. So the holes are counted and returned. */
+export function cryptoSpine(index: Candle[], fromISO: string, toISO: string): CryptoSpineRead {
+  const have = new Set<string>()
+  for (const c of index) {
+    const iso = new Date(c.t * 1000).toISOString().slice(0, 10)
+    if (iso >= fromISO && iso <= toISO) have.add(iso)
+  }
+  const days = [...have].sort()
+  const gaps: string[] = []
+  for (const d = new Date(`${fromISO}T00:00:00Z`); d.toISOString().slice(0, 10) <= toISO; d.setUTCDate(d.getUTCDate() + 1)) {
+    const iso = d.toISOString().slice(0, 10)
+    if (!have.has(iso)) gaps.push(iso)
+  }
+  const weekend = days.filter(d => [0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay())).length
+  return { days, gaps, weekend }
+}
+
+export type SpineKind = 'equity' | 'crypto'
+
+export interface CryptoLeverRead {
+  value: 'on' | 'off'
+  /** `default` — the mode chose it; `caller` — the operator set `CRYPTO` and the
+   * walk obeyed. A run log that cannot say which is a run whose arm is a guess. */
+  source: 'default' | 'caller'
+  why: string
+}
+
+/** THE LEVER THE PIN BECAME (B3, lifting the `CRYPTO=off` line B2 left here).
+ *
+ * B2 pinned the lane off in `main()` because the harness sliced every tape on an
+ * EQUITY session spine and two of the three pairs were not even in
+ * `.replay-cache`. Both facts are now false — `cryptoSpine` above is the crypto
+ * clock and the warm step fetches the pairs — so the pin becomes what the house
+ * pattern says it should be: an env-driven arm, one per tree, with a DEFAULT
+ * PER MODE and a refusal for the one combination that would lie.
+ *
+ *  · equity spine, nothing set → OFF. Every mode that shipped before B3 —
+ *    `--baseline`, `--plant-a`, `--seed-out`, the ordinary window walk — behaves
+ *    exactly as it did, byte for byte. That is the conservative default and it
+ *    is deliberate: the equity walk is the instrument three stages of evidence
+ *    were measured on, and B3 may not move it.
+ *  · equity spine, `CRYPTO` set to anything but `off` → BLOCKED. This is the
+ *    lie: it would replay a 24/7 cohort against a Mon–Fri calendar, publish no
+ *    weekend row, and grade a 14-bar horizon over a spine missing two days in
+ *    seven — the precise failure Phase A shipped to stop, wearing a lane.
+ *  · crypto spine, nothing set → ON. The mode exists for the lane.
+ *  · crypto spine, `CRYPTO=off` → OFF, and that is the LANE-OFF ARM of the
+ *    controlled diff: the same window, the same spine, the same tapes, one
+ *    lever. It is the only way to prove no equity blob byte moved. */
+export function resolveCryptoLever(spine: SpineKind, env: string | undefined): CryptoLeverRead {
+  if (spine === 'equity') {
+    if (env == null) return { value: 'off', source: 'default', why: 'the equity spine walks a Mon–Fri calendar; the lane is off exactly as it was before B3' }
+    if (env === 'off') return { value: 'off', source: 'caller', why: 'CRYPTO=off, as the caller asked' }
+    throw new Error(
+      `BLOCKED: CRYPTO=${env} on the equity spine — a crypto cohort cannot be replayed against SPY's calendar (no weekend session, a 14-bar horizon spanning a spine missing two days in seven). Run the lane on its own clock: --spine crypto`,
+    )
+  }
+  if (env === 'off') return { value: 'off', source: 'caller', why: 'the LANE-OFF arm: same window, same spine, same tapes, one lever' }
+  return { value: 'on', source: env == null ? 'default' : 'caller', why: 'the crypto session spine walks the pairs’ own days and the lane rides it' }
+}
+
 /** Production's per-kind screen depths (netlify/functions/lib/engine.ts,
  * `defaultDeps.screens`): the gainers list is read 50 deep because the top 25 of
  * that list is mostly sub-$5 penny rockets on a given day, and the other kinds
