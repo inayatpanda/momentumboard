@@ -1,0 +1,27 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "StreetSignal — the desktop shell around the StreetSignal web app"
+authors = ["RQAI"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+# No plugins. This shell opens one window on the bundled `dist` and gets out of
+# the way: no updater (the DMG is handed over by hand), no logging plugin, no
+# IPC surface for the frontend to call — the app is the same web app it is on
+# the site, and everything it needs it gets over HTTPS from the production API.
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.11.3", features = [] }

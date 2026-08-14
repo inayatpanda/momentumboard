@@ -29,6 +29,7 @@
   "devDependencies": {
     "@netlify/blobs": "^8.1.0",
     "@netlify/functions": "^2.8.2",
+    "@tauri-apps/cli": "^2.11.4",
     "@testing-library/jest-dom": "^6.4.8",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^26.1.0",
