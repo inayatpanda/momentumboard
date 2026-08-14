@@ -3,11 +3,12 @@
 // (`db.slices.put`) and asserts on the cached paint. Router wraps every
 // render in wouter's memoryLocation (src/shell/AppShell.test.tsx's pattern).
 
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
+import { writeSlice } from '../lib/store'
 import type { BoardSlice, FunnelSlice, JourneyFunnelRow } from '../lib/apiViews'
 import type { EnginePrediction } from '../lib/api'
 import Board from './Board'
@@ -195,5 +196,53 @@ describe('Board', () => {
     window.history.pushState(null, '', '/app/board#refused')
     withRouter(<Board />, '/app/board#refused')
     expect(await screen.findByText('OLDCALL')).toBeInTheDocument()
+  })
+
+  it('renders near-miss and observation rows with their own distinct one-line reasons, no grade pill or probability', async () => {
+    const nearMissRow = mkRow({ id: 'nm1', sym: 'ZOOM', watchOnly: true, nearMiss: true })
+    const observationRow = mkRow({ id: 'ob1', sym: 'ROKU', watchOnly: true, observation: true })
+    await seedBoard([nearMissRow, observationRow])
+    withRouter(<Board />)
+
+    const nearMissLink = (await screen.findByText('ZOOM')).closest('a') as HTMLAnchorElement
+    const observationLink = screen.getByText('ROKU').closest('a') as HTMLAnchorElement
+
+    // (a) each renders its own distinct sentence
+    expect(within(nearMissLink).getByText('nearest miss — no size')).toBeInTheDocument()
+    expect(within(observationLink).getByText('no ISA route — observation only')).toBeInTheDocument()
+    // neither borrows the other's reason
+    expect(within(nearMissLink).queryByText('no ISA route — observation only')).not.toBeInTheDocument()
+    expect(within(observationLink).queryByText('nearest miss — no size')).not.toBeInTheDocument()
+
+    // (b) neither row shows a letter grade pill or any probability text
+    expect(within(nearMissLink).queryByLabelText(/^grade/i)).not.toBeInTheDocument()
+    expect(within(observationLink).queryByLabelText(/^grade/i)).not.toBeInTheDocument()
+    expect(within(nearMissLink).queryByLabelText(/^probability/i)).not.toBeInTheDocument()
+    expect(within(observationLink).queryByLabelText(/^probability/i)).not.toBeInTheDocument()
+    expect(within(nearMissLink).queryByText(/%/)).not.toBeInTheDocument()
+    expect(within(observationLink).queryByText(/%/)).not.toBeInTheDocument()
+  })
+
+  it('remounts the refused section on a board-date change — never shows a stale day\'s refusals beside the new date', async () => {
+    // dateA has real refusals in cache; dateB is pre-seeded (as a real fetch
+    // would land it) so the remount's own useSlice call resolves instantly
+    // from Dexie rather than hanging on the never-resolving mocked fetcher.
+    await seedBoard([], '2026-08-10')
+    await seedFunnel('2026-08-10', mkFunnelData([mkFunnelRow({ key: 'STALE_SYM', gate: 'dead-zone-core' })]))
+    await seedFunnel('2026-08-11', { date: '2026-08-11', missing: true, refusals: [], published: [], nearMisses: [] })
+    window.history.pushState(null, '', '/app/board#refused')
+    withRouter(<Board />, '/app/board#refused')
+    expect(await screen.findByText('STALE_SYM')).toBeInTheDocument()
+
+    // the board moves on to a new day under the SAME mounted <Board/> — write
+    // the slice through the store (writeSlice both persists to Dexie AND
+    // fires the 'slice' write event useSlice listens for), exactly how a
+    // background revalidation lands a fresh board in production.
+    await writeSlice('board', mkBoardData([], '2026-08-11'))
+
+    await waitFor(() => expect(screen.getByText('No refusals recorded for 2026-08-11.')).toBeInTheDocument())
+    // dateA's refusal row must never sit beside dateB's board — key={date}
+    // forces the section to remount rather than carry stale state forward.
+    expect(screen.queryByText('STALE_SYM')).not.toBeInTheDocument()
   })
 })

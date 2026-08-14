@@ -22,6 +22,7 @@ import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
 import { getBoardSlice, getFunnel } from '../lib/apiViews'
 import type { EnginePrediction } from '../lib/api'
+import { splitBoardRows } from '../lib/boardTaxonomy'
 import { CallCard } from './parts/CallCard'
 import { RefusalRow } from './parts/RefusalRow'
 
@@ -69,11 +70,9 @@ export default function Board() {
   // same taxonomy as src/components/EngineBoard.tsx:251-255 and Today's
   // CountsRail — sized = live cards; the rest split into developing/watch
   // (thin, ranked) and observations/near-misses (thin, their own reason).
-  const sized = rows.filter(p => !p.watchOnly)
-  const developing = rows.filter(p => p.watchOnly && !p.nearMiss && !p.observation && p.horizon === 'developing')
-  const watch = rows.filter(p => p.watchOnly && !p.nearMiss && !p.observation && p.horizon !== 'developing')
-  const observations = rows.filter(p => p.observation && !p.nearMiss)
-  const nearMisses = rows.filter(p => p.nearMiss)
+  // One shared helper (src/lib/boardTaxonomy.ts) so this file, Today, and
+  // CountsRail can never drift on what counts as what.
+  const { sized, developing, watch, observations, nearMisses } = splitBoardRows(rows)
 
   return (
     <div className="board2">
@@ -116,8 +115,12 @@ export default function Board() {
           ))}
         </>
       )}
-      {/* the funnel's day pairs with the BOARD's date — never funnel:latest */}
-      {blob?.date && <RefusedSection date={blob.date} />}
+      {/* the funnel's day pairs with the BOARD's date — never funnel:latest.
+          `key={blob.date}` forces a full remount on a date change so a stale
+          render can never show yesterday's refusals beside today's date —
+          without it, useSlice's own state would carry the OLD date's cached
+          rows into the very same commit that already shows the NEW date. */}
+      {blob?.date && <RefusedSection key={blob.date} date={blob.date} />}
     </div>
   )
 }

@@ -11,6 +11,7 @@
 
 import { useSlice } from '../lib/useSlice'
 import { getBoardSlice } from '../lib/apiViews'
+import { splitBoardRows } from '../lib/boardTaxonomy'
 import { NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
 import { CountsRail } from './parts/CountsRail'
@@ -22,8 +23,10 @@ export default function Today() {
   const rows = blob?.board ?? []
   // "sized" mirrors src/components/EngineBoard.tsx:251's `trades` split — the
   // only rows a grade pill and a probability may ever show on (CallCard's own
-  // hard rule, checked again there rather than trusted from here).
-  const sized = rows.filter(p => !p.watchOnly)
+  // hard rule, checked again there rather than trusted from here). Shared
+  // taxonomy helper (src/lib/boardTaxonomy.ts) so Today, Board, and
+  // CountsRail can never drift on what counts as "sized".
+  const { sized } = splitBoardRows(rows)
 
   return (
     <div className="today">

@@ -7,21 +7,22 @@
 
 import { Link } from 'wouter'
 import type { EnginePrediction } from '../../lib/api'
+import { splitBoardRows } from '../../lib/boardTaxonomy'
 
 export function CountsRail({ board }: { board: EnginePrediction[] }) {
   // same taxonomy src/components/EngineBoard.tsx:252-253 sorts the board into:
   // nearMiss/observation rows are never "developing" or "watch", they are
-  // their own thing and have no chip here.
-  const trackable = board.filter(p => p.watchOnly && !p.nearMiss && !p.observation)
-  const developing = trackable.filter(p => p.horizon === 'developing').length
-  const watch = trackable.filter(p => p.horizon !== 'developing').length
+  // their own thing and have no chip here. Shared helper
+  // (src/lib/boardTaxonomy.ts) so this rail, Board, and Today can never drift
+  // on what counts as what.
+  const { developing, watch } = splitBoardRows(board)
   return (
     <div className="hrail">
       <Link href="/board#developing" className="pill pressable">
-        Developing · <span className="num">{developing}</span>
+        Developing · <span className="num">{developing.length}</span>
       </Link>
       <Link href="/board#watch" className="pill pressable">
-        Watch · <span className="num">{watch}</span>
+        Watch · <span className="num">{watch.length}</span>
       </Link>
       <Link href="/board#refused" className="pill pressable">
         Refused
