@@ -220,7 +220,8 @@ describe('Record', () => {
       await seedLearning(mkLearning({ regrets: mkRegrets({ topGates: [mkRegretGate({ causal: { n: 4, hits: 1 } })], unchecked: 0 }) }))
       withRouter()
       const regrets = await screen.findByLabelText('Regrets')
-      expect(within(regrets).getByText(/wildcard tested it: 4 tries, 1 hits/i)).toBeInTheDocument()
+      // findByText: the section label renders before the slice paints
+      expect(await within(regrets).findByText(/wildcard tested it: 4 tries, 1 hits/i)).toBeInTheDocument()
     })
 
     it('renders regrets.note verbatim whenever unchecked > 0, and omits it when 0', async () => {
@@ -244,7 +245,7 @@ describe('Record', () => {
       await seedLearning(mkLearning({ regrets: mkRegrets({ unchecked: 0, topGates: [mkRegretGate({ examples: [mkExample({ sym: 'PLTR', date: '2026-08-04', excessPct: 6.1 })] })] }) }))
       withRouter()
       const regrets = await screen.findByLabelText('Regrets')
-      const link = within(regrets).getByText('PLTR').closest('a') as HTMLAnchorElement
+      const link = (await within(regrets).findByText('PLTR')).closest('a') as HTMLAnchorElement
       expect(link).toBeInTheDocument()
       expect(link.getAttribute('href')).toBe('/app/stock/PLTR')
       expect(within(link).getByText(/04 Aug/)).toBeInTheDocument()

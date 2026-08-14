@@ -209,6 +209,17 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     expect(within(screen.getByRole('main')).getByRole('heading', { name: /today/i })).toBeInTheDocument()
   })
 
+  it('at /board the pane points at the column instead of docking a second copy of the list', async () => {
+    setViewport(1440)
+    render(<AppShell locationHook={memoryLocation({ path: '/app/board' }).hook} />)
+    await boardColumn()
+    // the seeded row renders ONCE (the column's), never twice
+    expect(await screen.findAllByText('NVDA')).toHaveLength(1)
+    const pane = screen.getByRole('main')
+    expect(within(pane).getByText(/board lives in the column/i)).toBeInTheDocument()
+    expect(within(pane).queryByRole('heading', { name: /^board$/i })).not.toBeInTheDocument()
+  })
+
   it('below 1200px the analytics drawer does not exist at all', async () => {
     setViewport(1024)
     render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)

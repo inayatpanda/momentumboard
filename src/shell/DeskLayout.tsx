@@ -18,6 +18,7 @@
 // separate chunk, imported the first time the reader opens it.
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useLocation } from 'wouter'
 import { Nav } from './Nav'
 
 const BoardColumn = lazy(() => import('../screens2/parts/BoardColumn'))
@@ -66,6 +67,12 @@ const PanelsFallback = () => (
 )
 
 export default function DeskLayout({ children }: { children: ReactNode }) {
+  // /board at desk width would dock a SECOND copy of the list the column
+  // already shows (Today's counts rail and typed URLs land here — Task 22
+  // review, Important 1). The URL and its #refused hash stay untouched (the
+  // column's own section carries the id), only the pane's content swaps.
+  const [path] = useLocation()
+  const atBoard = path === '/board'
   const [analytics, setAnalytics] = useState(false)
   const toggleRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLElement>(null)
@@ -125,7 +132,11 @@ export default function DeskLayout({ children }: { children: ReactNode }) {
             Analytics
           </button>
         </div>
-        {children}
+        {atBoard ? (
+          <p className="cc-reason desk2-board-pointer">The board lives in the column on the left — pick a name to open its journey here.</p>
+        ) : (
+          children
+        )}
       </main>
 
       {analytics && (

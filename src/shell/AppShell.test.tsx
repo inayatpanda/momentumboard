@@ -25,7 +25,9 @@ describe('AppShell', () => {
 
   it('deep-links a stock page with its symbol', async () => {
     render(<AppShell locationHook={at('/stock/NVDA')} />)
-    expect(await screen.findByText(/NVDA/)).toBeInTheDocument()
+    // 5s: the lazy StockPage chunk resolves in ~300ms alone but can exceed
+    // RTL's 1s default under full-suite parallel load (verified flake)
+    expect(await screen.findByText(/NVDA/, {}, { timeout: 5000 })).toBeInTheDocument()
   })
 
   it('routes /board even though it has no tab', async () => {
