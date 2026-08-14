@@ -557,3 +557,171 @@ BLOCKED: the funnel trace disagrees with the board on 2025-02-17 — 2 violation
 ### The verdict
 
 **Phase A's containment is proved, and the damage is measured.** In the live-shaped record of the acceptance window: **6 crypto rows, 5 of which taught; +5n/+1h into one pooled calibration bucket (0.49%) and one setup family (0.41%); 3.01% of the window's live evidence; 5 rows in the Brier means; 5/15 of an IC nudge step; one of the twenty slots that decided a rung demotion (which stands without it); 2 proven `saved` events permanently inside `called-watch`'s movable evidence (6.1% of its saved count); and two of twenty-one mornings where a coin held one of the three long trade slots.** None of it can be un-attributed; none of it, where a counterfactual is computable, changed a decision. **The live-D1 run is the one that matters, because production watched two coins and the replay watched one.**
+
+---
+
+## Stage 1c Phase B Task B3 — ₿ the weekend spine: the lane on its own clock, and nothing else moved
+
+**Date:** 2026-08-14 · **Instrument:** `scripts/replay-window.ts --spine crypto` (the eighth mode) · **Window:** 2026-04-01 … 2026-08-11 — **133 crypto sessions, 38 of them weekend days** · **Arms:** the same window walked three times, production-shaped throughout (gates live, regret live, wildcard live, funnel trace live), differing in ONE thing: `CRYPTO=off` against the lane's own default. **API calls: 3** (BTC/SOL/ETH 5y, once, into `.replay-cache`). **Artefacts:** `/private/tmp/.../b3/{w-off,w-on-1,w-on-2}.{json,log}` at commit `b56b7fe`.
+
+B1 built the partition, B2 wired the lane, and both were pinned against fixtures. This is the lane's first contact with real tape — and the first time any walk in this repo has run on a calendar that has Saturdays in it.
+
+### The spine, and why it is not `tradingDays`
+
+`tradingDays` reads the equity spine off SPY "so holidays are handled by the exchange itself". `cryptoSpine` reads the crypto spine off **BTC-USD's own bars** — a crypto session IS a UTC calendar day — and diverges in exactly one place: what a missing day MEANS. For SPY a gap is Thanksgiving, and silence is right. For BTC there is no closed day, so a gap is a tape defect (a bad fetch, a Stooq fallback serving 300 rows instead of 365) and the spine returns its holes so the walk can say so instead of quietly walking a shorter window than the operator asked for. Over this window: **133 days, 38 weekend, 0 gaps.**
+
+Two other pieces of the pair's own clock ship with it: **`tailBarsFor`** (a calendar year of a 24/7 tape is 365 bars, not the trading year's 252 — production reads Yahoo `1y` ≈ 366 for a coin, and the harness's equity tail would have measured the pair's typical travel, which is `cryptoMomentumFactor`'s denominator, over fifty weeks and called it a year) and the crypto-basis regrade of the harness's own diagnostic outcome (`gradeCryptoPrediction` over completed bars — the artefact's grade column was the last place Phase A's leak could have been re-introduced, and `gradePrediction(pred, cs, spy, 10)` is precisely what the twelve ETH rows in the last pre-A1 walk were).
+
+### The cache, as found
+
+| file | bars | span | day-of-week histogram | fetched |
+|---|---|---|---|---|
+| `BTC_USD.json` (192,161 B) | **1,827** | 2021-08-14 → 2026-08-14 | flat: 261 apiece, all seven | **new** — 2026-08-14 11:17Z |
+| `SOL_USD.json` (221,821 B) | **1,827** | 2021-08-14 → 2026-08-14 | flat: 261 apiece | **new** — 2026-08-14 11:17Z |
+| `ETH_USD.json` (215,421 B) | **1,827** | 2021-08-14 → 2026-08-14 | flat: 261 apiece | refetched 11:22Z (the cached copy's last bar was an 18-hour partial from 08-12; all three pairs now stop at the same seam) |
+
+Three requests, through the harness's own cached-candle path, warmed on the crypto spine only. **The recon's correction is confirmed: neither BTC nor SOL had ever been in a replay universe or cache.**
+
+**THE KNOWN LIMITS, as found in the code rather than as remembered.** `stooq.ts` maps `BTC-USD → btcusd` and `ETH-USD → ethusd` and **nothing else** — `SOL-USD` has no fallback at all — and `parseStooqCsv(csv, maxRows = 300)` caps at **300 rows**, below the 365 a crypto calendar year wants and below `CRYPTO_CAPACITY_LOOKBACK`. So a Yahoo outage degrades BTC/ETH to a tape 65 bars short of the window their own capacity read is denominated in, and kills SOL outright.
+
+**A dead SOL was therefore rehearsed, not assumed.** With a missing-marker written into `.replay-cache/SOL_USD.json`, the same walk over 2026-07-20 … 08-11: **exit 0**, `MISSING (never synthesised): SOL-USD(...)`, the run log naming it at the seam (`pairs warmed: BTC-USD ETH-USD SOL-USD(MISSING)`), **23 `no-candles` trace rows for SOL** carrying `crypto cohort — no completed tape, or fewer than 42 bars of one`, and **24 crypto rows published anyway** (BTC 3, ETH 21). Fail-soft per symbol, exactly the lane's stated contract.
+
+### (a) Grading matures on the CRYPTO clock — 16 days, thirty-eight times out of thirty-eight
+
+`CRYPTO_PUBLISH_TO_GRADE_DAYS = 16` is arithmetic before it is a measurement: entry at the first bar OPENING after D (D+1), plus the 14-bar horizon (D+15), and that bar must be COMPLETE before the grader may read it — so the pass is D+16's. The walk records each maturity **on the pass that booked it** (`DayOut.cryptoMatured`), never reconstructed from the final blob.
+
+**38 crypto rows matured. Every one of them at exactly 16 calendar days.** The distinct-lag set is `[16]`. Against the equity 14 (10 sessions + the pass that follows) the crypto clock is *slower in wall-clock terms* despite a longer horizon in bars — which is the partition working.
+
+| published | day | graded on | day | row | outcome |
+|---|---|---|---|---|---|
+| 2026-04-18 | **Sat** | 2026-05-04 | Mon | BTC-USD long | HIT +3.7pp |
+| 2026-04-23 | Thu | 2026-05-09 | **Sat** | BTC-USD long | HIT +2.5pp |
+| 2026-04-25 | **Sat** | 2026-05-11 | Mon | BTC-USD long | HIT +5.8pp |
+| 2026-04-26 | **Sun** | 2026-05-12 | Tue | BTC-USD long | HIT +3.9pp |
+| 2026-05-17 | **Sun** | 2026-06-02 | Tue | ETH-USD short | HIT +5.8pp |
+| 2026-05-28 | Thu | 2026-06-13 | **Sat** | ETH-USD short | HIT +17.1pp |
+| … | | | | | 38 rows in all |
+
+**The weekend is not decoration.** 20 of the 68 crypto rows published on a weekend day (10 Saturday, 10 Sunday); **5 Saturday-published rows matured end to end**; and **12 of the 38 outcomes were booked by a pass that ran on a Saturday or a Sunday**. The Saturday call in full: `2026-04-18 BTC-USD long, C, 0.5% risk, entry 77,126.88, stop 73,214.22, green, continuation → stored outcome HIT +3.7pp`, the engine's own grade and the harness's independent crypto-basis regrade agreeing to the decimal.
+
+### (b) NOT ONE EQUITY BLOB BYTE MOVED — six of six, over 133 sessions
+
+The lane-off and lane-on arms, sha256 over each blob as serialised:
+
+| blob | `CRYPTO=off` | lane on | |
+|---|---|---|---|
+| `engine-calibration` | `3fa9cb8f2a9f6d9c` | `3fa9cb8f2a9f6d9c` | **identical** |
+| `engine-weights` | `025b1de8d13e28aa` | `025b1de8d13e28aa` | **identical** |
+| `risk-state` | `f9c043a81382ae14` | `f9c043a81382ae14` | **identical** |
+| `engine-scorecard` | `a06e3c31e2b74530` | `a06e3c31e2b74530` | **identical** |
+| `gate-state` | `74234e98afe7498f` | `74234e98afe7498f` | **identical** (null both arms) |
+| `miss-ledger` | `1c1dbf8560b5dc90` | `1c1dbf8560b5dc90` | **identical** |
+
+`engine-weights` had never been read back out of a window walk before — only out of `--seed-out` — and B3 carries it precisely because a claim over five of six blobs is not the claim. The equity calibration ends both arms at 19 buckets / 10,777 rows.
+
+**And the rows themselves, not just the blobs:**
+
+| | result |
+|---|---|
+| every equity board + ledger row, all fields, all 133 days (**4,526 rows**) | **byte-identical** |
+| every equity funnel-trace row, and every day's `counts` block | **byte-identical** |
+| regime, roster size, dips, watched, base rate, miss accrual, per day | **byte-identical** |
+| `wildcards` (13 experiments) and `postMortemCensus` | **byte-identical** |
+| funnel trace rows in total | **17,754 in both arms** — the 399 `crypto-contained` rows of the off arm become 399 evaluated crypto rows in the on arm, and not one equity row moves |
+
+**Three harness-diagnostic fields DO move, and each is named rather than waved at.** None is a blob, none is a row, none is anything the reader is shown:
+
+1. `candidatesAsked` **+3 on every one of the 133 days** — the three pairs the lane asked for candles. It is the harness's own count of what `deps.candles` was called for.
+2. `shape` on **27 days — exactly the 27 days a crypto row seated on the BOARD.** `summariseBoard` counts the board it is given, and crypto rides the main board by ratified design (e.g. 04-18 `trades 6 → 7`, 04-21 `watch 7 → 8`). It is the summary reporting an extra row that is really there.
+3. `velocity` on **1 day of 133** (2026-05-22) — **the same five entries in a different order**, identical once sorted by symbol. The velocity diagnostic iterates `ctx.current.asked`, a Set in insertion order, and the lane's three extra awaits shift the interleaving of the engine's concurrent candle fetches by a tick. Same names, same doors, same numbers. (The 3d walk found the same class of thing in the miss ledger's fetch budget; this one is strictly cosmetic — it changes no count.)
+
+### (c) The cold start, measured
+
+**68 crypto rows over 133 sessions** (27 board, 41 ledger), on 41 of the 133 mornings. **Every single one is a C.** No A, no B, and the reason is structural rather than dispositional: `cryptoBaseHitRate` reads a flat 0.5 under 50 outcomes, so `gradeFor` has nothing to beat.
+
+| | |
+|---|---|
+| grades | **C 68 / 68** |
+| sizes | **8 rows at 0.5% risk**, 46 watch rows (risk 0), 14 shadows, 2 below-base |
+| every sized row | **paper only** — `instrument: null` on all 8 (no crypto tracker in `LEVMAP_MIRROR`, and `mapInstrument` mints at `sizedFraction === 1` anyway) |
+| probability range | 0.43 … 0.61 |
+| evidence contract passed | **10 of 68** (the crypto contract collapses to volume-confirmed + two core factors, and it mostly does not clear) |
+| sides / pairs / regimes | long 58 / short 10 · BTC 55, ETH 7, SOL 6 · green 54, amber 8, red 6 |
+| crypto rung at walk end | **R0**, `gradedAtRung 4`, no promotions — the half-size cap therefore never lifted |
+
+**"C at half size" is the design; "C at zero size" is what the cold start actually produces most mornings.** 60 of the 68 rows carry no size at all — a C on a 0.5 base is usually a watch row before any cap is reached — and the 8 that do size all land at 0.5%, which is the equity rung-0 half-size tier under a cap that is not yet binding on it. The cap's real bite arrives when the cohort's own record can earn a grade above C; **this window never got there, and the walk says so rather than implying the cap did work it did not do.**
+
+**The voice carries the cold start on every row — 68 of 68**, and it is read off the published row's own `note`:
+
+> `momentum: 29-bar move +10.3% vs its own typical 13.6% (0.8×) · technical: trending, timeframes disagree, volume-confirmed (RVOL 1.5) · crypto cohort — its own calibration, its own 14-bar clock, its own tape; this cohort has graded 1 of the ~50 outcomes it needs, so C at half size is the designed floor, not a verdict · paper only — no BTC-USD tracker configured yet · capped at 0.5× the rung until the cohort's own record earns the full one`
+
+All three ratified sentences are present on all 68 rows (cohort, cold start, paper-only + cap), and the counter in them is live: the quoted `gradedN` climbs **0 → 37** across the window.
+
+**The crypto blob accrued its first real outcomes — 38 of them, in its own namespace.**
+
+| | |
+|---|---|
+| `evidence` | `live { n: 26, hits: 10 }`, `shadow { n: 12, hits: 5 }`, `seed { n: 0, hits: 0 }` |
+| outcome tally | 38 graded, **15 hits**, 14 stopped, Σ excess **−27.7pp** |
+| buckets minted (9) | `long:green:25-40` 18/7 · `long:green:40-55` 7/3 · `long:green:70+` 1/0 · `long:amber:25-40` 3/1 · `short:amber:25-40` 2/1 · `short:green:25-40` 1/0 · `short:red:25-40` 2/2 · `short:red:40-55` 3/1 · `short:red:55-70` 1/0 |
+| setup buckets (7) | `continuation:long:25-40` 19/7 · `continuation:long:40-55` 7/3 · `continuation:short:25-40` 5/3 · `continuation:short:40-55` 3/1 · `continuation:short:55-70` 1/0 · `reversal:long:25-40` 2/1 · `reversal:long:70+` 1/0 |
+| **key shape** | **every key 3-part and cohortless** — `side:regime:band` and `setup:side:band`, no cap cohort anywhere, because `updateCryptoCalibration` forces `capUsdM` null (a coin has no market cap) |
+| Brier trail | 38 daily points, 0.25 → 0.372 → 0.292 · `defVersion 3`, `modelVersion 3`, `seeded false`, **`referenceBase` absent** (the equity 0.4158 never appears — the partition falls back to its own pooled base, by design) |
+| `crypto-risk` | `{ rung: 0, sinceDate: '2026-04-17', gradedAtRung: 4, history: [] }` |
+
+### (d) Determinism
+
+The lane-on walk was run **twice**. Normalising only `commit` and each day's wall-clock `ms`, the two 20.4 MB artefacts are **byte-identical over all 13,643,855 normalised bytes** — same crypto rows, same maturities, same buckets, same Brier trail, same rung, same slot cuts. Component shas (crypto rows `638a306b94dc0a70`, crypto calibration `38656fc3d922ecfa`, crypto risk `d9b37a69ec6da4e2`, `cryptoMatured` `3901b959beb5288e`) match across the two runs.
+
+### (e) One row per side, and the cut that proves it
+
+**Max crypto rows per side per day: 1** — board and ledger, all 133 days, no exceptions.
+
+The slot cut is not vacuous here: **66 `slot-cut` trace rows on 46 days, and on 20 of those days TWO pairs were cut on the same side** — all three pairs drafting one call, one seat. E.g. 2026-05-28: `BTC-USD:short = slot-cut`, `SOL-USD:short = slot-cut`, `ETH-USD:short = called-shadow` — the strongest |composite| took the seat and the trace names the other two, each carrying `crypto cohort · one row per side, and a stronger pair took it`.
+
+**The full crypto trace census over the window** (399 rows in each arm — 133 days × 3 pairs, exactly):
+
+| lane OFF | | lane ON | |
+|---|---|---|---|
+| `crypto-contained` | **399** | `dead-zone-core` | 234 |
+| | | `slot-cut` | 66 |
+| | | `shadow-capped` | 49 |
+| | | `called-watch` | 22 |
+| | | `called-shadow` | 9 |
+| | | `entry-wait` | 9 |
+| | | `route-blocked` | 5 |
+| | | `called-half` | 4 |
+| | | `called-below-base` | 1 |
+
+### The lever, and the default it chose
+
+`CRYPTO=off` was PINNED in `main()` by B2 with a comment ending "B3 builds the crypto session spine and the fetch, and lifts this line". It is now `resolveCryptoLever(spine, env)`:
+
+| spine | `CRYPTO` | result | why |
+|---|---|---|---|
+| equity | unset | **OFF (default)** | every mode that shipped before B3 — the window walk, `--baseline`, `--plant-a`, `--seed-out` — behaves exactly as it did |
+| equity | `off` | OFF (caller) | |
+| equity | anything else | **BLOCKED** | it would replay a 24/7 cohort against a Mon–Fri calendar: no weekend session, and a 14-bar horizon over a spine missing two days in seven |
+| crypto | unset | **ON (default)** | the mode exists for the lane |
+| crypto | `off` | OFF (caller) | **the lane-off arm of the controlled diff** |
+
+**The chosen default for existing modes is OFF, and it is proved rather than asserted:** the same 5-session equity-spine walk (`--from 2026-08-05 --to 2026-08-11`) run at BASE `99866cc` and again at HEAD produces **byte-identical artefacts — 487,884 bytes both**, after normalising `commit` and `ms`, with none of B3's new fields present. Every new artefact field is spread on the crypto spine only. `--seed-out`, `--baseline` and `--plant-a` are each refused on the crypto spine with their own sentence (the seed is an equity measurement on the equity calendar; the pre-Stage-1 tree has no lane; a planted EQUITY calibration prices no crypto row).
+
+### ⚠ Three invariants that were counting SESSIONS in walk days — the walk found them, and one is an ENGINE finding
+
+The first crypto-spine walk stopped three times before it finished. Every one is the harness asserting something that was only ever true because a walk day had always been a SPY session — the same shape as A1's `SIDE_FREE_GATES` residual, and the reason the arm exists.
+
+1. **⚠ THE MISS LEDGER CANNOT PRICE A DAY SPY HAS NO BAR FOR, AND NEVER REVISITS IT — an engine finding, recorded and NOT fixed.** `maturedTraceDate` maps each trace date onto a SPY bar index and takes the newest; `accrueMissLedger` then returns if that day is already priced, with no fallback to an older unpriced one. Walk dates sharing a bar are therefore ONE slot. Measured, over 2026-07-01 … 08-11: the ledger priced **07-01, 07-02, 07-03, 07-07** and **07-04 (Sat), 07-05 (Sun) and 07-06 (Mon) are unpriceable forever** — a holiday-Friday, a Saturday and a Sunday all collapsed onto Monday's bar, and 07-03 won the slot. **Nothing is broken in production today, because production does not run the engine at weekends** (recon §8.1) — but weekend engine runs are exactly what a 24/7 lane wants, and this is one of their costs. The harness now mirrors the rule (`priceableTraceDates`) so contiguity is asserted over the days the engine COULD have priced; a reachable hole is still a violation, and a priced day that was not reachable is a new one.
+2. **`gradedOnDate`.** "The morning the engine graded this row" was `dates[i + 11]` — true only while one day is one session. On this spine eleven sessions is fifteen calendar days, so the re-derivation was handed a tape four days short and three post-mortems "disagreed" over wording alone (`session 9` vs `inside the ten sessions`). Counted in sessions now, expressed in the spine's own days; identical to `dates[i + 11]` on the equity spine by construction.
+3. **A crypto row explains itself to nobody — and the walk asserted the opposite.** `postMortemViolations` failed the first three crypto losers with "the engine graded it a loser and it explains nothing". The engine is right and the harness was wrong: the post-mortem classifier reads `market-drag` and `news-reversal` off SPY and feeds a SPY-benchmarked ledger, so the engine excludes crypto at the accrual (`!cryptoRow`). Exempted — and asserted in the other direction too, because a crypto row that *carried* one would mean the engine's guard had failed. The post-mortem CENSUS is now excluded on the same grounds, which is what makes it byte-identical across the two arms above.
+
+### What this walk is NOT
+
+- **Not a seed.** The committed seed artefact is untouched, `--seed-out` is refused on this spine, and the crypto partition starts EMPTY by ratified design. Deep-seeding crypto remains a recorded follow-up.
+- **Not production's weekend.** The engine does not run at weekends (`daily-run.mts`: weekday → engine, weekend → composer only), so **a crypto lane in production publishes on weekdays only** and its Saturday/Sunday calls exist in this replay alone. Enabling weekend engine runs is a separate decision with its own costs — the miss-ledger finding above is one of them, and the gate-cadence session clock is another (recon §8.1).
+- **Not a P&L claim.** All 68 rows are C, 60 of them carry no size, and all 8 sized rows are paper-only. 15 hits in 38 outcomes on an absolute basis, Σ −27.7pp, is a cold partition's first record and nothing more.
+- **A replay-only artefact, stated:** on this spine the walk also runs the EQUITY engine on 38 weekend mornings (562 equity board rows production would never have published). It is identical in both arms, so it confounds nothing here — but no equity number from a crypto-spine walk should be quoted as if production had produced it.
+
+### The verdict
+
+**PASS on all five.** Grading matures on the crypto clock at exactly 16 calendar days, 38 times out of 38, weekend publications included. Not one byte of any of the six equity blobs moves when the lane runs, and neither does any of the 4,526 equity rows or 17,754 trace rows — the only differences are three named harness-diagnostic fields, all of which are the harness observing that a crypto row exists. The cold start is C at half size on every row, with the designed-floor sentence on every row and 38 real outcomes in nine cohortless three-part buckets of the partition's own blob. The walk is byte-deterministic. One row per side holds on all 133 days, with 66 slot cuts and 20 days of two pairs competing to prove it is not vacuous.
