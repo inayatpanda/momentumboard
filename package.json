@@ -13,7 +13,8 @@
     "deploy:cron": "cd workers/cron && npx wrangler deploy",
     "seed-engine": "vite-node scripts/seed-engine.ts",
     "engine-dry-run": "vite-node scripts/engine-dry-run.ts",
-    "budget": "node scripts/check-budgets.mjs"
+    "budget": "node scripts/check-budgets.mjs",
+    "walkthrough": "node scripts/walkthrough.mjs"
   },
   "dependencies": {
     "dexie": "^4.0.8",

@@ -17,3 +17,8 @@ docs/AUDIT-*.md
 
 # session worktrees
 .claude/worktrees/
+
+# walkthrough screenshots (scripts/walkthrough.mjs) — evidence, not source
+.superpowers/walkthrough/
+# miniflare's local state, written by `wrangler pages dev` (the walkthrough)
+.wrangler/
