@@ -37,7 +37,15 @@ import { CRYPTO_GRADE_HORIZON, CRYPTO_LOOKBACKS, CRYPTO_UNIVERSE } from './crypt
  *
  * Read per call, not memoised, for the same reason `regretDisabled` is: a run
  * that sets it after the module loaded must still be off. The try/catch is for
- * the browser bundle, which has no `process` at all. */
+ * the browser bundle, which has no `process` at all.
+ *
+ * ROLLBACK SCOPE (final branch review I-1): this reads the PROCESS env of
+ * whichever host runs the engine. The scheduled path is the Actions job
+ * (daily-paper.yml env block) — but predict-background is also reachable on
+ * the hosted router (admin POST) and the host cron slot behind
+ * WORKER_OWNS_PREDICT. A rollback is therefore TWO env edits — the workflow
+ * env AND the hosting env — or an admin-triggered hosted rerun during the
+ * rollback runs with the lane back on. */
 export function cryptoDisabled(): boolean {
   try {
     return typeof process !== 'undefined' && process.env?.CRYPTO === 'off'
