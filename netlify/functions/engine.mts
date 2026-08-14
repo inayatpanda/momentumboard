@@ -8,7 +8,11 @@ import type { ChannelCredState } from '../../shared/engine/channelCred'
 import { MISS_LEDGER_KEY, missLedgerExamples, missLedgerSummary } from '../../shared/engine/missLedger'
 import { GATE_STATE_KEY, gateStateStructured, gateStateSummary, type GateOverride } from '../../shared/engine/gateState'
 import { FUNNEL_TRACE_INDEX_KEY, PUBLISHED_GATES, funnelTraceKey, traceRowKey, type FunnelTrace, type FunnelNearMiss } from '../../shared/engine/funnelTrace'
-import { onDemandVerdict, type OnDemandVerdict } from './lib/onDemandVerdict'
+import { containedCryptoVerdict, onDemandVerdict, type OnDemandVerdict } from './lib/onDemandVerdict'
+import { isCryptoSymbol } from '../../shared/symbols'
+import { CRYPTO_CALIB_KEY, cryptoBaseHitRate, loadCryptoCalibration } from '../../shared/engine/cryptoCalibration'
+import { CRYPTO_COLD_START_N, CRYPTO_RISK_KEY, loadCryptoRisk } from '../../shared/engine/cryptoLane'
+import type { CohortRung } from '../../shared/engine/riskLadder'
 import { getCached, setCached } from './lib/cache'
 import { fetchYahooChart } from './lib/yahoo'
 import type { Candle } from '../../shared/types'
@@ -137,7 +141,14 @@ async function viewBoard() {
   // scored from its own rows, plus that day's costliest named regret — shipped
   // IN the board slice so a cold Today never depends on the learning slice.
   const ydate = (predIndex ?? []).filter(d => d !== (board?.date ?? null)).at(-1) ?? null
-  let yesterday: { date: string; wins: number; losses: number; topRegret: { sym: string; excessPct: number; gate: string } | null } | null = null
+  let yesterday: {
+    date: string
+    wins: number
+    losses: number
+    equity: { wins: number; losses: number }
+    crypto: { wins: number; losses: number } | null
+    topRegret: { sym: string; excessPct: number; gate: string } | null
+  } | null = null
   if (ydate) {
     const preds = (await blobAppStore.read<Prediction[]>(`predictions:${ydate}`)) ?? []
     // outcome10 is a PredOutcome object; `hit` is the side-adjusted verdict
@@ -147,10 +158,25 @@ async function viewBoard() {
       const dayExamples = (regrets?.topGates ?? [])
         .flatMap(g => g.examples.filter(e => e.date === ydate && e.excessPct > 0).map(e => ({ sym: e.sym, excessPct: e.excessPct, gate: g.gate as string })))
         .sort((a, b) => b.excessPct - a.excessPct)
+      // THE PARTITION, IN THE STRIP (crypto-v2 wave, finding 5). An equity `hit`
+      // means "beat SPY by ≥1pp over ten sessions"; a cohort `hit` means "moved
+      // ≥1pp on its own, over fourteen crypto bars, with nothing subtracted".
+      // Summed into one score they read as one measurement — and a weekend date
+      // on which only the coins graded would print as a generic engine result
+      // over a market that was shut. Keyed on the STAMP, never the symbol: a
+      // legacy crypto row published before the lane was graded against SPY, so
+      // its verdict really is an equity one.
+      const tally = (rows: Prediction[]) => ({ wins: rows.filter(p => p.outcome10!.hit).length, losses: rows.filter(p => !p.outcome10!.hit).length })
+      const cryptoGraded = graded.filter(p => p.cohort === 'crypto')
       yesterday = {
         date: ydate,
-        wins: graded.filter(p => p.outcome10!.hit).length,
-        losses: graded.filter(p => !p.outcome10!.hit).length,
+        // the flat pair is the whole day's census, KEPT FOR ONE RELEASE so a
+        // client on the old bundle still paints something true (a count of rows,
+        // which means the same thing in both partitions) — the split below is
+        // what YesterdayStrip actually reads.
+        ...tally(graded),
+        equity: tally(graded.filter(p => p.cohort !== 'crypto')),
+        crypto: cryptoGraded.length ? tally(cryptoGraded) : null,
         topRegret: dayExamples[0] ?? null,
       }
     }
@@ -241,6 +267,43 @@ const projectChannelCred = (cred: ChannelCredState | null) =>
  * structured gate timeline, the paper's own gate lines, the miss ledger WITH
  * its named examples, and the aggregate's projections of weights, scorecard,
  * roster, channel cred and calibration. */
+/** THE CRYPTO PARTITION'S OWN SUMMARY (crypto-v2 wave, finding 4).
+ *
+ * `engine-scorecard` and `engine-calibration` are the EQUITY partition's: the
+ * grading pass keeps every cohort row out of both, deliberately, because their
+ * numbers are excesses against SPY over ten sessions and a cohort row's is an
+ * absolute move over fourteen bars. A learning slice that serves only those two
+ * therefore hands the app a record with a whole cohort missing from it — its hit
+ * rate, its earned rung and its calibration all invisible.
+ *
+ * Served as its own field off the lane's own two blobs, read through the lane's
+ * own loaders: `loadCryptoCalibration` refuses a blob without the `absolute`
+ * brand (an equity blob mis-keyed here would otherwise hand the panel 8,500
+ * SPY-benchmarked rows), and `loadCryptoRisk` reads a malformed ladder as cold.
+ * `gradedN` is `cryptoBaseHitRate(...).n` — the very number the row's own voice
+ * quotes against the ~50 the partition needs — and the RATE is deliberately not
+ * served: `baseHitRate` returns a flat 0.5 under fifty outcomes, which is a
+ * cold-start floor and not a measurement, so the pane computes its hit rate from
+ * the cohort's actual receipts instead.
+ *
+ * null when NEITHER blob exists: the partition has never moved, and a panel of
+ * zeroes would claim a cold record where there is no record at all. */
+function projectCrypto(calBlob: CalibrationState | null, riskBlob: CohortRung | null, today: string) {
+  if (!calBlob && !riskBlob) return null
+  const cal = loadCryptoCalibration(calBlob)
+  const risk = riskBlob ? loadCryptoRisk(riskBlob, today) : null
+  return {
+    gradedN: cryptoBaseHitRate(cal).n,
+    coldStartN: CRYPTO_COLD_START_N,
+    rung: risk?.rung ?? null,
+    gradedAtRung: risk?.gradedAtRung ?? null,
+    sinceDate: risk?.sinceDate ?? null,
+    // the same projection the equity blob gets, plus the brand that says which
+    // basis these buckets were struck on
+    calibration: { ...projectCalibration(cal)!, basis: cal.basis },
+  }
+}
+
 async function viewLearning() {
   const [gateStateBlob, missLedgerBlob, weights, scorecard, roster, rosterLog, channelCred, calibration, config] = await Promise.all([
     blobAppStore.read(GATE_STATE_KEY),
@@ -253,6 +316,12 @@ async function viewLearning() {
     blobAppStore.read<CalibrationState>('engine-calibration'),
     blobAppStore.read<{ riskAppetite?: 'moderate' | 'aggressive' | null; gateOverride?: GateOverride | null }>('config'),
   ])
+  // the partition's own two, read beside the equity blobs and never merged into
+  // them — the same "two keys, two reads" rule the writer follows (engine.ts)
+  const [cryptoCalBlob, cryptoRiskBlob] = await Promise.all([
+    blobAppStore.read<CalibrationState>(CRYPTO_CALIB_KEY),
+    blobAppStore.read<CohortRung>(CRYPTO_RISK_KEY),
+  ])
   return {
     // Config rides along so `current` is the engine's OWN effective value —
     // appetite preset, earned delta, owner pin, bounds clamp, all of it (CX-14).
@@ -264,6 +333,7 @@ async function viewLearning() {
     roster: projectRoster(roster, rosterLog),
     channelCred: projectChannelCred(channelCred),
     calibration: projectCalibration(calibration),
+    crypto: projectCrypto(cryptoCalBlob, cryptoRiskBlob, londonToday()),
   }
 }
 
@@ -274,6 +344,12 @@ const VERDICT_CACHE_MS = 15 * 60 * 1000
  * cache+yahoo path /api/market uses; the verdict itself is cached 15 min under
  * `verdict-cache:{SYM}` and is NEVER written into predictions:*. */
 async function viewVerdict(sym: string) {
+  // THE CRYPTO CONTAINMENT (crypto-v2 wave, finding 1), before the cache and
+  // before every read: this desk's factors are the equity engine's, so a coin
+  // asked here would come back with a lean measured against SPY on a five-day
+  // week. `onDemandVerdict` guards itself too — this branch exists so a
+  // contained answer costs no blob read, no candle fetch and no cache write.
+  if (isCryptoSymbol(sym)) return containedCryptoVerdict(sym)
   const cacheKey = `verdict-cache:${sym}`
   const hit = await blobAppStore.read<{ at: number; verdict: OnDemandVerdict }>(cacheKey)
   if (hit && Date.now() - hit.at < VERDICT_CACHE_MS) return hit.verdict

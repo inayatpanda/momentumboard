@@ -93,7 +93,49 @@ describe('engine ?view= slices', () => {
       days: { '2026-08-13': { checked: 3, unchecked: 1, misses: 1 } },
     })
     const r = await body(await handler(req('?view=board')))
-    expect(r.data.yesterday).toEqual({ date: '2026-08-13', wins: 1, losses: 1, topRegret: { sym: 'PLTR', excessPct: 6.1, gate: 'dead-zone-core' } })
+    expect(r.data.yesterday).toEqual({
+      date: '2026-08-13',
+      wins: 1,
+      losses: 1,
+      // the whole-day census stays for one release; the SPLIT is what the strip reads
+      equity: { wins: 1, losses: 1 },
+      crypto: null, // no cohort row graded that day — the strip stays single-voiced
+      topRegret: { sym: 'PLTR', excessPct: 6.1, gate: 'dead-zone-core' },
+    })
+  })
+
+  // THE PARTITION, IN THE STRIP (crypto-v2 wave, finding 5). An equity verdict is
+  // "beat SPY by ≥1pp over ten sessions"; a cohort verdict is "moved ≥1pp on its
+  // own, over fourteen crypto bars". Summed into one "3 wins · 1 loss" they read
+  // as one measurement, and a weekend date on which only the coins graded reads
+  // as a generic engine result over a market that was shut.
+  it('?view=board partitions yesterday’s verdicts by cohort', async () => {
+    await seed('engine-board', { date: '2026-08-18', board: [] })
+    await seed('predictions-index', ['2026-08-17'])
+    await seed('predictions:2026-08-17', [
+      { id: 'e1', sym: 'NVDA', side: 'long', outcome10: { excessPct: 4.2, rawPct: 5, spyPct: 0.8, stopped: false, hit: true } },
+      { id: 'e2', sym: 'AMD', side: 'long', outcome10: { excessPct: -1.1, rawPct: 0, spyPct: 1.1, stopped: false, hit: false } },
+      { id: 'c1', sym: 'BTC-USD', cohort: 'crypto', side: 'long', outcome10: { excessPct: 6.4, rawPct: 6.4, spyPct: 0, stopped: false, hit: true } },
+      { id: 'c2', sym: 'ETH-USD', cohort: 'crypto', side: 'short', outcome10: { excessPct: -3.2, rawPct: -3.2, spyPct: 0, stopped: true, hit: false } },
+    ])
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.yesterday).toMatchObject({
+      date: '2026-08-17',
+      equity: { wins: 1, losses: 1 },
+      crypto: { wins: 1, losses: 1 },
+      wins: 2, // the flat census still counts the whole day
+      losses: 2,
+    })
+  })
+
+  it('?view=board reports a crypto-only weekend as crypto, not as a generic result', async () => {
+    await seed('engine-board', { date: '2026-08-18', board: [] })
+    await seed('predictions-index', ['2026-08-16'])
+    await seed('predictions:2026-08-16', [
+      { id: 'c1', sym: 'BTC-USD', cohort: 'crypto', side: 'long', outcome10: { excessPct: 2.4, rawPct: 2.4, spyPct: 0, stopped: false, hit: true } },
+    ])
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.yesterday).toMatchObject({ equity: { wins: 0, losses: 0 }, crypto: { wins: 1, losses: 0 } })
   })
 
   it('?view=board yesterday is null with no graded history', async () => {
@@ -338,6 +380,57 @@ describe('engine ?view= slices', () => {
       expect(r.data).not.toHaveProperty('holdingsReads')
       expect(r.data).not.toHaveProperty('ledger')
     })
+
+    // THE COHORT'S OWN PANE (crypto-v2 wave, finding 4). `engine-scorecard` and
+    // `engine-calibration` are the EQUITY partition's — the grading pass keeps
+    // every crypto row out of both, on purpose — so a learning slice that serves
+    // only those two hands the app a record with a cohort silently missing from
+    // it. The partition's own two blobs travel beside them, never inside them.
+    it('serves the crypto partition’s own calibration and rung, beside the equity ones', async () => {
+      await seed('engine-calibration', { buckets: { 'long:risk-on:high': { n: 5, hits: 3 } }, brier: [0.2], referenceBase: 0.41, defVersion: 3 })
+      await seed('crypto-calibration', {
+        basis: 'absolute',
+        defVersion: 3,
+        buckets: { 'long:green:55-70': { n: 12, hits: 7 } },
+        brier: [0.24],
+        seeded: false,
+        seedGeneration: 0,
+        evidence: { seed: { n: 0, hits: 0 }, live: { n: 12, hits: 7 }, shadow: { n: 0, hits: 0 } },
+      })
+      await seed('crypto-risk', { rung: 1, sinceDate: '2026-08-01', gradedAtRung: 12, history: [] })
+
+      const r = await body(await handler(req('?view=learning')))
+      const d = r.data as {
+        calibration: { referenceBase: number | null }
+        crypto: { gradedN: number; coldStartN: number; rung: number | null; gradedAtRung: number | null; calibration: { basis: string; buckets: Record<string, unknown>; referenceBase: number | null } | null } | null
+      }
+      // the equity blob is untouched by the new field
+      expect(d.calibration.referenceBase).toBe(0.41)
+      expect(d.crypto).not.toBeNull()
+      expect(d.crypto!.gradedN).toBe(12) // the same count the row's own voice quotes
+      expect(d.crypto!.coldStartN).toBe(50)
+      expect(d.crypto!.rung).toBe(1)
+      expect(d.crypto!.gradedAtRung).toBe(12)
+      expect(d.crypto!.calibration!.basis).toBe('absolute')
+      expect(d.crypto!.calibration!.buckets).toHaveProperty('long:green:55-70')
+      // there is no crypto reference sweep, and the equity 0.4158 may never leak in
+      expect(d.crypto!.calibration!.referenceBase).toBeNull()
+    })
+
+    it('serves crypto: null when the partition has never moved', async () => {
+      await seed('engine-calibration', { buckets: {}, brier: [], defVersion: 3 })
+      const r = await body(await handler(req('?view=learning')))
+      expect((r.data as { crypto: unknown }).crypto).toBeNull()
+    })
+
+    it('reads a mis-keyed equity blob under the crypto key as COLD, never as the cohort’s record', async () => {
+      // no `basis` brand → loadCryptoCalibration goes cold (cryptoCalibration.ts)
+      await seed('crypto-calibration', { defVersion: 3, buckets: { 'long:risk-on:high': { n: 8500, hits: 3500 } }, brier: [] })
+      const r = await body(await handler(req('?view=learning')))
+      const c = (r.data as { crypto: { gradedN: number; calibration: { buckets: Record<string, unknown> } | null } | null }).crypto
+      expect(c!.gradedN).toBe(0)
+      expect(c!.calibration!.buckets).toEqual({})
+    })
   })
 
   describe('?view=verdict&sym=', () => {
@@ -372,6 +465,25 @@ describe('engine ?view= slices', () => {
       // …and nothing was ever written into the predictions record.
       const rows = sqlite.prepare("SELECT key FROM blobs WHERE store='app' AND key LIKE 'predictions:%'").all<{ key: string }>()
       expect((await rows).results ?? []).toHaveLength(0)
+    })
+
+    // FINDING 1: this view's arithmetic is the equity engine's — equity windows,
+    // momentum vs SPY, equity weights, the board's equity regime. Over a coin it
+    // would publish a lean in VerdictHero that no partition ever measured.
+    it('contains a crypto pair instead of publishing an equity lean on it', async () => {
+      await seed('engine-weights', { base: { momentum: 2 }, current: { momentum: 2 }, history: [] })
+      await seed('engine-board', { date: '2026-08-14', regime: 'green', board: [] })
+      const r = await body(await handler(req('?view=verdict&sym=btc-usd')))
+      const v = r.data as { sym: string; contained?: true; unavailable?: true; lean: string; core: number | null; note: string }
+      expect(v.sym).toBe('BTC-USD')
+      expect(v.contained).toBe(true)
+      expect(v.unavailable).toBeUndefined()
+      expect(v.lean).toBe('none')
+      expect(v.core).toBeNull()
+      expect(v.note).toMatch(/crypto lane/i)
+      // contained BEFORE any work: no verdict cache entry, no candle fetch
+      const rows = await sqlite.prepare("SELECT key FROM blobs WHERE store='app' AND key LIKE 'verdict-cache:%'").all<{ key: string }>()
+      expect(rows.results ?? []).toHaveLength(0)
     })
 
     it('400s a malformed sym and reports unavailable when no tape can be fetched', async () => {

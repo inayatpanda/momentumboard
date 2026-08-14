@@ -80,3 +80,48 @@ describe('onDemandVerdict', () => {
     expect(v.lean).toBe('none')
   })
 })
+
+// THE CRYPTO CONTAINMENT (crypto-v2 wave, finding 1). This desk's factors ARE
+// the equity engine's: default equity windows, momentum measured against SPY,
+// equity weights and the board's equity regime. Run over a coin they answer a
+// question about a market they do not measure — and the answer would be printed
+// in VerdictHero as a lean. The lane's own predicate (`isCryptoSymbol`, the one
+// every containment site asks) sends those symbols back to the board instead.
+describe('onDemandVerdict — the crypto containment', () => {
+  const counting = (candles: Candle[] | null) => {
+    const asked: string[] = []
+    return { asked, deps: { candles: async (sym: string) => (asked.push(sym), sym === 'SPY' ? flatSpy() : candles) } }
+  }
+
+  it('never hands a crypto pair an equity read — contained, and it says why', async () => {
+    const { asked, deps: d } = counting(trendCandles())
+    const v = await onDemandVerdict('BTC-USD', d, { weights: MOMENTUM_ONLY, regime: 'green' })
+    expect(v.contained).toBe(true)
+    // NOT "unavailable": the tape exists and the engine reads it every morning —
+    // this desk is simply the wrong desk to ask (the two say different things).
+    expect(v.unavailable).toBeUndefined()
+    expect(v.lean).toBe('none')
+    expect(v.core).toBeNull()
+    expect(v.stage).toBeNull()
+    expect(v.computed).toEqual([])
+    expect(v.nulls).toEqual([])
+    expect(v.note).toMatch(/crypto lane/i)
+    expect(v.note).toMatch(/board/i)
+    // and no equity arithmetic was even attempted — no tape, and above all no SPY
+    expect(asked).toEqual([])
+  })
+
+  it('covers every pair the lane is defined over, in either spelling', async () => {
+    for (const sym of ['BTC-USD', 'ETH-USD', 'SOL-USD', 'eth-usd', 'DOGE-EUR']) {
+      const v = await onDemandVerdict(sym, deps(trendCandles()), { weights: MOMENTUM_ONLY, regime: 'green' })
+      expect(v.contained, sym).toBe(true)
+    }
+  })
+
+  it('leaves equities — including dashed share classes and LSE lines — alone', async () => {
+    for (const sym of ['NVDA', 'BRK-B', 'BT-A.L']) {
+      const v = await onDemandVerdict(sym, deps(trendCandles()), { weights: MOMENTUM_ONLY, regime: 'green' })
+      expect(v.contained, sym).toBeUndefined()
+    }
+  })
+})
