@@ -198,6 +198,11 @@ export function rungSizedN(buckets: Readonly<Record<string, BucketStat>>, cohort
     const parts = key.split(':')
     if (parts.length !== 4) continue
     if (parts[0] !== cohort || parts[1] !== side || parts[2] !== regime) continue
+    // DIVERGES from setupCurveFor's convention ON PURPOSE: an unpartitioned
+    // bucket reads as fully sized here. The blend must PROVE sized evidence
+    // before speaking; this rung only asks "has anything ever graded here" —
+    // and over-counting errs toward NOT firing rung 2, the safe direction for
+    // a scarce slot (Task-1 review, minor 3).
     n += Math.max(0, (b?.n ?? 0) - (b?.shadowN ?? 0))
   }
   return n
@@ -212,6 +217,11 @@ function gatesByName(rows: Readonly<Record<string, FunnelTraceRow>>): Map<string
   const out = new Map<string, Set<GateCode>>()
   for (const [key, row] of Object.entries(rows ?? {})) {
     if (!row?.gate) continue
+    // A PUBLICATION is not a block: a called-shadow on the other side (or a
+    // shadow-capped casualty) says nothing about the refused side's gate —
+    // funnelTrace.ts's own per-key precedence promise (Task-1 review). Only
+    // genuine refusals count toward "blocked by exactly one gate".
+    if (WILDCARD_INELIGIBLE_GATES.has(row.gate)) continue
     const sym = key.split(':')[0]
     const seen = out.get(sym) ?? new Set<GateCode>()
     seen.add(row.gate)
@@ -265,7 +275,10 @@ function wildcardPool(inputs: WildcardInputs): WildcardCandidate[] {
       gateEvidenceN: gateEvidenceN(inputs.gateStats ?? [], row.gate),
     }
     const prev = byKey.get(key)
-    if (!prev || Math.abs(cand.miss.core) > Math.abs(prev.miss.core)) byKey.set(key, cand)
+    // strict-greater kept first-seen on an exact tie — input-order-dependent
+    // (Task-1 review). The gate name settles exact ties totally.
+    if (!prev || Math.abs(cand.miss.core) > Math.abs(prev.miss.core) ||
+        (Math.abs(cand.miss.core) === Math.abs(prev.miss.core) && cand.gate.localeCompare(prev.gate) < 0)) byKey.set(key, cand)
   }
   return [...byKey.values()]
 }

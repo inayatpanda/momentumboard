@@ -251,6 +251,18 @@ describe('selectWildcard — the exclusions', () => {
     expect(sel).toBeNull()
   })
 
+  it('a publication on the OTHER side is not a second gate — the blocked side stays rung-1 eligible', () => {
+    // The mixed case the trace's per-key precedence promises: blocked long at the
+    // dead zone, the dip long shadowed (called-shadow) or capped on the short key.
+    for (const other of ['called-shadow', 'shadow-capped'] as const) {
+      const sel = selectWildcard(
+        p1Inputs({ traceRows: { 'AAA:long': row('dead-zone-core', 'long'), 'AAA:short': row(other, 'short') } }),
+      )
+      expect(sel?.priority).toBe(1)
+      expect(sel?.candidate.gate).toBe('dead-zone-core')
+    }
+  })
+
   it('a name whose rows repeat ONE gate on both sides is still a single-gate refusal', () => {
     const sel = selectWildcard(p1Inputs({ traceRows: { 'AAA:long': row('dead-zone-core', 'long'), 'AAA:short': row('dead-zone-core', 'short') } }))
     expect(sel!.priority).toBe(1)
