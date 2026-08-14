@@ -39,6 +39,27 @@ describe('flattenLedger + summariseLedger', () => {
     expect(s.hitRate).toBeCloseTo(0.33, 2)
     expect(s.avgExcess10).toBeCloseTo(0.5, 1)
   })
+
+  it('a crypto row counts in the CENSUS tiles and stays out of every AVERAGE [1c Phase B]', () => {
+    // the tiles sit above a table that LISTS the crypto row — total/open/stopped
+    // must count what the reader can see, while hitRate/avgExcess10 are equity-
+    // basis arithmetic and must not move by one crypto outcome
+    const rows = [
+      ...flattenLedger(days),
+      pred({ id: 'btc', sym: 'BTC-USD', cohort: 'crypto', outcome10: out(9, true, false) } as Partial<LedgerPrediction>),
+      pred({ id: 'eth', sym: 'ETH-USD', cohort: 'crypto', outcome10: out(-7, false, true) } as Partial<LedgerPrediction>),
+      pred({ id: 'sol', sym: 'SOL-USD', cohort: 'crypto' } as Partial<LedgerPrediction>), // open
+    ]
+    const s = summariseLedger(rows)
+    expect(s.total).toBe(7) // 4 equity + 3 crypto — the table's row count
+    expect(s.open).toBe(2) // one equity, one crypto
+    expect(s.stopped).toBe(2) // a stop close-through means the same thing in both partitions
+    // …and the averages are byte-identical to the equity-only read
+    expect(s.graded).toBe(3)
+    expect(s.hits).toBe(1)
+    expect(s.hitRate).toBeCloseTo(0.33, 2)
+    expect(s.avgExcess10).toBeCloseTo(0.5, 1)
+  })
 })
 
 describe('gradeBreakdown', () => {

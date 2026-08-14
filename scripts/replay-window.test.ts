@@ -27,6 +27,13 @@ import { THEMES } from '../shared/engine/themes'
 import { bannedTokensIn, composeThesis } from '../shared/engine/voice'
 import { classifyLoser } from '../shared/engine/postMortem'
 import { isRouteEtp } from '../shared/engine/riskLadder'
+import {
+  CRYPTO_CALIB_KEY,
+  CRYPTO_GRADE_HORIZON,
+  CRYPTO_HORIZONS,
+  CRYPTO_UNIVERSE,
+} from '../shared/engine/cryptoCalibration'
+import { CRYPTO_CAPACITY_LOOKBACK, CRYPTO_REGIME_SYMBOL, CRYPTO_RISK_KEY } from '../shared/engine/cryptoLane'
 import type { DayTrace, Keyed, MissGateStatLike, MissLedgerLike, PostMortemLike, PrecedenceSample, ProbeContext, RegretContext, Row, RunFile, SeedArtefact, WildcardRecordLike } from './replay-window'
 import {
   WALK_ABSENT_FACTORS,
@@ -54,9 +61,23 @@ import {
   missLedgerViolations,
   postMortemViolations,
   precedenceViolations,
+  gradedOnDate,
+  completedCryptoTail,
+  priceableTraceDates,
+  regretContextOf,
   traceViolations,
   MIRROR_EXTRAS,
   PROD_GAINERS_DEPTH,
+  CRYPTO_CALIB_KEY_MIRROR,
+  CRYPTO_HORIZONS_MIRROR,
+  CRYPTO_PUBLISH_TO_GRADE_DAYS,
+  CRYPTO_REGIME_SYM_MIRROR,
+  CRYPTO_RISK_KEY_MIRROR,
+  CRYPTO_UNIVERSE_MIRROR,
+  CRYPTO_YEAR_BARS,
+  cryptoSpine,
+  resolveCryptoLever,
+  tailBarsFor,
   aReachableState,
   bornBelowCensus,
   brierOf,
@@ -182,6 +203,86 @@ describe('tradingDays', () => {
   it('takes the window from a real index series, deduped and sorted', () => {
     const index = [day('2026-07-13', 1), day('2026-07-14', 1), day('2026-07-14', 1), day('2026-07-17', 1), day('2026-08-12', 1)]
     expect(tradingDays(index, '2026-07-14', '2026-08-11')).toEqual(['2026-07-14', '2026-07-17'])
+  })
+})
+
+describe('cryptoSpine — the crypto walk runs on the PAIR’S OWN bars, not SPY’s', () => {
+  /** A crypto bar is stamped 00:00 UTC, one per calendar day (recon §8.4: ETH’s
+   * five-year day-of-week histogram is perfectly flat at 261 apiece). */
+  const utc = (iso: string, c = 1): Candle => ({ t: Date.parse(`${iso}T00:00:00Z`) / 1000, o: c, h: c, l: c, c, v: 1 })
+  it('is the tape’s own calendar days, deduped, sorted and inside the window', () => {
+    const tape = [utc('2026-07-02'), utc('2026-07-04'), utc('2026-07-04'), utc('2026-07-03'), utc('2026-07-09')]
+    expect(cryptoSpine(tape, '2026-07-03', '2026-07-04').days).toEqual(['2026-07-03', '2026-07-04'])
+  })
+  it('CARRIES THE WEEKEND — the days the equity spine structurally cannot have', () => {
+    // 2026-07-03 Fri · 04 Sat · 05 Sun · 06 Mon
+    const tape = ['2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06'].map(d => utc(d))
+    const s = cryptoSpine(tape, '2026-07-03', '2026-07-06')
+    expect(s.days).toEqual(['2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06'])
+    expect(s.weekend).toBe(2)
+    // …and SPY's spine over the same window has neither of them
+    const spy = [day('2026-07-03', 1), day('2026-07-06', 1)]
+    expect(tradingDays(spy, '2026-07-03', '2026-07-06')).toEqual(['2026-07-03', '2026-07-06'])
+  })
+  it('REPORTS ITS HOLES rather than skipping them — an exchange that never closes has no holidays', () => {
+    const tape = [utc('2026-07-03'), utc('2026-07-06')]
+    const s = cryptoSpine(tape, '2026-07-03', '2026-07-06')
+    expect(s.days).toEqual(['2026-07-03', '2026-07-06'])
+    // the two missing days are a TAPE DEFECT, not a closed market — the difference
+    // between this and `tradingDays`, which is right to be silent about a holiday
+    expect(s.gaps).toEqual(['2026-07-04', '2026-07-05'])
+    expect(s.weekend).toBe(0)
+  })
+  it('is empty, and gapless, on an empty window', () => {
+    expect(cryptoSpine([], '2026-07-04', '2026-07-03')).toEqual({ days: [], gaps: [], weekend: 0 })
+  })
+})
+
+describe('tailBarsFor — a calendar year of a 24/7 tape is 365 bars, not 252', () => {
+  it('hands crypto its own year and every equity the trading one', () => {
+    expect(tailBarsFor('BTC-USD')).toBe(CRYPTO_YEAR_BARS)
+    expect(tailBarsFor('eth-usd')).toBe(365)
+    expect(tailBarsFor('AAPL')).toBe(252)
+    expect(tailBarsFor('BT-A.L')).toBe(252) // the LSE name that reads as CRYPTO to a naive predicate
+  })
+  it('is exactly the lookback the crypto capacity read is denominated in', () => {
+    // starve this and `cryptoMomentumFactor`'s denominator is measured over fifty
+    // weeks of a tape production reads a full year of (`cachedCandles` = Yahoo 1y)
+    expect(CRYPTO_YEAR_BARS).toBe(CRYPTO_CAPACITY_LOOKBACK)
+  })
+})
+
+describe('resolveCryptoLever — the pin becomes a lever, and refuses the one combination that lies', () => {
+  it('defaults OFF on the equity spine — every mode that shipped before B3 is untouched', () => {
+    expect(resolveCryptoLever('equity', undefined)).toMatchObject({ value: 'off', source: 'default' })
+    expect(resolveCryptoLever('equity', 'off')).toMatchObject({ value: 'off', source: 'caller' })
+  })
+  it('REFUSES the lane on an equity spine — that walk grades a cohort on a clock it does not keep', () => {
+    expect(() => resolveCryptoLever('equity', 'on')).toThrow(/BLOCKED/)
+    expect(() => resolveCryptoLever('equity', '1')).toThrow(/--spine crypto/)
+  })
+  it('defaults ON on the crypto spine — the mode exists for the lane', () => {
+    expect(resolveCryptoLever('crypto', undefined)).toMatchObject({ value: 'on', source: 'default' })
+    expect(resolveCryptoLever('crypto', 'on')).toMatchObject({ value: 'on', source: 'caller' })
+  })
+  it('and CRYPTO=off on the crypto spine is the lane-off arm of the controlled diff', () => {
+    expect(resolveCryptoLever('crypto', 'off')).toMatchObject({ value: 'off', source: 'caller' })
+  })
+})
+
+describe('the crypto mirrors — the harness may not import the lane, so it copies it and the copy is checked', () => {
+  it('matches the modules the engine actually runs', () => {
+    expect(CRYPTO_UNIVERSE_MIRROR).toEqual([...CRYPTO_UNIVERSE])
+    expect(CRYPTO_REGIME_SYM_MIRROR).toBe(CRYPTO_REGIME_SYMBOL)
+    expect(CRYPTO_CALIB_KEY_MIRROR).toBe(CRYPTO_CALIB_KEY)
+    expect(CRYPTO_RISK_KEY_MIRROR).toBe(CRYPTO_RISK_KEY)
+    expect(CRYPTO_HORIZONS_MIRROR).toEqual([...CRYPTO_HORIZONS])
+    expect(CRYPTO_HORIZONS_MIRROR[1]).toBe(CRYPTO_GRADE_HORIZON)
+  })
+  it('and the clock arithmetic the evidence quotes: a call dated D grades on D+16’s run', () => {
+    // entry is the first bar OPENING after D (D+1), plus the 14-bar horizon lands
+    // the outcome bar on D+15, which must be COMPLETE — so the pass is D+16's.
+    expect(CRYPTO_PUBLISH_TO_GRADE_DAYS).toBe(CRYPTO_GRADE_HORIZON + 2)
   })
 })
 
@@ -1912,6 +2013,116 @@ describe('MISS_SKIP_GATE_MIRROR / POSTMORTEM_CLASS_MIRROR — the drift guards',
     expect(declared.length).toBe(6)
     expect(declared.slice(0, 5)).toEqual(['stopped', 'thesis-break', 'market-drag', 'news-reversal', 'adverse-move'])
     expect([...POSTMORTEM_CLASS_MIRROR]).toEqual(declared) // ORDER too — it is the precedence
+  })
+})
+
+describe('priceableTraceDates — the miss ledger is a SPY-SESSION mechanism, and the crypto spine found it', () => {
+  /** `maturedTraceDate` (missLedger.ts) maps every trace date onto a SPY BAR
+   * INDEX and takes the newest, then `accrueMissLedger` returns without pricing
+   * anything if that day is already in the ledger — it never falls back to an
+   * older unpriced one. So two walk dates that land on the SAME SPY bar are one
+   * slot: the earlier one wins it and the later one can never be priced. On the
+   * equity spine that cannot happen (one walk day, one SPY bar). On the crypto
+   * spine every Saturday, Sunday and US holiday collapses onto the next session,
+   * and this function is the harness's mirror of the consequence. */
+  // horizon 0 in the collapse tests: the four-bar fixture isolates the
+  // SLOT-COLLAPSE arm; the engine's other refusal (maturity) has its own pin
+  // below, on a tape long enough to show the boundary.
+  const spy = [day('2026-07-01', 1), day('2026-07-02', 1), day('2026-07-06', 1), day('2026-07-07', 1)]
+  it('is every walk day on the equity spine — one session, one bar, nothing collapses', () => {
+    const dates = ['2026-07-01', '2026-07-02', '2026-07-06', '2026-07-07']
+    expect(priceableTraceDates(dates, spy, 0)).toEqual(dates)
+  })
+  it('COLLAPSES the weekend and the holiday onto the session that follows them — the earliest wins the slot', () => {
+    // 07-03 US holiday · 07-04 Sat · 07-05 Sun · 07-06 Mon — four dates, ONE bar
+    const dates = ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06', '2026-07-07']
+    expect(priceableTraceDates(dates, spy, 0)).toEqual(['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-07'])
+  })
+  it('drops a date the tape has no session at or after — it can never be selected', () => {
+    expect(priceableTraceDates(['2026-07-07', '2026-08-01'], spy, 0)).toEqual(['2026-07-07'])
+  })
+  it('drops a date whose stopless window has not MATURED — the engine\'s second refusal, mirrored whole', () => {
+    // 15 sessions; with the real MISS_HORIZON (10) only an index with ten more
+    // bars after it survives: idx 0..4 mature, idx 5+ do not. The mirror
+    // previously copied only the no-session arm, leaving `priceable` a
+    // superset near the window's end.
+    const tape15 = Array.from({ length: 15 }, (_, i) => day(new Date(Date.UTC(2026, 6, 1 + i)).toISOString().slice(0, 10), 1))
+    const dates = tape15.map(c => new Date(c.t * 1000).toISOString().slice(0, 10))
+    expect(priceableTraceDates(dates, tape15)).toEqual(dates.slice(0, 5))
+    expect(priceableTraceDates(dates, tape15, 0)).toEqual(dates)
+  })
+  it('falls back to the dates themselves without a tape, and the context defaults the same way', () => {
+    expect(priceableTraceDates(['2026-07-04'], null)).toEqual(['2026-07-04'])
+    expect(regretContextOf([{ date: '2026-07-14', board: [], ledger: [] }]).priceable).toEqual(['2026-07-14'])
+  })
+})
+
+describe('completedCryptoTail — the cache is cut at the FETCH clock, not the run clock', () => {
+  const bars = [day('2026-08-12', 1), day('2026-08-13', 1), { t: Date.parse('2026-08-14T00:00:00Z') / 1000, o: 1, h: 1, l: 1, c: 1, v: 1 }]
+  it('drops the fetch day\'s own bar — eleven hours in progress is not a close', () => {
+    const fetchedAt = Date.parse('2026-08-14T11:17:00Z') / 1000
+    expect(completedCryptoTail(bars, fetchedAt).map(c => c.t)).toEqual(bars.slice(0, 2).map(c => c.t))
+  })
+  it('keeps the same bar once a LATER fetch has seen it close — and a stale cache never grows it back', () => {
+    // fetched on the 15th: the 08-14 bar is complete and stays. The cut is a
+    // property of the FILE (its `at` stamp), so re-reading the 08-14-fetched
+    // copy after midnight still drops the frozen bar — the review's stale-
+    // cache scenario cannot occur.
+    const fetchedNextDay = Date.parse('2026-08-15T00:05:00Z') / 1000
+    expect(completedCryptoTail(bars, fetchedNextDay).length).toBe(3)
+  })
+})
+
+describe('postMortemViolations — the crypto partition explains itself to nobody, and that is the design', () => {
+  const led = (over: Partial<Row>): { date: string; board: Row[]; ledger: Row[] }[] => [
+    { date: '2026-07-14', board: [], ledger: [row({ storedOutcome10: { hit: false, excessPct: -9, stopped: true }, ...over })] },
+  ]
+  it('still fails an EQUITY loser that explains nothing', () => {
+    expect(postMortemViolations(led({})).join('\n')).toMatch(/explains nothing/)
+  })
+  it('exempts a crypto row — the classifier reads SPY, and the engine excludes the partition from it', () => {
+    expect(postMortemViolations(led({ cohort: 'crypto' }))).toEqual([])
+  })
+  it('…and fails one that carries a post-mortem anyway — the exclusion is checked both ways', () => {
+    expect(postMortemViolations(led({ cohort: 'crypto', postMortem: { cls: 'stopped', detail: 'x', at: 1 } })).join('\n')).toMatch(/crypto row carries a post-mortem/)
+  })
+})
+
+describe('gradedOnDate — eleven SESSIONS, expressed in whatever days the spine keeps', () => {
+  const spy = [day('2026-07-01', 1), day('2026-07-02', 1), day('2026-07-06', 1), day('2026-07-07', 1), day('2026-07-08', 1)]
+  it('is dates[i + 11] on an equity spine — the rule that shipped, unchanged', () => {
+    const dates = Array.from({ length: 20 }, (_, k) => `2026-07-${String(k + 1).padStart(2, '0')}`)
+    expect(gradedOnDate(dates, null, 0)).toBe(dates[11])
+    expect(gradedOnDate(dates, null, 3)).toBe(dates[14])
+  })
+  it('and the last walked day when the window ends before the grade could land', () => {
+    expect(gradedOnDate(['a', 'b', 'c'], null, 0)).toBe('c')
+  })
+  it('COUNTS SESSIONS on a spine whose days are not sessions', () => {
+    // one session apart in the tape, four calendar days apart on the spine
+    const dates = ['2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06']
+    // 07-02 is session 1; the next day at session >= 1 + 1 + 1 (horizon 1) is 07-06
+    expect(gradedOnDate(dates, spy, 0, 1)).toBe('2026-07-06')
+    // …and the collapsed days resolve to the session they sit on, not their own
+    expect(gradedOnDate(dates, spy, 2, 0)).toBe('2026-07-06')
+  })
+})
+
+describe('missLedgerViolations — the contiguity claim is over the days the ledger CAN reach', () => {
+  const ctx = (): RegretContext => ({
+    dates: ['2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06'],
+    traces: {},
+    sized: {},
+    // 07-03 is the last date that maps to its own SPY bar; 04/05/06 collapse onto
+    // Monday's, so only the first of them is reachable
+    priceable: ['2026-07-02', '2026-07-03', '2026-07-04'],
+  })
+  const led = (dates: string[]): MissLedgerLike => missLedgerOf({ days: Object.fromEntries(dates.map(d => [d, { checked: 0, unchecked: 0, misses: 0 }])) })
+  it('accepts a run that skipped the days the engine’s own rule can never select', () => {
+    expect(missLedgerViolations(led(['2026-07-02', '2026-07-03', '2026-07-04']), ctx())).toEqual([])
+  })
+  it('still catches a REAL hole — a reachable day that matured and was never measured', () => {
+    expect(missLedgerViolations(led(['2026-07-02', '2026-07-04']), ctx()).join('\n')).toMatch(/no entry for 2026-07-03/)
   })
 })
 

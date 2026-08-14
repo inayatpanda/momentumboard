@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { buildBoard, gradeOutstanding, type EngineDeps } from './engine'
 import { memoryStore, type AppStore } from './store'
 import type { Candle } from '../../../shared/types'
@@ -106,8 +106,20 @@ const runDay = async (watchlist: { symbol: string }[], over: Partial<EngineDeps>
 
 // ---------------------------------------------------------------- the claim --
 
-describe('crypto containment — the parity proof', () => {
-  it('a crypto watchlist changes NOTHING about the day: same board, same ledger, same trace bar the contained rows', async () => {
+// PHASE B UPDATED TWO OF THESE PINS, and only two (Stage 1c, Task B2). The
+// containment claim is now the LEVER'S OFF STATE — `CRYPTO=off` restores it
+// exactly, which is what the parity seam is for — and beside it sits the same
+// claim with the lane ON: the crypto rows exist, and the equity day is still
+// byte-for-byte what it was without them. Every other pin below is untouched,
+// because every other guard is still unconditional.
+
+describe('crypto containment — the parity proof, and CRYPTO=off restores it exactly', () => {
+  afterEach(() => {
+    delete process.env.CRYPTO
+  })
+
+  it('with the lane OFF, a crypto watchlist changes NOTHING about the day: same board, same ledger, same trace bar the contained rows', async () => {
+    process.env.CRYPTO = 'off'
     const without = await runDay([{ symbol: 'INV' }])
     const with_ = await runDay([{ symbol: 'INV' }, { symbol: 'BTC-USD' }, { symbol: 'ETH-USD' }])
 
@@ -122,14 +134,49 @@ describe('crypto containment — the parity proof', () => {
     expect(sha(strip(with_.trace))).toBe(sha(strip(without.trace)))
     expect(Object.keys(with_.trace.rows).filter(isCryptoKey).sort()).toEqual(['BTC-USD', 'ETH-USD'])
     // a NAMED code, not `not-candidate`: phase B's relaxation has to diff cleanly
-    expect(with_.trace.rows['BTC-USD']).toEqual({ gate: 'crypto-contained', source: 'watchlist', detail: expect.stringContaining('crypto') })
+    expect(with_.trace.rows['BTC-USD']).toEqual({ gate: 'crypto-contained', source: 'watchlist', detail: expect.stringContaining('CRYPTO=off') })
     // exactly once per name — a row, never also a count (funnelTrace's invariant)
     expect(with_.trace.counts).toEqual(without.trace.counts)
   })
 
-  it('never spends a candle fetch on a contained name — containment is upstream of the budget', async () => {
+  it('with the lane OFF, never spends a candle fetch on a contained name — containment is upstream of the budget', async () => {
+    process.env.CRYPTO = 'off'
     const { fetched } = await runDay([{ symbol: 'BTC-USD' }])
     expect([...fetched].filter(isCryptoKey)).toEqual([])
+  })
+
+  it('RELAXED — the lane claims its own names: the EQUITY day is still byte-identical, and only crypto rows are added', async () => {
+    const without = await runDay([{ symbol: 'INV' }])
+    const with_ = await runDay([{ symbol: 'INV' }, { symbol: 'BTC-USD' }, { symbol: 'ETH-USD' }])
+
+    const equityOnly = (rows: Prediction[]) => rows.filter(r => r.cohort !== 'crypto')
+    expect(sha(equityOnly(with_.board))).toBe(sha(equityOnly(without.board)))
+    expect(sha(equityOnly(with_.ledger))).toBe(sha(equityOnly(without.ledger)))
+    expect(with_.roster).toEqual(without.roster) // …and the roster guard is UNRELAXED
+    expect(with_.roster.some(e => isCryptoKey(e.sym))).toBe(false)
+
+    // the trace's equity half is untouched; the crypto half is the lane's own
+    // verdicts on its own names, keyed by SIDE because a side was argued
+    const strip = (t: FunnelTrace) => ({ ...t, rows: Object.fromEntries(Object.entries(t.rows).filter(([k]) => !isCryptoKey(k))) })
+    expect(sha(strip(with_.trace))).toBe(sha(strip(without.trace)))
+    const cryptoKeys = Object.keys(with_.trace.rows).filter(isCryptoKey)
+    expect(cryptoKeys.length).toBeGreaterThan(0)
+    // …and NOT one of them says `crypto-contained`: these names were routed, not refused
+    for (const k of cryptoKeys) expect([k, with_.trace.rows[k].gate]).not.toEqual([k, 'crypto-contained'])
+  })
+
+  it('RELAXED — keeps `crypto-contained` for every pair the lane does NOT own, and says which universe', async () => {
+    // DOGE-EUR is a crypto pair and is outside CRYPTO_UNIVERSE, so the lane
+    // never evaluates it and the Phase-A refusal still stands, with a reason.
+    const { trace } = await runDay([{ symbol: 'DOGE-EUR' }])
+    expect(trace.rows['DOGE-EUR']).toEqual({ gate: 'crypto-contained', source: 'watchlist', detail: expect.stringContaining("outside the lane's universe") })
+  })
+
+  it('RELAXED — spends candle fetches only on the lane’s own universe, plus BTC for the cohort’s regime', async () => {
+    const { fetched } = await runDay([{ symbol: 'ETH-USD' }])
+    // ETH because the reader asked for it; BTC because the cohort's regime is
+    // BTC's tape and an unknown regime fails the evidence contract. Never SOL.
+    expect([...fetched].filter(isCryptoKey).sort()).toEqual(['BTC-USD', 'ETH-USD'])
   })
 
   it('KEEPS the starter watchlist as it is: the reader may watch a coin the engine refuses to grade', () => {
@@ -152,7 +199,11 @@ describe('site 1 — candidate admission refuses crypto at EVERY door', () => {
       expect(board.some(b => isCryptoKey(b.sym))).toBe(false)
       expect(ledger.some(p => isCryptoKey(p.sym))).toBe(false)
       const row = Object.entries(trace.rows).find(([k]) => isCryptoKey(k))!
-      expect(row[1]).toMatchObject({ gate: 'crypto-contained', source })
+      // …and the detail names the RIGHT refusal: these are all lane pairs
+      // arriving with an empty watchlist, so the sentence is "the lane serves
+      // it, nobody watchlisted it" — never "outside the universe", which would
+      // be false about BTC-USD from a screener
+      expect(row[1]).toMatchObject({ gate: 'crypto-contained', source, detail: expect.stringContaining('the lane serves but the reader has not watchlisted') })
       expect([...fetched].filter(isCryptoKey)).toEqual([])
     })
   }

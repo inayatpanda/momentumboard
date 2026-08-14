@@ -16,7 +16,13 @@ export interface AppConfig {
   ytChannels: { id: string; name: string }[]
   capital: number
   notes?: UserNote[]
-  levMap?: LevMap // underlying → ISA-eligible leveraged/inverse ETP tickers
+  // underlying → the ISA-eligible tickers that hold it. `long2x/long3x/short2x/
+  // short3x` are geared ETPs (a full-size row only); `long1x/short1x` are 1×
+  // spot/inverse TRACKERS, which a row of any size may hold because they carry
+  // no gearing — that is how a crypto row routes at all (an ISA cannot hold a
+  // coin, but it can hold a cETN over one). Every ticker here is the owner's own
+  // instrument decision; the engine never invents one. See LevMap (riskLadder).
+  levMap?: LevMap
   coreSleeve?: string[] // owner-extended additions to the standing core sleeve (union over defaults, never replace)
   riskRungOverride?: 0 | 1 | 2 | 3 | null // manual risk-ladder pin; null = engine decides
   // Manual gate pins (shared/engine/gateState.ts), mirroring riskRungOverride: a
@@ -59,10 +65,22 @@ export function validateConfig(raw: unknown): AppConfig | null {
     : undefined
   const levMap: LevMap = {}
   if (c.levMap && typeof c.levMap === 'object') {
-    for (const [sym, m] of Object.entries(c.levMap).slice(0, 40)) {
+    // 80, and the number is a TRUNCATION CLIFF, not a quota (codex 1c-R
+    // finding 2): entries past it are dropped SILENTLY, and the map sits
+    // around forty real routes today — at the old cap of 40, adding the three
+    // crypto pairs would have discarded whichever route sorted last, with no
+    // error anywhere. The bound exists only so a garbage blob cannot balloon
+    // the config; it must stay far above any real book.
+    for (const [sym, m] of Object.entries(c.levMap).slice(0, 80)) {
       if (!m || typeof m !== 'object') continue
       const entry: LevMap[string] = {}
-      for (const k of ['long2x', 'long3x', 'short2x', 'short3x'] as const) {
+      // `long1x`/`short1x` are the 1× spot/inverse trackers the crypto route
+      // mints (riskLadder.LevMap). They validate exactly like the geared
+      // tickets — the difference between them is the engine's, not the
+      // config's — and an entry made of nothing but 1x fields is a complete,
+      // valid route: dropping it here would leave the lane paper-only forever
+      // with no error anywhere to say why.
+      for (const k of ['long1x', 'long2x', 'long3x', 'short1x', 'short2x', 'short3x'] as const) {
         const v = (m as Record<string, unknown>)[k]
         if (typeof v === 'string' && v.length) entry[k] = v.toUpperCase().slice(0, 12)
       }
@@ -133,7 +151,14 @@ export function validateConfig(raw: unknown): AppConfig | null {
     ytChannels: c.ytChannels,
     capital: typeof c.capital === 'number' ? c.capital : 5000,
     notes,
-    levMap: Object.keys(levMap).length ? levMap : undefined,
+    // PRESENCE, not emptiness, decides (codex 1c-R finding 3): a caller that
+    // SENT a levMap keeps it even when it validated to {} — an explicit empty
+    // map is "clear my routes", and collapsing it to undefined made the last
+    // route uncorrectable (config-sync preserves stored on absence, so a
+    // withdrawn tracker stayed executable forever). The phone mirror never
+    // sends the key at all, so its syncs still preserve — the exact
+    // riskRungOverride contract, one field over.
+    levMap: c.levMap && typeof c.levMap === 'object' ? levMap : undefined,
     coreSleeve: coreSleeve && coreSleeve.length ? coreSleeve : undefined,
     riskRungOverride,
     gateOverride,

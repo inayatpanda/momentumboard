@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { EngineBoard } from './EngineBoard'
 import type { EngineData } from '../lib/api'
 
@@ -168,5 +168,27 @@ describe('EngineBoard', () => {
     // as text is the same bug with a word in it.
     expect(container.textContent).not.toContain('undefined')
     expect(container.querySelector('[data-thesis]')).toBeNull()
+  })
+
+  it('warns about daily decay on a GEARED route only — a 1× tracker is the asset, and telling a reader it decays is false [1c-R]', async () => {
+    // the warning lives behind the evidence toggle, so each arm opens it first
+    data.board!.board = [{ ...prediction, instrument: { ticker: '3NVD.L', leverage: 2 } }]
+    const geared = render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText('NVDA')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('evidence'))
+    expect(screen.getByText(/decay daily — max hold 10 sessions/)).toBeInTheDocument()
+    geared.unmount()
+
+    data.board!.board = [{ ...prediction, sym: 'BTC-USD', id: '2026-07-02:BTC-USD:short', instrument: { ticker: 'XBTS.L', leverage: 1 }, paperOnly: false }]
+    render(<EngineBoard />)
+    await waitFor(() => expect(screen.getByText('BTC-USD')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('evidence'))
+    expect(screen.getByText(/XBTS.L 1x/)).toBeInTheDocument() // the route IS shown…
+    expect(screen.queryByText(/decay daily/)).toBeNull() // …the false decay clock is not…
+    // …but the UNDERLYING-levels half survives: the board prints the asset's
+    // levels beside a tracker that prints its own price, and dropping the
+    // whole warning for 1× told the reader nothing about which to exit on
+    expect(screen.getByText(/levels above are the underlying/)).toBeInTheDocument()
+    data.board!.board = [prediction]
   })
 })

@@ -1,6 +1,6 @@
 import type { Candle } from './types'
 import { sma, rsi, atr, emaLast } from './indicators'
-import { detectSetups } from './setups'
+import { detectSetups, EQUITY_SETUP_WINDOWS, type SetupWindows } from './setups'
 
 // Where is a stock IN its move? The reversal-first read: reward names that are
 // basing / turning up / pulling back into support; penalise names that have
@@ -53,18 +53,69 @@ const lastOf = <T,>(a: T[]): T | undefined => a[a.length - 1]
 
 const round2 = (x: number) => Math.round(x * 100) / 100
 
+/** THE BAR WINDOWS the technical read is measured over (Stage 1c Phase B, Task
+ * B2) — the same argument as `SetupWindows` one layer down, and the same
+ * promise: the DEFAULT is the equity profile, every existing call site omits
+ * the argument, and an equity read is byte-for-byte what it always was.
+ *
+ * A 24/7 tape prints seven bars a week where an exchange prints five, so
+ * reading these numbers unchanged on a coin silently shortens every span by
+ * 30%. The crypto profile is built in `shared/engine/cryptoLane.ts` from B1's
+ * `CRYPTO_LOOKBACKS` table, which adjudicated each of these one at a time — the
+ * RSI period, notably, does NOT scale.
+ *
+ * `setups` rides inside because `technicalStage` is what calls `detectSetups`,
+ * and the stage cascade reads BOTH: a technical read on the crypto clock whose
+ * setups were still on the equity clock would be one function reasoning about
+ * two calendars. */
+export interface TechWindows {
+  readonly sma20: number
+  readonly sma50: number
+  readonly atr: number
+  /** FIXED at 14 in both profiles — see CRYPTO_LOOKBACKS.rsi14. */
+  readonly rsi: number
+  /** "Where in its range" — the range. */
+  readonly range: number
+  /** The volume baseline today's volume is read against (today excluded). */
+  readonly rvolBaseline: number
+  readonly ema8: number
+  readonly ema21: number
+  readonly ema50: number
+  readonly thrustRecent: number
+  readonly thrustBase: number
+  /** Below this many bars there is no read at all. */
+  readonly minHistory: number
+  readonly setups: SetupWindows
+}
+
+export const EQUITY_TECH_WINDOWS: TechWindows = {
+  sma20: 20,
+  sma50: 50,
+  atr: 14,
+  rsi: 14,
+  range: 60,
+  rvolBaseline: 20,
+  ema8: 8,
+  ema21: 21,
+  ema50: 50,
+  thrustRecent: 5,
+  thrustBase: 20,
+  minHistory: 30,
+  setups: EQUITY_SETUP_WINDOWS,
+}
+
 /** The stack is read off the ROUNDED EMAs, not the raw ones, so the verdict and
  * the three numbers printed beside it can never disagree — a reader must never
  * see `e8 100, e21 100, aligned bull`. The PRICE leg is rounded for the same
  * reason and no other: a close a fifth of a cent above the printed 8-EMA is not
  * a fourth timeframe agreeing, it is a rounding artefact, and the card would
  * have shown the two numbers as equal while the verdict claimed a chain. */
-function emaStackOf(closes: number[], price: number): EmaStack {
+function emaStackOf(closes: number[], price: number, w: TechWindows = EQUITY_TECH_WINDOWS): EmaStack {
   const at = (p: number) => {
     const e = emaLast(closes, p)
     return e == null ? null : round2(e)
   }
-  const [e8, e21, e50] = [at(8), at(21), at(50)]
+  const [e8, e21, e50] = [at(w.ema8), at(w.ema21), at(w.ema50)]
   const p = round2(price)
   const aligned =
     e8 == null || e21 == null || e50 == null ? null // an unknown is not a verdict
@@ -74,55 +125,52 @@ function emaStackOf(closes: number[], price: number): EmaStack {
   return { e8, e21, e50, aligned }
 }
 
-const THRUST_RECENT = 5
-const THRUST_BASE = 20
-
 /** THE MULTI-DAY PARTICIPATION MEASURE, and the thing `rvol` is not. `rvol` asks
  * whether TODAY was loud against a 20-day average; on a swing horizon the useful
  * question is whether the crowd has been arriving for a WEEK. A name can print a
  * 0.6 rvol into a 2× thrust (the loud days were Monday to Thursday) and a 3.0
  * rvol into a flat one (one headline, nobody stayed). Today is inside the recent
  * window on purpose — this measures the week, not a baseline to judge today by. */
-function volThrustOf(vols: number[]): number | null {
-  const recent = vols.slice(-THRUST_RECENT)
-  const base = vols.slice(-(THRUST_RECENT + THRUST_BASE), -THRUST_RECENT)
-  if (recent.length < THRUST_RECENT || base.length < THRUST_BASE) return null
+function volThrustOf(vols: number[], w: TechWindows = EQUITY_TECH_WINDOWS): number | null {
+  const recent = vols.slice(-w.thrustRecent)
+  const base = vols.slice(-(w.thrustRecent + w.thrustBase), -w.thrustRecent)
+  if (recent.length < w.thrustRecent || base.length < w.thrustBase) return null
   const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length
   const baseMean = mean(base)
   if (baseMean <= 0) return null // a ratio on nothing is not a number
   return round2(mean(recent) / baseMean)
 }
 
-export function technicalStage(sym: string, candles: Candle[]): TechnicalRead | null {
-  if (!candles || candles.length < 30) return null
+export function technicalStage(sym: string, candles: Candle[], w: TechWindows = EQUITY_TECH_WINDOWS): TechnicalRead | null {
+  if (!candles || candles.length < w.minHistory) return null
   const closes = candles.map(c => c.c)
   const vols = candles.map(c => c.v)
   const price = lastOf(closes)!
-  const r = lastOf(rsi(closes)) ?? null
-  const m20 = lastOf(sma(closes, 20)) ?? null
-  const m50 = lastOf(sma(closes, 50)) ?? null
-  const a14 = lastOf(atr(candles)) ?? null
+  const r = lastOf(rsi(closes, w.rsi)) ?? null
+  const m20 = lastOf(sma(closes, w.sma20)) ?? null
+  const m50 = lastOf(sma(closes, w.sma50)) ?? null
+  const a14 = lastOf(atr(candles, w.atr)) ?? null
 
   const pctFrom20d = m20 ? Math.round(((price - m20) / m20) * 1000) / 10 : null
   const pctFrom50d = m50 ? Math.round(((price - m50) / m50) * 1000) / 10 : null
   const atrMultFrom20d = m20 && a14 ? Math.round(((price - m20) / a14) * 10) / 10 : null
 
-  const win = closes.slice(-60)
+  const win = closes.slice(-w.range)
   const lo = Math.min(...win)
   const hi = Math.max(...win)
   const rangePos = hi > lo ? Math.round(((price - lo) / (hi - lo)) * 100) / 100 : null
 
-  const avgVol20 = vols.slice(-21, -1).reduce((s, v) => s + v, 0) / 20
+  const avgVol20 = vols.slice(-(w.rvolBaseline + 1), -1).reduce((s, v) => s + v, 0) / w.rvolBaseline
   const rvol = avgVol20 > 0 ? Math.round((lastOf(vols)! / avgVol20) * 10) / 10 : null
   const volumeConfirmed = rvol != null && rvol >= 1.3
 
   // ADDITIVE ONLY (stage 2, task 1): computed and carried, consumed by nothing.
   // The stage cascade, entryQuality and note below are deliberately untouched —
   // task 2 is what teaches the score to read these.
-  const emaStack = emaStackOf(closes, price)
-  const volThrust = volThrustOf(vols)
+  const emaStack = emaStackOf(closes, price, w)
+  const volThrust = volThrustOf(vols, w)
 
-  const setups = detectSetups(candles, rvol)
+  const setups = detectSetups(candles, rvol, w.setups)
 
   // stage: reversal-first classification
   let stage: Stage

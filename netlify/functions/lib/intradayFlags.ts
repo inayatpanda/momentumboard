@@ -72,9 +72,19 @@ const within = (price: number, level: number, frac: number) => level > 0 && Math
  * reader at a level they have no way to take. Board-level containment; the
  * level rules below refuse them both a second time. PURE, so the runner's rule
  * is the tested rule. Either name, still on the watchlist, can of course earn
- * the generic breakout flag, which needs no engine levels. */
-export function boardFlagRows<T extends { nearMiss?: boolean; observation?: boolean }>(board: readonly T[], limit: number): T[] {
-  return board.filter(p => p.nearMiss !== true && p.observation !== true).slice(0, limit)
+ * the generic breakout flag, which needs no engine levels.
+ *
+ * The CRYPTO cohort is refused here too (Stage 1c Phase B — a named exclusion,
+ * not a leftover guard): this scan quotes, stages and levels a candidate off
+ * the RAW intraday tape and the EQUITY window profile. For a coin that means
+ * today's still-moving 00:00-UTC bar — the exact series the crypto candle seam
+ * exists to forbid (cryptoCalibration.ts `completedCryptoBars`) — read on the
+ * wrong clock (paperBook.ts makes the same argument for the same reason). A
+ * crypto alert lane, if one is ever wanted, is its own build with its own
+ * seam; until then the scan must not push "back at entry" on a 24/7 tape it
+ * is misreading. */
+export function boardFlagRows<T extends { nearMiss?: boolean; observation?: boolean; cohort?: string }>(board: readonly T[], limit: number): T[] {
+  return board.filter(p => p.nearMiss !== true && p.observation !== true && p.cohort !== 'crypto').slice(0, limit)
 }
 
 /** Which board rows CARRY RISK — the rows a "second chance" can be offered on,
@@ -86,8 +96,11 @@ export function boardFlagRows<T extends { nearMiss?: boolean; observation?: bool
  * predates half sizing and could therefore never see a real C-with-contract
  * trade — on a board whose only sized rows were half trades, the second-chance
  * flag was unreachable. PURE + exported so the runner's rule is the tested rule. */
-export function isActionableRow(p: { watchOnly?: boolean; shadow?: boolean; nearMiss?: boolean; observation?: boolean }): boolean {
-  return p.watchOnly !== true && p.shadow !== true && p.nearMiss !== true && p.observation !== true
+export function isActionableRow(p: { watchOnly?: boolean; shadow?: boolean; nearMiss?: boolean; observation?: boolean; cohort?: string }): boolean {
+  // the crypto refusal again, one layer down — board-level containment above,
+  // and this belt so a crypto row handed in directly can still never carry a
+  // second-chance push (the same twice-refused shape as nearMiss/observation)
+  return p.watchOnly !== true && p.shadow !== true && p.nearMiss !== true && p.observation !== true && p.cohort !== 'crypto'
 }
 
 // a. the watch setup from this morning is at its entry, moving through it on volume

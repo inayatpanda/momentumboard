@@ -247,6 +247,7 @@ export interface BoardRow {
   target: number
   expectedMovePct: number
   paperOnly: boolean
+  cohort?: 'crypto' // the lane's stamp (types.ts Prediction.cohort) — the footer's paper-only sentence splits on it
   watchOnly?: boolean // unsized: C on thin evidence, below-base, or an unpicked overflow row — printed as an observation
   nearMiss?: boolean // cleared NO gate; named only so a side with nothing on it is not blank — never an idea
   observation?: boolean // cleared EVERY gate and an ISA cannot route it: fully graded, never placeable
@@ -305,6 +306,7 @@ export function boardExportRows(board: readonly BoardExportSource[]): BoardRow[]
     target: b.target,
     expectedMovePct: b.expectedMovePct,
     paperOnly: b.paperOnly,
+    cohort: b.cohort, // without this hop the footer's crypto paper-only sentence can never fire
     watchOnly: b.watchOnly,
     nearMiss: b.nearMiss, // the row kinds the renderers key their honesty off
     observation: b.observation,
@@ -467,7 +469,7 @@ function caseFromThesis(b: { thesis?: string; falsifier?: string }): string | un
 /** When the journalist files no ideas despite a speaking board, the desk sets
  * the table itself: top board calls become ideas verbatim — numbers from the
  * engine, one-line case from its own note. Picks capture must never starve. */
-export function fallbackIdeasFromBoard(board: (BoardIdeaSlim & { note?: string; stage?: string | null })[], max = 2): Idea[] {
+export function fallbackIdeasFromBoard(board: (BoardIdeaSlim & { note?: string; stage?: string | null; cohort?: string })[], max = 2): Idea[] {
   return board.filter(b => !b.watchOnly).slice(0, max).map(b => ({
     ticker: b.sym,
     side: b.side,
@@ -482,7 +484,12 @@ export function fallbackIdeasFromBoard(board: (BoardIdeaSlim & { note?: string; 
     // and the falsifier is ALSO printed on its own in the invalidation cell — so
     // copying the thesis whole prints the same "Wrong if it closes below 178.2."
     // twice in one idea. The cell owns that sentence; the case keeps the belief.
-    caseText: `${caseFromThesis(b) ?? b.note ?? `Engine call at composite conviction`}${b.paperOnly ? ' Paper-only until the risk ladder unlocks the route.' : ''}`,
+    // the paper-only reason is the ROW'S, not a stock sentence (codex 1c-R
+    // finding 6): a crypto pair with no configured tracker is not waiting on
+    // the ladder — no rung can mint a route nobody configured
+    caseText: `${caseFromThesis(b) ?? b.note ?? `Engine call at composite conviction`}${
+      b.paperOnly ? (b.cohort === 'crypto' ? ' Paper-only — no tracker route is configured for this pair.' : ' Paper-only until the risk ladder unlocks the route.') : ''
+    }`,
     entry: String(b.entry),
     invalidation: String(b.stop),
     falsifier: b.falsifier,
@@ -685,7 +692,7 @@ IF engineBoard IS PRESENT in the data (the quant engine's scored calls, each wit
 - Copy entry, invalidation (the stop), target and conviction (the grade) VERBATIM from the board entry. You write the caseText, chartRead (from its stage/note), streetCheck (channels by name, then Reddit/Stocktwits), and 2-4 numbered reasons from the factor details.
 - EVERY board entry carries the engine's own one-sentence thesis and its falsifier. The thesis is your caseText's BASE: keep its claim and its direction exactly, then polish the wording and add the company, the story and the context around it. POLISH, NEVER INVENT — if you find yourself writing a different reason for the trade than the thesis states, you are writing about a call the engine did not make. The falsifier is printed verbatim by the desk in its own cell; never contradict it, never offer a different invalidation level, and DO NOT repeat the falsifier sentence inside your caseText — it already prints beside it.
 - You get ONE qualitative power per idea: an optional overlay {"flag":"boost|caution|veto","reason":"<grounded in a REAL headline or event in the data>"}. veto = the idea is dropped from the paper (say why in shortDesk if a short, lead if a long). Use it sparingly — every overlay is logged and graded against what price then did.
-- paperOnly:true board shorts are analysis, not executable — present them as "fade/avoid" and say the ETP route is locked until the risk ladder earns it. Board entries with an instrument: name the ETP ticker and its leverage, warn on daily-rebalance decay, max hold 10 sessions.
+- paperOnly:true board rows are analysis, not executable — present them as "fade/avoid" and state the row's OWN paper-only reason from its note: an ETP route the risk ladder has not unlocked, or (crypto) a tracker nobody has configured. NEVER attribute a missing crypto route to the risk ladder — no rung can mint a route that is not configured. Board entries with an instrument: name the ticker and its leverage. Warn on daily-rebalance decay and the 10-session hold cap ONLY when the leverage is above 1 — a 1x entry is a plain spot/inverse tracker, which does not decay and carries no hold clock.
 - The ideas array must NEVER be empty while engineBoard has entries: if the board offers no longs, promote its best 1-2 shorts into ideas (side:"short", playbook "S", framed as fade/avoid with the executable route or paper-only status stated). An empty ideas table on a day the engine spoke is a failure.
 - strength:"strong" only for grade A board entries with an independent confirming pillar (channel take, insider buys, headline) — cite it.
 IF engineBoard IS ABSENT (engine offline): fall back to candidateReads — an idea must have typical10dMovePct >= 8 AND a good entry (entryQuality early, never extended/exhausted); expectedMove <= 1.3x capacity; numeric levels ONLY if the price is in the data.`,
@@ -866,8 +873,13 @@ export function boardFootnote(board: readonly BoardRow[]): string {
     parts.push(
       'Nearest-miss rows cleared NO gate: the engine looked and said no, and they are printed only so a side with nothing on it is not blank. No grade, no probability, no size — their levels are orientation, not a trigger.',
     )
-  if (board.some(b => b.paperOnly && !b.watchOnly))
+  // two paper-only stories, because they have two causes (codex 1c-R finding
+  // 6): an equity route the ladder gates, and a crypto tracker nobody has
+  // configured — the ladder cannot create the second, so blaming it lies
+  if (board.some(b => b.paperOnly && !b.watchOnly && b.cohort !== 'crypto'))
     parts.push('Paper-only calls are analysis — the risk ladder has not unlocked their route yet.')
+  if (board.some(b => b.paperOnly && !b.watchOnly && b.cohort === 'crypto'))
+    parts.push('Paper-only crypto calls are analysis — no tracker route is configured for the pair yet.')
   // THE EXPERIMENT SLOT (Stage 3d). The chip carries the mark; this clause is
   // what the mark MEANS, and it is the only place on either export where the
   // reader is told the three things that make the row not a call: it is a

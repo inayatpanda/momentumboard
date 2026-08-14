@@ -31,6 +31,11 @@ export default async (req: Request) => {
     paperBook: await read('paper-book'),
     paperMonths: await read('paper-months'),
     riskState: await read('risk-state'),
+    // the crypto partition's two sibling blobs (1c Phase B) — its whole
+    // learning record; leaving them out made the cohort invisible to the one
+    // consumer built to survive the hosting
+    cryptoCalibration: await read('crypto-calibration'),
+    cryptoRisk: await read('crypto-risk'),
     roster: await read('engine-roster'),
     socialHistory: await read('social-history'), // restoring without it costs a fresh 7-day hype-cluster warm-up
     reportPicks: await read('report-picks'),

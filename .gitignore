@@ -12,3 +12,6 @@ desktop/dist/
 
 # security audit reports — keep local, not in version control
 docs/AUDIT-*.md
+
+# session worktrees
+.claude/worktrees/

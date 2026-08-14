@@ -765,6 +765,30 @@ describe('buildBoard', () => {
     expect(call.horizon).toBe('week') // sized rows run on the calibrated clock
   })
 
+  it('…and a 1x field on an EQUITY entry does not mint one there: the fractional-size mint is the crypto lane’s alone', async () => {
+    // Stage 1c-R gave LevMap `long1x`/`short1x` for the crypto route, and the
+    // engine mints them BELOW full size for a crypto row only. The same-shaped
+    // entry on an equity name must leave this half-size row exactly as the test
+    // above found it — no instrument, no paper-only flip, nothing.
+    const store = memoryStore()
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { long1x: 'GLW1' } } })
+    await store.write('engine-calibration', { buckets: { 'long:amber:25-40': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('risk-state', { rung: 3, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
+    const d = deps({
+      screens: async () => [],
+      social: async () => [],
+      mediaTitles: async () => [],
+      candles: async sym => (sym === 'GLW' ? dipTape : sym === 'SPY' || sym === 'QQQ' ? flat : null),
+      capUsdM: async sym => (sym === 'GLW' ? 35_000 : null),
+      sparkCloses: sparkOf(dipTape),
+    })
+    const { board } = await buildBoard(store, d, NOW)
+    const call = board.find(b => b.sym === 'GLW')!
+    expect(call.riskPct).toBe(RUNG_RISK_PCT[call.riskRung] / 2) // still the half-size row
+    expect(call.instrument).toBeNull()
+    expect(call.paperOnly).toBe(false)
+  })
+
   it('an A/B call that fails the contract trades at HALF size and names the gap in its evidence', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
