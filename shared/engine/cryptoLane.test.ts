@@ -4,11 +4,17 @@ import { swingCapacity } from '../indicators'
 import { technicalStage, EQUITY_TECH_WINDOWS } from '../technicals'
 import { momentumFactor } from './factors'
 import { EQUITY_SETUP_WINDOWS } from '../setups'
-import { CRYPTO_GRADE_HORIZON, CRYPTO_LOOKBACKS } from './cryptoCalibration'
+import { CRYPTO_GRADE_HORIZON, CRYPTO_LOOKBACKS, CRYPTO_UNIVERSE } from './cryptoCalibration'
+import { CONTEXT_MAX_PTS, DEFAULT_WEIGHTS } from './composite'
+import type { FactorName } from './types'
 import {
   CRYPTO_CAPACITY_LOOKBACK,
   CRYPTO_CAPACITY_WINDOW,
+  CRYPTO_CHART_ONLY_DIRECTIVE,
   CRYPTO_COLD_START_N,
+  CRYPTO_NEWS_ALIASES,
+  CRYPTO_NEWS_WEIGHT_MULT,
+  CRYPTO_WEIGHTS,
   CRYPTO_INDEX_MIN_BARS,
   CRYPTO_INDEX_WINDOWS,
   CRYPTO_MOMENTUM_SATURATION,
@@ -24,6 +30,7 @@ import {
   cryptoMomentumFactor,
   cryptoRegimeFrom,
   cryptoSizeCap,
+  cryptoTitleMatches,
   cryptoUniverseFor,
   cryptoVoice,
   initCryptoRisk,
@@ -290,6 +297,70 @@ describe('the universe is the reader’s watchlist, narrowed to the three pairs'
     expect(cryptoLaneOwns('btc-usd', u)).toBe(true)
     expect(cryptoLaneOwns('ETH-USD', u)).toBe(false)
     expect(cryptoLaneOwns('DOGE-EUR', u)).toBe(false)
+  })
+})
+
+// ------------------------------------------------- the chart-only policy ----
+
+describe('the chart-only factor policy — the owner’s sentence, encoded (Stage 1c-R)', () => {
+  it('prices a coin off a FROZEN vector: the chart cores at their defaults, news at half, the rest untouched', () => {
+    expect(CRYPTO_NEWS_WEIGHT_MULT).toBe(0.5)
+    expect(CRYPTO_WEIGHTS.news).toBe(DEFAULT_WEIGHTS.news * CRYPTO_NEWS_WEIGHT_MULT)
+    // every other factor keeps its default. Their scores are null on a crypto
+    // row and renormalise away — the vector's only job is the RELATIVE weight of
+    // the three factors that can score at all.
+    for (const n of Object.keys(DEFAULT_WEIGHTS) as FactorName[]) {
+      if (n !== 'news') expect(CRYPTO_WEIGHTS[n]).toBe(DEFAULT_WEIGHTS[n])
+    }
+    // frozen: the equity IC loop nudges `weights.current`, and nothing may nudge this
+    expect(Object.isFrozen(CRYPTO_WEIGHTS)).toBe(true)
+  })
+
+  it('bounds what “a little” can do — the halved weight over the core’s, inside the context cap', () => {
+    // composite.ts: ctxPts = ctxNum / coreDen, capped at gates.contextMaxPts. On
+    // a crypto row technical+momentum ARE the whole core denominator and news is
+    // the whole context numerator, so the tightest of the two bounds is this one.
+    const bound = (50 * CRYPTO_WEIGHTS.news) / (CRYPTO_WEIGHTS.technical + CRYPTO_WEIGHTS.momentum)
+    expect(bound).toBeCloseTo(6.58, 2)
+    expect(bound).toBeLessThan(CONTEXT_MAX_PTS)
+  })
+
+  it('carries the directive itself at every site it nulls — dated, so a null cannot read as missing wiring', () => {
+    expect(CRYPTO_CHART_ONLY_DIRECTIVE).toContain('owner directive 2026-08-14')
+    expect(CRYPTO_CHART_ONLY_DIRECTIVE).toContain('chart parameters and a little major news')
+  })
+})
+
+// ----------------------------------------------------------- the aliases ----
+
+describe('the name alias — what makes the crypto news factor real at all', () => {
+  /** engine.ts's `titleMatches`, verbatim over `baseSym('BTC-USD')` — the rule
+   * the equity book uses, quoted here so "the alias reaches what the equity
+   * matcher misses" is a measured claim rather than an assertion about it. */
+  const equityMatcher = (sym: string) => new RegExp(`\\b${sym.split('-')[0]}\\b`, 'i')
+
+  it('reaches the headline the base-ticker matcher misses — the near-dead factor’s whole cause', () => {
+    const titles = ['Bitcoin surges past $100,000 as ETF inflows accelerate']
+    expect(cryptoTitleMatches('BTC-USD', titles)).toEqual(titles)
+    expect(titles.filter(t => equityMatcher('BTC-USD').test(t))).toEqual([])
+  })
+
+  it('keeps the base ticker, reads any case, and stays exactly as word-bounded as it was', () => {
+    expect(cryptoTitleMatches('BTC-USD', ['BTC breaks out', 'btc drifts'])).toHaveLength(2)
+    expect(cryptoTitleMatches('ETH-USD', ['Ethereum upgrade ships', 'Ether ETF approved', 'ETH gas fees fall'])).toHaveLength(3)
+    expect(cryptoTitleMatches('SOL-USD', ['Solana outage resolved', 'SOL rallies'])).toHaveLength(2)
+    // `sol`/`eth` are short, which is why the boundary matters most here
+    expect(cryptoTitleMatches('SOL-USD', ['Retailer SOLD out', 'Solvay lifts guidance'])).toEqual([])
+    expect(cryptoTitleMatches('ETH-USD', ['Bethesda ships a patch', 'Ethanol prices slide'])).toEqual([])
+  })
+
+  it('is exhaustive over the universe — a fourth pair cannot be added without an alias', () => {
+    expect(Object.keys(CRYPTO_NEWS_ALIASES).sort()).toEqual([...CRYPTO_UNIVERSE].sort())
+    for (const sym of CRYPTO_UNIVERSE) expect(CRYPTO_NEWS_ALIASES[sym].length).toBeGreaterThan(0)
+  })
+
+  it('a pair with no alias reads a quiet tape rather than guessing at one', () => {
+    expect(cryptoTitleMatches('DOGE-USD', ['Dogecoin moons', 'DOGE rallies'])).toEqual([])
   })
 })
 

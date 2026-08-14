@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { buildBoard, type EngineDeps } from './engine'
 import { memoryStore, type AppStore } from './store'
 import type { Candle } from '../../../shared/types'
-import type { Prediction } from '../../../shared/engine/types'
+import type { FactorName, Prediction } from '../../../shared/engine/types'
 import { CALIB_DEF_VERSION, type CalibrationState } from '../../../shared/engine/calibration'
 import { funnelTraceKey, type FunnelTrace } from '../../../shared/engine/funnelTrace'
 import type { RosterEntry } from '../../../shared/engine/roster'
 import { RUNG_RISK_PCT } from '../../../shared/engine/riskLadder'
-import { CRYPTO_SIZE_CAP } from '../../../shared/engine/cryptoLane'
+import { DEFAULT_WEIGHTS } from '../../../shared/engine/composite'
+import { channelsFactor, socialFactor } from '../../../shared/engine/factors'
+import { CRYPTO_CHART_ONLY_DIRECTIVE, CRYPTO_SIZE_CAP, CRYPTO_WEIGHTS } from '../../../shared/engine/cryptoLane'
 import { atr } from '../../../shared/indicators'
 
 // ₿ THE CRYPTO LANE IN buildBoard (Stage 1c Phase B, Task B2) — Phase-A
@@ -78,7 +80,7 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   ...over,
 })
 
-const storeWith = async (watchlist: string[], levMap: Record<string, { long2x?: string }> = {}) => {
+const storeWith = async (watchlist: string[], levMap: Record<string, { long1x?: string; long2x?: string; short1x?: string; short2x?: string }> = {}) => {
   const store = memoryStore()
   await store.write('config', { watchlist: watchlist.map(symbol => ({ symbol })), rules: [], ytChannels: [], levMap })
   await store.write('engine-calibration', {
@@ -90,9 +92,15 @@ const storeWith = async (watchlist: string[], levMap: Record<string, { long2x?: 
   return store
 }
 
-const runDay = async (watchlist: string[], levMap: Record<string, { long2x?: string }> = {}, over: Partial<EngineDeps> = {}) => {
+const runDay = async (
+  watchlist: string[],
+  levMap: Record<string, { long1x?: string; long2x?: string; short1x?: string; short2x?: string }> = {},
+  over: Partial<EngineDeps> = {},
+  seed?: (store: AppStore) => Promise<void>,
+) => {
   asked.clear()
   const store = await storeWith(watchlist, levMap)
+  await seed?.(store)
   await buildBoard(store, deps(over), NOW)
   return { store, ...(await read(store)) }
 }
@@ -216,6 +224,98 @@ describe('the lane publishes a partitioned cohort onto the same board', () => {
     expect(row).toBeTruthy()
     expect(row.gate.startsWith('called-')).toBe(true)
     expect(row.detail).toContain('crypto cohort')
+  })
+})
+
+// ------------------------------------------------- the chart-only policy --
+
+/** A stored weights blob whose CURRENT vector has been nudged away from base —
+ * exactly the shape the equity IC loop writes. `base` still fingerprints
+ * DEFAULT_WEIGHTS so `rebaseWeights` finds nothing to do, and the nudge sits at
+ * the [0.5×, 1.5×] band edge so `migrateWeights` does not clamp it away. */
+const nudged = (name: FactorName, mult: number) => async (store: AppStore) => {
+  await store.write('engine-weights', {
+    base: { ...DEFAULT_WEIGHTS },
+    current: { ...DEFAULT_WEIGHTS, [name]: DEFAULT_WEIGHTS[name] * mult },
+    ic: Object.fromEntries(Object.keys(DEFAULT_WEIGHTS).map(n => [n, { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }])),
+    gradedSinceNudge: 0,
+    history: [],
+    seedGeneration: 99,
+  })
+}
+
+const LOUD_SOCIAL = {
+  sym: 'BTC-USD',
+  redditRank: 1,
+  redditMentions: 900,
+  surging: true,
+  surgeMultiple: 3,
+  stocktwits: true,
+  channelNet: 2,
+  sources: 3,
+  onWatchlist: true,
+}
+const LOUD_STANCES = [
+  { url: 'u1', channel: 'ChannelA', at: NOW - 3_600, tickers: [{ sym: 'BTC-USD', stance: 'bull' as const }] },
+  { url: 'u2', channel: 'ChannelB', at: NOW - 7_200, tickers: [{ sym: 'BTC-USD', stance: 'bull' as const }] },
+]
+
+describe('a coin is priced off chart parameters and a little major news — nothing else', () => {
+  it('hears the alias headline the equity base-ticker matcher misses', async () => {
+    const titles = ['Bitcoin surges to a record high as ETF inflows accelerate']
+    const { board } = await runDay(['BTC-USD'], {}, { mediaTitles: async () => titles })
+    const row = cryptoOf(board.board)[0]
+    expect(row.factors.news.detail).toContain('1 headline(s)')
+    expect(row.factors.news.score).toBeGreaterThan(0)
+    // the SAME tape read by the equity book: `\bBTC\b` matches nothing in it, so
+    // every equity row on this board still reads a quiet tape. That contrast is
+    // the whole claim — the alias is a crypto-lane matcher, not a global one.
+    for (const r of board.board.filter(b => b.cohort !== 'crypto')) expect(r.factors.news.detail).toBe('quiet tape')
+  })
+
+  it('retires social and channels with the directive at the site — and a signal that WOULD have scored moves nothing', async () => {
+    // the fixtures are real readings: both factors score on them today
+    expect(socialFactor(LOUD_SOCIAL, 50).score).not.toBeNull()
+    expect(channelsFactor(LOUD_STANCES.flatMap(e => e.tickers.map(t => ({ channel: e.channel, stance: t.stance }))), () => 0.5).score).not.toBeNull()
+
+    const quiet = await runDay(['BTC-USD'])
+    const loud = await runDay(['BTC-USD'], {}, { social: async () => [LOUD_SOCIAL] }, async store => {
+      await store.write('video-extracts', LOUD_STANCES)
+    })
+    const row = cryptoOf(loud.board.board)[0]
+    expect(row.factors.social.score).toBeNull()
+    expect(row.factors.channels.score).toBeNull()
+    expect(row.factors.social.detail).toContain(CRYPTO_CHART_ONLY_DIRECTIVE)
+    expect(row.factors.channels.detail).toContain(CRYPTO_CHART_ONLY_DIRECTIVE)
+    // …and the row itself is the row the quiet morning published, to the byte
+    expect(JSON.stringify(row)).toBe(JSON.stringify(cryptoOf(quiet.board.board)[0]))
+  })
+
+  it('prices off the FROZEN vector — an IC-nudged weights.current moves the equity board and not the coin', async () => {
+    const plain = await runDay(['BTC-USD'])
+    const learned = await runDay(['BTC-USD'], {}, {}, nudged('technical', 0.5))
+    const equity = (rows: Prediction[]) => JSON.stringify(rows.filter(r => r.cohort !== 'crypto'))
+    // the nudge is REAL: halving the heaviest factor re-prices the equity board
+    expect(equity(learned.board.board)).not.toBe(equity(plain.board.board))
+    for (const r of learned.board.board.filter(b => b.cohort !== 'crypto')) expect(r.factors.technical.weight).toBe(DEFAULT_WEIGHTS.technical * 0.5)
+    // …and the crypto row on the same morning never saw it
+    expect(JSON.stringify(cryptoOf(learned.board.board))).toBe(JSON.stringify(cryptoOf(plain.board.board)))
+    expect(cryptoOf(learned.board.board)[0].factors.technical.weight).toBe(CRYPTO_WEIGHTS.technical)
+    expect(cryptoOf(learned.board.board)[0].factors.news.weight).toBe(CRYPTO_WEIGHTS.news)
+  })
+
+  it('bounds the little: a maxed polarity tape moves the composite by ≤ the halved weight over the core', async () => {
+    const loud = Array.from({ length: 8 }, (_, i) => `Bitcoin surges to a record high, beats every estimate (${i})`)
+    const { board } = await runDay(['BTC-USD'], {}, { mediaTitles: async () => loud })
+    const row = cryptoOf(board.board)[0]
+    expect(row.factors.news.score).toBe(50) // the factor's own ±50 clamp, saturated
+    // composite.ts: ctxPts = ctxNum / coreDen. News is the whole context
+    // numerator on a crypto row and technical+momentum the whole core
+    // denominator, so this is the tightest of the two bounds (the context cap is
+    // the other, and it is looser).
+    const bound = (50 * CRYPTO_WEIGHTS.news) / (CRYPTO_WEIGHTS.technical + CRYPTO_WEIGHTS.momentum)
+    expect(Math.abs(row.evidence.contextPts)).toBeGreaterThan(0)
+    expect(Math.abs(row.evidence.contextPts)).toBeLessThanOrEqual(bound + 0.05) // +0.05: contextPts is rounded to 1dp
   })
 })
 

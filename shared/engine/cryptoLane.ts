@@ -2,8 +2,9 @@ import type { Candle, RegimeColor } from '../types'
 import { swingCapacity } from '../indicators'
 import { EQUITY_SETUP_WINDOWS, regimeFromCandles, type IndexWindows, type SetupWindows } from '../setups'
 import { type TechWindows } from '../technicals'
-import { clamp, round1, type FactorScore } from './types'
+import { clamp, round1, type FactorName, type FactorScore } from './types'
 import { initRisk, type CohortRung } from './riskLadder'
+import { DEFAULT_WEIGHTS } from './composite'
 import { CRYPTO_GRADE_HORIZON, CRYPTO_LOOKBACKS, CRYPTO_UNIVERSE } from './cryptoCalibration'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,6 +240,91 @@ export function cryptoMomentumFactor(
     score: round1(clamp((ratio / CRYPTO_MOMENTUM_SATURATION) * 80, -80, 80)),
     detail: `${window}-bar move ${ret >= 0 ? '+' : ''}${round1(ret)}% vs its own typical ${round1(typical)}% (${round1(ratio)}×)`,
   }
+}
+
+// ---- the factor policy ----
+
+/** THE OWNER'S SENTENCE, quoted and dated — the reason written at every site
+ * this directive nulls (2026-08-14: "a crypto prediction is priced off CHART
+ * PARAMETERS and A LITTLE MAJOR NEWS — nothing else"). Quoted rather than
+ * paraphrased, and carried in the factor's own `detail`, because a future
+ * session reading `social: null` on a crypto row must find the DECISION there:
+ * a null that says nothing is indistinguishable from wiring somebody forgot. */
+export const CRYPTO_CHART_ONLY_DIRECTIVE = 'owner directive 2026-08-14: chart parameters and a little major news — nothing else'
+
+/** "A LITTLE" IS A WEIGHT, "MAJOR" IS THE LEXICON.
+ *
+ * News rides at HALF its equity default on a crypto row. "Major" is NOT a new
+ * keyword taxonomy: `newsFactor`'s own polarity lexicon already decides it — a
+ * headline carrying no polarity language casts no votes and scores zero, which
+ * is the factor's own definition of noise. Inventing a second "is this big?"
+ * list would be a constant with no evidence behind it, in a cohort with no
+ * record to derive one from.
+ *
+ * TWO INDEPENDENT BOUNDS hold the influence, and neither is load-bearing alone:
+ * this weight, and `gates.contextMaxPts` — the cap every context factor already
+ * rides inside, which is what makes it structurally impossible for a headline to
+ * create a crypto call or flip its side. */
+export const CRYPTO_NEWS_WEIGHT_MULT = 0.5
+
+/** THE VECTOR A CRYPTO COMPOSITE IS PRICED BY — frozen, and never `weights.current`.
+ *
+ * `weights.current` is the EQUITY IC-nudged vector: the learning loop moves it
+ * from equity outcomes, and crypto rows are quarantined out of that loop by
+ * construction (they never reach `updateIcStats`). Reading it here meant equity
+ * evidence silently re-bucketed crypto composites — a drift with no learning
+ * path behind it and no record that could ever correct it. So the lane is priced
+ * by a CONSTANT: technical and momentum at their `DEFAULT_WEIGHTS` values, news
+ * at half its default, every other factor at its default.
+ *
+ * THE OTHERS ARE AT THEIR DEFAULTS RATHER THAN ZERO deliberately: their scores
+ * are null on a crypto row, so `tallyFactors` never adds them to either sum and
+ * they renormalise away. The only thing this vector decides is the RELATIVE
+ * weight of the three factors that can score at all — and stating that as "the
+ * default vector with one number halved" keeps the diff between the two
+ * partitions to exactly the decision that was made.
+ *
+ * Frozen because nothing may nudge it: `migrateWeights`/`rebaseWeights`/the IC
+ * loop all operate on the stored blob, and this is not one. */
+export const CRYPTO_WEIGHTS: Record<FactorName, number> = Object.freeze({
+  ...DEFAULT_WEIGHTS,
+  news: DEFAULT_WEIGHTS.news * CRYPTO_NEWS_WEIGHT_MULT,
+})
+
+/** THE NAME ALIASES — what makes the crypto news factor real rather than a
+ * permanent zero.
+ *
+ * The equity matcher regexes the BASE TICKER (`\bBTC\b`, engine.ts) and the tape
+ * says "Bitcoin", so the crypto news factor scored a quiet tape nearly every
+ * morning while the loudest headline of the year sat unread in the same list.
+ *
+ * KEYED ON THE UNIVERSE ITSELF (an exhaustive `Record` over `CRYPTO_UNIVERSE`),
+ * so a fourth pair is a COMPILE ERROR until it is given an alias — the news
+ * factor cannot silently go dead for a new pair the way it did for these three.
+ * Aliases are plain lower-case words by construction: they are interpolated into
+ * a regex below without escaping, and anything needing an escape does not belong
+ * in a list of asset names. */
+export const CRYPTO_NEWS_ALIASES: Record<(typeof CRYPTO_UNIVERSE)[number], readonly string[]> = {
+  'BTC-USD': ['bitcoin', 'btc'],
+  'ETH-USD': ['ethereum', 'ether', 'eth'],
+  'SOL-USD': ['solana', 'sol'],
+}
+
+/** WORD-BOUNDED, EXACTLY AS THE BASE-TICKER MATCH ALREADY IS. `sol` and `eth`
+ * are short enough to appear inside ordinary words (SOLD, Ethanol, Bethesda), so
+ * the boundary is not a nicety — it is the difference between a news factor and
+ * a random-word counter. One regex per pair, built once at module load. */
+const CRYPTO_TITLE_RE: Record<string, RegExp> = Object.fromEntries(
+  Object.entries(CRYPTO_NEWS_ALIASES).map(([sym, names]) => [sym, new RegExp(`\\b(?:${names.join('|')})\\b`, 'i')]),
+)
+
+/** The titles this pair's news factor is fed. A pair with no alias (nothing the
+ * lane evaluates today, by the exhaustive map above) matches NOTHING rather than
+ * falling back to a base-ticker guess: `newsFactor([])` is the quiet tape, which
+ * is the honest reading of "we have no way to recognise this name in a headline". */
+export function cryptoTitleMatches(sym: string, titles: readonly string[]): string[] {
+  const re = CRYPTO_TITLE_RE[sym.toUpperCase()]
+  return re ? titles.filter(t => re.test(t)) : []
 }
 
 // ---- the size cap and its earn-out ----

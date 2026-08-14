@@ -67,9 +67,11 @@ import {
   type CryptoCalibrationState,
 } from '../../../shared/engine/cryptoCalibration'
 import {
+  CRYPTO_CHART_ONLY_DIRECTIVE,
   CRYPTO_REGIME_SYMBOL,
   CRYPTO_RISK_KEY,
   CRYPTO_TECH_WINDOWS,
+  CRYPTO_WEIGHTS,
   cryptoCapacity,
   cryptoCombinedFor,
   cryptoDisabled,
@@ -77,6 +79,7 @@ import {
   cryptoMomentumFactor,
   cryptoRegimeFrom,
   cryptoSizeCap,
+  cryptoTitleMatches,
   cryptoUniverseFor,
   cryptoVoice,
   initCryptoRisk,
@@ -3235,19 +3238,32 @@ export async function buildBoard(
         //                 also RELAXES the expected-move floor. Deliberately not
         //                 wired in B2: that is a gate relaxation, and this task
         //                 relaxes only the sites it builds.
-        //  · social / channels / news — REAL reads that happen to cover crypto:
-        //                 the crowd names BTC, pundits voice sides on it, and the
-        //                 headline scan matches the pair's base ticker. All three
-        //                 are CONTEXT, capped at `gates.contextMaxPts`, so none of
-        //                 them can create a call or flip its side.
+        //  · social / channels — RETIRED, not missing (Stage 1c-R). Both were
+        //                 live reads that genuinely cover crypto — the crowd
+        //                 names BTC and pundits voice sides on it — and the
+        //                 owner's directive retires them anyway: a coin is
+        //                 priced off the chart and a little major news, nothing
+        //                 else. The directive itself is the `detail` at both
+        //                 sites, dated, so a future session cannot mistake these
+        //                 two nulls for wiring nobody finished.
+        //  · news       — THE "little", and the only context factor left. It is
+        //                 fed the ALIAS-matched titles (`cryptoTitleMatches`),
+        //                 not the base-ticker scan: `\bBTC\b` never matches
+        //                 "Bitcoin", so this factor was near-dead every morning.
+        //                 "Major" is enforced by `newsFactor`'s own polarity
+        //                 lexicon (a headline with no polarity word casts no
+        //                 votes), and "a little" by CRYPTO_WEIGHTS' halved news
+        //                 weight inside `gates.contextMaxPts` — two independent
+        //                 bounds, either of which alone keeps a headline from
+        //                 creating a call or flipping its side.
         const factors: Record<FactorName, FactorScore> = {
           technical: technicalFactor(read),
           momentum: cryptoMomentumFactor(closes),
           sector: sectorFactor(null),
-          social: socialFactor(socialBySym.get(sym) ?? null, read.rsi),
-          channels: channelsFactor(stancesBySym.get(sym) ?? [], credOf),
+          social: { score: null, detail: `not read for crypto — ${CRYPTO_CHART_ONLY_DIRECTIVE}` },
+          channels: { score: null, detail: `not read for crypto — ${CRYPTO_CHART_ONLY_DIRECTIVE}` },
           insiders: insiderFactor(undefined),
-          news: newsFactor(titleMatches(sym)),
+          news: newsFactor(cryptoTitleMatches(sym, mediaTitles)),
           seasonality: { score: null, detail: 'not read for crypto — the seasonality library counts a year in 252 sessions' },
           smartMoney: smartMoneyFactor(null),
           catalyst: catalystFactor(null),
@@ -3268,10 +3284,16 @@ export async function buildBoard(
         // NO SECOND PASS. The equity loop re-scores with the world-tape nudge;
         // the crypto lane does not, because that tape is equity indices, US
         // futures and the VIX. The row records mult 1, which is the truth.
+        //
+        // THE VECTOR IS FROZEN, and it is not `weights.current` (Stage 1c-R).
+        // That vector is the EQUITY IC-nudged one; crypto rows are quarantined
+        // out of the loop that moves it, so reading it here let equity evidence
+        // silently re-bucket crypto composites with no learning path behind it.
+        // `CRYPTO_WEIGHTS` is the same vector with news halved — see its note.
         const drafted = composeCall({
           sym,
           factors,
-          weights: weights.current,
+          weights: CRYPTO_WEIGHTS,
           regime: cryptoRegime,
           capacityPct: cryptoCapacity(closes),
           atr: atr(candles, CRYPTO_TECH_WINDOWS.atr)[candles.length - 1],
@@ -3302,7 +3324,10 @@ export async function buildBoard(
             side: drafted.side,
             source: 'watchlist',
             detail: `crypto cohort · ${drafted.detail ?? ''}`,
-            core: coreCompositeOf(factors, weights.current, cryptoRegime),
+            // the SAME frozen vector the call would have been priced by — a near
+            // miss reported against a different vector from the one that refused
+            // it is a number nobody can trace back to the decision
+            core: coreCompositeOf(factors, CRYPTO_WEIGHTS, cryptoRegime),
           })
           continue
         }
