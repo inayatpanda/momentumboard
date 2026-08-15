@@ -16,11 +16,50 @@ describe('AppShell', () => {
     expect(await screen.findByRole('heading', { name: /today/i })).toBeInTheDocument()
   })
 
+  // THE PHONE BAR IS THE RATIFIED FIVE, and owner iteration 2 did not touch it:
+  // the three pages promoted onto the desktop rail carry `.rail-only`, which is
+  // `display: none` until 1024px. jsdom applies no stylesheet, so "what the
+  // phone shows" is asserted as "the entries that are NOT rail-only" — the same
+  // predicate the CSS reads, and the only form that is honest here (a
+  // visibility assertion in jsdom would pass for a reason unrelated to the
+  // media query).
   it('shows exactly the five ratified nav labels, in order — Board is routable but unlabelled', () => {
     render(<AppShell locationHook={at('/')} />)
     const nav = screen.getByRole('navigation')
-    const labels = [...nav.querySelectorAll('.v2-tab-label')].map(el => el.textContent?.trim())
+    const labels = [...nav.querySelectorAll('.v2-tab:not(.rail-only) .v2-tab-label')].map(el => el.textContent?.trim())
     expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'More'])
+  })
+
+  // …and the RAIL shows eight: the ratified five plus three promoted out of
+  // More ("More section - we can bring more sections from it into main tabs
+  // shown outside on Nav bar"), after Track record and before More.
+  it('carries three extra rail-only entries — eight rows in rail order', () => {
+    render(<AppShell locationHook={at('/')} />)
+    const nav = screen.getByRole('navigation')
+    const labels = [...nav.querySelectorAll('.v2-tab-label')].map(el => el.textContent?.trim())
+    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'Research', 'Calendar', 'Gates & learning', 'More'])
+    const railOnly = [...nav.querySelectorAll('.v2-tab.rail-only .v2-tab-label')].map(el => el.textContent?.trim())
+    expect(railOnly).toEqual(['Research', 'Calendar', 'Gates & learning'])
+  })
+
+  it('the promoted entries link to their real routes', () => {
+    render(<AppShell locationHook={at('/')} />)
+    const nav = screen.getByRole('navigation')
+    const hrefs = [...nav.querySelectorAll('.v2-tab.rail-only')].map(a => a.getAttribute('href'))
+    expect(hrefs).toEqual(['/app/more/research', '/app/more/calendar', '/app/more/gates'])
+  })
+
+  it('a promoted page lights its own row, and marks the nav so the rail can dim the More parent', () => {
+    render(<AppShell locationHook={at('/more/gates')} />)
+    const nav = screen.getByRole('navigation')
+    expect(nav).toHaveClass('on-promoted')
+    const gates = [...nav.querySelectorAll('.v2-tab')].find(a => a.textContent?.includes('Gates & learning'))!
+    expect(gates).toHaveClass('on')
+    expect(gates).toHaveAttribute('aria-current', 'page')
+    // the phone's More tab still lights inside these pages — that is the bar
+    // that was ratified, and only CSS (≥1024px) quiets it on the rail
+    const more = [...nav.querySelectorAll('.v2-tab:not(.rail-only)')].find(a => a.textContent?.includes('More'))!
+    expect(more).toHaveClass('on')
   })
 
   it('deep-links a stock page with its symbol', async () => {

@@ -226,7 +226,18 @@ p {
   font-size: 17px;
   line-height: 1;
 }
+/* THE RAIL-ONLY ENTRIES (owner iteration 2). Three pages promoted out of More
+   onto the desktop rail; the phone bar stays exactly the five ratified tabs,
+   and CSS alone is what enforces it — the ≥1024px block below reveals them, so
+   no JS width check exists to disagree with the media query the rail skin is
+   already gated on. */
+.v2 .v2-tab.rail-only {
+  display: none;
+}
 @media (min-width: 1024px) {
+  .v2 .v2-tab.rail-only {
+    display: flex;
+  }
   .v2 .v2-nav {
     inset: 0 auto 0 0;
     width: 200px;
@@ -246,6 +257,13 @@ p {
   }
   .v2 .v2-tab.on {
     background: var(--surface-2);
+  }
+  /* …and while a promoted page is open its OWN row carries the highlight, so
+     the More parent above it stops shouting. (The parent keeps `.on` because
+     the PHONE needs it: More is the only tab these pages have there.) */
+  .v2 .v2-nav.on-promoted .v2-tab.on:not(.rail-only) {
+    color: var(--text-dim);
+    background: none;
   }
   .v2 .v2-page {
     margin-left: 200px;

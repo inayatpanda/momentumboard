@@ -154,7 +154,10 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     expect(document.querySelector('.desk2')).toBeNull()
     expect(screen.queryByRole('complementary', { name: /board column/i })).toBeNull()
     const nav = screen.getByRole('navigation')
-    expect([...nav.querySelectorAll('.v2-tab-label')].map(el => el.textContent?.trim())).toEqual([
+    // the PHONE bar is the ratified five: owner iteration 2's three promoted
+    // entries carry `.rail-only`, which CSS hides below 1024px (jsdom applies
+    // no stylesheet, so the predicate the CSS reads is what is asserted)
+    expect([...nav.querySelectorAll('.v2-tab:not(.rail-only) .v2-tab-label')].map(el => el.textContent?.trim())).toEqual([
       'Today',
       'Stocks',
       'Intel',
