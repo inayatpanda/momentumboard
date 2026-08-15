@@ -3,7 +3,7 @@
 // StockPage.test.tsx: fetchers mocked to never resolve, every case paints
 // from a seeded Dexie slice.
 
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -130,9 +130,13 @@ describe('Record', () => {
       )
       withRouter()
       const sc = await screen.findByLabelText('Scorecard')
-      expect(within(sc).getByText('Grade A')).toBeInTheDocument()
-      expect(within(sc).getByText('Shadow book')).toBeInTheDocument()
-      expect(within(sc).getByText(/🃏 Wildcard/)).toBeInTheDocument()
+      // the TILES specifically — the per-grade table below them (owner
+      // iteration 2) labels its rows from the same function, so an unscoped
+      // query would match twice and prove nothing about either surface
+      const tiles = sc.querySelector('.rec-tiles') as HTMLElement
+      expect(within(tiles).getByText('Grade A')).toBeInTheDocument()
+      expect(within(tiles).getByText('Shadow book')).toBeInTheDocument()
+      expect(within(tiles).getByText(/🃏 Wildcard/)).toBeInTheDocument()
       // never invents a tier neither key has
       expect(within(sc).queryByText('Grade shadow')).not.toBeInTheDocument()
       expect(within(sc).queryByText('Grade wildcard')).not.toBeInTheDocument()
@@ -191,7 +195,7 @@ describe('Record', () => {
 
     it('renders a distinct raw/no-benchmark panel with the cohort’s own numbers', async () => {
       await seedLearning(cryptoLearning())
-      await seedLedger('ledger:7', [
+      await seedLedger('ledger:30', [
         {
           date: '2026-08-10',
           predictions: [
@@ -245,24 +249,21 @@ describe('Record', () => {
       expect(within(panel).queryByText(/SPY/i)).not.toBeInTheDocument() // still no benchmark in this partition
     })
 
-    // codex #11: the window was LedgerSection's private state, so after
-    // "Load 30 days" the cards showed thirty and this panel still rolled seven.
-    it('rolls the SAME window the cards render — after Load 30 days the graded count widens', async () => {
+    // codex #11: the window was LedgerSection's private state, so the cards
+    // could show thirty days while this panel still rolled seven. It is now
+    // ONE window for the whole screen (owner iteration 2 dropped the widen
+    // button), which is the same invariant with nothing left to desynchronise.
+    it('rolls the SAME window the cards render', async () => {
       const coin = (id: string, date: string, hit: boolean) =>
         mkCall({ id, date, sym: 'BTC-USD', cohort: 'crypto', outcome10: { excessPct: hit ? 6 : -2, rawPct: hit ? 6 : -2, spyPct: 0, stopped: false, hit } })
       await seedLearning(cryptoLearning())
-      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [coin('k1', '2026-08-10', true)] }])
       await seedLedger('ledger:30', [
         { date: '2026-08-10', predictions: [coin('k1', '2026-08-10', true)] },
         { date: '2026-07-20', predictions: [coin('k2', '2026-07-20', true), coin('k3', '2026-07-20', false)] },
       ])
       withRouter()
       const panel = await screen.findByLabelText('Crypto scorecard')
-      expect(await within(panel).findByText(/1 of 1 graded here/)).toBeInTheDocument()
-
-      fireEvent.click(screen.getByRole('button', { name: /load 30 days/i }))
-
-      expect(await within(screen.getByLabelText('Crypto scorecard')).findByText(/2 of 3 graded here/)).toBeInTheDocument()
+      expect(await within(panel).findByText(/2 of 3 graded here/)).toBeInTheDocument()
     })
 
     it('renders no crypto panel at all when the partition has never moved', async () => {
@@ -277,7 +278,7 @@ describe('Record', () => {
     it('shows NO grade pill on a watch-only row, and shows one on a sized row', async () => {
       const sizedCall = mkCall({ id: 'sized1', sym: 'NVDA', watchOnly: false, grade: 'A' })
       const watchCall = mkCall({ id: 'watch1', sym: 'AMD', watchOnly: true, grade: 'B' })
-      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [sizedCall, watchCall] }])
+      await seedLedger('ledger:30', [{ date: '2026-08-10', predictions: [sizedCall, watchCall] }])
       withRouter()
       const ledger = await screen.findByLabelText('The ledger')
       expect(await within(ledger).findByText('NVDA')).toBeInTheDocument()
@@ -301,7 +302,7 @@ describe('Record', () => {
         outcome21: { excessPct: -1.2, rawPct: -1.2, spyPct: 0, stopped: false, hit: false },
       })
       const equity = mkCall({ id: 'e1', sym: 'NVDA', outcome10: { excessPct: 4.2, rawPct: 5, spyPct: 0.8, stopped: false, hit: true } })
-      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [coin, equity] }])
+      await seedLedger('ledger:30', [{ date: '2026-08-10', predictions: [coin, equity] }])
       withRouter()
       const ledger = await screen.findByLabelText('The ledger')
       const coinPill = await within(ledger).findByText(/14b/)
@@ -319,14 +320,16 @@ describe('Record', () => {
         sym: 'TSLA',
         postMortem: { cls: 'loss', detail: 'detail only', at: 1, sentence: 'Stopped out on a gap down.' },
       })
-      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [call] }])
+      await seedLedger('ledger:30', [{ date: '2026-08-10', predictions: [call] }])
       withRouter()
       const ledger = await screen.findByLabelText('The ledger')
       expect(await within(ledger).findByText('Stopped out on a gap down.')).toBeInTheDocument()
     })
 
-    it('"Load 30 days" swaps to the ledger:30 slice', async () => {
-      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [mkCall({ id: 'a1', sym: 'NVDA' })] }])
+    // OWNER ITERATION 2: the window is thirty days from the first paint, and
+    // the widen button — whose only job was to enlarge a number the reader had
+    // no reason to think was narrow — is gone.
+    it('reads the 30-day slice from the first paint, with no widen button anywhere', async () => {
       await seedLedger('ledger:30', [
         { date: '2026-08-10', predictions: [mkCall({ id: 'a1', sym: 'NVDA' })] },
         { date: '2026-07-14', predictions: [mkCall({ id: 'b1', sym: 'OLDCO', date: '2026-07-14' })] },
@@ -334,15 +337,14 @@ describe('Record', () => {
       withRouter()
       const ledger = await screen.findByLabelText('The ledger')
       expect(await within(ledger).findByText('NVDA')).toBeInTheDocument()
-      expect(within(ledger).queryByText('OLDCO')).not.toBeInTheDocument()
-      fireEvent.click(within(ledger).getByRole('button', { name: /load 30 days/i }))
       expect(await within(ledger).findByText('OLDCO')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /load 30 days/i })).not.toBeInTheDocument()
     })
 
     it('renders NO grade pill on a belowBase row, and shows one on a normal sized row', async () => {
       const sizedCall = mkCall({ id: 'sized2', sym: 'AAPL', belowBase: false, grade: 'A' })
       const belowBaseCall = mkCall({ id: 'below1', sym: 'MSFT', belowBase: true, grade: 'B' })
-      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [sizedCall, belowBaseCall] }])
+      await seedLedger('ledger:30', [{ date: '2026-08-10', predictions: [sizedCall, belowBaseCall] }])
       withRouter()
       const ledger = await screen.findByLabelText('The ledger')
       expect(await within(ledger).findByText('AAPL')).toBeInTheDocument()
@@ -352,13 +354,144 @@ describe('Record', () => {
 
     it('renders shadow label and no grade pill on a shadow row', async () => {
       const shadowCall = mkCall({ id: 'shadow1', sym: 'TSLA', shadow: true, grade: 'A' })
-      await seedLedger('ledger:7', [{ date: '2026-08-10', predictions: [shadowCall] }])
+      await seedLedger('ledger:30', [{ date: '2026-08-10', predictions: [shadowCall] }])
       withRouter()
       const ledger = await screen.findByLabelText('The ledger')
       expect(await within(ledger).findByText('TSLA')).toBeInTheDocument()
       expect(within(ledger).getByText(/shadow — never a live size/)).toBeInTheDocument()
       expect(within(ledger).queryByLabelText('Grade A')).not.toBeInTheDocument()
     })
+  })
+
+  // OWNER ITERATION 2: "Track record is basically useless, the graph doesnt
+  // mean anything. more information need to stay in track record."
+  describe('the cumulative line', () => {
+    const gradedCall = (id: string, date: string, excessPct: number, over: Partial<JourneyCall> = {}) =>
+      mkCall({ id, date, outcome10: { excessPct, rawPct: excessPct, spyPct: 0, stopped: false, hit: excessPct > 0 }, ...over })
+
+    it('names what it is measuring and prints the running total', async () => {
+      await seedLedger('ledger:30', [
+        { date: '2026-08-12', predictions: [gradedCall('b', '2026-08-12', -1.5, { sym: 'AMD' })] },
+        { date: '2026-08-10', predictions: [gradedCall('a', '2026-08-10', 4)] },
+      ])
+      withRouter()
+      const chart = await screen.findByLabelText('Cumulative excess')
+      expect(within(chart).getByText(/if you.?d taken every sized call/i)).toBeInTheDocument()
+      expect(within(chart).getByText(/cumulative excess vs SPY, last 30 days/i)).toBeInTheDocument()
+      // the running total, read off the headline (the y-axis labels are pp too)
+      expect(chart.querySelector('.rec-chart-total')).toHaveTextContent('+2.5pp') // 4 then −1.5
+      expect(chart.querySelector('.rec-chart-total')).toHaveClass('num')
+      expect(chart.querySelector('.rec-chart-path')).not.toBeNull()
+    })
+
+    it('says so plainly rather than drawing a line through one point', async () => {
+      await seedLedger('ledger:30', [{ date: '2026-08-10', predictions: [gradedCall('a', '2026-08-10', 4)] }])
+      withRouter()
+      const chart = await screen.findByLabelText('Cumulative excess')
+      expect(within(chart).getByText(/one graded day so far/i)).toBeInTheDocument()
+      expect(chart.querySelector('.rec-chart-path')).toBeNull()
+    })
+
+    it('says nothing has graded yet on an empty window', async () => {
+      await seedLedger('ledger:30', [])
+      withRouter()
+      const chart = await screen.findByLabelText('Cumulative excess')
+      expect(within(chart).getByText(/nothing has graded in this window yet/i)).toBeInTheDocument()
+    })
+
+    // the chart is an EXCESS-vs-SPY line; the cohort grades absolute over
+    // fourteen crypto bars, so one of its rows in here means the line is
+    // measuring neither thing
+    it('leaves crypto rows out of the line entirely', async () => {
+      await seedLedger('ledger:30', [
+        {
+          date: '2026-08-10',
+          predictions: [gradedCall('e', '2026-08-10', 2), gradedCall('k', '2026-08-10', 40, { sym: 'BTC-USD', cohort: 'crypto' })],
+        },
+        { date: '2026-08-11', predictions: [gradedCall('e2', '2026-08-11', 1)] },
+      ])
+      withRouter()
+      const chart = await screen.findByLabelText('Cumulative excess')
+      expect(chart.querySelector('.rec-chart-total')).toHaveTextContent('+3.0pp')
+      expect(within(chart).queryByText(/\+43/)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('best and worst of the window', () => {
+    const gradedCall = (id: string, sym: string, excessPct: number, over: Partial<JourneyCall> = {}) =>
+      mkCall({ id, sym, outcome10: { excessPct, rawPct: excessPct, spyPct: 0, stopped: false, hit: excessPct > 0 }, ...over })
+
+    it('names both ends, with the engine’s own sentence on the loser', async () => {
+      await seedLedger('ledger:30', [
+        {
+          date: '2026-08-10',
+          predictions: [
+            gradedCall('a', 'NVDA', 9.1),
+            gradedCall('b', 'TSLA', -6.3, { postMortem: { cls: 'loss', detail: 'd', at: 1, sentence: 'Stopped on a gap down.' } }),
+          ],
+        },
+      ])
+      withRouter()
+      const ends = await screen.findByLabelText('Best and worst')
+      expect(within(ends).getByText('NVDA')).toBeInTheDocument()
+      expect(within(ends).getByText('+9.1pp')).toBeInTheDocument()
+      expect(within(ends).getByText('TSLA')).toBeInTheDocument()
+      expect(within(ends).getByText('−6.3pp')).toBeInTheDocument()
+      expect(within(ends).getByText('Stopped on a gap down.')).toBeInTheDocument()
+    })
+
+    it('prints one graded row ONCE, not as both ends', async () => {
+      await seedLedger('ledger:30', [{ date: '2026-08-10', predictions: [gradedCall('a', 'PLTR', 2.2)] }])
+      withRouter()
+      const ends = await screen.findByLabelText('Best and worst')
+      expect(within(ends).getAllByText('PLTR')).toHaveLength(1)
+      expect(within(ends).queryByText(/worst of the window/i)).not.toBeInTheDocument()
+    })
+
+    it('renders nothing at all with nothing graded', async () => {
+      await seedLedger('ledger:30', [{ date: '2026-08-10', predictions: [mkCall({ id: 'open' })] }])
+      withRouter()
+      await screen.findByLabelText('The ledger')
+      expect(screen.queryByLabelText('Best and worst')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('the per-grade table', () => {
+    it('lines the tiers up as n / hit / avg excess so the reader can see them separate', async () => {
+      await seedLearning(
+        mkLearning({
+          scorecard: {
+            byGrade: { A: { n: 10, hits: 7, sumExcess: 30 }, C: { n: 4, hits: 1, sumExcess: -4 } },
+            byRegime: {},
+            overlays: {},
+            brierTail: [],
+            totalGraded: 14,
+          },
+        }),
+      )
+      withRouter()
+      const table = await screen.findByLabelText('Per-grade record')
+      const rows = [...table.querySelectorAll('tbody tr')].map(tr => [...tr.querySelectorAll('td')].map(td => td.textContent))
+      expect(rows).toEqual([
+        ['Grade A', '10', '70%', '+3.0%'],
+        ['Grade C', '4', '25%', '−1.0%'],
+      ])
+    })
+
+    it('renders no table when there is only one populated tier — one row compares nothing', async () => {
+      await seedLearning(mkLearning({ scorecard: { byGrade: { A: { n: 2, hits: 1, sumExcess: 3 } }, byRegime: {}, overlays: {}, brierTail: [], totalGraded: 2 } }))
+      withRouter()
+      await screen.findByLabelText('Scorecard')
+      expect(screen.queryByLabelText('Per-grade record')).not.toBeInTheDocument()
+    })
+  })
+
+  it('explains the calibration plot in plain words above it', async () => {
+    await seedLearning(mkLearning({ calibration: { buckets: {}, brier: [], seeded: true, modelVersion: null, referenceBase: 0.41, evidence: null } }))
+    withRouter()
+    const cal = await screen.findByLabelText('Calibration')
+    expect(within(cal).getByText(/what the engine predicted \(x\) vs what actually happened \(y\)/i)).toBeInTheDocument()
+    expect(within(cal).getByText(/honest predictions sit on the diagonal/i)).toBeInTheDocument()
   })
 
   describe('regrets', () => {

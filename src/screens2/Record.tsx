@@ -5,20 +5,34 @@
 //
 // DATA (DS-5, accepted): `learning` (the WHOLE slice — scorecard, calibration
 // and regrets; gateState/weights/roster/channelCred are the NEXT task's Gates
-// & learning page and are never read here) plus `ledger:7`, widened to
-// `ledger:30` by "Load 30 days" — same swap-the-slice shape as PastCalls'
-// "load older calls" (StockPage.tsx / parts/PastCalls.tsx).
+// & learning page and are never read here) plus `ledger:30`.
+//
+// OWNER ITERATION 2 — "Track record is basically useless, the graph doesnt
+// mean anything. more information need to stay in track record." Three things
+// were added and one taken away:
+//   + the CUMULATIVE LINE: what following every sized call would have done,
+//     which is the only question a track record actually owes the reader
+//   + BEST & WORST of the window, named, with the engine's own post-mortem
+//   + the PER-GRADE table: do the letters separate, in n / hit% / avg excess
+//   − the "Load 30 days" button. The window is now thirty from the first
+//     paint: one slice, one window, no button whose only job was to widen a
+//     number the reader had no reason to think was narrow.
 
-import { useState } from 'react'
 import { useSlice } from '../lib/useSlice'
 import { getLearning, getLedgerDays } from '../lib/apiViews'
 import type { LearningSlice, LedgerDay } from '../lib/apiViews'
 import type { EngineData } from '../lib/api'
 import { CalibrationPlot } from '../components/CalibrationPlot'
 import { cryptoLedgerSummary, flattenLedger } from '../lib/ledgerStats'
+import { bestAndWorst, cumulativeExcessSeries } from '../lib/ledgerSeries'
+import type { LedgerExtreme } from '../lib/ledgerSeries'
+import { longDate } from '../lib/format'
+import { CumulativeLine } from './parts/CumulativeLine'
 import { LedgerDayCards } from './parts/LedgerDayCards'
 import { Regrets } from './parts/Regrets'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
+
+const LEDGER_DAYS = 30
 
 const pct = (hits: number, n: number) => (n ? `${Math.round((hits / n) * 100)}%` : '—')
 const fmtExcess = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}%`
@@ -74,6 +88,68 @@ function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
           </div>
         ))}
       </div>
+      <GradeTable scorecard={scorecard} />
+    </section>
+  )
+}
+
+/** DO THE LETTERS SEPARATE? (owner iteration 2). The tiles say what each grade
+ * did; side by side in one table the reader can see whether an A is actually
+ * worth more than a C — which is the whole claim a grade makes. Same numbers,
+ * one comparison. */
+function GradeTable({ scorecard }: { scorecard: Scorecard }) {
+  const rows = Object.entries(scorecard.byGrade).filter(([, s]) => s.n > 0)
+  if (rows.length < 2) return null // one row compares nothing
+  return (
+    <div className="rec-grade-wrap">
+      <table className="rec-grade-table" aria-label="Per-grade record">
+        <thead>
+          <tr>
+            <th>Tier</th>
+            <th>n</th>
+            <th>Hit</th>
+            <th>Avg excess</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([key, s]) => (
+            <tr key={key}>
+              <td>{tileLabel(key)}</td>
+              <td className="num">{s.n}</td>
+              <td className="num">{pct(s.hits, s.n)}</td>
+              <td className="num">{fmtExcess(s.sumExcess / s.n)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** BEST & WORST OF THE WINDOW (owner iteration 2). An average hides both ends,
+ * and the ends are what a reader remembers — so name them, and let the worst
+ * one carry the engine's own explanation where it wrote one. */
+function ExtremesSection({ best, worst }: { best: LedgerExtreme | null; worst: LedgerExtreme | null }) {
+  if (!best && !worst) return null
+  const card = (kind: 'best' | 'worst', row: LedgerExtreme) => (
+    <div className={`card rec-extreme rec-extreme-${kind}`}>
+      <span className="rec-tile-label">{kind === 'best' ? 'Best of the window' : 'Worst of the window'}</span>
+      <span className="rec-extreme-sym">{row.sym}</span>
+      <span className={`num rec-extreme-pp ${row.excessPct >= 0 ? 'up' : 'down'}`}>
+        {row.excessPct >= 0 ? '+' : '−'}
+        {Math.abs(row.excessPct).toFixed(1)}pp
+      </span>
+      <span className="num rec-tile-sub">{longDate(row.date)}</span>
+      {kind === 'worst' && row.postMortem && <p className="rec-ledger-pm">{row.postMortem}</p>}
+    </div>
+  )
+  return (
+    <section aria-label="Best and worst" className="rec-extremes">
+      {best && card('best', best)}
+      {/* one graded row is its own best AND worst; printing that ONE row twice
+          would read as two calls. Identity, not symbol — two different calls on
+          one name genuinely are two rows. */}
+      {worst && !(best && worst.sym === best.sym && worst.date === best.date && worst.excessPct === best.excessPct) && card('worst', worst)}
     </section>
   )
 }
@@ -162,6 +238,12 @@ function CalibrationSection({ calibration }: { calibration: LearningSlice['calib
           while this said nothing. An unlabelled calibration plot under a labelled
           equity scorecard reads as "and here is the whole engine's". */}
       <p className="sec-label">Calibration · Equity — excess vs SPY</p>
+      {/* WHAT THE READER IS LOOKING AT (owner iteration 2). The plot was
+          unexplained, so a page the owner called useless had a scatter on it
+          that taught nothing. One sentence, above the plot, in plain words. */}
+      <p className="cc-reason rec-calibration-explainer">
+        Each dot: what the engine predicted (x) vs what actually happened (y) — honest predictions sit on the diagonal.
+      </p>
       <CalibrationPlot buckets={calibration.buckets as Record<string, { n: number; hits: number }>} seeded={calibration.seeded} />
       <p className="cc-reason rec-calibration-context">
         {referenceBase != null ? (
@@ -186,33 +268,28 @@ function CalibrationSection({ calibration }: { calibration: LearningSlice['calib
 /** `days` is passed IN rather than fetched here (crypto-v2 wave): the crypto
  * panel rolls the same receipts, and two components calling `useSlice` on one
  * key would revalidate one key twice for one screen. */
-function LedgerSection({ days, wide, onWiden }: { days: LedgerDay[]; wide: boolean; onWiden: () => void }) {
+function LedgerSection({ days }: { days: LedgerDay[] }) {
   return (
     <section aria-label="The ledger">
       <p className="sec-label">The ledger — the receipts</p>
       <LedgerDayCards days={days} />
-      {!wide && (
-        <button className="stx-showmore" onClick={onWiden}>
-          Load 30 days
-        </button>
-      )}
     </section>
   )
 }
 
 export default function Record() {
   const { data: learning } = useSlice('learning', getLearning)
-  // THE WINDOW IS ONE DECISION, MADE HERE (codex #11). It used to live inside
-  // LedgerSection, which meant the cards below could be showing thirty days
-  // while the crypto panel above still rolled the seven it had been handed —
-  // one screen quoting two windows, with nothing on it saying which was which.
-  // Widening swaps the slice KEY rather than mounting a second hook: one slice
-  // at a time, still fetched only once asked, and `useSlice` holds the 7-day
-  // paint on screen until the wider one lands rather than blanking (the same
-  // rule PastCalls' DeepCalls follows).
-  const [wide, setWide] = useState(false)
-  const { data: ledger } = useSlice<{ days: LedgerDay[] }>(wide ? 'ledger:30' : 'ledger:7', () => getLedgerDays(wide ? 30 : 7))
+  // ONE WINDOW, THIRTY DAYS, FROM THE FIRST PAINT (owner iteration 2). It was
+  // seven with a "Load 30 days" button, which meant the screen quoted the
+  // narrow window until the reader happened to press something — and the
+  // cumulative line below is only worth drawing over a window wide enough to
+  // have a shape. One slice for the whole page keeps the crypto panel, the
+  // chart, the extremes and the cards all rolling the SAME rows (codex #11's
+  // rule, now enforced by there being nothing to widen).
+  const { data: ledger } = useSlice<{ days: LedgerDay[] }>(`ledger:${LEDGER_DAYS}`, () => getLedgerDays(LEDGER_DAYS))
   const days = ledger?.days ?? []
+  const series = cumulativeExcessSeries(days)
+  const { best, worst } = bestAndWorst(days)
   return (
     <div className="rec2">
       <h1>Track record</h1>
@@ -229,10 +306,15 @@ export default function Record() {
               them — rendered only once the partition has actually moved, so a
               reader who has never watched a coin sees nothing about one */}
           {learning.crypto && <CryptoPanel crypto={learning.crypto} rows={flattenLedger(days)} />}
-          <CalibrationSection calibration={learning.calibration} />
         </>
       )}
-      <LedgerSection days={days} wide={wide} onWiden={() => setWide(true)} />
+      {/* the line and the two ends sit BETWEEN the tiles and the calibration:
+          the tiles say what each tier did, this says what the whole book did,
+          and the plot says whether the probabilities behind it were honest */}
+      <CumulativeLine points={series} days={LEDGER_DAYS} />
+      <ExtremesSection best={best} worst={worst} />
+      {learning != null && <CalibrationSection calibration={learning.calibration} />}
+      <LedgerSection days={days} />
       <Regrets regrets={learning?.regrets ?? null} />
     </div>
   )

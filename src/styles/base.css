@@ -1709,6 +1709,152 @@ p {
   color: var(--warn);
 }
 
+/* do the letters separate? the same byGrade numbers, side by side, so the
+   claim a grade makes can be checked in one glance (owner iteration 2) */
+.v2 .rec-grade-wrap {
+  overflow-x: auto;
+  margin: -8px 0 18px;
+}
+.v2 .rec-grade-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.v2 .rec-grade-table th {
+  text-align: right;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-dim);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.v2 .rec-grade-table th:first-child,
+.v2 .rec-grade-table td:first-child {
+  text-align: left;
+}
+.v2 .rec-grade-table td {
+  text-align: right;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.v2 .rec-grade-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* the cumulative line (owner iteration 2): "the graph doesnt mean anything" —
+   this one answers what following every sized call would have done. Labels are
+   HTML, never SVG text: the plot stretches with preserveAspectRatio="none" and
+   that scale would distort any glyph inside it. */
+.v2 .rec-chart {
+  margin-bottom: 18px;
+}
+.v2 .rec-chart .sec-label {
+  margin-top: 0;
+}
+.v2 .rec-chart-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 10px;
+}
+.v2 .rec-chart-total {
+  font-size: 24px;
+  font-weight: 800;
+}
+.v2 .rec-chart-total.up {
+  color: var(--long);
+}
+.v2 .rec-chart-total.down {
+  color: var(--short);
+}
+.v2 .rec-chart-plot {
+  position: relative;
+  /* room on the right for the y labels, which sit outside the plotted area */
+  padding-right: 52px;
+}
+.v2 .rec-chart-svg {
+  display: block;
+  width: 100%;
+  height: 180px;
+  overflow: visible;
+}
+.v2 .rec-chart-area {
+  fill: var(--accent);
+  opacity: 0.14;
+  stroke: none;
+}
+.v2 .rec-chart-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.v2 .rec-chart-zero {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+.v2 .rec-chart-ymax,
+.v2 .rec-chart-ymin,
+.v2 .rec-chart-yzero {
+  position: absolute;
+  right: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1;
+}
+.v2 .rec-chart-ymax {
+  top: 0;
+}
+.v2 .rec-chart-ymin {
+  bottom: 0;
+}
+.v2 .rec-chart-yzero {
+  transform: translateY(-50%);
+}
+.v2 .rec-chart-xaxis {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding-right: 52px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* the window's two ends, named (owner iteration 2) */
+.v2 .rec-extremes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.v2 .rec-extreme {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .rec-extreme-sym {
+  font-size: 17px;
+  font-weight: 800;
+}
+.v2 .rec-extreme-pp {
+  font-size: 15px;
+  font-weight: 700;
+}
+.v2 .rec-extreme-pp.up {
+  color: var(--long);
+}
+.v2 .rec-extreme-pp.down {
+  color: var(--short);
+}
+
 /* calibration: CalibrationPlot is reused AS-IS (its own file is untouched) —
    this wrapper only restyles the legacy .digest-section/.section-title/
    .empty-line classes it renders, onto the v2 palette. */
@@ -1732,6 +1878,9 @@ p {
 }
 .v2 .rec-calibration-context {
   margin-top: 8px;
+}
+.v2 .rec-calibration-explainer {
+  margin: 0 0 8px;
 }
 
 /* the ledger, grouped by day */
