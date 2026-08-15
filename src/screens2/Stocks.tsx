@@ -174,13 +174,23 @@ export default function Stocks() {
       db.watchlist.toArray().then(list => {
         setItems(list)
         setWatchLoaded(true)
+        return list
       })
-    void read()
     // The starter seeding (App.tsx boot) can land AFTER this first read — on a
     // brand-new install the list painted "empty" until a reload (owner's first
-    // DMG launch). starter.ts announces; we re-read.
+    // DMG launch). Two nets, both needed: starter.ts announces (the listener),
+    // but on a DIRECT /app/stocks load this lazy chunk can still be downloading
+    // when the event fires — a missed event repaints nothing (live-verified).
+    // So an empty first read also re-reads once after the seed window.
+    let retry: ReturnType<typeof setTimeout> | undefined
+    void read().then(list => {
+      if (list.length === 0) retry = setTimeout(read, 1500)
+    })
     window.addEventListener('mb-watchlist-changed', read)
-    return () => window.removeEventListener('mb-watchlist-changed', read)
+    return () => {
+      clearTimeout(retry)
+      window.removeEventListener('mb-watchlist-changed', read)
+    }
   }, [])
 
   const symbols = items.map(i => i.symbol)
