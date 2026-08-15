@@ -65,10 +65,11 @@ export function CumulativeLine({ points, days }: { points: CumulativePoint[]; da
           <path className="rec-chart-path" d={d} vectorEffect="non-scaling-stroke" />
         </svg>
         <span className="num rec-chart-ymax">{pp(max)}</span>
-        {/* the zero label only when zero is INSIDE the range: a book that never
-            went negative puts the zero line exactly on the minimum, and the two
-            labels then print on top of each other */}
-        {min < 0 && max > 0 && (
+        {/* the zero label is a courtesy, not a datum — it may only print when
+            the zero line clears BOTH edge labels. "Inside the range" is not
+            enough: a −8.1pp dip inside a +263pp run puts the line at 93%
+            height, straight over the min label (seen live, 2026-08-15). */}
+        {zeroY / H > 0.12 && zeroY / H < 0.88 && (
           <span className="num rec-chart-yzero" style={{ top: `${(zeroY / H) * 100}%` }}>
             0
           </span>
