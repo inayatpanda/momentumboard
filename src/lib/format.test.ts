@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { fmtPrice, fmtPct, capCohort, emptySideLine, sizeLabel, longDate, shortDateWithWeekday } from './format'
+import { fmtPrice, fmtPct, capCohort, compactUsd, emptySideLine, relativeStamp, sizeLabel, longDate, shortDateWithWeekday } from './format'
 
 describe('fmtPrice', () => {
   it('renders pence for GBp', () => expect(fmtPrice(123.4, 'GBp')).toBe('123.4p'))
@@ -12,6 +12,51 @@ describe('fmtPct', () => {
   it('signs both directions', () => {
     expect(fmtPct(1.7349)).toBe('+1.73%')
     expect(fmtPct(-0.5)).toBe('−0.50%')
+  })
+})
+
+// Owner iteration 2: "News desk doesnt show date of news." The desk stores `at`
+// in SECONDS and other feeds here store milliseconds, so the unit is decided by
+// magnitude — read the wrong way round, every headline dates to 1970.
+describe('relativeStamp', () => {
+  // LOCAL noon, not UTC noon: the >24h fallback prints a local calendar date,
+  // and a UTC-noon anchor would land on the previous/next day for readers far
+  // enough east or west to make this test machine-dependent.
+  const now = new Date(2026, 7, 14, 12, 0, 0).getTime() // Fri 14 Aug 2026
+
+  it('reads a SECONDS stamp as seconds', () => {
+    expect(relativeStamp(Math.floor((now - 2 * 3_600_000) / 1000), now)).toBe('2h ago')
+  })
+
+  it('reads a MILLISECONDS stamp as milliseconds', () => {
+    expect(relativeStamp(now - 2 * 3_600_000, now)).toBe('2h ago')
+  })
+
+  it('counts minutes under the hour and hours under the day', () => {
+    expect(relativeStamp(now - 90_000, now)).toBe('1m ago')
+    expect(relativeStamp(now - 45 * 60_000, now)).toBe('45m ago')
+    expect(relativeStamp(now - 23 * 3_600_000, now)).toBe('23h ago')
+  })
+
+  it('falls back to a weekday date beyond 24 hours', () => {
+    // 3 days back from Fri 14 Aug 2026 is Tue 11 Aug
+    expect(relativeStamp(now - 3 * 86_400_000, now)).toMatch(/^Tue 11 Aug$/)
+  })
+
+  it('never prints a negative age, and never prints an empty stamp as a number', () => {
+    expect(relativeStamp(now + 5 * 60_000, now)).toBe('just now')
+    expect(relativeStamp(0, now)).toBe('')
+    expect(relativeStamp(Number.NaN, now)).toBe('')
+  })
+})
+
+describe('compactUsd', () => {
+  it('scales to K/M/B and keeps small values whole', () => {
+    expect(compactUsd(1_240_000)).toBe('$1.2M')
+    expect(compactUsd(2_400_000_000)).toBe('$2.4B')
+    expect(compactUsd(950_000)).toBe('$950K')
+    expect(compactUsd(420)).toBe('$420')
+    expect(compactUsd(-1_500_000)).toBe('−$1.5M')
   })
 })
 

@@ -24,6 +24,43 @@ export function shortDateWithWeekday(iso: string): string {
   return `${wd}, ${d} ${MONTHS[(m ?? 1) - 1] ?? ''}`
 }
 
+/** How long ago a UNIX timestamp was, for a feed the reader scans (owner
+ * iteration 2 — "News desk doesnt show date of news").
+ *
+ * SECONDS OR MILLISECONDS, decided by magnitude rather than by trusting the
+ * field's documentation: the news desk stores `at` in seconds, other feeds in
+ * this codebase store milliseconds, and a seconds value read as milliseconds
+ * dates every headline to January 1970. Anything past ~2001 in ms (1e12) is
+ * already milliseconds; anything below it is seconds.
+ *
+ * Local timezone throughout, deliberately — unlike {@link longDate}, this reads
+ * an INSTANT, and the reader's own clock is the right frame for "2h ago". */
+export function relativeStamp(at: number, now = Date.now()): string {
+  if (!Number.isFinite(at) || at <= 0) return ''
+  const ms = at > 1e12 ? at : at * 1000
+  const diff = now - ms
+  // a clock-skewed future stamp is not "in −3 minutes"
+  if (diff < 60_000) return 'just now'
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(diff / 3_600_000)
+  if (hours < 24) return `${hours}h ago`
+  const d = new Date(ms)
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`
+}
+
+/** Dollar totals a reader scans rather than audits — insider clusters run from
+ * five figures to ten, and the raw integer is unreadable at either end. */
+export function compactUsd(n: number): string {
+  if (!Number.isFinite(n)) return '—'
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '−' : ''
+  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(1)}B`
+  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(1)}M`
+  if (abs >= 1e3) return `${sign}$${Math.round(abs / 1e3)}K`
+  return `${sign}$${Math.round(abs)}`
+}
+
 export function fmtPrice(price: number, currency: string): string {
   if (currency === 'GBp') return `${price.toFixed(1)}p`
   const sym = currency === 'GBP' ? '£' : currency === 'USD' ? '$' : `${currency} `

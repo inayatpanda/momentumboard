@@ -1404,9 +1404,57 @@ p {
    visually with a call card. */
 .v2 .itl-section {
   margin-bottom: 16px;
+  /* clear of the sticky jump rail when scrollIntoView lands on a section */
+  scroll-margin-top: 60px;
 }
 .v2 .itl-section .sec-label {
   margin-top: 0;
+}
+
+/* the jump rail (owner iteration 2): five chips, stuck to the top of the
+   scroller so the news desk is one tap away from anywhere on the page */
+.v2 .itl-jump {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  /* the bleed + padding is what stops rows sliding visibly UNDER the chips */
+  margin: 0 -16px 14px;
+  padding: 10px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.v2 a.itl-jump-chip {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* the paper, COLLAPSED by default (owner iteration 2): a 70vh iframe is not a
+   landing surface. The summary is the whole tap target. */
+.v2 details.itl-paper > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.v2 details.itl-paper > summary::-webkit-details-marker {
+  display: none;
+}
+.v2 .itl-paper-title {
+  margin: 0;
+}
+.v2 .itl-paper-cta {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.v2 .itl-paper-body {
+  margin-top: 12px;
 }
 
 /* the paper: edition pill + the sandboxed srcDoc iframe (CX-19) */
@@ -1474,6 +1522,91 @@ p {
   margin-top: 4px;
   font-size: 12px;
   color: var(--text-dim);
+}
+/* the stamp (owner iteration 2): dim, tabular, and first in the meta line */
+.v2 .itl-news-at {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.v2 .itl-news-at::after {
+  content: '·';
+  margin-left: 6px;
+  opacity: 0.6;
+}
+
+/* the two new feeds (owner iteration 2): insider clusters and congressional
+   disclosures. One shared compact row — symbol, the strong numerics, a date,
+   then whatever prose the payload actually carries. */
+.v2 .itl-feed-intro {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+}
+.v2 .itl-feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 .itl-feed-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.v2 .itl-feed-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.v2 a.itl-feed-sym {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--text);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.v2 .itl-feed-strong {
+  color: var(--text);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.v2 .itl-feed-date {
+  flex-shrink: 0;
+}
+.v2 .itl-feed-names {
+  flex-basis: 100%;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .itl-congress-who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.v2 .itl-congress-chamber {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.v2 .itl-congress-hits {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.v2 .itl-congress-hits .sec-label {
+  margin: 0 0 8px;
+  color: var(--accent);
 }
 
 /* social pulse: the "also loud" chip row, the discoveries strip, the

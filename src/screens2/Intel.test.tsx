@@ -5,13 +5,13 @@
 // first job is proving one section's failure (or simply not being seeded)
 // never blanks the other two.
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route, Router, Switch } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
 import { writeSlice } from '../lib/store'
-import type { NewsDeskItem } from '../lib/api'
+import type { CongressTrade, InsiderCluster, NewsDeskItem, getCongress } from '../lib/api'
 import Intel from './Intel'
 
 vi.mock('../lib/api', async () => {
@@ -24,18 +24,54 @@ vi.mock('../lib/api', async () => {
     getNewsDesk: vi.fn(notMocked),
     getSocialPulse: vi.fn(notMocked),
     getTrending: vi.fn(notMocked),
+    getInsiderClusters: vi.fn(notMocked),
+    getCongress: vi.fn(notMocked),
   }
 })
 
+// `at` is UNIX SECONDS on the desk (src/lib/api.ts:186) — the fixture says so
+// on purpose, because the stamp helper decides its unit by magnitude.
 const mkNews = (i: number, overrides: Partial<NewsDeskItem> = {}): NewsDeskItem => ({
   title: `Headline ${i}`,
   url: `https://example.com/a${i}`,
   syms: [],
   score: 80 - i,
   why: 'because reasons',
-  at: Date.now(),
+  at: Math.floor(Date.now() / 1000),
   ...overrides,
 })
+
+const mkCluster = (overrides: Partial<InsiderCluster> = {}): InsiderCluster => ({
+  symbol: 'NVDA',
+  buyers: 4,
+  totalValueUsd: 1_240_000,
+  lastDate: '2026-08-11',
+  names: ['A. Officer', 'B. Director'],
+  ...overrides,
+})
+
+const mkTrade = (overrides: Partial<CongressTrade> = {}): CongressTrade => ({
+  politician: 'Jane Doe',
+  chamber: 'house',
+  symbol: 'NVDA',
+  side: 'buy',
+  amountRange: '$15,001–$50,000',
+  traded: '2026-08-01',
+  filed: '2026-08-12',
+  ...overrides,
+})
+
+type CongressSlice = Awaited<ReturnType<typeof getCongress>>
+const seedCongress = (overrides: Partial<CongressSlice> = {}) =>
+  writeSlice<CongressSlice>('intel:congress', {
+    trades: [],
+    watchlistHits: [],
+    source: 'quiverquant',
+    asOf: 1,
+    aggregates: null,
+    scorecard: null,
+    ...overrides,
+  })
 
 const withRouter = (path = '/app/intel') =>
   render(
@@ -74,14 +110,58 @@ describe('Intel', () => {
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
+  // THE JUMP RAIL (owner iteration 2): "scrolling is difficult to reach
+  // directly to the News desk without scrolling through the entire bulletin."
+  describe('the jump chips', () => {
+    it('renders one anchor per section, pointing at that section’s id', async () => {
+      withRouter()
+      const rail = screen.getByRole('navigation', { name: /jump to a section/i })
+      const chips = [...rail.querySelectorAll('a')].map(a => [a.textContent?.trim(), a.getAttribute('href')])
+      expect(chips).toEqual([
+        ['Paper', '#paper'],
+        ['News', '#news'],
+        ['Insiders', '#insiders'],
+        ['Congress', '#congress'],
+        ['Social', '#social'],
+      ])
+    })
+
+    it('every anchor target actually exists on the page', () => {
+      withRouter()
+      for (const id of ['paper', 'news', 'insiders', 'congress', 'social']) {
+        expect(document.getElementById(id)).not.toBeNull()
+      }
+    })
+  })
+
+  // THE PAPER, COLLAPSED (owner iteration 2): "The Daily bulletin takes up the
+  // entire space." Closed by default also means the heavy edition fetch is
+  // deferred until the reader asks for it.
   describe('the paper', () => {
-    it('renders the latest edition inline via a sandboxed srcDoc iframe', async () => {
+    const openPaper = () => fireEvent.click(screen.getByText(/today.?s paper/i))
+
+    it('is CLOSED by default — no iframe until the reader opens it', async () => {
       await writeSlice('reports', { date: '2026-08-13', at: 1, html: '<h1>The Edition</h1>' })
       withRouter()
+      expect(await screen.findByText(/today.?s paper/i)).toBeInTheDocument()
+      expect(screen.queryByTitle(/today.?s paper/i)).not.toBeInTheDocument()
+      expect(document.getElementById('paper')).not.toHaveAttribute('open')
+    })
+
+    it('renders the latest edition inline via a sandboxed srcDoc iframe once opened', async () => {
+      await writeSlice('reports', { date: '2026-08-13', at: 1, html: '<h1>The Edition</h1>' })
+      withRouter()
+      openPaper()
       const iframe = await screen.findByTitle(/today.?s paper/i)
       expect(iframe.getAttribute('srcdoc')).toContain('The Edition')
       expect(iframe.getAttribute('sandbox')).toBe('')
       expect(screen.getByText('2026-08-13')).toBeInTheDocument()
+    })
+
+    it('names the cached edition’s date on the closed summary', async () => {
+      await writeSlice('reports', { date: '2026-08-13', at: 1, html: '<h1>The Edition</h1>' })
+      withRouter()
+      expect(await screen.findByText(/today.?s paper · 2026-08-13/i)).toBeInTheDocument()
     })
 
     it('tapping an archive date swaps the iframe to that edition', async () => {
@@ -89,6 +169,7 @@ describe('Intel', () => {
       await writeSlice('reports:list', ['2026-08-13', '2026-08-12'])
       await writeSlice('reports:2026-08-12', { date: '2026-08-12', at: 2, html: '<h1>Yesterday edition</h1>' })
       withRouter()
+      openPaper()
 
       const first = (await screen.findByTitle(/today.?s paper/i)) as HTMLIFrameElement
       expect(first.getAttribute('srcdoc')).toContain('Today edition')
@@ -123,6 +204,127 @@ describe('Intel', () => {
       const link = await screen.findByRole('link', { name: 'NVDA' })
       expect(link).toHaveAttribute('href', '/app/stock/NVDA')
     })
+
+    // "News desk doesnt show date of news. It just is a big collection of cards."
+    it('stamps every card with when it happened, reading `at` as SECONDS', async () => {
+      const twoHoursAgo = Math.floor((Date.now() - 2 * 3_600_000) / 1000)
+      await writeSlice('intel:news', [mkNews(0, { at: twoHoursAgo })])
+      withRouter()
+      await screen.findByText('Headline 0')
+      expect(screen.getByText('2h ago')).toBeInTheDocument()
+      // read as milliseconds, a seconds stamp dates every headline to 1970
+      expect(screen.queryByText(/1970/)).not.toBeInTheDocument()
+    })
+
+    it('sorts newest first regardless of the order the feed arrived in', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      await writeSlice('intel:news', [
+        mkNews(0, { title: 'Older', at: now - 20 * 3_600_000 / 1000 }),
+        mkNews(1, { title: 'Newest', at: now - 60 }),
+        mkNews(2, { title: 'Middle', at: now - 5 * 3_600_000 / 1000 }),
+      ])
+      withRouter()
+      await screen.findByText('Newest')
+      const titles = [...document.querySelectorAll('.itl-news-title')].map(el => el.textContent)
+      expect(titles).toEqual(['Newest', 'Middle', 'Older'])
+    })
+  })
+
+  // INSIDERS (owner iteration 2): "Intel doesnt show insider news/buying".
+  describe('insiders', () => {
+    it('renders a cluster row: symbol link, buyer count, compact dollars, last date, names', async () => {
+      await writeSlice('intel:insiders', { clusters: [mkCluster()], asOf: 1 })
+      withRouter()
+      const section = document.getElementById('insiders') as HTMLElement
+      expect(await within(section).findByText('4 buyers')).toBeInTheDocument()
+      expect(within(section).getByText('$1.2M')).toBeInTheDocument()
+      expect(within(section).getByText(/11 Aug 2026/)).toBeInTheDocument()
+      expect(within(section).getByText('A. Officer, B. Director')).toBeInTheDocument()
+      expect(within(section).getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
+    })
+
+    it('says so honestly when the engine has no coverage yet', async () => {
+      await writeSlice('intel:insiders', { clusters: [], asOf: 1 })
+      withRouter()
+      expect(await screen.findByText(/no insider-buying clusters in the engine's coverage yet/i)).toBeInTheDocument()
+    })
+  })
+
+  // CONGRESS (owner iteration 2): "…congressional things."
+  describe('congress', () => {
+    it('renders a disclosure row: who, chamber, direction, symbol, amount, dates and the disclosure lag', async () => {
+      await seedCongress({ trades: [mkTrade()] })
+      withRouter()
+      const section = document.getElementById('congress') as HTMLElement
+      expect(await within(section).findByText('Jane Doe')).toBeInTheDocument()
+      expect(within(section).getByText('house')).toBeInTheDocument()
+      expect(within(section).getByText('$15,001–$50,000')).toBeInTheDocument()
+      expect(within(section).getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
+      // traded 1 Aug, filed 12 Aug
+      expect(within(section).getByText(/01 Aug 2026 · disclosed 11d later/)).toBeInTheDocument()
+    })
+
+    // the transaction IS a direction, so it wears the direction colours the
+    // rest of the app uses — a bought line and a sold line must never read the
+    // same at a glance
+    it('colours the buy/sell pill by direction', async () => {
+      await seedCongress({ trades: [mkTrade({ side: 'buy' }), mkTrade({ politician: 'John Roe', symbol: 'AMD', side: 'sell' })] })
+      withRouter()
+      const section = document.getElementById('congress') as HTMLElement
+      expect(await within(section).findByText('bought')).toHaveClass('pill', 'long')
+      expect(within(section).getByText('sold')).toHaveClass('pill', 'short')
+    })
+
+    it('lifts watchlist hits into their own highlighted block on top', async () => {
+      await seedCongress({ trades: [mkTrade()], watchlistHits: [mkTrade({ politician: 'Watched Rep', symbol: 'PLTR' })] })
+      withRouter()
+      await screen.findByText('Watched Rep')
+      const hits = document.querySelector('.itl-congress-hits') as HTMLElement
+      expect(hits).not.toBeNull()
+      expect(within(hits).getByText('Watched Rep')).toBeInTheDocument()
+      expect(within(hits).getByText(/on your watchlist/i)).toBeInTheDocument()
+    })
+
+    it('renders the aggregates and scorecard lines when the payload carries them', async () => {
+      await seedCongress({
+        trades: [mkTrade()],
+        aggregates: {
+          topTickers: [{ symbol: 'NVDA', buys: 12, sells: 2 }, { symbol: 'AAPL', buys: 5, sells: 0 }],
+          topPoliticians: [],
+          sectorBreakdown: [],
+          historyCount: 90,
+          since: '2026-05-16',
+        },
+        scorecard: {
+          rows: [{ politician: 'Jane Doe', chamber: 'house', gradedBuys: 6, avgExcessPct: 3.4, hitRate: 0.5, bestCall: { symbol: 'NVDA', excessPct: 9 } }],
+          gradedBuys: 24,
+          skipped: 3,
+          asOf: 1,
+        },
+      })
+      withRouter()
+      const section = document.getElementById('congress') as HTMLElement
+      expect(await within(section).findByText(/most bought over the last 90 days: NVDA \(12\) · AAPL \(5\)/i)).toBeInTheDocument()
+      const graded = within(section).getByText(/graded against SPY so far/i)
+      expect(graded).toHaveTextContent(/24 disclosed buys/)
+      expect(graded).toHaveTextContent(/Jane Doe/)
+      expect(graded).toHaveTextContent(/\+3\.4pp/)
+    })
+
+    it('gives the honest fallback when every upstream source is dead', async () => {
+      await seedCongress({ source: 'none' })
+      withRouter()
+      expect(await screen.findByText(/every upstream source is dead or unkeyed/i)).toBeInTheDocument()
+    })
+  })
+
+  // FAILURE ISOLATION, across all five sections now.
+  it('a seeded insiders slice paints while the other four sections stay pending', async () => {
+    await writeSlice('intel:insiders', { clusters: [mkCluster({ symbol: 'AMD' })], asOf: 1 })
+    withRouter()
+    expect(await screen.findByText('4 buyers')).toBeInTheDocument()
+    expect(document.querySelectorAll('.skeleton').length).toBeGreaterThan(0)
+    expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
   describe('social pulse', () => {
