@@ -456,6 +456,86 @@ p {
   font-size: 12px;
 }
 
+/* --- the open book + the event radar (owner iteration 2) --------------------
+   Two secondary strips under the day's cards: the calls already on the table,
+   re-walked against closes, and the dated prints the engine watches but
+   refuses to bet. Deliberately thinner than a CallCard and than the intraday
+   flags — neither is a call. Tokens only. */
+.v2 .today-tape {
+  margin: -6px 0 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.v2 .oc-strip,
+.v2 .er-strip {
+  margin-bottom: 16px;
+}
+.v2 .oc-strip .sec-label,
+.v2 .er-strip .sec-label {
+  margin-top: 0;
+}
+.v2 .oc-list,
+.v2 .er-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.v2 .oc-row,
+.v2 .er-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 a.oc-sym,
+.v2 a.er-sym {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--text);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.v2 .oc-verdict {
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.v2 .oc-verdict.on {
+  color: var(--accent);
+}
+.v2 .oc-verdict.flat {
+  color: var(--text-dim);
+}
+.v2 .oc-verdict.weak {
+  color: var(--warn);
+}
+/* the bar takes the slack so the two numerics stay pinned right */
+.v2 .oc-bar {
+  flex: 1 1 60px;
+  min-width: 48px;
+}
+.v2 .oc-day,
+.v2 .er-date {
+  flex-shrink: 0;
+}
+.v2 .oc-move {
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 600;
+  min-width: 46px;
+  text-align: right;
+}
+.v2 .er-when {
+  flex: 1 1 auto;
+  color: var(--text);
+}
+.v2 .pill.er-stage {
+  flex-shrink: 0;
+}
+
 /* --- board -------------------------------------------------------------------
    The Board screen (plan Task 14): the whole engine's mind as one
    conviction-ranked scroll. Sized rows reuse CallCard/.today-cards as-is;

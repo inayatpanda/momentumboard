@@ -11,12 +11,33 @@
 
 import { useSlice } from '../lib/useSlice'
 import { getBoardSlice } from '../lib/apiViews'
+import type { BoardBlob } from '../lib/apiViews'
 import { splitBoardRows } from '../lib/boardTaxonomy'
 import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
 import { CountsRail } from './parts/CountsRail'
+import { EventRadarStrip } from './parts/EventRadarStrip'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
+import { OpenCallsStrip } from './parts/OpenCallsStrip'
 import { YesterdayStrip } from './parts/YesterdayStrip'
+
+/** THE TAPE LINE (owner iteration 2). The board blob has always carried the
+ * world tape's own sentence and the day's news tone, and the screen showed a
+ * one-word regime pill and nothing else — so the reader got the engine's
+ * verdict on the day with none of the reading behind it. One quiet line under
+ * the header; nothing when the blob carries neither. */
+function TapeLine({ blob }: { blob: BoardBlob | null }) {
+  const detail = blob?.worldTape?.detail?.trim()
+  const tone = blob?.newsTone?.label
+  if (!detail && !tone) return null
+  return (
+    <p className="cc-reason today-tape">
+      {detail}
+      {detail && tone ? ' · ' : ''}
+      {tone && <>news tone: {tone}</>}
+    </p>
+  )
+}
 
 export default function Today() {
   const { data } = useSlice('board', getBoardSlice)
@@ -43,6 +64,7 @@ export default function Today() {
         <h1>Today</h1>
         {blob && <span className={`pill ${blob.regime === 'green' ? 'accent' : ''}`}>{blob.regime}</span>}
       </div>
+      <TapeLine blob={blob} />
       {data && blob === null ? (
         // the slice RESOLVED and there is no board (cold store, pre-run
         // morning) — an empty state, never a skeleton that looks hung (A1)
@@ -66,6 +88,13 @@ export default function Today() {
           Under the cards, because they are those same cards' levels being
           reached, never new calls. */}
       <IntradayFlagsStrip blob={data?.intradayFlags ?? null} />
+      {/* …and then the calls ALREADY on the table (owner iteration 2): the open
+          book first, because that is where the reader's money is, then the
+          dated prints the engine is watching but refuses to bet. Both render
+          nothing at all until their bytes exist — no skeletons on secondary
+          sections (the rule OpenCallsStrip's header states). */}
+      <OpenCallsStrip entries={data?.openTrace?.entries} />
+      <EventRadarStrip radar={data?.eventRadar} />
       <CountsRail board={rows} />
       <YesterdayStrip yesterday={data?.yesterday ?? null} />
     </div>

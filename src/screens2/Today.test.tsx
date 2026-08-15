@@ -11,12 +11,14 @@ import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
 import type { BoardSlice } from '../lib/apiViews'
-import type { EnginePrediction, IntradayFlag, IntradayFlagsBlob } from '../lib/api'
+import type { EnginePrediction, EventRadarEntry, IntradayFlag, IntradayFlagsBlob, OpenTraceEntry } from '../lib/api'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
 import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
 import { CountsRail } from './parts/CountsRail'
+import { EventRadarStrip } from './parts/EventRadarStrip'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
+import { OpenCallsStrip } from './parts/OpenCallsStrip'
 import { YesterdayStrip } from './parts/YesterdayStrip'
 import Today from './Today'
 
@@ -294,6 +296,117 @@ describe('IntradayFlagsStrip', () => {
   })
 })
 
+// THE OPEN BOOK (owner iteration 2). Today painted only what was published this
+// morning; the calls already on the table were one tap deep on a per-symbol
+// journey. Three verdict states, three colours — a shared hedge would be the
+// screen lying by compression (OpenTraceCard's own rule, in one line).
+describe('OpenCallsStrip', () => {
+  const mkTrace = (o: Partial<OpenTraceEntry> = {}): OpenTraceEntry => ({
+    id: 'o1',
+    sym: 'NVDA',
+    side: 'long',
+    callDate: '2026-08-11',
+    grade: 'A',
+    entry: 118,
+    stop: 111,
+    target: 131,
+    status: 'in-play',
+    crossedDate: null,
+    last: 121.8,
+    movePct: 3.2,
+    progressPct: 41,
+    day: 4,
+    gradesInSessions: 6,
+    stage: 'trending',
+    requalified: false,
+    verdict: 'still-on',
+    note: 'walking',
+    ...o,
+  })
+
+  it('renders nothing at all — never a skeleton — with no entries', () => {
+    const { container } = withRouter(<OpenCallsStrip entries={[]} />)
+    expect(container).toBeEmptyDOMElement()
+    const undef = withRouter(<OpenCallsStrip entries={undefined} />)
+    expect(undef.container).toBeEmptyDOMElement()
+  })
+
+  it('renders one row per open call: sym link, side, day, move as .num, and a progress bar', () => {
+    withRouter(<OpenCallsStrip entries={[mkTrace()]} />)
+    expect(screen.getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
+    expect(screen.getByText('long')).toBeInTheDocument()
+    expect(screen.getByText('day 4')).toHaveClass('num')
+    expect(screen.getByText('+3.2%')).toHaveClass('num')
+    expect(document.querySelector('.oc-bar > i')).toHaveStyle({ width: '41%' })
+  })
+
+  it('gives each verdict its own word and its own colour class', () => {
+    withRouter(
+      <OpenCallsStrip
+        entries={[
+          mkTrace({ id: 'a', sym: 'NVDA', verdict: 'still-on' }),
+          mkTrace({ id: 'b', sym: 'AMD', verdict: 'intact' }),
+          mkTrace({ id: 'c', sym: 'COIN', verdict: 'weakening' }),
+        ]}
+      />,
+    )
+    expect(screen.getByText('still on')).toHaveClass('oc-verdict', 'on')
+    expect(screen.getByText('intact')).toHaveClass('oc-verdict', 'flat')
+    expect(screen.getByText('weakening')).toHaveClass('oc-verdict', 'weak')
+    // three distinct classes, never one shared hedge
+    const classes = [...document.querySelectorAll('.oc-verdict')].map(el => el.className)
+    expect(new Set(classes).size).toBe(3)
+  })
+
+  it('says what happened on a crossed row, which carries no verdict', () => {
+    withRouter(<OpenCallsStrip entries={[mkTrace({ status: 'stopped', verdict: null, crossedDate: '2026-08-13' })]} />)
+    expect(screen.getByText('stopped out')).toBeInTheDocument()
+  })
+})
+
+// THE EVENT RADAR (owner iteration 2). The board slice has carried it since the
+// radar shipped and no v2 screen read a character of it — so a dated binary the
+// engine already knew about was invisible until it printed.
+describe('EventRadarStrip', () => {
+  const mkEvent = (o: Partial<EventRadarEntry> = {}): EventRadarEntry => ({
+    sym: 'AVGO',
+    name: 'Broadcom',
+    date: '2026-08-20',
+    daysToPrint: 3,
+    stage: 'trending',
+    entryQuality: null,
+    rs21: null,
+    note: null,
+    ...o,
+  })
+
+  it('renders nothing when the radar is empty or absent', () => {
+    expect(withRouter(<EventRadarStrip radar={null} />).container).toBeEmptyDOMElement()
+    expect(withRouter(<EventRadarStrip radar={{ entries: [] }} />).container).toBeEmptyDOMElement()
+  })
+
+  it('renders a dated row per print, symbol linked, stage shown', () => {
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent()] }} />)
+    expect(screen.getByRole('link', { name: 'AVGO' })).toHaveAttribute('href', '/app/stock/AVGO')
+    expect(screen.getByText('reports in 3d')).toBeInTheDocument()
+    expect(screen.getByText(/20 Aug/)).toHaveClass('num')
+    expect(screen.getByText('trending')).toBeInTheDocument()
+  })
+
+  it('sorts nearest first and caps at six', () => {
+    const entries = Array.from({ length: 9 }, (_, i) => mkEvent({ sym: `S${i}`, date: '2026-08-20', daysToPrint: 9 - i }))
+    withRouter(<EventRadarStrip radar={{ entries }} />)
+    const syms = [...document.querySelectorAll('.er-sym')].map(el => el.textContent)
+    expect(syms).toEqual(['S8', 'S7', 'S6', 'S5', 'S4', 'S3']) // daysToPrint 1..6
+  })
+
+  it('never prints "in 0d" — a same-day print says so in English', () => {
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ daysToPrint: 0 }), mkEvent({ sym: 'AMD', daysToPrint: 1 })] }} />)
+    expect(screen.getByText('reports today')).toBeInTheDocument()
+    expect(screen.getByText('reports tomorrow')).toBeInTheDocument()
+  })
+})
+
 describe('Today', () => {
   it('paints a cached board slice without waiting for the network', async () => {
     await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() - 200_000 })
@@ -354,6 +467,59 @@ describe('Today', () => {
     withRouter(<Today />)
     expect(await screen.findByText(/intraday flags/i)).toBeInTheDocument()
     expect(screen.getByText('AMD')).toBeInTheDocument()
+  })
+
+  // …and the three new sections, from the ONE slice Today has always read.
+  it('mounts the open book and the event radar from the board slice', async () => {
+    const data = mkBoardData([mkRow()])
+    data.openTrace = {
+      date: '2026-08-14',
+      generatedAt: Date.now(),
+      entries: [
+        {
+          id: 'o1', sym: 'PLTR', side: 'long', callDate: '2026-08-11', grade: 'A', entry: 30, stop: 28, target: 35,
+          status: 'in-play', crossedDate: null, last: 31.2, movePct: 4, progressPct: 24, day: 4, gradesInSessions: 6,
+          stage: 'trending', requalified: false, verdict: 'weakening', note: 'thinning',
+        },
+      ],
+    }
+    data.eventRadar = {
+      date: '2026-08-14',
+      generatedAt: Date.now(),
+      entries: [{ sym: 'AVGO', name: 'Broadcom', date: '2026-08-20', daysToPrint: 3, stage: 'trending', entryQuality: null, rs21: null, note: null }],
+    }
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByLabelText('Open calls')).toBeInTheDocument()
+    expect(screen.getByText('weakening')).toHaveClass('weak')
+    expect(screen.getByLabelText('Event radar')).toBeInTheDocument()
+    expect(screen.getByText('reports in 3d')).toBeInTheDocument()
+  })
+
+  it('renders neither section — and does not crash — when the slice carries neither', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Open calls')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Event radar')).not.toBeInTheDocument()
+  })
+
+  it('prints the tape line — the world tape’s own sentence plus the day’s news tone', async () => {
+    const data = mkBoardData([mkRow()])
+    data.board!.worldTape = { tone: 'risk-on', votes: { on: 3, off: 1 }, detail: 'Breadth firm, credit calm' }
+    data.board!.newsTone = { score: 0.4, label: 'constructive', hits: 12 }
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    const line = await screen.findByText(/Breadth firm, credit calm/)
+    expect(line).toHaveTextContent(/news tone: constructive/)
+    expect(line).toHaveClass('today-tape')
+  })
+
+  it('prints no tape line at all when the board blob carries neither reading', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    await screen.findByText('NVDA')
+    expect(document.querySelector('.today-tape')).toBeNull()
   })
 
   it('renders the yesterday strip from the board slice alone', async () => {

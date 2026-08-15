@@ -144,6 +144,33 @@ describe('engine ?view= slices', () => {
     expect(r.data.yesterday).toBeNull()
   })
 
+  // THE OPEN BOOK RIDES THE BOARD SLICE (owner iteration 2). Today showed only
+  // what was published THIS morning; the calls already on the table — re-walked
+  // against closes by the same pass that writes `open-trace` — were reachable
+  // only one tap deep, on a per-symbol journey. One read, no extra round trip.
+  it('?view=board carries the open trace — yesterday’s still-walking calls', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('open-trace', {
+      date: '2026-08-14',
+      generatedAt: 1_755_000_000_000,
+      entries: [
+        { id: 'o1', sym: 'NVDA', side: 'long', callDate: '2026-08-11', grade: 'A', status: 'in-play', verdict: 'still-on', day: 4, movePct: 3.2, progressPct: 41 },
+        { id: 'o2', sym: 'COIN', side: 'short', callDate: '2026-08-12', grade: 'B', status: 'in-play', verdict: 'weakening', day: 3, movePct: -1.1, progressPct: 8 },
+      ],
+    })
+    const r = await body(await handler(req('?view=board')))
+    const trace = r.data.openTrace as { date: string; entries: { sym: string; verdict: string }[] }
+    expect(trace.date).toBe('2026-08-14')
+    expect(trace.entries.map(e => e.sym)).toEqual(['NVDA', 'COIN'])
+    expect(trace.entries[1].verdict).toBe('weakening')
+  })
+
+  it('?view=board openTrace is null before the first walk', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.openTrace).toBeNull()
+  })
+
   it('?view=board keeps the intraday-flags today-only guard', async () => {
     await seed('engine-board', { date: todayLondon(), board: [] })
     await seed('intraday-flags', { date: '2020-01-01', flags: [{ sym: 'OLD' }] })

@@ -42,6 +42,13 @@ export interface BoardSlice {
     crypto?: { wins: number; losses: number } | null
     topRegret: { sym: string; excessPct: number; gate: string } | null
   } | null
+  /** THE OPEN BOOK (owner iteration 2). Yesterday's still-live calls, re-walked
+   * against closes each morning — the same blob the journey slice already served
+   * one entry of. Today renders them as "open calls, still walking", because a
+   * home screen that shows only what was published THIS morning tells the reader
+   * nothing about the money already on the table. Optional: a slice cached by a
+   * bundle that predates the server field has none. */
+  openTrace?: { date: string; generatedAt: number; entries: OpenTraceEntry[] } | null
 }
 
 export const getBoardSlice = () => apiGet<BoardSlice>('/api/engine?view=board')

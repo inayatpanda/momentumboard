@@ -128,7 +128,7 @@ const londonToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/L
 
 /** ?view=board — what Today/Board render: ~9 reads instead of ~50. */
 async function viewBoard() {
-  const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration, predIndex, missLedgerBlob] = await Promise.all([
+  const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration, predIndex, missLedgerBlob, openTrace] = await Promise.all([
     blobAppStore.read<{ date?: string }>('engine-board'),
     blobAppStore.read<{ date: string }>('intraday-flags'),
     blobAppStore.read('event-radar'),
@@ -137,6 +137,9 @@ async function viewBoard() {
     blobAppStore.read<{ referenceBase?: number | null }>('engine-calibration'),
     blobAppStore.read<string[]>('predictions-index'),
     blobAppStore.read(MISS_LEDGER_KEY),
+    // the open book: yesterday's still-open calls walked against closes —
+    // Today renders them as "open calls, still walking" (owner iteration 2)
+    blobAppStore.read('open-trace'),
   ])
 
   // THE YESTERDAY STRIP (CX-18): the newest predictions day before the board's,
@@ -193,6 +196,7 @@ async function viewBoard() {
     riskState: riskState ?? null,
     referenceBase: calibration?.referenceBase ?? null,
     yesterday,
+    openTrace: openTrace ?? null,
   }
 }
 
