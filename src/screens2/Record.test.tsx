@@ -375,7 +375,11 @@ describe('Record', () => {
         { date: '2026-08-10', predictions: [gradedCall('a', '2026-08-10', 4)] },
       ])
       withRouter()
-      const chart = await screen.findByLabelText('Cumulative excess')
+      // wait on the PLOT (the section renders before the slice does, carrying
+      // its own "nothing graded yet" copy — asserting on the section alone
+      // would race the paint)
+      await screen.findByLabelText(/ending \+2\.5pp/)
+      const chart = screen.getByLabelText('Cumulative excess')
       expect(within(chart).getByText(/if you.?d taken every sized call/i)).toBeInTheDocument()
       expect(within(chart).getByText(/cumulative excess vs SPY, last 30 days/i)).toBeInTheDocument()
       // the running total, read off the headline (the y-axis labels are pp too)
@@ -388,7 +392,7 @@ describe('Record', () => {
       await seedLedger('ledger:30', [{ date: '2026-08-10', predictions: [gradedCall('a', '2026-08-10', 4)] }])
       withRouter()
       const chart = await screen.findByLabelText('Cumulative excess')
-      expect(within(chart).getByText(/one graded day so far/i)).toBeInTheDocument()
+      expect(await within(chart).findByText(/one graded day so far/i)).toBeInTheDocument()
       expect(chart.querySelector('.rec-chart-path')).toBeNull()
     })
 
@@ -411,7 +415,8 @@ describe('Record', () => {
         { date: '2026-08-11', predictions: [gradedCall('e2', '2026-08-11', 1)] },
       ])
       withRouter()
-      const chart = await screen.findByLabelText('Cumulative excess')
+      await screen.findByLabelText(/ending \+3\.0pp/)
+      const chart = screen.getByLabelText('Cumulative excess')
       expect(chart.querySelector('.rec-chart-total')).toHaveTextContent('+3.0pp')
       expect(within(chart).queryByText(/\+43/)).not.toBeInTheDocument()
     })

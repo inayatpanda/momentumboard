@@ -2258,17 +2258,60 @@ p {
   align-items: center;
   gap: 8px;
 }
+/* the bar's ends are LABELLED now (owner iteration 2): the bound number above,
+   the word for which way that end is below it — derived from GATE_BOUNDS'
+   `loosen` sign in the component, never written into this file */
 .v2 .gl-gate-bound {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   font-size: 12px;
   color: var(--text-dim);
   flex: 0 0 auto;
+  line-height: 1.2;
+}
+.v2 .gl-gate-bound-max {
+  align-items: flex-end;
+}
+.v2 .gl-gate-end {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 .v2 .gl-gate-track {
   flex: 1;
   height: 8px;
 }
+.v2 .gl-gate-what {
+  margin: -2px 0 2px;
+  color: var(--text);
+  font-size: 13px;
+}
 .v2 .gl-gate-base {
   margin: 0;
+}
+/* one sentence a move, not three stacked fragments */
+.v2 .gl-history-line {
+  display: block;
+}
+.v2 .gl-history-prose {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 .gl-history-prose .sp-step-gate {
+  color: var(--text);
+  font-weight: 700;
+}
+/* the section intros that make the page legible at all */
+.v2 .gl-page-intro {
+  margin: -6px 0 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.v2 .gl-intro {
+  margin: -2px 0 10px;
 }
 .v2 .gl-pin {
   align-self: flex-start;
@@ -2308,21 +2351,36 @@ p {
   gap: 10px;
   margin-bottom: 18px;
 }
+/* THREE LINES, not three columns (owner iteration 2): the factor's name and
+   its raw pair on top, the plain-English delta under it, the bars last. The
+   old 84px name column truncated half the factor names to an ellipsis. */
 .v2 .gl-weight-row {
   display: grid;
-  grid-template-columns: 84px 1fr 92px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name vals'
+    'phrase phrase'
+    'bars bars';
   align-items: center;
-  gap: 8px;
+  gap: 3px 8px;
   font-size: 12px;
 }
 .v2 .gl-weight-name {
-  color: var(--text-dim);
+  grid-area: name;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-transform: capitalize;
 }
+.v2 .gl-weight-phrase {
+  grid-area: phrase;
+  color: var(--text-dim);
+}
 .v2 .gl-weight-bars {
+  grid-area: bars;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -2347,6 +2405,7 @@ p {
   background: var(--accent-bar);
 }
 .v2 .gl-weight-vals {
+  grid-area: vals;
   text-align: right;
   color: var(--text-dim);
 }

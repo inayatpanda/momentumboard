@@ -8,7 +8,8 @@ import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
 import type { LearningSlice } from '../lib/apiViews'
-import type { GateStructuredEntry } from '../../shared/engine/gateState'
+import { GATE_BOUNDS } from '../../shared/engine/gateState'
+import type { GateStructuredEntry, TunableGate } from '../../shared/engine/gateState'
 import GatesLearning from './GatesLearning'
 
 vi.mock('../lib/apiViews', async () => {
@@ -71,7 +72,7 @@ describe('GatesLearning', () => {
       expect(within(barRow).getByText('25')).toBeInTheDocument()
     })
 
-    it('renders the history timeline with date and from→to', async () => {
+    it('renders the history timeline with date and from→to, as one sentence', async () => {
       await seedLearning(
         mkLearning({
           gateState: {
@@ -83,7 +84,12 @@ describe('GatesLearning', () => {
       const gates = await screen.findByLabelText('Gates')
       expect(within(gates).getByText('20 Jul 2026')).toBeInTheDocument()
       expect(within(gates).getByText(/25 → 22.5/)).toBeInTheDocument()
-      expect(within(gates).getByText(/cost 12 vs saved 3/)).toBeInTheDocument()
+      // owner iteration 2: the move now says what it DID to the funnel, in one
+      // line with its reason. Derived from the gate's own `loosen` sign — a
+      // deadZone move DOWN is a loosening because loosen is −1.
+      const prose = within(gates).getByText(/cost 12 vs saved 3/)
+      const word = GATE_BOUNDS.deadZone.loosen === -1 ? 'loosened' : 'tightened'
+      expect(prose).toHaveTextContent(new RegExp(`${word}\\s*25 → 22\\.5`))
     })
 
     it('shows the override pin badge only when the gate carries one', async () => {
@@ -123,15 +129,75 @@ describe('GatesLearning', () => {
     })
   })
 
-  describe('weights', () => {
-    it('renders base vs current per factor', async () => {
+  // OWNER ITERATION 2: "Gates and Learning is illegible - cant make anything
+  // out of it." The data is unchanged; every word around it is new.
+  describe('legibility', () => {
+    it('opens with two sentences saying what the whole page is', async () => {
+      await seedLearning(mkLearning())
+      withRouter()
+      expect(await screen.findByText(/the engine tunes its own strictness/i)).toBeInTheDocument()
+      expect(screen.getByText(/a bar every candidate must clear/i)).toBeInTheDocument()
+      expect(screen.getByText(/one notch at a time when the priced record says so/i)).toBeInTheDocument()
+    })
+
+    it('says in plain English what each gate IS', async () => {
+      await seedLearning(
+        mkLearning({
+          gateState: {
+            gates: [
+              mkGate({ gate: 'deadZone', label: 'dead zone' }),
+              mkGate({ gate: 'minExpectedMovePct', label: 'expected-move floor', base: 1.5, current: 1.25, bounds: { min: 1, max: 1.5 } }),
+              mkGate({ gate: 'contextCap', label: 'context cap', base: 16, current: 14, bounds: { min: 12, max: 16 } }),
+            ],
+          },
+        }),
+      )
+      withRouter()
+      const gates = await screen.findByLabelText('Gates')
+      expect(within(gates).getByText(/the conviction bar — below this composite score, no call/i)).toBeInTheDocument()
+      expect(within(gates).getByText(/the payoff floor — a setup must promise at least this much move/i)).toBeInTheDocument()
+      expect(within(gates).getByText(/how much soft evidence \(news, social\) can add on top of the chart/i)).toBeInTheDocument()
+    })
+
+    // DERIVED, NOT HARDCODED: `loosen` is the sign that loosens the funnel, so
+    // −1 puts "looser" on the MINIMUM end. If a gate's rule ever flips, this
+    // test flips with it and the screen has to as well.
+    it('labels which end of each gate’s bar is looser, from GATE_BOUNDS itself', async () => {
+      const gates: TunableGate[] = ['deadZone', 'minExpectedMovePct', 'contextCap']
+      await seedLearning(
+        mkLearning({ gateState: { gates: gates.map(g => mkGate({ gate: g, label: g, bounds: { min: GATE_BOUNDS[g].min, max: GATE_BOUNDS[g].max } })) } }),
+      )
+      withRouter()
+      const section = await screen.findByLabelText('Gates')
+      const cards = [...section.querySelectorAll('.gl-gate')]
+      expect(cards).toHaveLength(gates.length)
+      cards.forEach((card, i) => {
+        const ends = [...card.querySelectorAll('.gl-gate-end')].map(el => el.textContent)
+        const expected = GATE_BOUNDS[gates[i]].loosen === -1 ? ['looser', 'tighter'] : ['tighter', 'looser']
+        expect(ends).toEqual(expected)
+      })
+    })
+  })
+
+  describe('factor trust', () => {
+    it('renders base vs current per factor, and says what the change MEANS', async () => {
       await seedLearning(mkLearning({ weights: { base: { technical: 1.0, momentum: 0.5 }, current: { technical: 0.8, momentum: 0.6 }, history: [] } }))
       withRouter()
-      const weights = await screen.findByLabelText('Weights')
+      const weights = await screen.findByLabelText('Factor trust')
       expect(within(weights).getByText('technical')).toBeInTheDocument()
       expect(within(weights).getByText('1.00 → 0.80')).toBeInTheDocument()
       expect(within(weights).getByText('momentum')).toBeInTheDocument()
       expect(within(weights).getByText('0.50 → 0.60')).toBeInTheDocument()
+      // (0.8 − 1.0) / 1.0 = −20%; (0.6 − 0.5) / 0.5 = +20%
+      expect(within(weights).getByText('trusts it 20.0% less than launch')).toBeInTheDocument()
+      expect(within(weights).getByText('trusts it 20.0% more than launch')).toBeInTheDocument()
+    })
+
+    it('says "unchanged" rather than inventing a 0.0% move', async () => {
+      await seedLearning(mkLearning({ weights: { base: { news: 0.4 }, current: { news: 0.4 }, history: [] } }))
+      withRouter()
+      const weights = await screen.findByLabelText('Factor trust')
+      expect(within(weights).getByText('unchanged since launch')).toBeInTheDocument()
     })
   })
 
@@ -150,6 +216,7 @@ describe('GatesLearning', () => {
       expect(within(roster).getByText('NVDA')).toBeInTheDocument()
       expect(within(roster).getByText(/joined NVDA/)).toBeInTheDocument()
       expect(within(roster).getByText(/dropped OLD \(quiet 21 days\)/)).toBeInTheDocument()
+      expect(within(roster).getByText(/the names the engine actively hunts on/i)).toBeInTheDocument()
     })
   })
 
@@ -158,6 +225,7 @@ describe('GatesLearning', () => {
       await seedLearning(mkLearning({ channelCred: { alpha: { graded: 12, hits: 7, avgExcess: 3.4 } } }))
       withRouter()
       const table = await screen.findByLabelText('Channel credibility')
+      expect(within(table).getByText(/which YouTube\/Reddit callers have earned trust/i)).toBeInTheDocument()
       expect(within(table).getByText('alpha')).toBeInTheDocument()
       expect(within(table).getByText('12')).toBeInTheDocument()
       expect(within(table).getByText('7')).toBeInTheDocument()
