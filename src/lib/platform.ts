@@ -22,3 +22,17 @@ export function isDesktopShellLocation(protocol: string, hostname: string): bool
 
 /** True inside the Tauri desktop shell, false in every browser. */
 export const isDesktopShell = (): boolean => isDesktopShellLocation(location.protocol, location.hostname)
+
+/** The desktop shell loads at `tauri://localhost/` — but the app's router
+ * mounts at base `/app` (the web's product path). Outside that base nothing
+ * matches and the catch-all redirect spins silently: the chrome renders, the
+ * pane stays blank (the first free-tier DMG launch, live-observed — the
+ * pre-free-tier launch check only ever saw the AppGate, which renders outside
+ * the router). Normalise the path BEFORE React mounts; replaceState on the
+ * local protocol is same-origin and navigates nothing. Returns whether it
+ * rewrote, for the test. */
+export function normaliseDesktopPath(): boolean {
+  if (!isDesktopShell() || location.pathname.startsWith('/app')) return false
+  history.replaceState(null, '', '/app/')
+  return true
+}

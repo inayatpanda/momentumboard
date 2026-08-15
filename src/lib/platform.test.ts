@@ -33,3 +33,43 @@ describe('isDesktopShellLocation', () => {
     expect(isDesktopShellLocation('https:', 'tauri.localhost')).toBe(false)
   })
 })
+
+// The blank-pane regression (first free-tier DMG launch): the shell loads at
+// tauri://localhost/ while the router mounts at /app — nothing matched, the
+// catch-all spun, the pane rendered nothing. The boot rewrite is the fix.
+describe('normaliseDesktopPath', () => {
+  const setLocation = (protocol: string, hostname: string, pathname: string) => {
+    const original = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...original, protocol, hostname, pathname },
+    })
+    return () => Object.defineProperty(window, 'location', { configurable: true, value: original })
+  }
+
+  it('rewrites the desktop shell’s root path into the router’s /app base', async () => {
+    const restore = setLocation('tauri:', 'localhost', '/')
+    try {
+      const { normaliseDesktopPath } = await import('./platform')
+      expect(normaliseDesktopPath()).toBe(true)
+    } finally {
+      restore()
+    }
+  })
+
+  it('leaves the web alone, and a desktop path already inside /app alone', async () => {
+    const { normaliseDesktopPath } = await import('./platform')
+    const restoreWeb = setLocation('https:', 'thestreetsignal.rqai.co.uk', '/')
+    try {
+      expect(normaliseDesktopPath()).toBe(false)
+    } finally {
+      restoreWeb()
+    }
+    const restoreApp = setLocation('tauri:', 'localhost', '/app/stocks')
+    try {
+      expect(normaliseDesktopPath()).toBe(false)
+    } finally {
+      restoreApp()
+    }
+  })
+})
