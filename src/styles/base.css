@@ -530,12 +530,30 @@ p {
 .v2 .oc-verdict.weak {
   color: var(--warn);
 }
-/* the bar takes the slack so the two numerics stay pinned right */
+/* the bar takes the slack — CAPPED, or at desk width one row's progress bar
+   stretches across a third of the window and the numbers beside it drift a
+   quarter-screen away from the symbol they belong to */
 .v2 .oc-bar {
   flex: 1 1 60px;
   min-width: 48px;
+  max-width: 220px;
 }
-.v2 .oc-day,
+/* a phone row is ~330px of usable width and a long verdict word ("weakening")
+   plus a short side ("short") already fills it — the bar yields first, rather
+   than the move wrapping onto a line of its own */
+@media (max-width: 480px) {
+  .v2 .oc-bar {
+    flex-basis: 28px;
+    min-width: 26px;
+  }
+}
+/* the day/move pair rides the row's right edge — with the bar capped, the
+   slack would otherwise trail behind them and leave the numbers stranded
+   mid-row */
+.v2 .oc-day {
+  flex-shrink: 0;
+  margin-left: auto;
+}
 .v2 .er-date {
   flex-shrink: 0;
 }
@@ -552,6 +570,17 @@ p {
 }
 .v2 .pill.er-stage {
   flex-shrink: 0;
+}
+/* at desk the strips go two-up: one row per line across 1200px leaves most of
+   each row empty, with the date marooned at the far edge (the same densifying
+   the desk already does to the call cards and the Stocks rails) */
+@media (min-width: 1200px) {
+  .v2 .desk2 .oc-list,
+  .v2 .desk2 .er-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    gap: 10px 28px;
+  }
 }
 
 /* --- board -------------------------------------------------------------------
@@ -1420,6 +1449,13 @@ p {
    .pressable/.skeleton/.stx-showmore already declared above. This is news's
    ONLY home in the app (spec §3.5) — a side dish, so nothing here competes
    visually with a call card. */
+/* every other v2 screen sizes its own h1; Intel never did, so it alone
+   rendered at the browser's 2em default (owner iteration 2 — spotted in the
+   walkthrough shots, beside four screens at 22px) */
+.v2 .itl h1 {
+  font-size: 22px;
+  margin: 0 0 12px;
+}
 .v2 .itl-section {
   margin-bottom: 16px;
   /* clear of the sticky jump rail when scrollIntoView lands on a section */
@@ -1438,9 +1474,12 @@ p {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  /* the bleed + padding is what stops rows sliding visibly UNDER the chips */
-  margin: 0 -16px 14px;
-  padding: 10px 16px;
+  /* NO horizontal bleed: the page's own gutter never holds content, so a bar
+     the width of the content column already covers everything that scrolls
+     under it — and a fixed −16px bleed sat asymmetrically inside the desk's
+     24px gutter */
+  margin: 0 0 14px;
+  padding: 8px 0 10px;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
@@ -1732,6 +1771,9 @@ p {
 .v2 .rec-grade-wrap {
   overflow-x: auto;
   margin: -8px 0 18px;
+  /* four short columns stretched across a 1200px desk pane puts the tier name
+     and its numbers half a screen apart — cap it to a readable measure */
+  max-width: 560px;
 }
 .v2 .rec-grade-table {
   width: 100%;
@@ -2233,6 +2275,10 @@ p {
   flex-direction: column;
   gap: 10px;
   margin-bottom: 18px;
+  /* the same readable measure the rest of this page now keeps: a gate card
+     stretched to a 1200px pane puts its label and its value at opposite ends
+     of the window */
+  max-width: 760px;
 }
 .v2 .gl-gate {
   display: flex;
@@ -2257,6 +2303,9 @@ p {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* same measure rule: a gate's two bounds a metre apart on a desk pane are
+     no longer reading as the two ends of ONE scale */
+  max-width: 560px;
 }
 /* the bar's ends are LABELLED now (owner iteration 2): the bound number above,
    the word for which way that end is below it — derived from GATE_BOUNDS'
@@ -2345,6 +2394,16 @@ p {
   color: var(--text-dim);
 }
 
+/* THE READABLE MEASURE (owner iteration 2). These three are short-column
+   surfaces — a name, a phrase, two small bars, a number — and at the desk's
+   1200px pane they stretched until each row's own parts were half a screen
+   apart, which is its own kind of illegible. */
+.v2 .gl-weights,
+.v2 .gl-cred-wrap,
+.v2 .gl-roster,
+.v2 .gl-roster-changes {
+  max-width: 640px;
+}
 .v2 .gl-weights {
   display: flex;
   flex-direction: column;
