@@ -75,31 +75,21 @@ function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
       <p className="sec-label">
         Equity — excess vs SPY · <span className="num">{scorecard.totalGraded}</span> graded
       </p>
-      <div className="rec-tiles">
-        {Object.entries(scorecard.byGrade).map(([key, s]) => (
-          <div className="card rec-tile" key={key}>
-            <span className="rec-tile-label">{tileLabel(key)}</span>
-            <span className="num rec-tile-n">{s.n}</span>
-            <span className="num rec-tile-sub">
-              {pct(s.hits, s.n)} hit ({s.hits}/{s.n})
-            </span>
-            <span className="num rec-tile-sub">avg {s.n ? fmtExcess(s.sumExcess / s.n) : '—'}</span>
-            {key === 'wildcard' && <span className="rec-tile-warn">{WILDCARD_WARNING}</span>}
-          </div>
-        ))}
-      </div>
       <GradeTable scorecard={scorecard} />
     </section>
   )
 }
 
-/** DO THE LETTERS SEPARATE? (owner iteration 2). The tiles say what each grade
- * did; side by side in one table the reader can see whether an A is actually
- * worth more than a C — which is the whole claim a grade makes. Same numbers,
- * one comparison. */
+/** DO THE LETTERS SEPARATE? (owner iteration 2). Side by side in one table the
+ * reader can see whether an A is actually worth more than a C — which is the
+ * whole claim a grade makes. This is the ONLY per-grade surface: it used to sit
+ * under a tile grid carrying the same numbers, and the duplication was exactly
+ * the crowding the owner sent the page back over. Being the only surface, it
+ * renders even with one populated tier, and the wildcard warning rides under
+ * it whenever the wildcard row prints. */
 function GradeTable({ scorecard }: { scorecard: Scorecard }) {
   const rows = Object.entries(scorecard.byGrade).filter(([, s]) => s.n > 0)
-  if (rows.length < 2) return null // one row compares nothing
+  if (rows.length === 0) return null
   return (
     <div className="rec-grade-wrap">
       <table className="rec-grade-table" aria-label="Per-grade record">
@@ -122,6 +112,7 @@ function GradeTable({ scorecard }: { scorecard: Scorecard }) {
           ))}
         </tbody>
       </table>
+      {rows.some(([key]) => key === 'wildcard') && <p className="rec-tile-warn">{WILDCARD_WARNING}</p>}
     </div>
   )
 }

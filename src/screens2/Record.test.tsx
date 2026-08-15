@@ -10,6 +10,7 @@ import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
 import type { JourneyCall, LearningSlice, LedgerDay, RegretGate } from '../lib/apiViews'
 import type { MissExample } from '../../shared/engine/missLedger'
+import { WILDCARD_WARNING } from '../../shared/engine/voice'
 import Record from './Record'
 
 vi.mock('../lib/apiViews', async () => {
@@ -112,7 +113,13 @@ describe('Record', () => {
   })
 
   describe('scorecard tiles', () => {
-    it('labels shadow and wildcard tiles distinctly — never "Grade shadow"', async () => {
+    // ONE per-grade surface, not two (post-iteration-2 dedup): the tile grid
+    // and the table printed the same fifteen numbers back to back, on the page
+    // the owner called crowded. The TABLE is the survivor — it is the form in
+    // which the letters can actually be compared — and it carries the tiles'
+    // two obligations with it: the shadow/wildcard naming rule, and the
+    // wildcard health warning.
+    it('shows the per-grade numbers ONCE — a table, no tile grid, honest tier names', async () => {
       await seedLearning(
         mkLearning({
           scorecard: {
@@ -130,16 +137,16 @@ describe('Record', () => {
       )
       withRouter()
       const sc = await screen.findByLabelText('Scorecard')
-      // the TILES specifically — the per-grade table below them (owner
-      // iteration 2) labels its rows from the same function, so an unscoped
-      // query would match twice and prove nothing about either surface
-      const tiles = sc.querySelector('.rec-tiles') as HTMLElement
-      expect(within(tiles).getByText('Grade A')).toBeInTheDocument()
-      expect(within(tiles).getByText('Shadow book')).toBeInTheDocument()
-      expect(within(tiles).getByText(/🃏 Wildcard/)).toBeInTheDocument()
+      expect(sc.querySelector('.rec-tiles')).toBeNull()
+      const table = within(sc).getByLabelText('Per-grade record')
+      expect(within(table).getByText('Grade A')).toBeInTheDocument()
+      expect(within(table).getByText('Shadow book')).toBeInTheDocument()
+      expect(within(table).getByText(/🃏 Wildcard/)).toBeInTheDocument()
       // never invents a tier neither key has
       expect(within(sc).queryByText('Grade shadow')).not.toBeInTheDocument()
       expect(within(sc).queryByText('Grade wildcard')).not.toBeInTheDocument()
+      // the warning travelled with the wildcard numbers, not away with the tiles
+      expect(within(sc).getByText(WILDCARD_WARNING)).toBeInTheDocument()
     })
 
     // THE SCORECARD IS THE EQUITY PARTITION'S (crypto-v2 wave, finding 4). Every
@@ -483,11 +490,16 @@ describe('Record', () => {
       ])
     })
 
-    it('renders no table when there is only one populated tier — one row compares nothing', async () => {
+    // With the tile grid gone the table is the ONLY per-grade surface, so it
+    // may not hide behind a "one row compares nothing" rule any more — a
+    // single-tier record would then show no per-grade numbers at all.
+    it('still renders the table with a single populated tier — information over comparison', async () => {
       await seedLearning(mkLearning({ scorecard: { byGrade: { A: { n: 2, hits: 1, sumExcess: 3 } }, byRegime: {}, overlays: {}, brierTail: [], totalGraded: 2 } }))
       withRouter()
       await screen.findByLabelText('Scorecard')
-      expect(screen.queryByLabelText('Per-grade record')).not.toBeInTheDocument()
+      const table = await screen.findByLabelText('Per-grade record')
+      const rows = [...table.querySelectorAll('tbody tr')].map(tr => [...tr.querySelectorAll('td')].map(td => td.textContent))
+      expect(rows).toEqual([['Grade A', '2', '50%', '+1.5%']])
     })
   })
 
