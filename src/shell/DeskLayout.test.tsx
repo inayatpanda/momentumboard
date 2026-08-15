@@ -117,20 +117,33 @@ afterEach(() => {
 })
 
 describe('DeskLayout — the desktop master–detail desk', () => {
-  it('at 1440px renders three regions: the nav rail, the board column and the detail pane', async () => {
+  // Owner review of the first DMG: the column beside Today duplicated the same
+  // cards twice. The column now earns its place ONLY beside a journey pane.
+  it('at 1440px on Today: rail + FULL-WIDTH pane, no board column', async () => {
     setViewport(1440)
     render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
 
-    const col = await boardColumn()
+    const pane = screen.getByRole('main')
+    expect(await within(pane).findByRole('heading', { name: /today/i })).toBeInTheDocument()
     const grid = document.querySelector('.desk2')
     expect(grid).not.toBeNull()
+    expect(grid!.classList.contains('desk2-wide')).toBe(true)
+    expect(screen.queryByRole('complementary', { name: /board column/i })).toBeNull()
     // the rail is the EXISTING Nav, placed by the grid — not a second copy
     expect(grid!.querySelectorAll('.v2-nav')).toHaveLength(1)
     expect(grid!.querySelector('.desk2-rail .v2-nav')).not.toBeNull()
-    expect(grid!.contains(col)).toBe(true)
-    // the routed screen lives in the pane
+  })
+
+  it('at 1440px on a stock page: three regions — rail, board column, journey pane', async () => {
+    setViewport(1440)
+    render(<AppShell locationHook={memoryLocation({ path: '/app/stock/NVDA' }).hook} />)
+
+    const col = await boardColumn()
+    const grid = document.querySelector('.desk2')!
+    expect(grid.classList.contains('desk2-wide')).toBe(false)
+    expect(grid.contains(col)).toBe(true)
     const pane = screen.getByRole('main')
-    expect(within(pane).getByRole('heading', { name: /today/i })).toBeInTheDocument()
+    expect(await within(pane).findByRole('heading', { name: /NVDA/ }, { timeout: 5000 })).toBeInTheDocument()
   })
 
   it('at 390px there is no desk grid and the nav stays the bottom tab bar', async () => {
@@ -152,7 +165,8 @@ describe('DeskLayout — the desktop master–detail desk', () => {
 
   it('DS-18: a row click NAVIGATES and the board column survives — same DOM node, same scroll', async () => {
     setViewport(1440)
-    render(<AppShell locationHook={memoryLocation({ path: '/app/', record: true }).hook} />)
+    // start on a stock page: that's where the column lives now
+    render(<AppShell locationHook={memoryLocation({ path: '/app/stock/AAPL', record: true }).hook} />)
 
     const col = await boardColumn()
     col.scrollTop = 137
@@ -185,7 +199,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     setViewport(1440)
     render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
 
-    await boardColumn()
+    await screen.findByRole('heading', { name: /today/i })
     expect(spies.getSmartMoney).not.toHaveBeenCalled()
     expect(spies.getSeasonality).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
@@ -207,46 +221,27 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     setViewport(1440)
     fireEvent(window, new Event('resize'))
 
-    expect(await boardColumn()).toBeInTheDocument()
+    await waitFor(() => expect(document.querySelector('.desk2')).not.toBeNull())
     expect(within(screen.getByRole('main')).getByRole('heading', { name: /today/i })).toBeInTheDocument()
   })
 
-  it('at /board the pane points at the column instead of docking a second copy of the list', async () => {
+  it('at desk width /board is the full-width Board page — no column, no duplicate list', async () => {
     setViewport(1440)
     render(<AppShell locationHook={memoryLocation({ path: '/app/board' }).hook} />)
-    await boardColumn()
-    // the seeded row renders ONCE (the column's), never twice
-    expect(await screen.findAllByText('NVDA')).toHaveLength(1)
     const pane = screen.getByRole('main')
-    expect(within(pane).getByText(/board lives in the column/i)).toBeInTheDocument()
-    expect(within(pane).queryByRole('heading', { name: /^board$/i })).not.toBeInTheDocument()
+    expect(await within(pane).findByRole('heading', { name: /board/i })).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: /board column/i })).toBeNull()
+    // the seeded row renders ONCE (the page's), never twice
+    expect(await screen.findAllByText('NVDA')).toHaveLength(1)
   })
 
-  // D2: the pointer paragraph is the right answer for the PANE, but the chip
-  // that sent the reader here ("Refused") must still land somewhere. It lands
-  // in the column, which is mounted on the left the whole time.
-  it('at desk width /board#refused opens the COLUMN’s "engine said no" details', async () => {
+  it('at desk width /board#refused opens the PAGE’s "engine said no" details', async () => {
     setViewport(1440)
     window.history.pushState(null, '', '/app/board#refused')
     render(<AppShell locationHook={memoryLocation({ path: '/app/board' }).hook} />)
-    const col = await boardColumn()
-    const details = (await within(col).findByText(/the engine said no/i)).closest('details') as HTMLDetailsElement
+    const pane = screen.getByRole('main')
+    const details = (await within(pane).findByText(/the engine said no/i)).closest('details') as HTMLDetailsElement
     expect(details.open).toBe(true)
-    // …and the pane still points rather than docking a second list
-    expect(within(screen.getByRole('main')).getByText(/board lives in the column/i)).toBeInTheDocument()
-  })
-
-  it('at desk width /board#developing scrolls the column’s developing heading into view', async () => {
-    setViewport(1440)
-    const scrollIntoView = vi.fn()
-    Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrollIntoView, configurable: true, writable: true })
-    await writeSlice('board', mkBoardData([mkRow({ id: 'd1', sym: 'TSLA', watchOnly: true, horizon: 'developing', composite: -54 })]))
-    window.history.pushState(null, '', '/app/board#developing')
-    render(<AppShell locationHook={memoryLocation({ path: '/app/board' }).hook} />)
-    const col = await boardColumn()
-    expect(within(col).getByText(/developing — building/i)).toHaveAttribute('id', 'developing')
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
-    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   })
 
   it('below 1200px the analytics drawer does not exist at all', async () => {

@@ -67,15 +67,15 @@ const PanelsFallback = () => (
 )
 
 export default function DeskLayout({ children }: { children: ReactNode }) {
-  // /board at desk width would dock a SECOND copy of the list the column
-  // already shows (Today's counts rail and typed URLs land here — Task 22
-  // review, Important 1). The URL and its hash stay untouched, only the pane's
-  // content swaps — and the hash is not lost with the pane: BoardColumn (which
-  // is mounted right there on the left, and never unmounts) watches the wouter
-  // location and opens or scrolls to the section the chip named. So a chip that
-  // used to dead-end into this paragraph now moves the column (D2).
+  // THE COLUMN EARNS ITS PLACE OR IT LEAVES (owner review of the first DMG,
+  // 2026-08-15). Master–detail is the STOCK flow: the board column beside a
+  // journey pane, pick a name → it docks. Beside Today it duplicated the same
+  // cards twice; beside Stocks/Intel/Record it stole 320px from pages that
+  // want the width. So: the column mounts ONLY on /stock/:sym. Every other
+  // page gets the full pane. (This also retires the /board pane pointer —
+  // /board at desk is simply the Board page, full width, hash and all.)
   const [path] = useLocation()
-  const atBoard = path === '/board'
+  const withColumn = path.startsWith('/stock/')
   const [analytics, setAnalytics] = useState(false)
   const toggleRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLElement>(null)
@@ -97,31 +97,28 @@ export default function DeskLayout({ children }: { children: ReactNode }) {
   }, [analytics, close])
 
   return (
-    <div className="desk2">
+    <div className={withColumn ? 'desk2' : 'desk2 desk2-wide'}>
       <div className="desk2-rail">
         <Nav />
       </div>
 
-      <aside className="desk2-board" aria-label="Board column">
-        {/* No "see all" link: this column IS the whole /board screen minus its
-            title, so pointing the reader at /board would only dock a second
-            copy of the same list in the pane. The route still resolves for
-            deep links and for Today's counts rail — the desk just never sends
-            anyone there itself. */}
-        <header className="desk2-colhead">
-          <span className="sec-label">Board</span>
-        </header>
-        <Suspense
-          fallback={
-            <>
-              <div className="skeleton" style={{ height: 118, marginBottom: 10 }} />
-              <div className="skeleton" style={{ height: 118 }} />
-            </>
-          }
-        >
-          <BoardColumn />
-        </Suspense>
-      </aside>
+      {withColumn && (
+        <aside className="desk2-board" aria-label="Board column">
+          <header className="desk2-colhead">
+            <span className="sec-label">Board</span>
+          </header>
+          <Suspense
+            fallback={
+              <>
+                <div className="skeleton" style={{ height: 118, marginBottom: 10 }} />
+                <div className="skeleton" style={{ height: 118 }} />
+              </>
+            }
+          >
+            <BoardColumn />
+          </Suspense>
+        </aside>
+      )}
 
       <main className="v2-page desk2-detail">
         <div className="desk2-panebar">
@@ -135,11 +132,7 @@ export default function DeskLayout({ children }: { children: ReactNode }) {
             Analytics
           </button>
         </div>
-        {atBoard ? (
-          <p className="cc-reason desk2-board-pointer">The board lives in the column on the left — pick a name to open its journey here.</p>
-        ) : (
-          children
-        )}
+        {children}
       </main>
 
       {analytics && (

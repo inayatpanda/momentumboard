@@ -30,6 +30,7 @@ import { Sparkline } from '../components/Sparkline'
 import type { Quote } from '../../shared/types'
 import { StockRow, useCachedSparkline } from './parts/StockRow'
 import { HRail } from './parts/HRail'
+import { isDeskWidth } from '../shell/DeskLayout'
 import { sectorSign, SectorTileBody } from './parts/SectorTile'
 
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
@@ -76,7 +77,7 @@ function MoversFetcher({ onData }: { onData: (d: { gainers: MoverRow[]; losers: 
 }
 
 function MoversRails({ watchSymbols, onAdd }: { watchSymbols: Set<string>; onAdd: (sym: string) => void }) {
-  const [requested, setRequested] = useState(false)
+  const [requested, setRequested] = useState(isDeskWidth) // desk: eager — a pane with room shows its data, no scroll-into-view dance
   const [data, setData] = useState<{ gainers: MoverRow[]; losers: MoverRow[] } | null>(null)
 
   const body = (kind: 'gainers' | 'losers') => {
@@ -125,7 +126,7 @@ function SectorsRailBody() {
 }
 
 function SectorsRail() {
-  const [requested, setRequested] = useState(false)
+  const [requested, setRequested] = useState(isDeskWidth) // desk: eager — a pane with room shows its data, no scroll-into-view dance
   return (
     <HRail title="Sectors" seeAllPath="/stocks/sectors" onVisible={() => setRequested(true)}>
       {requested ? <SectorsRailBody /> : <RailSkeleton />}
@@ -169,10 +170,17 @@ export default function Stocks() {
   const [watchLoaded, setWatchLoaded] = useState(false)
 
   useEffect(() => {
-    db.watchlist.toArray().then(list => {
-      setItems(list)
-      setWatchLoaded(true)
-    })
+    const read = () =>
+      db.watchlist.toArray().then(list => {
+        setItems(list)
+        setWatchLoaded(true)
+      })
+    void read()
+    // The starter seeding (App.tsx boot) can land AFTER this first read — on a
+    // brand-new install the list painted "empty" until a reload (owner's first
+    // DMG launch). starter.ts announces; we re-read.
+    window.addEventListener('mb-watchlist-changed', read)
+    return () => window.removeEventListener('mb-watchlist-changed', read)
   }, [])
 
   const symbols = items.map(i => i.symbol)
@@ -220,17 +228,28 @@ export default function Stocks() {
       </form>
       {searchError && <p className="stx-search-error">Enter a valid ticker — letters, numbers, &quot;.&quot; or &quot;-&quot;, up to 12 characters.</p>}
 
-      <p className="sec-label">Your watchlist</p>
-      {!watchLoaded ? (
-        <div className="skeleton" style={{ height: 64, marginBottom: 8 }} />
-      ) : items.length === 0 ? (
-        <p className="cc-reason">Your watchlist is empty. Search a ticker above, or add one from the rails below.</p>
-      ) : (
-        <WatchlistRows key={symbols.join(',')} items={items} onRemove={remove} />
-      )}
-
-      <MoversRails watchSymbols={new Set(symbols)} onAdd={add} />
-      <SectorsRail />
+      {/* One structure, two densities: on phones these blocks simply stack
+          (the grid classes have no rules there); at desk width the .desk2
+          rules lay them out two-column with sectors full-width below —
+          the owner's first-DMG review: use the space. */}
+      <div className="stx-desk-grid">
+        <div>
+          <p className="sec-label">Your watchlist</p>
+          {!watchLoaded ? (
+            <div className="skeleton" style={{ height: 64, marginBottom: 8 }} />
+          ) : items.length === 0 ? (
+            <p className="cc-reason">Your watchlist is empty. Search a ticker above, or add one from the rails below.</p>
+          ) : (
+            <WatchlistRows key={symbols.join(',')} items={items} onRemove={remove} />
+          )}
+        </div>
+        <div>
+          <MoversRails watchSymbols={new Set(symbols)} onAdd={add} />
+        </div>
+        <div className="stx-sectors-block">
+          <SectorsRail />
+        </div>
+      </div>
     </div>
   )
 }

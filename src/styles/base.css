@@ -2297,6 +2297,40 @@ p {
     height: 100dvh;
     overflow: hidden;
   }
+  /* Column-less pages (everything except /stock/:sym — owner review of the
+     first DMG): rail + full-width pane. The pane content then DENSIFIES via
+     the desk-width rules below instead of floating as a phone column. */
+  .v2 .desk2-wide {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+  .v2 .desk2-wide .v2-page {
+    max-width: 1400px;
+  }
+
+  /* Today at desk: the call cards use the width — two-up grid. */
+  .v2 .desk2 .today-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 14px;
+  }
+
+  /* Stocks at desk: dense two-column — watchlist | movers+losers; sectors
+     full-width below. The rails STOP being horizontal scrollers: they wrap,
+     so nothing ever clips off the window edge. */
+  .v2 .desk2 .stx-desk-grid {
+    display: grid;
+    grid-template-columns: minmax(340px, 1fr) minmax(380px, 1.2fr);
+    gap: 0 28px;
+    align-items: start;
+  }
+  .v2 .desk2 .stx-desk-grid .stx-sectors-block {
+    grid-column: 1 / -1;
+  }
+  .v2 .desk2 .hrail {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
 
   /* the rail is the EXISTING .v2-nav, released from its fixed position so the
      grid — not the viewport — places it (the ≥1024px rail skin above stays,

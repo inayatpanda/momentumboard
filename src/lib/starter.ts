@@ -42,5 +42,8 @@ export async function seedStarterWatchlist(force = false): Promise<boolean> {
   await db.watchlist.bulkPut(missing.map(s => ({ symbol: s.symbol, addedAt: Date.now(), riskClass: 'normal' as const, category: s.category })))
   localStorage.setItem(FLAG, '1')
   mirrorConfig()
+  // A mounted Stocks screen read the list BEFORE this seeding finished on a
+  // first launch — announce so it repaints instead of showing "empty".
+  window.dispatchEvent(new Event('mb-watchlist-changed'))
   return true
 }
