@@ -2404,9 +2404,14 @@ p {
     padding: 11px;
   }
 
-  /* the detail pane: the routed screen, full width of what is left */
+  /* the detail pane: the routed screen, full width of what is left.
+     `margin: 0` — BOTH sides. The phone rule's `margin: 0 auto` survives
+     otherwise, and an auto margin on a grid item disables stretch: the pane
+     shrink-wrapped to fit-content (measured 436px in a 1240px track — the
+     actual root of the owner's "no proper use of space" DMG review). */
   .v2 .desk2 .v2-page {
-    margin-left: 0;
+    margin: 0;
+    width: 100%;
     max-width: none;
     height: 100dvh;
     overflow-y: auto;
