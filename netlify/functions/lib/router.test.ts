@@ -31,7 +31,7 @@ const fnRedirects = () =>
 describe('the route table is complete', () => {
   it('registers EVERY netlify/functions/*.mts, and nothing that does not exist', () => {
     expect(HANDLER_NAMES).toEqual(onDisk())
-    expect(HANDLER_NAMES.length).toBe(22)
+    expect(HANDLER_NAMES.length).toBe(23)
   })
 
   // The point of the whole file: a function with no pretty path is still

@@ -17,6 +17,9 @@ interface Env {
   FINNHUB_API_KEY?: string
   GEMINI_API_KEY?: string
   GOOGLE_GEMINI_BASE_URL?: string // set by Netlify AI Gateway; keys are gateway-scoped
+  /** lib/llm.ts's forced-primary override — the video tier pins 'openai'
+   * (= DeepSeek) so its condensation never spends the Groq daily budget */
+  LLM_PROVIDER?: string
   GROQ_API_KEY?: string
 }
 

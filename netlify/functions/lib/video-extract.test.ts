@@ -78,12 +78,15 @@ describe('extract tier rung ladder', () => {
     expect(res.status).toBe(503)
   })
 
-  it('gemini fallback has its own daily cap', async () => {
+  it('gemini fallback has its own daily cap — 2, an emergency valve, not a rung', async () => {
+    // owner directive 2026-08-16: 49 of the week's 53 extracts were Gemini
+    // WATCHING the video. With the local transcript store as the first rung
+    // the video-watch fallback drops from 12/day to 2.
     const store = memoryStore()
     const now = Math.floor(Date.now() / 1000)
     await store.write(
       'video-extracts',
-      Array.from({ length: 12 }, (_, i) => ({ url: `u${i}`, title: '', channel: '', at: now - 100, tickers: [], themes: [], via: 'gemini-video' })),
+      Array.from({ length: 2 }, (_, i) => ({ url: `u${i}`, title: '', channel: '', at: now - 100, tickers: [], themes: [], via: 'gemini-video' })),
     )
     transcriptMock.fetchTranscriptAny.mockResolvedValue(null)
     const watch = vi.fn(async () => EXTRACT_JSON)
@@ -103,5 +106,87 @@ describe('extract tier rung ladder', () => {
     const watch = vi.fn(async () => EXTRACT_JSON)
     const res = await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=c2'), { APP_TOKEN: 'app', GEMINI_API_KEY: 'k' }, store, watch)
     expect(await res.text()).toBe('extracted:gemini-video')
+  })
+})
+
+// THE LOCAL RUNG (owner directive 2026-08-16): the Mac runner writes captions
+// into `video-transcripts`, and the pipeline reads that store BEFORE any
+// network rung — no scrape, no Supadata, and above all no Gemini video-watch.
+describe('the local transcript store is the first rung', () => {
+  const stored = (url: string) => ({ url, title: 'NVDA breakout', channel: 'Test Channel', text: 'a stored transcript about NVDA '.repeat(10), source: 'local', at: 1 })
+
+  it('extract: a stored transcript short-circuits every network rung and tags via=local', async () => {
+    const store = memoryStore()
+    await store.write('video-transcripts', [stored('https://youtube.com/watch?v=loc1')])
+    llmMock.callLlm.mockResolvedValue({ text: EXTRACT_JSON })
+    const watch = vi.fn()
+    const res = await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=loc1'), { APP_TOKEN: 'app', GEMINI_API_KEY: 'k' }, store, watch as never)
+    expect(await res.text()).toBe('extracted:local')
+    expect(transcriptMock.fetchTranscriptAny).not.toHaveBeenCalled()
+    expect(watch).not.toHaveBeenCalled()
+    const rows = (await store.read<VideoExtract[]>('video-extracts'))!
+    expect(rows[0].via).toBe('local')
+  })
+
+  it('extract condensation runs DeepSeek-forced — Groq is not the video tier’s wallet', async () => {
+    const store = memoryStore()
+    await store.write('video-transcripts', [stored('https://youtube.com/watch?v=loc2')])
+    llmMock.callLlm.mockResolvedValue({ text: EXTRACT_JSON })
+    await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=loc2'), { APP_TOKEN: 'app' }, store)
+    const envArg = llmMock.callLlm.mock.calls[0][1] as { LLM_PROVIDER?: string }
+    expect(envArg.LLM_PROVIDER).toBe('openai')
+  })
+
+  it('a scraped transcript is PERSISTED to the store, so the words survive the extraction', async () => {
+    const store = memoryStore()
+    transcriptMock.fetchTranscriptAny.mockResolvedValue({ text: 'a scraped transcript about NVDA '.repeat(10), source: 'free' })
+    llmMock.callLlm.mockResolvedValue({ text: EXTRACT_JSON })
+    await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=scr1'), { APP_TOKEN: 'app' }, store)
+    const kept = (await store.read<{ url: string; source: string }[]>('video-transcripts'))!
+    expect(kept[0].url).toBe('https://youtube.com/watch?v=scr1')
+    expect(kept[0].source).toBe('free')
+  })
+})
+
+// THE WATCH TIER on the same diet: it reads ONLY the transcript store (the
+// extract tier and the runner both feed it), analyses the words via the
+// DeepSeek-forced text LLM, and may fall back to a real Gemini watch at most
+// ONCE a day — down from three.
+describe('watch tier, transcript-first', () => {
+  const watchBody = (url: string) => JSON.stringify({ url, title: 'TSLA levels', channel: 'Stocks with Josh', mode: 'watch' })
+
+  it('a stored transcript is analysed by the text LLM — Gemini never watches', async () => {
+    const store = memoryStore()
+    await store.write('video-transcripts', [{ url: 'https://youtube.com/watch?v=w1', title: 'TSLA levels', channel: 'Stocks with Josh', text: 'TSLA support at 180 '.repeat(20), source: 'local', at: 1 }])
+    llmMock.callLlm.mockResolvedValue({ text: 'TSLA discussed; support stated at 180; bullish.' })
+    const watch = vi.fn()
+    const res = await routeVideoAnalyze(auth, watchBody('https://youtube.com/watch?v=w1'), { APP_TOKEN: 'app', GEMINI_API_KEY: 'k' }, store, watch as never)
+    expect(res.status).toBe(200)
+    expect(watch).not.toHaveBeenCalled()
+    const envArg = llmMock.callLlm.mock.calls[0][1] as { LLM_PROVIDER?: string }
+    expect(envArg.LLM_PROVIDER).toBe('openai')
+    const list = (await store.read<{ analysis: string; via?: string }[]>('video-analyses'))!
+    expect(list[0].analysis).toContain('support stated at 180')
+    expect(list[0].via).toBe('transcript')
+  })
+
+  it('no transcript yet: one Gemini watch a day, then 503 so the queue retries', async () => {
+    const store = memoryStore()
+    const now = Math.floor(Date.now() / 1000)
+    await store.write('video-analyses', [{ url: 'u-g', title: '', channel: '', analysis: 'x', at: now - 100, via: 'gemini-video' }])
+    const watch = vi.fn(async () => 'y')
+    const res = await routeVideoAnalyze(auth, watchBody('https://youtube.com/watch?v=w2'), { APP_TOKEN: 'app', GEMINI_API_KEY: 'k' }, store, watch)
+    expect(res.status).toBe(503)
+    expect(watch).not.toHaveBeenCalled()
+  })
+
+  it('legacy via-less analyses count as Gemini watches — they were', async () => {
+    const store = memoryStore()
+    const now = Math.floor(Date.now() / 1000)
+    await store.write('video-analyses', [{ url: 'u-old', title: '', channel: '', analysis: 'x', at: now - 100 }])
+    const watch = vi.fn(async () => 'y')
+    const res = await routeVideoAnalyze(auth, watchBody('https://youtube.com/watch?v=w3'), { APP_TOKEN: 'app', GEMINI_API_KEY: 'k' }, store, watch)
+    expect(res.status).toBe(503)
+    expect(watch).not.toHaveBeenCalled()
   })
 })

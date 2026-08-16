@@ -10,12 +10,30 @@ export interface VideoAnalysis {
   channel: string
   analysis: string
   at: number
+  /** 'transcript' = the words were analysed by the text LLM; anything else
+   * (including the via-less legacy rows) was a real Gemini video watch. */
+  via?: 'transcript' | 'gemini-video'
 }
 
-const DAILY_CAP = 3 // watching video burns AI-gateway credits fast; cap it
-// The extract tier's transcript-less fallback also watches the video (Gemini),
-// but produces a tiny JSON — cheaper than the narrative tier, so a higher cap.
-const GEMINI_EXTRACT_DAILY_CAP = 12
+const DAILY_CAP = 3 // total watch-tier analyses per day, whichever rung
+// Owner directive 2026-08-16 ("without using up so much gemini/groq"): the
+// local transcript store is now the FIRST rung on both tiers, so the Gemini
+// video-watch fallbacks shrink to emergency valves. Production data behind it:
+// 49 of the week's 53 extracts were gemini-video, free scrape 0 in 30 days.
+const GEMINI_WATCH_DAILY_CAP = 1 // was 3 — full narrative watches
+const GEMINI_EXTRACT_DAILY_CAP = 2 // was 12 — extraction watches
+
+/** The narrative prompt over a TRANSCRIPT: same contract as the video PROMPT
+ * minus the one thing words cannot carry (chart annotations). */
+const TRANSCRIPT_PROMPT = (title: string, channel: string, text: string) => `You are reading the transcript of a stock-market YouTube video ("${title}" by ${channel}) for a sceptical swing trader. Report ONLY what is actually said:
+1. Tickers discussed.
+2. Specific price levels stated (support/resistance/entries/targets) — this matters most.
+3. The creator's stance per ticker (bullish/bearish/neutral) and their key argument in one line each.
+4. Anything promotional or hype-flagged worth discounting.
+Max 180 words. No advice, no embellishment. If the video is not about markets, say so in one line.
+
+TRANSCRIPT:
+${text.slice(0, 24_000)}`
 
 export type GeminiVideoCall = (videoUrl: string, prompt: string, env: Env) => Promise<string>
 
@@ -73,24 +91,35 @@ export async function routeVideoAnalyze(
 
   // mode=extract — tier-1 breadth: transcript + cheap text extraction → trend store
   if (body.mode === 'extract') {
-    // Rungs: free caption scrape → Supadata (if keyed) → Gemini WATCHES the
-    // video (fileData URI — YouTube can't block Google's own fetch, and it
-    // also works when auto-captions simply don't exist yet on a fresh upload).
-    // The worker runs on datacenter IPs, so the scrape failing is the norm,
-    // not the exception — the Gemini rung is what makes this tier reliable.
+    // Rungs: the LOCAL transcript store (the Mac runner's residential IP is
+    // the one place the caption endpoint reliably answers) → free caption
+    // scrape → Supadata (if keyed) → Gemini WATCHES the video (fileData URI —
+    // works even when auto-captions don't exist yet on a fresh upload). The
+    // worker runs on datacenter IPs, so the scrape failing is the norm, not
+    // the exception — the local rung is what makes this tier cheap AND the
+    // Gemini valve is what keeps it alive when the Mac is asleep.
     const { fetchTranscriptAny } = await import('./lib/transcripts')
+    const { readStoredTranscript, saveTranscript } = await import('./lib/videoTranscriptStore')
     const { EXTRACT_PROMPT, EXTRACT_PROMPT_VIDEO, parseExtract } = await import('./lib/videoTrends')
     const { callLlm } = await import('./ai-insights.mts')
     const extracts = (await store.read<VideoExtract[]>('video-extracts')) ?? []
     if (extracts.some(e => e.url === body.url)) return new Response('already-extracted', { status: 200 })
     if (extracts.filter(e => nowSec - e.at < 86_400).length >= 25) return new Response('extract-daily-cap', { status: 200 })
-    const got = await fetchTranscriptAny(body.url, env.SUPADATA_API_KEY)
+    const local = await readStoredTranscript(store, body.url)
+    const got = local ? { text: local.text, source: 'local' as const } : await fetchTranscriptAny(body.url, env.SUPADATA_API_KEY)
     let raw: string | null = null
-    let via: 'free' | 'supadata' | 'gemini-video' = 'gemini-video'
+    let via: 'local' | 'free' | 'supadata' | 'gemini-video' = 'gemini-video'
     if (got) {
-      via = got.source // 'free' (caption scrape) or 'supadata' — kept distinct so the health line shows which cheap rung actually fired
+      via = got.source // kept distinct so the health line shows which cheap rung actually fired
+      if (got.source !== 'local') {
+        // the words survive the extraction: whatever rung fetched them, store
+        // them — the watch tier and any re-read work from here, fetch-free
+        await saveTranscript(store, { url: body.url, title: body.title ?? '', channel: body.channel ?? '', text: got.text, source: got.source, at: nowSec })
+      }
       try {
-        raw = (await callLlm(EXTRACT_PROMPT(body.title ?? '', body.channel ?? '', got.text), env)).text
+        // DeepSeek-forced: video condensation must not spend the Groq
+        // tokens-per-day budget the morning paper composes against
+        raw = (await callLlm(EXTRACT_PROMPT(body.title ?? '', body.channel ?? '', got.text), { ...env, LLM_PROVIDER: 'openai' })).text
       } catch (e) {
         return new Response(String(e), { status: 502 }) // LLM down — retryable
       }
@@ -123,7 +152,7 @@ export async function routeVideoAnalyze(
     const last24 = extracts.filter(e => nowSec - e.at < 86_400)
     const n = (v: string) => last24.filter(e => e.via === v).length
     console.log(
-      `EXTRACT-HEALTH: read via ${via} | 24h rungs free=${n('free')} supadata=${n('supadata')} gemini=${n('gemini-video')}${last24.some(e => e.via === 'transcript') ? ` transcript(legacy)=${n('transcript')}` : ''} | caps: gemini ${GEMINI_EXTRACT_DAILY_CAP}/day, extract 25/day`,
+      `EXTRACT-HEALTH: read via ${via} | 24h rungs local=${n('local')} free=${n('free')} supadata=${n('supadata')} gemini=${n('gemini-video')}${last24.some(e => e.via === 'transcript') ? ` transcript(legacy)=${n('transcript')}` : ''} | caps: gemini ${GEMINI_EXTRACT_DAILY_CAP}/day, extract 25/day`,
     )
     return new Response(`extracted:${via}`, { status: 200 })
   }
@@ -131,9 +160,31 @@ export async function routeVideoAnalyze(
   if (list.some(v => v.url === body.url)) return new Response('already-analyzed', { status: 200 })
   if (list.filter(v => nowSec - v.at < 86_400).length >= DAILY_CAP) return new Response('daily-cap', { status: 200 })
 
+  // Transcript-first here too — and STORE-ONLY on purpose: the extract job for
+  // the same video (queued in the same alert-check cycle) and the Mac runner
+  // both feed `video-transcripts`, so scraping again here would just double the
+  // blocked-IP noise. No transcript yet ⇒ one real Gemini watch a day; beyond
+  // that 503, and by the queue's next attempt the words are usually in.
+  const { readStoredTranscript } = await import('./lib/videoTranscriptStore')
+  const local = await readStoredTranscript(store, body.url)
+  if (local) {
+    const { callLlm } = await import('./ai-insights.mts')
+    try {
+      const { text } = await callLlm(TRANSCRIPT_PROMPT(body.title ?? '', body.channel ?? '', local.text), { ...env, LLM_PROVIDER: 'openai' })
+      list.push({ url: body.url, title: body.title ?? '', channel: body.channel ?? '', analysis: text, at: nowSec, via: 'transcript' })
+      await store.write('video-analyses', list.slice(-20))
+      return new Response('ok:transcript', { status: 200 })
+    } catch (e) {
+      return new Response(String(e), { status: 502 })
+    }
+  }
+  // via-less rows are the legacy Gemini watches — they count against the valve
+  const geminiWatchesToday = list.filter(v => v.via !== 'transcript' && nowSec - v.at < 86_400).length
+  if (geminiWatchesToday >= GEMINI_WATCH_DAILY_CAP) return new Response('no-transcript-gemini-watch-capped', { status: 503 })
+
   try {
     const analysis = await watch(body.url, PROMPT, env)
-    list.push({ url: body.url, title: body.title ?? '', channel: body.channel ?? '', analysis, at: nowSec })
+    list.push({ url: body.url, title: body.title ?? '', channel: body.channel ?? '', analysis, at: nowSec, via: 'gemini-video' })
     await store.write('video-analyses', list.slice(-20))
     return new Response('ok', { status: 200 })
   } catch (e) {

@@ -175,6 +175,7 @@ export const FUNCTION_ENV_VARS = [
   'OPENAI_BASE_URL',
   'LLM_PROVIDER',
   'SUPADATA_API_KEY',
+  'TRANSCRIPT_TOKEN', // the Mac transcript runner's dedicated door (video-transcripts.mts)
   // delivery
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_CHAT_ID',

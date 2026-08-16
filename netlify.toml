@@ -115,6 +115,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/video-transcripts"
+  to = "/.netlify/functions/video-transcripts"
+  status = 200
+
+[[redirects]]
   from = "/download/*"
   to = "/.netlify/functions/download?platform=:splat"
   status = 200

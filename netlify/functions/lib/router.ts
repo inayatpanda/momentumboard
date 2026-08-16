@@ -67,6 +67,7 @@ export const HANDLERS = {
   'report-compose-background': () => import('../report-compose-background.mts'),
   'telegram-webhook': () => import('../telegram-webhook.mts'),
   'video-analyze-background': () => import('../video-analyze-background.mts'),
+  'video-transcripts': () => import('../video-transcripts.mts'),
   watchdog: () => import('../watchdog.mts'),
 } satisfies Record<string, () => Promise<HandlerModule>>
 
@@ -90,6 +91,7 @@ export const EXACT_ROUTES: Readonly<Record<string, HandlerName>> = {
   '/api/backup': 'backup',
   '/api/push': 'push',
   '/api/licences': 'licences',
+  '/api/video-transcripts': 'video-transcripts',
 }
 
 /** Prefix routes. netlify.toml's `/download/*` carries the splat into a query

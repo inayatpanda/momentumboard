@@ -8,7 +8,7 @@ export interface VideoExtract {
   at: number
   tickers: { sym: string; stance: 'bull' | 'bear' | 'neutral'; levels: number[] }[]
   themes: string[]
-  via?: 'free' | 'supadata' | 'gemini-video' | 'transcript' // how the facts were read ('transcript' = legacy rows before the rung was split); absent on rows older than the fallback
+  via?: 'local' | 'free' | 'supadata' | 'gemini-video' | 'transcript' // how the facts were read ('local' = the Mac runner's stored captions; 'transcript' = legacy rows before the rung was split); absent on rows older than the fallback
 }
 
 export interface TickerConsensus {

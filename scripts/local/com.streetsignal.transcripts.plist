@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The StreetSignal transcript runner: every 30 minutes, fetch captions for
+     any videos the app is still waiting on (residential IP — the whole point;
+     see scripts/local/transcript-runner.mjs). Installed copy lives in
+     ~/Library/LaunchAgents; the script runs from the MAIN checkout. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.streetsignal.transcripts</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/inayat/Projects/thestreetsignal/scripts/local/transcript-runner.mjs</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>1800</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/streetsignal-transcripts.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/streetsignal-transcripts.log</string>
+</dict>
+</plist>

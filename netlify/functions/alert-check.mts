@@ -142,6 +142,15 @@ export default async (req: Request) => {
   // queue AI video-watching for NEW videos worth the credits: Josh always,
   // others only when the title names a watchlist ticker (cap enforced downstream)
   const newVideos = videos.filter(v => !state.seenItems.includes(v.url))
+  // EVERY new video also lands in the inbox the Mac transcript runner polls
+  // (/api/video-transcripts?pending=1) — the free rung that starves the Gemini
+  // video-watch fallback. Unsliced on purpose: transcripts are wanted for all.
+  try {
+    const { recordInboxVideos } = await import('./lib/videoTranscriptStore')
+    await recordInboxVideos(store, newVideos, nowSec)
+  } catch {
+    errors.push('video-inbox')
+  }
   const worthWatching = newVideos
     .filter(v => v.channel === 'Stocks with Josh' || symbols.some(s => v.title.toUpperCase().includes(s.split('.')[0].split('-')[0])))
     .slice(0, 2)
