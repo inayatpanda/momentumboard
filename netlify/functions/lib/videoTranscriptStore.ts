@@ -33,10 +33,14 @@ const RECENT_CAP = 200
  * Returns how many were actually new; an empty or fully-known batch costs no
  * store write at all (alert-check runs inside a 50-subrequest budget). */
 export async function recordInboxVideos(store: AppStore, videos: { url: string; title: string; channel: string }[], nowSec: number): Promise<number> {
-  if (!videos.length) return 0
+  // YouTube only: the pundit bridge's video list can carry article links
+  // (seen live: stockmarketloop.com), and a url the runner can never
+  // transcribe would occupy a pending slot on every poll, forever
+  const eligible = videos.filter(v => /youtube\.com|youtu\.be/.test(v.url))
+  if (!eligible.length) return 0
   const inbox = (await store.read<InboxVideo[]>(INBOX_KEY)) ?? []
   const known = new Set(inbox.map(v => v.url))
-  const fresh = videos.filter(v => !known.has(v.url))
+  const fresh = eligible.filter(v => !known.has(v.url))
   if (!fresh.length) return 0
   for (const v of fresh) inbox.push({ url: v.url, title: v.title, channel: v.channel, at: nowSec })
   await store.write(INBOX_KEY, inbox.slice(-RECENT_CAP))

@@ -80,4 +80,16 @@ describe('recordInboxVideos — the canonical "all videos" list', () => {
     await recordInboxVideos(store, Array.from({ length: 205 }, (_, i) => v(`https://youtube.com/watch?v=n${String(i).padStart(10, '0')}`)), 5000)
     expect((await store.read<unknown[]>('video-inbox'))!).toHaveLength(200)
   })
+
+  it('only YouTube urls enter the inbox — anything else would sit pending forever', async () => {
+    // seen live on the first runner pass (2026-08-16): two stockmarketloop.com
+    // articles rode the pundit bridge into the video list, the runner can never
+    // transcribe them, and each occupied a pending slot on every poll
+    const store = memoryStore()
+    const n = await recordInboxVideos(store, [v('https://stockmarketloop.com/some-alert/'), v('https://youtube.com/watch?v=ddddddddddd')], 5000)
+    expect(n).toBe(1)
+    const inbox = (await store.read<{ url: string }[]>('video-inbox'))!
+    expect(inbox).toHaveLength(1)
+    expect(inbox[0].url).toContain('youtube')
+  })
 })
