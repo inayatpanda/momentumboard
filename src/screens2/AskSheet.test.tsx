@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AskSheet, ASK_DAILY_CAP, buildAskContext } from './parts/AskSheet'
+import { AskSheet, ASK_DAILY_CAP, ASK_NEEDS_KEY, buildAskContext, isNoKeyAnswer } from './parts/AskSheet'
 import type { EnginePrediction } from '../lib/api'
 import type { JourneyFunnelRow, VerdictRead } from '../lib/apiViews'
 
@@ -203,6 +203,118 @@ describe('AskSheet', () => {
 
       resolvePending({ ok: true, json: async () => ({ ok: true, data: { answer: 'done', at: 1 } }) } as Response)
       await waitFor(() => expect(input).not.toBeDisabled())
+    })
+  })
+
+  // VISIBILITY WAVE (2026-08-17). On a keyless account the sheet sent the
+  // question, spent one of twenty daily asks, and printed the server's own
+  // "Add your own AI key in Settings…" in the ANSWER slot — a non-answer,
+  // charged for, dressed as a read of the chart.
+  describe('the keyless account', () => {
+    const noKey = () => jsonResponse({ answer: 'Add your own AI key in Settings to ask the desk questions.', at: 0 })
+
+    describe('isNoKeyAnswer', () => {
+      it("recognises the server's own sentence", () => {
+        expect(isNoKeyAnswer({ answer: 'Add your own AI key in Settings to ask the desk questions.', at: 0 })).toBe(true)
+      })
+
+      it('recognises the zero stamp that only that branch carries', () => {
+        expect(isNoKeyAnswer({ answer: 'This desk has no AI key configured.', at: 0 })).toBe(true)
+      })
+
+      it('never mistakes a real answer for one — including a real answer that talks about keys', () => {
+        expect(isNoKeyAnswer({ answer: 'NVDA is extended; the desk would wait.', at: 1 })).toBe(false)
+        expect(isNoKeyAnswer({ answer: 'Support levels are key here.', at: 1_755_000_000 })).toBe(false)
+        expect(isNoKeyAnswer({ answer: '', at: 0 })).toBe(false)
+        expect(isNoKeyAnswer(null)).toBe(false)
+      })
+    })
+
+    it('does not charge a daily ask for a non-answer, and never prints it as one', async () => {
+      fetchMock.mockImplementation(noKey)
+      render(<Harness />)
+      const input = await screen.findByLabelText(/ask a question about nvda/i)
+      fireEvent.change(input, { target: { value: 'Good entry here?' } })
+      fireEvent.click(screen.getByRole('button', { name: /^ask$/i }))
+      await waitFor(() => expect(screen.getByText(`${ASK_NEEDS_KEY}.`)).toBeInTheDocument())
+      // the counter never moved
+      expect(localStorage.getItem(askCountKey())).toBeNull()
+      expect(screen.getByText('0/20 today')).toBeInTheDocument()
+      // and the server's sentence never reached the answer slot
+      expect(document.querySelector('.ask-a')).toBeNull()
+      expect(document.body.textContent).not.toContain('Add your own AI key')
+    })
+
+    it('locks the sheet after one, so a second question cannot be spent either', async () => {
+      fetchMock.mockImplementation(noKey)
+      render(<Harness />)
+      const input = await screen.findByLabelText(/ask a question about nvda/i)
+      fireEvent.change(input, { target: { value: 'Good entry here?' } })
+      fireEvent.click(screen.getByRole('button', { name: /^ask$/i }))
+      await waitFor(() => expect(input).toBeDisabled())
+      expect(input).toHaveAttribute('placeholder', ASK_NEEDS_KEY)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      fireEvent.submit(input.closest('form')!)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('a real answer still counts, exactly once', async () => {
+      render(<Harness />)
+      const input = await screen.findByLabelText(/ask a question about nvda/i)
+      fireEvent.change(input, { target: { value: 'Good entry here?' } })
+      fireEvent.click(screen.getByRole('button', { name: /^ask$/i }))
+      await screen.findByText('A grounded answer.')
+      expect(localStorage.getItem(askCountKey())).toBe('1')
+    })
+  })
+
+  // The up-front lock: only the shared free token is probed, because only that
+  // token is known to have no server-side key behind it.
+  describe('the free tier says so before a question is spent', () => {
+    const FREE = 'mb_freefreefreefreefreefreefreefreefre'
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('disables the input up front when the free device holds no key', async () => {
+      vi.stubEnv('VITE_FREE_TOKEN', FREE)
+      localStorage.setItem('mb-token', FREE)
+      fetchMock.mockImplementation(() => jsonResponse({ hasKey: false }))
+      render(<Harness />)
+      const input = await screen.findByLabelText(/ask a question about nvda/i)
+      await waitFor(() => expect(input).toBeDisabled())
+      expect(screen.getByText(`${ASK_NEEDS_KEY}.`)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^ask$/i })).toBeDisabled()
+    })
+
+    it('a free device that HAS saved a key is open for business', async () => {
+      vi.stubEnv('VITE_FREE_TOKEN', FREE)
+      localStorage.setItem('mb-token', FREE)
+      fetchMock.mockImplementation(() => jsonResponse({ hasKey: true }))
+      render(<Harness />)
+      const input = await screen.findByLabelText(/ask a question about nvda/i)
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      expect(input).not.toBeDisabled()
+      expect(screen.queryByText(`${ASK_NEEDS_KEY}.`)).not.toBeInTheDocument()
+    })
+
+    it('a failed probe leaves the sheet open — it must never lock a sheet that would have worked', async () => {
+      vi.stubEnv('VITE_FREE_TOKEN', FREE)
+      localStorage.setItem('mb-token', FREE)
+      fetchMock.mockImplementation(() => Promise.reject(new Error('offline')))
+      render(<Harness />)
+      const input = await screen.findByLabelText(/ask a question about nvda/i)
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      expect(input).not.toBeDisabled()
+    })
+
+    it('a personal licence is never probed at all', async () => {
+      vi.stubEnv('VITE_FREE_TOKEN', FREE)
+      localStorage.setItem('mb-token', 'mb_personal_key_9999')
+      render(<Harness />)
+      await screen.findByLabelText(/ask a question about nvda/i)
+      expect(fetchMock).not.toHaveBeenCalled()
     })
   })
 })
