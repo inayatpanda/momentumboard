@@ -36,6 +36,16 @@ vi.mock('../lib/apiViews', async () => {
 
 import { getBoardSlice } from '../lib/apiViews'
 
+// Today reaches past its own board slice now (dynamism wave): the headline
+// strip reads `intel:news` and the cards read a live quote batch. Both reject
+// here — every case paints from a seeded Dexie slice, and nothing in this file
+// may put a real request on the wire.
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
+  const notMocked = () => Promise.reject(new Error('not mocked in this test'))
+  return { ...actual, getNewsDesk: vi.fn(notMocked), getQuotes: vi.fn(notMocked) }
+})
+
 const withRouter = (ui: React.ReactElement) => render(<Router base="/app" hook={memoryLocation({ path: '/app/' }).hook}>{ui}</Router>)
 
 const FACTOR_NAMES = ['technical', 'momentum', 'sector', 'social', 'channels', 'insiders', 'news', 'seasonality', 'smartMoney', 'catalyst'] as const
@@ -695,6 +705,25 @@ describe('Today', () => {
     // …and the fetch never settles, so the busy bar is still up
     expect(await screen.findByRole('status', { name: /refreshing/i })).toBeInTheDocument()
     expect(screen.getByText('NVDA')).toBeInTheDocument() // the cached paint is untouched
+  })
+
+  // THREE HEADLINES (dynamism wave, feature 6), at the seam: the strip's own
+  // rules live in parts/TodayHeadlines.test.tsx.
+  it('carries the desk’s three newest headlines, and nothing when the desk is cold', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    const { unmount } = withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Headlines')).not.toBeInTheDocument()
+    unmount()
+
+    await db.slices.put({
+      key: 'intel:news',
+      data: [{ title: 'Chipmaker lifts guidance', url: 'https://x.com/1', syms: ['NVDA'], score: 80, why: 'guidance', at: Math.floor(Date.now() / 1000), source: 'Reuters' }],
+      fetchedAt: Date.now(),
+    })
+    withRouter(<Today />)
+    expect(await screen.findByLabelText('Headlines')).toBeInTheDocument()
+    expect(screen.getByText('Chipmaker lifts guidance')).toBeInTheDocument()
   })
 
   // THE LIVE LINE, at the seam (dynamism wave). The hook's own rules — the

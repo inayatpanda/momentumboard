@@ -334,6 +334,44 @@ p {
   line-height: 1.5;
   color: var(--text-dim);
 }
+/* THREE HEADLINES ON TODAY (dynamism wave). Deliberately thinner than any
+   card on this screen — news is a side dish, and these three lines are a
+   doorway into the desk, not the desk. Tokens only, on top of .card and
+   .sec-label. */
+.v2 .th-strip {
+  margin-bottom: 14px;
+}
+.v2 .th-strip .sec-label {
+  margin-top: 0;
+}
+.v2 .th-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.v2 .th-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-decoration: none;
+  color: inherit;
+}
+.v2 .th-row + .th-row {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.v2 .th-title {
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+.v2 .th-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
 /* THE LIVE LINE + THE PRICE FLASH (dynamism wave).
    The card's live line sits under the levels it is measured against, dimmer
    than they are — it is a reading, not an instruction. The flash is the legacy

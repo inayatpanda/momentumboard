@@ -25,6 +25,7 @@ import { OpenCallsStrip } from './parts/OpenCallsStrip'
 import { RefreshStrip } from './parts/RefreshStrip'
 import { SessionLine } from './parts/SessionLine'
 import { StaleBoardNote } from './parts/StaleBoardNote'
+import { TodayHeadlines } from './parts/TodayHeadlines'
 import { YesterdayStrip } from './parts/YesterdayStrip'
 
 /** THE TAPE LINE (owner iteration 2). The board blob has always carried the
@@ -84,6 +85,10 @@ export default function Today() {
           and the stamp the board has always carried and nothing ever showed. */}
       <SessionLine generatedAt={blob?.generatedAt} />
       <TapeLine blob={blob} />
+      {/* …and what the desk has taken in SINCE the run (dynamism wave): three
+          headlines, each a door into Intel's news desk. News keeps its one
+          home; this is the doorway, not a feed. */}
+      <TodayHeadlines />
       {/* …and WHICH DAY these cards belong to (dynamism wave): a weekend
           reader was shown Friday's board unlabelled. Nothing when it is
           today's — the fresh case must stay silent. */}
