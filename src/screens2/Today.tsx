@@ -94,7 +94,7 @@ export default function Today() {
           dated prints the engine is watching but refuses to bet. Both render
           nothing at all until their bytes exist — no skeletons on secondary
           sections (the rule OpenCallsStrip's header states). */}
-      <OpenCallsStrip entries={data?.openTrace?.entries} />
+      <OpenCallsStrip entries={data?.openTrace?.entries} closed={data?.openTrace?.closed} />
       <EventRadarStrip radar={data?.eventRadar} />
       {/* …and then the OTHER voice in the room (owner request): what the tracked
           channels have been recommending this week, each name beside the

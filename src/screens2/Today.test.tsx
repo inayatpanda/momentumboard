@@ -386,6 +386,34 @@ describe('OpenCallsStrip', () => {
     withRouter(<OpenCallsStrip entries={[mkTrace({ status: 'stopped', verdict: null, crossedDate: '2026-08-13' })]} />)
     expect(screen.getByText('stopped out')).toBeInTheDocument()
   })
+
+  // CLOSED IS NOT STILL WALKING. The server now hands the closed rows over
+  // separately; they get their own one-line heading, because a stopped-out trade
+  // sitting under "still walking" is the screen saying something untrue.
+  it('heads the closed rows separately from the walking ones', () => {
+    withRouter(
+      <OpenCallsStrip
+        entries={[mkTrace({ id: 'a', sym: 'NVDA' })]}
+        closed={[mkTrace({ id: 'b', sym: 'COIN', status: 'stopped', verdict: null, crossedDate: '2026-08-13' })]}
+      />,
+    )
+    expect(screen.getByText(/still walking/i)).toBeInTheDocument()
+    expect(screen.getByText(/closed — awaiting the formal grade/i)).toBeInTheDocument()
+    // the crossed word still carries the row, exactly as before
+    expect(screen.getByText('stopped out')).toBeInTheDocument()
+    expect(screen.getAllByRole('link')).toHaveLength(2)
+  })
+
+  it('says nothing about closed calls when there are none', () => {
+    withRouter(<OpenCallsStrip entries={[mkTrace()]} closed={[]} />)
+    expect(screen.queryByText(/closed — awaiting/i)).not.toBeInTheDocument()
+  })
+
+  it('renders the closed list on its own when nothing is still walking', () => {
+    withRouter(<OpenCallsStrip entries={[]} closed={[mkTrace({ status: 'target', verdict: null, crossedDate: '2026-08-13' })]} />)
+    expect(screen.getByText('hit target')).toBeInTheDocument()
+    expect(screen.queryByText(/still walking/i)).not.toBeInTheDocument()
+  })
 })
 
 // THE EVENT RADAR (owner iteration 2). The board slice has carried it since the

@@ -498,6 +498,11 @@ p {
 .v2 .er-strip .sec-label {
   margin-top: 0;
 }
+/* …except the closed list's own heading, which follows a card and must not sit
+   flush against it (the open book's two lists, 2026-08-17) */
+.v2 .oc-strip .sec-label.oc-closed {
+  margin-top: 14px;
+}
 .v2 .oc-list,
 .v2 .er-list {
   display: flex;

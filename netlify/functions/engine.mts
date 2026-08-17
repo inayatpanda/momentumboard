@@ -14,6 +14,7 @@ import { CRYPTO_CALIB_KEY, cryptoBaseHitRate, loadCryptoCalibration } from '../.
 import { CRYPTO_COLD_START_N, CRYPTO_RISK_KEY, loadCryptoRisk } from '../../shared/engine/cryptoLane'
 import type { CohortRung } from '../../shared/engine/riskLadder'
 import { computeConsensus, type VideoExtract } from './lib/videoTrends'
+import type { OpenTraceEntry } from '../../shared/engine/openTrace'
 import { getCached, setCached } from './lib/cache'
 import { fetchYahooChart } from './lib/yahoo'
 import type { Candle } from '../../shared/types'
@@ -158,6 +159,70 @@ function channelPicks(raw: unknown) {
   return picks.length ? picks : null
 }
 
+/** How close two published levels have to be before the second call is the same
+ * call re-issued rather than a new one. A morning's re-strike of an unchanged
+ * idea moves the entry by a fraction of a percent (yesterday's close vs today's);
+ * a genuinely new strike moves it by multiples of that. */
+const RE_ISSUE_TOLERANCE = 0.01
+
+/** Two published numbers within {@link RE_ISSUE_TOLERANCE} of each other. A
+ * missing or non-finite level on EITHER side answers false: a corrupt row is
+ * kept as its own call rather than silently folded into another one, because
+ * dropping a real position is the worse failure (D6's rule, applied to money). */
+const sameLevel = (a: unknown, b: unknown): boolean =>
+  typeof a === 'number' && Number.isFinite(a) && typeof b === 'number' && Number.isFinite(b) && Math.abs(a - b) <= RE_ISSUE_TOLERANCE * Math.max(Math.abs(a), Math.abs(b), 1e-9)
+
+const sameCall = (a: OpenTraceEntry, b: OpenTraceEntry): boolean => sameLevel(a.entry, b.entry) && sameLevel(a.stop, b.stop) && sameLevel(a.target, b.target)
+
+/** THE OPEN BOOK, ONE ROW A CALL (production 2026-08-17: HTZ listed twice, KTOS
+ * twice, VZLA twice, UROY twice, TSLA twice).
+ *
+ * The engine re-issues an unchanged call on consecutive mornings, and the walk
+ * traces every issue separately — so one position reached the reader as two,
+ * three or four rows, each with a DIFFERENT day count and a different move for
+ * the same trade. Two rules, both about what a row means:
+ *
+ *   • ONE ROW PER (sym, side), and the survivor is the OLDEST issue: that is the
+ *     original call, it owns the longest walk and the only honest day count.
+ *     A younger issue is dropped only when its entry, stop AND target all sit
+ *     within 1% of a kept one — a re-strike at genuinely different levels is a
+ *     different trade and keeps its own row.
+ *   • CLOSED IS NOT WALKING. A `stopped`/`target` row is mechanically over and
+ *     waiting on its formal grade; it sat under a heading that said "still
+ *     walking", which is the screen saying something untrue. It rides its own
+ *     list, so the client can head it honestly.
+ *
+ * Null-safe on the way through (D6): every value here comes off a stored blob,
+ * so a truncated write loses this section rather than the whole board. */
+export function projectOpenTrace(raw: { date?: string; generatedAt?: number; entries?: OpenTraceEntry[] } | null) {
+  if (!raw) return null
+  const rows = arr<OpenTraceEntry>(raw.entries).filter(e => e && typeof e.sym === 'string' && (e.side === 'long' || e.side === 'short'))
+  // oldest call date first (an absent one sorts last — a dated call outranks it
+  // as "the original"), ties broken by the blob's own order so the walk is stable
+  const ageKey = (e: OpenTraceEntry) => (typeof e.callDate === 'string' && e.callDate ? e.callDate : '￿')
+  const byAge = rows.map((row, i) => ({ row, i })).sort((a, b) => ageKey(a.row).localeCompare(ageKey(b.row)) || a.i - b.i)
+  const keptPerCall = new Map<string, OpenTraceEntry[]>()
+  const keep = new Set<number>()
+  for (const { row, i } of byAge) {
+    const key = `${row.sym}|${row.side}`
+    const already = keptPerCall.get(key) ?? []
+    if (already.some(k => sameCall(k, row))) continue // the same call, re-issued
+    already.push(row)
+    keptPerCall.set(key, already)
+    keep.add(i)
+  }
+  // the blob's own order for what survives — the dedup decides WHICH rows, never
+  // how the reader's list is sorted
+  const survivors = rows.filter((_, i) => keep.has(i))
+  const isClosed = (e: OpenTraceEntry) => e.status === 'stopped' || e.status === 'target'
+  return {
+    date: raw.date ?? null,
+    generatedAt: raw.generatedAt ?? null,
+    entries: survivors.filter(e => !isClosed(e)),
+    closed: survivors.filter(isClosed),
+  }
+}
+
 /** ?view=board — what Today/Board render: ~10 reads instead of ~50. */
 async function viewBoard() {
   const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration, predIndex, missLedgerBlob, openTrace, videoExtracts] = await Promise.all([
@@ -170,8 +235,10 @@ async function viewBoard() {
     blobAppStore.read<string[]>('predictions-index'),
     blobAppStore.read(MISS_LEDGER_KEY),
     // the open book: yesterday's still-open calls walked against closes —
-    // Today renders them as "open calls, still walking" (owner iteration 2)
-    blobAppStore.read('open-trace'),
+    // Today renders them as "open calls, still walking" (owner iteration 2).
+    // Projected, not served raw: see projectOpenTrace (one row a call, closed
+    // rows in their own list).
+    blobAppStore.read<{ date?: string; generatedAt?: number; entries?: OpenTraceEntry[] }>('open-trace'),
     // …and the tracked channels' week, which Today pairs name-by-name with the
     // engine's own stance (owner request)
     blobAppStore.read('video-extracts'),
@@ -258,7 +325,7 @@ async function viewBoard() {
     riskState: riskState ?? null,
     referenceBase: calibration?.referenceBase ?? null,
     yesterday,
-    openTrace: openTrace ?? null,
+    openTrace: projectOpenTrace(openTrace ?? null),
     channelPicks: channelPicks(videoExtracts),
   }
 }
