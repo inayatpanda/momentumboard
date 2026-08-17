@@ -12,7 +12,7 @@ import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
 import { writeSlice } from '../lib/store'
 import type { CongressTrade, InsiderCluster, NewsDeskItem, getCongress } from '../lib/api'
-import Intel from './Intel'
+import Intel, { daysLate, orderClusters } from './Intel'
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
@@ -324,6 +324,151 @@ describe('Intel', () => {
       await writeSlice('intel:social', { discoveries: [], alsoLoud: [], pulse: [], at: Date.now() })
       withRouter()
       expect(await screen.findByText(/nothing loud/i)).toBeInTheDocument()
+    })
+  })
+})
+
+// VISIBILITY WAVE (2026-08-17) — four things the live desk read wrong: "F 1
+// buyers $149K" at the top of a section headed CLUSTER, "SPDR S&amp;P 500 ETF
+// Trust" in the pulse, "Most bought: GOOGL (5) · SPGI (4) · CHRW (6)", and a
+// column of bare indigo score pills with no key anywhere on the page.
+describe('Intel — the feeds say what they mean', () => {
+  describe('insider clusters', () => {
+    it('counts one buyer in the singular', async () => {
+      await writeSlice('intel:insiders', { clusters: [mkCluster({ symbol: 'F', buyers: 1, totalValueUsd: 149_000, names: ['THORNTON JOHN L'] })], asOf: 1 })
+      withRouter()
+      const row = (await screen.findByRole('link', { name: 'F' })).closest('.itl-feed-row') as HTMLElement
+      expect(within(row).getByText('1 buyer')).toBeInTheDocument()
+      expect(within(row).queryByText('1 buyers')).not.toBeInTheDocument()
+    })
+
+    it('says a lone buyer is not a cluster, and dims the row that says so', async () => {
+      await writeSlice('intel:insiders', { clusters: [mkCluster({ symbol: 'F', buyers: 1 })], asOf: 1 })
+      withRouter()
+      const row = (await screen.findByRole('link', { name: 'F' })).closest('.itl-feed-row') as HTMLElement
+      expect(row.textContent).toMatch(/1 buyer\s*— not yet a cluster/)
+      expect(row.classList.contains('itl-feed-lone')).toBe(true)
+    })
+
+    describe('orderClusters', () => {
+      it('sends every lone buyer to the end, keeping the server order inside each group', () => {
+        const rows = [
+          mkCluster({ symbol: 'F', buyers: 1 }),
+          mkCluster({ symbol: 'EVMN', buyers: 2 }),
+          mkCluster({ symbol: 'JACK', buyers: 1 }),
+          mkCluster({ symbol: 'NVDA', buyers: 4 }),
+        ]
+        expect(orderClusters(rows).map(c => c.symbol)).toEqual(['EVMN', 'NVDA', 'F', 'JACK'])
+      })
+
+      it('does not mutate the slice it was handed', () => {
+        const rows = [mkCluster({ symbol: 'F', buyers: 1 }), mkCluster({ symbol: 'NVDA', buyers: 4 })]
+        orderClusters(rows)
+        expect(rows.map(c => c.symbol)).toEqual(['F', 'NVDA'])
+      })
+    })
+
+    it('paints the real clusters above the lone buyers on screen', async () => {
+      await writeSlice('intel:insiders', {
+        clusters: [mkCluster({ symbol: 'F', buyers: 1 }), mkCluster({ symbol: 'NVDA', buyers: 4 })],
+        asOf: 1,
+      })
+      withRouter()
+      await screen.findByRole('link', { name: 'NVDA' })
+      const syms = [...document.querySelectorAll('#insiders .itl-feed-sym')].map(a => a.textContent)
+      expect(syms).toEqual(['NVDA', 'F'])
+    })
+  })
+
+  describe('the social pulse', () => {
+    it('decodes the entities the feed left in a company name', async () => {
+      await writeSlice('intel:social', {
+        discoveries: [{ sym: 'IVV', companyName: 'iShares Core S&amp;P 500', opinion: 'Tracking the S&amp;P.', redditRank: null, redditMentions: null, surging: false, surgeMultiple: null, stocktwits: false, channelNet: null, sources: 1, onWatchlist: false, capUsdM: null }],
+        alsoLoud: [],
+        pulse: [{ sym: 'SPY', name: 'SPDR S&amp;P 500 ETF Trust', redditRank: 1, redditMentions: 90, surging: false, surgeMultiple: null, stocktwits: false, channelNet: null, sources: 1, onWatchlist: false }],
+        at: Date.now(),
+      })
+      withRouter()
+      expect(await screen.findByText('SPDR S&P 500 ETF Trust')).toBeInTheDocument()
+      expect(screen.getByText('iShares Core S&P 500')).toBeInTheDocument()
+      expect(screen.getByText('Tracking the S&P.')).toBeInTheDocument()
+      expect(document.body.textContent).not.toContain('&amp;')
+    })
+  })
+
+  describe('congressional trades', () => {
+    it('ranks the most-bought roll-up by the number it prints', async () => {
+      await seedCongress({
+        trades: [mkTrade()],
+        aggregates: {
+          topTickers: [
+            { symbol: 'GOOGL', buys: 5, sells: 0 },
+            { symbol: 'SPGI', buys: 4, sells: 0 },
+            { symbol: 'CHRW', buys: 6, sells: 0 },
+          ],
+        } as never,
+      })
+      withRouter()
+      const line = await screen.findByText(/most bought/i)
+      expect(line.textContent).toContain('CHRW (6) · GOOGL (5) · SPGI (4)')
+    })
+
+    describe('daysLate', () => {
+      it('measures the overrun past the 45-day window, not the whole gap', () => {
+        expect(daysLate('2026-01-09', '2026-08-14')).toBe(172) // 217d gap
+      })
+
+      it('is null inside the window, and on the boundary itself', () => {
+        expect(daysLate('2026-08-01', '2026-08-12')).toBeNull()
+        expect(daysLate('2026-06-28', '2026-08-12')).toBeNull() // exactly 45d
+      })
+
+      it('is null when a date is missing or unparseable', () => {
+        expect(daysLate('', '2026-08-12')).toBeNull()
+        expect(daysLate('2026-08-01', 'nonsense')).toBeNull()
+      })
+    })
+
+    it('cues a late watchlist filing with the overrun, and carries the arithmetic in its title', async () => {
+      await seedCongress({
+        trades: [mkTrade()],
+        watchlistHits: [mkTrade({ politician: 'Shri Thanedar', symbol: 'AAPL', side: 'sell', traded: '2026-01-09', filed: '2026-08-14' })],
+      })
+      withRouter()
+      const cue = await screen.findByText('172d late')
+      expect(cue.getAttribute('title')).toMatch(/217d after the trade/)
+      expect(cue.getAttribute('title')).toMatch(/allows 45/)
+    })
+
+    it('leaves a filing inside the window uncued', async () => {
+      await seedCongress({ trades: [mkTrade()], watchlistHits: [mkTrade({ traded: '2026-08-01', filed: '2026-08-12' })] })
+      withRouter()
+      await screen.findByText(/on your watchlist/i)
+      expect(screen.queryByText(/d late$/)).not.toBeInTheDocument()
+    })
+
+    it('never cues the general feed — only the reader’s own names', async () => {
+      await seedCongress({ trades: [mkTrade({ traded: '2026-01-09', filed: '2026-08-14' })], watchlistHits: [] })
+      withRouter()
+      await screen.findByText('Jane Doe')
+      expect(screen.queryByText(/d late$/)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('the news desk', () => {
+    it('says what the pill on a headline is, once, in a line above the list', async () => {
+      await writeSlice('intel:news', [mkNews(0)])
+      withRouter()
+      expect(await screen.findByText(/the pill is its importance score, 0–100/i)).toBeInTheDocument()
+    })
+
+    it('gives every score pill the same hover key', async () => {
+      await writeSlice('intel:news', [mkNews(0), mkNews(1)])
+      withRouter()
+      await screen.findByText('Headline 0')
+      const pills = [...document.querySelectorAll('#news .pill.accent.num')]
+      expect(pills).toHaveLength(2)
+      for (const p of pills) expect(p.getAttribute('title')).toBe('triage score 0–100')
     })
   })
 })

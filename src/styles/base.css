@@ -1763,6 +1763,27 @@ p {
 .v2 .itl-feed-date {
   flex-shrink: 0;
 }
+/* the lone buyer: sorted to the end of the list and dimmed there, because the
+   section's heading says "cluster" and one officer is what its own intro calls
+   noise (visibility wave, 2026-08-17) */
+.v2 .itl-feed-row.itl-feed-lone .itl-feed-strong {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.v2 .itl-feed-note {
+  color: var(--text-dim);
+  font-style: italic;
+}
+/* how far past the STOCK Act's own window a watchlist filing came — dim, a
+   cue and not an accusation; the exact arithmetic rides in its title */
+.v2 .itl-late {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--warn);
+  flex-shrink: 0;
+}
 .v2 .itl-feed-names {
   flex-basis: 100%;
   font-size: 12px;
