@@ -122,6 +122,48 @@ async function bumpAskCount(auth: { level: string; ns: string; house?: boolean }
   return null
 }
 
+/** How deep each mover rail is served. The Movers page pages FORTY rows and the
+ * board served TWELVE, so "Show more" was furniture; Yahoo's predefined
+ * screeners are asked for 25 (lib/screener's own default) and 25 is now what
+ * rides out. */
+export const MOVERS_DEPTH = 25
+
+/** How many rows per rail get the engine's stage read. The stage costs a
+ * per-symbol candle fetch, so it stays on the same upstream budget as the old
+ * twelve-deep payload: the rows a reader sees before "Show more" are read, the
+ * tail is served with `stage: null` rather than tripling the movers refresh. */
+export const MOVERS_STAGE_DEPTH = 12
+
+/** THE SIGN OF THE MOVE DECIDES THE RAIL — not which screener the row arrived in.
+ *
+ * Yahoo's `day_gainers` / `day_losers` membership is noisy: the live board on
+ * 2026-08-17 opened its LOSERS rail with MAAS +5.6% and LB +4.5%, and carried
+ * QNT −7.2% among the gainers. Those rows were not mislabelled by us — they came
+ * that way, and were served raw. So membership is discarded here and every row
+ * is re-partitioned by its OWN `changePct`: a row whose number contradicts the
+ * list it arrived in is moved to the side its number puts it on, and a row with
+ * no number at all (null, or a flat 0) is on neither side and is dropped.
+ *
+ * The two screeners overlap, so the pool is deduped by symbol first, keeping the
+ * record with the larger absolute move — that also settles the case where the
+ * two lists disagree about a symbol's sign, without it appearing on both rails. */
+export function partitionMovers<T extends { sym: string; changePct: number | null }>(
+  rows: T[],
+  depth = MOVERS_DEPTH,
+): { gainers: T[]; losers: T[] } {
+  const best = new Map<string, T>()
+  for (const r of rows) {
+    if (r.changePct == null || !Number.isFinite(r.changePct) || r.changePct === 0) continue
+    const prev = best.get(r.sym)
+    if (!prev || Math.abs(r.changePct) > Math.abs(prev.changePct as number)) best.set(r.sym, r)
+  }
+  const all = [...best.values()]
+  return {
+    gainers: all.filter(r => (r.changePct as number) > 0).sort((a, b) => (b.changePct as number) - (a.changePct as number)).slice(0, depth),
+    losers: all.filter(r => (r.changePct as number) < 0).sort((a, b) => (a.changePct as number) - (b.changePct as number)).slice(0, depth),
+  }
+}
+
 export async function routeRequest(
   url: URL,
   headers: Headers,
@@ -153,13 +195,19 @@ export async function routeRequest(
     if (hit) return json(200, { ok: true, data: hit })
     const { fetchScreen } = await import('./lib/screener')
     const [gainersAll, losersAll, activesAll] = await Promise.all([fetchScreen('day_gainers'), fetchScreen('day_losers'), fetchScreen('most_actives')])
-    const [gainers, losers, actives] = [gainersAll.slice(0, 12), losersAll.slice(0, 12), activesAll.slice(0, 12)]
+    // BOTH mover screeners are pooled and re-partitioned by the sign of each
+    // row's own move (see partitionMovers): the lists' membership is noisy and
+    // serving it raw put risers at the top of the Losers rail. `most_actives`
+    // is a different question — the day's volume, whichever way it went — so it
+    // rides through unpartitioned, just deeper.
+    const { gainers, losers } = partitionMovers([...gainersAll, ...losersAll])
+    const actives = activesAll.slice(0, MOVERS_DEPTH)
     // the engine's stage read per name — a big loser that's a falling knife and
     // one basing for a turn are different trades. Candle cache is shared with
     // the engine, per-symbol fail-soft, and the whole payload caches 10 min.
     const { cachedCandles } = await import('./lib/marketCache')
     const { technicalStage } = await import('../../shared/technicals')
-    const uniq = [...new Set([...gainers, ...losers, ...actives].map(r => r.sym))]
+    const uniq = [...new Set([...gainers.slice(0, MOVERS_STAGE_DEPTH), ...losers.slice(0, MOVERS_STAGE_DEPTH), ...actives.slice(0, MOVERS_STAGE_DEPTH)].map(r => r.sym))]
     const stages = new Map<string, string | null>()
     for (let i = 0; i < uniq.length; i += 8) {
       await Promise.all(
