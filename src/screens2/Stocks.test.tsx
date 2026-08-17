@@ -39,6 +39,10 @@ vi.mock('../lib/api', async () => {
   }
 })
 vi.mock('../lib/configMirror', () => ({ mirrorConfig: vi.fn() }))
+// The live ticker is its own tested machinery (useLiveQuotes.test.tsx) — here
+// it is a controllable map so the WIRING can be asserted without fake timers.
+const liveQuotesMock = vi.hoisted(() => vi.fn(() => ({}) as Record<string, unknown>))
+vi.mock('../lib/useLiveQuotes', () => ({ useLiveQuotes: liveQuotesMock }))
 // The crypto wire reads the SAME `board` slice Today and the board column do —
 // rejecting by default for the same reason as above, so every case below paints
 // from whatever the test seeded into Dexie and nothing else.
@@ -146,6 +150,7 @@ function intersect(el: Element) {
 beforeEach(async () => {
   await Promise.all([db.watchlist.clear(), db.slices.clear(), db.quotes.clear(), db.candles.clear()])
   vi.clearAllMocks()
+  liveQuotesMock.mockReturnValue({}) // clearAllMocks keeps implementations — reset the ticker to quiet
   observed = []
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
@@ -222,6 +227,18 @@ describe('Stocks', () => {
   })
 
   describe('watchlist rows', () => {
+    // owner 2026-08-17: "are the prices of stocks being gathered live now?" —
+    // the market-hours ticker (useLiveQuotes) now runs on the WATCHLIST too,
+    // not just Today's call cards, and its fresher row beats the slice's.
+    it('prefers the live ticker’s quote over the slice’s when both exist', async () => {
+      liveQuotesMock.mockReturnValue({ NVDA: mkQuote('NVDA', { price: 129.99, changePct: 0.5 }) })
+      await db.watchlist.put({ symbol: 'NVDA', addedAt: 1, riskClass: 'normal' })
+      await writeSlice('quotes:NVDA', [mkQuote('NVDA', { price: 128.4, changePct: -1.23 })])
+      withRouter()
+      expect(await screen.findByText('$129.99')).toBeInTheDocument()
+      expect(screen.queryByText('$128.40')).not.toBeInTheDocument()
+    })
+
     it('renders from seeded Dexie watchlist plus a seeded quotes slice', async () => {
       await db.watchlist.bulkPut([
         { symbol: 'NVDA', addedAt: 1, riskClass: 'normal' },

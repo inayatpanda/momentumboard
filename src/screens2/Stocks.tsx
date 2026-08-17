@@ -37,6 +37,7 @@ import { SessionLine } from './parts/SessionLine'
 import { isDeskWidth } from '../shell/DeskLayout'
 import { sectorSign, SectorTileBody } from './parts/SectorTile'
 import { CryptoWire } from './parts/CryptoWire'
+import { useLiveQuotes } from '../lib/useLiveQuotes'
 
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
 
@@ -171,7 +172,14 @@ function SectorsRail() {
 function WatchlistRows({ items, onRemove }: { items: WatchItem[]; onRemove: (sym: string) => void }) {
   const symbols = items.map(i => i.symbol)
   const { data: quotes } = useSlice(`quotes:${symbols.join(',')}`, () => getQuotes(symbols))
+  // the market-hours ticker (owner 2026-08-17: "are the prices of stocks being
+  // gathered live now?"): 45s revalidation while visible and the market is
+  // open, same gates as Today's call cards. Its row is fresher than the
+  // slice's own paint, so it wins when present.
+  const live = useLiveQuotes(symbols)
   const quoteFor = (sym: string): Quote | null => {
+    const fresh = live[sym.toUpperCase()]
+    if (fresh) return fresh
     const i = symbols.indexOf(sym)
     return i === -1 ? null : (quotes?.[i] ?? null)
   }
