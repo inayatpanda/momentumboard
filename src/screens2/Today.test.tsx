@@ -16,6 +16,7 @@ import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
 import { unsizedReason } from '../lib/boardTaxonomy'
 import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { londonToday } from '../lib/londonDay'
+import { resetSeenMarks, writeSeenMarks } from '../lib/lastSeen'
 import type { Quote } from '../../shared/types'
 import { CallCard, entryDistance } from './parts/CallCard'
 import { ChannelPicksStrip } from './parts/ChannelPicksStrip'
@@ -91,7 +92,8 @@ const mkBoardData = (board: EnginePrediction[], yesterday: BoardSlice['yesterday
 })
 
 beforeEach(async () => {
-  await db.slices.clear()
+  await Promise.all([db.slices.clear(), db.quotes.clear(), db.settings.clear()])
+  resetSeenMarks() // the new-since snapshot is module-level and outlives a test
 })
 
 describe('CallCard', () => {
@@ -705,6 +707,33 @@ describe('Today', () => {
     // …and the fetch never settles, so the busy bar is still up
     expect(await screen.findByRole('status', { name: /refreshing/i })).toBeInTheDocument()
     expect(screen.getByText('NVDA')).toBeInTheDocument() // the cached paint is untouched
+  })
+
+  // NEW SINCE THE LAST VISIT (dynamism wave, feature 7). Keyed on the board's
+  // own generatedAt — a re-fetch of the same morning's board is not new.
+  it('dots the heading when the board itself turned over since the last visit', async () => {
+    const data = mkBoardData([mkRow()])
+    data.board!.generatedAt = Date.parse('2026-08-17T05:42:00Z')
+    await writeSeenMarks({ boardGeneratedAt: Date.parse('2026-08-14T05:40:00Z'), newsTopAt: null })
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByLabelText(/new board since your last visit/i)).toBeInTheDocument()
+  })
+
+  it('does not dot the same board seen again — nor anything at all on a first visit', async () => {
+    const data = mkBoardData([mkRow()])
+    data.board!.generatedAt = Date.parse('2026-08-17T05:42:00Z')
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    const { unmount } = withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/new board/i)).not.toBeInTheDocument() // first visit
+    unmount()
+
+    resetSeenMarks()
+    await writeSeenMarks({ boardGeneratedAt: Date.parse('2026-08-17T05:42:00Z'), newsTopAt: null })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/new board/i)).not.toBeInTheDocument()
   })
 
   // THREE HEADLINES (dynamism wave, feature 6), at the seam: the strip's own

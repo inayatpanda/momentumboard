@@ -17,6 +17,7 @@
 import { Link } from 'wouter'
 import { getNewsDesk } from '../../lib/api'
 import { decodeEntities, relativeStamp } from '../../lib/format'
+import { countNewSince, useNoteSeen, useSeenBaseline } from '../../lib/lastSeen'
 import { useSlice } from '../../lib/useSlice'
 
 const HEADLINE_CAP = 3
@@ -34,11 +35,21 @@ export function TodayHeadlines({ now }: { now?: number }) {
   // NEWEST FIRST, asserted rather than assumed of the server — the same guard
   // Intel's news section states: a re-triaged or merged feed can arrive out of
   // order, and an out-of-order dated list is worse than an undated one.
-  const rows = data ? [...data].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, HEADLINE_CAP) : []
+  const sorted = data ? [...data].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)) : []
+  const rows = sorted.slice(0, HEADLINE_CAP)
+  // NEW SINCE THE LAST VISIT (dynamism wave, feature 7): counted across the
+  // whole desk, not just the three shown — "4 new" is a reason to open Intel,
+  // "3 new" every time would not be.
+  const baseline = useSeenBaseline()
+  const newCount = countNewSince(sorted.map(i => i.at), baseline?.newsTopAt ?? null)
+  useNoteSeen({ newsTopAt: sorted[0]?.at ?? null })
   if (rows.length === 0) return null
   return (
     <section className="th-strip" aria-label="Headlines">
-      <p className="sec-label">Headlines — the desk's newest</p>
+      <p className="sec-label">
+        Headlines — the desk's newest
+        {newCount > 0 && <span className="pill accent th-new">{newCount} new</span>}
+      </p>
       <div className="card th-list">
         {rows.map((item, i) => (
           <Link key={`${item.url}-${i}`} href="/intel#news" className="th-row">

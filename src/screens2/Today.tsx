@@ -10,6 +10,7 @@
 // contract, useSlice.ts).
 
 import { useSlice } from '../lib/useSlice'
+import { isNewSince, useNoteSeen, useSeenBaseline } from '../lib/lastSeen'
 import { useLiveQuotes } from '../lib/useLiveQuotes'
 import { usePullRefresh } from '../lib/usePullRefresh'
 import { getBoardSlice } from '../lib/apiViews'
@@ -73,12 +74,19 @@ export default function Today() {
   // the fold are watching, not waiting on a price.
   const liveSyms = [...new Set([...sized, ...rows.filter(r => r.wildcard)].map(r => r.sym))]
   const liveQuotes = useLiveQuotes(liveSyms)
+  // …and whether any of this is NEW to the reader (dynamism wave, feature 7).
+  const seen = useSeenBaseline()
+  const boardIsNew = isNewSince(blob?.generatedAt, seen?.boardGeneratedAt ?? null)
+  useNoteSeen({ boardGeneratedAt: blob?.generatedAt ?? null })
 
   return (
     <div className="today">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
       <div className="today-head">
         <h1>Today</h1>
+        {/* the board itself turned over since the last visit (dynamism wave) —
+            keyed on the board's own generatedAt, never on when it was fetched */}
+        {boardIsNew && <span className="new-dot" aria-label="New board since your last visit" />}
         {blob && <span className={`pill ${blob.regime === 'green' ? 'accent' : ''}`}>{blob.regime}</span>}
       </div>
       {/* WHEN the reader is (dynamism wave): the session's own state, ticking,

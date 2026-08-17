@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../../lib/db'
+import { resetSeenMarks, writeSeenMarks } from '../../lib/lastSeen'
 import { writeSlice } from '../../lib/store'
 import type { NewsDeskItem } from '../../lib/api'
 import { TodayHeadlines } from './TodayHeadlines'
@@ -31,7 +32,8 @@ const mkItem = (o: Partial<NewsDeskItem> = {}): NewsDeskItem => ({
 const withRouter = (ui: React.ReactElement) => render(<Router base="/app" hook={memoryLocation({ path: '/app/' }).hook}>{ui}</Router>)
 
 beforeEach(async () => {
-  await db.slices.clear()
+  await Promise.all([db.slices.clear(), db.settings.clear()])
+  resetSeenMarks() // the in-memory snapshot is module-level and outlives a test
 })
 
 describe('TodayHeadlines', () => {
@@ -67,6 +69,27 @@ describe('TodayHeadlines', () => {
     withRouter(<TodayHeadlines now={NOW} />)
     const row = await screen.findByRole('link', { name: /chipmaker lifts guidance/i })
     expect(row).toHaveAttribute('href', '/app/intel#news')
+  })
+
+  // NEW SINCE THE LAST VISIT (dynamism wave, feature 7)
+  it('counts what the desk took in since the last visit — across the whole desk, not the three shown', async () => {
+    await writeSeenMarks({ boardGeneratedAt: null, newsTopAt: Math.floor(Date.parse('2026-08-17T09:00:00Z') / 1000) })
+    await writeSlice('intel:news', [
+      mkItem({ title: 'A', at: Math.floor(Date.parse('2026-08-17T11:30:00Z') / 1000), url: 'https://x.com/1' }),
+      mkItem({ title: 'B', at: Math.floor(Date.parse('2026-08-17T10:30:00Z') / 1000), url: 'https://x.com/2' }),
+      mkItem({ title: 'C', at: Math.floor(Date.parse('2026-08-17T09:30:00Z') / 1000), url: 'https://x.com/3' }),
+      mkItem({ title: 'D', at: Math.floor(Date.parse('2026-08-17T09:20:00Z') / 1000), url: 'https://x.com/4' }),
+      mkItem({ title: 'E', at: Math.floor(Date.parse('2026-08-17T08:00:00Z') / 1000), url: 'https://x.com/5' }),
+    ])
+    withRouter(<TodayHeadlines now={NOW} />)
+    expect(await screen.findByText('4 new')).toBeInTheDocument()
+  })
+
+  it('says nothing about newness on a first visit', async () => {
+    await writeSlice('intel:news', [mkItem()])
+    withRouter(<TodayHeadlines now={NOW} />)
+    expect(await screen.findByLabelText('Headlines')).toBeInTheDocument()
+    expect(screen.queryByText(/\bnew\b/)).not.toBeInTheDocument()
   })
 
   it('falls back to the URL’s host when the desk stored no outlet, and undoes stored entities', async () => {

@@ -371,6 +371,21 @@ p {
   font-size: 11.5px;
   color: var(--text-dim);
 }
+/* NEW SINCE THE LAST VISIT (dynamism wave). A count beside the headlines and a
+   single dot beside Today's heading — both keyed on content identity, both
+   silent on a first visit. The dot takes the flex row's slack so the regime
+   pill stays hard right where it has always been. */
+.v2 .pill.th-new {
+  margin-left: 8px;
+  font-size: 11px;
+}
+.v2 .new-dot {
+  width: 7px;
+  height: 7px;
+  margin-right: auto;
+  border-radius: 999px;
+  background: var(--accent);
+}
 
 /* THE LIVE LINE + THE PRICE FLASH (dynamism wave).
    The card's live line sits under the levels it is measured against, dimmer
