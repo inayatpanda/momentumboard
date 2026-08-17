@@ -18,6 +18,8 @@ const Svg = ({ d }: { d: string }) => (
 const IconGate = () => <Svg d="M4 21V9l8-6 8 6v12M4 21h16M9 21v-6h6v6M4 9h16" />
 const IconNews = () => <Svg d="M4 5h13v14H6a2 2 0 01-2-2V5zm13 4h3v8a2 2 0 01-2 2M7 9h7M7 13h7M7 17h4" />
 const IconCalendar = () => <Svg d="M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zM8 3v4m8-4v4M3 10h18" />
+/** A speech bubble: The street is what other people said. */
+const IconQuote = () => <Svg d="M21 12a8 8 0 01-8 8H8l-4 3v-4a8 8 0 015-15h4a8 8 0 018 8zM9 11h6M9 15h4" />
 const IconGear = () => (
   <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="12" cy="12" r="3" />
@@ -87,6 +89,7 @@ export default function More() {
           is these pages' only home. */}
       <div className="menu-group on-rail">
         <div className="menu-title">Reading</div>
+        <Row href="/more/street" icon={<IconQuote />} tint="accent" label="The street" sub="What the channels said, and what the engine thinks" />
         <Row href="/more/paper" icon={<IconNews />} label="The paper" sub="Today's edition, and the archive" />
         <Row href="/more/research" icon={<IconNews />} tint="accent" label="Research" sub="AI reads, pick persistence, the scorecard" />
         <Row href="/more/calendar" icon={<IconCalendar />} tint="amber" label="Calendar" sub="Every day's paper, picks and notes" />

@@ -19,6 +19,9 @@ function Harness({ path }: { path: string }) {
         <Route path="/more/gates">
           <h1>Gates stub</h1>
         </Route>
+        <Route path="/more/street">
+          <h1>Street stub</h1>
+        </Route>
         <Route path="/more/research">
           <h1>Research stub</h1>
         </Route>
@@ -46,6 +49,7 @@ describe('More', () => {
     expect(screen.getByText('Reading')).toBeInTheDocument()
     expect(screen.getByText('App')).toBeInTheDocument()
     expect(screen.getByText('Gates & learning')).toBeInTheDocument()
+    expect(screen.getByText('The street')).toBeInTheDocument()
     expect(screen.getByText('Research')).toBeInTheDocument()
     expect(screen.getByText('Calendar')).toBeInTheDocument()
     expect(screen.getByText('Settings')).toBeInTheDocument()
@@ -53,15 +57,16 @@ describe('More', () => {
 
   // Owner (2026-08-17, with a screenshot): "Gates & learning is present twice,
   // outside and inside More." Nothing may be listed twice on one screen: the
-  // Reading group holds exactly the two rail-promoted pages, so at rail widths
-  // CSS hides that whole group (jsdom applies no stylesheet — the class the
-  // media query keys on IS the honest assertion, same form as rail-only's).
+  // Reading group holds exactly the rail-promoted pages, so at rail widths CSS
+  // hides that whole group (jsdom applies no stylesheet — the class the media
+  // query keys on IS the honest assertion, same form as rail-only's).
   it('marks the Reading group on-rail so the rail widths hide the duplicate listings', () => {
     render(<Harness path="/app/more" />)
     const reading = screen.getByText('Reading').closest('.menu-group')!
     expect(reading).toHaveClass('on-rail')
-    // Gates & learning is DEMOTED from the rail — More is its only home, so
-    // its group must stay visible at every width; App likewise
+    // The street joined that group (owner 2026-08-17) the same way the others
+    // did. Gates & learning is DEMOTED from the rail — More is its only home,
+    // so its group must stay visible at every width; App likewise
     expect(screen.getByText('The engine').closest('.menu-group')!).not.toHaveClass('on-rail')
     expect(screen.getByText('App').closest('.menu-group')!).not.toHaveClass('on-rail')
   })
@@ -70,6 +75,12 @@ describe('More', () => {
     render(<Harness path="/app/more" />)
     fireEvent.click(screen.getByText('Gates & learning'))
     expect(screen.getByRole('heading', { name: 'Gates stub' })).toBeInTheDocument()
+  })
+
+  it('navigates to The street', () => {
+    render(<Harness path="/app/more" />)
+    fireEvent.click(screen.getByText('The street'))
+    expect(screen.getByRole('heading', { name: 'Street stub' })).toBeInTheDocument()
   })
 
   it('navigates to Research', () => {

@@ -31,11 +31,14 @@ export const ROUTES: readonly RouteDef[] = [
   { path: '/stock/:sym', key: 'stocks', component: lazy(() => import('../screens2/StockPage')) as RouteDef['component'] },
   { path: '/intel', key: 'intel', label: 'Intel', component: lazy(() => import('../screens2/Intel')) },
   { path: '/record', key: 'record', label: 'Track record', component: lazy(() => import('../screens2/Record')) },
-  // the three promoted onto the desktop rail, BEFORE More so they read as
+  // the four promoted onto the desktop rail, BEFORE More so they read as
   // siblings of the ratified tabs rather than as an afterthought below it.
-  // Owner 2026-08-17 recut the trio: Gates & learning DEMOTED ("present
-  // twice, outside and inside More"), and the daily edition promoted into
-  // its own fresh tab in that slot ("move… just the Today paper").
+  // Owner 2026-08-17 recut the set twice: Gates & learning DEMOTED ("present
+  // twice, outside and inside More"), the daily edition promoted into its own
+  // fresh tab in that slot ("move… just the Today paper"), and then The street
+  // added ("all in a new page/tab altogether") — FIRST of the four, because it
+  // is the one the reader will open most.
+  { path: '/more/street', key: 'more', label: 'The street', railOnly: true, component: lazy(() => import('../screens2/Street2')) },
   { path: '/more/research', key: 'more', label: 'Research', railOnly: true, component: lazy(() => import('../screens2/Research2')) },
   { path: '/more/calendar', key: 'more', label: 'Calendar', railOnly: true, component: lazy(() => import('../screens2/Calendar2')) },
   { path: '/more/paper', key: 'more', label: 'The paper', railOnly: true, component: lazy(() => import('../screens2/Paper2')) },

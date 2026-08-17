@@ -30,25 +30,38 @@ describe('AppShell', () => {
     expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'More'])
   })
 
-  // …and the RAIL shows eight: the ratified five plus three promoted out of
-  // More. Owner 2026-08-17 recut the trio twice in one morning: Gates &
-  // learning DEMOTED ("present twice, outside and inside More"), and in its
-  // slot a fresh tab for the daily edition ("instead of Gates and learning…
-  // a new fresh tab, move… just the Today paper").
-  it('carries three rail-only entries — Research, Calendar, The paper; Gates demoted', () => {
+  // …and the RAIL shows nine: the ratified five plus four promoted out of
+  // More. Owner 2026-08-17 recut the set three times in one day: Gates &
+  // learning DEMOTED ("present twice, outside and inside More"), in its slot a
+  // fresh tab for the daily edition ("instead of Gates and learning… a new
+  // fresh tab, move… just the Today paper"), and then The street ("all in a
+  // new page/tab altogether") FIRST of the promoted — the most-visited of them.
+  it('carries four rail-only entries — The street, Research, Calendar, The paper; Gates demoted', () => {
     render(<AppShell locationHook={at('/')} />)
     const nav = screen.getByRole('navigation')
     const labels = [...nav.querySelectorAll('.v2-tab-label')].map(el => el.textContent?.trim())
-    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'Research', 'Calendar', 'The paper', 'More'])
+    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'The street', 'Research', 'Calendar', 'The paper', 'More'])
     const railOnly = [...nav.querySelectorAll('.v2-tab.rail-only .v2-tab-label')].map(el => el.textContent?.trim())
-    expect(railOnly).toEqual(['Research', 'Calendar', 'The paper'])
+    expect(railOnly).toEqual(['The street', 'Research', 'Calendar', 'The paper'])
   })
 
   it('the promoted entries link to their real routes', () => {
     render(<AppShell locationHook={at('/')} />)
     const nav = screen.getByRole('navigation')
     const hrefs = [...nav.querySelectorAll('.v2-tab.rail-only')].map(a => a.getAttribute('href'))
-    expect(hrefs).toEqual(['/app/more/research', '/app/more/calendar', '/app/more/paper'])
+    expect(hrefs).toEqual(['/app/more/street', '/app/more/research', '/app/more/calendar', '/app/more/paper'])
+  })
+
+  it('lights The street’s own rail row inside the page, with a glyph of its own', () => {
+    render(<AppShell locationHook={at('/more/street')} />)
+    const nav = screen.getByRole('navigation')
+    expect(nav).toHaveClass('on-promoted')
+    const street = [...nav.querySelectorAll('.v2-tab')].find(a => a.textContent?.includes('The street'))!
+    expect(street).toHaveClass('on')
+    expect(street).toHaveAttribute('aria-current', 'page')
+    // every rail glyph is distinct — a shared one makes two rows look like one
+    const glyphs = [...nav.querySelectorAll('.v2-tab-icon')].map(el => el.textContent?.trim())
+    expect(new Set(glyphs).size).toBe(glyphs.length)
   })
 
   it('a promoted page lights its own row, and marks the nav so the rail can dim the More parent', () => {
