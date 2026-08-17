@@ -840,6 +840,15 @@ p {
   color: var(--warn);
   font-weight: 600;
 }
+/* the week's stance FLIP (The street page's fuller row): warn tone, because a
+   set of channels that swung the other way in seven days is a fact about their
+   conviction — never a direction to trade */
+.v2 .pill.cp-shifted {
+  color: var(--warn);
+  font-size: 11px;
+  padding: 1px 8px;
+  margin-left: 8px;
+}
 /* the engine's answer rides the right edge — the whole point of the section is
    reading the second column straight down against the first */
 .v2 .cp-stance {
