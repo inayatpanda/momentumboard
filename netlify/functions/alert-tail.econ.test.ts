@@ -1,5 +1,9 @@
 // WHAT A FAILED ECONOMIC CALENDAR IS WORTH, IN SECONDS.
 //
+// (The econ leg lives in alert-tail.mts since the subrequest split — see that
+// handler's header. The behaviour under test is the caching decision, wherever
+// it runs.)
+//
 // Verified live 2026-08-17: `econ-calendar` held `[]` while the upstream served
 // ninety-six events. `fetchEconCalendar` swallowed every failure into an empty
 // array, and the caller cached whatever it got for six hours — so a single
@@ -43,8 +47,8 @@ describe('the econ calendar is never pinned by a failure', () => {
   }
 
   const tick = async () => {
-    const { default: alertCheck } = await import('./alert-check.mts')
-    return alertCheck(new Request('https://streetsignal.pages.dev/api/fn/alert-check', { method: 'POST', body: JSON.stringify({ next_run: new Date(NOW_MS + 300_000).toISOString() }) }))
+    const { default: alertTail } = await import('./alert-tail.mts')
+    return alertTail(new Request('https://streetsignal.pages.dev/api/fn/alert-tail', { method: 'POST', body: JSON.stringify({ next_run: new Date(NOW_MS + 900_000).toISOString() }) }))
   }
 
   beforeEach(async () => {
@@ -119,8 +123,9 @@ describe('the econ calendar is never pinned by a failure', () => {
     await tick()
     expect((await cachedEcon())!.ttlSec).toBe(600)
 
-    // eleven minutes later the cache row is dead and the feed is back
-    vi.setSystemTime(NOW_MS + 11 * 60_000)
+    // eleven minutes later the cache row is dead and the feed is back — past the
+    // tail's own 14-minute slot window too, so the next invocation really runs
+    vi.setSystemTime(NOW_MS + 15 * 60_000)
     seedWarmQuote()
     econReply = () => new Response(JSON.stringify([EVENT]), { headers: { 'content-type': 'application/json' } })
     await tick()

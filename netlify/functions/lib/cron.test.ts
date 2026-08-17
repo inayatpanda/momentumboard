@@ -64,7 +64,7 @@ describe('the job table', () => {
     .sort()
 
   it('carries every scheduled function Netlify runs', () => {
-    expect(scheduledOnDisk).toEqual(['alert-check', 'bulletin-evening', 'bulletin-premarket', 'congress-warm', 'ledger-snapshot', 'watchdog'])
+    expect(scheduledOnDisk).toEqual(['alert-check', 'alert-tail', 'bulletin-evening', 'bulletin-premarket', 'congress-warm', 'ledger-snapshot', 'watchdog'])
     for (const name of scheduledOnDisk) expect(CRON_JOBS.some(j => j.name === name), name).toBe(true)
   })
 
@@ -129,7 +129,8 @@ describe('jobsDueFor', () => {
     expect(jobsDueFor('*/5 * * * *', at('2026-08-13T12:45:00Z')).map(j => j.name)).toEqual(['alert-check', 'bulletin-premarket'])
     expect(jobsDueFor('*/5 * * * *', at('2026-08-13T18:10:00Z')).map(j => j.name)).toEqual(['alert-check', 'congress-warm'])
     expect(jobsDueFor('*/5 * * * *', at('2026-08-16T08:00:00Z')).map(j => j.name)).toEqual(['alert-check', 'ledger-snapshot'])
-    expect(jobsDueFor('*/15 * * * *', at('2026-08-13T07:15:00Z')).map(j => j.name)).toEqual(['watchdog'])
+    // the tail rides every quarter hour; the watchdog rides one of them
+    expect(jobsDueFor('*/15 * * * *', at('2026-08-13T07:15:00Z')).map(j => j.name)).toEqual(['alert-tail', 'watchdog'])
     expect(jobsDueFor('20 5 * * 1-5', at('2026-08-13T05:20:00Z')).map(j => j.name)).toEqual(['predict-background'])
   })
 
@@ -139,7 +140,8 @@ describe('jobsDueFor', () => {
   // healthy system because the 'morning paper' check has no tradingDay guard.
   it('does not run the watchdog on every quarter hour', () => {
     for (const t of ['2026-08-13T09:15:00Z', '2026-08-13T07:30:00Z', '2026-08-13T00:15:00Z', '2026-08-15T07:15:00Z' /* Saturday */]) {
-      expect(jobsDueFor('*/15 * * * *', at(t)).map(j => j.name), t).toEqual([])
+      // alert-tail is the quarter-hour job; the watchdog is not one of them
+      expect(jobsDueFor('*/15 * * * *', at(t)).map(j => j.name), t).toEqual(['alert-tail'])
     }
   })
 

@@ -5,15 +5,14 @@ import { fetchNews } from './lib/news'
 import { fetchVideos } from './lib/youtube'
 import { withDefaults } from '../../shared/channels'
 import { sendTelegram } from './lib/telegram'
-import { evaluateAlerts, flushBatch, emptyAlertState, type AlertState, type TickerSnapshot, type StopWatch, type AlertEvent } from '../../shared/alerts'
+import { evaluateAlerts, flushBatch, emptyAlertState, type AlertState, type StopWatch, type AlertEvent } from '../../shared/alerts'
 import type { AppConfig } from '../../shared/config'
 import type { Prediction } from '../../shared/engine/types'
-import { rsi } from '../../shared/indicators'
 import { avgDailyVolume, relativeVolume, sessionElapsedFraction, isMarketOpen } from '../../shared/rvol'
-import { detectSetups, regimeFromCandles } from '../../shared/setups'
+import { regimeFromCandles } from '../../shared/setups'
 import { exchangeFor } from '../../shared/symbols'
+import { buildSnapshots } from './lib/snapshots'
 import type { FlagCandidate, IntradayFlagsBlob } from './lib/intradayFlags'
-import type { EconEvent } from './lib/econCalendar'
 
 export default async (req: Request) => {
   // Public URL, no secret cron signal (audit C-1). Reject requests that are
@@ -46,42 +45,22 @@ export default async (req: Request) => {
 
   // gather market data in parallel; every branch is failure-isolated
   const symbols = [...new Set([...cfg.watchlist.map(w => w.symbol), ...positions.map(p => p.symbol)])].slice(0, 40)
-  const [snapshots, spy, qqq, news, videos] = await Promise.all([
-    Promise.all(
-      symbols.map(async (symbol): Promise<TickerSnapshot | null> => {
-        try {
-          const exchange = exchangeFor(symbol)
-          const open = isMarketOpen(exchange, nowSec)
-          const [quote, candles] = await Promise.all([cachedQuote(symbol, finnhubKey), cachedCandles(symbol)])
-          let rvol: number | null = null
-          let rsiVal: number | null = null
-          let setups: TickerSnapshot['setups'] = []
-          if (candles && candles.length > 25) {
-            const avg = avgDailyVolume(candles)
-            const todayVol = quote?.todayVolume ?? candles[candles.length - 1].v
-            if (avg) rvol = relativeVolume(todayVol, avg, sessionElapsedFraction(exchange, nowSec))
-            const r = rsi(candles.map(c => c.c))
-            rsiVal = r[r.length - 1]
-            setups = detectSetups(candles, rvol)
-          }
-          return { symbol, price: quote?.price ?? null, changePct: quote?.changePct ?? null, rvol, rsi: rsiVal, setups, marketOpen: open }
-        } catch (e) {
-          errors.push(`${symbol}: ${e}`)
-          return null
-        }
-      }),
-    ),
-    cachedCandles('SPY'),
-    cachedCandles('QQQ'),
-    fetchNews(symbols, finnhubKey, nowSec).catch(e => {
-      errors.push(`news: ${e}`)
-      return []
-    }),
-    fetchVideos(withDefaults(cfg.ytChannels), nowSec).catch(e => {
-      errors.push(`videos: ${e}`)
-      return []
-    }),
-  ])
+  // THE WIRES FIRST, so the batched cache read below overlaps them.
+  const newsP = fetchNews(symbols, finnhubKey, nowSec).catch(e => {
+    errors.push(`news: ${e}`)
+    return []
+  })
+  const videosP = fetchVideos(withDefaults(cfg.ytChannels), nowSec).catch(e => {
+    errors.push(`videos: ${e}`)
+    return []
+  })
+  // ONE READ FOR FORTY NAMES (lib/snapshots.ts). This loop used to spend two
+  // store reads a symbol — eighty subrequests out of an invocation's fifty
+  // before anything was computed, which is why 33 of 50 production runs ended
+  // on 'Too many subrequests'. `warm` is the batch's own answer, reused by the
+  // intraday-flag candidates below instead of asking for the same rows again.
+  const { snapshots, warm } = await buildSnapshots(symbols, finnhubKey, nowSec, { alsoWarm: ['SPY', 'QQQ'], onError: e => errors.push(e) })
+  const [spy, qqq, news, videos] = await Promise.all([warm.candles.get('SPY') ?? cachedCandles('SPY'), warm.candles.get('QQQ') ?? cachedCandles('QQQ'), newsP, videosP])
 
   // A virgin state means this is the first ever run: record everything as seen
   // but deliver nothing, or the first configured run would blast 30+ messages.
@@ -90,7 +69,7 @@ export default async (req: Request) => {
   const regime = spy && qqq ? regimeFromCandles(spy, qqq) : null
   const { events, state: afterEval, freshNews } = evaluateAlerts(
     { rules: cfg.rules, watchlist: symbols },
-    { tickers: snapshots.filter((s): s is TickerSnapshot => s !== null), regime, news, videos, nowSec, positions },
+    { tickers: snapshots, regime, news, videos, nowSec, positions },
     state,
   )
 
@@ -141,7 +120,7 @@ export default async (req: Request) => {
   // a rolling copy feeds the live scoreboard, monthly archives keep everything.
   const setupEvents = events.filter(e => e.meta?.kind === 'setup' && e.meta.price != null)
   if (setupEvents.length) {
-    const snapBySym = new Map(snapshots.filter((s): s is TickerSnapshot => s !== null).map(s => [s.symbol, s]))
+    const snapBySym = new Map(snapshots.map(s => [s.symbol, s]))
     const entries = setupEvents.map(e => ({
       symbol: e.symbol,
       setup: e.meta!.setup,
@@ -159,41 +138,21 @@ export default async (req: Request) => {
     await store.write(monthKey, archive)
   }
 
-  // queue AI video-watching for NEW videos worth the credits: Josh always,
-  // others only when the title names a watchlist ticker (cap enforced downstream)
-  const newVideos = videos.filter(v => !state.seenItems.includes(v.url))
-  // EVERY new video also lands in the inbox the Mac transcript runner polls
+  // EVERY new video lands in the inbox the Mac transcript runner polls
   // (/api/video-transcripts?pending=1) — the free rung that starves the Gemini
   // video-watch fallback. Unsliced on purpose: transcripts are wanted for all.
+  //
+  // RECORDING ONLY. Deciding which of them the paid rungs get, and queueing the
+  // work, moved to alert-tail.mts: the per-item enqueue was a read AND a write
+  // each, up to twenty subrequests a cycle out of an invocation's fifty, for
+  // work that nothing waits on. This inbox write is what the tail reads.
+  const newVideos = videos.filter(v => !state.seenItems.includes(v.url))
   try {
     const { recordInboxVideos } = await import('./lib/videoTranscriptStore')
     await recordInboxVideos(store, newVideos, nowSec)
   } catch {
     errors.push('video-inbox')
   }
-  const worthWatching = newVideos
-    .filter(v => v.channel === 'Stocks with Josh' || symbols.some(s => v.title.toUpperCase().includes(s.split('.')[0].split('-')[0])))
-    .slice(0, 2)
-  // Work items for the GitHub Actions queue worker (scripts/bg/drain-queue.mts,
-  // every 15 min) — the long jobs left Netlify when the plan dropped background
-  // functions. Same store, so enqueue here is one blob write; the worker calls
-  // the very same handler modules the HTTP kick used to reach.
-  const enqueueWork = async (kind: 'video' | 'dossier' | 'compose', body: unknown) => {
-    try {
-      const q = (await store.read<unknown[]>('work-queue')) ?? []
-      q.push({ id: crypto.randomUUID(), kind, body, at: nowSec, attempts: 0 })
-      await store.write('work-queue', q.slice(-100))
-    } catch {
-      errors.push(`${kind}-enqueue`)
-    }
-  }
-  const dispatch = (v: { url: string; title: string; channel: string }, mode: 'watch' | 'extract') =>
-    enqueueWork('video', { url: v.url, title: v.title, channel: v.channel, mode })
-  // depth tier: Gemini fully watches the few videos that earn it (202 returns instantly)
-  for (const v of worthWatching) await dispatch(v, 'watch')
-  // breadth tier: EVERY new video gets transcript+extraction for the consensus maths
-  // (free caption scrape needs no key; Supadata is the fallback when keyed)
-  for (const v of newVideos.slice(0, 8)) await dispatch(v, 'extract')
 
   // alert history for the in-app screen
   if (events.length) {
@@ -237,71 +196,27 @@ export default async (req: Request) => {
 
   // PERSIST WHAT WAS JUST DELIVERED, IMMEDIATELY (Cloudflare C-1).
   //
-  // Everything below — the macro sentinel, econ, call-cross, intraday flags,
-  // trending, the pundit bridge — costs subrequests, and on the free plan an
-  // invocation has FIFTY of them, spent by every fetch AND every D1 call alike.
-  // When the budget runs out mid-run the FINAL `alert-state` write throws too,
-  // the invocation dies, and the next tick reads the state as it was BEFORE
-  // these alerts went out: `ruleArmed` still armed, `seenItems` still short —
-  // so the reader's phone buzzes with the same alerts again. The delivery has
-  // already happened by this line and is not undoable, so the record of it must
-  // not be hostage to the rest of the run.
+  // Everything below — call-cross and the intraday flags — costs subrequests,
+  // and on the free plan an invocation has FIFTY of them, spent by every fetch
+  // AND every D1 call alike. When the budget runs out mid-run the FINAL
+  // `alert-state` write throws too, the invocation dies, and the next tick reads
+  // the state as it was BEFORE these alerts went out: `ruleArmed` still armed,
+  // `seenItems` still short — so the reader's phone buzzes with the same alerts
+  // again. The delivery has already happened by this line and is not undoable,
+  // so the record of it must not be hostage to the rest of the run.
   //
-  // The end-of-run write below stays: the legs after this point add their own
-  // `seenItems` keys and flush the digest queue, and those need persisting too.
-  // Two writes is one extra D1 call against re-notifying a reader — cheap.
+  // The end-of-run write below stays: the legs after this point flush the digest
+  // queue, and that needs persisting too. Two writes is one extra D1 call
+  // against re-notifying a reader — cheap.
+  //
+  // THE REST OF THE TAIL IS GONE FROM THIS INVOCATION (2026-08-17). The macro
+  // sentinel, the econ calendar, the video work queue, the trending snapshot and
+  // the pundit bridge now run in alert-tail.mts on the quarter-hour trigger,
+  // with their own fresh fifty — 33 of 50 production runs were ending on 'Too
+  // many subrequests' with the tail starved and two Telegram sends lost. What
+  // stays here is what decays inside ten minutes: rule and setup alerts, the
+  // news triage, level touches on live calls, and the intraday flag windows.
   await store.write('alert-state', afterEval)
-
-  // macro SHOCK sentinel: oil/gold/VIX/dollar/natgas one-day shocks and stretches
-  try {
-    const { MACRO_ASSETS, detectShock, detectStretch } = await import('./lib/macroEvents')
-    for (const asset of MACRO_ASSETS) {
-      const candles = await cachedCandles(asset.sym)
-      if (!candles) continue
-      const today = new Date(nowSec * 1000).toISOString().slice(0, 10)
-      const shock = detectShock(asset, candles)
-      const stretch = detectStretch(asset, candles)
-      const isoWeek = `${new Date(nowSec * 1000).getUTCFullYear()}-w${Math.ceil(new Date(nowSec * 1000).getUTCDate() / 7)}${new Date(nowSec * 1000).getUTCMonth()}`
-      const fire = async (evt: object, key: string, ping: string) => {
-        if (afterEval.seenItems.includes(key)) return
-        afterEval.seenItems.push(key)
-        await deliver(ping)
-        await enqueueWork('dossier', evt)
-      }
-      if (shock) await fire(shock, `shock:${asset.sym}:${today}`, `⚡ ${asset.name} ${shock.movePct > 0 ? '+' : ''}${shock.movePct}% today — building the event assessment now`)
-      else if (stretch) await fire(stretch, `stretch:${asset.sym}:${isoWeek}`, `🎈 ${asset.name} stretched to ${stretch.zScore}σ (RSI ${stretch.rsi}) — reversion assessment incoming`)
-    }
-  } catch (e) {
-    errors.push(`macro-sentinel: ${e}`)
-  }
-
-  // macro-event warnings: FOMC/CPI/NFP morning-of + 1h before (idempotent via seenItems keys)
-  try {
-    const { fetchEconCalendar, dueMacroWarnings } = await import('./lib/econCalendar')
-    const { getCached, setCached } = await import('./lib/cache')
-    let econ = await getCached<EconEvent[]>('econ-calendar')
-    if (!econ) {
-      // WHAT A FAILURE IS WORTH, IN SECONDS (verified live 2026-08-17). This
-      // used to cache whatever came back for six hours, and every failure came
-      // back as `[]` — so one refused request pinned an empty calendar in place
-      // and the macro sentinel went blind for six hours while the feed served
-      // ninety-six events. Real data keeps the full TTL; a failure (null) and a
-      // genuinely quiet week (empty) are both re-asked in ten minutes, which
-      // costs two ticks of this loop and nothing else.
-      const fetched = await fetchEconCalendar()
-      econ = fetched ?? []
-      await setCached('econ-calendar', econ, econ.length ? 21_600 : 600)
-    }
-    for (const w of dueMacroWarnings(econ, nowSec, afterEval.seenItems)) {
-      afterEval.seenItems.push(w.key)
-      await deliver(w.text)
-      const history = (await store.read<unknown[]>('alert-history')) ?? []
-      history.push({ text: w.text, tier: 'instant', at: nowSec })
-      await store.write('alert-history', history.slice(-200))
-    }
-  } catch (e) {
-    errors.push(`econ: ${e}`)
-  }
 
   // intraday level watch on OPEN ENGINE CALLS: the published stop/target is
   // hard execution advice, so a touch pings immediately — the close-based
@@ -322,7 +237,7 @@ export default async (req: Request) => {
     // only markets currently trading: outside hours the last trade is stale
     // and would just re-report yesterday's session
     const live = open.filter(p => isMarketOpen(exchangeFor(p.sym), nowSec))
-    const priceBySym = new Map(snapshots.filter((s): s is TickerSnapshot => s !== null && s.price != null).map(s => [s.symbol, s.price!]))
+    const priceBySym = new Map(snapshots.filter(s => s.price != null).map(s => [s.symbol, s.price!]))
     const missing = [...new Set(live.map(p => p.sym))].filter(s => !priceBySym.has(s)).slice(0, 60)
     await Promise.all(
       missing.map(async sym => {
@@ -360,15 +275,17 @@ export default async (req: Request) => {
       if (!(prior?.date === londonDate && prior.scans.some(s => s.window === window))) {
         const { technicalStage } = await import('../../shared/technicals')
         const board = (await store.read<{ date: string; board: Prediction[] }>('engine-board'))?.board ?? []
-        const snapBySym = new Map(snapshots.filter((s): s is TickerSnapshot => s !== null).map(s => [s.symbol, s]))
+        const snapBySym = new Map(snapshots.map(s => [s.symbol, s]))
         const todayISO = new Date(nowSec * 1000).toISOString().slice(0, 10)
 
         // one candidate = live quote + daily candles + (for board rows) engine levels.
-        // Quotes are 60s-cached and candles 900s-cached, so most are already warm.
+        // Quotes are 60s-cached and candles 900s-cached, so most are already warm
+        // — and for a watchlist name the batched read above ALREADY has both, so
+        // it is consulted first: sixty store reads in a flag window otherwise.
         const build = async (sym: string, lv: Partial<Pick<FlagCandidate, 'side' | 'entry' | 'stage' | 'watchOnly' | 'nearMiss' | 'observation' | 'published' | 'name'>> = {}): Promise<FlagCandidate | null> => {
           const exch = exchangeFor(sym)
           const snap = snapBySym.get(sym)
-          const [quote, candles] = await Promise.all([cachedQuote(sym, finnhubKey), cachedCandles(sym)])
+          const [quote, candles] = await Promise.all([warm.quotes.get(sym) ?? cachedQuote(sym, finnhubKey), warm.candles.get(sym) ?? cachedCandles(sym)])
           const price = quote?.price ?? snap?.price ?? null
           if (price == null || !Number.isFinite(price)) return null
           let rvol = snap?.rvol ?? null
@@ -447,57 +364,6 @@ export default async (req: Request) => {
     }
   } catch (e) {
     errors.push(`intraday-flags: ${e}`)
-  }
-
-  // intraday trending: watchlist movers + market-wide (Yahoo trending), snapshotted through the day
-  try {
-    const { getCached, setCached } = await import('./lib/cache')
-    let market = await getCached<{ sym: string; changePct: number | null }[]>('mkt-trending')
-    if (!market) {
-      const res = await fetch('https://query1.finance.yahoo.com/v1/finance/trending/US?count=8', { headers: { 'User-Agent': 'Mozilla/5.0 (MomentumBoard)' } })
-      const j = (await res.json()) as { finance?: { result?: { quotes?: { symbol: string }[] }[] } }
-      const syms = (j.finance?.result?.[0]?.quotes ?? []).map(q => q.symbol).slice(0, 8)
-      market = await Promise.all(syms.map(async sym => ({ sym, changePct: (await cachedQuote(sym, finnhubKey))?.changePct ?? null })))
-      await setCached('mkt-trending', market, 600)
-    }
-    const watchlistMovers = snapshots
-      .filter((s): s is TickerSnapshot => s !== null && s.changePct != null)
-      .sort((a, b) => Math.abs(b.changePct!) - Math.abs(a.changePct!))
-      .slice(0, 8)
-      .map(s => ({ sym: s.symbol, changePct: s.changePct!, rvol: s.rvol, setups: s.setups }))
-    await store.write('trending', { at: nowSec, watchlist: watchlistMovers, market })
-    const timeline = (await store.read<{ at: number }[]>('trending-timeline')) ?? []
-    if (!timeline.length || nowSec - timeline[timeline.length - 1].at > 1700) {
-      timeline.push({ at: nowSec, watchlist: watchlistMovers.slice(0, 3), market: market.slice(0, 3) } as never)
-      await store.write('trending-timeline', timeline.slice(-30))
-    }
-  } catch (e) {
-    errors.push(`trending: ${e}`)
-  }
-
-  // pundit call bridge: auto-poll pundit Reddit accounts + tag feeds and append
-  // their fresh calls to the same `video-extracts` store the engine grades.
-  // Deduped by url so the 5-min cadence never double-logs a post.
-  try {
-    const { fetchRedditPunditPosts, fetchPunditTagFeed, DEFAULT_PUNDIT_REDDITS, DEFAULT_PUNDIT_FEEDS } = await import('./lib/punditCalls')
-    const sinceSec = nowSec - 26 * 3600
-    const fresh = [
-      ...(await fetchRedditPunditPosts(DEFAULT_PUNDIT_REDDITS, sinceSec)),
-      ...(await Promise.all(DEFAULT_PUNDIT_FEEDS.map(f => fetchPunditTagFeed(f.url, f.name, sinceSec)))).flat(),
-    ]
-    if (fresh.length) {
-      const extracts = (await store.read<{ url: string }[]>('video-extracts')) ?? []
-      const known = new Set(extracts.map(e => e.url))
-      const added: unknown[] = []
-      for (const e of fresh) {
-        if (known.has(e.url)) continue
-        known.add(e.url)
-        added.push(e)
-      }
-      if (added.length) await store.write('video-extracts', [...extracts, ...added].slice(-400))
-    }
-  } catch (e) {
-    errors.push(`pundit-bridge: ${e}`)
   }
 
   const { digest, state: finalState } = flushBatch(afterEval, nowSec)

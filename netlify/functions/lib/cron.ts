@@ -142,6 +142,19 @@ export type Trigger = (typeof TRIGGERS)[number]
 
 export const CRON_JOBS: readonly CronJob[] = [
   { name: 'alert-check', schedule: '*/5 * * * *', trigger: '*/5 * * * *', auth: 'cron-body', why: 'the alert loop — its own 240s slot window bounds it' },
+  {
+    // THE TAIL'S OWN FIFTY (2026-08-17). alert-check used to deliver its alerts
+    // and then run seven more legs in the same invocation; 33 of 50 production
+    // runs ended on 'Too many subrequests', which starved the trending snapshot
+    // and dropped two Telegram sends in eight hours. Nothing in this handler
+    // decays inside ten minutes, so it takes the quarter-hour trigger and its
+    // own budget while the five-minute job keeps the alerts that do.
+    name: 'alert-tail',
+    schedule: '*/15 * * * *',
+    trigger: '*/15 * * * *',
+    auth: 'cron-body',
+    why: 'the long tail — macro, econ, video queue, trending, pundits',
+  },
   { name: 'bulletin-premarket', schedule: '45 12 * * 1-5', trigger: '*/5 * * * *', auth: 'cron-body', why: '~45 min before the US open' },
   { name: 'bulletin-evening', schedule: '5 16 * * 1-5', trigger: '*/5 * * * *', auth: 'cron-body', why: 'the LSE-close wrap' },
   { name: 'congress-warm', schedule: '10 6,18 * * 1-5', trigger: '*/5 * * * *', auth: 'cron-body', why: 'disclosure sweep on the server clock' },

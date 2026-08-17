@@ -111,6 +111,14 @@ export interface D1StoreOptions {
  * need them, and no live call site does, so they stay off the interface. */
 export interface D1Store extends AppStore {
   readStrong<T>(key: string): Promise<T | null>
+  /** MANY KEYS, ONE STATEMENT. Every D1 binding call spends one of an
+   * invocation's fifty subrequests, and the hot loops ask for a quote and a
+   * candle series per symbol — eighty reads before any work is done, which is
+   * how 33 of 50 production alert-check runs ended on 'Too many subrequests'.
+   *
+   * Missing keys are ABSENT from the map (never a null entry), expiry is the
+   * same SQL predicate `read()` uses, and duplicates are asked for once. */
+  readMany<T>(keys: string[]): Promise<Map<string, T>>
   /** The raw stored string, expiry-filtered exactly as read() is. */
   readRaw(key: string): Promise<string | null>
   /** Write a pre-serialised string with an explicit expiry (epoch ms or null).
@@ -140,7 +148,15 @@ export function d1AppStore(db: D1Database, opts: D1StoreOptions = {}): D1Store {
   const store = opts.store ?? 'app'
   const now = opts.now ?? (() => Date.now())
   const expiresAtOf = opts.expiresAt ?? (() => null)
-  const evict = opts.evictOnRead !== false
+  // …AND ONLY WHERE THERE IS SOMETHING TO EVICT (2026-08-17). The eviction is
+  // speculative: a SELECT that returns nothing cannot say whether the row was
+  // expired or was never there, so the DELETE goes out on every miss. On a store
+  // whose rows never expire — the app store, whose `expiresAt` is the default
+  // `() => null` — that DELETE can never match anything, and it was spending a
+  // second subrequest on every optional key a handler reads. alert-check reads a
+  // dozen of them; eleven of its twenty-seven statements were these. The cache
+  // store, where a miss really can be an expired row, is untouched.
+  const evict = opts.evictOnRead !== false && opts.expiresAt != null
   const onCorrupt = opts.onCorrupt ?? 'throw'
 
   // Expiry is enforced in the SQL predicate, not after the fact: a stale row
@@ -188,6 +204,39 @@ export function d1AppStore(db: D1Database, opts: D1StoreOptions = {}): D1Store {
     // D1 is single-primary: this IS the strong read. See the header.
     async readStrong<T>(key: string): Promise<T | null> {
       return self.read<T>(key)
+    },
+
+    // ONE `key IN (…)` SELECT per chunk. Deliberately NOT `evictIfStale`: a
+    // batch read is a hot path, eviction is housekeeping the quarter-hour sweep
+    // already owns, and a second statement per stale key would give back the
+    // subrequests this exists to save. Corruption follows the store's own rule
+    // (see D1StoreOptions.onCorrupt) — a cache row is dropped so the caller
+    // re-fetches it, an app row still throws rather than being written back over.
+    async readMany<T>(keys: string[]): Promise<Map<string, T>> {
+      const out = new Map<string, T>()
+      const wanted = [...new Set(keys.filter(k => typeof k === 'string' && k.length > 0))]
+      if (!wanted.length) return out
+      const at = now()
+      // SQLite's default bound-variable ceiling is 999 and D1's is the same
+      // order; chunk rather than hand it a statement it will refuse.
+      const CHUNK = 90
+      for (let i = 0; i < wanted.length; i += CHUNK) {
+        const slice = wanted.slice(i, i + CHUNK)
+        const placeholders = slice.map((_, j) => `?${j + 3}`).join(', ')
+        const res = await db
+          .prepare(`SELECT key, value FROM blobs WHERE store = ?1 AND (expires_at IS NULL OR expires_at >= ?2) AND key IN (${placeholders})`)
+          .bind(store, at, ...slice)
+          .all<{ key: string; value: string }>()
+        for (const row of res.results ?? []) {
+          try {
+            out.set(row.key, JSON.parse(row.value) as T)
+          } catch (e) {
+            if (onCorrupt === 'throw') throw new Error(`d1 store '${store}': corrupt JSON at key '${row.key}' (${String((e as Error)?.message ?? e).slice(0, 120)})`)
+            // else: a miss, which every cache caller already handles as "go and fetch it"
+          }
+        }
+      }
+      return out
     },
 
     async writeRaw(key: string, json: string, expiresAt: number | null = null): Promise<void> {

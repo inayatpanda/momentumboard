@@ -110,6 +110,27 @@ describe('d1AppStore — the AppStore contract', () => {
     db.close()
   })
 
+  // …BUT THE APP STORE HAS NOTHING TO EVICT. Its rows are immortal (`expires_at`
+  // is always NULL), so the speculative DELETE could never match — it was pure
+  // cost, one extra subrequest per optional key, and a handler reads a dozen of
+  // them inside a fifty-subrequest budget.
+  it('a missing APP key costs one statement, not two', async () => {
+    const db = await fresh()
+    const queries: string[] = []
+    const counted: D1Database = { prepare: (q: string) => (queries.push(q.trim().split(/\s+/).slice(0, 2).join(' ')), db.prepare(q)) }
+    const app = d1AppStore(counted)
+    await app.write('here', { yes: true })
+
+    queries.length = 0
+    expect(await app.read('not-here')).toBeNull()
+    expect(queries, 'the app store issued an eviction that can never match anything').toEqual(['SELECT value'])
+
+    queries.length = 0
+    expect(await app.read('here')).toEqual({ yes: true })
+    expect(queries).toEqual(['SELECT value'])
+    db.close()
+  })
+
   it('serves the existing lease handshake unchanged', async () => {
     const db = await fresh()
     const store = d1AppStore(db)
@@ -353,6 +374,135 @@ describe('sweepExpired — the cron housekeeper', () => {
     clock = 9_001
     expect(await cache.sweepExpired()).toBe(3)
     expect(await rowCount(db, 'app')).toBe(1)
+    db.close()
+  })
+})
+
+// ONE STATEMENT FOR FORTY KEYS (the subrequest ceiling, 2026-08-17).
+//
+// Every D1 binding call spends one of an invocation's fifty subrequests, and
+// alert-check asked for a quote and a candle series PER SYMBOL — eighty reads
+// before it had done anything. Production ended 33 of 50 runs on 'Too many
+// subrequests'. `readMany` is the same reads as one `key IN (…)` select.
+describe('readMany — the batched cache read', () => {
+  /** Counts statements the way workerd counts subrequests: one per prepare. */
+  const counted = (db: D1Database & { close(): void }) => {
+    let statements = 0
+    const wrapped: D1Database & { close(): void } = {
+      prepare: (sql: string) => {
+        statements++
+        return db.prepare(sql)
+      },
+      close: () => db.close(),
+    }
+    return { db: wrapped, count: () => statements }
+  }
+
+  it('returns what is there, keyed by key, and leaves missing keys ABSENT', async () => {
+    const db = await fresh()
+    const cache = d1CacheStore(db, { now: () => 5_000 })
+    await cache.writeWithTtl('quote:AAPL', { price: 150 }, 600)
+    await cache.writeWithTtl('quote:NVDA', { price: 120 }, 600)
+
+    const got = await cache.readMany<{ value: { price: number } }>(['quote:AAPL', 'quote:MSFT', 'quote:NVDA'])
+    expect(got.get('quote:AAPL')!.value).toEqual({ price: 150 })
+    expect(got.get('quote:NVDA')!.value).toEqual({ price: 120 })
+    expect(got.has('quote:MSFT'), 'a missing key must be absent, never a null entry').toBe(false)
+    expect(got.size).toBe(2)
+    db.close()
+  })
+
+  it('is order-independent — the answer is a map, not a positional list', async () => {
+    const db = await fresh()
+    const cache = d1CacheStore(db, { now: () => 5_000 })
+    for (const s of ['A', 'B', 'C']) await cache.writeWithTtl(`quote:${s}`, { sym: s }, 600)
+    const forward = await cache.readMany<{ value: { sym: string } }>(['quote:A', 'quote:B', 'quote:C'])
+    const backward = await cache.readMany<{ value: { sym: string } }>(['quote:C', 'quote:B', 'quote:A'])
+    expect([...backward].map(([k, v]) => [k, v.value.sym]).sort()).toEqual([...forward].map(([k, v]) => [k, v.value.sym]).sort())
+    // …and a repeated key is asked for once and answered once
+    expect((await cache.readMany(['quote:A', 'quote:A'])).size).toBe(1)
+    db.close()
+  })
+
+  it('honours expiry exactly as read() does', async () => {
+    const db = await fresh()
+    let clock = 5_000
+    const cache = d1CacheStore(db, { now: () => clock })
+    await cache.write('quote:STALE', { value: { price: 999 }, expires: 1_000 })
+    await cache.write('quote:LIVE', { value: { price: 111 }, expires: 9_000 })
+
+    const got = await cache.readMany<{ value: { price: number } }>(['quote:STALE', 'quote:LIVE'])
+    expect(got.has('quote:STALE')).toBe(false)
+    expect(got.get('quote:LIVE')!.value).toEqual({ price: 111 })
+
+    clock = 9_001 // the live one ages out under us
+    expect((await cache.readMany(['quote:STALE', 'quote:LIVE'])).size).toBe(0)
+    db.close()
+  })
+
+  it('costs ONE statement for forty keys — the whole point', async () => {
+    const raw = await fresh()
+    const { db, count } = counted(raw)
+    const cache = d1CacheStore(db, { now: () => 5_000 })
+    const syms = Array.from({ length: 40 }, (_, i) => `SYM${i}`)
+    for (const s of syms) await cache.writeWithTtl(`quote:${s}`, { sym: s }, 600)
+
+    const before = count()
+    const got = await cache.readMany(syms.map(s => `quote:${s}`))
+    expect(got.size).toBe(40)
+    expect(count() - before, 'forty keys must cost one statement, not forty').toBe(1)
+    raw.close()
+  })
+
+  it('asks for nothing when there is nothing to ask for', async () => {
+    const raw = await fresh()
+    const { db, count } = counted(raw)
+    const cache = d1CacheStore(db, { now: () => 5_000 })
+    expect((await cache.readMany([])).size).toBe(0)
+    expect(count()).toBe(0)
+    raw.close()
+  })
+
+  it('keeps the stores apart, exactly as read() does', async () => {
+    const db = await fresh()
+    const app = d1AppStore(db)
+    const cache = d1CacheStore(db, { now: () => 5_000 })
+    await app.write('shared-key', { from: 'app' })
+    await cache.writeWithTtl('shared-key', { from: 'cache' }, 600)
+    expect((await cache.readMany<{ value: unknown }>(['shared-key'])).get('shared-key')!.value).toEqual({ from: 'cache' })
+    expect((await app.readMany<{ from: string }>(['shared-key'])).get('shared-key')).toEqual({ from: 'app' })
+    db.close()
+  })
+
+  // The cache's own rule (onCorrupt: 'null'): a row that will not parse is a
+  // MISS, so the caller re-fetches it — and never a batch-wide throw that would
+  // lose the thirty-nine good rows beside it.
+  it('drops a corrupt row on the cache store rather than failing the batch', async () => {
+    const db = await fresh()
+    const cache = d1CacheStore(db, { now: () => 5_000 })
+    await cache.writeWithTtl('quote:GOOD', { price: 1 }, 600)
+    await cache.writeRaw('quote:BROKEN', '{"value":', 9_000)
+    const got = await cache.readMany(['quote:GOOD', 'quote:BROKEN'])
+    expect(got.has('quote:BROKEN')).toBe(false)
+    expect(got.has('quote:GOOD')).toBe(true)
+    db.close()
+  })
+
+  it('the app store still THROWS on a corrupt row — its callers write back what they read', async () => {
+    const db = await fresh()
+    const app = d1AppStore(db)
+    await app.writeRaw('licences', '{"key":')
+    await expect(app.readMany(['licences'])).rejects.toThrow(/corrupt JSON/)
+    db.close()
+  })
+
+  it('chunks past SQLite’s bound-variable ceiling instead of throwing', async () => {
+    const db = await fresh()
+    const cache = d1CacheStore(db, { now: () => 5_000 })
+    const keys = Array.from({ length: 1200 }, (_, i) => `k:${i}`)
+    for (const k of keys.slice(0, 5)) await cache.writeWithTtl(k, { k }, 600)
+    const got = await cache.readMany(keys)
+    expect(got.size).toBe(5)
     db.close()
   })
 })
