@@ -7,6 +7,7 @@
 // hypothesis) — so the grade pill is gated on both the shared law AND !shadow,
 // and shadow gets its own honest pill exactly like PastCalls.tsx.
 
+import { useState } from 'react'
 import { Link } from 'wouter'
 import type { LedgerDay, JourneyCall } from '../../lib/apiViews'
 import { rowKind, unsizedReason } from '../../lib/boardTaxonomy'
@@ -61,23 +62,68 @@ function LedgerCard({ c }: { c: JourneyCall }) {
   )
 }
 
+/** RENDER PAGINATION, not data pagination (visibility wave, 2026-08-17). The
+ * thirty-day window is already in hand — Record fetches it in one slice and
+ * three other panes roll the same rows — so nothing here refetches anything.
+ * What it stops doing is PAINTING all thirty days at once: the live desk
+ * measured a 35,518px ledger, which is not a page a reader scrolls, it is a
+ * page a reader leaves. */
+export const LEDGER_FIRST_DAYS = 5
+export const LEDGER_MORE_DAYS = 14
+
+/** Matured means the row has an outcome to show. An unmatured row's whole
+ * content is "Not yet matured — no graded outcome", and on a fresh window
+ * those outnumber the graded ones and sit at the TOP (newest first), so the
+ * receipts a track record exists to show began below a screen of placeholders. */
+const matured = (c: JourneyCall) => Boolean(c.outcome10 || c.outcome21)
+
+/** One day's still-open calls, folded to a single disclosure line. Closed by
+ * default; the names are one tap away, and the count is on the summary so
+ * nothing is hidden, only stacked. */
+function AwaitingMaturity({ calls }: { calls: JourneyCall[] }) {
+  if (calls.length === 0) return null
+  return (
+    <details className="rec-ledger-awaiting">
+      <summary className="cc-reason">
+        <span className="num">{calls.length}</span> {calls.length === 1 ? 'call' : 'calls'} awaiting maturity
+      </summary>
+      {calls.map(c => (
+        <LedgerCard key={c.id} c={c} />
+      ))}
+    </details>
+  )
+}
+
 /** Grouped by day, newest first (the server already returns newest-first —
  * `viewLedger`'s `dates.reverse()` — so this trusts that order rather than
  * re-sorting, exactly as PastCalls trusts its own server order elsewhere). */
 export function LedgerDayCards({ days }: { days: LedgerDay[] }) {
+  const [visible, setVisible] = useState(LEDGER_FIRST_DAYS)
   if (days.length === 0) {
     return <p className="cc-reason">No predictions on the ledger yet. The receipts arrive once the engine has run and graded.</p>
   }
+  const remaining = days.length - visible
+  const step = Math.min(LEDGER_MORE_DAYS, remaining)
   return (
     <>
-      {days.map(d => (
-        <div className="rec-ledger-day" key={d.date}>
-          <p className="sec-label num">{d.date}</p>
-          {d.predictions.map(c => (
-            <LedgerCard key={c.id} c={c} />
-          ))}
-        </div>
-      ))}
+      {days.slice(0, visible).map(d => {
+        const graded = d.predictions.filter(matured)
+        const open = d.predictions.filter(c => !matured(c))
+        return (
+          <div className="rec-ledger-day" key={d.date}>
+            <p className="sec-label num">{d.date}</p>
+            {graded.map(c => (
+              <LedgerCard key={c.id} c={c} />
+            ))}
+            <AwaitingMaturity calls={open} />
+          </div>
+        )
+      })}
+      {remaining > 0 && (
+        <button type="button" className="stx-showmore" onClick={() => setVisible(v => v + LEDGER_MORE_DAYS)}>
+          Load {step} more {step === 1 ? 'day' : 'days'}
+        </button>
+      )}
     </>
   )
 }

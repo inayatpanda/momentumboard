@@ -2070,6 +2070,30 @@ p {
 .v2 .rec-ledger-day {
   margin-bottom: 4px;
 }
+/* the day's still-open calls, stacked behind one line (visibility wave,
+   2026-08-17) — they arrive newest-first and outnumber the graded rows, so
+   unfolded they buried the receipts the page exists to show */
+.v2 .rec-ledger-awaiting {
+  margin-bottom: 10px;
+}
+.v2 .rec-ledger-awaiting > summary {
+  cursor: pointer;
+  padding: 6px 0;
+  list-style: none;
+}
+.v2 .rec-ledger-awaiting > summary::-webkit-details-marker {
+  display: none;
+}
+.v2 .rec-ledger-awaiting > summary::before {
+  content: '›';
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--text-dim);
+  transition: transform 0.15s ease;
+}
+.v2 .rec-ledger-awaiting[open] > summary::before {
+  transform: rotate(90deg);
+}
 .v2 .rec-ledger-card {
   display: flex;
   flex-direction: column;

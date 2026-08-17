@@ -61,6 +61,19 @@ function tileLabel(key: string): string {
   return `Grade ${key}`
 }
 
+/** THE TABLE READS AS A LADDER OR IT READS AS NOTHING (visibility wave,
+ * 2026-08-17). `Object.entries` hands back whatever order the blob was built
+ * in — which is population order, so the best tier landed last and the reader
+ * scanning top-to-bottom was scanning by n, a number the table already prints.
+ * Letters descend A→Z; the two non-tiers follow, in the order they lose the
+ * reader's conviction: shadow was never offered, the wildcard was offered
+ * BECAUSE the gates refused it. */
+export function tierRank(key: string): number {
+  if (key === 'shadow') return 100
+  if (key === 'wildcard') return 101
+  return /^[A-Za-z]$/.test(key) ? key.toUpperCase().charCodeAt(0) - 65 : 90
+}
+
 function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
   if (!scorecard || scorecard.totalGraded === 0) {
     return <p className="cc-reason">No graded predictions yet — the scorecard fills in as calls mature.</p>
@@ -88,7 +101,9 @@ function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
  * renders even with one populated tier, and the wildcard warning rides under
  * it whenever the wildcard row prints. */
 function GradeTable({ scorecard }: { scorecard: Scorecard }) {
-  const rows = Object.entries(scorecard.byGrade).filter(([, s]) => s.n > 0)
+  const rows = Object.entries(scorecard.byGrade)
+    .filter(([, s]) => s.n > 0)
+    .sort((a, b) => tierRank(a[0]) - tierRank(b[0]))
   if (rows.length === 0) return null
   return (
     <div className="rec-grade-wrap">

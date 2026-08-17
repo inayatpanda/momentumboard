@@ -3,7 +3,7 @@
 // StockPage.test.tsx: fetchers mocked to never resolve, every case paints
 // from a seeded Dexie slice.
 
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -568,6 +568,119 @@ describe('Record', () => {
       withRouter()
       const regrets = await screen.findByLabelText('Regrets')
       expect(await within(regrets).findByText(noteText)).toBeInTheDocument()
+    })
+  })
+})
+
+// VISIBILITY WAVE (2026-08-17) — the live desk measured this page at 35,518px:
+// thirty days of receipts, all painted, the unmatured rows sitting at the top
+// of every one of them, and the per-grade table listing the best tier last
+// because it sorted by nothing at all.
+describe('Record — the page a reader can actually reach the end of', () => {
+  const graded = (id: string, sym: string) => mkCall({ id, sym, outcome10: { excessPct: 2.1, rawPct: 2.5, spyPct: 0.4, stopped: false, hit: true } })
+  const open = (id: string, sym: string) => mkCall({ id, sym })
+  const dayOf = (i: number, predictions: JourneyCall[]): LedgerDay => ({ date: `2026-08-${String(30 - i).padStart(2, '0')}`, predictions })
+
+  describe('the per-grade table reads as a ladder', () => {
+    it('orders A, B, C, then the shadow book, then the wildcard — never by n', async () => {
+      await seedLearning(
+        mkLearning({
+          scorecard: {
+            byGrade: {
+              // the wire order the live blob arrived in: population order, best tier last
+              C: { n: 40, hits: 12, sumExcess: -4 },
+              wildcard: { n: 9, hits: 3, sumExcess: 1 },
+              shadow: { n: 20, hits: 6, sumExcess: -1 },
+              B: { n: 8, hits: 5, sumExcess: 12 },
+              A: { n: 3, hits: 3, sumExcess: 18 },
+            },
+            byRegime: {},
+            overlays: {},
+            brierTail: [],
+            totalGraded: 80,
+          },
+        }),
+      )
+      withRouter()
+      const table = await screen.findByLabelText('Per-grade record')
+      const tiers = [...table.querySelectorAll('tbody tr td:first-child')].map(td => td.textContent)
+      expect(tiers).toEqual(['Grade A', 'Grade B', 'Grade C', 'Shadow book', '🃏 Wildcard'])
+    })
+  })
+
+  describe('the ledger paints five days, then offers more', () => {
+    it('renders only the newest five days at first', async () => {
+      await seedLearning(mkLearning())
+      await seedLedger(
+        'ledger:30',
+        Array.from({ length: 20 }, (_, i) => dayOf(i, [graded(`g${i}`, `SYM${i}`)])),
+      )
+      withRouter()
+      const ledger = await screen.findByLabelText('The ledger')
+      await within(ledger).findByText('2026-08-30')
+      expect(ledger.querySelectorAll('.rec-ledger-day')).toHaveLength(5)
+      expect(within(ledger).queryByText('2026-08-25')).not.toBeInTheDocument()
+    })
+
+    it('the button says how many days it will add, and adds them', async () => {
+      await seedLearning(mkLearning())
+      await seedLedger(
+        'ledger:30',
+        Array.from({ length: 20 }, (_, i) => dayOf(i, [graded(`g${i}`, `SYM${i}`)])),
+      )
+      withRouter()
+      const ledger = await screen.findByLabelText('The ledger')
+      await within(ledger).findByText('2026-08-30')
+      fireEvent.click(within(ledger).getByRole('button', { name: /load 14 more days/i }))
+      expect(ledger.querySelectorAll('.rec-ledger-day')).toHaveLength(19)
+      // one day left: the label counts what remains, never a round number it cannot deliver
+      expect(within(ledger).getByRole('button', { name: /^load 1 more day$/i })).toBeInTheDocument()
+    })
+
+    it('no button at all when the whole window already fits', async () => {
+      await seedLearning(mkLearning())
+      await seedLedger(
+        'ledger:30',
+        Array.from({ length: 3 }, (_, i) => dayOf(i, [graded(`g${i}`, `SYM${i}`)])),
+      )
+      withRouter()
+      const ledger = await screen.findByLabelText('The ledger')
+      await within(ledger).findByText('2026-08-30')
+      expect(within(ledger).queryByRole('button', { name: /load/i })).not.toBeInTheDocument()
+    })
+  })
+
+  describe("a day's unmatured calls fold into one line", () => {
+    it('counts them on a disclosure instead of stacking placeholder cards', async () => {
+      await seedLearning(mkLearning())
+      await seedLedger('ledger:30', [dayOf(0, [graded('g1', 'NVDA'), open('o1', 'AMD'), open('o2', 'PLTR'), open('o3', 'HL')])])
+      withRouter()
+      const ledger = await screen.findByLabelText('The ledger')
+      await within(ledger).findByText('NVDA')
+      const fold = ledger.querySelector('.rec-ledger-awaiting') as HTMLDetailsElement
+      expect(fold).not.toBeNull()
+      expect(fold.open).toBe(false)
+      expect(fold.querySelector('summary')!.textContent).toContain('3 calls awaiting maturity')
+      // the graded receipt stays out in the open where the reader can see it
+      expect(fold.textContent).not.toContain('NVDA')
+    })
+
+    it('says "1 call" for a single one', async () => {
+      await seedLearning(mkLearning())
+      await seedLedger('ledger:30', [dayOf(0, [graded('g1', 'NVDA'), open('o1', 'AMD')])])
+      withRouter()
+      const ledger = await screen.findByLabelText('The ledger')
+      await within(ledger).findByText('NVDA')
+      expect(within(ledger).getByText(/call awaiting maturity/).textContent).toContain('1 call awaiting maturity')
+    })
+
+    it('a day whose calls have all matured grows no disclosure', async () => {
+      await seedLearning(mkLearning())
+      await seedLedger('ledger:30', [dayOf(0, [graded('g1', 'NVDA'), graded('g2', 'AMD')])])
+      withRouter()
+      const ledger = await screen.findByLabelText('The ledger')
+      await within(ledger).findByText('NVDA')
+      expect(ledger.querySelector('.rec-ledger-awaiting')).toBeNull()
     })
   })
 })
