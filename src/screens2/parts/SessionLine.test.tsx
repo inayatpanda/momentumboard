@@ -73,6 +73,14 @@ describe('SessionLine', () => {
     expect(screen.getByText('US market open · closes 21:00')).toBeInTheDocument()
   })
 
+  // SEEN LIVE (first DMG with this line): the board blob stamps generatedAt in
+  // SECONDS; read as ms that is January 1970, rendered as "struck 17:22". The
+  // magnitude rule relativeStamp already uses applies here too.
+  it('reads a seconds-unit stamp by magnitude, like every other stamp reader', () => {
+    render(<SessionLine now={at('2026-08-17T15:00:00Z')} generatedAt={Math.floor(at('2026-08-17T05:42:00Z') / 1000)} timeZone={LDN} />)
+    expect(screen.getByText('US market open · closes 21:00 · board struck 06:42')).toBeInTheDocument()
+  })
+
   it('ticks on its own clock when none is injected, and clears the interval on unmount', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(at('2026-08-17T13:29:00Z')))

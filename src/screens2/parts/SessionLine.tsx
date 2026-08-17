@@ -119,7 +119,11 @@ export function SessionLine({
   }, [frozen])
 
   const read = usSessionRead(frozen ? now : ticked, timeZone)
-  const stamp = generatedAt != null && generatedAt > 0 ? ` · board struck ${hhmm(generatedAt, timeZone)}` : ''
+  // magnitude decides the unit (the relativeStamp rule): the board blob stamps
+  // generatedAt in SECONDS, and seconds read as ms is January 1970 — which this
+  // line rendered as "struck 17:22" on the first build that carried it
+  const stampMs = generatedAt != null && generatedAt > 0 ? (generatedAt > 1e12 ? generatedAt : generatedAt * 1000) : null
+  const stamp = stampMs != null ? ` · board struck ${hhmm(stampMs, timeZone)}` : ''
   return (
     <p className="session-line" data-session={read.kind}>
       {read.text}
