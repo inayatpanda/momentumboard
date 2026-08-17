@@ -1,30 +1,29 @@
-// Intel (plan Task 19; CX-19 — restructured by owner iteration 2) — the
-// paper + news + insiders + congress + social. This is news's ONLY home in the
-// app (spec §3.5): a side dish, never the meal.
+// Intel (plan Task 19; CX-19 — restructured by owner iteration 2) — the news
+// desk, the insider clusters and the congressional filings. This is news's
+// ONLY home in the app (spec §3.5): a side dish, never the meal.
 //
 // THE OWNER'S REVIEW REBUILT THIS PAGE:
 //   "The Daily bulletin takes up the entire space, and scrolling is difficult
 //    to reach directly to the News desk without scrolling through the entire
 //    bulletin. News desk doesnt show date of news. Intel doesnt show insider
 //    news/buying congressional things."
-// So: a STICKY chip row jumps to any section in one tap; the paper is a
-// <details> CLOSED by default (a 70vh iframe is not a landing surface, and a
-// reader who never opens it now pays for neither the pixels nor the fetch);
-// every headline carries a stamp; and the two feeds the engine has always
-// collected and never shown — insider clusters and congressional disclosures
-// — get sections of their own.
+// So: a STICKY chip row jumps to any section in one tap; every headline
+// carries a stamp; and the two feeds the engine has always collected and never
+// shown — insider clusters and congressional disclosures — get sections of
+// their own.
 //
-// Five stacked sections, each its OWN `useSlice` + skeleton: one section's
+// THE PAGE THINNED TWICE (owner 2026-08-17). "The Daily bulletin takes up the
+// entire space" took the paper to its own tab; "i dont like the intel page
+// which is overwhelmed by news desk" took the social pulse to The street, with
+// the channels' videos — the same kind of thing, other people's opinions. What
+// is left is the three feeds that are reported FACT: what was published, who
+// bought their own stock, and what Congress filed.
+//
+// Three stacked sections, each its OWN `useSlice` + skeleton: one section's
 // failure (a rejected fetch, or simply not yet cached) must never blank the
 // others. `useSlice` already never throws into render — a failed fetch just
 // flips `offline` and leaves `data` at whatever was cached (null on a cold
 // slice) — so this file needs no error boundary of its own.
-//
-// The paper renders INLINE via the /report?format=json envelope
-// (netlify/functions/report.mts; report.format.test.ts), dropped into a
-// SANDBOXED srcDoc iframe (sandbox="" — no scripts, no navigation, no
-// same-origin) rather than an iframe `src` navigation, which the report
-// route's own X-Frame-Options would block outright.
 
 import { useState } from 'react'
 import { Link } from 'wouter'
@@ -32,7 +31,7 @@ import { useSlice } from '../lib/useSlice'
 import { usePullRefresh, useSlicesRefresh, type SliceRefreshEntry } from '../lib/usePullRefresh'
 import { RefreshStrip } from './parts/RefreshStrip'
 import { db } from '../lib/db'
-import { getCongress, getInsiderClusters, getNewsDesk, getSocialPulse } from '../lib/api'
+import { getCongress, getInsiderClusters, getNewsDesk } from '../lib/api'
 import type { CongressTrade, InsiderCluster } from '../lib/api'
 import { compactUsd, decodeEntities, longDate, relativeStamp } from '../lib/format'
 
@@ -51,12 +50,13 @@ const DISCLOSURE_WINDOW_DAYS = 45
 /** The jump rail's targets, in page order. Ids live on the sections.
  * The paper left this page for its own tab (owner 2026-08-17) — the news
  * desk is now the first thing on Intel, which is where the reader's most
- * frequent check belongs. */
+ * frequent check belongs — and the social pulse left for The street (owner:
+ * "i dont like the intel page which is overwhelmed by news desk"), where it
+ * sits with the other opinions the engine reads and does not obey. */
 const SECTIONS = [
   { id: 'news', label: 'News' },
   { id: 'insiders', label: 'Insiders' },
   { id: 'congress', label: 'Congress' },
-  { id: 'social', label: 'Social' },
 ] as const
 
 const hostOf = (url: string) => {
@@ -355,68 +355,7 @@ function CongressSection() {
   )
 }
 
-function SocialSection() {
-  const { data } = useSlice('intel:social', getSocialPulse)
-  const [visible, setVisible] = useState(PAGE)
-  const rows = data?.pulse ?? []
-
-  return (
-    <section id="social" className="card itl-section">
-      <h2 className="sec-label">Social pulse</h2>
-      {!data ? (
-        <div className="skeleton" style={{ height: 160 }} />
-      ) : rows.length === 0 && data.alsoLoud.length === 0 && data.discoveries.length === 0 ? (
-        <p className="cc-reason">Nothing loud enough to show right now.</p>
-      ) : (
-        <>
-          {data.alsoLoud.length > 0 && (
-            <div className="itl-loud-row">
-              <span>Also loud:</span>
-              {data.alsoLoud.map(s => (
-                <Link key={s} href={`/stock/${s}`} className="pill">
-                  {s}
-                </Link>
-              ))}
-            </div>
-          )}
-          {data.discoveries.length > 0 && (
-            <div className="itl-discoveries">
-              {data.discoveries.slice(0, 5).map(d => (
-                <Link key={d.sym} href={`/stock/${d.sym}`} className="card pressable itl-discovery">
-                  <span className="itl-pulse-sym">{d.sym}</span>
-                  {/* the pulse's names arrive from the same feeds the news desk
-                      reads, entities and all — "SPDR S&amp;P 500 ETF Trust" was
-                      on screen (visibility wave). Same decode the desk uses. */}
-                  {d.companyName && <span className="itl-pulse-name">{decodeEntities(d.companyName)}</span>}
-                  {d.opinion && <p className="cc-reason">{decodeEntities(d.opinion)}</p>}
-                </Link>
-              ))}
-            </div>
-          )}
-          <div className="itl-pulse-list">
-            {rows.slice(0, visible).map(r => (
-              <Link key={r.sym} href={`/stock/${r.sym}`} className="card pressable itl-pulse-row">
-                <span className="itl-pulse-sym">{r.sym}</span>
-                {r.name && <span className="itl-pulse-name">{decodeEntities(r.name)}</span>}
-                <span className="itl-pulse-meta">
-                  {r.redditMentions != null && <span className="num">{r.redditMentions} mentions</span>}
-                  {r.surging && <span className="pill accent">surging{r.surgeMultiple != null ? ` ${r.surgeMultiple.toFixed(1)}x` : ''}</span>}
-                </span>
-              </Link>
-            ))}
-          </div>
-          {visible < rows.length && (
-            <button type="button" className="stx-showmore" onClick={() => setVisible(rows.length)}>
-              Show more ({rows.length - visible})
-            </button>
-          )}
-        </>
-      )}
-    </section>
-  )
-}
-
-/** The four feeds this page is, named once for the refresh (dynamism wave).
+/** The three feeds this page is, named once for the refresh (dynamism wave).
  * Each section owns its own `useSlice` — a failure in one must never blank the
  * others — so a page-wide refresh force-revalidates their keys and lets each
  * section repaint off the store's write announcement. */
@@ -424,7 +363,6 @@ const REFRESH_ENTRIES: SliceRefreshEntry[] = [
   { key: 'intel:news', fetcher: getNewsDesk },
   { key: 'intel:insiders', fetcher: getInsiderClusters },
   { key: 'intel:congress', fetcher: congressFetcher },
-  { key: 'intel:social', fetcher: getSocialPulse },
 ]
 
 export default function Intel() {
@@ -438,7 +376,6 @@ export default function Intel() {
       <NewsSection />
       <InsidersSection />
       <CongressSection />
-      <SocialSection />
     </div>
   )
 }

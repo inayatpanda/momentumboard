@@ -1,9 +1,13 @@
-// Intel (plan Task 19; CX-19) — the paper + news desk + social pulse. Same
-// local-first pattern as Movers/StockPage tests: every network fetcher is
-// mocked to reject by default, every case paints from a seeded Dexie slice
-// via writeSlice. The three sections are independently sliced — this file's
-// first job is proving one section's failure (or simply not being seeded)
-// never blanks the other two.
+// Intel (plan Task 19; CX-19) — the news desk, the insider clusters and the
+// congressional filings. Same local-first pattern as Movers/StockPage tests:
+// every network fetcher is mocked to reject by default, every case paints
+// from a seeded Dexie slice via writeSlice. The three sections are
+// independently sliced — this file's first job is proving one section's
+// failure (or simply not being seeded) never blanks the other two.
+//
+// The social pulse LEFT this page (owner 2026-08-17: "i dont like the intel
+// page which is overwhelmed by news desk") — its tests went with it, to
+// Street2.test.tsx, and what is asserted here is that it is gone.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -101,7 +105,7 @@ describe('Intel', () => {
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
-  it('one section erroring never blanks the others — seeded news paints while insiders and social stay pending', async () => {
+  it('one section erroring never blanks the others — seeded news paints while insiders and congress stay pending', async () => {
     await writeSlice('intel:news', [mkNews(0), mkNews(1)])
     withRouter()
     expect(await screen.findByText('Headline 0')).toBeInTheDocument()
@@ -111,17 +115,19 @@ describe('Intel', () => {
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
-  // WIRED REFRESH (dynamism wave). Four independently-sliced sections, one
+  // WIRED REFRESH (dynamism wave). Three independently-sliced sections, one
   // refresh: the screen names their keys and forces them together, and each
   // section repaints off the store's write announcement.
-  it('the refresh affordance re-fetches all four feeds at once', async () => {
+  it('the refresh affordance re-fetches all three feeds at once', async () => {
     withRouter()
     await waitFor(() => expect(getNewsDesk).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
     await waitFor(() => expect(getNewsDesk).toHaveBeenCalledTimes(2))
     expect(getInsiderClusters).toHaveBeenCalledTimes(2)
-    expect(getSocialPulse).toHaveBeenCalledTimes(2)
     await waitFor(() => expect(getCongressFn).toHaveBeenCalledTimes(2))
+    // the pulse is not this page's feed any more — refreshing Intel must not
+    // spend a request on a section that is not here
+    expect(getSocialPulse).not.toHaveBeenCalled()
   })
 
   // THE JUMP RAIL (owner iteration 2): "scrolling is difficult to reach
@@ -131,18 +137,18 @@ describe('Intel', () => {
       withRouter()
       const rail = screen.getByRole('navigation', { name: /jump to a section/i })
       const chips = [...rail.querySelectorAll('a')].map(a => [a.textContent?.trim(), a.getAttribute('href')])
-      // the paper left for its own tab (owner 2026-08-17) — news leads
+      // the paper left for its own tab and the pulse for The street (owner
+      // 2026-08-17) — news leads, and three chips is the whole rail
       expect(chips).toEqual([
         ['News', '#news'],
         ['Insiders', '#insiders'],
         ['Congress', '#congress'],
-        ['Social', '#social'],
       ])
     })
 
     it('every anchor target actually exists on the page — and the paper is gone', () => {
       withRouter()
-      for (const id of ['news', 'insiders', 'congress', 'social']) {
+      for (const id of ['news', 'insiders', 'congress']) {
         expect(document.getElementById(id)).not.toBeNull()
       }
       expect(document.getElementById('paper')).toBeNull()
@@ -299,8 +305,8 @@ describe('Intel', () => {
     })
   })
 
-  // FAILURE ISOLATION, across all five sections now.
-  it('a seeded insiders slice paints while the other four sections stay pending', async () => {
+  // FAILURE ISOLATION, across all three sections.
+  it('a seeded insiders slice paints while the other two sections stay pending', async () => {
     await writeSlice('intel:insiders', { clusters: [mkCluster({ symbol: 'AMD' })], asOf: 1 })
     withRouter()
     expect(await screen.findByText('4 buyers')).toBeInTheDocument()
@@ -308,38 +314,6 @@ describe('Intel', () => {
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
-  describe('social pulse', () => {
-    it('renders trending symbols as /stock/SYM links, first 30 then Show more', async () => {
-      const pulse = Array.from({ length: 40 }, (_, i) => ({
-        sym: `SYM${i}`,
-        redditRank: i + 1,
-        redditMentions: 10 - i,
-        surging: i === 0,
-        surgeMultiple: i === 0 ? 3.2 : null,
-        stocktwits: false,
-        channelNet: null,
-        sources: 1,
-        onWatchlist: false,
-      }))
-      await writeSlice('intel:social', { discoveries: [], alsoLoud: ['TSLA'], pulse, at: Date.now() })
-      withRouter()
-
-      await screen.findByText('SYM0')
-      expect(screen.getAllByText(/^SYM\d+$/)).toHaveLength(30)
-
-      fireEvent.click(screen.getByRole('button', { name: /show more/i }))
-      expect(screen.getByText('SYM39')).toBeInTheDocument()
-
-      const link = screen.getByRole('link', { name: /SYM0/ })
-      expect(link).toHaveAttribute('href', '/app/stock/SYM0')
-    })
-
-    it('shows an empty state, not a blank section, when nothing is loud', async () => {
-      await writeSlice('intel:social', { discoveries: [], alsoLoud: [], pulse: [], at: Date.now() })
-      withRouter()
-      expect(await screen.findByText(/nothing loud/i)).toBeInTheDocument()
-    })
-  })
 })
 
 // VISIBILITY WAVE (2026-08-17) — four things the live desk read wrong: "F 1
@@ -391,22 +365,6 @@ describe('Intel — the feeds say what they mean', () => {
       await screen.findByRole('link', { name: 'NVDA' })
       const syms = [...document.querySelectorAll('#insiders .itl-feed-sym')].map(a => a.textContent)
       expect(syms).toEqual(['NVDA', 'F'])
-    })
-  })
-
-  describe('the social pulse', () => {
-    it('decodes the entities the feed left in a company name', async () => {
-      await writeSlice('intel:social', {
-        discoveries: [{ sym: 'IVV', companyName: 'iShares Core S&amp;P 500', opinion: 'Tracking the S&amp;P.', redditRank: null, redditMentions: null, surging: false, surgeMultiple: null, stocktwits: false, channelNet: null, sources: 1, onWatchlist: false, capUsdM: null }],
-        alsoLoud: [],
-        pulse: [{ sym: 'SPY', name: 'SPDR S&amp;P 500 ETF Trust', redditRank: 1, redditMentions: 90, surging: false, surgeMultiple: null, stocktwits: false, channelNet: null, sources: 1, onWatchlist: false }],
-        at: Date.now(),
-      })
-      withRouter()
-      expect(await screen.findByText('SPDR S&P 500 ETF Trust')).toBeInTheDocument()
-      expect(screen.getByText('iShares Core S&P 500')).toBeInTheDocument()
-      expect(screen.getByText('Tracking the S&P.')).toBeInTheDocument()
-      expect(document.body.textContent).not.toContain('&amp;')
     })
   })
 
