@@ -23,8 +23,8 @@
 // against the machine's own.
 
 import { useEffect, useState } from 'react'
-import { isMarketOpen, SESSIONS } from '../../../shared/rvol'
-import type { Exchange } from '../../../shared/symbols'
+import { exchangeOpenNow, utcIsoDate } from '../../lib/marketClock'
+import { SESSIONS } from '../../../shared/rvol'
 import { isUsMarketHoliday } from '../../../shared/usMarketHolidays'
 
 /** Past this gap the countdown stops being useful — nobody reads "opens in
@@ -38,8 +38,6 @@ export interface SessionRead {
   text: string
 }
 
-const pad2 = (n: number) => String(n).padStart(2, '0')
-const isoOfUtc = (d: Date) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`
 
 /** A fractional UTC hour (13.5) as a real instant on a given UTC calendar day. */
 const instantAt = (d: Date, hour: number, dayOffset = 0) =>
@@ -57,7 +55,7 @@ const weekdayShort = (ms: number, timeZone?: string) => new Intl.DateTimeFormat(
 const isTradingDay = (d: Date, dayOffset = 0): boolean => {
   const day = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + dayOffset))
   const dow = day.getUTCDay()
-  return dow !== 0 && dow !== 6 && !isUsMarketHoliday(isoOfUtc(day))
+  return dow !== 0 && dow !== 6 && !isUsMarketHoliday(utcIsoDate(day))
 }
 
 /** The next opening bell strictly after `nowMs`. Scans forward a fortnight —
@@ -80,26 +78,12 @@ const humanGap = (ms: number): string => {
   return m ? `${h}h ${m}m` : `${h}h`
 }
 
-/** Is this exchange trading right now? `isMarketOpen` knows the session hours
- * and weekends; the NYSE calendar knows the rest, and 15:00 UTC on Thanksgiving
- * is mid-session by the hour alone. Crypto is always true and the LSE keeps its
- * own holidays — out of scope until something prices off them, and a live quote
- * labelled "now" on an LSE bank holiday is the mildest wrong this file can be.
- *
- * Exported because the live-quote poller (src/lib/useLiveQuotes.ts) and the
- * call card's own "now / Fri close" label must ask the SAME question. */
-export function exchangeOpenNow(exchange: Exchange, nowMs: number): boolean {
-  const d = new Date(nowMs)
-  if (exchange === 'US' && isUsMarketHoliday(isoOfUtc(d))) return false
-  return isMarketOpen(exchange, Math.floor(nowMs / 1000))
-}
-
 /** Where the US cash session stands, as the reader would say it. */
 export function usSessionRead(nowMs: number, timeZone?: string): SessionRead {
   const now = new Date(nowMs)
   const dow = now.getUTCDay()
   const weekend = dow === 0 || dow === 6
-  const holiday = !weekend && isUsMarketHoliday(isoOfUtc(now))
+  const holiday = !weekend && isUsMarketHoliday(utcIsoDate(now))
   const closeAt = instantAt(now, SESSIONS.US.close)
   // `exchangeOpenNow` carries the holiday check, which `isMarketOpen` does not:
   // 15:00 UTC on Thanksgiving is mid-session by the clock alone.

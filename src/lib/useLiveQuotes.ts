@@ -13,7 +13,7 @@
 //   · document.visibilityState === 'visible' — a backgrounded tab tears the
 //     timer down entirely and re-arms on return.
 //   · the symbol's own exchange is open (shared/rvol.ts, holiday-aware through
-//     parts/SessionLine.tsx's exchangeOpenNow) — out of hours the last close IS
+//     ./marketClock.ts's exchangeOpenNow) — out of hours the last close IS
 //     the answer, and the card labels it as one rather than faking a tick.
 //   · not navigator.connection.saveData — a reader who asked their phone to
 //     save data has asked this too.
@@ -28,7 +28,7 @@ import { useEffect, useState } from 'react'
 import { getQuotes } from './api'
 import { readSlice, revalidate } from './store'
 import { exchangeFor } from '../../shared/symbols'
-import { exchangeOpenNow } from '../screens2/parts/SessionLine'
+import { exchangeOpenNow } from './marketClock'
 import type { Quote } from '../../shared/types'
 
 export const LIVE_INTERVAL_MS = 45_000

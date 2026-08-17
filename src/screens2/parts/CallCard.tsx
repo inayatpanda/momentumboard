@@ -16,9 +16,9 @@ import { Sparkline } from '../../components/Sparkline'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
 import { exchangeFor } from '../../../shared/symbols'
 import type { Quote } from '../../../shared/types'
+import { exchangeOpenNow } from '../../lib/marketClock'
 import { CohortPill, WhySized } from './CohortMarks'
 import { RouteNote } from './RouteNote'
-import { exchangeOpenNow } from './SessionLine'
 
 /** Within this much of the entry, "1.9% below" is false precision — the reader
  * is AT the entry and the only useful word is that. */
