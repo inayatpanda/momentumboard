@@ -48,8 +48,8 @@ function TapeLine({ blob }: { blob: BoardBlob | null }) {
 }
 
 export default function Today() {
-  // …and the slice's OWN refresh, which no screen had ever called (dynamism
-  // wave): a pull on the phone, the ↻ at desk, both driving the one board slice.
+  // The slice's OWN refresh, which no screen had ever called (dynamism wave):
+  // a pull on the phone, the ↻ at desk, both driving the one board slice.
   const { data, refreshing, refresh } = useSlice('board', getBoardSlice)
   const { pull } = usePullRefresh(refresh)
   const blob = data?.board ?? null
