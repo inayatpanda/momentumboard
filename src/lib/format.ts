@@ -49,6 +49,27 @@ export function relativeStamp(at: number, now = Date.now()): string {
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`
 }
 
+/** WHICH SESSION a chart's intraday bars belong to, for the 1D range.
+ *
+ * Markets are shut most of the hours a reader is awake: open NVDA at breakfast
+ * in the UK and the newest five-minute bar is FRIDAY's close. A 1D chart that
+ * says nothing invites that dead tape to be read as a live one, so the header
+ * names the session out loud — "today's session" while it runs, the weekday
+ * once it is history, a date once even the weekday would be ambiguous.
+ *
+ * The reader's own clock decides the day, like {@link relativeStamp}: 21:00 on
+ * Friday in New York is Saturday in UTC, and it was still Friday's session. */
+export function sessionLabel(lastBarSec: number, now = Date.now()): string {
+  if (!Number.isFinite(lastBarSec) || lastBarSec <= 0) return ''
+  const ms = lastBarSec > 1e12 ? lastBarSec : lastBarSec * 1000
+  const d = new Date(ms)
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.round((startOfDay(new Date(now)) - startOfDay(d)) / 86_400_000)
+  if (days === 0) return "today's session"
+  if (days >= 1 && days <= 6) return `${WEEKDAYS[d.getDay()]} session`
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} session`
+}
+
 /** Undo HTML entities a feed left in stored text (seen live 2026-08-17:
  * "&#x2019;" raw in outlet headlines). The server decodes at ingest now, but
  * the desk's rolling store still carries days of pre-fix rows — this cleans

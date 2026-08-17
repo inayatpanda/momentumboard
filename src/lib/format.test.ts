@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { fmtPrice, fmtPct, capCohort, compactUsd, emptySideLine, relativeStamp, sizeLabel, longDate, shortDateWithWeekday } from './format'
+import { fmtPrice, fmtPct, capCohort, compactUsd, emptySideLine, relativeStamp, sessionLabel, sizeLabel, longDate, shortDateWithWeekday } from './format'
 
 describe('fmtPrice', () => {
   it('renders pence for GBp', () => expect(fmtPrice(123.4, 'GBp')).toBe('123.4p'))
@@ -136,5 +136,41 @@ describe('sizeLabel', () => {
 
   it('says nothing at all for an unsized row', () => {
     expect(sizeLabel(0, 0)).toBe('')
+  })
+})
+
+// The 1D chart's honesty line. A reader opening a US name at breakfast in the
+// UK is looking at FRIDAY's five-minute bars, and a chart that says nothing
+// invites them to read a dead tape as a live one.
+describe('sessionLabel', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  const at = (iso: string) => new Date(iso).getTime()
+
+  it('names today when the newest bar is from today', () => {
+    vi.stubEnv('TZ', 'Europe/London')
+    expect(sessionLabel(at('2026-08-17T14:35:00Z') / 1000, at('2026-08-17T16:00:00Z'))).toBe("today's session")
+  })
+
+  it('names the weekday when the newest bar is the last session, not today', () => {
+    vi.stubEnv('TZ', 'Europe/London')
+    // Monday breakfast in London; NVDA's last five-minute bar is Friday's close
+    expect(sessionLabel(at('2026-08-14T20:00:00Z') / 1000, at('2026-08-17T08:10:00Z'))).toBe('Fri session')
+  })
+
+  it('dates anything older than a week rather than repeating a weekday', () => {
+    vi.stubEnv('TZ', 'Europe/London')
+    expect(sessionLabel(at('2026-08-07T20:00:00Z') / 1000, at('2026-08-17T08:10:00Z'))).toBe('7 Aug session')
+  })
+
+  it('reads the day in the READER’s clock, not UTC', () => {
+    // 21:00 Friday New York = 01:00 Saturday UTC; a New York reader saw Friday
+    vi.stubEnv('TZ', 'America/New_York')
+    expect(sessionLabel(at('2026-08-15T01:00:00Z') / 1000, at('2026-08-17T12:00:00Z'))).toBe('Fri session')
+  })
+
+  it('says nothing for a missing or nonsense stamp', () => {
+    expect(sessionLabel(0)).toBe('')
+    expect(sessionLabel(Number.NaN)).toBe('')
   })
 })

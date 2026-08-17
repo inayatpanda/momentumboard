@@ -68,6 +68,60 @@ describe('market-data routing', () => {
   })
 })
 
+// The chart's range switcher (owner: "can i have 1 day and 1 week, 1 month
+// views as well"). `range` arrives from a query string and used to be dropped
+// straight into the upstream Yahoo URL — it is a whitelist now, one cache key
+// per range, and the short ranges expire sooner because a day of tape moves
+// while the reader watches it.
+describe('market-data — the candles range', () => {
+  beforeEach(() => deps.yahoo.mockClear())
+
+  it('serves each whitelisted range under its OWN cache key, asking Yahoo for that range', async () => {
+    const body = await (await call('type=candles&symbol=NVDA&range=1d', 'secret')).json()
+    expect(body.ok).toBe(true)
+    expect(deps.yahoo).toHaveBeenCalledWith('NVDA', '1d')
+
+    const { getCached } = await import('./cache')
+    expect(await getCached('candles:NVDA:1d')).not.toBeNull()
+    expect(await getCached('candles:NVDA:1mo')).toBeNull() // one range never overwrites another
+
+    await call('type=candles&symbol=NVDA&range=1mo', 'secret')
+    expect(deps.yahoo).toHaveBeenLastCalledWith('NVDA', '1mo')
+  })
+
+  it('crypto rides the same path — a coin trades through the night, so its day is a day', async () => {
+    const body = await (await call('type=candles&symbol=BTC-USD&range=1d', 'secret')).json()
+    expect(body.ok).toBe(true)
+    expect(deps.yahoo).toHaveBeenCalledWith('BTC-USD', '1d')
+  })
+
+  it('refuses an unknown range rather than forwarding it upstream', async () => {
+    await call('type=candles&symbol=NVDA&range=10y', 'secret')
+    expect(deps.yahoo).toHaveBeenCalledWith('NVDA', '1y')
+    await call('type=candles&symbol=NVDA&range=' + encodeURIComponent('1d&interval=1m'), 'secret')
+    expect(deps.yahoo).toHaveBeenLastCalledWith('NVDA', '1y')
+  })
+
+  it('expires a day of tape in five minutes and a quarter of it in fifteen', async () => {
+    const { getCached } = await import('./cache')
+    await call('type=candles&symbol=TSLA&range=1d', 'secret')
+    await call('type=candles&symbol=TSLA&range=5d', 'secret')
+    await call('type=candles&symbol=TSLA&range=3mo', 'secret')
+    // only the clock is faked — timers and promises stay real
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(Date.now() + 400_000) // 6m40s
+      expect(await getCached('candles:TSLA:1d')).toBeNull()
+      expect(await getCached('candles:TSLA:5d')).not.toBeNull()
+      vi.setSystemTime(Date.now() + 400_000) // 13m20s
+      expect(await getCached('candles:TSLA:5d')).toBeNull()
+      expect(await getCached('candles:TSLA:3mo')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 // CX-24: the sectors payload must additively carry each row's REAL constituent
 // symbols (from lib/sectors.ts's SECTOR_MEMBERS) so the Sectors see-all page can
 // expand a tile to actual tickers instead of inventing any. Every SECTORS

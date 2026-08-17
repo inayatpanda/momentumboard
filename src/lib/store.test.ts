@@ -64,6 +64,17 @@ describe('slice store', () => {
     expect(ttlFor('something-unknown')).toBe(SLICE_TTL.default)
   })
 
+  // The chart's short ranges: a 1D chart 15 minutes stale has missed three
+  // whole bars, so the freshness window follows the range the same way the
+  // server's cache does (netlify/functions/lib/yahoo.ts, CANDLE_RANGES).
+  it('ttlFor tightens for intraday candle ranges and leaves the daily ones at 15 min', () => {
+    expect(ttlFor('candles:NVDA:1d')).toBe(300_000)
+    expect(ttlFor('candles:BTC-USD:5d')).toBe(600_000)
+    expect(ttlFor('candles:NVDA:1mo')).toBe(900_000)
+    expect(ttlFor('candles:NVDA:3mo')).toBe(SLICE_TTL.candles)
+    expect(ttlFor('candles:NVDA:1y')).toBe(SLICE_TTL.candles)
+  })
+
   it('writeSlice and invalidateSlices both announce, distinguishably — writes re-render, invalidations refetch', async () => {
     const seen: { key: string; kind: string }[] = []
     const listener = (e: Event) => seen.push((e as CustomEvent<{ key: string; kind: string }>).detail)

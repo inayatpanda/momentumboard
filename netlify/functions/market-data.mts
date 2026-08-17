@@ -1,5 +1,5 @@
 import type { Context } from '@netlify/functions'
-import { fetchYahooChart } from './lib/yahoo'
+import { CANDLE_RANGES, candleRange, fetchYahooChart } from './lib/yahoo'
 import { fetchFinnhubQuote } from './lib/finnhub'
 import { fetchSymbolNews } from './lib/news'
 import { getCached, setCached } from './lib/cache'
@@ -200,14 +200,18 @@ export async function routeRequest(
 
   if (type === 'candles') {
     const symbol = url.searchParams.get('symbol')
-    const range = (url.searchParams.get('range') ?? '1y') as '3mo' | '6mo' | '1y'
+    // WHITELISTED, not passed through (the range switcher's wave): this string
+    // is interpolated into the upstream Yahoo URL, and each range keeps its own
+    // cache key so a 1D read never overwrites the 3M one. Its TTL rides with
+    // it — five minutes for a day of tape, fifteen for a quarter of it.
+    const range = candleRange(url.searchParams.get('range'))
     if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })
     const key = `candles:${symbol}:${range}`
     const hit = await getCached<unknown>(key)
     if (hit) return json(200, { ok: true, data: hit })
     try {
       const data = await deps.yahoo(symbol, range)
-      await setCached(key, data, 900)
+      await setCached(key, data, CANDLE_RANGES[range].ttlSec)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })

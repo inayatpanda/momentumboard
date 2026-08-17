@@ -12,6 +12,12 @@
 // the on-demand read, which is NEVER dressed as a scanned call (no grade, no
 // calibrated probability; see VerdictHero's rule).
 //
+// THE RANGE PILLS run 1D · 1W · 1M · 3M · 6M · 1Y and open on the MONTH (owner:
+// "can i have 1 day and 1 week, 1 month views as well rather than starting with
+// 3 months"). The choice is the reader's and it sticks — lib/chartRange.ts owns
+// the table, the default and the memory; each range has its own candles slice,
+// so switching never overwrites another range's cache.
+//
 // The chart is the app's heaviest component (lightweight-charts) — it is
 // React.lazy'd so it stays in its own chunk and never blocks this page's
 // first paint, and jsdom (which cannot run it) mocks the module in tests.
@@ -22,7 +28,8 @@ import { getJourney, getVerdict } from '../lib/apiViews'
 import { getCandles, getNews } from '../lib/api'
 import { db, getCapital, type RuleItem } from '../lib/db'
 import { mirrorConfig } from '../lib/configMirror'
-import { fmtPct, fmtPrice } from '../lib/format'
+import { CHART_RANGES, chartRangeOf, readChartRange, writeChartRange, type ChartRangeId } from '../lib/chartRange'
+import { fmtPct, fmtPrice, sessionLabel } from '../lib/format'
 import { engineLevelLines } from '../lib/engineLevels'
 import { AlertEditor } from '../components/AlertEditor'
 import { PositionCalculator } from '../components/PositionCalculator'
@@ -35,9 +42,6 @@ import { AskSheet } from './parts/AskSheet'
 import type { OpenTraceEntry } from '../lib/api'
 
 const PriceChart = lazy(() => import('../components/PriceChart').then(m => ({ default: m.PriceChart })))
-
-const RANGES = ['3mo', '6mo', '1y'] as const
-type Range = (typeof RANGES)[number]
 
 const hostOf = (url: string) => {
   try {
@@ -101,7 +105,13 @@ function Catalysts({ sym }: { sym: string }) {
 }
 
 export default function StockPage({ sym }: { sym: string }) {
-  const [range, setRange] = useState<Range>('6mo')
+  // The reader's own last choice, or the month (chartRange.ts owns both). Read
+  // lazily — localStorage is touched once per mount, not once per render.
+  const [range, setRange] = useState<ChartRangeId>(readChartRange)
+  const pickRange = (id: ChartRangeId) => {
+    setRange(id)
+    writeChartRange(id) // it applies to the NEXT stock page too, not just this one
+  }
   const { data: journey } = useSlice(`journey:${sym}`, () => getJourney(sym))
   const { data: chart } = useSlice(`candles:${sym}:${range}`, () => getCandles(sym, range))
   const [rules, setRules] = useState<RuleItem[]>([])
@@ -118,6 +128,7 @@ export default function StockPage({ sym }: { sym: string }) {
   const row = journey?.boardRow ?? null
   const quote = chart?.quote ?? null
   const candles = chart?.candles ?? []
+  const intradayRange = chartRangeOf(range).intraday
   // WHAT THE HERO MAY SAY, AND FROM WHICH DAY (Task 17 review, C1).
   //
   // Only the NEWEST funnel day speaks for the hero. The old memo scanned every
@@ -181,15 +192,24 @@ export default function StockPage({ sym }: { sym: string }) {
       {/* 1 — the chart, pinned at the top */}
       <section className="sp-chart" aria-label="Price chart">
         <div className="seg" role="group" aria-label="Chart range">
-          {RANGES.map(r => (
-            <button key={r} aria-pressed={r === range} onClick={() => setRange(r)}>
-              {r}
+          {CHART_RANGES.map(r => (
+            <button key={r.id} aria-pressed={r.id === range} onClick={() => pickRange(r.id)}>
+              {r.label}
             </button>
           ))}
         </div>
+        {/* WHAT YOU ARE ACTUALLY LOOKING AT, on the intraday ranges only: the
+            bar size, and WHOSE session — markets are shut most of the hours a
+            UK reader is awake, so a 1D chart of a US name at breakfast is
+            Friday's tape and must say so rather than imply a live one. */}
+        {intradayRange && candles.length > 0 && (
+          <p className="sp-chart-when" data-testid="chart-when">
+            {chartRangeOf(range).bars} · {sessionLabel(candles[candles.length - 1].t)}
+          </p>
+        )}
         {candles.length > 1 ? (
           <Suspense fallback={<div className="skeleton sp-chart-skel" />}>
-            <PriceChart candles={candles} priceLines={priceLines} height={260} interactive />
+            <PriceChart candles={candles} priceLines={priceLines} height={260} interactive intraday={intradayRange} />
           </Suspense>
         ) : (
           <div className="skeleton sp-chart-skel" />

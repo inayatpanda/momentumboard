@@ -1108,6 +1108,25 @@ p {
 .v2 .sp-chart .seg {
   margin-bottom: 10px;
 }
+/* six ranges on a 360px phone: the labels are two characters, so the padding
+   goes rather than the pills wrapping into a second row */
+.v2 .sp-chart .seg > button {
+  padding: 6px 2px;
+  font-size: 12px;
+}
+/* The legend floats over the chart's top-left corner and, unbounded, ran its
+   chips straight under the price axis' own top label — on a 390px phone the
+   target chip sat on top of "227.00". Bounded clear of the axis it wraps to a
+   second line instead, which it was already built to do. */
+.v2 .sp-chart .chart-legend {
+  right: 56px;
+}
+/* which session, and how big its bars are — only on the intraday ranges */
+.v2 .sp-chart-when {
+  margin: -4px 0 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
 .v2 .sp-chart-skel {
   height: 260px;
 }

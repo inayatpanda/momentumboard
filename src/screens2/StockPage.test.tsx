@@ -128,13 +128,14 @@ const mkTrace = (o: Partial<OpenTraceEntry> = {}): OpenTraceEntry => ({
 
 const candles = Array.from({ length: 30 }, (_, i) => ({ t: 1_700_000_000 + i * 86_400, o: 100, h: 102, l: 99, c: 100 + i, v: 1_000_000 }))
 
-const seedCandles = (sym: string, range = '6mo') =>
+const seedCandles = (sym: string, range = '1mo') =>
   writeSlice(`candles:${sym}:${range}`, { candles, quote: { symbol: sym, price: 128.4, prevClose: 125.8, changePct: 2.07, currency: 'USD', todayVolume: 1e6, asOf: 0, source: 'finnhub' as const } })
 
 const withRouter = (sym: string) => render(<Router base="/app" hook={memoryLocation({ path: `/app/stock/${sym}` }).hook}><StockPage sym={sym} /></Router>)
 
 beforeEach(async () => {
   await Promise.all([db.slices.clear(), db.candles.clear(), db.quotes.clear(), db.watchlist.clear(), db.rules.clear()])
+  localStorage.clear() // the chart range is remembered there — one test's choice is not the next's
   vi.clearAllMocks()
 })
 
@@ -672,16 +673,66 @@ describe('StockPage', () => {
   })
 
   describe('the chart', () => {
-    it('offers 3mo/6mo/1y range pills and refetches candles on a range change', async () => {
+    it('offers 1D/1W/1M/3M/6M/1Y range pills and refetches candles on a range change', async () => {
       const { getCandles } = await import('../lib/api')
       await seedCandles('NVDA')
       await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
       withRouter('NVDA')
       expect(await screen.findByTestId('price-chart')).toBeInTheDocument()
       const pills = screen.getByRole('group', { name: /chart range/i })
-      expect([...pills.querySelectorAll('button')].map(b => b.textContent)).toEqual(['3mo', '6mo', '1y'])
-      fireEvent.click(within(pills).getByRole('button', { name: '1y' }))
+      expect([...pills.querySelectorAll('button')].map(b => b.textContent)).toEqual(['1D', '1W', '1M', '3M', '6M', '1Y'])
+      fireEvent.click(within(pills).getByRole('button', { name: '1Y' }))
       await waitFor(() => expect(getCandles).toHaveBeenCalledWith('NVDA', '1y'))
+    })
+
+    // The owner's gripe, verbatim: "rather than starting with 3 months."
+    it('opens on the month and reads its candles from that range’s own slice', async () => {
+      const { getCandles } = await import('../lib/api')
+      await seedCandles('NVDA', '1mo')
+      await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
+      withRouter('NVDA')
+      expect(await screen.findByTestId('price-chart')).toBeInTheDocument()
+      const pills = screen.getByRole('group', { name: /chart range/i })
+      expect(within(pills).getByRole('button', { name: '1M' })).toHaveAttribute('aria-pressed', 'true')
+      expect(getCandles).not.toHaveBeenCalled() // the seeded 1mo record served it
+    })
+
+    it('remembers the reader’s last range and applies it to the next stock page', async () => {
+      const { getCandles } = await import('../lib/api')
+      await seedCandles('NVDA', '1mo')
+      await seedCandles('NVDA', '1d')
+      await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
+      const first = withRouter('NVDA')
+      const pills = await screen.findByRole('group', { name: /chart range/i })
+      fireEvent.click(within(pills).getByRole('button', { name: '1D' }))
+      await waitFor(() => expect(localStorage.getItem('mb-chart-range')).toBe('1d'))
+      first.unmount()
+
+      await writeSlice('journey:AMD', mkJourney({ boardRow: mkRow({ sym: 'AMD' }) }))
+      await seedCandles('AMD', '1d')
+      withRouter('AMD')
+      const next = await screen.findByRole('group', { name: /chart range/i })
+      expect(within(next).getByRole('button', { name: '1D' })).toHaveAttribute('aria-pressed', 'true')
+      expect(getCandles).not.toHaveBeenCalledWith('AMD', '1mo')
+    })
+
+    // A 1D chart out of hours is the LAST session's five-minute bars. Saying
+    // nothing invites a dead tape to be read as a live one.
+    it('names the session and the bar size on the intraday ranges, and neither on the daily ones', async () => {
+      const threeDaysAgo = Math.floor(Date.now() / 1000) - 3 * 86_400
+      const intraday = Array.from({ length: 40 }, (_, i) => ({ t: threeDaysAgo - (39 - i) * 300, o: 100, h: 101, l: 99, c: 100 + i * 0.1, v: 1000 }))
+      await writeSlice('candles:NVDA:1d', { candles: intraday, quote: { symbol: 'NVDA', price: 104, prevClose: 100, changePct: 4, currency: 'USD', todayVolume: 1e6, asOf: 0, source: 'yahoo' as const } })
+      await seedCandles('NVDA', '1mo')
+      await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
+      withRouter('NVDA')
+      const pills = await screen.findByRole('group', { name: /chart range/i })
+      expect(screen.queryByTestId('chart-when')).not.toBeInTheDocument() // 1M: daily bars, nothing to explain
+
+      fireEvent.click(within(pills).getByRole('button', { name: '1D' }))
+      const when = await screen.findByTestId('chart-when')
+      expect(when).toHaveTextContent('5-minute bars')
+      expect(when).toHaveTextContent(/session/)
+      expect(when).not.toHaveTextContent("today's session") // three days old — say so
     })
 
     // B1: `candles:SYM:3mo` has TWO writers — this page's 3mo range and every
@@ -706,7 +757,7 @@ describe('StockPage', () => {
 
       withRouter('NVDA')
       const pills = await screen.findByRole('group', { name: /chart range/i })
-      fireEvent.click(within(pills).getByRole('button', { name: '3mo' }))
+      fireEvent.click(within(pills).getByRole('button', { name: '3M' }))
       expect(await screen.findByTestId('price-chart')).toBeInTheDocument()
       expect(getCandles).not.toHaveBeenCalledWith('NVDA', '3mo')
     })

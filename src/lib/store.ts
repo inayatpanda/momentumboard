@@ -41,7 +41,18 @@ export const SLICE_TTL: Record<string, number> = {
   default: 900_000,
 }
 
-export const ttlFor = (key: string): number => SLICE_TTL[key] ?? SLICE_TTL[key.split(':')[0]] ?? SLICE_TTL.default
+/** The chart's intraday ranges age faster than the daily ones — a 1D chart
+ * fifteen minutes stale has missed three whole bars. Keyed by the range suffix
+ * of `candles:SYM:RANGE`, and deliberately the same numbers the server caches
+ * those ranges for (netlify/functions/lib/yahoo.ts, CANDLE_RANGES): a client
+ * that revalidates sooner than the server refreshes only buys a round trip. */
+const CANDLE_RANGE_TTL: Record<string, number> = { '1d': 300_000, '5d': 600_000 }
+
+export const ttlFor = (key: string): number => {
+  const parts = key.split(':')
+  if (parts[0] === 'candles' && CANDLE_RANGE_TTL[parts[2]]) return CANDLE_RANGE_TTL[parts[2]]
+  return SLICE_TTL[key] ?? SLICE_TTL[parts[0]] ?? SLICE_TTL.default
+}
 
 /** candles:/quotes: live in their own tables; everything else in `slices`. */
 const tableFor = (key: string) => (key.startsWith('candles:') ? db.candles : key.startsWith('quotes:') ? db.quotes : db.slices)

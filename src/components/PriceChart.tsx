@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { createChart, ColorType, CrosshairMode, type IChartApi, type UTCTimestamp } from 'lightweight-charts'
 import type { Candle } from '../../shared/types'
 import { sma } from '../../shared/indicators'
-import { toCandleSeries, toVolumeSeries, toLineSeries } from '../lib/chartData'
+import { drawableMAs, toCandleSeries, toLocalBars, toVolumeSeries, toLineSeries } from '../lib/chartData'
 import type { ColorRole, PriceLineSpec, StageMarkerSpec } from '../lib/engineLevels'
 
 // Every colour is read from the theme tokens at mount (getComputedStyle), so the
@@ -19,6 +19,7 @@ export function PriceChart({
   marker,
   height = 300,
   interactive = false,
+  intraday = false,
 }: {
   candles: Candle[]
   priceLines?: PriceLineSpec[]
@@ -29,12 +30,17 @@ export function PriceChart({
   // pan/zoom/crosshair. Scrolling stays intentional: zooming is something you
   // chose a chart page to do, never something a card hijacks mid-scroll.
   interactive?: boolean
+  // The bars are HOURS, not days (the 1D and 1W ranges). The axis then has to
+  // show clock times — and in the reader's own timezone, which lightweight-
+  // charts cannot do, so the bars are shifted onto it (toLocalBars).
+  intraday?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi>()
 
   useEffect(() => {
     if (!ref.current || candles.length === 0) return
+    const bars = intraday ? toLocalBars(candles) : candles
     const css = getComputedStyle(document.documentElement)
     const themed = (v: string, fallback: string) => css.getPropertyValue(v).trim() || fallback
     const chart = createChart(ref.current, {
@@ -46,7 +52,7 @@ export function PriceChart({
       rightPriceScale: { borderVisible: false },
       // a few bars of right padding so a marker on the LAST bar (the stage read)
       // isn't clipped by the price axis
-      timeScale: { borderVisible: false, timeVisible: false, rightOffset: marker ? 7 : 0 },
+      timeScale: { borderVisible: false, timeVisible: intraday, secondsVisible: false, rightOffset: marker ? 7 : 0 },
       crosshair: interactive
         ? {
             horzLine: { color: themed('--faint', '#5d6d74'), labelBackgroundColor: themed('--panel', '#12171a') },
@@ -75,19 +81,19 @@ export function PriceChart({
       lastValueVisible: false,
       priceLineVisible: false,
     })
-    candleSeries.setData(toCandleSeries(candles))
+    candleSeries.setData(toCandleSeries(bars))
 
     // volume: very muted — the soft accent tints, a whisper under the candles
     const volUp = themed('--green-soft', 'rgba(43,211,150,0.13)')
     const volDown = themed('--red-soft', 'rgba(255,95,118,0.13)')
     const volumeSeries = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false })
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false })
-    volumeSeries.setData(toVolumeSeries(candles).map((d, i) => ({ ...d, color: candles[i].c >= candles[i].o ? volUp : volDown })))
+    volumeSeries.setData(toVolumeSeries(bars).map((d, i) => ({ ...d, color: bars[i].c >= bars[i].o ? volUp : volDown })))
 
-    const closes = candles.map(c => c.c)
-    for (const { period, token, fallback } of MA_STYLES) {
+    const closes = bars.map(c => c.c)
+    for (const { period, token, fallback } of drawableMAs(MA_STYLES, bars.length)) {
       const line = chart.addLineSeries({ color: themed(token, fallback), lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
-      line.setData(toLineSeries(candles, sma(closes, period)))
+      line.setData(toLineSeries(bars, sma(closes, period)))
     }
 
     // Engine annotations: entry/stop/target as coloured dashes. NO titled axis
@@ -101,7 +107,7 @@ export function PriceChart({
     }
     if (marker) {
       candleSeries.setMarkers([
-        { time: candles[candles.length - 1].t as UTCTimestamp, position: marker.position, color: roleColor(marker.role), shape: 'circle', text: marker.text },
+        { time: bars[bars.length - 1].t as UTCTimestamp, position: marker.position, color: roleColor(marker.role), shape: 'circle', text: marker.text },
       ])
     }
 
@@ -113,14 +119,18 @@ export function PriceChart({
       chart.remove()
       chartRef.current = undefined
     }
-  }, [candles, priceLines, marker, height, interactive])
+  }, [candles, priceLines, marker, height, interactive, intraday])
 
   return (
     <div className="chart-box">
       <div className="chart-legend">
-        <span style={{ color: 'var(--blue)' }}>MA20</span>
-        <span style={{ color: 'var(--amber)' }}>MA50</span>
-        <span style={{ color: 'var(--muted)' }}>MA200</span>
+        {/* only the averages this series can actually draw — an MA200 chip over
+            78 five-minute bars named a line that was never there */}
+        {drawableMAs(MA_STYLES, candles.length).map(({ period, token }) => (
+          <span key={period} style={{ color: `var(${token})` }}>
+            MA{period}
+          </span>
+        ))}
         {priceLines.map(pl => (
           <span key={pl.title} className="lvl-chip" style={{ color: pl.role === 'up' ? 'var(--green)' : pl.role === 'down' ? 'var(--red)' : 'var(--muted)' }}>
             {pl.title.replace('engine ', '')} {pl.price}
