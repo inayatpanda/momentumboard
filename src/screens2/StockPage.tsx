@@ -38,6 +38,7 @@ import { FactorVotes } from './parts/FactorVotes'
 import { FunnelPath, funnelDayKind, isPublishedGate } from './parts/FunnelPath'
 import { PastCalls } from './parts/PastCalls'
 import { OpenTraceCard } from './parts/OpenTraceCard'
+import { SessionLine } from './parts/SessionLine'
 import { AskSheet } from './parts/AskSheet'
 import type { OpenTraceEntry } from '../lib/api'
 
@@ -182,12 +183,17 @@ export default function StockPage({ sym }: { sym: string }) {
           {(row?.name ?? quote?.name) && <span className="sp-name">{row?.name ?? quote?.name}</span>}
         </h1>
         {quote && (
-          <span className="sp-px num">
+          <span
+            className={`sp-px num${quote.stale ? ' stale' : ''}`}
+            title={quote.stale ? 'last known price — the live quote is not answering' : undefined}
+          >
             {fmtPrice(quote.price, quote.currency)}
             {quote.changePct != null && <span className={quote.changePct >= 0 ? 'sp-side long' : 'sp-side short'}> {fmtPct(quote.changePct)}</span>}
           </span>
         )}
       </div>
+      <SessionLine />
+
 
       {/* 1 — the chart, pinned at the top */}
       <section className="sp-chart" aria-label="Price chart">

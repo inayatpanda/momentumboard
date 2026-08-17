@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import type { Quote } from '../../../shared/types'
-import { StockRow } from './StockRow'
+import { StockRow, monogram } from './StockRow'
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api')
@@ -70,5 +70,40 @@ describe('StockRow price flash', () => {
       </Router>,
     )
     expect(priceEl().className).toBe('num')
+  })
+})
+
+// THE MONOGRAM COLLISION (sweep A #32): `slice(0, 2)` made AMD and AMZN both
+// "AM", GOOG/GOOGL both "GO". First + last letter of the base symbol keeps
+// two characters and separates every collision the sweep named.
+describe('monogram', () => {
+  it('separates the sweep’s collisions and leaves short symbols whole', () => {
+    expect(monogram('AMD')).toBe('AD')
+    expect(monogram('AMZN')).toBe('AN')
+    expect(monogram('GOOG')).toBe('GG')
+    expect(monogram('GOOGL')).toBe('GL')
+    expect(monogram('MSFT')).toBe('MT')
+    expect(monogram('MU')).toBe('MU')
+    expect(monogram('F')).toBe('F')
+    // suffixes and quote currencies never reach the tile
+    expect(monogram('BTC-USD')).toBe('BC')
+    expect(monogram('VOD.L')).toBe('VD')
+  })
+})
+
+// A LAST-KNOWN-GOOD PRICE MUST SAY SO (S2 concern #3): the server now serves
+// `stale: true` with the original asOf instead of a dash when the live fetch
+// fails — rendering it indistinguishable from a live tick would be worse than
+// the dash it replaced.
+describe('stale quotes', () => {
+  it('dims a stale price, names it, and never flashes it', () => {
+    render(
+      <Router hook={memoryLocation({ path: '/' }).hook}>
+        <StockRow symbol="AAPL" quote={{ symbol: 'AAPL', price: 232.14, changePct: -0.4, currency: 'USD', asOf: 1786824000, stale: true } as never} sparkCachedOnly />
+      </Router>,
+    )
+    const el = document.querySelector('.stx-row-prices .num') as HTMLElement
+    expect(el.className).toContain('stale')
+    expect(el.title).toMatch(/last known price/i)
   })
 })

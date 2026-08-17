@@ -198,7 +198,7 @@ describe('Stocks', () => {
       expect(await screen.findByText(/your watchlist is empty/i)).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
       await waitFor(() => expect(getMovers).toHaveBeenCalledTimes(1))
-      for (const call of getQuotes.mock.calls) {
+      for (const call of vi.mocked(getQuotes).mock.calls) {
         expect(call[0]).toEqual(['BTC-USD', 'ETH-USD'])
       }
     })

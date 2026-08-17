@@ -1108,6 +1108,11 @@ p {
   gap: 3px;
   flex-shrink: 0;
 }
+/* a last-known-good price is a record, not a tick — it reads dimmer than a
+   live one and its title says why (StockRow, S2's stale tier) */
+.v2 .stx-row-prices .num.stale {
+  opacity: 0.55;
+}
 .v2 .stx-remove {
   flex-shrink: 0;
   border: none;

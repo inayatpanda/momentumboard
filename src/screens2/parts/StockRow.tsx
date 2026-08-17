@@ -22,6 +22,16 @@ import { useSlice } from '../../lib/useSlice'
 import { readSlice } from '../../lib/store'
 import { getCandles } from '../../lib/api'
 import { symbolHue } from '../../components/TickerRow'
+
+/** The avatar's two letters. `slice(0, 2)` collided half the megacaps (AMD and
+ * AMZN both "AM", GOOG and GOOGL both "GO" — sweep A #32); first + last letter
+ * of the BASE symbol (suffix and quote currency stripped) keeps two characters
+ * and separates every observed collision. Short symbols stay themselves. */
+export function monogram(symbol: string): string {
+  const base = symbol.split(/[-.]/)[0]
+  if (base.length <= 2) return base
+  return `${base[0]}${base[base.length - 1]}`
+}
 import { Sparkline } from '../../components/Sparkline'
 import { fmtPrice, fmtPct } from '../../lib/format'
 import type { Candle, Quote } from '../../../shared/types'
@@ -119,12 +129,13 @@ export function StockRow({
   sparkCachedOnly?: boolean
 }) {
   const up = quote && quote.changePct != null ? quote.changePct >= 0 : false
-  const flash = usePriceFlash(quote?.price)
+  // a stale (last-known-good) price is a RECORD, not a tick — it never flashes
+  const flash = usePriceFlash(quote?.stale ? undefined : quote?.price)
   return (
     <div className="card pressable stx-row" data-flip-key={flipKey}>
       <Link href={`/stock/${symbol}`} className="stx-row-link">
         <span className="stx-avatar" style={{ '--h': symbolHue(symbol) } as CSSProperties} aria-hidden="true">
-          {symbol.slice(0, 2)}
+          {monogram(symbol)}
         </span>
         <span className="stx-row-main">
           <span className="stx-sym">{symbol}</span>
@@ -132,7 +143,12 @@ export function StockRow({
         </span>
         {sparkCachedOnly ? <SparkCached symbol={symbol} /> : <SparkLive symbol={symbol} />}
         <span className="stx-row-prices">
-          <span className={`num${flash ? ` flash-${flash}` : ''}`}>{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
+          <span
+            className={`num${flash ? ` flash-${flash}` : ''}${quote?.stale ? ' stale' : ''}`}
+            title={quote?.stale ? 'last known price — the live quote is not answering' : undefined}
+          >
+            {quote ? fmtPrice(quote.price, quote.currency) : '—'}
+          </span>
           {quote && quote.changePct != null && <span className={`pill ${up ? 'long' : 'short'}`}><span className="num">{fmtPct(quote.changePct)}</span></span>}
         </span>
       </Link>
