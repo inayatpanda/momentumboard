@@ -3,6 +3,11 @@ import type { AppConfig } from '../../shared/config'
 import type { EmptySideReason } from '../../shared/engine/types'
 import type { MissLedgerSummary } from '../../shared/engine/missLedger'
 import type { GateStateSummary } from '../../shared/engine/gateState'
+// TYPE-ONLY, and deliberately so: apiViews.ts imports this file for `apiGet`,
+// and a value import back would close the cycle. `ChannelPick` is the client's
+// one mirror of the server's TickerConsensus and belongs beside the board slice
+// it has always ridden — The street's wire carries the same rows, uncapped.
+import type { ChannelPick } from './apiViews'
 
 export const getToken = () => localStorage.getItem('mb-token')
 
@@ -212,6 +217,52 @@ export const getSocialPulse = () =>
     pulse: PulseRow[]
     at: number
   }>('/api/market?type=social')
+
+// --- THE STREET (owner request) ---------------------------------------------
+// "the summary of youtube video input deserve a section of their own, and there
+//  should be a system where the youtube suggestions are also evaluated by our
+//  engine and highlighted — all in a new page/tab altogether."
+//
+// Mirrors netlify/functions/market-data.mts's `type=street` 1:1. `levels` is
+// deliberately absent from the ticker shape: the server strips it, because this
+// wire's claim is what a channel SAID about a name, never the prices it drew.
+
+/** One analysed video, as the wire renders it. */
+export interface StreetVideo {
+  url: string
+  title: string
+  channel: string
+  /** UNIX SECONDS, like the news desk's — `relativeStamp` reads the unit by
+   * magnitude, so nothing downstream has to know which this is. */
+  at: number
+  tickers: { sym: string; stance: 'bull' | 'bear' | 'neutral' }[]
+  themes: string[]
+  /** HOW THE FACTS WERE OBTAINED: 'gemini-video' means the model watched the
+   * video, anything else means it read words. Absent on rows older than the
+   * fallback, and the page then says nothing rather than guessing. */
+  via?: 'local' | 'free' | 'supadata' | 'gemini-video' | 'transcript'
+}
+
+/** One watch-tier narrative read — plain prose, already short by construction. */
+export interface StreetRead {
+  url: string
+  title: string
+  channel: string
+  analysis: string
+  at: number
+  via?: string
+}
+
+export interface StreetWire {
+  videos: StreetVideo[]
+  reads: StreetRead[]
+  /** The FULL cross-channel consensus — uncapped, unlike the board slice's
+   * eight-name `channelPicks`, which is capped to fit a home screen. */
+  consensus: ChannelPick[]
+  at: number
+}
+
+export const getStreetWire = () => apiGet<StreetWire>('/api/market?type=street')
 
 export const evaluateNote = (text: string, kind: string) =>
   apiGet<{ take: string }>(`/api/market?type=evaluate-note&text=${encodeURIComponent(text)}&kind=${kind}`).then(d => d.take)
