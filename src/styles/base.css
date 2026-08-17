@@ -106,6 +106,13 @@ p {
   padding: 3px;
   border: 1px solid var(--border);
 }
+/* HORIZONTAL PADDING IS LOAD-BEARING (visibility wave, 2026-08-17). With
+   `padding: 6px 0` a button's min-content width is exactly its longest word,
+   so inside a grid `auto` track — Settings' theme row — the whole control
+   collapsed to ~110px and "Auto Light Dark" ran together under a selected pill
+   that had nothing to hug. `nowrap` keeps a two-word label on one line for the
+   same reason; `flex: 1` still spreads the full-width segs (Sectors, Movers,
+   the stock chart) exactly as before. */
 .v2 .seg > button {
   flex: 1;
   border: none;
@@ -114,7 +121,8 @@ p {
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  padding: 6px 0;
+  padding: 6px 12px;
+  white-space: nowrap;
   border-radius: 999px;
   cursor: pointer;
 }

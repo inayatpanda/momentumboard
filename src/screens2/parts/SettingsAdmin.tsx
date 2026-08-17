@@ -5,7 +5,7 @@
 // whole Settings screen still lives here so a re-render never re-fires it.
 
 import { useCallback, useEffect, useState } from 'react'
-import { apiUrl, createLicence, getLicences, getToken, revokeLicence, setToken } from '../../lib/api'
+import { apiUrl, createLicence, getLicences, getToken, isSharedFreeToken, revokeLicence, setToken } from '../../lib/api'
 
 type Licence = Awaited<ReturnType<typeof getLicences>>[number]
 
@@ -18,20 +18,30 @@ const IconKey = () => <Svg d="M21 2l-9.4 9.4M15.5 7.5l3 3M11.6 11.6a5 5 0 11-7.0
 
 /** isAdmin: null = probe in flight (every gated section hidden, matching the
  * legacy screen's initial states), true = the server accepted the stored
- * token as admin, false = a normal licence or no token. */
+ * token as admin, false = a normal licence or no token.
+ *
+ * THE FREE TIER NEVER ASKS (visibility wave, 2026-08-17). The shared DMG token
+ * is by construction not the admin key, so /api/licences can only ever answer
+ * it 401 — which the live walkthrough caught firing three times on one Settings
+ * paint. A request whose answer is already known is not a probe, it is noise in
+ * the log and a red row in the reader's devtools. Answering it locally is also
+ * the honest answer: false, immediately, with no round trip. */
 export function useIsAdmin() {
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
+  const free = isSharedFreeToken()
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(free ? false : null)
   const [licences, setLicences] = useState<Licence[]>([])
-  const reload = useCallback(
-    () =>
-      getLicences()
-        .then(l => {
-          setLicences(l)
-          setIsAdmin(true)
-        })
-        .catch(() => setIsAdmin(false)),
-    [],
-  )
+  const reload = useCallback(() => {
+    if (free) {
+      setIsAdmin(false)
+      return Promise.resolve()
+    }
+    return getLicences()
+      .then(l => {
+        setLicences(l)
+        setIsAdmin(true)
+      })
+      .catch(() => setIsAdmin(false))
+  }, [free])
   useEffect(() => {
     reload()
   }, [reload])
@@ -40,10 +50,16 @@ export function useIsAdmin() {
 
 export function LicenceStatusRow({ isAdmin }: { isAdmin: boolean | null }) {
   const token = getToken()
+  const free = isSharedFreeToken()
   const tail = token ? token.slice(-6) : null
-  const label = isAdmin === null ? 'Checking licence…' : isAdmin ? 'Admin access' : 'Licensed device'
-  const sub =
-    isAdmin === null
+  // A SHARED TOKEN IS NOT A LICENCE ON THIS DEVICE. "A licence key is active on
+  // this device, ending …97bd72" is true of the binary, not of the reader —
+  // every free install carries the same six characters, and quoting them
+  // invites the reader to treat a shared key as their own.
+  const label = free ? 'Free preview' : isAdmin === null ? 'Checking licence…' : isAdmin ? 'Admin access' : 'Licensed device'
+  const sub = free
+    ? 'Free preview — licence binding comes later. Nothing on this device is tied to an account yet.'
+    : isAdmin === null
       ? "Confirming this device's key with the server."
       : isAdmin
         ? 'This device holds the admin key — full control of this StreetSignal instance.'
