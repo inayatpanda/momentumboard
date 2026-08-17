@@ -10,11 +10,16 @@ export interface FeedItem {
 const decode = (s: string) =>
   s
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&amp;/g, '&')
+    // numeric entities FIRST (MarketWatch/WSJ feeds use hex ones — &#x2019;
+    // rendered raw on the live desk, 2026-08-17), &amp; LAST so a literal
+    // "&amp;#x2019;" decodes to the text "&#x2019;", never double-decodes
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
     .trim()
 
 const tag = (block: string, name: string): string | null => {

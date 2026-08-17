@@ -32,7 +32,7 @@ import { useSlice } from '../lib/useSlice'
 import { db } from '../lib/db'
 import { getCongress, getInsiderClusters, getNewsDesk, getSocialPulse } from '../lib/api'
 import type { CongressTrade } from '../lib/api'
-import { compactUsd, longDate, relativeStamp } from '../lib/format'
+import { compactUsd, decodeEntities, longDate, relativeStamp } from '../lib/format'
 
 const PAGE = 30
 const FEED_PAGE = 12
@@ -120,7 +120,7 @@ function NewsSection() {
               // re-triaged URL can appear twice (same fix as StockPage's catalysts)
               <div key={`${item.url}-${i}`} className="itl-news-row">
                 <a className="itl-news-title" href={item.url} target="_blank" rel="noreferrer">
-                  {item.title}
+                  {decodeEntities(item.title)}
                 </a>
                 <div className="itl-news-meta">
                   {/* the stamp first — the owner's complaint was that a big

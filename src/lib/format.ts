@@ -49,6 +49,22 @@ export function relativeStamp(at: number, now = Date.now()): string {
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`
 }
 
+/** Undo HTML entities a feed left in stored text (seen live 2026-08-17:
+ * "&#x2019;" raw in outlet headlines). The server decodes at ingest now, but
+ * the desk's rolling store still carries days of pre-fix rows — this cleans
+ * them at render until they age out. React escapes output, so decoding here
+ * introduces nothing executable. */
+export function decodeEntities(s: string): string {
+  return s
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
 /** Dollar totals a reader scans rather than audits — insider clusters run from
  * five figures to ten, and the raw integer is unreadable at either end. */
 export function compactUsd(n: number): string {

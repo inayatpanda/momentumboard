@@ -43,4 +43,13 @@ describe('parseFeed', () => {
   it('returns [] on garbage', () => {
     expect(parseFeed('<html>nope</html>')).toEqual([])
   })
+
+  // seen live 2026-08-17: MarketWatch/WSJ feeds use HEX entities, and the desk
+  // rendered "&#x2019;" raw in every affected headline
+  it('decodes numeric entities — hex and decimal — and never double-decodes &amp;', () => {
+    const xml =
+      '<rss><channel><item><title>It&#x2019;s the Fed &#8212; markets &amp; rates, &amp;#x2019; literal</title><link>https://x/a</link><pubDate>Wed, 01 Jul 2026 19:16:15 +0000</pubDate></item></channel></rss>'
+    const items = parseFeed(xml)
+    expect(items[0].title).toBe('It’s the Fed — markets & rates, &#x2019; literal')
+  })
 })
