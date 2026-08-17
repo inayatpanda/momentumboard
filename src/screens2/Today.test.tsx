@@ -446,6 +446,11 @@ describe('OpenCallsStrip', () => {
 // radar shipped and no v2 screen read a character of it — so a dated binary the
 // engine already knew about was invisible until it printed.
 describe('EventRadarStrip', () => {
+  // THE CLOCK IS PINNED (dynamism wave, feature 5): the day distance is now
+  // computed from each entry's DATE against the reader's clock, so a test that
+  // let the real clock in would pass today and fail tomorrow — which is
+  // precisely the staleness this recompute exists to fix.
+  const NOW = Date.parse('2026-08-17T09:00:00Z') // Monday morning, London
   const mkEvent = (o: Partial<EventRadarEntry> = {}): EventRadarEntry => ({
     sym: 'AVGO',
     name: 'Broadcom',
@@ -464,24 +469,60 @@ describe('EventRadarStrip', () => {
   })
 
   it('renders a dated row per print, symbol linked, stage shown', () => {
-    withRouter(<EventRadarStrip radar={{ entries: [mkEvent()] }} />)
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent()] }} now={NOW} />)
     expect(screen.getByRole('link', { name: 'AVGO' })).toHaveAttribute('href', '/app/stock/AVGO')
     expect(screen.getByText('reports in 3d')).toBeInTheDocument()
     expect(screen.getByText(/20 Aug/)).toHaveClass('num')
     expect(screen.getByText('trending')).toBeInTheDocument()
   })
 
-  it('sorts nearest first and caps at six', () => {
-    const entries = Array.from({ length: 9 }, (_, i) => mkEvent({ sym: `S${i}`, date: '2026-08-20', daysToPrint: 9 - i }))
-    withRouter(<EventRadarStrip radar={{ entries }} />)
-    const syms = [...document.querySelectorAll('.er-sym')].map(el => el.textContent)
-    expect(syms).toEqual(['S8', 'S7', 'S6', 'S5', 'S4', 'S3']) // daysToPrint 1..6
+  it('counts from the reader’s own day, ignoring the number the blob was baked with', () => {
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ date: '2026-08-20', daysToPrint: 0 })] }} now={NOW} />)
+    expect(screen.getByText('reports in 3d')).toBeInTheDocument()
+    expect(screen.queryByText('reports today')).not.toBeInTheDocument()
   })
 
   it('never prints "in 0d" — a same-day print says so in English', () => {
-    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ daysToPrint: 0 }), mkEvent({ sym: 'AMD', daysToPrint: 1 })] }} />)
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ date: '2026-08-17' }), mkEvent({ sym: 'AMD', date: '2026-08-18' })] }} now={NOW} />)
     expect(screen.getByText('reports today')).toBeInTheDocument()
     expect(screen.getByText('reports tomorrow')).toBeInTheDocument()
+  })
+
+  // THE SATURDAY BUG (dynamism wave): Friday's blob said "reports today" about
+  // a print whose result the reader could already look up.
+  it('a print already past says so, instead of claiming it is today', () => {
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ date: '2026-08-14', daysToPrint: 0 })] }} now={NOW} />)
+    expect(screen.getByText("reported — awaiting the print's read")).toBeInTheDocument()
+  })
+
+  it('turns over at LONDON midnight, not the reader’s and not UTC’s', () => {
+    const justAfterMidnight = Date.parse('2026-08-17T23:30:00Z') // 00:30 on the 18th, London
+    withRouter(
+      <EventRadarStrip radar={{ entries: [mkEvent({ date: '2026-08-18' }), mkEvent({ sym: 'AMD', date: '2026-08-17' })] }} now={justAfterMidnight} />,
+    )
+    expect(screen.getByText('reports today')).toBeInTheDocument()
+    expect(screen.getByText("reported — awaiting the print's read")).toBeInTheDocument()
+  })
+
+  it('sorts nearest first, pushes the already-reported to the back, and caps at six', () => {
+    const entries = [
+      mkEvent({ sym: 'FAR', date: '2026-08-27' }),
+      mkEvent({ sym: 'PAST1', date: '2026-08-14' }),
+      mkEvent({ sym: 'SOON', date: '2026-08-18' }),
+      mkEvent({ sym: 'PAST2', date: '2026-08-10' }),
+      mkEvent({ sym: 'TODAY', date: '2026-08-17' }),
+      mkEvent({ sym: 'MID', date: '2026-08-20' }),
+      mkEvent({ sym: 'LATER', date: '2026-08-24' }),
+      mkEvent({ sym: 'LAST', date: '2026-08-25' }),
+    ]
+    withRouter(<EventRadarStrip radar={{ entries }} now={NOW} />)
+    const syms = [...document.querySelectorAll('.er-sym')].map(el => el.textContent)
+    expect(syms).toEqual(['TODAY', 'SOON', 'MID', 'LATER', 'LAST', 'FAR'])
+  })
+
+  it('falls back to the blob’s own count when an entry has no readable date', () => {
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ date: '', daysToPrint: 2 })] }} now={NOW} />)
+    expect(screen.getByText('reports in 2d')).toBeInTheDocument()
   })
 })
 
@@ -761,10 +802,14 @@ describe('Today', () => {
         },
       ],
     }
+    // the print's date is THREE DAYS FROM THE READER'S TODAY, computed rather
+    // than hardcoded: the strip counts from the reader's own clock now
+    // (dynamism wave), so a fixed date would make this assertion expire
+    const inThreeDays = new Date(Date.now() + 3 * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
     data.eventRadar = {
       date: '2026-08-14',
       generatedAt: Date.now(),
-      entries: [{ sym: 'AVGO', name: 'Broadcom', date: '2026-08-20', daysToPrint: 3, stage: 'trending', entryQuality: null, rs21: null, note: null }],
+      entries: [{ sym: 'AVGO', name: 'Broadcom', date: inThreeDays, daysToPrint: 9, stage: 'trending', entryQuality: null, rs21: null, note: null }],
     }
     await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
     withRouter(<Today />)
