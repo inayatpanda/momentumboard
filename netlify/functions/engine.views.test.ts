@@ -95,6 +95,9 @@ describe('engine ?view= slices', () => {
     const r = await body(await handler(req('?view=board')))
     expect(r.data.yesterday).toEqual({
       date: '2026-08-13',
+      // WHICH CLOCK THE VERDICTS WERE STRUCK ON. `outcome10` is present here, so
+      // the strip is reporting ten-session grades and says so.
+      horizon: 10,
       wins: 1,
       losses: 1,
       // the whole-day census stays for one release; the SPLIT is what the strip reads
@@ -140,6 +143,85 @@ describe('engine ?view= slices', () => {
 
   it('?view=board yesterday is null with no graded history', async () => {
     await seed('engine-board', { date: '2026-08-14', board: [] })
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.yesterday).toBeNull()
+  })
+
+  // THE STRIP THAT NEVER RENDERED. `outcome10` lands TEN sessions after the call,
+  // so the day immediately before the board has it on nothing — the strip asked
+  // for the one number that is guaranteed absent and drew nothing, every day
+  // since it shipped. The five-session grade is the honest fallback, LABELLED as
+  // five so the reader is never told a ten-session record that isn't one.
+  it('?view=board falls back to the five-session grade when no ten-session one has landed', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('predictions-index', ['2026-08-13'])
+    await seed('predictions:2026-08-13', [
+      { id: 'w', sym: 'NVDA', side: 'long', outcome5: { excessPct: 3.1, rawPct: 4, spyPct: 0.9, stopped: false, hit: true } },
+      { id: 'l', sym: 'COIN', side: 'short', outcome5: { excessPct: -1.4, rawPct: -1, spyPct: 0.4, stopped: false, hit: false } },
+      { id: 'u', sym: 'AMD', side: 'long' }, // ungraded at either horizon — counts nowhere
+    ])
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.yesterday).toMatchObject({ date: '2026-08-13', horizon: 5, wins: 1, losses: 1, equity: { wins: 1, losses: 1 } })
+  })
+
+  // …and when a day carries BOTH, the ten-session verdicts are the record: they
+  // are the calibrated horizon the hit definition is written against.
+  it('?view=board prefers the ten-session grade on a day that carries both', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('predictions-index', ['2026-08-13'])
+    await seed('predictions:2026-08-13', [
+      {
+        id: 'w',
+        sym: 'NVDA',
+        side: 'long',
+        outcome5: { excessPct: -2, rawPct: -2, spyPct: 0, stopped: false, hit: false },
+        outcome10: { excessPct: 4.2, rawPct: 5, spyPct: 0.8, stopped: false, hit: true },
+      },
+      { id: 'x', sym: 'AMD', side: 'long', outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
+    ])
+    const r = await body(await handler(req('?view=board')))
+    // only the ten-session rows are counted — mixing two horizons into one score
+    // would be two different measurements printed as one
+    expect(r.data.yesterday).toMatchObject({ date: '2026-08-13', horizon: 10, wins: 1, losses: 0 })
+  })
+
+  // The immediately-prior day usually has NEITHER grade (both mature days later),
+  // so the strip walks back to the newest day that actually graded — and carries
+  // THAT day's date, so the client can name the day it is reporting on.
+  it('?view=board walks back to the newest graded day and carries its real date', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('predictions-index', ['2026-08-06', '2026-08-07', '2026-08-12', '2026-08-13'])
+    await seed('predictions:2026-08-13', [{ id: 'a', sym: 'AMD', side: 'long' }]) // published, ungraded
+    await seed('predictions:2026-08-12', [{ id: 'b', sym: 'INTC', side: 'long' }]) // published, ungraded
+    await seed('predictions:2026-08-07', [{ id: 'c', sym: 'NVDA', side: 'long', outcome5: { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true } }])
+    await seed('predictions:2026-08-06', [{ id: 'd', sym: 'COIN', side: 'long', outcome10: { excessPct: 9, rawPct: 9, spyPct: 0, stopped: false, hit: true } }])
+    await seed('miss-ledger', {
+      gates: {
+        'dead-zone-core': {
+          cost: 1,
+          costExcessSum: 6,
+          examples: [{ date: '2026-08-07', sym: 'PLTR', side: 'long', excessPct: 6.1, gate: 'dead-zone-core' }],
+        },
+      },
+      days: {},
+    })
+    const r = await body(await handler(req('?view=board')))
+    // the NEWEST graded day, not the oldest one that happens to carry outcome10
+    expect(r.data.yesterday).toMatchObject({
+      date: '2026-08-07',
+      horizon: 5,
+      wins: 1,
+      losses: 0,
+      // the regret is read against the day actually being reported
+      topRegret: { sym: 'PLTR', excessPct: 6.1, gate: 'dead-zone-core' },
+    })
+  })
+
+  it('?view=board yesterday stays null when nothing inside the lookback graded', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('predictions-index', ['2026-08-12', '2026-08-13'])
+    await seed('predictions:2026-08-13', [{ id: 'a', sym: 'AMD', side: 'long' }])
+    await seed('predictions:2026-08-12', [{ id: 'b', sym: 'INTC', side: 'long' }])
     const r = await body(await handler(req('?view=board')))
     expect(r.data.yesterday).toBeNull()
   })

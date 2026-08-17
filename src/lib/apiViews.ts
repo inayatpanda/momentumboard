@@ -28,7 +28,17 @@ export interface BoardSlice {
   riskState: { rung?: number; [k: string]: unknown } | null
   referenceBase: number | null
   yesterday: {
+    /** WHICH day is being reported. Rarely the calendar day before the board:
+     * a grade lands 5 or 10 sessions after the call, so the server walks back to
+     * the newest day that has actually been graded and carries its real date —
+     * the strip names it rather than printing one day's score as another's. */
     date: string
+    /** WHICH clock those verdicts were struck on: 10 = the calibrated horizon the
+     * hit definition is written against, 5 = the earlier read, served only when no
+     * ten-session grade has landed on that day. Optional because a slice cached by
+     * a bundle that predates the field has none — such a slice prints the score
+     * with no horizon claim rather than inventing one. */
+    horizon?: 5 | 10
     /** the whole day's census, both partitions — kept for one release so a slice
      * cached by the previous bundle still paints something true */
     wins: number

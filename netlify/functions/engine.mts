@@ -132,6 +132,13 @@ const londonToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/L
  * section stops being a glance and becomes a list to scroll. */
 const CHANNEL_PICKS_CAP = 8
 
+/** How many published days back the yesterday strip may look for one that has
+ * actually been graded. The five-session grade lands ~5 sessions after the call
+ * and the ten-session one ~10, so on a normal week the newest graded day is five
+ * or six entries back in the index; eight covers a bank holiday without turning
+ * the board slice into an unbounded scan (every read is a subrequest). */
+const YESTERDAY_LOOKBACK = 8
+
 /** What the tracked channels are RECOMMENDING this week, straight off the
  * `video-extracts` blob via the same deterministic consensus maths the paper
  * and the social pulse read (lib/videoTrends.ts — the AI only extracts).
@@ -170,48 +177,75 @@ async function viewBoard() {
     blobAppStore.read('video-extracts'),
   ])
 
-  // THE YESTERDAY STRIP (CX-18): the newest predictions day before the board's,
-  // scored from its own rows, plus that day's costliest named regret — shipped
-  // IN the board slice so a cold Today never depends on the learning slice.
-  const ydate = (predIndex ?? []).filter(d => d !== (board?.date ?? null)).at(-1) ?? null
+  // THE YESTERDAY STRIP (CX-18): the newest GRADED predictions day before the
+  // board's, scored from its own rows, plus that day's costliest named regret —
+  // shipped IN the board slice so a cold Today never depends on the learning slice.
+  //
+  // WHY THIS WALKS BACK, AND WHY IT READS TWO HORIZONS. As shipped it took the
+  // one date immediately before the board's and kept only rows carrying
+  // `outcome10` — a grade that lands TEN sessions after the call. On the day
+  // before the board that field is null on every row, always, so the strip has
+  // drawn nothing since it shipped. Two changes, both about telling the truth
+  // rather than telling nothing:
+  //   • the five-session grade is read when no ten-session one has landed, and
+  //     the payload SAYS which horizon it is reporting (`horizon: 5 | 10`), so
+  //     the client never calls a five-session record a ten-session one;
+  //   • when the immediately-prior day has neither, the newest day that DID
+  //     grade is reported, carrying its own `date` — the reader is told which
+  //     day this is, instead of being shown one day's score under another's name.
+  // Never mixed: a day carrying both horizons is reported at ten sessions only,
+  // because two different measurements summed into one score are neither.
+  const yesterdayDates = (predIndex ?? []).filter(d => d !== (board?.date ?? null)).slice(-YESTERDAY_LOOKBACK)
+  // ONE round trip, bounded (YESTERDAY_LOOKBACK). Every store read costs a
+  // subrequest on the Cloudflare side, so the walk is capped rather than open —
+  // the five-session grade lands ~5 sessions back, well inside the window.
+  const yesterdayDays = await Promise.all(yesterdayDates.map(d => blobAppStore.read<Prediction[]>(`predictions:${d}`)))
   let yesterday: {
     date: string
+    /** WHICH clock these verdicts were struck on — 10 = the calibrated horizon
+     * the hit definition is written against, 5 = the earlier read, reported only
+     * when no ten-session grade has landed on that day yet. */
+    horizon: 5 | 10
     wins: number
     losses: number
     equity: { wins: number; losses: number }
     crypto: { wins: number; losses: number } | null
     topRegret: { sym: string; excessPct: number; gate: string } | null
   } | null = null
-  if (ydate) {
-    const preds = (await blobAppStore.read<Prediction[]>(`predictions:${ydate}`)) ?? []
-    // outcome10 is a PredOutcome object; `hit` is the side-adjusted verdict
-    const graded = preds.filter(p => p.outcome10 != null)
-    if (graded.length) {
-      const regrets = missLedgerExamples(missLedgerBlob, 20)
-      const dayExamples = (regrets?.topGates ?? [])
-        .flatMap(g => g.examples.filter(e => e.date === ydate && e.excessPct > 0).map(e => ({ sym: e.sym, excessPct: e.excessPct, gate: g.gate as string })))
-        .sort((a, b) => b.excessPct - a.excessPct)
-      // THE PARTITION, IN THE STRIP (crypto-v2 wave, finding 5). An equity `hit`
-      // means "beat SPY by ≥1pp over ten sessions"; a cohort `hit` means "moved
-      // ≥1pp on its own, over fourteen crypto bars, with nothing subtracted".
-      // Summed into one score they read as one measurement — and a weekend date
-      // on which only the coins graded would print as a generic engine result
-      // over a market that was shut. Keyed on the STAMP, never the symbol: a
-      // legacy crypto row published before the lane was graded against SPY, so
-      // its verdict really is an equity one.
-      const tally = (rows: Prediction[]) => ({ wins: rows.filter(p => p.outcome10!.hit).length, losses: rows.filter(p => !p.outcome10!.hit).length })
-      const cryptoGraded = graded.filter(p => p.cohort === 'crypto')
-      yesterday = {
-        date: ydate,
-        // the flat pair is the whole day's census, KEPT FOR ONE RELEASE so a
-        // client on the old bundle still paints something true (a count of rows,
-        // which means the same thing in both partitions) — the split below is
-        // what YesterdayStrip actually reads.
-        ...tally(graded),
-        equity: tally(graded.filter(p => p.cohort !== 'crypto')),
-        crypto: cryptoGraded.length ? tally(cryptoGraded) : null,
-        topRegret: dayExamples[0] ?? null,
-      }
+  for (let i = yesterdayDates.length - 1; i >= 0 && yesterday === null; i--) {
+    const ydate = yesterdayDates[i]
+    const preds = yesterdayDays[i] ?? []
+    // outcome10/outcome5 are PredOutcome objects; `hit` is the side-adjusted verdict
+    const at10 = preds.filter(p => p.outcome10 != null)
+    const graded = at10.length ? at10 : preds.filter(p => p.outcome5 != null)
+    if (!graded.length) continue
+    const horizon: 5 | 10 = at10.length ? 10 : 5
+    const outcomeOf = (p: Prediction) => (horizon === 10 ? p.outcome10! : p.outcome5!)
+    const regrets = missLedgerExamples(missLedgerBlob, 20)
+    const dayExamples = (regrets?.topGates ?? [])
+      .flatMap(g => g.examples.filter(e => e.date === ydate && e.excessPct > 0).map(e => ({ sym: e.sym, excessPct: e.excessPct, gate: g.gate as string })))
+      .sort((a, b) => b.excessPct - a.excessPct)
+    // THE PARTITION, IN THE STRIP (crypto-v2 wave, finding 5). An equity `hit`
+    // means "beat SPY by ≥1pp over ten sessions"; a cohort `hit` means "moved
+    // ≥1pp on its own, over fourteen crypto bars, with nothing subtracted".
+    // Summed into one score they read as one measurement — and a weekend date
+    // on which only the coins graded would print as a generic engine result
+    // over a market that was shut. Keyed on the STAMP, never the symbol: a
+    // legacy crypto row published before the lane was graded against SPY, so
+    // its verdict really is an equity one.
+    const tally = (rows: Prediction[]) => ({ wins: rows.filter(p => outcomeOf(p).hit).length, losses: rows.filter(p => !outcomeOf(p).hit).length })
+    const cryptoGraded = graded.filter(p => p.cohort === 'crypto')
+    yesterday = {
+      date: ydate,
+      horizon,
+      // the flat pair is the whole day's census, KEPT FOR ONE RELEASE so a
+      // client on the old bundle still paints something true (a count of rows,
+      // which means the same thing in both partitions) — the split below is
+      // what YesterdayStrip actually reads.
+      ...tally(graded),
+      equity: tally(graded.filter(p => p.cohort !== 'crypto')),
+      crypto: cryptoGraded.length ? tally(cryptoGraded) : null,
+      topRegret: dayExamples[0] ?? null,
     }
   }
 
