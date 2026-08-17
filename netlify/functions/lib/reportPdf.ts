@@ -7,7 +7,8 @@
 // wraps the call in try/catch so a PDF failure never blocks the email.
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type Color } from 'pdf-lib'
-import { boardFootnote } from './newspaper'
+import { boardFootnote, stripLeadingNumber } from './newspaper'
+import { plausibleCapUsdM } from './social'
 import { WILDCARD_MARK } from '../../../shared/engine/voice'
 import type { ComposedReport, PaperExtras, Idea, SocialRow, CalendarRow } from './newspaper'
 
@@ -755,14 +756,18 @@ function drawSocial(c: Cursor, social: SocialRow[], fonts: Fonts): void {
     { header: '24h surge', w: CONTENT_W * 0.17, align: 'r' },
     { header: 'Platforms', w: CONTENT_W * 0.17, align: 'r' },
   ]
-  const rows: GCell[][] = social.slice(0, 10).map(s => [
+  const rows: GCell[][] = social
+    .slice(0, 10)
+    // same door as the emailed edition: an unbelievable cap is an unknown cap
+    .map(s => ({ ...s, capUsdM: plausibleCapUsdM(s.capUsdM, s.sym) }))
+    .map(s => [
     { text: s.sym || '', bold: true },
     { text: s.capUsdM == null ? '·' : s.capUsdM >= 1000 ? `$${(s.capUsdM / 1000).toFixed(1)}B` : `$${Math.round(s.capUsdM)}M`, align: 'r' },
     { text: s.redditRank == null ? '·' : `#${s.redditRank}`, align: 'r' },
     { text: s.redditMentions == null ? '·' : String(s.redditMentions), align: 'r' },
     { text: s.surgeMultiple == null ? '·' : `${s.surgeMultiple}x`, align: 'r', color: s.surgeMultiple != null && s.surgeMultiple >= 2 ? GREEN : INK },
     { text: String(s.sources ?? '·'), align: 'r' },
-  ])
+    ])
   drawGridTable(c, cols, rows, fonts)
 }
 
@@ -839,7 +844,9 @@ function drawIdea(c: Cursor, idea: Idea, fonts: Fonts): void {
   const sideCol = isShort ? RED : GREEN
 
   const caseLines = wrapText(sanitizeWinAnsi(idea.caseText ?? ''), fonts.serif, 10.5, w)
-  const reasonsText = idea.reasons?.length ? `${strong ? 'I STRONGLY SUGGEST — ' : 'Why: '}${idea.reasons.map((t, n) => `${n + 1}) ${t}`).join('   ')}` : ''
+  // …with the model's own numbering stripped, exactly as the emailed edition
+  // does it: the template owns the numbers, and both used to print "1) 1. …"
+  const reasonsText = idea.reasons?.length ? `${strong ? 'I STRONGLY SUGGEST — ' : 'Why: '}${idea.reasons.map((t, n) => `${n + 1}) ${stripLeadingNumber(t)}`).join('   ')}` : ''
   const reasonLines = reasonsText ? wrapText(sanitizeWinAnsi(reasonsText), fonts.serif, 9.5, w) : []
   const annotParts: string[] = []
   if (idea.chartRead) annotParts.push(`Chart: ${idea.chartRead}`)

@@ -557,7 +557,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
     const hit = await getCached<unknown>('social-pulse:v2')
     if (hit) return json(200, { ok: true, data: hit })
     try {
-      const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse, pickDiscoveries, isMega } = await import('./lib/social')
+      const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse, pickDiscoveries, isMega, plausibleCapUsdM } = await import('./lib/social')
       const { appStore: blobAppStore } = await import('./lib/storeProvider')
       const { computeConsensus } = await import('./lib/videoTrends')
       const [reddit, stocktwits, extracts, cfg] = await Promise.all([
@@ -579,13 +579,17 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
             try {
               const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${c.sym}&token=${env.FINNHUB_API_KEY}`)
               const j = (await res.json()) as { marketCapitalization?: number; name?: string }
-              cap = { capUsdM: j.marketCapitalization ?? null, name: j.name }
+              // guarded BEFORE the cache: an unbelievable cap ($1072.7B beside
+              // MU) must not be stored, let alone typeset (lib/social)
+              cap = { capUsdM: plausibleCapUsdM(j.marketCapitalization, c.sym), name: j.name }
               await setCached(capKey, cap, 86_400)
             } catch {
               cap = { capUsdM: null }
             }
           }
-          Object.assign(c, { capUsdM: cap.capUsdM, companyName: cap.name })
+          // …and again on the way out, because a cache entry written before the
+          // guard existed is still out there for its 24h
+          Object.assign(c, { capUsdM: plausibleCapUsdM(cap.capUsdM, c.sym), companyName: cap.name })
         }),
       )
       const discoveries = pickDiscoveries(candidates as never[])
