@@ -5,7 +5,7 @@
 // asserts on the cached paint, the same pattern src/lib/useSlice.test.tsx
 // uses for its "never" fetcher.
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -15,7 +15,10 @@ import type { EnginePrediction, EventRadarEntry, IntradayFlag, IntradayFlagsBlob
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
 import { unsizedReason } from '../lib/boardTaxonomy'
 import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
-import { CallCard } from './parts/CallCard'
+import { londonToday } from '../lib/londonDay'
+import { resetSeenMarks, writeSeenMarks } from '../lib/lastSeen'
+import type { Quote } from '../../shared/types'
+import { CallCard, entryDistance } from './parts/CallCard'
 import { ChannelPicksStrip } from './parts/ChannelPicksStrip'
 import { CountsRail } from './parts/CountsRail'
 import { EventRadarStrip } from './parts/EventRadarStrip'
@@ -26,7 +29,22 @@ import Today from './Today'
 
 vi.mock('../lib/apiViews', async () => {
   const actual = await vi.importActual<typeof import('../lib/apiViews')>('../lib/apiViews')
-  return { ...actual, getBoardSlice: () => new Promise<never>(() => {}) }
+  // A `vi.fn` around the same never-resolving promise: the refresh wiring
+  // (dynamism wave) needs to see that a second fetch was ASKED for, and a
+  // fetch that never settles is exactly how "refreshing" stays observable.
+  return { ...actual, getBoardSlice: vi.fn(() => new Promise<never>(() => {})) }
+})
+
+import { getBoardSlice } from '../lib/apiViews'
+
+// Today reaches past its own board slice now (dynamism wave): the headline
+// strip reads `intel:news` and the cards read a live quote batch. Both reject
+// here — every case paints from a seeded Dexie slice, and nothing in this file
+// may put a real request on the wire.
+vi.mock('../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
+  const notMocked = () => Promise.reject(new Error('not mocked in this test'))
+  return { ...actual, getNewsDesk: vi.fn(notMocked), getQuotes: vi.fn(notMocked) }
 })
 
 const withRouter = (ui: React.ReactElement) => render(<Router base="/app" hook={memoryLocation({ path: '/app/' }).hook}>{ui}</Router>)
@@ -74,7 +92,8 @@ const mkBoardData = (board: EnginePrediction[], yesterday: BoardSlice['yesterday
 })
 
 beforeEach(async () => {
-  await db.slices.clear()
+  await Promise.all([db.slices.clear(), db.quotes.clear(), db.settings.clear()])
+  resetSeenMarks() // the new-since snapshot is module-level and outlives a test
 })
 
 describe('CallCard', () => {
@@ -180,6 +199,75 @@ describe('CallCard', () => {
     expect(screen.getByText('crypto')).toBeInTheDocument()
     expect(screen.queryByLabelText(/^grade/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/^probability/i)).not.toBeInTheDocument()
+  })
+
+  // THE LIVE LINE (dynamism wave, feature 4a).
+  describe('the live line', () => {
+    const OPEN = Date.parse('2026-08-17T15:00:00Z') // Monday, mid-session
+    const SHUT = Date.parse('2026-08-15T15:00:00Z') // Saturday
+    const mkQuote = (price: number, overrides: Partial<Quote> = {}): Quote => ({
+      symbol: 'NVDA',
+      price,
+      prevClose: price,
+      changePct: 0,
+      currency: 'USD',
+      todayVolume: null,
+      asOf: Math.floor(Date.parse('2026-08-14T20:00:00Z') / 1000), // a Friday close
+      source: 'finnhub',
+      ...overrides,
+    })
+
+    it('renders nothing new at all without a quote — the card is byte-identical', () => {
+      withRouter(<CallCard row={mkRow()} />)
+      expect(document.querySelector('.cc-live')).toBeNull()
+    })
+
+    it('says what the name is trading at and how far that is from the entry', () => {
+      withRouter(<CallCard row={mkRow({ entry: 130.9 })} quote={mkQuote(128.4)} now={OPEN} />)
+      expect(document.querySelector('.cc-live')?.textContent).toBe('now 128.40 · 1.9% below entry')
+    })
+
+    it('out of hours it is a CLOSE, named by its own day, never a fake tick', () => {
+      withRouter(<CallCard row={mkRow({ entry: 130.9 })} quote={mkQuote(128.4)} now={SHUT} />)
+      expect(document.querySelector('.cc-live')?.textContent).toBe('Fri close 128.40 · 1.9% below entry')
+    })
+
+    it('a quote with no stamp says so rather than inventing a weekday', () => {
+      withRouter(<CallCard row={mkRow({ entry: 130.9 })} quote={mkQuote(128.4, { asOf: 0 })} now={SHUT} />)
+      expect(document.querySelector('.cc-live')?.textContent).toContain('last close 128.40')
+    })
+
+    it('leaves the grade and the probability exactly as they were', () => {
+      withRouter(<CallCard row={mkRow()} quote={mkQuote(128.4)} now={OPEN} />)
+      expect(screen.getByLabelText('Grade A')).toHaveClass('pill', 'accent')
+      expect(screen.getByLabelText(/^probability/i)).toHaveClass('num')
+    })
+  })
+
+  // The arithmetic itself, side by side.
+  describe('entryDistance', () => {
+    it('measures a long against its entry from below, and calls the trigger past', () => {
+      expect(entryDistance(128.4, 130.9, 'long')).toBe('1.9% below entry')
+      expect(entryDistance(133.0, 130.9, 'long')).toBe('past entry')
+    })
+
+    it('inverts for a short: not yet triggered means ABOVE the entry', () => {
+      expect(entryDistance(133.0, 130.9, 'short')).toBe('1.6% above entry')
+      expect(entryDistance(128.4, 130.9, 'short')).toBe('past entry')
+    })
+
+    it('within 0.3% either way it is simply at entry, both sides', () => {
+      expect(entryDistance(130.9, 130.9, 'long')).toBe('at entry')
+      expect(entryDistance(131.2, 130.9, 'long')).toBe('at entry')
+      expect(entryDistance(130.6, 130.9, 'long')).toBe('at entry')
+      expect(entryDistance(130.6, 130.9, 'short')).toBe('at entry')
+    })
+
+    it('refuses a nonsense level rather than dividing by it', () => {
+      expect(entryDistance(128.4, 0, 'long')).toBeNull()
+      expect(entryDistance(0, 130.9, 'long')).toBeNull()
+      expect(entryDistance(Number.NaN, 130.9, 'long')).toBeNull()
+    })
   })
 })
 
@@ -445,6 +533,11 @@ describe('OpenCallsStrip', () => {
 // radar shipped and no v2 screen read a character of it — so a dated binary the
 // engine already knew about was invisible until it printed.
 describe('EventRadarStrip', () => {
+  // THE CLOCK IS PINNED (dynamism wave, feature 5): the day distance is now
+  // computed from each entry's DATE against the reader's clock, so a test that
+  // let the real clock in would pass today and fail tomorrow — which is
+  // precisely the staleness this recompute exists to fix.
+  const NOW = Date.parse('2026-08-17T09:00:00Z') // Monday morning, London
   const mkEvent = (o: Partial<EventRadarEntry> = {}): EventRadarEntry => ({
     sym: 'AVGO',
     name: 'Broadcom',
@@ -463,24 +556,60 @@ describe('EventRadarStrip', () => {
   })
 
   it('renders a dated row per print, symbol linked, stage shown', () => {
-    withRouter(<EventRadarStrip radar={{ entries: [mkEvent()] }} />)
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent()] }} now={NOW} />)
     expect(screen.getByRole('link', { name: 'AVGO' })).toHaveAttribute('href', '/app/stock/AVGO')
     expect(screen.getByText('reports in 3d')).toBeInTheDocument()
     expect(screen.getByText(/20 Aug/)).toHaveClass('num')
     expect(screen.getByText('trending')).toBeInTheDocument()
   })
 
-  it('sorts nearest first and caps at six', () => {
-    const entries = Array.from({ length: 9 }, (_, i) => mkEvent({ sym: `S${i}`, date: '2026-08-20', daysToPrint: 9 - i }))
-    withRouter(<EventRadarStrip radar={{ entries }} />)
-    const syms = [...document.querySelectorAll('.er-sym')].map(el => el.textContent)
-    expect(syms).toEqual(['S8', 'S7', 'S6', 'S5', 'S4', 'S3']) // daysToPrint 1..6
+  it('counts from the reader’s own day, ignoring the number the blob was baked with', () => {
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ date: '2026-08-20', daysToPrint: 0 })] }} now={NOW} />)
+    expect(screen.getByText('reports in 3d')).toBeInTheDocument()
+    expect(screen.queryByText('reports today')).not.toBeInTheDocument()
   })
 
   it('never prints "in 0d" — a same-day print says so in English', () => {
-    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ daysToPrint: 0 }), mkEvent({ sym: 'AMD', daysToPrint: 1 })] }} />)
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ date: '2026-08-17' }), mkEvent({ sym: 'AMD', date: '2026-08-18' })] }} now={NOW} />)
     expect(screen.getByText('reports today')).toBeInTheDocument()
     expect(screen.getByText('reports tomorrow')).toBeInTheDocument()
+  })
+
+  // THE SATURDAY BUG (dynamism wave): Friday's blob said "reports today" about
+  // a print whose result the reader could already look up.
+  it('a print already past says so, instead of claiming it is today', () => {
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ date: '2026-08-14', daysToPrint: 0 })] }} now={NOW} />)
+    expect(screen.getByText("reported — awaiting the print's read")).toBeInTheDocument()
+  })
+
+  it('turns over at LONDON midnight, not the reader’s and not UTC’s', () => {
+    const justAfterMidnight = Date.parse('2026-08-17T23:30:00Z') // 00:30 on the 18th, London
+    withRouter(
+      <EventRadarStrip radar={{ entries: [mkEvent({ date: '2026-08-18' }), mkEvent({ sym: 'AMD', date: '2026-08-17' })] }} now={justAfterMidnight} />,
+    )
+    expect(screen.getByText('reports today')).toBeInTheDocument()
+    expect(screen.getByText("reported — awaiting the print's read")).toBeInTheDocument()
+  })
+
+  it('sorts nearest first, pushes the already-reported to the back, and caps at six', () => {
+    const entries = [
+      mkEvent({ sym: 'FAR', date: '2026-08-27' }),
+      mkEvent({ sym: 'PAST1', date: '2026-08-14' }),
+      mkEvent({ sym: 'SOON', date: '2026-08-18' }),
+      mkEvent({ sym: 'PAST2', date: '2026-08-10' }),
+      mkEvent({ sym: 'TODAY', date: '2026-08-17' }),
+      mkEvent({ sym: 'MID', date: '2026-08-20' }),
+      mkEvent({ sym: 'LATER', date: '2026-08-24' }),
+      mkEvent({ sym: 'LAST', date: '2026-08-25' }),
+    ]
+    withRouter(<EventRadarStrip radar={{ entries }} now={NOW} />)
+    const syms = [...document.querySelectorAll('.er-sym')].map(el => el.textContent)
+    expect(syms).toEqual(['TODAY', 'SOON', 'MID', 'LATER', 'LAST', 'FAR'])
+  })
+
+  it('falls back to the blob’s own count when an entry has no readable date', () => {
+    withRouter(<EventRadarStrip radar={{ entries: [mkEvent({ date: '', daysToPrint: 2 })] }} now={NOW} />)
+    expect(screen.getByText('reports in 2d')).toBeInTheDocument()
   })
 })
 
@@ -616,6 +745,128 @@ describe('Today', () => {
     expect(screen.getByRole('heading', { level: 1, name: /today/i })).toBeInTheDocument()
   })
 
+  // THE TIME-AWARENESS LINE (dynamism wave). The board has always carried its
+  // own `generatedAt` and no screen printed a character of it; the session
+  // state is computed here, client-side, and ticks (parts/SessionLine.tsx owns
+  // both, and its own test file pins the clock — this one only checks the seam).
+  it('renders the session line under the heading, stamped with the board’s own generatedAt', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    const line = document.querySelector('.session-line')
+    expect(line?.textContent).toMatch(/^US /)
+    expect(line?.textContent).toContain('board struck')
+  })
+
+  it('still says where the session stands on a morning with no board at all', async () => {
+    await db.slices.put({ key: 'board', data: { ...mkBoardData([]), board: null }, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText(NO_BOARD_YET)).toBeInTheDocument()
+    const line = document.querySelector('.session-line')
+    expect(line?.textContent).toMatch(/^US /)
+    expect(line?.textContent).not.toContain('board struck')
+  })
+
+  // WIRED REFRESH (dynamism wave). `useSlice` has always returned refresh()
+  // and `refreshing`, and no screen called either. The gesture itself lives in
+  // src/lib/usePullRefresh.test.tsx; this is the seam.
+  it('the refresh affordance asks the board slice for fresh bytes and shows it working', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    // the count BEFORE the press — this file shares one module mock across
+    // every case, so what matters is the delta the press causes
+    const before = vi.mocked(getBoardSlice).mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
+    await waitFor(() => expect(vi.mocked(getBoardSlice).mock.calls.length).toBe(before + 1))
+    // …and the fetch never settles, so the busy bar is still up
+    expect(await screen.findByRole('status', { name: /refreshing/i })).toBeInTheDocument()
+    expect(screen.getByText('NVDA')).toBeInTheDocument() // the cached paint is untouched
+  })
+
+  // NEW SINCE THE LAST VISIT (dynamism wave, feature 7). Keyed on the board's
+  // own generatedAt — a re-fetch of the same morning's board is not new.
+  it('dots the heading when the board itself turned over since the last visit', async () => {
+    const data = mkBoardData([mkRow()])
+    data.board!.generatedAt = Date.parse('2026-08-17T05:42:00Z')
+    await writeSeenMarks({ boardGeneratedAt: Date.parse('2026-08-14T05:40:00Z'), newsTopAt: null })
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByLabelText(/new board since your last visit/i)).toBeInTheDocument()
+  })
+
+  it('does not dot the same board seen again — nor anything at all on a first visit', async () => {
+    const data = mkBoardData([mkRow()])
+    data.board!.generatedAt = Date.parse('2026-08-17T05:42:00Z')
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    const { unmount } = withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/new board/i)).not.toBeInTheDocument() // first visit
+    unmount()
+
+    resetSeenMarks()
+    await writeSeenMarks({ boardGeneratedAt: Date.parse('2026-08-17T05:42:00Z'), newsTopAt: null })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/new board/i)).not.toBeInTheDocument()
+  })
+
+  // THREE HEADLINES (dynamism wave, feature 6), at the seam: the strip's own
+  // rules live in parts/TodayHeadlines.test.tsx.
+  it('carries the desk’s three newest headlines, and nothing when the desk is cold', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    const { unmount } = withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Headlines')).not.toBeInTheDocument()
+    unmount()
+
+    await db.slices.put({
+      key: 'intel:news',
+      data: [{ title: 'Chipmaker lifts guidance', url: 'https://x.com/1', syms: ['NVDA'], score: 80, why: 'guidance', at: Math.floor(Date.now() / 1000), source: 'Reuters' }],
+      fetchedAt: Date.now(),
+    })
+    withRouter(<Today />)
+    expect(await screen.findByLabelText('Headlines')).toBeInTheDocument()
+    expect(screen.getByText('Chipmaker lifts guidance')).toBeInTheDocument()
+  })
+
+  // THE LIVE LINE, at the seam (dynamism wave). The hook's own rules — the
+  // beat, the market-hours gate, saveData, the idle backoff — are pinned in
+  // src/lib/useLiveQuotes.test.tsx; here we only prove the cached quote batch
+  // reaches the card it belongs to.
+  it('feeds each sized card the quote its symbol already has cached', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow({ entry: 130.9 })]), fetchedAt: Date.now() })
+    await db.quotes.put({
+      key: 'quotes:NVDA',
+      data: [{ symbol: 'NVDA', price: 128.4, prevClose: 130, changePct: -1.2, currency: 'USD', todayVolume: null, asOf: 1_755_201_600, source: 'finnhub' }],
+      fetchedAt: Date.now(),
+    })
+    withRouter(<Today />)
+    // the label's first word is the reader's own session state, so match the
+    // half of the line that is the same at every hour
+    await waitFor(() => expect(document.querySelector('.cc-live')?.textContent).toMatch(/128\.40 · 1\.9% below entry$/))
+  })
+
+  // THE STALE-BOARD BANNER (dynamism wave). The seeded board is dated
+  // 2026-08-14 — a Friday, and permanently in the past — so the banner is the
+  // honest read of it whenever this suite runs. parts/StaleBoardNote.test.tsx
+  // pins the clock and covers the day arithmetic itself.
+  it('labels a board struck on an earlier day, above the cards', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText(/Friday's board \(14 Aug/)).toBeInTheDocument()
+    expect(screen.getByText(/Friday's board \(14 Aug/)).toHaveClass('stale-board')
+  })
+
+  it('says nothing about staleness when the board is today’s', async () => {
+    const data = mkBoardData([mkRow()])
+    data.board!.date = londonToday()
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByText(/the engine publishes on weekday mornings/)).not.toBeInTheDocument()
+  })
+
   // A1 (walkthrough): a RESOLVED slice with no board is an answer — the cold
   // store / pre-run morning must say so, never sit on a skeleton forever.
   it('a resolved slice with board:null renders the no-board-yet state, not a skeleton', async () => {
@@ -684,10 +935,14 @@ describe('Today', () => {
         },
       ],
     }
+    // the print's date is THREE DAYS FROM THE READER'S TODAY, computed rather
+    // than hardcoded: the strip counts from the reader's own clock now
+    // (dynamism wave), so a fixed date would make this assertion expire
+    const inThreeDays = new Date(Date.now() + 3 * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
     data.eventRadar = {
       date: '2026-08-14',
       generatedAt: Date.now(),
-      entries: [{ sym: 'AVGO', name: 'Broadcom', date: '2026-08-20', daysToPrint: 3, stage: 'trending', entryQuality: null, rs21: null, note: null }],
+      entries: [{ sym: 'AVGO', name: 'Broadcom', date: inThreeDays, daysToPrint: 9, stage: 'trending', entryQuality: null, rs21: null, note: null }],
     }
     await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
     withRouter(<Today />)

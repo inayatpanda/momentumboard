@@ -57,6 +57,9 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  // the reorder case spies on Element.prototype.getBoundingClientRect — a
+  // prototype spy that outlived its test would measure every later one
+  vi.restoreAllMocks()
 })
 
 describe('Movers', () => {
@@ -130,6 +133,32 @@ describe('Movers', () => {
     await screen.findByText('GAINR')
     expect(document.body.textContent).not.toMatch(/\bgrade\b/i)
     expect(document.body.textContent).not.toMatch(/\bprobability\b/i)
+  })
+
+  // REORDER MOTION (dynamism wave, feature 8). jsdom lays nothing out, so the
+  // ruler here is DOM order: a row's top is its index among its siblings. The
+  // hook's own rules — the invert arithmetic, reduced motion, arriving rows —
+  // are pinned in src/lib/useFlip.test.tsx.
+  it('slides the rows when a refresh re-ranks them', async () => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const i = this.parentElement ? [...this.parentElement.children].indexOf(this) : 0
+      return { top: i * 50, left: 0, right: 0, bottom: i * 50 + 50, width: 0, height: 50, x: 0, y: i * 50, toJSON: () => ({}) } as DOMRect
+    })
+    const at = Date.now()
+    await writeSlice('movers', { gainers: [mkMover('AAA', 5.1), mkMover('BBB', 4.2), mkMover('CCC', 3.3)], losers: [], actives: [], at })
+    withRouter('/app/stocks/movers', 'movers')
+    expect(await screen.findByText('AAA')).toBeInTheDocument()
+
+    // the same three names, re-ranked — the mounted slice repaints off the
+    // store's own write announcement
+    await writeSlice('movers', { gainers: [mkMover('CCC', 9.1), mkMover('AAA', 5.1), mkMover('BBB', 4.2)], losers: [], actives: [], at: at + 1 })
+    await waitFor(() => {
+      const first = document.querySelector('.stx-watchlist > *')
+      expect(first?.getAttribute('data-flip-key')).toBe('CCC')
+    })
+    const climbed = document.querySelector<HTMLElement>('[data-flip-key="CCC"]')!
+    expect(climbed).toHaveClass('flip-move')
+    expect(climbed.style.transform).toBe('translate(0px, 100px)') // it came from two rows down
   })
 
   it('null price renders dash, not fabricated $0.00 or pill', async () => {

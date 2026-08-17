@@ -10,6 +10,9 @@
 // contract, useSlice.ts).
 
 import { useSlice } from '../lib/useSlice'
+import { isNewSince, useNoteSeen, useSeenBaseline } from '../lib/lastSeen'
+import { useLiveQuotes } from '../lib/useLiveQuotes'
+import { usePullRefresh } from '../lib/usePullRefresh'
 import { getBoardSlice } from '../lib/apiViews'
 import type { BoardBlob } from '../lib/apiViews'
 import { splitBoardRows } from '../lib/boardTaxonomy'
@@ -20,6 +23,10 @@ import { CountsRail } from './parts/CountsRail'
 import { EventRadarStrip } from './parts/EventRadarStrip'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
 import { OpenCallsStrip } from './parts/OpenCallsStrip'
+import { RefreshStrip } from './parts/RefreshStrip'
+import { SessionLine } from './parts/SessionLine'
+import { StaleBoardNote } from './parts/StaleBoardNote'
+import { TodayHeadlines } from './parts/TodayHeadlines'
 import { YesterdayStrip } from './parts/YesterdayStrip'
 
 /** THE TAPE LINE (owner iteration 2). The board blob has always carried the
@@ -41,7 +48,10 @@ function TapeLine({ blob }: { blob: BoardBlob | null }) {
 }
 
 export default function Today() {
-  const { data } = useSlice('board', getBoardSlice)
+  // The slice's OWN refresh, which no screen had ever called (dynamism wave):
+  // a pull on the phone, the ↻ at desk, both driving the one board slice.
+  const { data, refreshing, refresh } = useSlice('board', getBoardSlice)
+  const { pull } = usePullRefresh(refresh)
   const blob = data?.board ?? null
   const rows = blob?.board ?? []
   // "sized" mirrors src/components/EngineBoard.tsx:251's `trades` split — the
@@ -58,14 +68,39 @@ export default function Today() {
   // cleared no gate, so on a board of nothing but near misses the first
   // sentence is the true one.
   const clearedButUnsized = developing.length + watch.length + observations.length > 0
+  // THE LIVE LINE'S SYMBOLS (dynamism wave): the cards the reader can act on —
+  // the sized rows, plus the wildcard slot, which is a published call whatever
+  // else it is. Nothing else: a quote batch is an API call, and the rows below
+  // the fold are watching, not waiting on a price.
+  const liveSyms = [...new Set([...sized, ...rows.filter(r => r.wildcard)].map(r => r.sym))]
+  const liveQuotes = useLiveQuotes(liveSyms)
+  // …and whether any of this is NEW to the reader (dynamism wave, feature 7).
+  const seen = useSeenBaseline()
+  const boardIsNew = isNewSince(blob?.generatedAt, seen?.boardGeneratedAt ?? null)
+  useNoteSeen({ boardGeneratedAt: blob?.generatedAt ?? null })
 
   return (
     <div className="today">
+      <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
       <div className="today-head">
         <h1>Today</h1>
+        {/* the board itself turned over since the last visit (dynamism wave) —
+            keyed on the board's own generatedAt, never on when it was fetched */}
+        {boardIsNew && <span className="new-dot" aria-label="New board since your last visit" />}
         {blob && <span className={`pill ${blob.regime === 'green' ? 'accent' : ''}`}>{blob.regime}</span>}
       </div>
+      {/* WHEN the reader is (dynamism wave): the session's own state, ticking,
+          and the stamp the board has always carried and nothing ever showed. */}
+      <SessionLine generatedAt={blob?.generatedAt} />
       <TapeLine blob={blob} />
+      {/* …and what the desk has taken in SINCE the run (dynamism wave): three
+          headlines, each a door into Intel's news desk. News keeps its one
+          home; this is the doorway, not a feed. */}
+      <TodayHeadlines />
+      {/* …and WHICH DAY these cards belong to (dynamism wave): a weekend
+          reader was shown Friday's board unlabelled. Nothing when it is
+          today's — the fresh case must stay silent. */}
+      <StaleBoardNote date={blob?.date} />
       {data && blob === null ? (
         // the slice RESOLVED and there is no board (cold store, pre-run
         // morning) — an empty state, never a skeleton that looks hung (A1)
@@ -80,7 +115,7 @@ export default function Today() {
       ) : (
         <div className="today-cards">
           {sized.map(row => (
-            <CallCard key={row.id} row={row} />
+            <CallCard key={row.id} row={row} quote={liveQuotes[row.sym]} />
           ))}
         </div>
       )}

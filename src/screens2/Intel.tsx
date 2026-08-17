@@ -29,6 +29,8 @@
 import { useState } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
+import { usePullRefresh, useSlicesRefresh, type SliceRefreshEntry } from '../lib/usePullRefresh'
+import { RefreshStrip } from './parts/RefreshStrip'
 import { db } from '../lib/db'
 import { getCongress, getInsiderClusters, getNewsDesk, getSocialPulse } from '../lib/api'
 import type { CongressTrade, InsiderCluster } from '../lib/api'
@@ -414,9 +416,23 @@ function SocialSection() {
   )
 }
 
+/** The four feeds this page is, named once for the refresh (dynamism wave).
+ * Each section owns its own `useSlice` — a failure in one must never blank the
+ * others — so a page-wide refresh force-revalidates their keys and lets each
+ * section repaint off the store's write announcement. */
+const REFRESH_ENTRIES: SliceRefreshEntry[] = [
+  { key: 'intel:news', fetcher: getNewsDesk },
+  { key: 'intel:insiders', fetcher: getInsiderClusters },
+  { key: 'intel:congress', fetcher: congressFetcher },
+  { key: 'intel:social', fetcher: getSocialPulse },
+]
+
 export default function Intel() {
+  const { refresh, refreshing } = useSlicesRefresh(REFRESH_ENTRIES)
+  const { pull } = usePullRefresh(refresh)
   return (
     <div className="itl">
+      <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
       <h1>Intel</h1>
       <JumpChips />
       <NewsSection />

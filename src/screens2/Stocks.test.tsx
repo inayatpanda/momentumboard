@@ -47,7 +47,7 @@ vi.mock('../lib/apiViews', async () => {
   return { ...actual, getBoardSlice: vi.fn(() => Promise.reject(new Error('not mocked in this test'))) }
 })
 
-import { getCandles, getMovers } from '../lib/api'
+import { getCandles, getMovers, getQuotes, getSectors } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 
 const mkQuote = (symbol: string, overrides: Partial<Quote> = {}): Quote => ({
@@ -158,6 +158,44 @@ describe('Stocks', () => {
   it('has a heading containing "Stocks"', () => {
     withRouter()
     expect(screen.getByRole('heading', { name: /stocks/i })).toBeInTheDocument()
+  })
+
+  // THE TIME-AWARENESS LINE (dynamism wave). Stocks holds no board slice, so
+  // it gets the session half alone — never a fabricated stamp.
+  it('renders the session line under the heading, with no board stamp', () => {
+    withRouter()
+    const line = document.querySelector('.session-line')
+    expect(line?.textContent).toMatch(/^US /)
+    expect(line?.textContent).not.toContain('board struck')
+  })
+
+  // WIRED REFRESH (dynamism wave). This screen's slices all live in children,
+  // so the screen names their keys and forces them together. The gesture itself
+  // is covered in src/lib/usePullRefresh.test.tsx; this is the seam.
+  describe('the refresh affordance', () => {
+    it('force-fetches the rails’ slices — even ones no rail has scrolled to', async () => {
+      withRouter()
+      fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
+      await waitFor(() => expect(getMovers).toHaveBeenCalledTimes(1))
+      expect(getSectors).toHaveBeenCalledTimes(1)
+    })
+
+    it('includes the watchlist’s quote batch when there is a watchlist', async () => {
+      await db.watchlist.bulkPut([{ symbol: 'NVDA', addedAt: 1, riskClass: 'normal' }])
+      withRouter()
+      expect(await screen.findByText('NVDA')).toBeInTheDocument()
+      vi.clearAllMocks()
+      fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
+      await waitFor(() => expect(getQuotes).toHaveBeenCalledWith(['NVDA']))
+    })
+
+    it('asks the API for nothing when the watchlist is empty', async () => {
+      withRouter()
+      expect(await screen.findByText(/your watchlist is empty/i)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
+      await waitFor(() => expect(getMovers).toHaveBeenCalledTimes(1))
+      expect(getQuotes).not.toHaveBeenCalled()
+    })
   })
 
   describe('search', () => {

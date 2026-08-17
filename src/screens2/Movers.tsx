@@ -17,8 +17,9 @@
 // first PAGE rows, a "Show more" button reveals the rest. Switching gainers
 // <-> losers resets the window back to PAGE.
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useSlice } from '../lib/useSlice'
+import { useFlip } from '../lib/useFlip'
 import { getMovers, type MoverRow } from '../lib/api'
 import { StockRow } from './parts/StockRow'
 import type { Quote } from '../../shared/types'
@@ -49,6 +50,11 @@ export default function Movers() {
 
   const rows = data ? data[view] : []
   const shown = rows.slice(0, visible)
+  // REORDER MOTION (dynamism wave, feature 8): a refresh re-ranks this list,
+  // and a row that climbed six places used to simply appear six places up —
+  // the one moment something genuinely changed showed nothing at all.
+  const listRef = useRef<HTMLDivElement>(null)
+  useFlip(listRef, shown.map(r => r.sym).join(','))
 
   const setViewAndReset = (v: 'gainers' | 'losers') => {
     setView(v)
@@ -73,9 +79,9 @@ export default function Movers() {
         <p className="cc-reason">Nothing to show right now.</p>
       ) : (
         <>
-          <div className="stx-watchlist">
+          <div className="stx-watchlist" ref={listRef}>
             {shown.map(r => (
-              <StockRow key={r.sym} symbol={r.sym} name={r.name} quote={moverQuote(r)} sparkCachedOnly />
+              <StockRow key={r.sym} symbol={r.sym} name={r.name} quote={moverQuote(r)} sparkCachedOnly flipKey={r.sym} />
             ))}
           </div>
           {visible < rows.length && (
