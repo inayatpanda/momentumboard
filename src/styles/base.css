@@ -2757,6 +2757,17 @@ p {
   justify-content: center;
   gap: 2px;
 }
+/* THE GRID IS NOT THE PAGE (visibility wave, 2026-08-17). `aspect-ratio: 1`
+   is right on a phone, where a column is ~50px wide; at desk width a column is
+   ~165px, so six square rows ate the entire first screen and the day ledger —
+   the thing the reader came for — began below the fold. A fixed height here
+   halves the cell and puts the ledger back on the first screen. */
+@media (min-width: 1024px) {
+  .v2 .cal2 .cal-day {
+    aspect-ratio: auto;
+    height: 76px;
+  }
+}
 .v2 .cal2 .cal-day.today {
   border-color: var(--accent);
 }
@@ -2789,6 +2800,28 @@ p {
 }
 .v2 .cal2 .dot.picks {
   background: var(--accent);
+}
+/* WHAT THE DOTS MEAN (visibility wave, 2026-08-17) — one dim line, the same
+   four classnames the cells paint, so the key can never name a colour the
+   grid stopped using. */
+.v2 .cal2 .cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: -8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.v2 .cal2 .cal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.v2 .cal2 .cal-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 .v2 .cal2 .section-title {
   font-size: 11px;

@@ -13,11 +13,24 @@ const monthLabel = (ym: string) =>
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
+// THE FOUR DOTS, named (visibility wave, 2026-08-17). Four colours on a month
+// grid and nothing anywhere saying what any of them meant — the reader could
+// see that something happened on the 12th and never what. The classnames are
+// the same ones the cells render, so the legend cannot drift from the dots.
+const DOT_LEGEND: { cls: string; label: string }[] = [
+  { cls: 'report', label: 'paper' },
+  { cls: 'picks', label: 'picks' },
+  { cls: 'alerts', label: 'alerts' },
+  { cls: 'events', label: 'events' },
+]
+
 export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [month, setMonth] = useState(todayISO().slice(0, 7))
   const [map, setMap] = useState<Awaited<ReturnType<typeof getMonthMap>>>({})
   const [selected, setSelected] = useState<string>(todayISO())
   const [ledger, setLedger] = useState<Awaited<ReturnType<typeof getDayLedger>> | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   const [notes, setNotes] = useState<NoteItem[]>([])
   const [trades, setTrades] = useState<Trade[]>([])
 
@@ -28,14 +41,25 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
   useEffect(() => {
     if (!selected) return
     setLedger(null)
-    getDayLedger(selected).then(setLedger).catch(() => {})
+    // A SWALLOWED REJECTION IS A HUNG SCREEN (visibility wave, 2026-08-17).
+    // `.catch(() => {})` left `ledger` at null forever, and null is also the
+    // loading state — so a failed day sat under "Loading the day…" until the
+    // reader gave up. The failure is now its own state with its own retry;
+    // `attempt` is the retry's only job, bumping it re-runs this effect.
+    setFailed(false)
+    getDayLedger(selected)
+      .then(d => {
+        setLedger(d)
+        setFailed(false)
+      })
+      .catch(() => setFailed(true))
     const dayStart = Date.parse(selected) / 1000
     const dayEnd = dayStart + 86_400
     db.notes.toArray().then(all => setNotes(all.filter(n => n.at >= dayStart && n.at < dayEnd)))
     db.trades.toArray().then(all =>
       setTrades(all.filter(t => (t.openedAt >= dayStart && t.openedAt < dayEnd) || (t.closedAt != null && t.closedAt >= dayStart && t.closedAt < dayEnd))),
     )
-  }, [selected])
+  }, [selected, attempt])
 
   const shiftMonth = (delta: number) => {
     const d = new Date(`${month}-01T00:00:00Z`)
@@ -89,12 +113,29 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
           )}
         </div>
 
+        <p className="cal-legend">
+          {DOT_LEGEND.map(d => (
+            <span className="cal-legend-item" key={d.cls}>
+              <i className={`dot ${d.cls}`} aria-hidden="true" />
+              {d.label}
+            </span>
+          ))}
+        </p>
+
         <h3 className="section-title" style={{ marginTop: 18 }}>
           {new Date(selected).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           {ledger?.regime && <span className={`badge ${ledger.regime === 'green' ? 'good' : ledger.regime === 'red' ? 'bad' : 'warn'}`} style={{ marginLeft: 8 }}>{ledger.regime}</span>}
         </h3>
 
-        {!ledger && <p className="empty-line">Loading the day…</p>}
+        {!ledger && failed && (
+          <div className="cal-failed">
+            <p className="empty-line">That day's ledger didn't load — the desk is there, the connection isn't.</p>
+            <button type="button" className="mini-btn" onClick={() => setAttempt(a => a + 1)}>
+              Try again
+            </button>
+          </div>
+        )}
+        {!ledger && !failed && <p className="empty-line">Loading the day…</p>}
         {ledger && (
           <>
             {ledger.hasReport && (
