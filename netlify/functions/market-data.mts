@@ -164,6 +164,150 @@ export function partitionMovers<T extends { sym: string; changePct: number | nul
   }
 }
 
+/* ───────────────────────── the quote batch ─────────────────────────
+ *
+ * DEFECT 2, measured live: a 15-symbol batch returned 8–12 nulls. Three things
+ * compounded. The batch fired every symbol at once, which is what tripped
+ * Finnhub; every failure was swallowed by `catch { return null }`, so nothing
+ * anywhere said so; and the hollow result then rode the client's 120s slice,
+ * leaving the app's most-opened screen showing "—" on rows whose price we had
+ * had minutes earlier. The three answers below are, in order: a bounded
+ * fan-out, one retry, and a last-known-good tier.
+ */
+
+/** Upstream calls in flight per batch. Four, not fifteen. */
+export const QUOTE_CONCURRENCY = 4
+
+/** 72h — long enough that Friday's close is still there on Monday morning. */
+export const QUOTE_LKG_TTL_SEC = 259_200
+
+/** The last-known-good row for a symbol. A SEPARATE key from `quote:{sym}` on
+ * purpose: the 60s row means "this is the market now", and a stale price must
+ * never be written into it. */
+export const quoteLkgKey = (sym: string) => `quote-lkg:${sym}`
+
+/** Runs `fn` over `items` with at most `limit` in flight, preserving order. */
+async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const i = next++
+      if (i >= items.length) return
+      out[i] = await fn(items[i], i)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker))
+  return out
+}
+
+/** ONE read for a whole set of cache keys.
+ *
+ * Deliberately private to this path: a general multi-get belongs in lib/cache.ts
+ * and is being added there separately, and two of them landing at once would
+ * collide. On D1 this is a single `key IN (…)` select — the failed set costs one
+ * round trip however many symbols are in it — with the same envelope decoding
+ * and the same expiry rule as getCached (`{ value, expires }`, epoch ms, and a
+ * corrupt row reads as a miss). Off D1 there is no multi-get to reach for, so it
+ * falls back to bounded per-key reads, which is exactly what the caller would
+ * have done anyway. Fail-soft throughout: a batch read that throws degrades to
+ * the per-key path rather than failing the request. */
+export async function readCachedBatch<T>(keys: string[]): Promise<Map<string, T>> {
+  const out = new Map<string, T>()
+  if (!keys.length) return out
+  const { currentCacheStore, currentD1 } = await import('./lib/storeProvider')
+  const db = currentCacheStore() ? currentD1() : null
+  if (db) {
+    try {
+      const at = Date.now()
+      const slots = keys.map((_, i) => `?${i + 2}`).join(',')
+      const res = await db
+        .prepare(`SELECT key, value FROM blobs WHERE store = ?1 AND key IN (${slots}) AND (expires_at IS NULL OR expires_at >= ?${keys.length + 2})`)
+        .bind('cache', ...keys, at)
+        .all<{ key: string; value: string }>()
+      for (const row of res.results ?? []) {
+        try {
+          const envelope = JSON.parse(row.value) as { value?: T; expires?: number }
+          if (envelope && typeof envelope.expires === 'number' && envelope.expires >= at && envelope.value != null) out.set(row.key, envelope.value)
+        } catch {
+          /* a corrupt cache row is a miss, exactly as getCached treats it */
+        }
+      }
+      return out
+    } catch {
+      /* fall through to the per-key path */
+    }
+  }
+  await mapWithLimit(keys, QUOTE_CONCURRENCY, async key => {
+    const v = await getCached<T>(key)
+    if (v != null) out.set(key, v)
+  })
+  return out
+}
+
+/** The batch the Stocks screen lives on. Order in = order out; a row is null
+ * only for a symbol this deployment has never successfully priced. */
+export async function batchQuotes(
+  symbols: string[],
+  finnhubKey: string,
+  deps: { yahoo: typeof fetchYahooChart; finnhub: typeof fetchFinnhubQuote },
+): Promise<(Quote | null)[]> {
+  const out = new Array<Quote | null>(symbols.length).fill(null)
+  const failed: number[] = []
+
+  const fetchOne = async (sym: string): Promise<Quote> =>
+    isYahooSymbol(sym) ? (await deps.yahoo(sym, '3mo')).quote : await deps.finnhub(sym, finnhubKey)
+
+  /** A landed quote is written twice: the 60s row the next request reads, and
+   * the 72h row the next FAILURE reads. Nothing is written on a failure — the
+   * fresh row must never be overwritten by one. */
+  const land = async (sym: string, quote: Quote): Promise<void> => {
+    await setCached(`quote:${sym}`, quote, 60)
+    await setCached(quoteLkgKey(sym), quote, QUOTE_LKG_TTL_SEC)
+  }
+
+  // pass 1 — the 60s cache, else one upstream call, at most four at a time
+  await mapWithLimit(symbols, QUOTE_CONCURRENCY, async (sym, i) => {
+    const hit = await getCached<Quote>(`quote:${sym}`)
+    if (hit) {
+      out[i] = hit
+      return
+    }
+    try {
+      const quote = await fetchOne(sym)
+      await land(sym, quote)
+      out[i] = quote
+    } catch {
+      failed.push(i)
+    }
+  })
+
+  // pass 2 — ONE retry each. Most of these failures are the fan-out's own doing,
+  // and a second ask a moment later, four at a time, simply works.
+  const stillFailed: number[] = []
+  await mapWithLimit(failed, QUOTE_CONCURRENCY, async i => {
+    try {
+      const quote = await fetchOne(symbols[i])
+      await land(symbols[i], quote)
+      out[i] = quote
+    } catch {
+      stillFailed.push(i)
+    }
+  })
+
+  // pass 3 — the last-known-good tier, in ONE read. A price from this morning
+  // labelled `stale` (its own `asOf` carried through, so the UI can say how old
+  // it is) beats a dash. A symbol with no lkg at all is the only null left.
+  if (stillFailed.length) {
+    const lkg = await readCachedBatch<Quote>(stillFailed.map(i => quoteLkgKey(symbols[i])))
+    for (const i of stillFailed) {
+      const row = lkg.get(quoteLkgKey(symbols[i]))
+      if (row) out[i] = { ...row, stale: true }
+    }
+  }
+  return out
+}
+
 export async function routeRequest(
   url: URL,
   headers: Headers,
@@ -229,20 +373,7 @@ export async function routeRequest(
 
   if (type === 'quote') {
     const symbols = (url.searchParams.get('symbols') ?? '').split(',').filter(Boolean).slice(0, 30)
-    const quotes = await Promise.all(
-      symbols.map(async (sym): Promise<Quote | null> => {
-        const key = `quote:${sym}`
-        const hit = await getCached<Quote>(key)
-        if (hit) return hit
-        try {
-          const quote = isYahooSymbol(sym) ? (await deps.yahoo(sym, '3mo')).quote : await deps.finnhub(sym, env.FINNHUB_API_KEY ?? '')
-          await setCached(key, quote, 60)
-          return quote
-        } catch {
-          return null
-        }
-      }),
-    )
+    const quotes = await batchQuotes(symbols, env.FINNHUB_API_KEY ?? '', deps)
     return json(200, { ok: true, data: { quotes } })
   }
 

@@ -41,11 +41,22 @@ describe('market-data routing', () => {
     expect(body.ok).toBe(true)
     expect(body.data.quotes.map((x: Quote | null) => x?.source)).toEqual(['finnhub', 'yahoo'])
   })
-  it('nulls a failing symbol without failing the batch', async () => {
-    deps.finnhub.mockRejectedValueOnce(new Error('boom'))
+  // A symbol the upstream refuses TWICE (one attempt, one retry) and that has
+  // no last-known-good row is the only thing that still nulls — and it never
+  // takes the rest of the batch down with it.
+  it('nulls a twice-failing, never-seen symbol without failing the batch', async () => {
+    deps.finnhub.mockRejectedValueOnce(new Error('boom')).mockRejectedValueOnce(new Error('boom again'))
     const body = await (await call('type=quote&symbols=MSFT,3LTS.L', 'secret')).json()
     expect(body.data.quotes[0]).toBeNull()
     expect(body.data.quotes[1]).not.toBeNull()
+  })
+
+  it('one flaky refusal no longer costs the row — the retry lands it', async () => {
+    deps.finnhub.mockRejectedValueOnce(new Error('boom'))
+    const body = await (await call('type=quote&symbols=IBM,3LTS.L', 'secret')).json()
+    expect(body.data.quotes[0]).not.toBeNull()
+    expect(body.data.quotes[0].symbol).toBe('IBM')
+    expect(body.data.quotes[0].stale).toBeUndefined()
   })
   it('400s unknown type', async () => {
     expect((await call('type=wat', 'secret')).status).toBe(400)
