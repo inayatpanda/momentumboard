@@ -337,7 +337,9 @@ export async function routeRequest(
       const cfg = await blobAppStore.read<{ watchlist?: { symbol: string }[] }>('config')
       const syms = [...new Set([...roster.map(r => r.sym), ...(cfg?.watchlist ?? []).map(w => w.symbol)])]
       const data = { clusters: await aggregateInsiderClusters(syms), asOf: Math.floor(Date.now() / 1000) }
-      await setCached('insider-clusters:v1', data, 21_600)
+      // an EMPTY aggregate must not stick for six hours: pre-run mornings it
+      // would pin "no coverage yet" long after the engine had filled in
+      await setCached('insider-clusters:v1', data, data.clusters.length ? 21_600 : 900)
       return json(200, { ok: true, data })
     } catch {
       return json(200, { ok: true, data: { clusters: [], asOf: Math.floor(Date.now() / 1000) } })

@@ -65,7 +65,11 @@ export async function fetchInsiderBuys(
 // deterministic rotating slice of non-watchlist names, cache each summary for
 // 24h, and let coverage build to the whole roster over ~4 runs.
 
-const INSIDER_TTL_SEC = 24 * 3600
+// 96h, not 24: the engine only writes coverage on run mornings, so a 24h TTL
+// left the Intel insiders section honestly-empty from Sunday morning until
+// Monday's run (live-observed 2026-08-17, owner screenshot). Insider windows
+// are 90 days — four-day-old coverage is not stale in any way that matters.
+const INSIDER_TTL_SEC = 96 * 3600
 const INSIDER_SLICE = 20 // ~roster/4 → full coverage every ~4 runs
 const FETCH_CHUNK = 15 // fetchInsiderBuys slices to 15 US symbols per call — respect it
 // Distinct namespace from market-data.mts's list key `insiders:${sortedSyms}`
