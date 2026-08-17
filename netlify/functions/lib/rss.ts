@@ -2,6 +2,9 @@ export interface FeedItem {
   title: string
   url: string
   publishedSec: number
+  /** the publisher, when the feed names one — Google News items carry a
+   * `<source>` tag (the outlet behind the aggregated link) */
+  source?: string
 }
 
 const decode = (s: string) =>
@@ -33,7 +36,8 @@ export function parseFeed(xml: string): FeedItem[] {
     const dateStr = tag(block, 'pubDate') ?? tag(block, 'published') ?? tag(block, 'updated')
     if (!title || !url) continue
     const parsed = dateStr ? Date.parse(dateStr) : NaN
-    items.push({ title, url, publishedSec: Number.isNaN(parsed) ? 0 : Math.floor(parsed / 1000) })
+    const source = tag(block, 'source')
+    items.push({ title, url, publishedSec: Number.isNaN(parsed) ? 0 : Math.floor(parsed / 1000), ...(source ? { source } : {}) })
   }
   return items
 }

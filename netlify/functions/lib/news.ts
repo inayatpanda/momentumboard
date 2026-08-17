@@ -66,7 +66,28 @@ export async function fetchSymbolNews(
     .map(i => ({ title: i.title, url: i.url, publishedSec: i.publishedSec }))
 }
 
-/** Finnhub per-symbol company news (US symbols only) + stockmarketloop + Google News market RSS. */
+/** The curated outlet sweep (owner 2026-08-17: "barrons, bloombergs, financial
+ * times, etc — even if its just the headlines"). Headlines-and-links are what
+ * the public feeds give away free. `source: null` means the feed names the
+ * publisher per item (Google News `<source>`); a string hard-tags the whole
+ * feed. Every lane fails soft like the rest of this file — a feed that stops
+ * answering just contributes nothing that run. */
+const OUTLET_FEEDS: { url: string; source: string | null }[] = [
+  { url: 'https://www.ft.com/markets?format=rss', source: 'Financial Times' },
+  { url: 'https://feeds.content.dowjones.io/public/rss/RSSMarketsMain', source: 'Wall Street Journal' },
+  { url: 'https://feeds.content.dowjones.io/public/rss/mw_topstories', source: 'MarketWatch' },
+  { url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html', source: 'CNBC' },
+  { url: 'https://www.economist.com/finance-and-economics/rss.xml', source: 'The Economist' },
+  // no public feed of their own — Google News' per-publisher lane carries the
+  // headline, the link and a `<source>` naming the outlet
+  { url: 'https://news.google.com/rss/search?q=site:bloomberg.com%20markets&hl=en-GB&gl=GB&ceid=GB:en', source: null },
+  { url: 'https://news.google.com/rss/search?q=site:barrons.com&hl=en-GB&gl=GB&ceid=GB:en', source: null },
+  { url: 'https://news.google.com/rss/search?q=site:reuters.com%20markets&hl=en-GB&gl=GB&ceid=GB:en', source: null },
+]
+const OUTLET_ITEMS_PER_FEED = 4
+
+/** Finnhub per-symbol company news (US symbols only) + the outlet sweep +
+ * stockmarketloop + Google News market RSS. */
 export async function fetchNews(
   watchlist: string[],
   finnhubKey: string,
@@ -82,21 +103,31 @@ export async function fetchNews(
       const j = (await safeJson(
         `https://finnhub.io/api/v1/company-news?symbol=${sym}&from=${iso(nowSec - DAY)}&to=${iso(nowSec)}&token=${finnhubKey}`,
         fetchFn,
-      )) as { headline?: string; url?: string; datetime?: number }[] | null
+      )) as { headline?: string; url?: string; datetime?: number; source?: string }[] | null
       for (const n of (j ?? []).slice(0, 5)) {
-        if (n.headline && n.url) out.push({ title: n.headline, url: n.url, symbols: [sym] })
+        // finnhub's `source` names the real outlet — the url is often a
+        // finnhub.io redirect, so without it the desk reads as one wire
+        if (n.headline && n.url) out.push({ title: n.headline, url: n.url, symbols: [sym], ...(n.source ? { source: n.source } : {}) })
+      }
+    }),
+    ...OUTLET_FEEDS.map(async feed => {
+      const xml = await safeText(feed.url, fetchFn)
+      for (const item of parseFeed(xml).slice(0, OUTLET_ITEMS_PER_FEED)) {
+        if (nowSec - item.publishedSec >= DAY) continue
+        const source = feed.source ?? item.source
+        out.push({ title: item.title, url: item.url, symbols: [], ...(source ? { source } : {}) })
       }
     }),
     (async () => {
       const xml = await safeText('https://stockmarketloop.com/feed/', fetchFn)
       for (const item of parseFeed(xml).slice(0, 10)) {
-        if (nowSec - item.publishedSec < DAY) out.push({ title: item.title, url: item.url, symbols: [] })
+        if (nowSec - item.publishedSec < DAY) out.push({ title: item.title, url: item.url, symbols: [], source: 'Stockmarketloop' })
       }
     })(),
     (async () => {
       const xml = await safeText('https://news.google.com/rss/search?q=stock%20market&hl=en-GB&gl=GB&ceid=GB:en', fetchFn)
       for (const item of parseFeed(xml).slice(0, 10)) {
-        if (nowSec - item.publishedSec < DAY) out.push({ title: item.title, url: item.url, symbols: [] })
+        if (nowSec - item.publishedSec < DAY) out.push({ title: item.title, url: item.url, symbols: [], ...(item.source ? { source: item.source } : {}) })
       }
     })(),
     (async () => {

@@ -67,3 +67,70 @@ describe('fetchNews — the crypto RSS fires only when the watchlist really hold
     expect(urls.filter(u => u.includes('company-news?symbol=RR.L'))).toHaveLength(0)
   })
 })
+
+// THE OUTLETS (owner 2026-08-17, with a screenshot of a desk that was 100%
+// finnhub.io): "i was hoping for barrons, bloombergs, financial times, etc —
+// even if its just the headlines." Headlines-and-links is exactly what the
+// public feeds give away free, so the desk gains a curated outlet sweep, and
+// every item — outlet or finnhub — now carries WHO published it.
+describe('fetchNews — the outlet sweep and the source field', () => {
+  it('sweeps the big outlets: FT, WSJ, MarketWatch, CNBC, Economist, plus the Google News lanes for Bloomberg, Barron’s and Reuters', async () => {
+    const { urls, fetchFn } = recordingFetch()
+    await fetchNews([], 'key', NOW, fetchFn)
+    const hit = (frag: string) => urls.some(u => u.includes(frag))
+    expect(hit('ft.com')).toBe(true)
+    expect(hit('dowjones.io')).toBe(true) // WSJ + MarketWatch public feeds
+    expect(hit('cnbc.com')).toBe(true)
+    expect(hit('economist.com')).toBe(true)
+    expect(hit('bloomberg.com')).toBe(true)
+    expect(hit('barrons.com')).toBe(true)
+    expect(hit('reuters.com')).toBe(true)
+  })
+
+  it('a single-outlet feed hard-tags its items with the outlet name', async () => {
+    const rss = (title: string) =>
+      `<rss><channel><item><title>${title}</title><link>https://example.org/a</link><pubDate>Wed, 12 Aug 2026 08:00:00 GMT</pubDate></item></channel></rss>`
+    const fetchFn = (async (url: string) => {
+      const u = String(url)
+      return {
+        ok: true,
+        json: async () => [],
+        text: async () => (u.includes('ft.com') ? rss('FT headline') : '<rss><channel></channel></rss>'),
+      } as unknown as Response
+    }) as unknown as typeof fetch
+    const items = await fetchNews([], 'key', NOW, fetchFn)
+    const ft = items.find(i => i.title === 'FT headline')
+    expect(ft?.source).toBe('Financial Times')
+  })
+
+  it('finnhub company-news items carry finnhub’s own source field — the real outlet, not finnhub.io', async () => {
+    const fetchFn = (async (url: string) => {
+      const u = String(url)
+      return {
+        ok: true,
+        json: async () =>
+          u.includes('finnhub.io') ? [{ headline: 'NVDA pops', url: 'https://finnhub.io/api/news?id=1', datetime: NOW - 60, source: 'MarketWatch' }] : [],
+        text: async () => '<rss><channel></channel></rss>',
+      } as unknown as Response
+    }) as unknown as typeof fetch
+    const items = await fetchNews(['NVDA'], 'key', NOW, fetchFn)
+    const row = items.find(i => i.title === 'NVDA pops')
+    expect(row?.source).toBe('MarketWatch')
+  })
+
+  it('a Google News lane reads the item’s <source> tag for the publisher', async () => {
+    const gnews =
+      '<rss><channel><item><title>Big move - Bloomberg</title><link>https://news.google.com/rss/articles/x</link><pubDate>Wed, 12 Aug 2026 08:00:00 GMT</pubDate><source url="https://www.bloomberg.com">Bloomberg</source></item></channel></rss>'
+    const fetchFn = (async (url: string) => {
+      const u = String(url)
+      return {
+        ok: true,
+        json: async () => [],
+        text: async () => (u.includes('bloomberg.com') ? gnews : '<rss><channel></channel></rss>'),
+      } as unknown as Response
+    }) as unknown as typeof fetch
+    const items = await fetchNews([], 'key', NOW, fetchFn)
+    const row = items.find(i => i.title.startsWith('Big move'))
+    expect(row?.source).toBe('Bloomberg')
+  })
+})

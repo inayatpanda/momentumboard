@@ -126,7 +126,10 @@ function NewsSection() {
                   {/* the stamp first — the owner's complaint was that a big
                       collection of cards said nothing about when any of it happened */}
                   <span className="itl-news-at">{relativeStamp(item.at)}</span>
-                  <span className="itl-news-host">{hostOf(item.url)}</span>
+                  {/* WHO published it (owner 2026-08-17: a desk that was 100%
+                      "finnhub.io" — the url's host is the aggregator, the
+                      `source` field is the outlet). Host only as fallback. */}
+                  <span className="itl-news-host">{item.source ?? hostOf(item.url)}</span>
                   {item.syms.map(s => (
                     <Link key={s} href={`/stock/${s}`} className="pill">
                       {s}

@@ -183,7 +183,7 @@ export const getInsiderClusters = () =>
 
 // The triaged news desk: every fresh headline analysed and importance-scored
 // (0-100) by the news editor (LLM, heuristic fallback). Newest first.
-export interface NewsDeskItem { title: string; url: string; syms: string[]; score: number; why: string; at: number }
+export interface NewsDeskItem { title: string; url: string; syms: string[]; score: number; why: string; at: number; source?: string }
 export const getNewsDesk = () => apiGet<{ items: NewsDeskItem[] }>('/api/market?type=news-desk').then(d => d.items)
 
 export const getSignalStats = () =>

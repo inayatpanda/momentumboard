@@ -15,6 +15,9 @@ export interface TriagedNews {
   score: number // 0..100 market importance
   why: string // one short line: why it matters (or doesn't)
   at: number // epoch sec triaged
+  /** the publisher (rides through triageNews's spread untouched) — absent on
+   * rows triaged before the desk learned who published what */
+  source?: string
 }
 
 /** Ping the reader at or above this score — reserved for company-changing or

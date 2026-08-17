@@ -169,6 +169,20 @@ describe('Intel', () => {
       expect(screen.queryByText(/1970/)).not.toBeInTheDocument()
     })
 
+    // owner 2026-08-17, screenshot of a desk that was 100% "finnhub.io": the
+    // url's host is the AGGREGATOR; `source` is the outlet, and it wins
+    it('names the publisher from `source`, falling back to the url host only without one', async () => {
+      await writeSlice('intel:news', [
+        mkNews(0, { title: 'Sourced', url: 'https://finnhub.io/api/news?id=9', source: 'Bloomberg' }),
+        mkNews(1, { title: 'Unsourced', url: 'https://example.com/a1' }),
+      ])
+      withRouter()
+      await screen.findByText('Sourced')
+      expect(screen.getByText('Bloomberg')).toBeInTheDocument()
+      expect(screen.queryByText('finnhub.io')).not.toBeInTheDocument()
+      expect(screen.getByText('example.com')).toBeInTheDocument()
+    })
+
     it('sorts newest first regardless of the order the feed arrived in', async () => {
       const now = Math.floor(Date.now() / 1000)
       await writeSlice('intel:news', [

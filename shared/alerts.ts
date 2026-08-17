@@ -37,6 +37,9 @@ export interface NewsItem {
   title: string
   url: string
   symbols: string[]
+  /** the publisher — finnhub's own `source` field, an outlet feed's hard
+   * tag, or a Google News item's `<source>`; absent on legacy rows */
+  source?: string
 }
 
 export interface VideoItem {
