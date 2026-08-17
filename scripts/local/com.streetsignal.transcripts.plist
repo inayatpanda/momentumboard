@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- The StreetSignal transcript runner: every 30 minutes, fetch captions for
-     any videos the app is still waiting on (residential IP — the whole point;
-     see scripts/local/transcript-runner.mjs). Installed copy lives in
+<!-- The StreetSignal transcript runner: hourly from 16:00 to 23:00 local
+     (owner cadence, 2026-08-17 — "runs at 4pm, every 1 hourly"; 30-minutely
+     was too much). 16:00 UK = 11:00 ET, so the window walks the US session
+     into the evening uploads; launchd coalesces any run missed while the Mac
+     slept into one run on wake. Fetches captions for videos the app is still
+     waiting on (residential IP — the whole point; see
+     scripts/local/transcript-runner.mjs). Installed copy lives in
      ~/Library/LaunchAgents; the script runs from the MAIN checkout. -->
 <plist version="1.0">
 <dict>
@@ -13,10 +17,17 @@
     <string>/opt/homebrew/bin/node</string>
     <string>/Users/inayat/Projects/thestreetsignal/scripts/local/transcript-runner.mjs</string>
   </array>
-  <key>StartInterval</key>
-  <integer>1800</integer>
-  <key>RunAtLoad</key>
-  <true/>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
   <key>StandardOutPath</key>
   <string>/tmp/streetsignal-transcripts.log</string>
   <key>StandardErrorPath</key>

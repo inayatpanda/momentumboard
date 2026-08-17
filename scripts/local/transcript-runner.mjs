@@ -2,10 +2,11 @@
 // The Mac transcript runner (owner directive 2026-08-16). YouTube's caption
 // endpoint answers residential IPs and blocks datacenter ones — 30 days of
 // production EXTRACT-HEALTH showed free=0 while Gemini watched 49 of 53
-// videos. So the fetch moves HERE: launchd runs this every 30 minutes, it
-// asks the app which videos still need words (`GET ?pending=1`), pulls each
-// caption track the same way the YouTube app itself does, and hands the text
-// back (`POST`). No LLM anywhere in this file, by design.
+// videos. So the fetch moves HERE: launchd runs this hourly from 16:00 to
+// 23:00 local (see the plist), it asks the app which videos still need words
+// (`GET ?pending=1`), pulls each caption track the same way the YouTube app
+// itself does, and hands the text back (`POST`). No LLM anywhere in this
+// file, by design.
 //
 // Install (one-off):
 //   cp scripts/local/com.streetsignal.transcripts.plist ~/Library/LaunchAgents/
