@@ -10,11 +10,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
-import type { BoardSlice } from '../lib/apiViews'
+import type { BoardSlice, ChannelPick } from '../lib/apiViews'
 import type { EnginePrediction, EventRadarEntry, IntradayFlag, IntradayFlagsBlob, OpenTraceEntry } from '../lib/api'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
+import { unsizedReason } from '../lib/boardTaxonomy'
 import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
+import { ChannelPicksStrip } from './parts/ChannelPicksStrip'
 import { CountsRail } from './parts/CountsRail'
 import { EventRadarStrip } from './parts/EventRadarStrip'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
@@ -407,6 +409,130 @@ describe('EventRadarStrip', () => {
   })
 })
 
+// THE CHANNELS' PICKS (owner request). What the tracked channels are pushing
+// this week, each name beside the engine's OWN stance on it — the whole point
+// is the disagreement, so a name the engine has no read on must say exactly
+// that rather than borrow a grade from anywhere.
+describe('ChannelPicksStrip', () => {
+  const mkPick = (o: Partial<ChannelPick> = {}): ChannelPick => ({
+    sym: 'NVDA',
+    mentions7d: 4,
+    mentionsPrior7d: 2,
+    channels: 3,
+    bulls: 3,
+    bears: 1,
+    net: 2,
+    crowded: false,
+    shifted: false,
+    ...o,
+  })
+
+  it('renders nothing at all — never a skeleton — with no picks', () => {
+    expect(withRouter(<ChannelPicksStrip picks={null} board={[]} openCalls={undefined} />).container).toBeEmptyDOMElement()
+    expect(withRouter(<ChannelPicksStrip picks={undefined} board={[]} openCalls={undefined} />).container).toBeEmptyDOMElement()
+    expect(withRouter(<ChannelPicksStrip picks={[]} board={[]} openCalls={undefined} />).container).toBeEmptyDOMElement()
+  })
+
+  it('renders the street’s read: symbol linked, bulls and bears in their own direction colours', () => {
+    withRouter(<ChannelPicksStrip picks={[mkPick()]} board={[]} openCalls={undefined} />)
+    expect(screen.getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
+    expect(screen.getByText('3 bulls')).toHaveClass('cp-bull')
+    expect(screen.getByText('1 bear')).toHaveClass('cp-bear')
+    expect(screen.getByText(/3 channels/)).toBeInTheDocument()
+  })
+
+  it('says nothing about a side nobody took, and counts one channel in the singular', () => {
+    withRouter(<ChannelPicksStrip picks={[mkPick({ bulls: 0, bears: 1, channels: 1 })]} board={[]} openCalls={undefined} />)
+    expect(screen.queryByText(/bull/)).not.toBeInTheDocument()
+    expect(screen.getByText('1 bear')).toBeInTheDocument()
+    expect(screen.getByText(/1 channel$/)).toBeInTheDocument()
+  })
+
+  it('a name the engine has no read on says so — no grade borrowed from anywhere', () => {
+    withRouter(<ChannelPicksStrip picks={[mkPick({ sym: 'GME' })]} board={[]} openCalls={undefined} />)
+    expect(screen.getByText('no view')).toHaveClass('cp-noview')
+    expect(screen.queryByLabelText(/^grade/i)).not.toBeInTheDocument()
+  })
+
+  it('a sized board row shows the engine’s side and its grade', () => {
+    withRouter(<ChannelPicksStrip picks={[mkPick()]} board={[mkRow({ sym: 'NVDA', side: 'long', grade: 'A' })]} openCalls={undefined} />)
+    expect(screen.getByLabelText('Grade A')).toHaveTextContent('A')
+    expect(screen.getByText('long')).toHaveClass('pill', 'long')
+    expect(screen.queryByText('no view')).not.toBeInTheDocument()
+  })
+
+  // THE HARD RULE (CX-13), carried into the strip: a letter grade is a read on
+  // evidence only a sized row ever cleared.
+  it('an unsized board row shows its real state and NEVER a grade', () => {
+    withRouter(
+      <ChannelPicksStrip
+        picks={[mkPick({ sym: 'AMD' }), mkPick({ sym: 'PLTR' }), mkPick({ sym: 'ASML' })]}
+        board={[
+          mkRow({ id: 'w', sym: 'AMD', watchOnly: true, horizon: 'week' }),
+          mkRow({ id: 'n', sym: 'PLTR', watchOnly: true, nearMiss: true }),
+          mkRow({ id: 'o', sym: 'ASML', watchOnly: true, observation: true }),
+        ]}
+        openCalls={undefined}
+      />,
+    )
+    expect(screen.getByText('watch')).toBeInTheDocument()
+    expect(screen.getByText('nearest miss')).toBeInTheDocument()
+    expect(screen.getByText('observation')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/^grade/i)).not.toBeInTheDocument()
+    // …and the row-kind law's own sentence rides along, so the two can't drift
+    expect(screen.getByText('nearest miss')).toHaveAttribute('title', unsizedReason('near-miss'))
+  })
+
+  it('a wildcard row carries the experiment label and its standing warning', () => {
+    withRouter(
+      <ChannelPicksStrip
+        picks={[mkPick({ sym: 'COIN' })]}
+        board={[mkRow({ sym: 'COIN', side: 'short', grade: 'B', wildcard: { gate: 'dead-zone-core', priority: 1, hypothesis: 'h', gateEvidenceN: 7 } })]}
+        openCalls={undefined}
+      />,
+    )
+    expect(screen.getByText(WILDCARD_LABEL)).toBeInTheDocument()
+    expect(screen.getByText(WILDCARD_WARNING)).toBeInTheDocument()
+  })
+
+  it('a name already walking in the open book shows the day and the verdict, in the verdict’s colour', () => {
+    const open: OpenTraceEntry = {
+      id: 'o1', sym: 'TSLA', side: 'long', callDate: '2026-08-11', grade: 'A', entry: 300, stop: 280, target: 340,
+      status: 'in-play', crossedDate: null, last: 312, movePct: 4, progressPct: 30, day: 4, gradesInSessions: 6,
+      stage: 'trending', requalified: false, verdict: 'weakening', note: '',
+    }
+    withRouter(<ChannelPicksStrip picks={[mkPick({ sym: 'TSLA' })]} board={[]} openCalls={[open]} />)
+    expect(screen.getByText(/open call · day 4/)).toBeInTheDocument()
+    expect(screen.getByText('weakening')).toHaveClass('weak')
+    expect(screen.queryByLabelText(/^grade/i)).not.toBeInTheDocument()
+  })
+
+  // today's board is the fresher stance: a name on it AND in the open book
+  // reads as what the engine says this morning, not what it said last week
+  it('prefers today’s board row over the open book', () => {
+    const open: OpenTraceEntry = {
+      id: 'o1', sym: 'NVDA', side: 'long', callDate: '2026-08-11', grade: 'A', entry: 300, stop: 280, target: 340,
+      status: 'in-play', crossedDate: null, last: 312, movePct: 4, progressPct: 30, day: 4, gradesInSessions: 6,
+      stage: 'trending', requalified: true, verdict: 'still-on', note: '',
+    }
+    withRouter(<ChannelPicksStrip picks={[mkPick()]} board={[mkRow({ sym: 'NVDA', grade: 'B' })]} openCalls={[open]} />)
+    expect(screen.getByLabelText('Grade B')).toBeInTheDocument()
+    expect(screen.queryByText(/open call/)).not.toBeInTheDocument()
+  })
+
+  // the channels say "BTC"; the engine trades the pair. Only crypto pairs are
+  // aliased — BRK-B's dash is a share class, not a quote currency.
+  it('matches a channel’s coin ticker to the engine’s traded pair', () => {
+    withRouter(<ChannelPicksStrip picks={[mkPick({ sym: 'BTC' })]} board={[mkRow({ sym: 'BTC-USD', cohort: 'crypto', grade: 'C' })]} openCalls={undefined} />)
+    expect(screen.getByLabelText('Grade C')).toBeInTheDocument()
+  })
+
+  it('marks a crowded name as crowded — one-sided coverage is a warning, not a signal', () => {
+    withRouter(<ChannelPicksStrip picks={[mkPick({ crowded: true })]} board={[]} openCalls={undefined} />)
+    expect(screen.getByText('crowded')).toBeInTheDocument()
+  })
+})
+
 describe('Today', () => {
   it('paints a cached board slice without waiting for the network', async () => {
     await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() - 200_000 })
@@ -502,6 +628,29 @@ describe('Today', () => {
     expect(await screen.findByText('NVDA')).toBeInTheDocument()
     expect(screen.queryByLabelText('Open calls')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Event radar')).not.toBeInTheDocument()
+  })
+
+  // THE CHANNELS' PICKS (owner request), from the same one slice — and read
+  // against the board rows and the open book already in it.
+  it('mounts the channels’ picks and pairs each name with the engine’s own stance', async () => {
+    const data = mkBoardData([mkRow({ sym: 'NVDA', grade: 'A' })])
+    data.channelPicks = [
+      { sym: 'NVDA', mentions7d: 4, mentionsPrior7d: 1, channels: 3, bulls: 3, bears: 1, net: 2, crowded: false, shifted: false },
+      { sym: 'GME', mentions7d: 2, mentionsPrior7d: 0, channels: 2, bulls: 2, bears: 0, net: 2, crowded: false, shifted: false },
+    ]
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByLabelText('Channel picks')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'GME' })).toBeInTheDocument()
+    expect(screen.getByText('no view')).toBeInTheDocument() // GME — the engine has no read
+    expect(screen.getAllByLabelText('Grade A').length).toBeGreaterThan(0) // NVDA — it does
+  })
+
+  it('renders no picks section when the slice predates the field', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Channel picks')).not.toBeInTheDocument()
   })
 
   it('prints the tape line — the world tape’s own sentence plus the day’s news tone', async () => {

@@ -15,6 +15,7 @@ import type { BoardBlob } from '../lib/apiViews'
 import { splitBoardRows } from '../lib/boardTaxonomy'
 import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { CallCard } from './parts/CallCard'
+import { ChannelPicksStrip } from './parts/ChannelPicksStrip'
 import { CountsRail } from './parts/CountsRail'
 import { EventRadarStrip } from './parts/EventRadarStrip'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
@@ -95,6 +96,12 @@ export default function Today() {
           sections (the rule OpenCallsStrip's header states). */}
       <OpenCallsStrip entries={data?.openTrace?.entries} />
       <EventRadarStrip radar={data?.eventRadar} />
+      {/* …and then the OTHER voice in the room (owner request): what the tracked
+          channels have been recommending this week, each name beside the
+          engine's own stance on it. Reads only what this slice already carries
+          — the picks, today's board rows and the open book — so a name in
+          neither says "no view" rather than borrowing a grade. */}
+      <ChannelPicksStrip picks={data?.channelPicks} board={rows} openCalls={data?.openTrace?.entries} />
       <CountsRail board={rows} />
       <YesterdayStrip yesterday={data?.yesterday ?? null} />
     </div>

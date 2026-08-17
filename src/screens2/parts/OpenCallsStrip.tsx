@@ -18,13 +18,17 @@ import type { OpenTraceEntry } from '../../lib/api'
 
 /** still-on = the engine would publish it again today (accent); intact = it
  * would not, but nothing has broken (dim); weakening = the evidence behind it
- * is thinner than when it was called (warn). */
-const VERDICT_WORD: Record<NonNullable<OpenTraceEntry['verdict']>, string> = {
+ * is thinner than when it was called (warn).
+ *
+ * EXPORTED, because ChannelPicksStrip says the same three words about the same
+ * three states — and a verdict vocabulary that lived in two files would drift
+ * the way the row-kind law did before boardTaxonomy.ts took it. */
+export const VERDICT_WORD: Record<NonNullable<OpenTraceEntry['verdict']>, string> = {
   'still-on': 'still on',
   intact: 'intact',
   weakening: 'weakening',
 }
-const VERDICT_CLASS: Record<NonNullable<OpenTraceEntry['verdict']>, string> = {
+export const VERDICT_CLASS: Record<NonNullable<OpenTraceEntry['verdict']>, string> = {
   'still-on': 'on',
   intact: 'flat',
   weakening: 'weak',
@@ -33,7 +37,7 @@ const VERDICT_CLASS: Record<NonNullable<OpenTraceEntry['verdict']>, string> = {
 /** A row whose level has been crossed has no verdict — the engine stops
  * opining once the trade is mechanically over. Say what happened instead of
  * printing an empty slot. */
-const crossedWord = (status: OpenTraceEntry['status']) => (status === 'stopped' ? 'stopped out' : status === 'target' ? 'hit target' : '')
+export const crossedWord = (status: OpenTraceEntry['status']) => (status === 'stopped' ? 'stopped out' : status === 'target' ? 'hit target' : '')
 
 export function OpenCallsStrip({ entries }: { entries: OpenTraceEntry[] | undefined }) {
   if (!entries || entries.length === 0) return null

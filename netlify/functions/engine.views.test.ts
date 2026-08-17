@@ -171,6 +171,64 @@ describe('engine ?view= slices', () => {
     expect(r.data.openTrace).toBeNull()
   })
 
+  // THE CHANNELS' PICKS RIDE THE BOARD SLICE (owner request). The tracked
+  // channels' week of stances has only ever been readable inside the paper and
+  // the social pulse; Today pairs each name with the engine's OWN stance on it,
+  // which it can only do if the consensus arrives in the same slice the board
+  // does. Deterministic maths over the `video-extracts` blob — no extra fetch.
+  const hoursAgo = (h: number) => Math.floor(Date.now() / 1000) - h * 3600
+
+  it('?view=board carries the channels’ picks — bulls/bears per name, mentions first', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('video-extracts', [
+      {
+        url: 'u1', title: 'v1', channel: 'Chan A', at: hoursAgo(6), themes: ['ai-capex'],
+        tickers: [{ sym: 'NVDA', stance: 'bull', levels: [] }, { sym: 'COIN', stance: 'bear', levels: [] }],
+      },
+      { url: 'u2', title: 'v2', channel: 'Chan B', at: hoursAgo(20), themes: [], tickers: [{ sym: 'NVDA', stance: 'bull', levels: [] }] },
+      { url: 'u3', title: 'v3', channel: 'Chan C', at: hoursAgo(30), themes: [], tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }] },
+      // older than the fortnight the consensus reads — invisible either way
+      { url: 'u4', title: 'v4', channel: 'Chan A', at: hoursAgo(24 * 30), themes: [], tickers: [{ sym: 'STALE', stance: 'bull', levels: [] }] },
+    ])
+    const r = await body(await handler(req('?view=board')))
+    const picks = r.data.channelPicks as { sym: string; bulls: number; bears: number; channels: number; mentions7d: number }[]
+    expect(picks.map(p => p.sym)).toEqual(['NVDA', 'COIN']) // most-mentioned first
+    expect(picks[0]).toMatchObject({ bulls: 2, bears: 1, channels: 3, mentions7d: 3 })
+    expect(picks[1]).toMatchObject({ bulls: 0, bears: 1, channels: 1 })
+    expect(picks.map(p => p.sym)).not.toContain('STALE')
+  })
+
+  it('?view=board channelPicks drops names nobody took a side on, and caps the list', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('video-extracts', [
+      {
+        url: 'u1', title: 'v1', channel: 'Chan A', at: hoursAgo(4), themes: [],
+        // one neutral mention is not a recommendation — the section is what the
+        // channels are RECOMMENDING, not every symbol they said out loud
+        tickers: [{ sym: 'MENTIONED', stance: 'neutral', levels: [] }, ...Array.from({ length: 10 }, (_, i) => ({ sym: `S${i}`, stance: 'bull' as const, levels: [] }))],
+      },
+    ])
+    const r = await body(await handler(req('?view=board')))
+    const picks = r.data.channelPicks as { sym: string }[]
+    expect(picks.map(p => p.sym)).not.toContain('MENTIONED')
+    expect(picks.length).toBe(8)
+  })
+
+  it('?view=board channelPicks is null before any video has been read — and survives a malformed row', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    const cold = await body(await handler(req('?view=board')))
+    expect(cold.data.channelPicks).toBeNull()
+
+    // a truncated write / an older schema puts a row on the blob with no
+    // tickers array at all; one bad row must not 500 the whole home screen
+    await seed('video-extracts', [
+      { url: 'bad', title: 'v', channel: 'Chan A', at: hoursAgo(2) },
+      { url: 'ok', title: 'v', channel: 'Chan A', at: hoursAgo(2), themes: [], tickers: [{ sym: 'AMD', stance: 'bull', levels: [] }] },
+    ])
+    const r = await body(await handler(req('?view=board')))
+    expect((r.data.channelPicks as { sym: string }[]).map(p => p.sym)).toEqual(['AMD'])
+  })
+
   it('?view=board keeps the intraday-flags today-only guard', async () => {
     await seed('engine-board', { date: todayLondon(), board: [] })
     await seed('intraday-flags', { date: '2020-01-01', flags: [{ sym: 'OLD' }] })

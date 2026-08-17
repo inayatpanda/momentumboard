@@ -49,6 +49,29 @@ export interface BoardSlice {
    * nothing about the money already on the table. Optional: a slice cached by a
    * bundle that predates the server field has none. */
   openTrace?: { date: string; generatedAt: number; entries: OpenTraceEntry[] } | null
+  /** THE CHANNELS' PICKS (owner request). What the tracked YouTube channels have
+   * been recommending this week — the deterministic cross-channel consensus
+   * (netlify/functions/lib/videoTrends.ts, `TickerConsensus`), which Today pairs
+   * name-by-name with the engine's OWN stance. Optional AND nullable for two
+   * different reasons: a slice cached by a bundle that predates the server field
+   * has none at all, and a week in which no video was read carries null. */
+  channelPicks?: ChannelPick[] | null
+}
+
+/** Mirrors `TickerConsensus` in netlify/functions/lib/videoTrends.ts 1:1 — the
+ * shape is computed server-side and served verbatim, capped at eight. */
+export interface ChannelPick {
+  sym: string
+  mentions7d: number
+  mentionsPrior7d: number
+  channels: number
+  bulls: number
+  bears: number
+  net: number
+  /** heavy one-sided coverage — a contrarian warning, never a buy signal */
+  crowded: boolean
+  /** the stance balance flipped against the prior week */
+  shifted: boolean
 }
 
 export const getBoardSlice = () => apiGet<BoardSlice>('/api/engine?view=board')

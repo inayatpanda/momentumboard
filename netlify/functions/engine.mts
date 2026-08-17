@@ -13,6 +13,7 @@ import { isCryptoSymbol } from '../../shared/symbols'
 import { CRYPTO_CALIB_KEY, cryptoBaseHitRate, loadCryptoCalibration } from '../../shared/engine/cryptoCalibration'
 import { CRYPTO_COLD_START_N, CRYPTO_RISK_KEY, loadCryptoRisk } from '../../shared/engine/cryptoLane'
 import type { CohortRung } from '../../shared/engine/riskLadder'
+import { computeConsensus, type VideoExtract } from './lib/videoTrends'
 import { getCached, setCached } from './lib/cache'
 import { fetchYahooChart } from './lib/yahoo'
 import type { Candle } from '../../shared/types'
@@ -126,9 +127,33 @@ const londonToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/L
 // ride one — the auth-split test drives that with a real licence.
 // ---------------------------------------------------------------------------
 
-/** ?view=board — what Today/Board render: ~9 reads instead of ~50. */
+/** THE CHANNELS' PICKS (owner request). How many names the home screen pairs
+ * with the engine's own stance — eight is the most a phone shows before the
+ * section stops being a glance and becomes a list to scroll. */
+const CHANNEL_PICKS_CAP = 8
+
+/** What the tracked channels are RECOMMENDING this week, straight off the
+ * `video-extracts` blob via the same deterministic consensus maths the paper
+ * and the social pulse read (lib/videoTrends.ts — the AI only extracts).
+ *
+ * Two filters carry meaning, not tidiness: a name nobody took a SIDE on is not
+ * a recommendation (a neutral mention is a name said out loud), and a row whose
+ * `tickers`/`themes` never made it onto the blob — a truncated write, an older
+ * schema — is dropped rather than allowed to throw the whole home screen (D6,
+ * the same argument slimNearMiss makes below). */
+function channelPicks(raw: unknown) {
+  const extracts = arr<VideoExtract>(raw).filter(e => e && typeof e.at === 'number' && Array.isArray(e.tickers) && Array.isArray(e.themes))
+  if (!extracts.length) return null
+  // computeConsensus already ranks by 7-day mentions — the cap rides that order
+  const picks = computeConsensus(extracts, Math.floor(Date.now() / 1000))
+    .tickers.filter(t => t.bulls + t.bears > 0)
+    .slice(0, CHANNEL_PICKS_CAP)
+  return picks.length ? picks : null
+}
+
+/** ?view=board — what Today/Board render: ~10 reads instead of ~50. */
 async function viewBoard() {
-  const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration, predIndex, missLedgerBlob, openTrace] = await Promise.all([
+  const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration, predIndex, missLedgerBlob, openTrace, videoExtracts] = await Promise.all([
     blobAppStore.read<{ date?: string }>('engine-board'),
     blobAppStore.read<{ date: string }>('intraday-flags'),
     blobAppStore.read('event-radar'),
@@ -140,6 +165,9 @@ async function viewBoard() {
     // the open book: yesterday's still-open calls walked against closes —
     // Today renders them as "open calls, still walking" (owner iteration 2)
     blobAppStore.read('open-trace'),
+    // …and the tracked channels' week, which Today pairs name-by-name with the
+    // engine's own stance (owner request)
+    blobAppStore.read('video-extracts'),
   ])
 
   // THE YESTERDAY STRIP (CX-18): the newest predictions day before the board's,
@@ -197,6 +225,7 @@ async function viewBoard() {
     referenceBase: calibration?.referenceBase ?? null,
     yesterday,
     openTrace: openTrace ?? null,
+    channelPicks: channelPicks(videoExtracts),
   }
 }
 

@@ -642,7 +642,6 @@ p {
 .v2 .cp-crowded {
   color: var(--warn);
   font-weight: 600;
-  flex-shrink: 0;
 }
 /* the engine's answer rides the right edge — the whole point of the section is
    reading the second column straight down against the first */
@@ -686,9 +685,13 @@ p {
   flex-basis: 100%;
   margin: 0;
   font-size: 11.5px;
+  /* LAST in the row whatever the phone reorders above it — the warning read
+     ahead of the stance it belongs to, which is how it looked at 390px */
+  order: 9;
 }
-/* a phone row is ~330px wide: the street's read takes its own line rather than
-   pushing the stance chip off the right edge */
+/* a phone row is ~330px wide: the name and the engine's answer hold the first
+   line, the street's read wraps under them — and the rows need a hairline
+   between them, or two-line rows read as one four-line paragraph */
 @media (max-width: 480px) {
   .v2 .cp-street {
     flex-basis: 100%;
@@ -697,8 +700,9 @@ p {
   .v2 .cp-stance {
     order: 2;
   }
-  .v2 .cp-crowded {
-    order: 4;
+  .v2 .cp-row + .cp-row {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
   }
 }
 
