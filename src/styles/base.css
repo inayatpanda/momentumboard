@@ -2685,6 +2685,30 @@ p {
   gap: 10px;
 }
 
+/* the markdown-lite renderer (parts/MarkdownLite.tsx): the desk's LLM writers
+   emit numbered steps with bold heads, and one <p> collapsed the lot into a
+   wall carrying literal asterisks. Structure only — colour and size still come
+   from whatever class the caller passes in (.cc-reason here). */
+.v2 .md-lite {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.v2 .md-lite-line {
+  margin: 0;
+}
+.v2 .md-lite-bullet {
+  padding-left: 14px;
+}
+.v2 .md-lite-marker {
+  color: var(--text-dim);
+  font-weight: 700;
+  margin-right: 6px;
+}
+.v2 .md-lite-line strong {
+  color: var(--text);
+}
+
 /* --- calendar adapter --------------------------------------------------------
    Plan Task 21 (CX-23): the legacy CalendarScreen mounted as-is and skinned —
    its own imports are cutover-safe, so this restyles its classnames onto v2

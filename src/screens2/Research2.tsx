@@ -10,26 +10,50 @@ import { useState } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
 import { getAiRead, getEventDossiers, getOutcomes, getPickStats, getPicks } from '../lib/api'
-import { shortDateWithWeekday } from '../lib/format'
+import { relativeStamp, shortDateWithWeekday } from '../lib/format'
+import { MarkdownLite } from './parts/MarkdownLite'
+
+/** THE SERVER'S OWN SENTENCE, quoted here only so the display can refuse to
+ * print it. `/api/ai` answers a keyless caller with `unconfigured: true`, but
+ * an older cached slice carries the same fact as this bare string in `text` —
+ * either way it is deployment plumbing, and a reader has no gateway to
+ * configure. (Visibility wave, 2026-08-17.) */
+const SERVER_UNCONFIGURED = 'AI gateway not configured on this site.'
+
+/** What the reader is told when there is no AI read. Deliberately says the
+ * page below is still whole: the desk's numbers are computed server-side and
+ * owe the LLM nothing, so a missing read is a missing garnish, not a missing
+ * page. */
+export const AI_READ_UNAVAILABLE = "The desk's AI read isn't available on this account — the day's data below is complete without it."
+
+/** One place that decides what the AI-read card says, so the "absent read"
+ * cases cannot each invent their own wording. `isRead` is the difference
+ * between prose the model wrote (which earns the provider footnote and the
+ * stamp) and our own explanation of its absence (which earns neither). */
+export function aiReadCopy(d: { text?: string; unconfigured?: boolean; empty?: boolean }): { body: string; isRead: boolean } {
+  const text = d.text?.trim()
+  if (text && text !== SERVER_UNCONFIGURED) return { body: text, isRead: true }
+  if (d.empty) return { body: 'Add tickers to your watchlist first.', isRead: false }
+  return { body: AI_READ_UNAVAILABLE, isRead: false }
+}
 
 function AiReadCard() {
   const { data } = useSlice('research:aiRead', getAiRead)
+  const copy = data ? aiReadCopy(data) : null
+  // WHEN the desk read it (visibility wave). The payload has always carried
+  // `at`; nothing rendered it, so a read cached three days ago looked like
+  // this morning's.
+  const stamp = data?.at ? relativeStamp(data.at) : ''
   return (
     <section className="card rs2-section" aria-label="AI read">
-      <p className="sec-label">AI read</p>
-      {!data ? (
+      <p className="sec-label">AI read{copy?.isRead && stamp ? ` · ${stamp}` : ''}</p>
+      {!data || !copy ? (
         <div className="skeleton" style={{ height: 60 }} />
-      ) : data.text ? (
-        <>
-          <p className="cc-reason">{data.text}</p>
-          <p className="cc-reason rs2-fine">AI interpretation ({data.provider}). Not a prediction, not advice.</p>
-        </>
-      ) : data.unconfigured ? (
-        <p className="cc-reason">AI gateway not configured on this site.</p>
-      ) : data.empty ? (
-        <p className="cc-reason">Add tickers to your watchlist first.</p>
       ) : (
-        <p className="cc-reason">Nothing to read yet.</p>
+        <>
+          <p className="cc-reason">{copy.body}</p>
+          {copy.isRead && <p className="cc-reason rs2-fine">AI interpretation ({data.provider}). Not a prediction, not advice.</p>}
+        </>
       )}
     </section>
   )
@@ -58,7 +82,10 @@ function EventsSection() {
               )}
               <span className="cc-reason">{new Date(e.at * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
             </div>
-            <p className="cc-reason">{e.assessment}</p>
+            {/* the assessment is written as a numbered list with bold heads —
+                straight into a <p> it arrived as one wall with literal
+                asterisks in it (visibility wave, 2026-08-17) */}
+            <MarkdownLite text={e.assessment} className="cc-reason rs2-assessment" />
             <p className="cc-reason rs2-fine">Magnitude scenarios are grounded in measured historical analogues. Assessment, not advice.</p>
           </div>
         ))
