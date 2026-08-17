@@ -374,6 +374,20 @@ describe('engine ?view= slices', () => {
     expect(picks.map(p => p.sym)).not.toContain('STALE')
   })
 
+  // WHO said it rides along (The street page). The channel names were in the
+  // extracts all along and only the COUNT ever reached the client.
+  it('?view=board channelPicks names the channels behind each pick, not just how many', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('video-extracts', [
+      { url: 'u1', title: 'v1', channel: 'Josh', at: hoursAgo(6), themes: [], tickers: [{ sym: 'NVDA', stance: 'bull', levels: [] }] },
+      { url: 'u2', title: 'v2', channel: 'Gareth', at: hoursAgo(20), themes: [], tickers: [{ sym: 'NVDA', stance: 'bull', levels: [] }] },
+    ])
+    const r = await body(await handler(req('?view=board')))
+    const picks = r.data.channelPicks as { sym: string; channels: number; channelNames: string[] }[]
+    expect(picks[0].channelNames).toEqual(['Josh', 'Gareth'])
+    expect(picks[0].channels).toBe(2)
+  })
+
   it('?view=board channelPicks drops names nobody took a side on, and caps the list', async () => {
     await seed('engine-board', { date: '2026-08-14', board: [] })
     await seed('video-extracts', [

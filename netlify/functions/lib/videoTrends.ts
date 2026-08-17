@@ -16,12 +16,25 @@ export interface TickerConsensus {
   mentions7d: number
   mentionsPrior7d: number
   channels: number
+  /** WHO said it — the distinct channel names behind this name, first-seen
+   * order, capped at {@link NAMED_CHANNELS_CAP}. `channels` above stays the
+   * full count, so a row can honestly read "Josh, Gareth + 2 more"; the two
+   * fields are never the same number once the cap bites. Optional because a
+   * consensus recomputed from a cached payload written before this existed
+   * carries none — a reader is then told the count and no names, which is
+   * exactly what was true before. */
+  channelNames?: string[]
   bulls: number
   bears: number
   net: number // bulls - bears
   crowded: boolean // heavy one-sided coverage → contrarian warning, not a buy signal
   shifted: boolean // stance balance flipped vs the prior week
 }
+
+/** How many channel names a row prints before it says "+ n more". Six is the
+ * point at which the names stop being readable at a glance and start being a
+ * paragraph. */
+export const NAMED_CHANNELS_CAP = 6
 
 const WEEK = 7 * 86_400
 
@@ -59,6 +72,10 @@ export function computeConsensus(extracts: VideoExtract[], nowSec: number): { ti
         mentions7d: a.mentions,
         mentionsPrior7d: prior?.mentions ?? 0,
         channels: a.channels.size,
+        // a Set iterates in insertion order, which here is the order the
+        // channels actually spoke — no sort, because "who said it first" is
+        // the only ranking the extracts support
+        channelNames: [...a.channels].slice(0, NAMED_CHANNELS_CAP),
         bulls: a.bulls,
         bears: a.bears,
         net,

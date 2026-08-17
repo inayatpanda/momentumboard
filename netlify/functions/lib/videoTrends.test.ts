@@ -39,6 +39,29 @@ describe('computeConsensus', () => {
     expect(tickers[0].crowded).toBe(true)
   })
 
+  // WHO said it, not just how many (The street page). `channels` has always
+  // been a COUNT — "from 3 channels" — which tells the reader nothing about
+  // whose read this is. The names were in the extracts all along.
+  it('names the distinct channels behind each ticker, in first-seen order', () => {
+    const extracts = [
+      ex('Josh', 1, [{ sym: 'NVDA', stance: 'bull', levels: [] }]),
+      ex('Gareth', 2, [{ sym: 'NVDA', stance: 'bull', levels: [] }]),
+      // the same channel twice is still one voice
+      ex('Josh', 3, [{ sym: 'NVDA', stance: 'bear', levels: [] }]),
+    ]
+    const nvda = computeConsensus(extracts, NOW).tickers.find(t => t.sym === 'NVDA')!
+    expect(nvda.channels).toBe(2)
+    expect(nvda.channelNames).toEqual(['Josh', 'Gareth'])
+  })
+
+  it('caps the named channels at six while the count keeps counting', () => {
+    const extracts = Array.from({ length: 9 }, (_, i) => ex(`ch${i}`, 1, [{ sym: 'TSLA', stance: 'bull' as const, levels: [] }]))
+    const tsla = computeConsensus(extracts, NOW).tickers[0]
+    expect(tsla.channels).toBe(9)
+    expect(tsla.channelNames).toHaveLength(6)
+    expect(tsla.channelNames).toEqual(['ch0', 'ch1', 'ch2', 'ch3', 'ch4', 'ch5'])
+  })
+
   it('aggregates themes over the last week', () => {
     const extracts = [ex('a', 1, [], ['ai-capex']), ex('b', 2, [], ['ai-capex', 'rate-cuts'])]
     const { themes } = computeConsensus(extracts, NOW)

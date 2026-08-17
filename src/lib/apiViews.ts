@@ -83,6 +83,11 @@ export interface ChannelPick {
   mentions7d: number
   mentionsPrior7d: number
   channels: number
+  /** WHO said it — distinct channel names, first-seen order, capped at six by
+   * the server. `channels` stays the full count, so a row reads "Josh, Gareth
+   * + 2 more". Optional: a slice cached by a bundle that predates the field
+   * carries the count and no names. */
+  channelNames?: string[]
   bulls: number
   bears: number
   net: number
