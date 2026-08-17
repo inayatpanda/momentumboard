@@ -26,21 +26,22 @@
 // same-origin) rather than an iframe `src` navigation, which the report
 // route's own X-Frame-Options would block outright.
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
-import { readSlice } from '../lib/store'
 import { db } from '../lib/db'
-import { getCongress, getInsiderClusters, getNewsDesk, getReportJson, getReportList, getSocialPulse } from '../lib/api'
+import { getCongress, getInsiderClusters, getNewsDesk, getSocialPulse } from '../lib/api'
 import type { CongressTrade } from '../lib/api'
 import { compactUsd, longDate, relativeStamp } from '../lib/format'
 
 const PAGE = 30
 const FEED_PAGE = 12
 
-/** The jump rail's targets, in page order. Ids live on the sections. */
+/** The jump rail's targets, in page order. Ids live on the sections.
+ * The paper left this page for its own tab (owner 2026-08-17) — the news
+ * desk is now the first thing on Intel, which is where the reader's most
+ * frequent check belongs. */
 const SECTIONS = [
-  { id: 'paper', label: 'Paper' },
   { id: 'news', label: 'News' },
   { id: 'insiders', label: 'Insiders' },
   { id: 'congress', label: 'Congress' },
@@ -92,101 +93,6 @@ function JumpChips() {
         </a>
       ))}
     </nav>
-  )
-}
-
-/** One edition, painted from its own slice: `reports` for the latest,
- * `reports:${date}` for an archive pick — so a cached past edition still
- * paints instantly and never blocks on the network. */
-function EditionFrame({ date }: { date?: string }) {
-  const { data } = useSlice(date ? `reports:${date}` : 'reports', () => getReportJson(date))
-  if (!data) return <div className="skeleton" style={{ height: '70vh' }} />
-  return (
-    <>
-      <div className="itl-edition-pill-row">
-        <span className="pill">{data.date}</span>
-      </div>
-      {/* sandbox="" is deliberate: no scripts, no navigation, no same-origin — the
-          edition can only ever paint, never act. */}
-      <iframe className="itl-frame" sandbox="" srcDoc={data.html} title="Today's paper" />
-    </>
-  )
-}
-
-/** The archive: mounted only once the reader opens the <details> — so a
- * reader who never taps it never pays for the report-list fetch either. */
-function ArchiveList({ activeDate, onPick }: { activeDate: string | null; onPick: (date: string) => void }) {
-  const { data: dates } = useSlice('reports:list', getReportList)
-  if (!dates) return <div className="skeleton" style={{ height: 32, marginTop: 8 }} />
-  if (dates.length === 0) return <p className="cc-reason">No past editions yet.</p>
-  return (
-    <div className="itl-archive-list">
-      {dates.map(d => (
-        <button key={d} type="button" className={`pill${d === activeDate ? ' accent' : ''}`} onClick={() => onPick(d)}>
-          {d}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-/** THE PAPER, COLLAPSED (owner iteration 2). It was the first thing on the
- * page and 70vh tall, so every other section was below the fold and the news
- * desk — the thing a reader checks most — took a long scroll to reach.
- *
- * Closed by default means the heavy fetch is deferred too: `EditionFrame` is
- * not mounted until the summary is opened. The DATE in the summary therefore
- * comes from Dexie DIRECTLY (`readSlice`, never `useSlice`), which reads the
- * cache without scheduling a revalidation — a reader who has opened the paper
- * before sees which edition is waiting; one who never has sees no date rather
- * than a fetch they did not ask for. */
-function PaperSection() {
-  const [open, setOpen] = useState(false)
-  const [openDate, setOpenDate] = useState<string | null>(null)
-  const [archiveOpen, setArchiveOpen] = useState(false)
-  const [cachedDate, setCachedDate] = useState<string | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    void readSlice<{ date?: string }>('reports')
-      .then(r => {
-        if (alive && r?.data?.date) setCachedDate(r.data.date)
-      })
-      .catch(() => {})
-    return () => {
-      alive = false
-    }
-  }, [])
-
-  return (
-    <details id="paper" className="card itl-section itl-paper" open={open}>
-      <summary
-        className="itl-paper-summary"
-        onClick={e => {
-          e.preventDefault()
-          setOpen(v => !v)
-        }}
-      >
-        <span className="sec-label itl-paper-title">Today's paper{cachedDate ? ` · ${cachedDate}` : ''}</span>
-        <span className="itl-paper-cta">{open ? 'close' : 'read'}</span>
-      </summary>
-      {open && (
-        <div className="itl-paper-body">
-          <EditionFrame key={openDate ?? 'latest'} date={openDate ?? undefined} />
-          <details className="itl-archive" open={archiveOpen}>
-            <summary
-              onClick={e => {
-                e.preventDefault()
-                setArchiveOpen(v => !v)
-              }}
-            >
-              Archive
-            </summary>
-            {archiveOpen && <ArchiveList activeDate={openDate} onPick={setOpenDate} />}
-          </details>
-        </div>
-      )}
-    </details>
   )
 }
 
@@ -455,7 +361,6 @@ export default function Intel() {
     <div className="itl">
       <h1>Intel</h1>
       <JumpChips />
-      <PaperSection />
       <NewsSection />
       <InsidersSection />
       <CongressSection />

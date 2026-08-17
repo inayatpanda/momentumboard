@@ -27,7 +27,7 @@ const ICONS: Record<string, string> = {
 const RAIL_ICONS: Record<string, string> = {
   '/more/research': '⌕',
   '/more/calendar': '▦',
-  '/more/gates': '⚖',
+  '/more/paper': '≣',
 }
 
 /** Which nav key lights up for the current path. */

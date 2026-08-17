@@ -31,34 +31,45 @@ describe('AppShell', () => {
   })
 
   // …and the RAIL shows eight: the ratified five plus three promoted out of
-  // More ("More section - we can bring more sections from it into main tabs
-  // shown outside on Nav bar"), after Track record and before More.
-  it('carries three extra rail-only entries — eight rows in rail order', () => {
+  // More. Owner 2026-08-17 recut the trio twice in one morning: Gates &
+  // learning DEMOTED ("present twice, outside and inside More"), and in its
+  // slot a fresh tab for the daily edition ("instead of Gates and learning…
+  // a new fresh tab, move… just the Today paper").
+  it('carries three rail-only entries — Research, Calendar, The paper; Gates demoted', () => {
     render(<AppShell locationHook={at('/')} />)
     const nav = screen.getByRole('navigation')
     const labels = [...nav.querySelectorAll('.v2-tab-label')].map(el => el.textContent?.trim())
-    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'Research', 'Calendar', 'Gates & learning', 'More'])
+    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'Research', 'Calendar', 'The paper', 'More'])
     const railOnly = [...nav.querySelectorAll('.v2-tab.rail-only .v2-tab-label')].map(el => el.textContent?.trim())
-    expect(railOnly).toEqual(['Research', 'Calendar', 'Gates & learning'])
+    expect(railOnly).toEqual(['Research', 'Calendar', 'The paper'])
   })
 
   it('the promoted entries link to their real routes', () => {
     render(<AppShell locationHook={at('/')} />)
     const nav = screen.getByRole('navigation')
     const hrefs = [...nav.querySelectorAll('.v2-tab.rail-only')].map(a => a.getAttribute('href'))
-    expect(hrefs).toEqual(['/app/more/research', '/app/more/calendar', '/app/more/gates'])
+    expect(hrefs).toEqual(['/app/more/research', '/app/more/calendar', '/app/more/paper'])
   })
 
   it('a promoted page lights its own row, and marks the nav so the rail can dim the More parent', () => {
-    render(<AppShell locationHook={at('/more/gates')} />)
+    render(<AppShell locationHook={at('/more/research')} />)
     const nav = screen.getByRole('navigation')
     expect(nav).toHaveClass('on-promoted')
-    const gates = [...nav.querySelectorAll('.v2-tab')].find(a => a.textContent?.includes('Gates & learning'))!
-    expect(gates).toHaveClass('on')
-    expect(gates).toHaveAttribute('aria-current', 'page')
+    const research = [...nav.querySelectorAll('.v2-tab')].find(a => a.textContent?.includes('Research'))!
+    expect(research).toHaveClass('on')
+    expect(research).toHaveAttribute('aria-current', 'page')
     // the phone's More tab still lights inside these pages — that is the bar
     // that was ratified, and only CSS (≥1024px) quiets it on the rail
     const more = [...nav.querySelectorAll('.v2-tab:not(.rail-only)')].find(a => a.textContent?.includes('More'))!
+    expect(more).toHaveClass('on')
+  })
+
+  it('the demoted Gates page routes fine but lights only More — no rail row of its own', async () => {
+    render(<AppShell locationHook={at('/more/gates')} />)
+    const nav = screen.getByRole('navigation')
+    expect(nav).not.toHaveClass('on-promoted')
+    expect([...nav.querySelectorAll('.v2-tab-label')].some(el => el.textContent?.includes('Gates'))).toBe(false)
+    const more = [...nav.querySelectorAll('.v2-tab')].find(a => a.textContent?.includes('More'))!
     expect(more).toHaveClass('on')
   })
 

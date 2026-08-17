@@ -100,7 +100,7 @@ describe('Intel', () => {
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
-  it('one section erroring never blanks the others — seeded news paints while the paper and social pulse stay pending', async () => {
+  it('one section erroring never blanks the others — seeded news paints while insiders and social stay pending', async () => {
     await writeSlice('intel:news', [mkNews(0), mkNews(1)])
     withRouter()
     expect(await screen.findByText('Headline 0')).toBeInTheDocument()
@@ -117,8 +117,8 @@ describe('Intel', () => {
       withRouter()
       const rail = screen.getByRole('navigation', { name: /jump to a section/i })
       const chips = [...rail.querySelectorAll('a')].map(a => [a.textContent?.trim(), a.getAttribute('href')])
+      // the paper left for its own tab (owner 2026-08-17) — news leads
       expect(chips).toEqual([
-        ['Paper', '#paper'],
         ['News', '#news'],
         ['Insiders', '#insiders'],
         ['Congress', '#congress'],
@@ -126,60 +126,13 @@ describe('Intel', () => {
       ])
     })
 
-    it('every anchor target actually exists on the page', () => {
+    it('every anchor target actually exists on the page — and the paper is gone', () => {
       withRouter()
-      for (const id of ['paper', 'news', 'insiders', 'congress', 'social']) {
+      for (const id of ['news', 'insiders', 'congress', 'social']) {
         expect(document.getElementById(id)).not.toBeNull()
       }
-    })
-  })
-
-  // THE PAPER, COLLAPSED (owner iteration 2): "The Daily bulletin takes up the
-  // entire space." Closed by default also means the heavy edition fetch is
-  // deferred until the reader asks for it.
-  describe('the paper', () => {
-    const openPaper = () => fireEvent.click(screen.getByText(/today.?s paper/i))
-
-    it('is CLOSED by default — no iframe until the reader opens it', async () => {
-      await writeSlice('reports', { date: '2026-08-13', at: 1, html: '<h1>The Edition</h1>' })
-      withRouter()
-      expect(await screen.findByText(/today.?s paper/i)).toBeInTheDocument()
-      expect(screen.queryByTitle(/today.?s paper/i)).not.toBeInTheDocument()
-      expect(document.getElementById('paper')).not.toHaveAttribute('open')
-    })
-
-    it('renders the latest edition inline via a sandboxed srcDoc iframe once opened', async () => {
-      await writeSlice('reports', { date: '2026-08-13', at: 1, html: '<h1>The Edition</h1>' })
-      withRouter()
-      openPaper()
-      const iframe = await screen.findByTitle(/today.?s paper/i)
-      expect(iframe.getAttribute('srcdoc')).toContain('The Edition')
-      expect(iframe.getAttribute('sandbox')).toBe('')
-      expect(screen.getByText('2026-08-13')).toBeInTheDocument()
-    })
-
-    it('names the cached edition’s date on the closed summary', async () => {
-      await writeSlice('reports', { date: '2026-08-13', at: 1, html: '<h1>The Edition</h1>' })
-      withRouter()
-      expect(await screen.findByText(/today.?s paper · 2026-08-13/i)).toBeInTheDocument()
-    })
-
-    it('tapping an archive date swaps the iframe to that edition', async () => {
-      await writeSlice('reports', { date: '2026-08-13', at: 1, html: '<h1>Today edition</h1>' })
-      await writeSlice('reports:list', ['2026-08-13', '2026-08-12'])
-      await writeSlice('reports:2026-08-12', { date: '2026-08-12', at: 2, html: '<h1>Yesterday edition</h1>' })
-      withRouter()
-      openPaper()
-
-      const first = (await screen.findByTitle(/today.?s paper/i)) as HTMLIFrameElement
-      expect(first.getAttribute('srcdoc')).toContain('Today edition')
-
-      fireEvent.click(screen.getByText(/archive/i)) // opens the <details>
-      const dateBtn = await screen.findByRole('button', { name: '2026-08-12' })
-      fireEvent.click(dateBtn)
-
-      const swapped = await screen.findByTitle(/today.?s paper/i)
-      expect(swapped.getAttribute('srcdoc')).toContain('Yesterday edition')
+      expect(document.getElementById('paper')).toBeNull()
+      expect(screen.queryByText(/today.?s paper/i)).not.toBeInTheDocument()
     })
   })
 

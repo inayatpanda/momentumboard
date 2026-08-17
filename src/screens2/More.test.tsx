@@ -51,6 +51,21 @@ describe('More', () => {
     expect(screen.getByText('Settings')).toBeInTheDocument()
   })
 
+  // Owner (2026-08-17, with a screenshot): "Gates & learning is present twice,
+  // outside and inside More." Nothing may be listed twice on one screen: the
+  // Reading group holds exactly the two rail-promoted pages, so at rail widths
+  // CSS hides that whole group (jsdom applies no stylesheet — the class the
+  // media query keys on IS the honest assertion, same form as rail-only's).
+  it('marks the Reading group on-rail so the rail widths hide the duplicate listings', () => {
+    render(<Harness path="/app/more" />)
+    const reading = screen.getByText('Reading').closest('.menu-group')!
+    expect(reading).toHaveClass('on-rail')
+    // Gates & learning is DEMOTED from the rail — More is its only home, so
+    // its group must stay visible at every width; App likewise
+    expect(screen.getByText('The engine').closest('.menu-group')!).not.toHaveClass('on-rail')
+    expect(screen.getByText('App').closest('.menu-group')!).not.toHaveClass('on-rail')
+  })
+
   it('navigates to Gates & learning, Research, Calendar and Settings', () => {
     render(<Harness path="/app/more" />)
     fireEvent.click(screen.getByText('Gates & learning'))

@@ -32,10 +32,14 @@ export const ROUTES: readonly RouteDef[] = [
   { path: '/intel', key: 'intel', label: 'Intel', component: lazy(() => import('../screens2/Intel')) },
   { path: '/record', key: 'record', label: 'Track record', component: lazy(() => import('../screens2/Record')) },
   // the three promoted onto the desktop rail, BEFORE More so they read as
-  // siblings of the ratified tabs rather than as an afterthought below it
+  // siblings of the ratified tabs rather than as an afterthought below it.
+  // Owner 2026-08-17 recut the trio: Gates & learning DEMOTED ("present
+  // twice, outside and inside More"), and the daily edition promoted into
+  // its own fresh tab in that slot ("move… just the Today paper").
   { path: '/more/research', key: 'more', label: 'Research', railOnly: true, component: lazy(() => import('../screens2/Research2')) },
   { path: '/more/calendar', key: 'more', label: 'Calendar', railOnly: true, component: lazy(() => import('../screens2/Calendar2')) },
-  { path: '/more/gates', key: 'more', label: 'Gates & learning', railOnly: true, component: lazy(() => import('../screens2/GatesLearning')) },
+  { path: '/more/paper', key: 'more', label: 'The paper', railOnly: true, component: lazy(() => import('../screens2/Paper2')) },
+  { path: '/more/gates', key: 'more', component: lazy(() => import('../screens2/GatesLearning')) },
   { path: '/more', key: 'more', label: 'More', component: lazy(() => import('../screens2/More')) },
   { path: '/settings', key: 'more', component: lazy(() => import('../screens2/Settings')) },
 ] as const

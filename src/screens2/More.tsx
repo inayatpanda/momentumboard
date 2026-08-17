@@ -81,8 +81,13 @@ export default function More() {
         <div className="menu-title">The engine</div>
         <Row href="/more/gates" icon={<IconGate />} label="Gates & learning" sub="Every notch the engine has earned, and why" />
       </div>
-      <div className="menu-group">
+      {/* every row in THIS group also sits on the desktop rail (routes.ts
+          railOnly), so ≥1024px CSS hides the whole group — owner 2026-08-17:
+          nothing may be listed twice on one screen. On the phone this group
+          is these pages' only home. */}
+      <div className="menu-group on-rail">
         <div className="menu-title">Reading</div>
+        <Row href="/more/paper" icon={<IconNews />} label="The paper" sub="Today's edition, and the archive" />
         <Row href="/more/research" icon={<IconNews />} tint="accent" label="Research" sub="AI reads, pick persistence, the scorecard" />
         <Row href="/more/calendar" icon={<IconCalendar />} tint="amber" label="Calendar" sub="Every day's paper, picks and notes" />
       </div>

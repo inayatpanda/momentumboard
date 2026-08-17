@@ -238,6 +238,12 @@ p {
   .v2 .v2-tab.rail-only {
     display: flex;
   }
+  /* the More page's counterpart to rail-only (owner 2026-08-17: "present
+     twice, outside and inside More"): a menu group whose every row sits on
+     the rail disappears here at exactly the width the rail reveals them */
+  .v2 .menu-group.on-rail {
+    display: none;
+  }
   .v2 .v2-nav {
     inset: 0 auto 0 0;
     width: 200px;
@@ -576,10 +582,123 @@ p {
    the desk already does to the call cards and the Stocks rails) */
 @media (min-width: 1200px) {
   .v2 .desk2 .oc-list,
-  .v2 .desk2 .er-list {
+  .v2 .desk2 .er-list,
+  .v2 .desk2 .cp-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
     gap: 10px 28px;
+  }
+}
+
+/* --- the channels' picks (owner request) ------------------------------------
+   Two readings a row: what the tracked channels are pushing, and what the
+   engine says about the same name. Same thin-strip shape as the open book and
+   the radar — this is not a call either — with the stance riding the right
+   edge so the second column scans as a column. Tokens only; green/red mark
+   DIRECTION (bull/bear) and nothing else. */
+.v2 .cp-strip {
+  margin-bottom: 16px;
+}
+.v2 .cp-strip .sec-label {
+  margin-top: 0;
+}
+.v2 .cp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.v2 .cp-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 a.cp-sym {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--text);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.v2 .cp-street {
+  min-width: 0;
+}
+.v2 .cp-bull {
+  color: var(--long);
+  font-weight: 700;
+}
+.v2 .cp-bear {
+  color: var(--short);
+  font-weight: 700;
+}
+.v2 .cp-dot,
+.v2 .cp-chan {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.v2 .cp-crowded {
+  color: var(--warn);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+/* the engine's answer rides the right edge — the whole point of the section is
+   reading the second column straight down against the first */
+.v2 .cp-stance {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.v2 .cp-unsized,
+.v2 .cp-noview {
+  font-weight: 600;
+}
+/* dimmer than the rest of the row: "no view" is an absence, and it should not
+   compete with the names the engine does have a read on */
+.v2 .cp-noview {
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+.v2 .cp-open {
+  color: var(--text);
+  font-weight: 600;
+}
+.v2 .cp-verdict {
+  font-weight: 700;
+  font-size: 12px;
+}
+.v2 .cp-verdict.on {
+  color: var(--accent);
+}
+.v2 .cp-verdict.flat {
+  color: var(--text-dim);
+}
+.v2 .cp-verdict.weak {
+  color: var(--warn);
+}
+/* the experiment slot's standing warning takes the whole line under its row —
+   it is never a suffix on a stance, and never softened (voice.ts) */
+.v2 .cp-wild-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11.5px;
+}
+/* a phone row is ~330px wide: the street's read takes its own line rather than
+   pushing the stance chip off the right edge */
+@media (max-width: 480px) {
+  .v2 .cp-street {
+    flex-basis: 100%;
+    order: 3;
+  }
+  .v2 .cp-stance {
+    order: 2;
+  }
+  .v2 .cp-crowded {
+    order: 4;
   }
 }
 
