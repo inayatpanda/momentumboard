@@ -189,12 +189,18 @@ describe('Stocks', () => {
       await waitFor(() => expect(getQuotes).toHaveBeenCalledWith(['NVDA']))
     })
 
-    it('asks the API for nothing when the watchlist is empty', async () => {
+    it('asks for no WATCHLIST quotes when the watchlist is empty — the crypto wire still gets its pair', async () => {
+      // merge of two same-day waves: the dynamism wave wrote "no quotes at
+      // all", the crypto wire made BTC/ETH unconditional BY DESIGN ("i dont
+      // see any crypto information anywhere"). The composed truth: the only
+      // quotes fetch on an empty watchlist is the crypto pair's.
       withRouter()
       expect(await screen.findByText(/your watchlist is empty/i)).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
       await waitFor(() => expect(getMovers).toHaveBeenCalledTimes(1))
-      expect(getQuotes).not.toHaveBeenCalled()
+      for (const call of getQuotes.mock.calls) {
+        expect(call[0]).toEqual(['BTC-USD', 'ETH-USD'])
+      }
     })
   })
 
