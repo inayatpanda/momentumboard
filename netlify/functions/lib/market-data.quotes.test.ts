@@ -140,6 +140,37 @@ describe('quote batch — one retry, then the last-known-good tier', () => {
   })
 })
 
+// The old batch held the upstream fetch and the cache write inside ONE
+// `try { … } catch { return null }`: a store that refused the write threw away a
+// quote already in hand. Keeping the copy is best-effort; serving the price is not.
+const cacheWrite = vi.hoisted(() => ({ fails: false }))
+vi.mock('./cache', async () => {
+  const actual = await vi.importActual<typeof import('./cache')>('./cache')
+  return {
+    ...actual,
+    setCached: async (...args: Parameters<typeof actual.setCached>) => {
+      if (cacheWrite.fails) throw new Error('store-refused')
+      return actual.setCached(...args)
+    },
+  }
+})
+
+describe('quote batch — a refused cache write never costs the row', () => {
+  afterEach(() => {
+    cacheWrite.fails = false
+  })
+
+  it('serves the fetched price even when the store will not keep it', async () => {
+    const [sym] = syms(1, 'NOSTORE')
+    cacheWrite.fails = true
+    const { deps, attempts } = mkDeps()
+    const out = await served([sym], deps)
+    expect(out[0]).toMatchObject({ symbol: sym, price: 100 })
+    expect(out[0]!.stale).toBeUndefined()
+    expect(attempts.get(sym)).toBe(1) // …and it was not mistaken for a failure and retried
+  })
+})
+
 // The lkg reads are a SET read, not fifteen. Under Netlify Blobs there is no
 // multi-get to reach for; under D1 there is, and the failed set must cost one
 // round trip however many symbols are in it.

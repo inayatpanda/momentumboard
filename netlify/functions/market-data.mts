@@ -260,10 +260,19 @@ export async function batchQuotes(
 
   /** A landed quote is written twice: the 60s row the next request reads, and
    * the 72h row the next FAILURE reads. Nothing is written on a failure — the
-   * fresh row must never be overwritten by one. */
+   * fresh row must never be overwritten by one.
+   *
+   * AND THE WRITE NEVER COSTS THE ROW. The old batch had both cache write and
+   * upstream fetch inside one `try { … } catch { return null }`, so a store that
+   * refused a write discarded a quote we were holding in our hand. Keeping the
+   * copy is best-effort; serving the price is not. */
   const land = async (sym: string, quote: Quote): Promise<void> => {
-    await setCached(`quote:${sym}`, quote, 60)
-    await setCached(quoteLkgKey(sym), quote, QUOTE_LKG_TTL_SEC)
+    try {
+      await setCached(`quote:${sym}`, quote, 60)
+      await setCached(quoteLkgKey(sym), quote, QUOTE_LKG_TTL_SEC)
+    } catch {
+      /* the reader still gets the price */
+    }
   }
 
   // pass 1 — the 60s cache, else one upstream call, at most four at a time
