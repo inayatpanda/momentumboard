@@ -10,6 +10,7 @@
 // contract, useSlice.ts).
 
 import { useSlice } from '../lib/useSlice'
+import { usePullRefresh } from '../lib/usePullRefresh'
 import { getBoardSlice } from '../lib/apiViews'
 import type { BoardBlob } from '../lib/apiViews'
 import { splitBoardRows } from '../lib/boardTaxonomy'
@@ -20,6 +21,7 @@ import { CountsRail } from './parts/CountsRail'
 import { EventRadarStrip } from './parts/EventRadarStrip'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
 import { OpenCallsStrip } from './parts/OpenCallsStrip'
+import { RefreshStrip } from './parts/RefreshStrip'
 import { SessionLine } from './parts/SessionLine'
 import { StaleBoardNote } from './parts/StaleBoardNote'
 import { YesterdayStrip } from './parts/YesterdayStrip'
@@ -43,7 +45,10 @@ function TapeLine({ blob }: { blob: BoardBlob | null }) {
 }
 
 export default function Today() {
-  const { data } = useSlice('board', getBoardSlice)
+  // …and the slice's OWN refresh, which no screen had ever called (dynamism
+  // wave): a pull on the phone, the ↻ at desk, both driving the one board slice.
+  const { data, refreshing, refresh } = useSlice('board', getBoardSlice)
+  const { pull } = usePullRefresh(refresh)
   const blob = data?.board ?? null
   const rows = blob?.board ?? []
   // "sized" mirrors src/components/EngineBoard.tsx:251's `trades` split — the
@@ -63,6 +68,7 @@ export default function Today() {
 
   return (
     <div className="today">
+      <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
       <div className="today-head">
         <h1>Today</h1>
         {blob && <span className={`pill ${blob.regime === 'green' ? 'accent' : ''}`}>{blob.regime}</span>}

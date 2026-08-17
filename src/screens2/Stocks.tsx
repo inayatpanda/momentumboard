@@ -23,6 +23,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'wouter'
 import { db, type WatchItem } from '../lib/db'
 import { useSlice } from '../lib/useSlice'
+import { usePullRefresh, useSlicesRefresh, type SliceRefreshEntry } from '../lib/usePullRefresh'
 import { getQuotes, getMovers, getSectors, type MoverRow } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
 import { fmtPct } from '../lib/format'
@@ -30,6 +31,7 @@ import { Sparkline } from '../components/Sparkline'
 import type { Quote } from '../../shared/types'
 import { StockRow, useCachedSparkline } from './parts/StockRow'
 import { HRail } from './parts/HRail'
+import { RefreshStrip } from './parts/RefreshStrip'
 import { SessionLine } from './parts/SessionLine'
 import { isDeskWidth } from '../shell/DeskLayout'
 import { sectorSign, SectorTileBody } from './parts/SectorTile'
@@ -196,6 +198,20 @@ export default function Stocks() {
 
   const symbols = items.map(i => i.symbol)
 
+  // PULL TO REFRESH (dynamism wave). This screen's slices live in its
+  // CHILDREN — the watchlist's quote batch, the rails' movers and sectors — so
+  // the refresh names their keys and force-revalidates them through the same
+  // store call a slice's own refresh() makes; every mounted reader repaints off
+  // the write announcement. An empty watchlist contributes no `quotes:` key
+  // rather than asking the API for nothing.
+  const refreshEntries: SliceRefreshEntry[] = [
+    { key: 'movers', fetcher: getMovers },
+    { key: 'sectors', fetcher: getSectors },
+  ]
+  if (symbols.length) refreshEntries.push({ key: `quotes:${symbols.join(',')}`, fetcher: () => getQuotes(symbols) })
+  const { refresh, refreshing } = useSlicesRefresh(refreshEntries)
+  const { pull } = usePullRefresh(refresh)
+
   const add = async (symbol: string) => {
     const sym = symbol.toUpperCase()
     if (items.some(i => i.symbol === sym)) return
@@ -224,6 +240,7 @@ export default function Stocks() {
 
   return (
     <div className="stx">
+      <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
       <h1>Stocks</h1>
       {/* the session's own state (dynamism wave) — a watchlist of flat prices
           reads as broken until the line above it says the market is shut */}

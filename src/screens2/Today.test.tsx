@@ -5,7 +5,7 @@
 // asserts on the cached paint, the same pattern src/lib/useSlice.test.tsx
 // uses for its "never" fetcher.
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -27,8 +27,13 @@ import Today from './Today'
 
 vi.mock('../lib/apiViews', async () => {
   const actual = await vi.importActual<typeof import('../lib/apiViews')>('../lib/apiViews')
-  return { ...actual, getBoardSlice: () => new Promise<never>(() => {}) }
+  // A `vi.fn` around the same never-resolving promise: the refresh wiring
+  // (dynamism wave) needs to see that a second fetch was ASKED for, and a
+  // fetch that never settles is exactly how "refreshing" stays observable.
+  return { ...actual, getBoardSlice: vi.fn(() => new Promise<never>(() => {})) }
 })
+
+import { getBoardSlice } from '../lib/apiViews'
 
 const withRouter = (ui: React.ReactElement) => render(<Router base="/app" hook={memoryLocation({ path: '/app/' }).hook}>{ui}</Router>)
 
@@ -562,6 +567,23 @@ describe('Today', () => {
     const line = document.querySelector('.session-line')
     expect(line?.textContent).toMatch(/^US /)
     expect(line?.textContent).not.toContain('board struck')
+  })
+
+  // WIRED REFRESH (dynamism wave). `useSlice` has always returned refresh()
+  // and `refreshing`, and no screen called either. The gesture itself lives in
+  // src/lib/usePullRefresh.test.tsx; this is the seam.
+  it('the refresh affordance asks the board slice for fresh bytes and shows it working', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    // the count BEFORE the press — this file shares one module mock across
+    // every case, so what matters is the delta the press causes
+    const before = vi.mocked(getBoardSlice).mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
+    await waitFor(() => expect(vi.mocked(getBoardSlice).mock.calls.length).toBe(before + 1))
+    // …and the fetch never settles, so the busy bar is still up
+    expect(await screen.findByRole('status', { name: /refreshing/i })).toBeInTheDocument()
+    expect(screen.getByText('NVDA')).toBeInTheDocument() // the cached paint is untouched
   })
 
   // THE STALE-BOARD BANNER (dynamism wave). The seeded board is dated

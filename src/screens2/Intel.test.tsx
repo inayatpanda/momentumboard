@@ -5,7 +5,7 @@
 // first job is proving one section's failure (or simply not being seeded)
 // never blanks the other two.
 
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route, Router, Switch } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -13,6 +13,7 @@ import { db } from '../lib/db'
 import { writeSlice } from '../lib/store'
 import type { CongressTrade, InsiderCluster, NewsDeskItem, getCongress } from '../lib/api'
 import Intel from './Intel'
+import { getCongress as getCongressFn, getInsiderClusters, getNewsDesk, getSocialPulse } from '../lib/api'
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
@@ -108,6 +109,19 @@ describe('Intel', () => {
     // the page is not blank — the other two sections show skeleton placeholders, not an error
     expect(document.querySelectorAll('.skeleton').length).toBeGreaterThan(0)
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
+  })
+
+  // WIRED REFRESH (dynamism wave). Four independently-sliced sections, one
+  // refresh: the screen names their keys and forces them together, and each
+  // section repaints off the store's write announcement.
+  it('the refresh affordance re-fetches all four feeds at once', async () => {
+    withRouter()
+    await waitFor(() => expect(getNewsDesk).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
+    await waitFor(() => expect(getNewsDesk).toHaveBeenCalledTimes(2))
+    expect(getInsiderClusters).toHaveBeenCalledTimes(2)
+    expect(getSocialPulse).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(getCongressFn).toHaveBeenCalledTimes(2))
   })
 
   // THE JUMP RAIL (owner iteration 2): "scrolling is difficult to reach
