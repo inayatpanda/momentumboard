@@ -15,6 +15,7 @@ import type { EnginePrediction, EventRadarEntry, IntradayFlag, IntradayFlagsBlob
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
 import { unsizedReason } from '../lib/boardTaxonomy'
 import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
+import { londonToday } from '../lib/londonDay'
 import { CallCard } from './parts/CallCard'
 import { ChannelPicksStrip } from './parts/ChannelPicksStrip'
 import { CountsRail } from './parts/CountsRail'
@@ -561,6 +562,26 @@ describe('Today', () => {
     const line = document.querySelector('.session-line')
     expect(line?.textContent).toMatch(/^US /)
     expect(line?.textContent).not.toContain('board struck')
+  })
+
+  // THE STALE-BOARD BANNER (dynamism wave). The seeded board is dated
+  // 2026-08-14 — a Friday, and permanently in the past — so the banner is the
+  // honest read of it whenever this suite runs. parts/StaleBoardNote.test.tsx
+  // pins the clock and covers the day arithmetic itself.
+  it('labels a board struck on an earlier day, above the cards', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText(/Friday's board \(14 Aug/)).toBeInTheDocument()
+    expect(screen.getByText(/Friday's board \(14 Aug/)).toHaveClass('stale-board')
+  })
+
+  it('says nothing about staleness when the board is today’s', async () => {
+    const data = mkBoardData([mkRow()])
+    data.board!.date = londonToday()
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByText(/the engine publishes on weekday mornings/)).not.toBeInTheDocument()
   })
 
   // A1 (walkthrough): a RESOLVED slice with no board is an answer — the cold

@@ -334,6 +334,16 @@ p {
   line-height: 1.5;
   color: var(--text-dim);
 }
+/* THE STALE-BOARD BANNER (dynamism wave). Dim and unalarming on purpose: the
+   board is still the engine's latest word, and this only says which day struck
+   it. A quiet left rule marks it as an annotation on the cards below rather
+   than another card. Tokens only. */
+.v2 .stale-board {
+  margin: 0 0 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  font-size: 12.5px;
+}
 .v2 .today-cards {
   display: flex;
   flex-direction: column;

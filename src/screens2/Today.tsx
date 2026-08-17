@@ -21,6 +21,7 @@ import { EventRadarStrip } from './parts/EventRadarStrip'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
 import { OpenCallsStrip } from './parts/OpenCallsStrip'
 import { SessionLine } from './parts/SessionLine'
+import { StaleBoardNote } from './parts/StaleBoardNote'
 import { YesterdayStrip } from './parts/YesterdayStrip'
 
 /** THE TAPE LINE (owner iteration 2). The board blob has always carried the
@@ -70,6 +71,10 @@ export default function Today() {
           and the stamp the board has always carried and nothing ever showed. */}
       <SessionLine generatedAt={blob?.generatedAt} />
       <TapeLine blob={blob} />
+      {/* …and WHICH DAY these cards belong to (dynamism wave): a weekend
+          reader was shown Friday's board unlabelled. Nothing when it is
+          today's — the fresh case must stay silent. */}
+      <StaleBoardNote date={blob?.date} />
       {data && blob === null ? (
         // the slice RESOLVED and there is no board (cold store, pre-run
         // morning) — an empty state, never a skeleton that looks hung (A1)
