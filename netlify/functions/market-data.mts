@@ -181,6 +181,32 @@ export const QUOTE_CONCURRENCY = 4
 /** 72h — long enough that Friday's close is still there on Monday morning. */
 export const QUOTE_LKG_TTL_SEC = 259_200
 
+/* --- THE STREET (owner request) ---------------------------------------------
+ * "the summary of youtube video input deserve a section of their own, and
+ *  there should be a system where the youtube suggestions are also evaluated
+ *  by our engine and highlighted — all in a new page/tab altogether."
+ *
+ * The engine has written three video blobs since the lane shipped and no
+ * screen has rendered any of them whole: every analysed video, the deep
+ * watch-tier narrative reads, and the transcripts that power both. This type
+ * serves the first two plus the deterministic consensus computed off the
+ * first — the transcripts stay server-side, because a page of raw transcripts
+ * is not a reading surface. */
+
+/** How many videos the wire carries. Thirty is roughly a fortnight of the
+ * tracked channels at their current rate — enough that scrolling reaches
+ * something older than the last two days, short enough to stay one payload. */
+export const STREET_VIDEOS = 30
+
+/** The deep reads are expensive (the Gemini watch tier's daily cap is three)
+ * and long, so the page carries the newest handful and nothing more. */
+export const STREET_READS = 5
+
+/** Five minutes. The upstream blobs turn over when a video lands, which is a
+ * handful of times a day — this cache exists to stop a page open on two
+ * devices re-reading four hundred extracts a refresh, not to hide staleness. */
+export const STREET_TTL_SEC = 300
+
 /** The last-known-good row for a symbol. A SEPARATE key from `quote:{sym}` on
  * purpose: the 60s row means "this is the market now", and a stale price must
  * never be written into it. */
@@ -811,6 +837,57 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
         at: Math.floor(Date.now() / 1000),
       }
       await setCached('social-pulse:v2', data, 3600)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      return json(502, { ok: false, error: String(e) })
+    }
+  }
+
+  if (type === 'street') {
+    // THE WIRE (owner request). Aggregation only — this endpoint fetches
+    // nothing upstream, so a cold engine simply means a short (or empty) wire.
+    const hit = await getCached<unknown>('street-wire:v1')
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { computeConsensus } = await import('./lib/videoTrends')
+      type Extract = Parameters<typeof computeConsensus>[0][number]
+      type Analysis = { url: string; title: string; channel: string; analysis: string; at: number; via?: string }
+      const [rawExtracts, rawAnalyses] = await Promise.all([
+        blobAppStore.read<unknown[]>('video-extracts'),
+        blobAppStore.read<Analysis[]>('video-analyses'),
+      ])
+      // A BLOB IS NOT A TYPE (D6, the same argument engine.mts's channelPicks
+      // makes): a truncated write or an older schema puts a row on here with
+      // no tickers array at all, and one bad row must not take the page down.
+      const extracts = ((rawExtracts ?? []) as Extract[]).filter(e => e && typeof e.at === 'number' && Array.isArray(e.tickers) && Array.isArray(e.themes))
+      const newestFirst = <T extends { at: number }>(rows: T[]) => [...rows].sort((a, b) => b.at - a.at)
+      const data = {
+        // NEWEST FIRST off the STAMP, not off the blob's own order — the
+        // extracts accumulate in write order, and a re-analysed video is
+        // appended rather than moved.
+        videos: newestFirst(extracts)
+          .slice(0, STREET_VIDEOS)
+          .map(e => ({
+            url: e.url,
+            title: e.title,
+            channel: e.channel,
+            at: e.at,
+            // `levels` is dropped: it is the one unbounded field on an extract
+            // and the wire prints what a channel SAID about a name, never the
+            // prices it drew on a chart
+            tickers: e.tickers.map(t => ({ sym: t.sym, stance: t.stance })),
+            themes: e.themes,
+            // absent on rows older than the fallback — and absent here too,
+            // rather than defaulted into a claim about how the video was read
+            ...(e.via ? { via: e.via } : {}),
+          })),
+        reads: newestFirst((rawAnalyses ?? []).filter(a => a && typeof a.at === 'number' && typeof a.analysis === 'string')).slice(0, STREET_READS),
+        // the WHOLE consensus, uncapped: the board slice's channelPicks caps at
+        // eight because it rides a home screen — this page is the full board
+        consensus: computeConsensus(extracts, Math.floor(Date.now() / 1000)).tickers,
+        at: Math.floor(Date.now() / 1000),
+      }
+      await setCached('street-wire:v1', data, STREET_TTL_SEC)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
