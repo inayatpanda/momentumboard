@@ -976,6 +976,31 @@ p {
   font-weight: 700;
 }
 
+/* the crypto wire: the two pairs (reusing .stx-watchlist rows verbatim), the
+   day's cohort stance, and the standing basis line. Four rules, tokens only,
+   on top of .card/.pill/.cc-reason/.sec-label/.board-row-main/.stx-watchlist
+   already declared above — the stance link is a card that stacks rather than a
+   .board-row, because the row-kind law's sentence is a full line and the
+   board's thin row would ellipsis it away on a phone. */
+.v2 .cw-stances {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.v2 a.cw-stance {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+.v2 a.cw-stance > .cc-reason {
+  margin-top: 6px;
+}
+.v2 .cw-basis {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
 /* --- movers/sectors --------------------------------------------------------
    The Movers + Sectors see-all pages (plan Task 16; CX-24). Tokens only, on
    top of .card/.pill/.seg/.sec-label/.cc-reason/.num/.pressable/.skeleton and
@@ -2943,6 +2968,17 @@ p {
     grid-template-columns: minmax(340px, 1fr) minmax(380px, 1.2fr);
     gap: 0 28px;
     align-items: start;
+  }
+  /* The crypto wire leads the page on a phone, so at desk it leads it too: its
+     own full-width band above the watchlist | movers pair, with the two pairs
+     side by side rather than stretched the width of the window. */
+  .v2 .desk2 .stx-desk-grid .stx-crypto-block {
+    grid-column: 1 / -1;
+  }
+  .v2 .desk2 .cw .stx-watchlist {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
   .v2 .desk2 .stx-desk-grid .stx-sectors-block {
     grid-column: 1 / -1;

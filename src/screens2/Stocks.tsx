@@ -32,6 +32,7 @@ import { StockRow, useCachedSparkline } from './parts/StockRow'
 import { HRail } from './parts/HRail'
 import { isDeskWidth } from '../shell/DeskLayout'
 import { sectorSign, SectorTileBody } from './parts/SectorTile'
+import { CryptoWire } from './parts/CryptoWire'
 
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
 
@@ -243,6 +244,14 @@ export default function Stocks() {
           rules lay them out two-column with sectors full-width below —
           the owner's first-DMG review: use the space. */}
       <div className="stx-desk-grid">
+        {/* THE CRYPTO WIRE (owner: "i dont see any crpto information
+            anywhere") — first on the page and full-width at desk, ALWAYS
+            rendered. It leads rather than follows because the starter
+            watchlist alone is seventeen rows: a section that sits under it is
+            a section he has to go looking for, which is the complaint. */}
+        <div className="stx-crypto-block">
+          <CryptoWire />
+        </div>
         <div>
           <p className="sec-label">Your watchlist</p>
           {!watchLoaded ? (

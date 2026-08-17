@@ -22,3 +22,24 @@ export const NO_SIZED_NO_ROUTE = 'Nothing sized today — what cleared the gates
  * morning before the engine's run) — said out loud, never a skeleton that
  * looks hung (walkthrough finding A1). */
 export const NO_BOARD_YET = 'No board yet — the engine publishes on weekday mornings.'
+
+/** THE CRYPTO WIRE'S STANDING LINE (owner, 2026-08-17: "i dont see any crpto
+ * information anywhere"). Every crypto number in this app was struck on a
+ * different partition, and a reader shown a price and a stance with no basis
+ * beside them is being told something false by omission — the same argument
+ * CohortMarks.tsx makes for the row's own disclosure.
+ *
+ * The two facts are the engine's own, said here in the client's words: the
+ * cohort's grade is the raw side-adjusted move over fourteen crypto bars with
+ * no benchmark subtracted (shared/engine/cryptoCalibration.ts; Record's cohort
+ * pane and newspaper.ts's footnote each say it for their own surface), and a
+ * coin itself is not an ISA-holdable instrument — a crypto row is analysis
+ * unless a tracker route happens to be configured for the pair, which is why
+ * the lane's rows carry `paperOnly`. */
+export const CRYPTO_BASIS =
+  'Graded apart — the move itself over fourteen crypto bars, absolute, nothing subtracted. An ISA cannot hold a coin, so the lane is observation first.'
+
+/** …and the day the board carries no coin at all. The wire still renders: a
+ * lane that vanishes when it is quiet is how crypto became invisible in an app
+ * that prices it every morning. */
+export const NO_CRYPTO_TODAY = "No crypto read on today's board — the lane only speaks when a coin sets up."

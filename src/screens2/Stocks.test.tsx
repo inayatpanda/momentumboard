@@ -7,13 +7,15 @@
 // `observe()` call so a test can simulate "this rail scrolled into view" by
 // hand.
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route, Router, Switch } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
 import { writeSlice } from '../lib/store'
 import type { Quote } from '../../shared/types'
+import type { EnginePrediction } from '../lib/api'
+import type { BoardSlice } from '../lib/apiViews'
 import Stocks from './Stocks'
 
 // Defaults REJECT quickly rather than hanging forever: `store.ts`'s inflight
@@ -37,6 +39,13 @@ vi.mock('../lib/api', async () => {
   }
 })
 vi.mock('../lib/configMirror', () => ({ mirrorConfig: vi.fn() }))
+// The crypto wire reads the SAME `board` slice Today and the board column do —
+// rejecting by default for the same reason as above, so every case below paints
+// from whatever the test seeded into Dexie and nothing else.
+vi.mock('../lib/apiViews', async () => {
+  const actual = await vi.importActual<typeof import('../lib/apiViews')>('../lib/apiViews')
+  return { ...actual, getBoardSlice: vi.fn(() => Promise.reject(new Error('not mocked in this test'))) }
+})
 
 import { getCandles, getMovers } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
@@ -55,6 +64,42 @@ const mkQuote = (symbol: string, overrides: Partial<Quote> = {}): Quote => ({
 
 const mkCandles = (n = 30) =>
   Array.from({ length: n }, (_, i) => ({ t: 1_700_000_000 + i * 86_400, o: 100, h: 102, l: 99, c: 100 + i, v: 1_000_000 }))
+
+const mkRow = (o: Partial<EnginePrediction> & { sym: string }): EnginePrediction => ({
+  id: o.sym,
+  side: 'long',
+  composite: 58,
+  probability: 0.61,
+  provisional: false,
+  grade: 'C',
+  expectedMovePct: 5.4,
+  entry: 61_000,
+  stop: 57_500,
+  target: 68_000,
+  capacityPct: 100,
+  smallCap: false,
+  earningsRisk: false,
+  stage: 'trending',
+  note: 'crypto cohort — its own calibration, its own 14-bar clock, its own tape',
+  riskRung: 3,
+  riskPct: 1.25,
+  instrument: null,
+  paperOnly: true,
+  factors: {},
+  ...o,
+})
+
+/** The board slice, shaped as the view client serves it — only `board` matters
+ * to the crypto wire, and every other field is honestly absent. */
+const mkBoardSlice = (rows: EnginePrediction[]): BoardSlice => ({
+  board: { date: '2026-08-17', generatedAt: Date.now(), regime: 'green', board: rows },
+  intradayFlags: null,
+  eventRadar: null,
+  runStatus: null,
+  riskState: null,
+  referenceBase: null,
+  yesterday: null,
+})
 
 // A minimal router: `/stocks` mounts the screen under test, `/stock/:sym`
 // stands in for the real (stubbed elsewhere) journey page so a search
@@ -206,6 +251,96 @@ describe('Stocks', () => {
       // give any stray effect a tick, then confirm no second call landed
       await new Promise(r => setTimeout(r, 0))
       expect(getMovers).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // THE CRYPTO WIRE (owner: "i dont see any crpto information anywhere"). The
+  // one section on this screen that may never go absent-when-empty: the whole
+  // point of it is that the lane is visible on a day it says nothing.
+  describe('crypto wire', () => {
+    const wire = () => screen.getByRole('region', { name: 'Crypto wire' })
+
+    it('renders with no data at all — heading, both pairs named, and the standing basis line', async () => {
+      withRouter()
+      const w = wire()
+      expect(within(w).getByText('BTC-USD')).toBeInTheDocument()
+      expect(within(w).getByText('ETH-USD')).toBeInTheDocument()
+      expect(within(w).getByText(/fourteen crypto bars/i)).toBeInTheDocument()
+      expect(within(w).getByText(/observation first/i)).toBeInTheDocument()
+    })
+
+    it('paints both pairs off ONE crypto quotes slice, and links each to its journey page', async () => {
+      await writeSlice('quotes:BTC-USD,ETH-USD', [
+        mkQuote('BTC-USD', { name: 'Bitcoin USD', price: 61_240, changePct: 2.4 }),
+        mkQuote('ETH-USD', { name: 'Ethereum USD', price: 2_980, changePct: -1.1 }),
+      ])
+      withRouter()
+      const w = wire()
+      expect(await within(w).findByText('$61,240')).toHaveClass('num')
+      expect(await within(w).findByText('$2,980')).toHaveClass('num')
+      expect(within(w).getByText('+2.40%')).toBeInTheDocument()
+      expect(within(w).getByText('−1.10%')).toBeInTheDocument()
+      expect(within(w).getByRole('link', { name: /BTC-USD/ })).toHaveAttribute('href', '/app/stock/BTC-USD')
+    })
+
+    it('never fetches candles for the two pairs — the sparkline is cache-only here', async () => {
+      await writeSlice('quotes:BTC-USD,ETH-USD', [mkQuote('BTC-USD'), mkQuote('ETH-USD', { price: 2_980 })])
+      withRouter()
+      expect(await within(wire()).findByText('$128.40')).toBeInTheDocument()
+      expect(getCandles).not.toHaveBeenCalledWith('BTC-USD', '3mo')
+      expect(getCandles).not.toHaveBeenCalledWith('ETH-USD', '3mo')
+    })
+
+    it('says the lane is quiet when the day HAS a board and no crypto row on it', async () => {
+      await writeSlice('board', mkBoardSlice([mkRow({ sym: 'NVDA', cohort: undefined, note: 'trend intact' })]))
+      withRouter()
+      expect(await within(wire()).findByText(/only speaks when a coin sets up/i)).toBeInTheDocument()
+    })
+
+    it('says there is no board yet when the slice resolved without one — not "the lane is quiet"', async () => {
+      await writeSlice('board', { ...mkBoardSlice([]), board: null })
+      withRouter()
+      expect(await within(wire()).findByText(/no board yet/i)).toBeInTheDocument()
+      expect(within(wire()).queryByText(/only speaks when a coin sets up/i)).not.toBeInTheDocument()
+    })
+
+    // THE ROW-KIND LAW, unchanged by which screen renders it: a near miss
+    // cleared no gate, so it carries no letter, no probability and no size.
+    it('a crypto nearest miss shows its own reason and NO grade, probability or size', async () => {
+      await writeSlice('board', mkBoardSlice([mkRow({ sym: 'BTC-USD', cohort: 'crypto', watchOnly: true, nearMiss: true })]))
+      withRouter()
+      const w = wire()
+      expect(await within(w).findByText(/nearest miss/i)).toBeInTheDocument()
+      expect(within(w).getByText(/no grade, no probability and no size/i)).toBeInTheDocument()
+      expect(within(w).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+      expect(within(w).queryByText(/61%/)).not.toBeInTheDocument()
+      expect(within(w).queryByText(/risk 1\.25%/)).not.toBeInTheDocument()
+      expect(within(w).getByText('crypto')).toBeInTheDocument() // which partition it belongs to
+    })
+
+    it('a watch-only crypto row says watch — still no grade, no probability, no size', async () => {
+      await writeSlice('board', mkBoardSlice([mkRow({ sym: 'ETH-USD', cohort: 'crypto', watchOnly: true })]))
+      withRouter()
+      const w = wire()
+      expect(await within(w).findByText(/watch — no size yet/i)).toBeInTheDocument()
+      expect(within(w).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
+    })
+
+    it('a SIZED crypto row carries its grade and its probability, and its own note behind the disclosure', async () => {
+      await writeSlice('board', mkBoardSlice([mkRow({ sym: 'BTC-USD', cohort: 'crypto', grade: 'C', probability: 0.61 })]))
+      withRouter()
+      const w = wire()
+      expect(await within(w).findByLabelText('Grade C')).toBeInTheDocument()
+      expect(within(w).getByText(/61% · ~5\.4%/)).toBeInTheDocument()
+      expect(within(w).getByText(/why sized like this/i)).toBeInTheDocument()
+    })
+
+    // A cohort row is not the only crypto row the board can carry: a legacy row
+    // published before the lane stamped its partition is still a coin.
+    it('recognises a crypto pair by its SYMBOL even when the row carries no cohort stamp', async () => {
+      await writeSlice('board', mkBoardSlice([mkRow({ sym: 'BTC-USD', watchOnly: true, nearMiss: true })]))
+      withRouter()
+      expect(await within(wire()).findByText(/nearest miss/i)).toBeInTheDocument()
     })
   })
 
