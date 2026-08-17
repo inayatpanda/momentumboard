@@ -49,9 +49,13 @@ describe('whoSaidIt', () => {
 })
 
 describe('ChannelPickRow', () => {
-  it('names the channels instead of counting them, on a detailed row', () => {
+  // …on its own line, because inline the names made the first line a different
+  // length on every row and pushed the engine's answer to a different x
+  it('names the channels instead of counting them, on a line of its own', () => {
     withRouter(<ChannelPickRow pick={mkPick({ channels: 4, channelNames: ['Josh', 'Gareth'] })} row={undefined} open={undefined} detailed />)
-    expect(screen.getByText(/from Josh, Gareth \+ 2 more/)).toBeInTheDocument()
+    const who = document.querySelector('.cp-who') as HTMLElement
+    expect(who).toHaveTextContent('Josh, Gareth + 2 more')
+    expect(document.querySelector('.cp-street')).not.toHaveTextContent(/Josh/)
     expect(screen.queryByText(/from 4 channels/)).not.toBeInTheDocument()
   })
 
@@ -60,9 +64,11 @@ describe('ChannelPickRow', () => {
     expect(screen.getByText(/from 4 channels/)).toBeInTheDocument()
   })
 
-  it('calls out a stance that flipped against the prior week', () => {
+  it('calls out a stance that flipped against the prior week, beside who said it', () => {
     withRouter(<ChannelPickRow pick={mkPick({ shifted: true })} row={undefined} open={undefined} detailed />)
-    expect(screen.getByText('stance flipped this week')).toHaveClass('pill', 'cp-shifted')
+    const chip = screen.getByText('stance flipped this week')
+    expect(chip).toHaveClass('pill', 'cp-shifted')
+    expect(chip.closest('.cp-who')).not.toBeNull()
   })
 
   it('says nothing about a stance that held', () => {
@@ -75,7 +81,7 @@ describe('ChannelPickRow', () => {
   it('keeps the undetailed row exactly as the home screen has it', () => {
     withRouter(<ChannelPickRow pick={mkPick({ channels: 4, channelNames: ['Josh', 'Gareth'], shifted: true })} row={undefined} open={undefined} />)
     expect(screen.getByText(/from 4 channels/)).toBeInTheDocument()
-    expect(screen.queryByText('Josh, Gareth + 2 more')).not.toBeInTheDocument()
+    expect(document.querySelector('.cp-who')).toBeNull()
     expect(screen.queryByText(/flipped/)).not.toBeInTheDocument()
   })
 })

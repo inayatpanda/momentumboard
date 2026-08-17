@@ -132,9 +132,11 @@ export function ChannelPickRow({
         {pick.bulls > 0 && <b className="cp-bull num">{plural(pick.bulls, 'bull')}</b>}
         {pick.bulls > 0 && pick.bears > 0 && <span className="cp-dot"> · </span>}
         {pick.bears > 0 && <b className="cp-bear num">{plural(pick.bears, 'bear')}</b>}
-        {/* the names carry the count inside them ("+ 2 more"), so they REPLACE
-            it rather than sitting beside a number that says the same thing */}
-        <span className="cp-chan num"> from {who ?? plural(pick.channels, 'channel')}</span>
+        {/* the names carry the count inside them ("+ 2 more"), so when they are
+            shown the count goes with them, onto its own line below — a first
+            line of variable length puts the engine's answer at a different
+            x on every row, and reading that column down IS the section */}
+        {!who && <span className="cp-chan num"> from {plural(pick.channels, 'channel')}</span>}
         {/* heavy one-sided coverage is a contrarian warning, never a second
             vote for the direction (videoTrends.ts's own word) — and it is part
             of the STREET's read, so it rides that line */}
@@ -144,12 +146,19 @@ export function ChannelPickRow({
             <span className="cp-crowded">crowded</span>
           </>
         )}
-        {/* …and so is a flip: `shifted` is the stance balance reversing against
-            the PRIOR seven days (videoTrends.ts), which is a fact about the
-            channels' conviction and nothing about the engine's */}
-        {detailed && pick.shifted && <span className="pill cp-shifted">stance flipped this week</span>}
       </span>
       <EngineStance row={row} open={row ? undefined : open} />
+      {/* WHO said it, and whether they changed their minds — both are facts
+          about the CHANNELS, so they share one quiet line under the row.
+          `shifted` is the stance balance reversing against the PRIOR seven days
+          (videoTrends.ts): a fact about their conviction, never about the
+          engine's, and never a direction to trade. */}
+      {detailed && (who || pick.shifted) && (
+        <p className="cp-who">
+          {who}
+          {pick.shifted && <span className="pill cp-shifted">stance flipped this week</span>}
+        </p>
+      )}
       {row?.wildcard && <p className="cc-reason cp-wild-note">{WILDCARD_WARNING}</p>}
     </div>
   )

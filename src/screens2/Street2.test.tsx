@@ -167,7 +167,8 @@ describe('Street2', () => {
     it('names the channels behind each pick', async () => {
       await seedWire({ consensus: [mkPick({ channels: 5, channelNames: ['Josh', 'Gareth', 'Nash'] })] })
       withRouter()
-      expect(await screen.findByText(/from Josh, Gareth, Nash \+ 2 more/)).toBeInTheDocument()
+      await screen.findByRole('link', { name: 'NVDA' })
+      expect(document.querySelector('.cp-who')).toHaveTextContent('Josh, Gareth, Nash + 2 more')
     })
 
     it('chips a name whose stance flipped against the prior week', async () => {

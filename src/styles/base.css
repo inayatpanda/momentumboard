@@ -841,14 +841,30 @@ p {
   color: var(--warn);
   font-weight: 600;
 }
-/* the week's stance FLIP (The street page's fuller row): warn tone, because a
-   set of channels that swung the other way in seven days is a fact about their
-   conviction — never a direction to trade */
+/* WHO SAID IT, on its own line (The street page's fuller row). Inline, the
+   names made the first line a different length on every row and pushed the
+   engine's answer to a different x each time — and reading that column
+   straight down is the entire point of the section. */
+.v2 .cp-who {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 1px 0 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  /* after the row's own three parts, before the wildcard warning (order 9) */
+  order: 8;
+}
+/* the week's stance FLIP: warn tone, because a set of channels that swung the
+   other way in seven days is a fact about their conviction — never a direction
+   to trade */
 .v2 .pill.cp-shifted {
   color: var(--warn);
   font-size: 11px;
   padding: 1px 8px;
-  margin-left: 8px;
+  margin-left: 4px;
 }
 /* the engine's answer rides the right edge — the whole point of the section is
    reading the second column straight down against the first */
@@ -2284,6 +2300,10 @@ p {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 7px;
+}
+/* a chip already has a border — an underline on top of it reads as damage */
+.v2 .stt-video-meta a.pill {
+  text-decoration: none;
 }
 /* a neutral mention took no side, so it takes no direction colour */
 .v2 .pill.stt-flat {
