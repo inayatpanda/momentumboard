@@ -790,6 +790,32 @@ p {
 .v2 details.board-refused > .cc-reason {
   padding-bottom: 14px;
 }
+/* the chevron the suppressed marker left missing — a flat bar invited nothing
+   (visibility wave, 2026-08-17) */
+.v2 details.board-refused > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v2 .board-refused-chev {
+  color: var(--text-dim);
+  transition: transform 0.15s ease;
+}
+.v2 details.board-refused[open] .board-refused-chev {
+  transform: rotate(90deg);
+}
+/* grouped by the gate that refused them, each with its own count */
+.v2 .board-refused-group {
+  padding: 0 14px;
+}
+.v2 .board-refused-gate {
+  margin: 12px 0 4px;
+  color: var(--text);
+}
+.v2 .board-refused-more {
+  width: calc(100% - 28px);
+  margin: 12px 14px 14px;
+}
 
 /* --- stocks -------------------------------------------------------------------
    Search + watchlist rows + T212-Discover-style rails (plan Task 15). Tokens

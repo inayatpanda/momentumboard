@@ -32,8 +32,11 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'wouter'
 import { useSlice } from '../../lib/useSlice'
 import { getBoardSlice, getFunnel } from '../../lib/apiViews'
+import type { JourneyFunnelRow } from '../../lib/apiViews'
 import type { EnginePrediction } from '../../lib/api'
+import type { GateCode } from '../../../shared/engine/types'
 import { splitBoardRows } from '../../lib/boardTaxonomy'
+import { GATE_LABELS } from '../../lib/gateLabels'
 import { NO_BOARD_YET } from '../../lib/copy'
 import { CallCard } from './CallCard'
 import { CohortPill } from './CohortMarks'
@@ -53,7 +56,12 @@ function BoardThinRow({ p, note, conviction }: { p: EnginePrediction; note: stri
         <CohortPill cohort={p.cohort} />
       </span>
       <span className="board-row-detail">{note}</span>
-      {conviction != null && <span className="num board-row-core">{Math.round(conviction)}</span>}
+      {/* LABELLED, like every other place this number appears (visibility
+          wave, 2026-08-17). A bare 51 at the end of a row is a number with no
+          noun — RefusalRow has always printed "core 10.0" for the very same
+          quantity, so the board was the one surface where the reader had to
+          guess. */}
+      {conviction != null && <span className="num board-row-core">core {Math.round(conviction)}</span>}
     </Link>
   )
 }
@@ -80,8 +88,36 @@ function useLocationHash(): string {
   return hash
 }
 
+/** THREE HUNDRED AND FIFTY-EIGHT ROWS IS NOT A LIST, IT IS A LANDFILL
+ * (visibility wave, 2026-08-17). Ungrouped, "the engine said no · 358" told
+ * the reader a number and then buried the only thing that number is FOR: which
+ * gate is doing the refusing. Grouped by gate with per-gate counts, the same
+ * scroll answers "what stopped the day" in one screen.
+ *
+ * Ordered by count desc, and STABLE inside that — a gate's own rows keep the
+ * server's order, and gates with equal counts keep the order they first appear
+ * in, so the section never re-sorts a day's trace into a ranking the server
+ * never made. */
+export interface RefusalGroup {
+  gate: GateCode
+  rows: JourneyFunnelRow[]
+}
+
+export function groupRefusalsByGate(refusals: JourneyFunnelRow[]): RefusalGroup[] {
+  const byGate = new Map<GateCode, JourneyFunnelRow[]>()
+  for (const r of refusals) byGate.set(r.gate, [...(byGate.get(r.gate) ?? []), r])
+  return [...byGate.entries()].map(([gate, rows]) => ({ gate, rows })).sort((a, b) => b.rows.length - a.rows.length)
+}
+
+/** How many refusal ROWS the section paints before offering the rest. The
+ * groups above it are always all present — it is the rows inside them that are
+ * budgeted, so the shape of the day (which gates, how many each) is complete
+ * from the first paint even when the names are not. */
+export const REFUSED_PAGE = 50
+
 function RefusedSection({ date, hash }: { date: string; hash: string }) {
   const { data } = useSlice(`funnel:${date}`, () => getFunnel(date))
+  const [visible, setVisible] = useState(REFUSED_PAGE)
   // Real browser navigation lands the hash in window.location regardless of
   // which locationHook is routing the app (wouter's memory hook, used in
   // tests, never touches it) — checked at mount per DS-17, and again whenever
@@ -94,15 +130,48 @@ function RefusedSection({ date, hash }: { date: string; hash: string }) {
     if (hash === '#refused') setOpen(true)
   }, [hash])
   const refusals = data?.refusals ?? []
+  const groups = groupRefusalsByGate(refusals)
+  // the row budget, spent group by group in order
+  let budget = visible
+  const painted = groups.map(g => {
+    const rows = g.rows.slice(0, Math.max(0, budget))
+    budget -= rows.length
+    return { ...g, rows, total: g.rows.length }
+  })
+  const hidden = refusals.length - visible
   return (
     <details id="refused" className="card board-refused" open={open} onToggle={e => setOpen(e.currentTarget.open)}>
-      <summary className="sec-label">The engine said no{data && !data.missing ? ` · ${refusals.length}` : ''}</summary>
+      {/* A CHEVRON, so the bar reads as something that opens (visibility wave).
+          The default marker is suppressed for the token look, which left a flat
+          strip nothing invited the reader to press. */}
+      <summary className="sec-label">
+        <span className="board-refused-chev" aria-hidden="true">
+          ›
+        </span>
+        The engine said no{data && !data.missing ? ` · ${refusals.length}` : ''}
+      </summary>
       {data?.missing ? (
         <p className="cc-reason">No refusals recorded for {date}.</p>
       ) : refusals.length === 0 ? (
         data ? <p className="cc-reason">Nothing refused — every candidate cleared its gates today.</p> : null
       ) : (
-        refusals.map(r => <RefusalRow key={r.key} row={r} />)
+        <>
+          {painted.map(g => (
+            <div className="board-refused-group" key={g.gate}>
+              <p className="sec-label board-refused-gate">
+                {GATE_LABELS[g.gate]} · <span className="num">{g.total}</span>
+              </p>
+              {g.rows.map(r => (
+                <RefusalRow key={r.key} row={r} showGate={false} />
+              ))}
+            </div>
+          ))}
+          {hidden > 0 && (
+            <button type="button" className="stx-showmore board-refused-more" onClick={() => setVisible(refusals.length)}>
+              Show {hidden} more
+            </button>
+          )}
+        </>
       )}
     </details>
   )
@@ -152,21 +221,25 @@ export default function BoardColumn() {
             </div>
           )}
 
-          {/* the ids Today's counts rail links to (D2) — one per chip */}
-          {developing.length > 0 && (
-            <p className="sec-label" id="developing">
-              Developing — building over 2–4 weeks
-            </p>
-          )}
+          {/* THE ANCHOR IS UNCONDITIONAL (visibility wave, 2026-08-17). These
+              ids are Today's counts-rail destinations (D2), and they were
+              rendered only when the section had rows — so on a day with
+              nothing developing, "Developing · 0" landed the reader at a
+              heading that did not exist and the page simply did not move. A
+              heading that says the section is empty is an answer; a missing
+              anchor is a dead link. */}
+          <p className="sec-label" id="developing">
+            Developing · <span className="num">{developing.length}</span>
+            {developing.length === 0 ? ' — nothing building today' : ' — building over 2–4 weeks'}
+          </p>
           {developing.map(p => (
             <BoardThinRow key={p.id} p={p} note="developing" conviction={Math.abs(p.composite)} />
           ))}
 
-          {watch.length > 0 && (
-            <p className="sec-label" id="watch">
-              Watch — short-term observations
-            </p>
-          )}
+          <p className="sec-label" id="watch">
+            Watch · <span className="num">{watch.length}</span>
+            {watch.length === 0 ? ' — nothing on watch today' : ' — short-term observations'}
+          </p>
           {watch.map(p => (
             <BoardThinRow key={p.id} p={p} note="watch" conviction={Math.abs(p.composite)} />
           ))}

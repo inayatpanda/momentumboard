@@ -184,7 +184,7 @@ describe('CallCard', () => {
 })
 
 describe('CountsRail', () => {
-  it('counts developing and watch rows from the board, and renders Refused with no count', () => {
+  it('counts developing and watch rows from the board, and leaves Refused bare until the funnel is known', () => {
     const board = [
       mkRow({ id: 'd1', watchOnly: true, horizon: 'developing' }),
       mkRow({ id: 'd2', watchOnly: true, horizon: 'developing' }),
@@ -196,7 +196,32 @@ describe('CountsRail', () => {
     expect(screen.getByText('2')).toHaveClass('num')
     expect(screen.getByText(/watch/i)).toBeInTheDocument()
     expect(screen.getByText('1')).toHaveClass('num')
+    // no board slice cached here, so no date, so no funnel — the chip degrades
+    // to exactly what it always was rather than guessing a number
     expect(screen.getByText(/^refused$/i)).toBeInTheDocument()
+  })
+
+  // VISIBILITY WAVE (2026-08-17). Two chips quantified and a third bare reads
+  // as a chip that does something else — and the third number is the one that
+  // says most about the day: 358 refused against six watched.
+  it('carries the real refusal count once the funnel for the board’s date is in hand', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([]), fetchedAt: Date.now() })
+    await db.slices.put({
+      key: 'funnel:2026-08-14',
+      data: { date: '2026-08-14', refusals: [{ key: 'A', gate: 'slot-cut' }, { key: 'B', gate: 'slot-cut' }, { key: 'C', gate: 'entry-chase' }], published: [], nearMisses: [] },
+      fetchedAt: Date.now(),
+    })
+    withRouter(<CountsRail board={[]} />)
+    const chip = await screen.findByText('3')
+    expect(chip).toHaveClass('num')
+    expect(chip.closest('a')).toHaveAttribute('href', '/app/board#refused')
+  })
+
+  it('never invents a count for a day the engine recorded no trace for', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([]), fetchedAt: Date.now() })
+    await db.slices.put({ key: 'funnel:2026-08-14', data: { date: null, missing: true, refusals: [], published: [], nearMisses: [] }, fetchedAt: Date.now() })
+    withRouter(<CountsRail board={[]} />)
+    expect(await screen.findByText(/^refused$/i)).toBeInTheDocument()
   })
 })
 

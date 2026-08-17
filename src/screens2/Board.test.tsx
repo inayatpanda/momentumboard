@@ -12,6 +12,7 @@ import { writeSlice } from '../lib/store'
 import type { BoardSlice, FunnelSlice, JourneyFunnelRow } from '../lib/apiViews'
 import type { EnginePrediction } from '../lib/api'
 import Board from './Board'
+import { groupRefusalsByGate, REFUSED_PAGE } from './parts/BoardColumn'
 
 vi.mock('../lib/apiViews', async () => {
   const actual = await vi.importActual<typeof import('../lib/apiViews')>('../lib/apiViews')
@@ -112,10 +113,12 @@ describe('Board', () => {
     // developing/watch: thin rows — sym, side, stage word, conviction .num, NO grade pill
     expect(screen.getByText('TSLA')).toBeInTheDocument()
     expect(screen.getByText('developing')).toBeInTheDocument()
-    expect(screen.getByText('54')).toHaveClass('num')
+    // the composite is LABELLED (visibility wave) — a bare number at the end
+    // of a row was the one place the reader had to guess what it was
+    expect(screen.getByText('core 54')).toHaveClass('num')
     expect(screen.getByText('AMD')).toBeInTheDocument()
     expect(screen.getByText('watch')).toBeInTheDocument()
-    expect(screen.getByText('58')).toHaveClass('num')
+    expect(screen.getByText('core 58')).toHaveClass('num')
     expect(screen.queryByLabelText(/^grade/i)).toHaveTextContent('A') // only the one sized row's grade pill exists
     expect(screen.getAllByLabelText(/^grade/i)).toHaveLength(1)
   })
@@ -196,8 +199,20 @@ describe('Board', () => {
       mkRow({ id: 'w1', sym: 'AMD', watchOnly: true, horizon: 'week', composite: 58 }),
     ])
     withRouter(<Board />)
-    expect(await screen.findByText(/developing — building/i)).toHaveAttribute('id', 'developing')
-    expect(screen.getByText(/watch — short-term/i)).toHaveAttribute('id', 'watch')
+    await screen.findByText('TSLA')
+    expect(document.getElementById('developing')!.textContent).toMatch(/developing · 1 — building/i)
+    expect(document.getElementById('watch')!.textContent).toMatch(/watch · 1 — short-term/i)
+  })
+
+  // …and the anchor cannot depend on the section having rows, or the chip
+  // lands on nothing exactly on the days the reader most wants to know why
+  // (visibility wave, 2026-08-17).
+  it('renders both headings on a day with nothing developing and nothing watched', async () => {
+    await seedBoard([mkRow({ id: 's1', sym: 'NVDA', watchOnly: false, grade: 'A' })])
+    withRouter(<Board />)
+    await screen.findByText('NVDA')
+    expect(document.getElementById('developing')!.textContent).toMatch(/developing · 0 — nothing building today/i)
+    expect(document.getElementById('watch')!.textContent).toMatch(/watch · 0 — nothing on watch today/i)
   })
 
   // …and the desk never unmounts this column, so a hash arriving UNDER it has
@@ -292,5 +307,95 @@ describe('Board', () => {
     // dateA's refusal row must never sit beside dateB's board — key={date}
     // forces the section to remount rather than carry stale state forward.
     expect(screen.queryByText('STALE_SYM')).not.toBeInTheDocument()
+  })
+})
+
+// VISIBILITY WAVE (2026-08-17) — the live desk read "THE ENGINE SAID NO · 358"
+// as a flat bar with no affordance, and behind it 358 undifferentiated rows.
+// The number is the most interesting thing on the board and it answered
+// nothing: 358 refused by WHAT?
+describe('the engine said no — grouped, counted, openable', () => {
+  const rows = (gate: JourneyFunnelRow['gate'], n: number, prefix: string) =>
+    Array.from({ length: n }, (_, i) => mkFunnelRow({ key: `${prefix}${i}`, gate, core: 40 + i }))
+
+  const openRefused = async (refusals: JourneyFunnelRow[]) => {
+    await seedBoard([])
+    await seedFunnel('2026-08-14', mkFunnelData(refusals))
+    window.history.pushState(null, '', '/app/board#refused')
+    withRouter(<Board />, '/app/board#refused')
+    await screen.findByText(`${prefixOf(refusals[0])}`)
+    return document.getElementById('refused') as HTMLDetailsElement
+  }
+  const prefixOf = (r: JourneyFunnelRow) => r.key.split(':')[0]
+
+  describe('groupRefusalsByGate', () => {
+    it('groups by gate and orders the groups by size, biggest first', () => {
+      const groups = groupRefusalsByGate([
+        mkFunnelRow({ key: 'A', gate: 'entry-chase' }),
+        mkFunnelRow({ key: 'B', gate: 'dead-zone-core' }),
+        mkFunnelRow({ key: 'C', gate: 'dead-zone-core' }),
+        mkFunnelRow({ key: 'D', gate: 'dead-zone-core' }),
+        mkFunnelRow({ key: 'E', gate: 'slot-cut' }),
+        mkFunnelRow({ key: 'F', gate: 'slot-cut' }),
+      ])
+      expect(groups.map(g => [g.gate, g.rows.length])).toEqual([
+        ['dead-zone-core', 3],
+        ['slot-cut', 2],
+        ['entry-chase', 1],
+      ])
+    })
+
+    it('keeps the server order inside a gate, and among gates of equal size', () => {
+      const groups = groupRefusalsByGate([
+        mkFunnelRow({ key: 'ZZZ', gate: 'slot-cut' }),
+        mkFunnelRow({ key: 'AAA', gate: 'dead-zone-core' }),
+        mkFunnelRow({ key: 'MMM', gate: 'entry-chase' }),
+      ])
+      expect(groups.map(g => g.gate)).toEqual(['slot-cut', 'dead-zone-core', 'entry-chase'])
+      expect(groups.flatMap(g => g.rows.map(r => r.key))).toEqual(['ZZZ', 'AAA', 'MMM'])
+    })
+
+    it('an empty trace is no groups at all', () => {
+      expect(groupRefusalsByGate([])).toEqual([])
+    })
+  })
+
+  it('heads each group with the gate that refused them and its own count', async () => {
+    const details = await openRefused([...rows('dead-zone-core', 3, 'DZ'), ...rows('slot-cut', 1, 'SC')])
+    const heads = [...details.querySelectorAll('.board-refused-gate')].map(p => p.textContent)
+    expect(heads).toEqual(['below the conviction bar · 3', 'lost the last slot · 1'])
+  })
+
+  it('names the gate once per group, never again on every row under it', async () => {
+    const details = await openRefused(rows('dead-zone-core', 3, 'DZ'))
+    expect(within(details).getAllByText(/below the conviction bar/)).toHaveLength(1)
+  })
+
+  it('paints 50 rows, then offers the rest — and the group shape is complete from the first paint', async () => {
+    const details = await openRefused([...rows('dead-zone-core', 60, 'DZ'), ...rows('slot-cut', 20, 'SC')])
+    expect(details.querySelectorAll('.board-row')).toHaveLength(REFUSED_PAGE)
+    // both gates are named with their TRUE counts even though the second has no rows yet
+    const heads = [...details.querySelectorAll('.board-refused-gate')].map(p => p.textContent)
+    expect(heads).toEqual(['below the conviction bar · 60', 'lost the last slot · 20'])
+
+    const more = within(details).getByRole('button', { name: /show 30 more/i })
+    fireEvent.click(more)
+    expect(details.querySelectorAll('.board-row')).toHaveLength(80)
+    expect(within(details).queryByRole('button', { name: /show more|show \d+ more/i })).not.toBeInTheDocument()
+  })
+
+  it('offers nothing to show when the whole trace already fits', async () => {
+    const details = await openRefused(rows('dead-zone-core', 3, 'DZ'))
+    expect(within(details).queryByRole('button', { name: /show/i })).not.toBeInTheDocument()
+  })
+
+  it('carries a chevron that turns with the disclosure', async () => {
+    await seedBoard([])
+    await seedFunnel('2026-08-14', mkFunnelData([mkFunnelRow({ key: 'AMD' })]))
+    withRouter(<Board />)
+    await screen.findByText(/the engine said no/i)
+    const details = document.getElementById('refused') as HTMLDetailsElement
+    expect(details.open).toBe(false)
+    expect(details.querySelector('.board-refused-chev')).not.toBeNull()
   })
 })
