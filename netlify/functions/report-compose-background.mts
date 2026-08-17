@@ -1,7 +1,8 @@
 import { appStore as blobAppStore } from './lib/storeProvider'
 import { authenticate, scopedToken } from './lib/auth'
 import { callLlm } from './lib/llm'
-import { composePrompt, parseComposed, buildNewspaperHtml, boardExportRows, constrainIdeasToBoard, validateNominations, mergeNominations, paperPostMortems, COMPOSE_DROP_ORDER, PAPER_POSTMORTEM_DAYS, type StoredNomination } from './lib/newspaper'
+import { composePrompt, parseComposed, buildNewspaperHtml, boardExportRows, constrainIdeasToBoard, validateNominations, mergeNominations, paperPostMortems, planSections, COMPOSE_DROP_ORDER, PAPER_POSTMORTEM_DAYS, SHORT_DESK_EMPTY, type StoredNomination } from './lib/newspaper'
+import { companyNamesBlock, correctTapeWeekdays, honestCloseFacts, lockCompanyNames, shortDeskData, shortDeskScope, shortsLive, tapeEventLines } from './lib/paperFacts'
 import { missLedgerSummary, MISS_LEDGER_KEY } from '../../shared/engine/missLedger'
 import { gateAnnouncement, GATE_STATE_KEY } from '../../shared/engine/gateState'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
@@ -329,6 +330,9 @@ export default async (req: Request) => {
     })()
 
     const { getCached } = await import('./lib/cache')
+    // …with the cap guarded at the door: a 24h-cached profile can still be
+    // carrying the "$1072.7B beside MU" figure the social board printed
+    const { plausibleCapUsdM } = await import('./lib/social')
     const socialBoard = await Promise.all(
       (social ?? []).slice(0, 10).map(async s => ({
         sym: s.sym,
@@ -336,15 +340,22 @@ export default async (req: Request) => {
         redditMentions: s.redditMentions,
         surgeMultiple: s.surgeMultiple,
         sources: s.sources,
-        capUsdM: ((await getCached<{ capUsdM: number | null }>(`cap:${s.sym}`)) ?? {}).capUsdM ?? null,
+        capUsdM: plausibleCapUsdM(((await getCached<{ capUsdM: number | null }>(`cap:${s.sym}`)) ?? {}).capUsdM, s.sym),
       })),
     )
+    // ONE calendar array, shared by the table and the Tape's fragments. The Tape
+    // used to be handed the raw feed and asked to preview the next 48h from it —
+    // so it re-derived the weekdays and printed "Monday" over a table row that
+    // said Tuesday. Now both come off this array (see tapeEventLines below).
+    const calendarRows = (econ ?? []).filter(e => e.at > nowSec && e.at < nowSec + 5 * 86_400).slice(0, 6)
+    const tapeEvents = tapeEventLines(calendarRows)
+
     const extras = {
       rotationTables,
       socialBoard,
       ipos,
       eventRadar: eventRadar ?? undefined,
-      calendar: (econ ?? []).filter(e => e.at > nowSec && e.at < nowSec + 5 * 86_400).slice(0, 6),
+      calendar: calendarRows,
       spyCloses: spy?.slice(-63).map(c => c.c),
       sectorBars: (sectors ?? []).map(s => ({ name: SECTORS.find(x => x.sym === s.sym)?.name ?? s.sym, rs21: s.rs21 })),
       // the board typeset in code — grades and levels never depend on the LLM.
@@ -352,6 +363,26 @@ export default async (req: Request) => {
       // so a row kind can never be dropped on the way out to one renderer only.
       engineBoard: boardExportRows(engineBoard ?? []),
     }
+
+    // ---- the company register: one name per ticker, for prose AND tables ----
+    // Built BEFORE the compose so the writer is handed the same names the board,
+    // the ideas and the event radar are typeset from. Four editions running, the
+    // prose invented its own ("CrowdWave Technologies" for CoreWeave) two
+    // sections below a table that had it right. Cache-first and fail-soft: a
+    // miss just leaves that ticker out of the register, and out of the lock.
+    const companyNames = await (async () => {
+      const syms = [...new Set([
+        ...(engineBoard ?? []).map(b => b.sym),
+        ...(eventRadar ?? []).map(e => e.sym),
+        ...socialBoard.map(s => s.sym),
+      ])].slice(0, 40)
+      const radarName = new Map((eventRadar ?? []).filter(e => e.name).map(e => [e.sym, e.name as string]))
+      const pairs = await Promise.all(
+        syms.map(async sym => [sym, radarName.get(sym) ?? (await cachedCompanyName(sym, process.env.FINNHUB_API_KEY ?? '').catch(() => null))] as const),
+      )
+      return new Map(pairs.filter((p): p is [string, string] => !!p[1]))
+    })()
+    console.log('COMPOSE: company register', companyNames.size, 'names')
 
     // Budget-aware: whole low-priority keys drop first — never a mid-JSON cut
     // that silently deletes whatever serialized last (it was the headlines).
@@ -363,7 +394,10 @@ export default async (req: Request) => {
         engineBoard, // null = engine offline; ideas then fall back to candidateReads rules
         mediaHeadlines,
         headlines: news,
-        econCalendarThisWeek: econ,
+        // …the calendar as IMMUTABLE FRAGMENTS, never as dates. Weekday, time,
+        // name and forecast/previous, already rendered exactly as the table
+        // renders them, so no section can derive a weekday of its own.
+        eventSchedule: tapeEvents.map(e => e.line),
         watchlistQuotes: quotes,
         sectorRotation: sectors,
         channelConsensus: consensus,
@@ -399,37 +433,58 @@ export default async (req: Request) => {
     // ---- compose: six small sections in parallel (Groq-sized), per-section
     // Gemini retry, single-shot Gemini as plan C. Small outputs rarely truncate.
     const { SECTIONS, sectionPrompt, extractJson, mergeSections } = await import('./lib/newspaper')
+
+    // THE SHORT DESK'S OWN, SMALLER WORLD (paperFacts.shortDeskScope): the
+    // short-side rows and the short-side near misses, and nothing else. Written
+    // from the whole document it kept filling with long-side watch names,
+    // rotation copy and a small-cap discovery the Small-Cap Wire denied making.
+    const shortScope = shortDeskScope(engineBoard ?? [])
+    const shortsOn = !engineFresh || shortsLive(shortScope) // engine offline → the section falls back to the full document
+    const shortsJson = engineFresh ? shortDeskData(shortScope) : data
+
+    // The FACTS a section is handed beside its brief: things it must not derive.
+    const names = companyNamesBlock(companyNames)
+    const schedule = tapeEvents.length
+      ? `THE EVENT SCHEDULE — every fragment below is the calendar table's own row, already rendered. Weave the ones you preview in VERBATIM and write your interpretation around them. NEVER restate a weekday, a time or a number from memory, and never work one out from a date:\n${tapeEvents.map(e => `- ${e.line}`).join('\n')}`
+      : ''
+    const closeFacts = honestCloseFacts(postMortems ?? [], wildcard)
+    const factsFor = (key: string) =>
+      [names, key === 'desk' || key === 'lead' ? schedule : '', key === 'voice' ? closeFacts : ''].filter(Boolean).join('\n\n')
+    const dataFor = (key: string) => (key === 'shorts' ? shortsJson : data)
+
     const writeSection = async (spec: (typeof SECTIONS)[0], covered?: string[]) => {
+      const prompt = sectionPrompt(spec, dataFor(spec.key), dateLabel, covered, factsFor(spec.key))
       try {
-        const first = await callLlm(sectionPrompt(spec, data, dateLabel, covered), { maxTokens: 1600 })
+        const first = await callLlm(prompt, { maxTokens: 1600 })
         const parsed = extractJson<Record<string, unknown>>(first.text)
         if (parsed) return { parsed, provider: first.provider }
       } catch { /* fall through to gemini retry */ }
       try {
-        const retry = await callLlm(`${sectionPrompt(spec, data, dateLabel, covered)}\nIMPORTANT: return ONLY valid JSON.`, { maxTokens: 1600, LLM_PROVIDER: 'gemini' })
+        const retry = await callLlm(`${prompt}\nIMPORTANT: return ONLY valid JSON.`, { maxTokens: 1600, LLM_PROVIDER: 'gemini' })
         return { parsed: extractJson<Record<string, unknown>>(retry.text), provider: retry.provider }
       } catch {
         return { parsed: null, provider: 'none' }
       }
     }
     // Two waves: the ideas desk writes first, then every section that could
-    // re-pitch its names (signal/discovery/voice) writes knowing what is
-    // already fully cased. Fully parallel writers CANNOT avoid duplicating
-    // each other — the reader met the same pick in four sections.
-    const WAVE1 = new Set(['lead', 'desk', 'ideas', 'rotation'])
-    const wave1Specs = SECTIONS.filter(s => WAVE1.has(s.key))
-    const wave2Specs = SECTIONS.filter(s => !WAVE1.has(s.key))
-    const wave1Results = await Promise.all(wave1Specs.map(s => writeSection(s)))
-    const ideasParsed = wave1Results[wave1Specs.findIndex(s => s.key === 'ideas')]?.parsed as { ideas?: { ticker?: unknown }[] } | null
+    // re-pitch its names (signal/discovery/short desk/voice) writes knowing what
+    // is already fully cased. Fully parallel writers CANNOT avoid duplicating
+    // each other — the reader met the same pick in four sections. planSections
+    // also DROPS the short desk on a day with no short side: the desk states
+    // that itself, and a section nobody writes cannot wander.
+    const plan = planSections({ shortsLive: shortsOn })
+    const wave1Results = await Promise.all(plan.wave1.map(s => writeSection(s)))
+    const ideasParsed = wave1Results[plan.wave1.findIndex(s => s.key === 'ideas')]?.parsed as { ideas?: { ticker?: unknown }[] } | null
     const covered = [...new Set((ideasParsed?.ideas ?? []).map(i => String(i.ticker ?? '').toUpperCase()).filter(Boolean))]
-    const wave2Results = await Promise.all(wave2Specs.map(s => writeSection(s, covered)))
-    const sectionResults = SECTIONS.map(spec => {
-      const i1 = wave1Specs.indexOf(spec)
-      return i1 >= 0 ? wave1Results[i1] : wave2Results[wave2Specs.indexOf(spec)]
+    const wave2Results = await Promise.all(plan.wave2.map(s => writeSection(s, covered)))
+    const written = [...plan.wave1, ...plan.wave2]
+    const sectionResults = written.map(spec => {
+      const i1 = plan.wave1.indexOf(spec)
+      return i1 >= 0 ? wave1Results[i1] : wave2Results[plan.wave2.indexOf(spec)]
     })
     let provider = sectionResults.map(r => r.provider).join(',')
-    let composed = mergeSections(sectionResults.map(r => r.parsed))
-    console.log('COMPOSE: sections', sectionResults.map((r, i) => `${SECTIONS[i].key}:${r.parsed ? r.provider : 'FAIL'}`).join(' '))
+    let composed = mergeSections([...sectionResults.map(r => r.parsed), plan.fixed])
+    console.log('COMPOSE: sections', sectionResults.map((r, i) => `${written[i].key}:${r.parsed ? r.provider : 'FAIL'}`).join(' '), plan.fixed.shortDesk ? '| shorts:desk-written (no short side)' : '')
     if (!composed) {
       // plan C: the single-shot big compose on gemini
       const single = await callLlm(composePrompt(data, dateLabel), { maxTokens: 8000, LLM_PROVIDER: 'gemini' })
@@ -483,12 +538,18 @@ export default async (req: Request) => {
     // Enrich the FINALISED ideas and the engine-board rows from the cap cache
     // (read-only, no network call), in parallel and fail-soft — a miss just omits
     // the name. LSE symbols like RR.L pass through the lookup unchanged.
+    // The register built before the compose already holds the board; only the
+    // ideas can carry a ticker it has not seen (the engine-offline fallback
+    // path), and those are looked up here and folded back in — so the prose lock
+    // downstream and the tables here can only ever use ONE name per ticker.
     try {
-      const nameSyms = [...new Set([...composed.ideas.map(i => i.ticker), ...extras.engineBoard.map(b => b.sym)])]
-      const names = new Map(await Promise.all(nameSyms.map(async sym => [sym, await cachedCompanyName(sym, process.env.FINNHUB_API_KEY ?? '').catch(() => null)] as const)))
-      for (const i of composed.ideas) { const n = names.get(i.ticker); if (n) i.name = n }
-      for (const b of extras.engineBoard) { const n = names.get(b.sym); if (n) b.name = n }
-      console.log('COMPOSE: named', [...names.entries()].filter(([, n]) => n).length, 'of', nameSyms.length)
+      const missing = [...new Set([...composed.ideas.map(i => i.ticker), ...extras.engineBoard.map(b => b.sym)])].filter(s => !companyNames.has(s))
+      for (const [sym, name] of await Promise.all(missing.map(async sym => [sym, await cachedCompanyName(sym, process.env.FINNHUB_API_KEY ?? '').catch(() => null)] as const))) {
+        if (name) companyNames.set(sym, name)
+      }
+      for (const i of composed.ideas) { const n = companyNames.get(i.ticker); if (n) i.name = n }
+      for (const b of extras.engineBoard) { const n = companyNames.get(b.sym); if (n) b.name = n }
+      console.log('COMPOSE: named', [...composed.ideas, ...extras.engineBoard].filter(r => r.name).length, 'rows from a register of', companyNames.size)
     } catch { /* names are best-effort — the paper publishes without them */ }
 
     // ---- claims audit: gentle, headline-level only ----
@@ -534,7 +595,10 @@ export default async (req: Request) => {
       if (priorText) {
         const { findVerbatimRepeats } = await import('./lib/newspaper')
         const proseFields: Record<string, string | undefined> = {
-          lead: composed.lead, tape: composed.tape, shortDesk: composed.shortDesk,
+          // …the desk's own empty-short-side line excepted: it is the same
+          // sentence every quiet day BY DESIGN, and a rewrite pass that treats a
+          // deterministic statement as recycled prose would paraphrase a fact.
+          lead: composed.lead, tape: composed.tape, shortDesk: composed.shortDesk === SHORT_DESK_EMPTY ? undefined : composed.shortDesk,
           smallCap: composed.smallCap, rotation: composed.rotation, crypto: composed.crypto,
           channels: composed.channels, editorial: composed.editorial,
           signalWhy: composed.signalWhy, honestClose: composed.honestClose,
@@ -572,6 +636,55 @@ export default async (req: Request) => {
         } else console.log('COMPOSE: freshness pass clean')
       }
     } catch { /* freshness is best-effort — today's prose stands */ }
+
+    // ---- the deterministic last word, AFTER every model pass ----
+    // Both rewrite passes above hand prose back to a model, so these run last:
+    // whatever the writers and the sub-editors did, the paper that gets built
+    // cannot name a company the register disagrees with, cannot put an event on
+    // a weekday its own table denies, and cannot fill an empty short desk.
+    if (plan.fixed.shortDesk) composed.shortDesk = plan.fixed.shortDesk // survives the single-shot fallback too
+    if (composed.tape) {
+      const { text, fixes } = correctTapeWeekdays(composed.tape, tapeEvents)
+      composed.tape = text
+      if (fixes.length) console.log('COMPOSE: tape weekdays corrected from the table —', fixes.map(f => `${f.title}: ${f.from}→${f.to}`).join(', '))
+    }
+    if (companyNames.size) {
+      const nameFixes: string[] = []
+      const lock = (s: string | undefined) => {
+        if (!s) return s
+        const { text, fixes } = lockCompanyNames(s, companyNames)
+        for (const f of fixes) nameFixes.push(`${f.sym}: ${f.from}→${f.to}`)
+        return text
+      }
+      for (const field of ['headline', 'standfirst', 'lead', 'tape', 'shortDesk', 'smallCap', 'rotation', 'crypto', 'channels', 'readersNotes', 'editorial', 'signalWhy', 'honestClose'] as const) {
+        const cur = (composed as unknown as Record<string, unknown>)[field]
+        if (typeof cur === 'string') (composed as unknown as Record<string, unknown>)[field] = lock(cur)
+      }
+      composed.macroNotes = (composed.macroNotes ?? []).map(n => lock(n) as string)
+      for (const i of composed.ideas) {
+        i.caseText = lock(i.caseText) as string
+        if (i.chartRead) i.chartRead = lock(i.chartRead)
+        if (i.streetCheck) i.streetCheck = lock(i.streetCheck)
+        if (i.reasons) i.reasons = i.reasons.map(r => lock(r) as string)
+        const canonical = companyNames.get(i.ticker)
+        if (canonical) i.name = canonical
+      }
+      if (composed.signal) {
+        const s = composed.signal
+        // the Signal's company field is a NAME BOUND TO A TICKER by the schema —
+        // the one binding the prose patterns cannot see, and the one printed
+        // biggest on the page
+        const canonical = companyNames.get(String(s.ticker ?? '').toUpperCase())
+        if (canonical && s.company && !s.company.toLowerCase().includes(canonical.toLowerCase().split(' ')[0])) {
+          nameFixes.push(`${s.ticker}: ${s.company}→${canonical}`)
+          s.company = canonical
+        }
+        s.thesis = lock(s.thesis) as string
+        s.action = lock(s.action) as string
+        for (const k of ['data', 'news', 'channels', 'social', 'company'] as const) s.evidence[k] = lock(s.evidence[k]) as string
+      }
+      if (nameFixes.length) console.log('COMPOSE: company names locked to the register —', nameFixes.join(', '))
+    }
 
     // ---- publish through the same pipe the routine uses ----
     const html = buildNewspaperHtml(composed, dateLabel, extras)

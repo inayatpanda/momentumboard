@@ -92,6 +92,40 @@ export function pickDiscoveries(
 
 export const isMega = (sym: string) => MEGA.has(sym)
 
+/** THE SOCIAL BOARD PRINTED "$1072.7B" BESIDE MU — a name worth roughly a tenth
+ * of that. The cause sits upstream and is not always knowable (a provider
+ * returning a figure in the wrong unit, a symbol collision with a foreign
+ * listing, a cached profile for something else entirely), which is exactly why
+ * the guard belongs at the door instead: a number nobody can believe must not be
+ * typeset as a measurement. Unknown renders as the "·" empty state — and unknown
+ * is the honest word for it.
+ *
+ * Two bounds, because "implausible" needs the name to mean anything:
+ *  - NOBODY is worth $5T. Beyond that it is arithmetic, not a company.
+ *  - The trillion-dollar club is a dozen names long and everybody knows who is in
+ *    it. A trillion-dollar cap on a symbol outside it is far likelier to be a bad
+ *    field than a surprise: MU at $1.07T sat inside the first bound and is the
+ *    defect this exists for. Without a symbol only the hard bound applies.
+ *
+ * $M in, $M out; null for non-finite, non-positive or unbelievable. */
+export const MAX_PLAUSIBLE_CAP_USD_M = 5_000_000 // $5T — nobody, ever
+export const TRILLION_CAP_USD_M = 1_000_000 // $1T — and only for a name that could be
+
+/** Who can credibly print a trillion-dollar market cap. Deliberately generous:
+ * a name wrongly on this list only loses the guard, while a name wrongly off it
+ * loses its cap cell — and the cell is not the paper's point. */
+const TRILLION_CLUB = new Set([
+  'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'GOOG', 'AMZN', 'META', 'AVGO', 'TSLA', 'BRK.A', 'BRK.B',
+  'TSM', 'LLY', 'JPM', 'WMT', 'ORCL', 'V', 'MA', 'XOM', 'NVO', 'SPY', 'QQQ',
+])
+
+export function plausibleCapUsdM(capUsdM: number | null | undefined, sym?: string): number | null {
+  if (typeof capUsdM !== 'number' || !Number.isFinite(capUsdM)) return null
+  if (capUsdM <= 0 || capUsdM > MAX_PLAUSIBLE_CAP_USD_M) return null
+  if (capUsdM >= TRILLION_CAP_USD_M && sym && !TRILLION_CLUB.has(sym.toUpperCase())) return null
+  return capUsdM
+}
+
 export function combineSocialPulse(
   reddit: RedditTrend[],
   stocktwits: string[],
