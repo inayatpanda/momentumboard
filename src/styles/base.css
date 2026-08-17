@@ -1033,14 +1033,49 @@ p {
 /* the see-all tile grid: same tile look as the rail (.stx-sector-tile), but a
    button (toggles the sector open in place) rather than a Link, and full
    width of its grid cell rather than the rail's fixed 118px card. */
+/* 100px fitted eleven columns onto a desk pane and truncated the two sectors
+   whose names are two words ("Consumer …", "Comm. Ser…") — the tile's whole
+   left half is the name, so a track too narrow to hold it costs the reader the
+   only thing identifying the number beside it. 140px is the widest label
+   ("Comm. Services") plus its padding. (Visibility wave, 2026-08-17.) */
 .v2 .stx-sector-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
 .v2 .stx-sector-grid .stx-sector-tile {
   width: 100%;
+}
+.v2 .stx-sector-legend {
+  margin: 10px 0 0;
+}
+/* the payload's own constituents, as links rather than StockRows — see the
+   component's note on why fifty-five live rows is the wrong trade */
+.v2 .stx-sector-inside {
+  margin-top: 22px;
+}
+.v2 .stx-sector-inside-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.v2 .stx-sector-inside-name {
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 130px;
+}
+.v2 .stx-sector-inside-syms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v2 .stx-sector-inside-syms a.pill {
+  text-decoration: none;
+  color: var(--text);
 }
 .v2 button.stx-sector-tile {
   border: none;
