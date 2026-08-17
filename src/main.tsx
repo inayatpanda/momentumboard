@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { seedFreeTierToken } from './lib/api'
-import { normaliseDesktopPath } from './lib/platform'
+import { installExternalLinkOpener, normaliseDesktopPath } from './lib/platform'
 // ORDER IS LOAD-BEARING: site.css first, tokens.css second. The two collide on
 // --bg/--text (equal :root specificity, last-wins), and tokens.css must win —
 // the owner rejected the legacy cream light theme outright, and the public
@@ -38,6 +38,7 @@ seedFreeTierToken()
 // Desktop shell: land the router inside its /app base (blank-pane fix) —
 // after the ?key= consume, before React reads location.
 normaliseDesktopPath()
+installExternalLinkOpener()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

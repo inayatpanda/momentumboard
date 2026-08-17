@@ -18,6 +18,7 @@
     "walkthrough": "node scripts/walkthrough.mjs"
   },
   "dependencies": {
+    "@tauri-apps/plugin-opener": "^2.5.4",
     "dexie": "^4.0.8",
     "lightweight-charts": "^4.2.3",
     "motion": "^12.42.2",

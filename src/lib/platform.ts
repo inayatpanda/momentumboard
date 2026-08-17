@@ -36,3 +36,44 @@ export function normaliseDesktopPath(): boolean {
   history.replaceState(null, '', '/app/')
   return true
 }
+
+/** The external href a click means to open, or null when the click is the
+ * app's own business. Pure, for the tests: an anchor (or a child of one)
+ * whose href is http(s) on a DIFFERENT origin than `origin`. Everything else
+ * — in-app links, hash jumps, mailto — returns null and is left alone. */
+export function externalHrefFrom(target: EventTarget | null, origin: string): string | null {
+  const el = target instanceof Element ? target.closest('a[href]') : null
+  const href = el?.getAttribute('href')
+  if (!href) return null
+  try {
+    const url = new URL(href, origin)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    return url.origin === new URL(origin).origin ? null : url.href
+  } catch {
+    return null
+  }
+}
+
+const defaultOpen = (url: string): void => {
+  // resolved lazily so the web build never even loads the plugin chunk
+  void import('@tauri-apps/plugin-opener').then(m => m.openUrl(url)).catch(() => {})
+}
+
+/** THE "NONE IS CLICKABLE" FIX (owner 2026-08-17). Tauri denies new-window
+ * requests by default, so every `target="_blank"` news link in the Mac app
+ * silently did nothing. Inside the shell, clicks on external http(s) anchors
+ * are cancelled and handed to the OS browser via the opener plugin instead.
+ * Installed from main.tsx beside the path rewrite; a no-op on the web.
+ * Returns a disposer, for the tests. */
+export function installExternalLinkOpener(open: (url: string) => void = defaultOpen, inShell: boolean = isDesktopShell()): () => void {
+  if (!inShell) return () => {}
+  const onClick = (e: MouseEvent) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    const href = externalHrefFrom(e.target, location.origin)
+    if (!href) return
+    e.preventDefault()
+    open(href)
+  }
+  document.addEventListener('click', onClick)
+  return () => document.removeEventListener('click', onClick)
+}

@@ -17,11 +17,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
-# No plugins. This shell opens one window on the bundled `dist` and gets out of
-# the way: no updater (the DMG is handed over by hand), no logging plugin, no
-# IPC surface for the frontend to call — the app is the same web app it is on
-# the site, and everything it needs it gets over HTTPS from the production API.
+# ONE plugin: opener, so external news links open in the OS browser instead
+# of being silently denied (owner 2026-08-17: "none is clickable" — Tauri
+# refuses new-window requests by default). Otherwise this shell opens one
+# window on the bundled `dist` and gets out of the way: no updater (the DMG
+# is handed over by hand), no logging plugin, no further IPC surface — the
+# app is the same web app it is on the site, and everything it needs it gets
+# over HTTPS from the production API.
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.11.3", features = [] }
+tauri-plugin-opener = "2"

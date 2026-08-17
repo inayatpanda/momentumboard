@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isDesktopShellLocation } from './platform'
+import { externalHrefFrom, installExternalLinkOpener, isDesktopShellLocation } from './platform'
 
 // The two Tauri v2 webview origins, split into the parts `location` exposes.
 // They are the SAME two the server's CORS allow-list names — if these ever
@@ -71,5 +71,62 @@ describe('normaliseDesktopPath', () => {
     } finally {
       restoreApp()
     }
+  })
+})
+
+// EXTERNAL LINKS IN THE SHELL (owner 2026-08-17: "none is clickable"). Tauri
+// denies new-window requests by default, so every `target="_blank"` news link
+// in the Mac app silently did nothing. The shell now intercepts clicks on
+// external http(s) anchors and hands them to the OS browser via the opener
+// plugin; same-origin navigation and non-http schemes stay untouched.
+describe('externalHrefFrom', () => {
+  const ORIGIN = 'tauri://localhost'
+  const anchor = (href: string) => {
+    const a = document.createElement('a')
+    a.setAttribute('href', href)
+    document.body.appendChild(a)
+    return a
+  }
+
+  it('returns the href for an external https link — even from a nested child', () => {
+    const a = anchor('https://www.ft.com/markets/story')
+    const span = document.createElement('span')
+    a.appendChild(span)
+    expect(externalHrefFrom(span, ORIGIN)).toBe('https://www.ft.com/markets/story')
+  })
+
+  it('ignores in-app navigation and non-http schemes', () => {
+    expect(externalHrefFrom(anchor('tauri://localhost/app/stocks'), ORIGIN)).toBeNull()
+    expect(externalHrefFrom(anchor('/app/stocks'), ORIGIN)).toBeNull()
+    expect(externalHrefFrom(anchor('mailto:x@y.z'), ORIGIN)).toBeNull()
+    expect(externalHrefFrom(anchor('#news'), ORIGIN)).toBeNull()
+    expect(externalHrefFrom(document.createElement('div'), ORIGIN)).toBeNull()
+  })
+})
+
+describe('installExternalLinkOpener', () => {
+  it('opens an external link through the injected opener and cancels the default', () => {
+    const opened: string[] = []
+    const dispose = installExternalLinkOpener(url => opened.push(url), true)
+    const a = document.createElement('a')
+    a.setAttribute('href', 'https://www.bloomberg.com/x')
+    a.setAttribute('target', '_blank')
+    document.body.appendChild(a)
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true })
+    a.dispatchEvent(ev)
+    expect(opened).toEqual(['https://www.bloomberg.com/x'])
+    expect(ev.defaultPrevented).toBe(true)
+    dispose()
+  })
+
+  it('outside the shell it installs nothing', () => {
+    const opened: string[] = []
+    const dispose = installExternalLinkOpener(url => opened.push(url), false)
+    const a = document.createElement('a')
+    a.setAttribute('href', 'https://www.bloomberg.com/y')
+    document.body.appendChild(a)
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(opened).toEqual([])
+    dispose()
   })
 })
