@@ -16,7 +16,7 @@
 // the shape everywhere now (here, StockPage, and Stocks' rail sparklines);
 // every reader takes `.candles` off it.
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../../lib/useSlice'
 import { readSlice } from '../../lib/store'
@@ -72,6 +72,28 @@ function SparkCached({ symbol }: { symbol: string }) {
   return closes ? <Sparkline closes={closes} /> : null
 }
 
+/** How long the tick colour lingers. Matches the CSS animation in base.css. */
+const FLASH_MS = 900
+
+/** THE PRICE FLASH (dynamism wave), ported from the legacy row
+ * (src/components/TickerRow.tsx:34-44), which was the only place in the app
+ * that ever showed a price MOVING — and which no v2 screen renders. A changed
+ * price flashes green or red for the length of the animation and then goes
+ * quiet; the FIRST price a row ever sees is not a change and never flashes. */
+function usePriceFlash(price: number | null | undefined): 'up' | 'down' | null {
+  const prev = useRef(price)
+  const [flash, setFlash] = useState<'up' | 'down' | null>(null)
+  useEffect(() => {
+    const before = prev.current
+    prev.current = price
+    if (before == null || price == null || price === before) return
+    setFlash(price > before ? 'up' : 'down')
+    const t = setTimeout(() => setFlash(null), FLASH_MS)
+    return () => clearTimeout(t)
+  }, [price])
+  return flash
+}
+
 export function StockRow({
   symbol,
   name,
@@ -93,6 +115,7 @@ export function StockRow({
   sparkCachedOnly?: boolean
 }) {
   const up = quote && quote.changePct != null ? quote.changePct >= 0 : false
+  const flash = usePriceFlash(quote?.price)
   return (
     <div className="card pressable stx-row">
       <Link href={`/stock/${symbol}`} className="stx-row-link">
@@ -105,7 +128,7 @@ export function StockRow({
         </span>
         {sparkCachedOnly ? <SparkCached symbol={symbol} /> : <SparkLive symbol={symbol} />}
         <span className="stx-row-prices">
-          <span className="num">{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
+          <span className={`num${flash ? ` flash-${flash}` : ''}`}>{quote ? fmtPrice(quote.price, quote.currency) : '—'}</span>
           {quote && quote.changePct != null && <span className={`pill ${up ? 'long' : 'short'}`}><span className="num">{fmtPct(quote.changePct)}</span></span>}
         </span>
       </Link>

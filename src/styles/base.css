@@ -334,6 +334,43 @@ p {
   line-height: 1.5;
   color: var(--text-dim);
 }
+/* THE LIVE LINE + THE PRICE FLASH (dynamism wave).
+   The card's live line sits under the levels it is measured against, dimmer
+   than they are — it is a reading, not an instruction. The flash is the legacy
+   row's tick colour (site.css `flashUp`/`flashDown`, which the v2 shell does
+   not load) restated on tokens: long/short greens and reds, no hardcoded glow,
+   and nothing at all for a reader who asked for less motion. */
+.v2 .cc-live {
+  margin: -2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 .cc-live-gap {
+  color: var(--text-dim);
+}
+.v2 .flash-up {
+  animation: v2-flash-up 0.9s ease-out;
+}
+.v2 .flash-down {
+  animation: v2-flash-down 0.9s ease-out;
+}
+@keyframes v2-flash-up {
+  0% {
+    color: var(--long);
+  }
+  100% {
+    color: inherit;
+  }
+}
+@keyframes v2-flash-down {
+  0% {
+    color: var(--short);
+  }
+  100% {
+    color: inherit;
+  }
+}
+
 /* THE REFRESH AFFORDANCE (dynamism wave). A 2px bar across the top of the
    viewport and nothing else — a centred spinner would claim the screen is
    empty, and it never is (the cache paints first). The pull bar is the reader's
@@ -3213,5 +3250,9 @@ p {
     animation: none;
     transform: scaleX(1);
     opacity: 0.6;
+  }
+  .v2 .flash-up,
+  .v2 .flash-down {
+    animation: none;
   }
 }

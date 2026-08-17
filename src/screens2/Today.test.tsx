@@ -16,7 +16,8 @@ import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
 import { unsizedReason } from '../lib/boardTaxonomy'
 import { NO_BOARD_YET, NO_SIZED_NO_ROUTE, NO_SIZED_TODAY } from '../lib/copy'
 import { londonToday } from '../lib/londonDay'
-import { CallCard } from './parts/CallCard'
+import type { Quote } from '../../shared/types'
+import { CallCard, entryDistance } from './parts/CallCard'
 import { ChannelPicksStrip } from './parts/ChannelPicksStrip'
 import { CountsRail } from './parts/CountsRail'
 import { EventRadarStrip } from './parts/EventRadarStrip'
@@ -186,6 +187,75 @@ describe('CallCard', () => {
     expect(screen.getByText('crypto')).toBeInTheDocument()
     expect(screen.queryByLabelText(/^grade/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/^probability/i)).not.toBeInTheDocument()
+  })
+
+  // THE LIVE LINE (dynamism wave, feature 4a).
+  describe('the live line', () => {
+    const OPEN = Date.parse('2026-08-17T15:00:00Z') // Monday, mid-session
+    const SHUT = Date.parse('2026-08-15T15:00:00Z') // Saturday
+    const mkQuote = (price: number, overrides: Partial<Quote> = {}): Quote => ({
+      symbol: 'NVDA',
+      price,
+      prevClose: price,
+      changePct: 0,
+      currency: 'USD',
+      todayVolume: null,
+      asOf: Math.floor(Date.parse('2026-08-14T20:00:00Z') / 1000), // a Friday close
+      source: 'finnhub',
+      ...overrides,
+    })
+
+    it('renders nothing new at all without a quote — the card is byte-identical', () => {
+      withRouter(<CallCard row={mkRow()} />)
+      expect(document.querySelector('.cc-live')).toBeNull()
+    })
+
+    it('says what the name is trading at and how far that is from the entry', () => {
+      withRouter(<CallCard row={mkRow({ entry: 130.9 })} quote={mkQuote(128.4)} now={OPEN} />)
+      expect(document.querySelector('.cc-live')?.textContent).toBe('now 128.40 · 1.9% below entry')
+    })
+
+    it('out of hours it is a CLOSE, named by its own day, never a fake tick', () => {
+      withRouter(<CallCard row={mkRow({ entry: 130.9 })} quote={mkQuote(128.4)} now={SHUT} />)
+      expect(document.querySelector('.cc-live')?.textContent).toBe('Fri close 128.40 · 1.9% below entry')
+    })
+
+    it('a quote with no stamp says so rather than inventing a weekday', () => {
+      withRouter(<CallCard row={mkRow({ entry: 130.9 })} quote={mkQuote(128.4, { asOf: 0 })} now={SHUT} />)
+      expect(document.querySelector('.cc-live')?.textContent).toContain('last close 128.40')
+    })
+
+    it('leaves the grade and the probability exactly as they were', () => {
+      withRouter(<CallCard row={mkRow()} quote={mkQuote(128.4)} now={OPEN} />)
+      expect(screen.getByLabelText('Grade A')).toHaveClass('pill', 'accent')
+      expect(screen.getByLabelText(/^probability/i)).toHaveClass('num')
+    })
+  })
+
+  // The arithmetic itself, side by side.
+  describe('entryDistance', () => {
+    it('measures a long against its entry from below, and calls the trigger past', () => {
+      expect(entryDistance(128.4, 130.9, 'long')).toBe('1.9% below entry')
+      expect(entryDistance(133.0, 130.9, 'long')).toBe('past entry')
+    })
+
+    it('inverts for a short: not yet triggered means ABOVE the entry', () => {
+      expect(entryDistance(133.0, 130.9, 'short')).toBe('1.6% above entry')
+      expect(entryDistance(128.4, 130.9, 'short')).toBe('past entry')
+    })
+
+    it('within 0.3% either way it is simply at entry, both sides', () => {
+      expect(entryDistance(130.9, 130.9, 'long')).toBe('at entry')
+      expect(entryDistance(131.2, 130.9, 'long')).toBe('at entry')
+      expect(entryDistance(130.6, 130.9, 'long')).toBe('at entry')
+      expect(entryDistance(130.6, 130.9, 'short')).toBe('at entry')
+    })
+
+    it('refuses a nonsense level rather than dividing by it', () => {
+      expect(entryDistance(128.4, 0, 'long')).toBeNull()
+      expect(entryDistance(0, 130.9, 'long')).toBeNull()
+      expect(entryDistance(Number.NaN, 130.9, 'long')).toBeNull()
+    })
   })
 })
 
@@ -584,6 +654,23 @@ describe('Today', () => {
     // …and the fetch never settles, so the busy bar is still up
     expect(await screen.findByRole('status', { name: /refreshing/i })).toBeInTheDocument()
     expect(screen.getByText('NVDA')).toBeInTheDocument() // the cached paint is untouched
+  })
+
+  // THE LIVE LINE, at the seam (dynamism wave). The hook's own rules — the
+  // beat, the market-hours gate, saveData, the idle backoff — are pinned in
+  // src/lib/useLiveQuotes.test.tsx; here we only prove the cached quote batch
+  // reaches the card it belongs to.
+  it('feeds each sized card the quote its symbol already has cached', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow({ entry: 130.9 })]), fetchedAt: Date.now() })
+    await db.quotes.put({
+      key: 'quotes:NVDA',
+      data: [{ symbol: 'NVDA', price: 128.4, prevClose: 130, changePct: -1.2, currency: 'USD', todayVolume: null, asOf: 1_755_201_600, source: 'finnhub' }],
+      fetchedAt: Date.now(),
+    })
+    withRouter(<Today />)
+    // the label's first word is the reader's own session state, so match the
+    // half of the line that is the same at every hour
+    await waitFor(() => expect(document.querySelector('.cc-live')?.textContent).toMatch(/128\.40 · 1\.9% below entry$/))
   })
 
   // THE STALE-BOARD BANNER (dynamism wave). The seeded board is dated

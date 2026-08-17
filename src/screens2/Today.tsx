@@ -10,6 +10,7 @@
 // contract, useSlice.ts).
 
 import { useSlice } from '../lib/useSlice'
+import { useLiveQuotes } from '../lib/useLiveQuotes'
 import { usePullRefresh } from '../lib/usePullRefresh'
 import { getBoardSlice } from '../lib/apiViews'
 import type { BoardBlob } from '../lib/apiViews'
@@ -65,6 +66,12 @@ export default function Today() {
   // cleared no gate, so on a board of nothing but near misses the first
   // sentence is the true one.
   const clearedButUnsized = developing.length + watch.length + observations.length > 0
+  // THE LIVE LINE'S SYMBOLS (dynamism wave): the cards the reader can act on —
+  // the sized rows, plus the wildcard slot, which is a published call whatever
+  // else it is. Nothing else: a quote batch is an API call, and the rows below
+  // the fold are watching, not waiting on a price.
+  const liveSyms = [...new Set([...sized, ...rows.filter(r => r.wildcard)].map(r => r.sym))]
+  const liveQuotes = useLiveQuotes(liveSyms)
 
   return (
     <div className="today">
@@ -95,7 +102,7 @@ export default function Today() {
       ) : (
         <div className="today-cards">
           {sized.map(row => (
-            <CallCard key={row.id} row={row} />
+            <CallCard key={row.id} row={row} quote={liveQuotes[row.sym]} />
           ))}
         </div>
       )}
