@@ -433,19 +433,28 @@ async function fromFmp(
   const pull = async (url: string, chamber: 'senate' | 'house') => {
     try {
       const res = await tfetch(fetchFn, url)
+      // each failure mode logs ONE line (the transcripts.ts pattern): this
+      // rung died silently for days post-cutover because nothing said why
       if (res.status === 401 || res.status === 403) {
         gated = true // invalid key / gated endpoint — remembered below
+        console.warn(`CONGRESS: fmp ${chamber} HTTP ${res.status} — key invalid or endpoint gated`)
         return
       }
-      if (!res.ok) return
+      if (!res.ok) {
+        console.warn(`CONGRESS: fmp ${chamber} HTTP ${res.status}`)
+        return
+      }
       const j = (await res.json().catch(() => null)) as FmpRow[] | null
-      if (!Array.isArray(j)) return
+      if (!Array.isArray(j)) {
+        console.warn(`CONGRESS: fmp ${chamber} non-array body`)
+        return
+      }
       for (const row of j) {
         const m = mapFmpRow(chamber, row)
         if (m && plausible(m)) out.push(m)
       }
-    } catch {
-      /* timeout / network — the other endpoint may still deliver */
+    } catch (e) {
+      console.warn(`CONGRESS: fmp ${chamber} threw: ${String(e).slice(0, 120)}`)
     }
   }
   // Market-wide latest-disclosure lists: two calls cover both chambers.
