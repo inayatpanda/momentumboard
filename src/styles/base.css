@@ -3308,4 +3308,12 @@ p {
   .v2 .flash-down {
     animation: none;
   }
+  /* THE FLIP REORDER (dynamism wave). src/lib/useFlip.ts checks this same
+     preference in JS and skips the whole dance — this rule is the backstop for
+     an environment that reports no matchMedia, which is why it has to beat the
+     inline style the hook would otherwise have set. */
+  .v2 .flip-move {
+    transition: none !important;
+    transform: none !important;
+  }
 }

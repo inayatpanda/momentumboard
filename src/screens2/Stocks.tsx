@@ -19,10 +19,11 @@
 // different: StockRow owns its own `candles:SYM:3mo` slice per row — see that
 // file for why that is safe to do N times in parallel.
 
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'wouter'
 import { db, type WatchItem } from '../lib/db'
 import { useSlice } from '../lib/useSlice'
+import { useFlip } from '../lib/useFlip'
 import { usePullRefresh, useSlicesRefresh, type SliceRefreshEntry } from '../lib/usePullRefresh'
 import { getQuotes, getMovers, getSectors, type MoverRow } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
@@ -38,6 +39,10 @@ import { sectorSign, SectorTileBody } from './parts/SectorTile'
 
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
 
+/** How many cards a rail shows — named once so the rail's own FLIP ordering
+ * and its body can never disagree about which twelve those are. */
+const railRows = (rows: MoverRow[]) => rows.slice(0, 12)
+
 function RailSkeleton() {
   return (
     <>
@@ -52,7 +57,7 @@ function RailMoverCard({ r, inWatchlist, onAdd }: { r: MoverRow; inWatchlist: bo
   const closes = useCachedSparkline(r.sym)
   const up = (r.changePct ?? 0) >= 0
   return (
-    <div className="card pressable stx-rail-card">
+    <div className="card pressable stx-rail-card" data-flip-key={r.sym}>
       <Link href={`/stock/${r.sym}`} className="stx-rail-card-link">
         <span className="stx-rail-card-top">{r.sym}</span>
         {closes && closes.length > 1 && <Sparkline closes={closes} width={100} height={26} />}
@@ -82,10 +87,19 @@ function MoversFetcher({ onData }: { onData: (d: { gainers: MoverRow[]; losers: 
 function MoversRails({ watchSymbols, onAdd }: { watchSymbols: Set<string>; onAdd: (sym: string) => void }) {
   const [requested, setRequested] = useState(isDeskWidth) // desk: eager — a pane with room shows its data, no scroll-into-view dance
   const [data, setData] = useState<{ gainers: MoverRow[]; losers: MoverRow[] } | null>(null)
+  // REORDER MOTION (dynamism wave, feature 8), one ruler per rail: a refresh
+  // re-ranks both, and the cards should slide to their new places rather than
+  // teleport. The wrappers exist only to give each rail a container ref —
+  // HRail owns its own markup and the cards stay direct children of `.hrail`.
+  const gainersRef = useRef<HTMLDivElement>(null)
+  const losersRef = useRef<HTMLDivElement>(null)
+  const order = (kind: 'gainers' | 'losers') => (data ? railRows(data[kind]).map(r => r.sym).join(',') : '')
+  useFlip(gainersRef, order('gainers'))
+  useFlip(losersRef, order('losers'))
 
   const body = (kind: 'gainers' | 'losers') => {
     if (!data) return <RailSkeleton />
-    const rows = data[kind].slice(0, 12)
+    const rows = railRows(data[kind])
     return rows.length ? (
       rows.map(r => <RailMoverCard key={r.sym} r={r} inWatchlist={watchSymbols.has(r.sym)} onAdd={onAdd} />)
     ) : (
@@ -95,12 +109,16 @@ function MoversRails({ watchSymbols, onAdd }: { watchSymbols: Set<string>; onAdd
 
   return (
     <>
-      <HRail title="Top movers" seeAllPath="/stocks/movers" onVisible={() => setRequested(true)}>
-        {body('gainers')}
-      </HRail>
-      <HRail title="Top losers" seeAllPath="/stocks/movers" onVisible={() => setRequested(true)}>
-        {body('losers')}
-      </HRail>
+      <div ref={gainersRef}>
+        <HRail title="Top movers" seeAllPath="/stocks/movers" onVisible={() => setRequested(true)}>
+          {body('gainers')}
+        </HRail>
+      </div>
+      <div ref={losersRef}>
+        <HRail title="Top losers" seeAllPath="/stocks/movers" onVisible={() => setRequested(true)}>
+          {body('losers')}
+        </HRail>
+      </div>
       {requested && <MoversFetcher onData={setData} />}
     </>
   )

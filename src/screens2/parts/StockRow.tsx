@@ -100,10 +100,14 @@ export function StockRow({
   quote,
   onRemove,
   sparkCachedOnly,
+  flipKey,
 }: {
   symbol: string
   name?: string | null
   quote?: Quote | null
+  /** Opts this row into the list's FLIP reorder animation (src/lib/useFlip.ts)
+   * under a STABLE identity — the symbol, never the index. */
+  flipKey?: string
   /** Presence implies the watchlist context — renders a ✕ remove button. */
   onRemove?: () => void
   /** NEVER fetch this row's candles — draw a sparkline only if the store
@@ -117,7 +121,7 @@ export function StockRow({
   const up = quote && quote.changePct != null ? quote.changePct >= 0 : false
   const flash = usePriceFlash(quote?.price)
   return (
-    <div className="card pressable stx-row">
+    <div className="card pressable stx-row" data-flip-key={flipKey}>
       <Link href={`/stock/${symbol}`} className="stx-row-link">
         <span className="stx-avatar" style={{ '--h': symbolHue(symbol) } as CSSProperties} aria-hidden="true">
           {symbol.slice(0, 2)}
