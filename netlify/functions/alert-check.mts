@@ -93,6 +93,25 @@ export default async (req: Request) => {
     state,
   )
 
+  // The Daily Upside (owner 2026-08-17): issues posted by the Gmail Apps
+  // Script wait in `newsletter-inbox`; each not-yet-consumed one contributes
+  // its stories to the SAME triage as every other headline, tagged with the
+  // publisher. The cursor advances once per consumption so an issue is
+  // extracted exactly once however many cycles see it.
+  try {
+    const newsletterCursor = (await store.read<number>('newsletter-cursor')) ?? 0
+    const issues = ((await store.read<import('./newsletters.mts').NewsletterMail[]>('newsletter-inbox')) ?? []).filter(m => m.at > newsletterCursor)
+    if (issues.length) {
+      const { extractDailyUpsideStories } = await import('./lib/newsletterStories')
+      for (const issue of issues) {
+        for (const s of extractDailyUpsideStories(issue.text)) freshNews.push({ title: s.title, url: s.url, symbols: [], syms: [], source: 'The Daily Upside' })
+      }
+      await store.write('newsletter-cursor', Math.max(...issues.map(i => i.at)))
+    }
+  } catch {
+    errors.push('newsletter-inbox')
+  }
+
   // News desk: EVERY fresh headline is analysed and stored for the app; only
   // what the triage scores as genuinely important comes back to the reader —
   // top few as instant pings, the notable middle into the batched digest, the

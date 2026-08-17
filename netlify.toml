@@ -120,6 +120,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/newsletters"
+  to = "/.netlify/functions/newsletters"
+  status = 200
+
+[[redirects]]
   from = "/download/*"
   to = "/.netlify/functions/download?platform=:splat"
   status = 200

@@ -176,6 +176,7 @@ export const FUNCTION_ENV_VARS = [
   'LLM_PROVIDER',
   'SUPADATA_API_KEY',
   'TRANSCRIPT_TOKEN', // the Mac transcript runner's dedicated door (video-transcripts.mts)
+  'NEWSLETTER_TOKEN', // the Gmail Apps Script's dedicated door (newsletters.mts)
   // delivery
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_CHAT_ID',

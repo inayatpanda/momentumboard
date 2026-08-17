@@ -60,6 +60,7 @@ export const HANDLERS = {
   'ledger-snapshot': () => import('../ledger-snapshot.mts'),
   licences: () => import('../licences.mts'),
   'market-data': () => import('../market-data.mts'),
+  newsletters: () => import('../newsletters.mts'),
   portfolio: () => import('../portfolio.mts'),
   'predict-background': () => import('../predict-background.mts'),
   push: () => import('../push.mts'),
@@ -92,6 +93,7 @@ export const EXACT_ROUTES: Readonly<Record<string, HandlerName>> = {
   '/api/push': 'push',
   '/api/licences': 'licences',
   '/api/video-transcripts': 'video-transcripts',
+  '/api/newsletters': 'newsletters',
 }
 
 /** Prefix routes. netlify.toml's `/download/*` carries the splat into a query
