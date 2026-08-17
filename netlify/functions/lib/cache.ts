@@ -37,6 +37,33 @@ async function blobEntry(key: string): Promise<Entry | null> {
   return store ? ((await store.get(key, { type: 'json' })) as Entry | null) : (mem.get(key) ?? null)
 }
 
+/** MANY KEYS, ONE READ (2026-08-17). The per-symbol loops asked for a quote and
+ * a candle series a symbol — eighty `getCached` calls before any work was done —
+ * and on Cloudflare every one of them spends a subrequest out of an invocation's
+ * fifty. Production ended 33 of 50 alert-check runs on 'Too many subrequests'.
+ *
+ * Missing and expired keys are ABSENT from the map, so a caller loops over what
+ * it asked for and fetches whatever is not there — the same shape as a `null`
+ * from {@link getCached}, batched. On the Blobs/memory side there is no batch
+ * API upstream, so this is the same per-key cost it always was, in parallel; the
+ * saving is D1's alone, which is where the ceiling is. */
+export async function getCachedMany<T>(keys: string[]): Promise<Map<string, T>> {
+  const out = new Map<string, T>()
+  const wanted = [...new Set(keys.filter(k => typeof k === 'string' && k.length > 0))]
+  if (!wanted.length) return out
+  const now = Date.now()
+  const d1 = currentCacheStore()
+  if (d1) {
+    // The expiry check is kept on top of the SQL predicate for the same reason
+    // getCached keeps it: two nets (M1 gate H2).
+    for (const [key, entry] of await d1.readMany<Entry>(wanted)) if (entry && entry.expires >= now) out.set(key, entry.value as T)
+    return out
+  }
+  const entries = await Promise.all(wanted.map(async key => [key, await blobEntry(key)] as const))
+  for (const [key, entry] of entries) if (entry && entry.expires >= now) out.set(key, entry.value as T)
+  return out
+}
+
 export async function setCached(key: string, value: unknown, ttlSec: number): Promise<void> {
   const d1 = currentCacheStore()
   // writeWithTtl builds the very same `{ value, expires }` envelope and copies

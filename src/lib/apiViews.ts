@@ -28,7 +28,17 @@ export interface BoardSlice {
   riskState: { rung?: number; [k: string]: unknown } | null
   referenceBase: number | null
   yesterday: {
+    /** WHICH day is being reported. Rarely the calendar day before the board:
+     * a grade lands 5 or 10 sessions after the call, so the server walks back to
+     * the newest day that has actually been graded and carries its real date —
+     * the strip names it rather than printing one day's score as another's. */
     date: string
+    /** WHICH clock those verdicts were struck on: 10 = the calibrated horizon the
+     * hit definition is written against, 5 = the earlier read, served only when no
+     * ten-session grade has landed on that day. Optional because a slice cached by
+     * a bundle that predates the field has none — such a slice prints the score
+     * with no horizon claim rather than inventing one. */
+    horizon?: 5 | 10
     /** the whole day's census, both partitions — kept for one release so a slice
      * cached by the previous bundle still paints something true */
     wins: number
@@ -47,8 +57,16 @@ export interface BoardSlice {
    * one entry of. Today renders them as "open calls, still walking", because a
    * home screen that shows only what was published THIS morning tells the reader
    * nothing about the money already on the table. Optional: a slice cached by a
-   * bundle that predates the server field has none. */
-  openTrace?: { date: string; generatedAt: number; entries: OpenTraceEntry[] } | null
+   * bundle that predates the server field has none.
+   *
+   * ONE ROW A CALL, AND CLOSED ROWS APART (2026-08-17). The server collapses an
+   * unchanged call re-issued on consecutive mornings into its ORIGINAL issue —
+   * the reader was seeing the same position two and three times, each row with a
+   * different day count — and hands the finished walks over in `closed` instead
+   * of leaving them under a heading that says "still walking". `closed` is
+   * optional: a slice cached before the split carries its crossed rows inside
+   * `entries`, and the strip still renders those honestly. */
+  openTrace?: { date: string | null; generatedAt: number | null; entries: OpenTraceEntry[]; closed?: OpenTraceEntry[] } | null
   /** THE CHANNELS' PICKS (owner request). What the tracked YouTube channels have
    * been recommending this week — the deterministic cross-channel consensus
    * (netlify/functions/lib/videoTrends.ts, `TickerConsensus`), which Today pairs

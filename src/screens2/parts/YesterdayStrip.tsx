@@ -5,16 +5,21 @@
 // yesterday to report (first day, or a holiday with no prior session).
 
 import type { BoardSlice } from '../../lib/apiViews'
+import { shortDateWithWeekday } from '../../lib/format'
 
 const score = (wins: number, losses: number) => `${wins} win${wins === 1 ? '' : 's'} · ${losses} loss${losses === 1 ? '' : 'es'}`
 
 export function YesterdayStrip({ yesterday }: { yesterday: BoardSlice['yesterday'] }) {
   if (!yesterday) return null
-  const { wins, losses, equity, crypto, topRegret } = yesterday
+  const { date, horizon, wins, losses, equity, crypto, topRegret } = yesterday
   return (
     <div className="card cc-yesterday">
+      {/* THE DAY, BY NAME. A grade lands 5 or 10 sessions after the call, so the
+          day the server can actually report on is rarely the calendar day before
+          — printing its score under a bare "Yesterday" would attribute it to the
+          wrong session. The date is the label; the label is the date. */}
       <span className="sec-label" style={{ margin: 0 }}>
-        Yesterday
+        {date ? shortDateWithWeekday(date) : 'Yesterday'}
       </span>
       {/* THE PARTITION (crypto-v2 wave, finding 5). An equity verdict is an
           excess over SPY across ten sessions; a cohort verdict is an absolute
@@ -32,6 +37,10 @@ export function YesterdayStrip({ yesterday }: { yesterday: BoardSlice['yesterday
       ) : (
         <span className="num">{score(wins, losses)}</span>
       )}
+      {/* …AND WHICH CLOCK. A five-session verdict and a ten-session one are two
+          different measurements, and the strip may be reporting either; a slice
+          cached before the server sent the horizon claims neither. */}
+      {horizon && <span className="cc-reason">over {horizon} sessions</span>}
       {topRegret && (
         <span>
           biggest regret <b>{topRegret.sym}</b>{' '}

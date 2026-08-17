@@ -1,8 +1,35 @@
 import { fetchYahooChart } from './yahoo'
 import { fetchFinnhubQuote } from './finnhub'
-import { getCached, setCached } from './cache'
+import { getCached, getCachedMany, setCached } from './cache'
 import { isYahooSymbol } from '../../../shared/symbols'
 import type { Candle, Quote } from '../../../shared/types'
+
+/** Every quote and candle series a symbol loop is about to ask for, in ONE
+ * batched cache read (lib/cache.ts's `getCachedMany`).
+ *
+ * WHY IT EXISTS. `cachedQuote` and `cachedCandles` each cost a store read, so a
+ * forty-name sweep spent eighty subrequests out of an invocation's fifty before
+ * it had computed anything — 33 of 50 production alert-check runs died on 'Too
+ * many subrequests'. The caller primes with this and then falls back to the
+ * per-symbol functions for whatever came back cold, so a miss behaves exactly as
+ * it always did (fetch, cache, use) and a hit costs a fraction of a read.
+ *
+ * Keys are the ones those two functions write, spelled once here so they cannot
+ * drift apart. Absent = cold, never a null entry. */
+export async function warmMarketCache(symbols: string[]): Promise<{ quotes: Map<string, Quote>; candles: Map<string, Candle[]> }> {
+  const quotes = new Map<string, Quote>()
+  const candles = new Map<string, Candle[]>()
+  const syms = [...new Set(symbols.filter(s => typeof s === 'string' && s.length > 0))]
+  if (!syms.length) return { quotes, candles }
+  const rows = await getCachedMany<unknown>([...syms.map(s => `quote:${s}`), ...syms.map(s => `candles:${s}:1y`)])
+  for (const sym of syms) {
+    const q = rows.get(`quote:${sym}`) as Quote | undefined
+    if (q) quotes.set(sym, q)
+    const c = rows.get(`candles:${sym}:1y`) as { candles?: Candle[] } | undefined
+    if (Array.isArray(c?.candles)) candles.set(sym, c.candles)
+  }
+  return { quotes, candles }
+}
 
 export async function cachedQuote(sym: string, finnhubKey: string): Promise<Quote | null> {
   const key = `quote:${sym}`

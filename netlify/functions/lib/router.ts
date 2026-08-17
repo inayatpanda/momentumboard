@@ -48,6 +48,7 @@ export type HandlerModule = { default: (req: Request, ctx: never) => Response | 
 export const HANDLERS = {
   'ai-insights': () => import('../ai-insights.mts'),
   'alert-check': () => import('../alert-check.mts'),
+  'alert-tail': () => import('../alert-tail.mts'),
   backup: () => import('../backup.mts'),
   'bulletin-evening': () => import('../bulletin-evening.mts'),
   'bulletin-premarket': () => import('../bulletin-premarket.mts'),

@@ -39,35 +39,65 @@ export const VERDICT_CLASS: Record<NonNullable<OpenTraceEntry['verdict']>, strin
  * printing an empty slot. */
 export const crossedWord = (status: OpenTraceEntry['status']) => (status === 'stopped' ? 'stopped out' : status === 'target' ? 'hit target' : '')
 
-export function OpenCallsStrip({ entries }: { entries: OpenTraceEntry[] | undefined }) {
-  if (!entries || entries.length === 0) return null
+/** One call's line. Shared by both lists so a closed row is rendered by the same
+ * code as a walking one — the only difference is which heading it sits under. */
+function OpenCallRow({ e }: { e: OpenTraceEntry }) {
+  const progress = Math.max(0, Math.min(100, e.progressPct ?? 0))
+  const word = e.verdict ? VERDICT_WORD[e.verdict] : crossedWord(e.status)
+  const cls = e.verdict ? VERDICT_CLASS[e.verdict] : 'flat'
+  return (
+    <div className="oc-row">
+      <Link href={`/stock/${e.sym}`} className="oc-sym">
+        {e.sym}
+      </Link>
+      <span className={`pill ${e.side}`}>{e.side}</span>
+      {word && <span className={`oc-verdict ${cls}`}>{word}</span>}
+      <span className="convbar oc-bar">
+        <i style={{ width: `${progress}%` }} />
+      </span>
+      <span className="num oc-day">day {e.day}</span>
+      <span className="num oc-move">
+        {e.movePct >= 0 ? '+' : '−'}
+        {Math.abs(e.movePct).toFixed(1)}%
+      </span>
+    </div>
+  )
+}
+
+/** TWO LISTS, TWO HEADINGS (2026-08-17). `entries` is what is still walking;
+ * `closed` is what the walk has already finished — stopped out or at target,
+ * waiting only on the formal grade ten sessions on. They used to arrive in one
+ * array and print under one heading that said "still walking", which is the
+ * screen telling the reader a stopped-out trade is still live. `closed` is
+ * optional: a slice cached by a bundle that predates the split has none, and
+ * such a slice still carries its crossed rows inside `entries` — which is why
+ * the row above keeps rendering `crossedWord` in both lists. */
+export function OpenCallsStrip({ entries, closed }: { entries: OpenTraceEntry[] | undefined; closed?: OpenTraceEntry[] | undefined }) {
+  const walking = entries ?? []
+  const done = closed ?? []
+  if (walking.length === 0 && done.length === 0) return null
   return (
     <section className="oc-strip" aria-label="Open calls">
-      <p className="sec-label">Open calls, still walking</p>
-      <div className="card oc-list">
-        {entries.map(e => {
-          const progress = Math.max(0, Math.min(100, e.progressPct ?? 0))
-          const word = e.verdict ? VERDICT_WORD[e.verdict] : crossedWord(e.status)
-          const cls = e.verdict ? VERDICT_CLASS[e.verdict] : 'flat'
-          return (
-            <div className="oc-row" key={e.id}>
-              <Link href={`/stock/${e.sym}`} className="oc-sym">
-                {e.sym}
-              </Link>
-              <span className={`pill ${e.side}`}>{e.side}</span>
-              {word && <span className={`oc-verdict ${cls}`}>{word}</span>}
-              <span className="convbar oc-bar">
-                <i style={{ width: `${progress}%` }} />
-              </span>
-              <span className="num oc-day">day {e.day}</span>
-              <span className="num oc-move">
-                {e.movePct >= 0 ? '+' : '−'}
-                {Math.abs(e.movePct).toFixed(1)}%
-              </span>
-            </div>
-          )
-        })}
-      </div>
+      {walking.length > 0 && (
+        <>
+          <p className="sec-label">Open calls, still walking</p>
+          <div className="card oc-list">
+            {walking.map(e => (
+              <OpenCallRow e={e} key={e.id} />
+            ))}
+          </div>
+        </>
+      )}
+      {done.length > 0 && (
+        <>
+          <p className="sec-label oc-closed">Closed — awaiting the formal grade</p>
+          <div className="card oc-list">
+            {done.map(e => (
+              <OpenCallRow e={e} key={e.id} />
+            ))}
+          </div>
+        </>
+      )}
     </section>
   )
 }

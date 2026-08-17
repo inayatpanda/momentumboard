@@ -95,6 +95,9 @@ describe('engine ?view= slices', () => {
     const r = await body(await handler(req('?view=board')))
     expect(r.data.yesterday).toEqual({
       date: '2026-08-13',
+      // WHICH CLOCK THE VERDICTS WERE STRUCK ON. `outcome10` is present here, so
+      // the strip is reporting ten-session grades and says so.
+      horizon: 10,
       wins: 1,
       losses: 1,
       // the whole-day census stays for one release; the SPLIT is what the strip reads
@@ -144,6 +147,85 @@ describe('engine ?view= slices', () => {
     expect(r.data.yesterday).toBeNull()
   })
 
+  // THE STRIP THAT NEVER RENDERED. `outcome10` lands TEN sessions after the call,
+  // so the day immediately before the board has it on nothing — the strip asked
+  // for the one number that is guaranteed absent and drew nothing, every day
+  // since it shipped. The five-session grade is the honest fallback, LABELLED as
+  // five so the reader is never told a ten-session record that isn't one.
+  it('?view=board falls back to the five-session grade when no ten-session one has landed', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('predictions-index', ['2026-08-13'])
+    await seed('predictions:2026-08-13', [
+      { id: 'w', sym: 'NVDA', side: 'long', outcome5: { excessPct: 3.1, rawPct: 4, spyPct: 0.9, stopped: false, hit: true } },
+      { id: 'l', sym: 'COIN', side: 'short', outcome5: { excessPct: -1.4, rawPct: -1, spyPct: 0.4, stopped: false, hit: false } },
+      { id: 'u', sym: 'AMD', side: 'long' }, // ungraded at either horizon — counts nowhere
+    ])
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.yesterday).toMatchObject({ date: '2026-08-13', horizon: 5, wins: 1, losses: 1, equity: { wins: 1, losses: 1 } })
+  })
+
+  // …and when a day carries BOTH, the ten-session verdicts are the record: they
+  // are the calibrated horizon the hit definition is written against.
+  it('?view=board prefers the ten-session grade on a day that carries both', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('predictions-index', ['2026-08-13'])
+    await seed('predictions:2026-08-13', [
+      {
+        id: 'w',
+        sym: 'NVDA',
+        side: 'long',
+        outcome5: { excessPct: -2, rawPct: -2, spyPct: 0, stopped: false, hit: false },
+        outcome10: { excessPct: 4.2, rawPct: 5, spyPct: 0.8, stopped: false, hit: true },
+      },
+      { id: 'x', sym: 'AMD', side: 'long', outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
+    ])
+    const r = await body(await handler(req('?view=board')))
+    // only the ten-session rows are counted — mixing two horizons into one score
+    // would be two different measurements printed as one
+    expect(r.data.yesterday).toMatchObject({ date: '2026-08-13', horizon: 10, wins: 1, losses: 0 })
+  })
+
+  // The immediately-prior day usually has NEITHER grade (both mature days later),
+  // so the strip walks back to the newest day that actually graded — and carries
+  // THAT day's date, so the client can name the day it is reporting on.
+  it('?view=board walks back to the newest graded day and carries its real date', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('predictions-index', ['2026-08-06', '2026-08-07', '2026-08-12', '2026-08-13'])
+    await seed('predictions:2026-08-13', [{ id: 'a', sym: 'AMD', side: 'long' }]) // published, ungraded
+    await seed('predictions:2026-08-12', [{ id: 'b', sym: 'INTC', side: 'long' }]) // published, ungraded
+    await seed('predictions:2026-08-07', [{ id: 'c', sym: 'NVDA', side: 'long', outcome5: { excessPct: 2, rawPct: 2, spyPct: 0, stopped: false, hit: true } }])
+    await seed('predictions:2026-08-06', [{ id: 'd', sym: 'COIN', side: 'long', outcome10: { excessPct: 9, rawPct: 9, spyPct: 0, stopped: false, hit: true } }])
+    await seed('miss-ledger', {
+      gates: {
+        'dead-zone-core': {
+          cost: 1,
+          costExcessSum: 6,
+          examples: [{ date: '2026-08-07', sym: 'PLTR', side: 'long', excessPct: 6.1, gate: 'dead-zone-core' }],
+        },
+      },
+      days: {},
+    })
+    const r = await body(await handler(req('?view=board')))
+    // the NEWEST graded day, not the oldest one that happens to carry outcome10
+    expect(r.data.yesterday).toMatchObject({
+      date: '2026-08-07',
+      horizon: 5,
+      wins: 1,
+      losses: 0,
+      // the regret is read against the day actually being reported
+      topRegret: { sym: 'PLTR', excessPct: 6.1, gate: 'dead-zone-core' },
+    })
+  })
+
+  it('?view=board yesterday stays null when nothing inside the lookback graded', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('predictions-index', ['2026-08-12', '2026-08-13'])
+    await seed('predictions:2026-08-13', [{ id: 'a', sym: 'AMD', side: 'long' }])
+    await seed('predictions:2026-08-12', [{ id: 'b', sym: 'INTC', side: 'long' }])
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.yesterday).toBeNull()
+  })
+
   // THE OPEN BOOK RIDES THE BOARD SLICE (owner iteration 2). Today showed only
   // what was published THIS morning; the calls already on the table — re-walked
   // against closes by the same pass that writes `open-trace` — were reachable
@@ -163,6 +245,100 @@ describe('engine ?view= slices', () => {
     expect(trace.date).toBe('2026-08-14')
     expect(trace.entries.map(e => e.sym)).toEqual(['NVDA', 'COIN'])
     expect(trace.entries[1].verdict).toBe('weakening')
+  })
+
+  // THE OPEN BOOK DOUBLE-LISTED ITS CALLS. The engine re-issues an unchanged
+  // call on consecutive mornings and each issue walks separately, so the same
+  // (sym, side) arrived at the reader two, three and four times — HTZ on day 1
+  // AND day 2, TSLA on day 5 AND day 9 — each row with a different day count
+  // for the same position. One call, one row: the OLDEST issue, which is the
+  // original call and carries the true day count and the longest walk.
+  it('?view=board collapses a re-issued call to its original, keeping the oldest call date', async () => {
+    const trace = (o: Record<string, unknown>) => ({
+      sym: 'HTZ',
+      side: 'long',
+      grade: 'B',
+      entry: 100,
+      stop: 92,
+      target: 118,
+      status: 'in-play',
+      verdict: 'intact',
+      ...o,
+    })
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('open-trace', {
+      date: '2026-08-14',
+      generatedAt: 1,
+      entries: [
+        trace({ id: 'h1', callDate: '2026-08-11', day: 4, movePct: 2.1 }),
+        // re-issued the next morning at the same levels (within 1%) — the same trade
+        trace({ id: 'h2', callDate: '2026-08-12', day: 3, entry: 100.4, stop: 92.3, target: 118.6, movePct: 1.7 }),
+      ],
+    })
+    const r = await body(await handler(req('?view=board')))
+    const trace2 = r.data.openTrace as { entries: { id: string; callDate: string; day: number }[] }
+    expect(trace2.entries).toHaveLength(1)
+    expect(trace2.entries[0]).toMatchObject({ id: 'h1', callDate: '2026-08-11', day: 4 })
+  })
+
+  it('?view=board keeps a re-strike at genuinely different levels — that is a new call', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('open-trace', {
+      date: '2026-08-14',
+      generatedAt: 1,
+      entries: [
+        { id: 'k1', sym: 'KTOS', side: 'long', callDate: '2026-08-11', entry: 100, stop: 92, target: 118, status: 'in-play', day: 4 },
+        // +6% on the entry: the engine struck this one again somewhere else
+        { id: 'k2', sym: 'KTOS', side: 'long', callDate: '2026-08-13', entry: 106, stop: 98, target: 125, status: 'in-play', day: 2 },
+        // same name, other side — never the same call
+        { id: 'k3', sym: 'KTOS', side: 'short', callDate: '2026-08-13', entry: 106, stop: 112, target: 96, status: 'in-play', day: 2 },
+      ],
+    })
+    const r = await body(await handler(req('?view=board')))
+    const t = r.data.openTrace as { entries: { id: string }[] }
+    expect(t.entries.map(e => e.id)).toEqual(['k1', 'k2', 'k3'])
+  })
+
+  // …AND A CLOSED CALL IS NOT STILL WALKING. "stopped" and "target" rows sat
+  // inside a section headed "still walking"; the trade is mechanically over and
+  // only the formal grade is outstanding, so they ride their own list.
+  it('?view=board splits the closed rows out of the walking ones', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('open-trace', {
+      date: '2026-08-14',
+      generatedAt: 1,
+      entries: [
+        { id: 'a', sym: 'NVDA', side: 'long', callDate: '2026-08-11', entry: 100, stop: 92, target: 118, status: 'in-play', verdict: 'still-on', day: 4 },
+        { id: 'b', sym: 'COIN', side: 'short', callDate: '2026-08-12', entry: 200, stop: 214, target: 176, status: 'stopped', verdict: null, day: 3 },
+        { id: 'c', sym: 'UROY', side: 'long', callDate: '2026-08-08', entry: 3, stop: 2.7, target: 3.6, status: 'target', verdict: null, day: 7 },
+      ],
+    })
+    const r = await body(await handler(req('?view=board')))
+    const t = r.data.openTrace as { entries: { id: string }[]; closed: { id: string }[] }
+    expect(t.entries.map(e => e.id)).toEqual(['a'])
+    expect(t.closed.map(e => e.id)).toEqual(['b', 'c'])
+  })
+
+  it('?view=board dedupes closed re-issues too, and survives a blob with no entries array', async () => {
+    await seed('engine-board', { date: '2026-08-14', board: [] })
+    await seed('open-trace', {
+      date: '2026-08-14',
+      generatedAt: 1,
+      entries: [
+        { id: 'v1', sym: 'VZLA', side: 'long', callDate: '2026-08-11', entry: 4, stop: 3.6, target: 4.8, status: 'stopped', day: 4 },
+        { id: 'v2', sym: 'VZLA', side: 'long', callDate: '2026-08-12', entry: 4.02, stop: 3.61, target: 4.83, status: 'stopped', day: 3 },
+      ],
+    })
+    const r = await body(await handler(req('?view=board')))
+    const t = r.data.openTrace as { entries: unknown[]; closed: { id: string }[] }
+    expect(t.entries).toEqual([])
+    expect(t.closed.map(e => e.id)).toEqual(['v1'])
+
+    // a truncated write must lose the section, never the whole board (D6)
+    await seed('open-trace', { date: '2026-08-14', generatedAt: 1 })
+    const r2 = await body(await handler(req('?view=board')))
+    expect(r2.ok).toBe(true)
+    expect(r2.data.openTrace).toMatchObject({ entries: [], closed: [] })
   })
 
   it('?view=board openTrace is null before the first walk', async () => {

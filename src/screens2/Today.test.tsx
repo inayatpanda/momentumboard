@@ -240,6 +240,28 @@ describe('YesterdayStrip', () => {
     expect(screen.getByText(/2 wins? · 1 loss/i)).toBeInTheDocument()
     expect(screen.queryByText(/crypto/i)).not.toBeInTheDocument()
   })
+
+  // NAME THE DAY AND NAME THE CLOCK. The server reports the newest day that
+  // actually graded, which is rarely the calendar day before — a score printed
+  // under a bare "Yesterday" would be attributed to the wrong session. And a
+  // five-session grade read as a ten-session one is a different measurement.
+  it('names the day it is reporting and the horizon the verdicts were struck on', () => {
+    withRouter(<YesterdayStrip yesterday={{ date: '2026-08-14', horizon: 5, wins: 2, losses: 1, equity: { wins: 2, losses: 1 }, crypto: null, topRegret: null }} />)
+    expect(screen.getByText(/Fri, 14 Aug/)).toBeInTheDocument()
+    expect(screen.getByText(/2 wins? · 1 loss/i)).toBeInTheDocument()
+    expect(screen.getByText(/over 5 sessions/i)).toBeInTheDocument()
+  })
+
+  it('says ten sessions when the day carries the calibrated grade', () => {
+    withRouter(<YesterdayStrip yesterday={{ date: '2026-08-13', horizon: 10, wins: 1, losses: 0, topRegret: null }} />)
+    expect(screen.getByText(/over 10 sessions/i)).toBeInTheDocument()
+  })
+
+  it('says nothing about the horizon on a slice cached before the server sent one', () => {
+    withRouter(<YesterdayStrip yesterday={{ date: '2026-08-13', wins: 2, losses: 1, topRegret: null }} />)
+    expect(screen.queryByText(/sessions/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Thu, 13 Aug/)).toBeInTheDocument()
+  })
 })
 
 // THE LIVE FLAGS (crypto-v2 wave, finding 8). The board slice has always carried
@@ -363,6 +385,34 @@ describe('OpenCallsStrip', () => {
   it('says what happened on a crossed row, which carries no verdict', () => {
     withRouter(<OpenCallsStrip entries={[mkTrace({ status: 'stopped', verdict: null, crossedDate: '2026-08-13' })]} />)
     expect(screen.getByText('stopped out')).toBeInTheDocument()
+  })
+
+  // CLOSED IS NOT STILL WALKING. The server now hands the closed rows over
+  // separately; they get their own one-line heading, because a stopped-out trade
+  // sitting under "still walking" is the screen saying something untrue.
+  it('heads the closed rows separately from the walking ones', () => {
+    withRouter(
+      <OpenCallsStrip
+        entries={[mkTrace({ id: 'a', sym: 'NVDA' })]}
+        closed={[mkTrace({ id: 'b', sym: 'COIN', status: 'stopped', verdict: null, crossedDate: '2026-08-13' })]}
+      />,
+    )
+    expect(screen.getByText(/still walking/i)).toBeInTheDocument()
+    expect(screen.getByText(/closed — awaiting the formal grade/i)).toBeInTheDocument()
+    // the crossed word still carries the row, exactly as before
+    expect(screen.getByText('stopped out')).toBeInTheDocument()
+    expect(screen.getAllByRole('link')).toHaveLength(2)
+  })
+
+  it('says nothing about closed calls when there are none', () => {
+    withRouter(<OpenCallsStrip entries={[mkTrace()]} closed={[]} />)
+    expect(screen.queryByText(/closed — awaiting/i)).not.toBeInTheDocument()
+  })
+
+  it('renders the closed list on its own when nothing is still walking', () => {
+    withRouter(<OpenCallsStrip entries={[]} closed={[mkTrace({ status: 'target', verdict: null, crossedDate: '2026-08-13' })]} />)
+    expect(screen.getByText('hit target')).toBeInTheDocument()
+    expect(screen.queryByText(/still walking/i)).not.toBeInTheDocument()
   })
 })
 
