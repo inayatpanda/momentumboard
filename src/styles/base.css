@@ -2476,9 +2476,28 @@ p {
   text-transform: uppercase;
   font-weight: 700;
 }
+/* A THRESHOLD IS A POSITION, NOT A QUANTITY (visibility wave, 2026-08-17).
+   This was a .convbar — a FILL — and a gate sitting at its own minimum drew a
+   perfectly correct empty bar that read as a broken widget. The rail is the
+   ratified range, the marker is where the gate stands in it; `overflow` stays
+   visible so a gate pinned at either bound still shows its marker whole. */
 .v2 .gl-gate-track {
   flex: 1;
   height: 8px;
+  position: relative;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.v2 .gl-gate-marker {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--surface-1);
 }
 .v2 .gl-gate-what {
   margin: -2px 0 2px;
