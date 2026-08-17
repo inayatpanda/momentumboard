@@ -324,6 +324,16 @@ p {
   font-size: 22px;
   margin: 0;
 }
+/* THE TIME-AWARENESS LINE (dynamism wave). Under the page heading on Today and
+   Stocks: quiet by construction — dim, small, no chrome — because it is context
+   for everything below it, never an announcement. `data-session` is there for a
+   future accent (an open bell); today both themes read it in --text-dim. */
+.v2 .session-line {
+  margin: -8px 0 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
 .v2 .today-cards {
   display: flex;
   flex-direction: column;

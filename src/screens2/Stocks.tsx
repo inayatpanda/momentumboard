@@ -30,6 +30,7 @@ import { Sparkline } from '../components/Sparkline'
 import type { Quote } from '../../shared/types'
 import { StockRow, useCachedSparkline } from './parts/StockRow'
 import { HRail } from './parts/HRail'
+import { SessionLine } from './parts/SessionLine'
 import { isDeskWidth } from '../shell/DeskLayout'
 import { sectorSign, SectorTileBody } from './parts/SectorTile'
 
@@ -224,6 +225,9 @@ export default function Stocks() {
   return (
     <div className="stx">
       <h1>Stocks</h1>
+      {/* the session's own state (dynamism wave) — a watchlist of flat prices
+          reads as broken until the line above it says the market is shut */}
+      <SessionLine />
       <form className="stx-search" onSubmit={handleSearch}>
         <input
           aria-label="Search ticker"

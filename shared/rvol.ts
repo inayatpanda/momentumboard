@@ -10,7 +10,10 @@ export function avgDailyVolume(candles: Candle[], days = 30): number | null {
 
 // UTC approximations: US cash session 13:30–20:00, LSE 08:00–16:30.
 // Off by one hour around DST switches — acceptable for a badge, documented in UI.
-const SESSIONS = { US: { open: 13.5, close: 20 }, LSE: { open: 8, close: 16.5 } } as const
+// Exported because the app's session line (src/screens2/parts/SessionLine.tsx)
+// must name the very same open/close instants this file judges "open" by — a
+// second copy of 13.5/20 in the UI is a drift waiting to happen.
+export const SESSIONS = { US: { open: 13.5, close: 20 }, LSE: { open: 8, close: 16.5 } } as const
 
 export function sessionElapsedFraction(exchange: Exchange, nowUtcSec: number): number {
   const d = new Date(nowUtcSec * 1000)

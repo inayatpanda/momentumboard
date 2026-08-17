@@ -541,6 +541,28 @@ describe('Today', () => {
     expect(screen.getByRole('heading', { level: 1, name: /today/i })).toBeInTheDocument()
   })
 
+  // THE TIME-AWARENESS LINE (dynamism wave). The board has always carried its
+  // own `generatedAt` and no screen printed a character of it; the session
+  // state is computed here, client-side, and ticks (parts/SessionLine.tsx owns
+  // both, and its own test file pins the clock — this one only checks the seam).
+  it('renders the session line under the heading, stamped with the board’s own generatedAt', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeInTheDocument()
+    const line = document.querySelector('.session-line')
+    expect(line?.textContent).toMatch(/^US /)
+    expect(line?.textContent).toContain('board struck')
+  })
+
+  it('still says where the session stands on a morning with no board at all', async () => {
+    await db.slices.put({ key: 'board', data: { ...mkBoardData([]), board: null }, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText(NO_BOARD_YET)).toBeInTheDocument()
+    const line = document.querySelector('.session-line')
+    expect(line?.textContent).toMatch(/^US /)
+    expect(line?.textContent).not.toContain('board struck')
+  })
+
   // A1 (walkthrough): a RESOLVED slice with no board is an answer — the cold
   // store / pre-run morning must say so, never sit on a skeleton forever.
   it('a resolved slice with board:null renders the no-board-yet state, not a skeleton', async () => {

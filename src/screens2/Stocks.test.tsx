@@ -115,6 +115,15 @@ describe('Stocks', () => {
     expect(screen.getByRole('heading', { name: /stocks/i })).toBeInTheDocument()
   })
 
+  // THE TIME-AWARENESS LINE (dynamism wave). Stocks holds no board slice, so
+  // it gets the session half alone — never a fabricated stamp.
+  it('renders the session line under the heading, with no board stamp', () => {
+    withRouter()
+    const line = document.querySelector('.session-line')
+    expect(line?.textContent).toMatch(/^US /)
+    expect(line?.textContent).not.toContain('board struck')
+  })
+
   describe('search', () => {
     it('submitting a valid ticker navigates to /stock/SYM, uppercased', async () => {
       withRouter()

@@ -20,6 +20,7 @@ import { CountsRail } from './parts/CountsRail'
 import { EventRadarStrip } from './parts/EventRadarStrip'
 import { IntradayFlagsStrip } from './parts/IntradayFlagsStrip'
 import { OpenCallsStrip } from './parts/OpenCallsStrip'
+import { SessionLine } from './parts/SessionLine'
 import { YesterdayStrip } from './parts/YesterdayStrip'
 
 /** THE TAPE LINE (owner iteration 2). The board blob has always carried the
@@ -65,6 +66,9 @@ export default function Today() {
         <h1>Today</h1>
         {blob && <span className={`pill ${blob.regime === 'green' ? 'accent' : ''}`}>{blob.regime}</span>}
       </div>
+      {/* WHEN the reader is (dynamism wave): the session's own state, ticking,
+          and the stamp the board has always carried and nothing ever showed. */}
+      <SessionLine generatedAt={blob?.generatedAt} />
       <TapeLine blob={blob} />
       {data && blob === null ? (
         // the slice RESOLVED and there is no board (cold store, pre-run
