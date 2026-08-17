@@ -17,7 +17,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { GateCode } from '../../../shared/engine/types'
 import type { EnginePrediction, OpenTraceEntry } from '../../lib/api'
 import type { JourneyFunnelRow, VerdictRead } from '../../lib/apiViews'
-import { askDesk } from '../../lib/api'
+import { askDesk, getLlmKeyStatus, isSharedFreeToken } from '../../lib/api'
 import { rowKind } from '../../lib/boardTaxonomy'
 import { GATE_LABELS } from '../../lib/gateLabels'
 import { humanError } from '../../lib/format'
@@ -38,6 +38,26 @@ function bumpAskCount(): number {
   const n = askCountToday() + 1
   localStorage.setItem(askCountKey(), String(n))
   return n
+}
+
+/** WHAT THE READER IS TOLD when there is no key behind the desk. Said up front
+ * where it can be acted on, never after a question has been spent on it. */
+export const ASK_NEEDS_KEY = 'Add your AI key in Settings to ask the desk'
+
+/** IS THIS THE SERVER'S KEYLESS NON-ANSWER? (visibility wave, 2026-08-17.)
+ *
+ * netlify/functions/market-data.mts answers a caller with no LLM env
+ * `{ answer: 'Add your own AI key in Settings to ask the desk questions.',
+ * at: 0 }` — a 200, so nothing threw, so the sheet printed it in the answer
+ * slot AND charged the reader one of twenty daily asks for it. Two tells, and
+ * both are checked: the sentence itself, and `at: 0` — every real answer on
+ * that route stamps `nowSec`, so a zero stamp is that branch and no other. */
+const NO_KEY_ANSWER_RE = /^add your own ai key in settings/i
+
+export function isNoKeyAnswer(d: { answer?: string; at?: number } | null | undefined): boolean {
+  const answer = (d?.answer ?? '').trim()
+  if (!answer) return false
+  return NO_KEY_ANSWER_RE.test(answer) || (d?.at === 0 && /\bai key\b/i.test(answer))
 }
 
 export type AskState = 'sized' | 'unsized' | 'refused' | 'published-elsewhere' | 'near-miss' | 'on-demand' | 'no-read'
@@ -89,6 +109,7 @@ export function AskSheet({ open, onClose, ...hero }: AskHeroState & { open: bool
   const [turns, setTurns] = useState<Turn[]>([])
   const [error, setError] = useState<string | null>(null)
   const [count, setCount] = useState(0)
+  const [keyless, setKeyless] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const triggerElementRef = useRef<Element | null>(null)
 
@@ -103,6 +124,28 @@ export function AskSheet({ open, onClose, ...hero }: AskHeroState & { open: bool
   useEffect(() => {
     if (!open) return
     setCount(askCountToday())
+  }, [open])
+
+  // ASK BEFORE THE READER DOES (visibility wave, 2026-08-17). A free-tier
+  // device with no BYOK key gets the same non-answer to every question, so the
+  // honest move is to say so while the input is still empty. Probed ONLY on
+  // the shared free token — a personal licence may hold a server-side key this
+  // client cannot see, and a probe that fails must never lock a sheet that
+  // would have worked: the failure path leaves `keyless` false and the answer-
+  // shape check below still catches the case without spending a question.
+  useEffect(() => {
+    if (!open || !isSharedFreeToken()) return
+    let alive = true
+    getLlmKeyStatus()
+      // both directions: a reader who has just saved a key in Settings and
+      // come back must find the sheet open for business again
+      .then(s => {
+        if (alive) setKeyless(!s.hasKey)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
   }, [open])
 
   useEffect(() => {
@@ -143,16 +186,24 @@ export function AskSheet({ open, onClose, ...hero }: AskHeroState & { open: bool
 
   const send = async (question: string) => {
     const trimmed = question.trim()
-    if (!trimmed || busy) return
+    if (!trimmed || busy || keyless) return
     if (askCountToday() >= ASK_DAILY_CAP) {
       setCount(askCountToday())
       return
     }
     setBusy(true)
     setError(null)
-    setCount(bumpAskCount())
     try {
       const d = await askDesk(sym, trimmed, context)
+      // THE QUOTA IS CHARGED FOR ANSWERS, NOT FOR ROUND TRIPS. The keyless
+      // branch is a 200 carrying a note about Settings — the desk read no
+      // chart, so there is nothing to bill and nothing to print in an answer
+      // slot. The bump moved below the check for exactly this reason.
+      if (isNoKeyAnswer(d)) {
+        setKeyless(true)
+        return
+      }
+      setCount(bumpAskCount())
       setTurns(t => [...t, { q: trimmed, answer: d.answer }])
       setQ('')
     } catch (e) {
@@ -187,7 +238,8 @@ export function AskSheet({ open, onClose, ...hero }: AskHeroState & { open: bool
             </div>
 
             <div className="ask-body">
-              {turns.length === 0 && !busy && !atCap && (
+              {keyless && <p className="ask-note">{ASK_NEEDS_KEY}.</p>}
+              {turns.length === 0 && !busy && !atCap && !keyless && (
                 <p className="ask-note">Ask about entry, trend, levels — grounded in what the engine sees right now.</p>
               )}
               {turns.map((t, i) => (
@@ -213,13 +265,13 @@ export function AskSheet({ open, onClose, ...hero }: AskHeroState & { open: bool
                   ref={inputRef}
                   value={q}
                   onChange={e => setQ(e.target.value)}
-                  placeholder={`Ask about ${sym}…`}
-                  disabled={busy}
+                  placeholder={keyless ? ASK_NEEDS_KEY : `Ask about ${sym}…`}
+                  disabled={busy || keyless}
                   maxLength={400}
                   aria-label={`Ask a question about ${sym}`}
                   style={{ textTransform: 'none' }}
                 />
-                <button disabled={busy || !q.trim()}>{busy ? '…' : 'Ask'}</button>
+                <button disabled={busy || keyless || !q.trim()}>{busy ? '…' : 'Ask'}</button>
               </form>
             )}
           </motion.div>

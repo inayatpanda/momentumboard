@@ -226,9 +226,13 @@ export default function Stocks() {
     <div className="stx">
       <h1>Stocks</h1>
       <form className="stx-search" onSubmit={handleSearch}>
+        {/* THE PLACEHOLDER FITS THE FIELD NOW (visibility wave, 2026-08-17).
+            Three examples overflowed a phone's input and the reader met a
+            truncated one; two teach the whole shape — a plain ticker and a
+            suffixed one — and the ellipsis says there are more. */}
         <input
           aria-label="Search ticker"
-          placeholder="Search a ticker — AAPL, 3LTS.L, BTC-USD"
+          placeholder="Search a ticker — AAPL, VOD.L…"
           value={query}
           onChange={e => {
             setQuery(e.target.value)

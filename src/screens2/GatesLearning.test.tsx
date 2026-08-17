@@ -10,7 +10,7 @@ import { db } from '../lib/db'
 import type { LearningSlice } from '../lib/apiViews'
 import { GATE_BOUNDS } from '../../shared/engine/gateState'
 import type { GateStructuredEntry, TunableGate } from '../../shared/engine/gateState'
-import GatesLearning from './GatesLearning'
+import GatesLearning, { churnLines, gatePosition } from './GatesLearning'
 
 vi.mock('../lib/apiViews', async () => {
   const actual = await vi.importActual<typeof import('../lib/apiViews')>('../lib/apiViews')
@@ -239,6 +239,153 @@ describe('GatesLearning', () => {
       withRouter()
       expect(await screen.findByText('dead zone 25 → 22.5 on 2026-07-20')).toBeInTheDocument()
       expect(screen.getByText('context cap: eligible, held by the cadence')).toBeInTheDocument()
+    })
+  })
+})
+
+// VISIBILITY WAVE (2026-08-17) — three things the live desk caught: a gate at
+// its own minimum drew an empty bar that read as a broken widget, the roster's
+// churn lines said a name joined and was dropped on the same day, and a market
+// cap printed as `$16487M`.
+describe('GatesLearning — the numbers stop lying about themselves', () => {
+  describe('gatePosition', () => {
+    it('is the same fraction for every gate — (current − min) / (max − min)', () => {
+      expect(gatePosition(20, 20, 25)).toBe(0)
+      expect(gatePosition(22.5, 20, 25)).toBe(50)
+      expect(gatePosition(25, 20, 25)).toBe(100)
+      expect(gatePosition(12, 12, 16)).toBe(0)
+      expect(gatePosition(14, 12, 16)).toBe(50)
+    })
+
+    it('clamps a value outside its own ratified bounds rather than running off the track', () => {
+      expect(gatePosition(30, 20, 25)).toBe(100)
+      expect(gatePosition(10, 20, 25)).toBe(0)
+    })
+
+    it('a degenerate range is 0, never NaN or Infinity', () => {
+      expect(gatePosition(12, 12, 12)).toBe(0)
+      expect(gatePosition(12, 16, 12)).toBe(0)
+    })
+  })
+
+  describe('the gate bar', () => {
+    it('marks a position on a track instead of filling one, for every gate alike', async () => {
+      await seedLearning(
+        mkLearning({
+          gateState: {
+            gates: [
+              mkGate({ gate: 'deadZone', label: 'dead zone', current: 25, bounds: { min: 20, max: 25 } }),
+              mkGate({ gate: 'contextCap', label: 'context cap', current: 12, bounds: { min: 12, max: 16 } }),
+            ],
+          },
+        }),
+      )
+      withRouter()
+      const gates = await screen.findByLabelText('Gates')
+      const tracks = [...gates.querySelectorAll('.gl-gate-track')] as HTMLElement[]
+      expect(tracks).toHaveLength(2)
+      // no fill anywhere — the same primitive for both, whatever the value
+      expect(gates.querySelector('.convbar')).toBeNull()
+      expect(tracks.map(t => t.dataset.position)).toEqual(['100', '0'])
+      // a gate at its own minimum still renders a marker: the widget is visibly alive
+      const markers = [...gates.querySelectorAll('.gl-gate-marker')] as HTMLElement[]
+      expect(markers).toHaveLength(2)
+      expect(markers[1].style.left).toBe('0%')
+    })
+
+    it('the track says out loud where the gate sits in its range', async () => {
+      await seedLearning(mkLearning({ gateState: { gates: [mkGate({ gate: 'contextCap', label: 'context cap', current: 12, bounds: { min: 12, max: 16 } })] } }))
+      withRouter()
+      const gates = await screen.findByLabelText('Gates')
+      expect(within(gates).getByLabelText('context cap sits at 12 on a scale from 12 to 16')).toBeInTheDocument()
+    })
+  })
+
+  describe('churnLines', () => {
+    it('a name that joined AND was dropped the same day is one honest line', () => {
+      expect(
+        churnLines({
+          joined: ['AVGO', 'LLY'],
+          dropped: [
+            { sym: 'AVGO', why: 'roster full' },
+            { sym: 'LLY', why: 'roster full' },
+          ],
+        }),
+      ).toEqual(['AVGO, LLY knocked — roster full, not admitted'])
+    })
+
+    it('keeps the real joins and the real drops apart from the knocked', () => {
+      expect(
+        churnLines({
+          joined: ['AVGO', 'NEW'],
+          dropped: [
+            { sym: 'AVGO', why: 'roster full' },
+            { sym: 'OLD', why: 'quiet 21 days' },
+          ],
+        }),
+      ).toEqual(['AVGO knocked — roster full, not admitted', 'joined NEW', 'dropped OLD (quiet 21 days)'])
+    })
+
+    it('groups the knocked by the reason they were shed, one line per reason', () => {
+      expect(
+        churnLines({
+          joined: ['A', 'B', 'C'],
+          dropped: [
+            { sym: 'A', why: 'roster full' },
+            { sym: 'B', why: 'larger caps shed first' },
+            { sym: 'C', why: 'roster full' },
+          ],
+        }),
+      ).toEqual(['A, C knocked — roster full, not admitted', 'B knocked — larger caps shed first, not admitted'])
+    })
+
+    it('a quiet day with neither is no clauses at all', () => {
+      expect(churnLines({ joined: [], dropped: [] })).toEqual([])
+    })
+  })
+
+  describe('the roster', () => {
+    it('renders the same-day churn as one knocked line, never as join-then-drop', async () => {
+      await seedLearning(
+        mkLearning({
+          roster: {
+            entries: [{ sym: 'NVDA', joined: '2026-01-05', source: 'screener', capUsdM: 3_000_000, lastCapacity: 9, lastQualified: '2026-08-10' }],
+            changes: [
+              {
+                date: '2026-08-17',
+                joined: ['AVGO', 'LLY'],
+                dropped: [
+                  { sym: 'AVGO', why: 'roster full' },
+                  { sym: 'LLY', why: 'roster full' },
+                ],
+              },
+            ],
+          },
+        }),
+      )
+      withRouter()
+      const roster = await screen.findByLabelText('Roster')
+      expect(within(roster).getByText(/AVGO, LLY knocked — roster full, not admitted/)).toBeInTheDocument()
+      expect(within(roster).queryByText(/joined AVGO/)).not.toBeInTheDocument()
+    })
+
+    it('prints a market cap a reader can hold, not a raw million count', async () => {
+      await seedLearning(
+        mkLearning({
+          roster: {
+            entries: [
+              { sym: 'QNT', joined: '2026-08-13', source: 'screener:gainers', capUsdM: 16487, lastCapacity: 9, lastQualified: '2026-08-13' },
+              { sym: 'RR', joined: '2026-07-14', source: 'holding', capUsdM: 360, lastCapacity: 9, lastQualified: '2026-07-14' },
+            ],
+            changes: [],
+          },
+        }),
+      )
+      withRouter()
+      const roster = await screen.findByLabelText('Roster')
+      expect(within(roster).getByText('$16.5B')).toBeInTheDocument()
+      expect(within(roster).queryByText('$16487M')).not.toBeInTheDocument()
+      expect(within(roster).getByText('$360.0M')).toBeInTheDocument()
     })
   })
 })

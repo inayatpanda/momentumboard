@@ -106,6 +106,13 @@ p {
   padding: 3px;
   border: 1px solid var(--border);
 }
+/* HORIZONTAL PADDING IS LOAD-BEARING (visibility wave, 2026-08-17). With
+   `padding: 6px 0` a button's min-content width is exactly its longest word,
+   so inside a grid `auto` track — Settings' theme row — the whole control
+   collapsed to ~110px and "Auto Light Dark" ran together under a selected pill
+   that had nothing to hug. `nowrap` keeps a two-word label on one line for the
+   same reason; `flex: 1` still spreads the full-width segs (Sectors, Movers,
+   the stock chart) exactly as before. */
 .v2 .seg > button {
   flex: 1;
   border: none;
@@ -114,7 +121,8 @@ p {
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  padding: 6px 0;
+  padding: 6px 12px;
+  white-space: nowrap;
   border-radius: 999px;
   cursor: pointer;
 }
@@ -787,6 +795,32 @@ p {
 .v2 details.board-refused > .cc-reason {
   padding-bottom: 14px;
 }
+/* the chevron the suppressed marker left missing — a flat bar invited nothing
+   (visibility wave, 2026-08-17) */
+.v2 details.board-refused > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v2 .board-refused-chev {
+  color: var(--text-dim);
+  transition: transform 0.15s ease;
+}
+.v2 details.board-refused[open] .board-refused-chev {
+  transform: rotate(90deg);
+}
+/* grouped by the gate that refused them, each with its own count */
+.v2 .board-refused-group {
+  padding: 0 14px;
+}
+.v2 .board-refused-gate {
+  margin: 12px 0 4px;
+  color: var(--text);
+}
+.v2 .board-refused-more {
+  width: calc(100% - 28px);
+  margin: 12px 14px 14px;
+}
 
 /* --- stocks -------------------------------------------------------------------
    Search + watchlist rows + T212-Discover-style rails (plan Task 15). Tokens
@@ -1029,14 +1063,49 @@ p {
 /* the see-all tile grid: same tile look as the rail (.stx-sector-tile), but a
    button (toggles the sector open in place) rather than a Link, and full
    width of its grid cell rather than the rail's fixed 118px card. */
+/* 100px fitted eleven columns onto a desk pane and truncated the two sectors
+   whose names are two words ("Consumer …", "Comm. Ser…") — the tile's whole
+   left half is the name, so a track too narrow to hold it costs the reader the
+   only thing identifying the number beside it. 140px is the widest label
+   ("Comm. Services") plus its padding. (Visibility wave, 2026-08-17.) */
 .v2 .stx-sector-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
 .v2 .stx-sector-grid .stx-sector-tile {
   width: 100%;
+}
+.v2 .stx-sector-legend {
+  margin: 10px 0 0;
+}
+/* the payload's own constituents, as links rather than StockRows — see the
+   component's note on why fifty-five live rows is the wrong trade */
+.v2 .stx-sector-inside {
+  margin-top: 22px;
+}
+.v2 .stx-sector-inside-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.v2 .stx-sector-inside-name {
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 130px;
+}
+.v2 .stx-sector-inside-syms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v2 .stx-sector-inside-syms a.pill {
+  text-decoration: none;
+  color: var(--text);
 }
 .v2 button.stx-sector-tile {
   border: none;
@@ -1804,6 +1873,27 @@ p {
 .v2 .itl-feed-date {
   flex-shrink: 0;
 }
+/* the lone buyer: sorted to the end of the list and dimmed there, because the
+   section's heading says "cluster" and one officer is what its own intro calls
+   noise (visibility wave, 2026-08-17) */
+.v2 .itl-feed-row.itl-feed-lone .itl-feed-strong {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.v2 .itl-feed-note {
+  color: var(--text-dim);
+  font-style: italic;
+}
+/* how far past the STOCK Act's own window a watchlist filing came — dim, a
+   cue and not an accusation; the exact arithmetic rides in its title */
+.v2 .itl-late {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--warn);
+  flex-shrink: 0;
+}
 .v2 .itl-feed-names {
   flex-basis: 100%;
   font-size: 12px;
@@ -2118,6 +2208,30 @@ p {
 /* the ledger, grouped by day */
 .v2 .rec-ledger-day {
   margin-bottom: 4px;
+}
+/* the day's still-open calls, stacked behind one line (visibility wave,
+   2026-08-17) — they arrive newest-first and outnumber the graded rows, so
+   unfolded they buried the receipts the page exists to show */
+.v2 .rec-ledger-awaiting {
+  margin-bottom: 10px;
+}
+.v2 .rec-ledger-awaiting > summary {
+  cursor: pointer;
+  padding: 6px 0;
+  list-style: none;
+}
+.v2 .rec-ledger-awaiting > summary::-webkit-details-marker {
+  display: none;
+}
+.v2 .rec-ledger-awaiting > summary::before {
+  content: '›';
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--text-dim);
+  transition: transform 0.15s ease;
+}
+.v2 .rec-ledger-awaiting[open] > summary::before {
+  transform: rotate(90deg);
 }
 .v2 .rec-ledger-card {
   display: flex;
@@ -2501,9 +2615,28 @@ p {
   text-transform: uppercase;
   font-weight: 700;
 }
+/* A THRESHOLD IS A POSITION, NOT A QUANTITY (visibility wave, 2026-08-17).
+   This was a .convbar — a FILL — and a gate sitting at its own minimum drew a
+   perfectly correct empty bar that read as a broken widget. The rail is the
+   ratified range, the marker is where the gate stands in it; `overflow` stays
+   visible so a gate pinned at either bound still shows its marker whole. */
 .v2 .gl-gate-track {
   flex: 1;
   height: 8px;
+  position: relative;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.v2 .gl-gate-marker {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--surface-1);
 }
 .v2 .gl-gate-what {
   margin: -2px 0 2px;
@@ -2734,6 +2867,30 @@ p {
   gap: 10px;
 }
 
+/* the markdown-lite renderer (parts/MarkdownLite.tsx): the desk's LLM writers
+   emit numbered steps with bold heads, and one <p> collapsed the lot into a
+   wall carrying literal asterisks. Structure only — colour and size still come
+   from whatever class the caller passes in (.cc-reason here). */
+.v2 .md-lite {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.v2 .md-lite-line {
+  margin: 0;
+}
+.v2 .md-lite-bullet {
+  padding-left: 14px;
+}
+.v2 .md-lite-marker {
+  color: var(--text-dim);
+  font-weight: 700;
+  margin-right: 6px;
+}
+.v2 .md-lite-line strong {
+  color: var(--text);
+}
+
 /* --- calendar adapter --------------------------------------------------------
    Plan Task 21 (CX-23): the legacy CalendarScreen mounted as-is and skinned —
    its own imports are cutover-safe, so this restyles its classnames onto v2
@@ -2782,6 +2939,17 @@ p {
   justify-content: center;
   gap: 2px;
 }
+/* THE GRID IS NOT THE PAGE (visibility wave, 2026-08-17). `aspect-ratio: 1`
+   is right on a phone, where a column is ~50px wide; at desk width a column is
+   ~165px, so six square rows ate the entire first screen and the day ledger —
+   the thing the reader came for — began below the fold. A fixed height here
+   halves the cell and puts the ledger back on the first screen. */
+@media (min-width: 1024px) {
+  .v2 .cal2 .cal-day {
+    aspect-ratio: auto;
+    height: 76px;
+  }
+}
 .v2 .cal2 .cal-day.today {
   border-color: var(--accent);
 }
@@ -2814,6 +2982,28 @@ p {
 }
 .v2 .cal2 .dot.picks {
   background: var(--accent);
+}
+/* WHAT THE DOTS MEAN (visibility wave, 2026-08-17) — one dim line, the same
+   four classnames the cells paint, so the key can never name a colour the
+   grid stopped using. */
+.v2 .cal2 .cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: -8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.v2 .cal2 .cal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.v2 .cal2 .cal-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 .v2 .cal2 .section-title {
   font-size: 11px;

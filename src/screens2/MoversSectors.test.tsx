@@ -4,7 +4,7 @@
 // `writeSlice`, so `useSlice`'s Dexie-first paint shows it without a network
 // round trip.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route, Router, Switch } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -12,7 +12,7 @@ import { db } from '../lib/db'
 import { writeSlice } from '../lib/store'
 import type { MoverRow } from '../lib/api'
 import Movers from './Movers'
-import Sectors from './Sectors'
+import Sectors, { rsLegend } from './Sectors'
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
@@ -171,7 +171,7 @@ describe('Sectors', () => {
   it('shows the CX-24 1w/1m/3m period toggle, never day/week', async () => {
     await seedSectors()
     withRouter('/app/stocks/sectors', 'sectors')
-    await screen.findByText('Technology')
+    await screen.findByRole('button', { name: /technology/i })
     expect(screen.getByRole('button', { name: '1w' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '1m' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '3m' })).toBeInTheDocument()
@@ -195,23 +195,78 @@ describe('Sectors', () => {
     expect(screen.queryByText('1.1')).not.toBeInTheDocument()
   })
 
-  it('tapping a sector tile reveals its real member symbols', async () => {
+  it('tapping a sector tile promotes its members from links to full rows', async () => {
     await seedSectors()
     withRouter('/app/stocks/sectors', 'sectors')
-    await screen.findByText('Technology')
+    await screen.findByRole('button', { name: /technology/i })
 
-    expect(screen.queryByText('AAPL')).not.toBeInTheDocument()
+    // VISIBILITY WAVE (2026-08-17): the members are on the page from the first
+    // paint now — as plain links in the "what's inside" list, which is what the
+    // dead two thirds of a desk screen is spent on. Tapping the tile is what
+    // turns THIS sector's into full rows.
+    expect(screen.getByText('AAPL').closest('.stx-sector-inside-row')).not.toBeNull()
+    expect(screen.queryByText('AAPL')!.closest('.stx-row')).toBeNull()
+
     fireEvent.click(screen.getByRole('button', { name: /technology/i }))
-    expect(await screen.findByText('AAPL')).toBeInTheDocument()
+    expect((await screen.findByText('AAPL')).closest('.stx-row')).not.toBeNull()
     expect(screen.getByText('MSFT')).toBeInTheDocument()
-    // the other sector's members stay hidden
+    // …and the whole "what's inside" list steps aside so the open sector is the
+    // only thing being read — the other sector's members go with it
+    expect(document.querySelector('.stx-sector-inside')).toBeNull()
     expect(screen.queryByText('XOM')).not.toBeInTheDocument()
+  })
+
+  // VISIBILITY WAVE (2026-08-17) — the grid printed `5.2` and `-6.0` with no
+  // unit and no benchmark anywhere on the page. The wording was verified
+  // against computeSectorRows (netlify/functions/lib/sectors.ts) before it was
+  // written: sector-ETF return minus SPY's, over N BARS, in percentage points.
+  describe('the tiles say what their numbers are', () => {
+    it('names the benchmark, the unit and the window', async () => {
+      await seedSectors()
+      withRouter('/app/stocks/sectors', 'sectors')
+      await screen.findByRole('button', { name: /technology/i })
+      const legend = document.querySelector('.stx-sector-legend') as HTMLElement
+      expect(legend.textContent).toBe("Relative strength over the last 21 sessions — the sector ETF's return minus SPY's, in percentage points.")
+    })
+
+    it('rsLegend counts SESSIONS, per period, never calendar time', () => {
+      expect(rsLegend('1w')).toContain('last 5 sessions')
+      expect(rsLegend('1m')).toContain('last 21 sessions')
+      expect(rsLegend('3m')).toContain('last 63 sessions')
+    })
+
+    it('the window in the legend follows the toggle', async () => {
+      await seedSectors()
+      withRouter('/app/stocks/sectors', 'sectors')
+      await screen.findByRole('button', { name: /technology/i })
+      fireEvent.click(screen.getByRole('button', { name: '3m' }))
+      expect(document.querySelector('.stx-sector-legend')!.textContent).toContain('last 63 sessions')
+    })
+  })
+
+  describe("what's inside each one", () => {
+    it('lists every sector with its constituents as links, from the payload', async () => {
+      await seedSectors()
+      withRouter('/app/stocks/sectors', 'sectors')
+      await screen.findByRole('button', { name: /technology/i })
+      const inside = document.querySelector('.stx-sector-inside') as HTMLElement
+      const names = [...inside.querySelectorAll('.stx-sector-inside-name')].map(n => n.textContent)
+      expect(names).toEqual(['Technology', 'Energy'])
+      expect(within(inside).getByText('XOM').closest('a')).toHaveAttribute('href', '/app/stock/XOM')
+    })
+
+    it('renders no StockRow at all — fifty-five live tapes is the burst sparkCachedOnly exists to prevent', async () => {
+      await seedSectors()
+      withRouter('/app/stocks/sectors', 'sectors')
+      await screen.findByRole('button', { name: /technology/i })
+      expect(document.querySelector('.stx-sector-inside .stx-row')).toBeNull()
+    })
   })
 
   it('never renders grade or probability text', async () => {
     await seedSectors()
     withRouter('/app/stocks/sectors', 'sectors')
-    await screen.findByText('Technology')
+    await screen.findByRole('button', { name: /technology/i })
     fireEvent.click(screen.getByRole('button', { name: /technology/i }))
     await screen.findByText('AAPL')
     expect(document.body.textContent).not.toMatch(/\bgrade\b/i)

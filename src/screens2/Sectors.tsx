@@ -11,6 +11,7 @@
 // tint) are shared with Stocks.tsx's rail card via parts/SectorTile.tsx.
 
 import { useState } from 'react'
+import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
 import { getSectors } from '../lib/api'
 import { sectorSign, SectorTileBody } from './parts/SectorTile'
@@ -19,6 +20,23 @@ import { StockRow } from './parts/StockRow'
 type Period = '1w' | '1m' | '3m'
 const RS_FIELD: Record<Period, 'rs5' | 'rs21' | 'rs63'> = { '1w': 'rs5', '1m': 'rs21', '3m': 'rs63' }
 const PERIODS: Period[] = ['1w', '1m', '3m']
+
+/** THE SESSION COUNT BEHIND EACH TOGGLE, read off the server's own arithmetic
+ * rather than from the label. netlify/functions/lib/sectors.ts computes each
+ * field as `returnOver(sectorCandles, N) − returnOver(spy, N)` with N = 5 / 21
+ * / 63 BARS — so "1m" is twenty-one sessions, not a calendar month, and the
+ * unit is percentage points of return, not a percentage of anything. */
+const RS_SESSIONS: Record<Period, number> = { '1w': 5, '1m': 21, '3m': 63 }
+
+/** WHAT THE NUMBER ON A TILE IS (visibility wave, 2026-08-17). The grid printed
+ * `5.2` and `-6.0` with no unit and no benchmark anywhere on the page — a
+ * reader could not tell a percentage from a rank from a score. Verified against
+ * computeSectorRows before it was written: SPY is the benchmark (the ETF, which
+ * is what the server actually subtracts), the window is sessions, and the
+ * difference of two percentage returns is percentage points. */
+export function rsLegend(period: Period): string {
+  return `Relative strength over the last ${RS_SESSIONS[period]} sessions — the sector ETF's return minus SPY's, in percentage points.`
+}
 
 export default function Sectors() {
   const { data } = useSlice('sectors', getSectors)
@@ -39,6 +57,8 @@ export default function Sectors() {
           </button>
         ))}
       </div>
+
+      <p className="cc-reason stx-sector-legend">{rsLegend(period)}</p>
 
       {!data ? (
         <div className="skeleton" style={{ height: 64, marginTop: 12 }} />
@@ -73,6 +93,33 @@ export default function Sectors() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* WHAT IS INSIDE EACH ONE (visibility wave, 2026-08-17). The page ended
+          at the tile grid and left two thirds of a desk screen blank, while the
+          payload had been carrying every sector's constituents all along — the
+          same `members` the tile expands. As plain links, not StockRows: a
+          StockRow fetches its own three-month tape, and fifty-five of them is
+          precisely the burst `sparkCachedOnly` exists to prevent. Hidden while
+          a tile is open so the expanded sector is the only thing being read. */}
+      {data && rows.length > 0 && !activeRow && (
+        <div className="stx-sector-inside">
+          <p className="sec-label">What's inside each one</p>
+          {rows.map(row => (
+            <div className="stx-sector-inside-row" key={row.sym}>
+              <span className="stx-sector-inside-name">{row.name}</span>
+              <span className="stx-sector-inside-syms">
+                {row.members.length === 0
+                  ? '—'
+                  : row.members.map(sym => (
+                      <Link key={sym} href={`/stock/${sym}`} className="pill">
+                        {sym}
+                      </Link>
+                    ))}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

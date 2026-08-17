@@ -11,10 +11,16 @@ import { Link } from 'wouter'
 import type { JourneyFunnelRow } from '../../lib/apiViews'
 import { GATE_LABELS } from '../../lib/gateLabels'
 
-export function RefusalRow({ row }: { row: JourneyFunnelRow }) {
+/** `showGate` false when the row sits UNDER a heading that already names the
+ * gate (BoardColumn groups the refusals by it — visibility wave, 2026-08-17).
+ * Repeating the label on every row under its own heading is the noise the
+ * grouping was meant to remove; the row's own `detail`, which differs row to
+ * row, still prints. Defaults true so any future caller keeps the whole line. */
+export function RefusalRow({ row, showGate = true }: { row: JourneyFunnelRow; showGate?: boolean }) {
   // key is `SYM:side` or bare `SYM` — the symbol always comes from the key,
   // never inferred from `side` (which the row may omit, e.g. no-data).
   const sym = row.key.split(':')[0]
+  const label = showGate ? GATE_LABELS[row.gate] : ''
   return (
     <Link href={`/stock/${sym}`} className="board-row pressable">
       <span className="board-row-main">
@@ -22,8 +28,8 @@ export function RefusalRow({ row }: { row: JourneyFunnelRow }) {
         {row.side && <span className={`pill ${row.side}`}>{row.side === 'long' ? 'Long' : 'Short'}</span>}
       </span>
       <span className="board-row-detail">
-        {GATE_LABELS[row.gate]}
-        {row.detail ? ` — ${row.detail}` : ''}
+        {label}
+        {row.detail ? `${label ? ' — ' : ''}${row.detail}` : ''}
       </span>
       {row.core != null && (
         <span className="num board-row-core">

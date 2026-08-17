@@ -31,11 +31,20 @@ import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
 import { db } from '../lib/db'
 import { getCongress, getInsiderClusters, getNewsDesk, getSocialPulse } from '../lib/api'
-import type { CongressTrade } from '../lib/api'
+import type { CongressTrade, InsiderCluster } from '../lib/api'
 import { compactUsd, decodeEntities, longDate, relativeStamp } from '../lib/format'
 
 const PAGE = 30
 const FEED_PAGE = 12
+
+/** WHAT THE PILL ON A HEADLINE IS. The news editor scores every headline for
+ * importance, 0–100 (lib/api.ts's NewsDeskItem doc) — a bare indigo `35`
+ * beside a headline said nothing about which direction was good. */
+const SCORE_HINT = 'triage score 0–100'
+
+/** The STOCK Act's disclosure window. A filing inside it is simply a filing;
+ * past it, the gap between trading and telling is itself the information. */
+const DISCLOSURE_WINDOW_DAYS = 45
 
 /** The jump rail's targets, in page order. Ids live on the sections.
  * The paper left this page for its own tab (owner 2026-08-17) — the news
@@ -114,6 +123,8 @@ function NewsSection() {
         <p className="cc-reason">Nothing fresh right now.</p>
       ) : (
         <>
+          {/* the pills had no key anywhere on the page (visibility wave) */}
+          <p className="cc-reason itl-feed-intro">Every headline the desk triaged, newest first. The pill is its importance score, 0–100.</p>
           <div className="itl-news-list">
             {rows.slice(0, visible).map((item, i) => (
               // url+index: the desk's stored array has no URL-level dedup, so a
@@ -135,7 +146,9 @@ function NewsSection() {
                       {s}
                     </Link>
                   ))}
-                  <span className="pill accent num">{item.score}</span>
+                  <span className="pill accent num" title={SCORE_HINT}>
+                    {item.score}
+                  </span>
                 </div>
               </div>
             ))}
@@ -155,10 +168,20 @@ function NewsSection() {
  * collecting per-symbol insider coverage all along and the app never showed a
  * row of it. Open-market buying clusters only — a single officer's scheduled
  * sale is noise, several distinct buyers inside ninety days is not. */
+/** A LONE BUYER IS NOT A CLUSTER (visibility wave, 2026-08-17). The section's
+ * whole claim is "several distinct buyers inside ninety days", and a one-buyer
+ * row is the single officer the intro explicitly calls noise — printed at the
+ * top, in the same weight, under a heading that says cluster. Stable sort, so
+ * the server's own ordering survives inside each group; the singles simply go
+ * last, where the reader meets them after the rows that earned the heading. */
+export function orderClusters(rows: InsiderCluster[]): InsiderCluster[] {
+  return [...rows].sort((a, b) => (a.buyers > 1 ? 0 : 1) - (b.buyers > 1 ? 0 : 1))
+}
+
 function InsidersSection() {
   const { data } = useSlice('intel:insiders', getInsiderClusters)
   const [visible, setVisible] = useState(FEED_PAGE)
-  const clusters = data?.clusters ?? []
+  const clusters = orderClusters(data?.clusters ?? [])
 
   return (
     <section id="insiders" className="card itl-section">
@@ -172,11 +195,14 @@ function InsidersSection() {
           <p className="cc-reason itl-feed-intro">Distinct open-market buyers over the last ~90 days, across the names the engine covers.</p>
           <div className="itl-feed-list">
             {clusters.slice(0, visible).map(c => (
-              <div className="itl-feed-row" key={c.symbol}>
+              <div className={`itl-feed-row${c.buyers === 1 ? ' itl-feed-lone' : ''}`} key={c.symbol}>
                 <Link href={`/stock/${c.symbol}`} className="itl-feed-sym">
                   {c.symbol}
                 </Link>
-                <span className="num itl-feed-strong">{c.buyers} buyers</span>
+                <span className="num itl-feed-strong">
+                  {c.buyers} {c.buyers === 1 ? 'buyer' : 'buyers'}
+                </span>
+                {c.buyers === 1 && <span className="itl-feed-note">— not yet a cluster</span>}
                 <span className="num itl-feed-strong">{compactUsd(c.totalValueUsd)}</span>
                 <span className="num itl-feed-date">last {longDate(c.lastDate)}</span>
                 {c.names.length > 0 && <span className="itl-feed-names">{c.names.join(', ')}</span>}
@@ -194,11 +220,28 @@ function InsidersSection() {
   )
 }
 
+/** HOW LATE, against the statutory window rather than against zero. The row
+ * already prints the raw gap ("disclosed 217d later"), which is the whole
+ * distance from trade to filing — of which the first 45 days are simply the
+ * law. The overrun is the part that is information about the filer, so that is
+ * the number the cue carries. Null when the filing was inside the window, or
+ * when either date is missing. (Visibility wave, 2026-08-17.) */
+export function daysLate(traded: string, filed: string): number | null {
+  const lag = daysBetween(traded, filed)
+  if (lag == null || lag <= DISCLOSURE_WINDOW_DAYS) return null
+  return lag - DISCLOSURE_WINDOW_DAYS
+}
+
 /** One disclosure row. `side` IS the direction, so it carries the long/short
  * colours the rest of the app uses for exactly that — a bought line and a sold
- * line must never read the same at a glance. */
-function CongressRow({ t }: { t: CongressTrade }) {
+ * line must never read the same at a glance.
+ *
+ * `flagLate` only on the watchlist block: a reader scanning their OWN names is
+ * the reader for whom "and nobody was told for seven months" changes what the
+ * row means. On the general feed it would be a chip on nearly every line. */
+function CongressRow({ t, flagLate = false }: { t: CongressTrade; flagLate?: boolean }) {
   const lag = daysBetween(t.traded, t.filed)
+  const late = flagLate ? daysLate(t.traded, t.filed) : null
   return (
     <div className="itl-feed-row itl-congress-row">
       <span className="itl-congress-who">
@@ -214,6 +257,11 @@ function CongressRow({ t }: { t: CongressTrade }) {
         {longDate(t.traded)}
         {lag != null && lag >= 0 ? ` · disclosed ${lag}d later` : ''}
       </span>
+      {late != null && (
+        <span className="itl-late num" title={`Filed ${lag}d after the trade — the STOCK Act allows ${DISCLOSURE_WINDOW_DAYS}`}>
+          {late}d late
+        </span>
+      )}
     </div>
   )
 }
@@ -240,7 +288,11 @@ function CongressSection() {
   const [visible, setVisible] = useState(FEED_PAGE)
   const trades = data?.trades ?? []
   const hits = data?.watchlistHits ?? []
-  const topBought = (data?.aggregates?.topTickers ?? []).filter(t => t.buys > 0).slice(0, 3)
+  // SORTED BY THE NUMBER IT PRINTS (visibility wave, 2026-08-17). The live desk
+  // read "Most bought: GOOGL (5) · SPGI (4) · CHRW (6)" — the server's own
+  // ordering, taken as a ranking it never claimed to be, so a line headed "most
+  // bought" put the most-bought name last.
+  const topBought = [...(data?.aggregates?.topTickers ?? [])].filter(t => t.buys > 0).sort((a, b) => b.buys - a.buys).slice(0, 3)
   const best = data?.scorecard?.rows?.[0] ?? null
 
   return (
@@ -261,7 +313,7 @@ function CongressSection() {
             <div className="itl-congress-hits">
               <p className="sec-label">On your watchlist</p>
               {hits.slice(0, 5).map((t, i) => (
-                <CongressRow t={t} key={`hit-${t.politician}-${t.symbol}-${t.traded}-${i}`} />
+                <CongressRow t={t} flagLate key={`hit-${t.politician}-${t.symbol}-${t.traded}-${i}`} />
               ))}
             </div>
           )}
@@ -330,8 +382,11 @@ function SocialSection() {
               {data.discoveries.slice(0, 5).map(d => (
                 <Link key={d.sym} href={`/stock/${d.sym}`} className="card pressable itl-discovery">
                   <span className="itl-pulse-sym">{d.sym}</span>
-                  {d.companyName && <span className="itl-pulse-name">{d.companyName}</span>}
-                  {d.opinion && <p className="cc-reason">{d.opinion}</p>}
+                  {/* the pulse's names arrive from the same feeds the news desk
+                      reads, entities and all — "SPDR S&amp;P 500 ETF Trust" was
+                      on screen (visibility wave). Same decode the desk uses. */}
+                  {d.companyName && <span className="itl-pulse-name">{decodeEntities(d.companyName)}</span>}
+                  {d.opinion && <p className="cc-reason">{decodeEntities(d.opinion)}</p>}
                 </Link>
               ))}
             </div>
@@ -340,7 +395,7 @@ function SocialSection() {
             {rows.slice(0, visible).map(r => (
               <Link key={r.sym} href={`/stock/${r.sym}`} className="card pressable itl-pulse-row">
                 <span className="itl-pulse-sym">{r.sym}</span>
-                {r.name && <span className="itl-pulse-name">{r.name}</span>}
+                {r.name && <span className="itl-pulse-name">{decodeEntities(r.name)}</span>}
                 <span className="itl-pulse-meta">
                   {r.redditMentions != null && <span className="num">{r.redditMentions} mentions</span>}
                   {r.surging && <span className="pill accent">surging{r.surgeMultiple != null ? ` ${r.surgeMultiple.toFixed(1)}x` : ''}</span>}

@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Settings from './Settings'
 
 vi.mock('../lib/api', async () => {
@@ -96,5 +96,56 @@ describe('Settings', () => {
     darkBtn.click()
     await waitFor(() => expect(localStorage.getItem('mb-theme')).toBe('dark'))
     expect(document.documentElement.dataset.theme).toBe('dark')
+  })
+})
+
+// VISIBILITY WAVE (2026-08-17) — the live walkthrough watched /api/licences
+// 401 three times on one Settings paint. The shared DMG token cannot be the
+// admin key, so the answer was known before the request left: asking anyway is
+// noise in the log, three red rows in the reader's devtools, and a "Checking
+// licence…" flicker on a device with no licence to check.
+describe('Settings on the shared free token', () => {
+  const FREE = 'mb_freefreefreefreefreefreefreefreefre'
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_FREE_TOKEN', FREE)
+    localStorage.setItem('mb-token', FREE)
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('never asks the server about a licence it already knows the answer for', async () => {
+    asNonAdmin()
+    render(<Settings />)
+    expect(await screen.findByText('Free preview')).toBeInTheDocument()
+    expect(getLicences).not.toHaveBeenCalled()
+  })
+
+  it('says what the free tier IS, and never quotes the shared key back as the reader’s own', async () => {
+    asNonAdmin()
+    render(<Settings />)
+    const row = await screen.findByLabelText('Licence status')
+    expect(within(row).getByText(/free preview — licence binding comes later/i)).toBeInTheDocument()
+    expect(row.textContent).not.toMatch(/ending …/)
+    expect(row.textContent).not.toContain(FREE.slice(-6))
+    // and it never flickers through the probe state it is not in
+    expect(within(row).queryByText(/checking licence/i)).not.toBeInTheDocument()
+  })
+
+  it('is treated as a non-admin device — the unlock hatch stays, the manager does not', async () => {
+    asNonAdmin()
+    render(<Settings />)
+    expect(await screen.findByText('Unlock admin')).toBeInTheDocument()
+    expect(screen.queryByText('Licences')).not.toBeInTheDocument()
+  })
+
+  it('a personal key on the same build still asks the server', async () => {
+    localStorage.setItem('mb-token', 'mb_personal_key_9999')
+    asNonAdmin()
+    render(<Settings />)
+    await waitFor(() => expect(screen.getByText('Licensed device')).toBeInTheDocument())
+    expect(getLicences).toHaveBeenCalled()
   })
 })

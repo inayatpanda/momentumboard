@@ -26,7 +26,7 @@ import type { LearningSlice } from '../lib/apiViews'
 import { GATE_BOUNDS, GATE_CADENCE_SESSIONS } from '../../shared/engine/gateState'
 import type { GateStructuredEntry, TunableGate } from '../../shared/engine/gateState'
 import { labelOf } from './parts/FactorVotes'
-import { longDate } from '../lib/format'
+import { compactUsd, longDate } from '../lib/format'
 
 /** WHAT EACH GATE ACTUALLY IS, in one sentence a reader who has never seen the
  * engine's source can act on. The engine's own labels ("dead zone", "context
@@ -61,9 +61,23 @@ function blockedSentence(blocked: NonNullable<GateStructuredEntry['blocked']>): 
   return `Eligible to move since ${longDate(blocked.date)}, held by the cadence — one notch per ${GATE_CADENCE_SESSIONS} sessions.`
 }
 
+/** WHERE THE GATE SITS in its own ratified range, 0–100.
+ *
+ * The arithmetic never changed; what it was DRAWN as did. A fill bar answers
+ * "how much", and a threshold is not a quantity — it is a position. The live
+ * desk caught the consequence: the context cap sits at 12 of 12–16, its own
+ * minimum, so the fill was mathematically a perfect zero and read on screen as
+ * a broken widget beside two bars that happened to be pinned at their maxima
+ * and so read as full. A marker on the track says the same number and cannot
+ * be mistaken for a failure to render. (Visibility wave, 2026-08-17.) */
+export function gatePosition(current: number, min: number, max: number): number {
+  if (!(max > min)) return 0
+  return Math.min(100, Math.max(0, ((current - min) / (max - min)) * 100))
+}
+
 function GateCard({ gate }: { gate: GateStructuredEntry }) {
   const { min, max } = gate.bounds
-  const pct = max > min ? Math.min(100, Math.max(0, ((gate.current - min) / (max - min)) * 100)) : 0
+  const pos = gatePosition(gate.current, min, max)
   const ends = endLabels(gate.gate)
   return (
     <div className="card gl-gate">
@@ -77,8 +91,13 @@ function GateCard({ gate }: { gate: GateStructuredEntry }) {
           <span className="num">{min}</span>
           <span className="gl-gate-end">{ends.min}</span>
         </span>
-        <span className="convbar gl-gate-track">
-          <i style={{ width: `${pct}%` }} />
+        <span
+          className="gl-gate-track"
+          role="img"
+          aria-label={`${gate.label} sits at ${gate.current} on a scale from ${min} to ${max}`}
+          data-position={Math.round(pos)}
+        >
+          <i className="gl-gate-marker" style={{ left: `${pos}%` }} />
         </span>
         <span className="gl-gate-bound gl-gate-bound-max">
           <span className="num">{max}</span>
@@ -210,6 +229,36 @@ function WeightsSection({ weights }: { weights: LearningSlice['weights'] }) {
 
 const ROSTER_PAGE = 10
 
+/** A NAME CANNOT BOTH JOIN AND BE DROPPED (visibility wave, 2026-08-17). The
+ * live roster printed "joined AVGO, LLY · dropped AVGO (roster full), LLY
+ * (roster full)" on seven separate days — which reads as churn, as though the
+ * engine kept changing its mind. It never did: the trim runs in the same pass
+ * as the screen, so a name that qualified and then lost the cut appears in
+ * both arrays. It was knocked at the door; it was never on the roster.
+ *
+ * Returns the day's clauses in reading order — the knocked first (grouped by
+ * the reason they were shed, so one line can carry several names), then the
+ * names that actually joined, then the names that were actually dropped. */
+export function churnLines(c: { joined: string[]; dropped: { sym: string; why: string }[] }): string[] {
+  const joined = c.joined ?? []
+  const dropped = c.dropped ?? []
+  const joinedSet = new Set(joined)
+  const knockedSyms = new Set<string>()
+  const byWhy = new Map<string, string[]>()
+  for (const d of dropped) {
+    if (!joinedSet.has(d.sym) || knockedSyms.has(d.sym)) continue
+    knockedSyms.add(d.sym)
+    byWhy.set(d.why, [...(byWhy.get(d.why) ?? []), d.sym])
+  }
+  const out: string[] = []
+  for (const [why, syms] of byWhy) out.push(`${syms.join(', ')} knocked — ${why}, not admitted`)
+  const admitted = joined.filter(s => !knockedSyms.has(s))
+  if (admitted.length > 0) out.push(`joined ${admitted.join(', ')}`)
+  const shed = dropped.filter(d => !joinedSet.has(d.sym))
+  if (shed.length > 0) out.push(`dropped ${shed.map(d => `${d.sym} (${d.why})`).join(', ')}`)
+  return out
+}
+
 function RosterSection({ roster }: { roster: LearningSlice['roster'] }) {
   const [visible, setVisible] = useState(ROSTER_PAGE)
   if (!roster || roster.entries.length === 0) return null
@@ -226,7 +275,9 @@ function RosterSection({ roster }: { roster: LearningSlice['roster'] }) {
           <Link href={`/stock/${e.sym}`} key={e.sym} className="gl-roster-row">
             <span className="gl-roster-sym">{e.sym}</span>
             <span className="cc-reason">joined {e.joined} · {e.source}</span>
-            <span className="num gl-roster-cap">{e.capUsdM != null ? `$${Math.round(e.capUsdM)}M` : '—'}</span>
+            {/* `$16487M` is not a number a reader holds — compactUsd is the
+                same rule the insider column uses, and capUsdM is millions */}
+            <span className="num gl-roster-cap">{e.capUsdM != null ? compactUsd(e.capUsdM * 1e6) : '—'}</span>
           </Link>
         ))}
       </div>
@@ -241,8 +292,9 @@ function RosterSection({ roster }: { roster: LearningSlice['roster'] }) {
           {[...changes].reverse().map(c => (
             <p className="cc-reason" key={c.date}>
               <strong>{c.date}</strong>
-              {c.joined.length > 0 && <> · joined {c.joined.join(', ')}</>}
-              {c.dropped.length > 0 && <> · dropped {c.dropped.map(d => `${d.sym} (${d.why})`).join(', ')}</>}
+              {churnLines(c).map((line, i) => (
+                <span key={i}> · {line}</span>
+              ))}
             </p>
           ))}
         </div>
