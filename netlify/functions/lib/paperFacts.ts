@@ -91,7 +91,9 @@ export function lockCompanyNames(text: string, names: ReadonlyMap<string, string
     const sym = rawSym.toUpperCase()
     if (!canonical || !/^[A-Z0-9][A-Z0-9.\-]{0,9}$/.test(sym)) continue
     const S = esc(sym)
-    const NAME = `${NAME_TOKEN}(?:\\s+(?:${NAME_TOKEN}|of|and|the|&|for|de|van|von))*`
+    // at most five tokens: long enough for "Aya Gold & Silver Inc", short enough
+    // that a rewrite can never swallow a whole clause of the sentence around it
+    const NAME = `${NAME_TOKEN}(?:\\s+(?:${NAME_TOKEN}|of|and|the|&|for|de|van|von)){0,4}`
     // "Name (SYM)" replaces the whole span (the name is in front of the anchor);
     // the two ticker-first forms replace the name alone, via lookbehind.
     const boundBefore = new RegExp(`(${NAME})(\\s*\\(${S}\\))`, 'g')

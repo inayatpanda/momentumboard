@@ -57,6 +57,13 @@ describe('lockCompanyNames — the prose may not rename a company', () => {
     expect(lockCompanyNames('Buy CrowdWave Technologies (CRWV) here.', names).text).toBe('Buy CoreWeave Inc (CRWV) here.')
   })
 
+  it('never swallows the clause in front of the name it is fixing', () => {
+    const { text } = lockCompanyNames('The AI trade found its landlord in CrowdWave Technologies (CRWV) this week.', names)
+    expect(text).toContain('The AI trade found its landlord in')
+    expect(text).toContain('CoreWeave Inc (CRWV)')
+    expect(text).not.toContain('CrowdWave')
+  })
+
   it('is a no-op on prose with no ticker bindings at all', () => {
     const src = 'The tape was thin and the rotation held. Nothing to rename here.'
     expect(lockCompanyNames(src, names).text).toBe(src)
