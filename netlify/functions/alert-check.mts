@@ -13,6 +13,7 @@ import { avgDailyVolume, relativeVolume, sessionElapsedFraction, isMarketOpen } 
 import { detectSetups, regimeFromCandles } from '../../shared/setups'
 import { exchangeFor } from '../../shared/symbols'
 import type { FlagCandidate, IntradayFlagsBlob } from './lib/intradayFlags'
+import type { EconEvent } from './lib/econCalendar'
 
 export default async (req: Request) => {
   // Public URL, no secret cron signal (audit C-1). Reject requests that are
@@ -278,10 +279,18 @@ export default async (req: Request) => {
   try {
     const { fetchEconCalendar, dueMacroWarnings } = await import('./lib/econCalendar')
     const { getCached, setCached } = await import('./lib/cache')
-    let econ = await getCached<Awaited<ReturnType<typeof fetchEconCalendar>>>('econ-calendar')
+    let econ = await getCached<EconEvent[]>('econ-calendar')
     if (!econ) {
-      econ = await fetchEconCalendar()
-      await setCached('econ-calendar', econ, 21_600)
+      // WHAT A FAILURE IS WORTH, IN SECONDS (verified live 2026-08-17). This
+      // used to cache whatever came back for six hours, and every failure came
+      // back as `[]` — so one refused request pinned an empty calendar in place
+      // and the macro sentinel went blind for six hours while the feed served
+      // ninety-six events. Real data keeps the full TTL; a failure (null) and a
+      // genuinely quiet week (empty) are both re-asked in ten minutes, which
+      // costs two ticks of this loop and nothing else.
+      const fetched = await fetchEconCalendar()
+      econ = fetched ?? []
+      await setCached('econ-calendar', econ, econ.length ? 21_600 : 600)
     }
     for (const w of dueMacroWarnings(econ, nowSec, afterEval.seenItems)) {
       afterEval.seenItems.push(w.key)

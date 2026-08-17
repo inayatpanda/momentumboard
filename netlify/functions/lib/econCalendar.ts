@@ -31,13 +31,26 @@ export function parseEconFeed(raw: unknown): EconEvent[] {
     .sort((a, b) => a.at - b.at)
 }
 
-export async function fetchEconCalendar(fetchFn: typeof fetch = fetch): Promise<EconEvent[]> {
+/** The week's events, or NULL when the upstream could not be read.
+ *
+ * WHY NULL AND NOT `[]` (verified live 2026-08-17). Every failure used to come
+ * back as an empty array, and both callers cached whatever came back for six
+ * hours — so one refused request pinned "no events this week" into the cache
+ * while the feed served ninety-six, and the macro sentinel was blind until the
+ * TTL ran out. `[]` is a real answer (a quiet week, or a week whose only events
+ * are the Low-impact ones the filter drops); null is "ask again soon". A caller
+ * that cannot tell them apart cannot choose a TTL honestly. */
+export async function fetchEconCalendar(fetchFn: typeof fetch = fetch): Promise<EconEvent[] | null> {
   try {
     const res = await fetchFn('https://nfs.faireconomy.media/ff_calendar_thisweek.json', { headers: { 'User-Agent': 'Mozilla/5.0 (MomentumBoard)' } })
-    if (!res.ok) return []
-    return parseEconFeed(await res.json())
+    if (!res.ok) return null
+    const raw = await res.json()
+    // An error object or an HTML interstitial parses fine and is not the feed;
+    // parseEconFeed would flatten it to `[]` and it would read as a quiet week.
+    if (!Array.isArray(raw)) return null
+    return parseEconFeed(raw)
   } catch {
-    return []
+    return null
   }
 }
 
