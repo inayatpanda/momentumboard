@@ -71,7 +71,7 @@ const calWith = (key: string, n = 32, hits = 22): CalibrationState => ({
   buckets: { [key]: { n, hits } },
   brier: [],
   defVersion: CALIB_DEF_VERSION,
-  seedGeneration: 4,
+  seedGeneration: 5,
 })
 
 /** A store that remembers WHICH keys were written, so a test can prove the trace
@@ -313,7 +313,7 @@ describe('the funnel trace', () => {
       ytChannels: [],
       levMap: Object.fromEntries(syms.map(s => [s, { short2x: `I${s}` }])),
     })
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     const fillers = ['FIL1', 'FIL2', 'FIL3', 'FIL4', 'FIL5', 'FIL6']
     await buildBoard(
       store,
@@ -355,7 +355,7 @@ describe('the funnel trace', () => {
       ytChannels: [],
       levMap: Object.fromEntries(syms.map(s => [s, { short2x: `I${s}` }])),
     })
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     const fillers = ['FIL1', 'FIL2', 'FIL3', 'FIL4', 'FIL5', 'FIL6']
     await buildBoard(
       store,
@@ -417,7 +417,7 @@ describe('the funnel trace', () => {
       ['SB', drift(0.15)],
     ])
     await store.write('config', { watchlist: [{ symbol: 'SA' }, { symbol: 'SB' }], rules: [], ytChannels: [], levMap: {} })
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await buildBoard(
       store,
       deps({
@@ -461,7 +461,7 @@ describe('the funnel trace', () => {
       buckets: { 'short:amber:40-55': { n: 32, hits: 22 }, 'long:amber:25-40': { n: 16, hits: 11 } },
       brier: [],
       defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
     })
     await buildBoard(
       store,
@@ -495,7 +495,7 @@ describe('the funnel trace', () => {
     const syms = ['AAA', 'BBB', 'CCC', 'DDD']
     const tapes = new Map(syms.map((s, i) => [s, shortyVariant(0.7 + i * 0.4)]))
     await store.write('config', { watchlist: syms.map(symbol => ({ symbol })), rules: [], ytChannels: [], levMap: {} }) // NO routes at all
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     const fillers = ['FIL1', 'FIL2', 'FIL3', 'FIL4', 'FIL5', 'FIL6']
     await buildBoard(
       store,
@@ -630,7 +630,7 @@ describe('the funnel trace', () => {
       ytChannels: [],
       levMap: Object.fromEntries(syms.map(s => [s, { short2x: `I${s}` }])),
     })
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await buildBoard(
       store,
       deps({
@@ -671,7 +671,7 @@ describe('the funnel trace', () => {
     const syms = Array.from({ length: 9 }, (_, i) => `R${String(i).padStart(2, '0')}`)
     const tapes = new Map(syms.map((s, i) => [s, shortyVariant(0.7 + i * 0.4)]))
     await store.write('config', { watchlist: syms.map(symbol => ({ symbol })), rules: [], ytChannels: [], levMap: {} }) // NO routes at all
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     const fillers = ['FIL1', 'FIL2', 'FIL3', 'FIL4', 'FIL5', 'FIL6']
     await buildBoard(
       store,

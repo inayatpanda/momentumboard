@@ -542,14 +542,14 @@ async function loadState(store: AppStore, today: string) {
   //  · A seed ON THE CURRENT DEFINITION replaces them, exactly as it always has —
   //    and never a stale one: live state is not regressed to a seed measuring an
   //    outcome the engine has already moved past.
-  //  · NO SUCH SEED AND THE ENGINE GOES COLD. That is the v4 (10→21 session) case
-  //    today: the committed generation-4 artefact was walked at 10d and still says
-  //    `defVersion: 3`, so it cannot install, and the honest state is EMPTY v4
-  //    buckets — every read pools to the base rate, every published row grades C —
-  //    until a regenerated v4 seed lands. Carrying the 10d buckets forward to
-  //    avoid an all-C board would price the reader's money off a hit definition
-  //    nobody is being scored on, which is the one thing this version gate exists
-  //    to prevent.
+  //  · NO SUCH SEED AND THE ENGINE GOES COLD: EMPTY buckets on the new
+  //    definition — every read pools to the base rate, every published row grades
+  //    C — until a regenerated seed lands. That was the v4 (10→21 session) state
+  //    for as long as the committed artefact still said `defVersion: 3`, and it is
+  //    what the NEXT definition change will land in. Carrying the old buckets
+  //    forward to avoid an all-C board would price the reader's money off a hit
+  //    definition nobody is being scored on, which is the one thing this version
+  //    gate exists to prevent.
   //
   // The FACTOR IC goes with them (`retireIcEvidence`): every column in the weights
   // blob is a sum of `outcome.excessPct` measured under the retired definition, so
@@ -588,12 +588,14 @@ async function loadState(store: AppStore, today: string) {
   // above is: an artefact measuring a different hit must not install, however
   // loudly it announces itself.
   //
-  // …AND THE REFUSAL IS THE LOUD HALF OF IT TODAY. `seed.json` announces generation
-  // 4 but `defVersion: 3`: it out-ranks anything a cold v4 state carries and would
-  // install on the spot if generation were the only test. It is refused, and the
-  // refusal is logged, because a generation says which WALK measured the buckets
-  // and a defVersion says WHAT it measured — an artefact that measured the wrong
-  // thing does not become right by being newer.
+  // …AND THE REFUSAL IS THE LOUD HALF OF IT. The generation-4 `seed.json` announced
+  // generation 4 on `defVersion: 3`: it out-ranked anything a cold v4 state carried
+  // and would have installed on the spot if generation were the only test. It was
+  // refused, and the refusal logged, because a generation says which WALK measured
+  // the buckets and a defVersion says WHAT it measured — an artefact that measured
+  // the wrong thing does not become right by being newer. The committed seed is
+  // generation 5 on defVersion 4 now and does install; the gate stays, for the next
+  // horizon move.
   const seedInstallable = seedCal.defVersion === CALIB_DEF_VERSION
   const storedGen = calibration.seedGeneration ?? 1
   const seedGen = seedCal.seedGeneration ?? 1
@@ -4329,29 +4331,39 @@ export async function buildBoard(
 // display blob — the prediction blobs and grading are never touched.
 export async function traceOpenIdeas(store: AppStore, deps: EngineDeps, nowSec: number): Promise<{ traced: number }> {
   const today = londonDate(nowSec)
-  const index = ((await store.read<string[]>('predictions-index')) ?? []).slice(-10).filter(d => d < today)
+  // THE LOOKBACK IS THE HORIZON, plus two sessions of slack for an index that
+  // skipped a day. It was ten — exactly the OLD calibrated horizon — and stayed
+  // there when v4 moved the grade to 21 sessions, so the open book stopped
+  // tracing a live call eleven sessions before its grade could land: the row
+  // vanished from the reader's open positions while the engine was still going
+  // to grade it. The window must outlive the grade, never the other way round.
+  const index = ((await store.read<string[]>('predictions-index')) ?? []).slice(-(CALIBRATED_HORIZON_SESSIONS + 2)).filter(d => d < today)
   const open: Prediction[] = []
   for (const date of index) {
     for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
       // watch-only calls aren't positions — the open book traces trades. Open
-      // until the CALIBRATED (10d) grade lands, matching openTrace's GRADE_HORIZON
-      // so "grades in N sessions" stays truthful (a call no longer vanishes at 5d).
+      // until the CALIBRATED grade lands — `calibratedOutcomeOf`, 21 sessions
+      // since CALIB_DEF_VERSION v4 — matching openTrace's GRADE_HORIZON so
+      // "grades in N sessions" stays truthful. It read `outcome10` here, which
+      // since v4 is a DISPLAY lens the ledger keeps and nothing grades on: a row
+      // was dropped from the open book at 10 sessions and then graded at 21,
+      // eleven sessions after the reader last saw it.
       //
       // …and a CRYPTO row is kept OUT of the open book entirely (Stage 1c Phase
       // B, and it is a DECISION rather than an omission — B1's
-      // `CRYPTO_LOOKBACKS.openTraceGradeHorizon10` names the fork). `openTrace.ts`
+      // `CRYPTO_LOOKBACKS.openTraceGradeHorizon` names the fork). `openTrace.ts`
       // holds the equity answers to both of the questions the crypto partition
-      // re-answers: `GRADE_HORIZON = 10` and an entry of `t >= dayEpoch` (the
-      // publication day's own bar). Fed a crypto row unchanged it would tell the
-      // reader a call matures in ten sessions when the grade will strike it on
-      // fourteen bars, and base its running P&L on a bar the return leg
+      // re-answers: `GRADE_HORIZON = CALIBRATED_HORIZON_SESSIONS` and an entry of
+      // `t >= dayEpoch` (the publication day's own bar). Fed a crypto row
+      // unchanged it would tell the reader a call matures on the equity clock
+      // when the grade will strike it on fourteen bars, and base its running P&L on a bar the return leg
       // deliberately forfeits — the trace and the grade contradicting each other
       // in front of the person holding the position. The other arm of the fork
       // (teaching openTrace the crypto clock) is a real option and is recorded as
       // the follow-up; until it is taken, saying nothing beats saying something
       // the grade will contradict. The row still grades, still teaches the crypto
       // partition, and still appears on the board and in the ledger.
-      if (!p.shadow && !p.watchOnly && !p.outcome10 && p.cohort !== 'crypto') open.push(p)
+      if (!p.shadow && !p.watchOnly && !calibratedOutcomeOf(p) && p.cohort !== 'crypto') open.push(p)
     }
   }
   const board = await store.read<{ date: string; board: Prediction[] }>('engine-board')

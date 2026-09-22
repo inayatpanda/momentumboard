@@ -100,7 +100,7 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps =>
     ...over,
   }) as unknown as EngineDeps
 
-const emptyCalibration = (): CalibrationState => ({ buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+const emptyCalibration = (): CalibrationState => ({ buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
 
 /** THE DAY EVERY CANDIDATE DIES AT A GATE — engine.test.ts's near-miss fixture,
  * verbatim, because the adjudication between the two mechanisms is only worth

@@ -74,7 +74,7 @@ const calWith = (key: string, n = 32, hits = 22): CalibrationState => ({
   buckets: { [key]: { n, hits } },
   brier: [],
   defVersion: CALIB_DEF_VERSION,
-  seedGeneration: 4,
+  seedGeneration: 5,
 })
 
 const boardStore = async (watchlist: { symbol: string }[]) => {

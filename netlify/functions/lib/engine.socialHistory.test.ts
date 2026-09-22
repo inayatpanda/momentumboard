@@ -65,7 +65,7 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
 const seeded = async (): Promise<AppStore> => {
   const store = memoryStore()
   await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INVD' } } })
-  await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION })
+  await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
   return store
 }
 const historyOf = (store: AppStore) => store.read<TrendDay[]>('social-history')

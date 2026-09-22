@@ -331,9 +331,11 @@ describe('the generation-keyed seed install', () => {
     })
 
     // …and the generation channel cannot talk its way past the definition gate.
-    // `seed.json` announces generation 4 today and would out-rank a cold v4 state
-    // on generation alone; it is refused because a generation says WHICH walk
-    // measured the buckets and defVersion says WHAT it measured.
+    // The generation-4 `seed.json` announced 4 on defVersion 3 and would have
+    // out-ranked a cold v4 state on generation alone; it was refused because a
+    // generation says WHICH walk measured the buckets and defVersion says WHAT it
+    // measured. The committed seed is generation 5 on defVersion 4 now — this pins
+    // the rule that let the tree survive the gap.
     it('refuses a HIGHER-generation seed that measures a retired definition, and says so in the runlog', async () => {
       seedStub.calibration = seedCal({ defVersion: CALIB_DEF_VERSION - 1, seedGeneration: 4 })
       seedStub.weights = seedW({ seedGeneration: 4 })

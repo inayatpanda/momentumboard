@@ -86,7 +86,7 @@ describe('the world-tape stamp is keyed on the lane FAMILY', () => {
     // both names need a short route, or the route guard shadows them off the board
     // before publishCall ever stamps a multiplier
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INVD' }, FRESH: { short2x: 'IFRE' } } })
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
 
     const { board } = await buildBoard(store, deps(), NOW)
 

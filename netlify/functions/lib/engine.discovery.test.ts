@@ -77,7 +77,7 @@ const calWith = (key: string, n = 32, hits = 22): CalibrationState => ({
   buckets: { [key]: { n, hits } },
   brier: [],
   defVersion: CALIB_DEF_VERSION,
-  seedGeneration: 4,
+  seedGeneration: 5,
 })
 
 // ---- the scan's own fixtures ----
@@ -344,7 +344,7 @@ describe('an S&P 500 / FTSE 100 listing is evidence of size; a band alone is not
   const dipRun = async (capBand: 'large' | 'mid', over: Partial<DiscoveryCandidate> = {}, capUsdM: number | null = null) => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
-    await store.write('engine-calibration', { buckets: { 'long:amber:25-40': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: { 'long:amber:25-40': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await store.write('risk-state', { rung: 3, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
     const { board } = await buildBoard(
       store,

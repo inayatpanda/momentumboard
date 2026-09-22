@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 // THE CALIBRATED HORIZON, 10 → 21 SESSIONS (CALIB_DEF_VERSION v4, owner ruling
 // 2026-09-22 "option 1"). The reader holds one to two weeks and up to a month, so
@@ -16,9 +16,11 @@ import { describe, expect, it } from 'vitest'
 //     inventing conviction;
 //   · the regret ledger measures on the same clock as the hit.
 //
-// The install/refusal half of the swap (the committed generation-4 seed is v3 and
-// may not land) is pinned next door in engine.seedGeneration.test.ts, which owns
-// the seed stub.
+// The REFUSAL half of the swap (a seed measuring a retired definition may not
+// land, however high its generation) is pinned next door in
+// engine.seedGeneration.test.ts, which owns the seed stub. The INSTALL half — the
+// committed generation-5 artefact landing into a cold v4 state — is pinned at the
+// foot of this file, on the real seed.
 
 import { gradeOutstanding, type EngineDeps } from './engine'
 import { memoryStore } from './store'
@@ -26,6 +28,7 @@ import {
   CALIB_DEF_VERSION,
   CALIBRATED_HORIZON_SESSIONS,
   CALIBRATED_OUTCOME,
+  ENGINE_MODEL_VERSION,
   calibratedOutcomeOf,
   emptyCalibration,
   gradeFor,
@@ -36,6 +39,7 @@ import {
   type CalibrationState,
   type WeightsState,
 } from '../../../shared/engine/calibration'
+import seedJson from '../../../shared/engine/seed.json'
 import { MISS_HORIZON, missExcess } from '../../../shared/engine/missLedger'
 import type { Candle } from '../../../shared/types'
 import type { Prediction } from '../../../shared/engine/types'
@@ -198,7 +202,7 @@ const plantedRow = (over: Partial<Prediction> = {}): Prediction =>
     ...over,
   }) as unknown as Prediction
 
-const currentEpoch = (): CalibrationState => ({ buckets: {}, setupBuckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+const currentEpoch = (): CalibrationState => ({ buckets: {}, setupBuckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
 
 /** Runs a grading pass over a tape TRUNCATED to `bars` sessions after entry, so a
  * test can stand the engine exactly between the two lenses. */
@@ -210,7 +214,7 @@ const gradeOver = async (barsAfterEntry: number) => {
     ['SPY', spy.slice(0, cut)],
   ]))
   await store.write('engine-calibration', currentEpoch())
-  await store.write('engine-weights', { ...initWeights(), seedGeneration: 4 })
+  await store.write('engine-weights', { ...initWeights(), seedGeneration: 5 })
   await store.write(`predictions:${ENTRY}`, [plantedRow()])
   await store.write('predictions-index', [ENTRY])
   const res = await gradeOutstanding(store, deps, NOW, null)
@@ -280,7 +284,7 @@ describe('every equity learning seam fires ONCE, at the 21 lens — and never at
       ['SPY', spy.slice(0, cut)],
     ]))
     await store.write('engine-calibration', currentEpoch())
-    await store.write('engine-weights', { ...initWeights(), seedGeneration: 4 })
+    await store.write('engine-weights', { ...initWeights(), seedGeneration: 5 })
     await store.write(`predictions:${ENTRY}`, [plantedRow()])
     await store.write('predictions-index', [ENTRY])
 
@@ -293,6 +297,110 @@ describe('every equity learning seam fires ONCE, at the 21 lens — and never at
     const w = (await store.read<WeightsState>('engine-weights'))!
     expect(w.ic.technical.nAgree).toBe(1)
     expect(cal.brier).toHaveLength(1)
+  })
+})
+
+
+// ---- …AND THE v4 SEED LANDED (generation 5, 2026-09-22) ----------------------
+// The block above pins what a v4 engine does with NO seed to load: empty buckets,
+// everything at the base rate, every row a C. That was the honest cost of moving
+// the horizon, and it was always meant to be temporary. This block is the other
+// end of it, driven through the REAL `loadState` rather than a stub, because the
+// two failures it guards against are both silent:
+//
+//   · A COMMITTED SEED THAT CANNOT INSTALL. `loadState` gates the swap on
+//     `seedCal.defVersion === CALIB_DEF_VERSION`, so an artefact walked at the
+//     wrong horizon is refused however high its generation — and the engine then
+//     runs cold with nothing but a runlog line to say why. Generation 4 sat in the
+//     tree in exactly that state. A stamp assertion is cheap; a quarter of C-graded
+//     boards is not.
+//   · A v3 BLOB CARRIED FORWARD. Retiring the old buckets and installing the seed
+//     are two steps in one load, and the order matters: the stale buckets must be
+//     GONE, not merged under the new ones, because they counted a different hit.
+//
+// It drives `gradeOutstanding` with an empty ledger. That is not a detour — the
+// pass persists whatever `loadState` returned as its last act, so a store read
+// afterwards is the installed state exactly as tomorrow's board would find it.
+const coldRun = async (stored?: { cal?: unknown; weights?: unknown }) => {
+  const store = memoryStore()
+  const deps = flatFor(['SPY'], new Map([['SPY', spy]]))
+  if (stored?.cal) await store.write('engine-calibration', stored.cal)
+  if (stored?.weights) await store.write('engine-weights', stored.weights)
+  const logged: string[] = []
+  const quiet = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void logged.push(a.map(String).join(' ')))
+  try {
+    await gradeOutstanding(store, deps, NOW, null)
+  } finally {
+    quiet.mockRestore()
+  }
+  return {
+    cal: (await store.read<CalibrationState>('engine-calibration'))!,
+    w: (await store.read<WeightsState>('engine-weights'))!,
+    log: logged.join('\n'),
+  }
+}
+
+describe('the committed seed INSTALLS — the v4 engine is no longer cold', () => {
+  const seedCal = seedJson.calibration as unknown as CalibrationState
+  const seedW = seedJson.weights as unknown as WeightsState
+
+  it('is stamped for the definition the engine actually grades', () => {
+    // The refusal gate is `defVersion`, not generation: this is the one assertion
+    // that would have caught the committed generation-4 artefact standing in the
+    // tree unable to load.
+    expect(seedCal.defVersion).toBe(CALIB_DEF_VERSION)
+    expect(seedCal.modelVersion).toBe(ENGINE_MODEL_VERSION)
+    expect(seedCal.seedGeneration).toBe(5)
+    expect(seedW.seedGeneration).toBe(seedCal.seedGeneration) // both halves, one walk
+    expect(seedCal.seeded).toBe(true)
+    expect(Object.keys(seedCal.buckets).length).toBeGreaterThan(0)
+    expect(seedCal.referenceBase).toBeGreaterThan(0)
+  })
+
+  it('installs into an EMPTY v4 state — a cold store comes back carrying the seed', async () => {
+    const r = await coldRun()
+
+    expect(r.cal.buckets).toEqual(seedCal.buckets)
+    expect(r.cal.setupBuckets).toEqual(seedCal.setupBuckets)
+    expect(r.cal.referenceBase).toBe(seedCal.referenceBase)
+    expect(r.cal.seedGeneration).toBe(seedCal.seedGeneration)
+    expect(r.cal.defVersion).toBe(CALIB_DEF_VERSION)
+    // the WEIGHTS half lands with it — installing buckets while leaving the IC
+    // behind would grade tomorrow with a yardstick from another scoring epoch
+    expect(r.w.seedGeneration).toBe(seedW.seedGeneration)
+    expect(r.w.ic.technical).toEqual(seedW.ic.technical)
+    // …and `rebaseWeights` found nothing to strip on the way in (§4.4): the
+    // measurement survives the load, which is the whole point of committing it
+    expect(r.w.ic.technical.nAgree + r.w.ic.technical.nDisagree).toBeGreaterThan(0)
+    expect(r.w.base).toEqual(seedW.base)
+    // a real read off installed evidence, not the cold-start 0.5 cliff
+    expect(baseHitRate(r.cal).n).toBeGreaterThan(0)
+    expect(probabilityFor(r.cal, 'long', 'green', 47.5).nEff).toBeGreaterThan(0)
+  })
+
+  it('RETIRES a stored v3 blob first, then installs — the old buckets are gone, not merged', async () => {
+    // A blob from the 10-session epoch, carrying a bucket the seed does not have
+    // so its survival would be unmistakable.
+    const stale: CalibrationState = {
+      buckets: { 'long:green:70+': { n: 4_000, hits: 3_000 }, 'short:teal:25-40': { n: 90, hits: 80 } } as CalibrationState['buckets'],
+      setupBuckets: { 'continuation:long:70+': { n: 500, hits: 400 } },
+      brier: [{ date: '2026-01-01', n: 10, mean: 0.2 }],
+      defVersion: CALIB_DEF_VERSION - 1,
+      seedGeneration: 4,
+      evidence: { seed: { n: 0, hits: 0 }, live: { n: 77, hits: 40 }, shadow: { n: 0, hits: 0 } },
+    }
+    const r = await coldRun({ cal: stale, weights: { ...initWeights(), seedGeneration: 4 } })
+
+    expect(r.cal.defVersion).toBe(CALIB_DEF_VERSION)
+    expect(r.cal.buckets['short:teal:25-40']).toBeUndefined() // the invented key proves nothing was merged
+    expect(r.cal.buckets).toEqual(seedCal.buckets) // …and what stands there is the seed, whole
+    expect(r.cal.setupBuckets).toEqual(seedCal.setupBuckets)
+    expect(r.cal.brier).toEqual(seedCal.brier) // the trail scored probabilities against the retired horizon
+    expect(r.cal.evidence!.live.n).toBe(0) // the 77 live rows went with the definition
+    // the runlog says both halves out loud — a silent reseed is a support ticket
+    expect(r.log).toContain(`outcome definition v${CALIB_DEF_VERSION - 1} → v${CALIB_DEF_VERSION}`)
+    expect(r.log).toContain(`reseeded from the committed generation ${seedCal.seedGeneration} seed`)
+    expect(r.log).not.toContain('CANNOT install')
   })
 })
 

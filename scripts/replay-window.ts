@@ -116,6 +116,9 @@
 //     --watchlist BTC-USD,ETH-USD,SOL-USD --out /tmp/crypto-on.json
 //   CRYPTO=off npx tsx scripts/replay-window.ts --spine crypto … --out /tmp/crypto-off.json
 //
+// `--universe discovery-large` WIDENS the walk universe to REPLAY_UNIVERSE ∪ every
+// committed discovery-seed name tagged sp500 or ftse100 (~635) — the affordable
+// approximation of the pool production's scan actually draws from (UNIVERSE_NAMES).
 // `--symbols A,B,C` narrows the walk universe (default: the whole REPLAY_UNIVERSE) —
 // a targeted diagnostic run, and what lets the unit test walk a fixture universe.
 // Both are NEW-mode only; nothing above changes shape or output because of them, and
@@ -300,6 +303,50 @@ export { isCryptoSymbol } from '../shared/symbols'
 
 /** The population a v3 seed may measure: the walk universe with crypto removed. */
 export const seedUniverse = (syms: string[] = REPLAY_UNIVERSE): string[] => syms.filter(s => !isCryptoSymbol(s))
+
+/** THE NAMED WALK UNIVERSES — `--universe <name>`.
+ *
+ * `replay` (the default) is REPLAY_UNIVERSE and nothing changes.
+ *
+ * `discovery-large` is REPLAY_UNIVERSE ∪ every committed discovery-seed name
+ * tagged `sp500` or `ftse100` — ~635 names. WHY IT HAS TO EXIST. With the scan
+ * on, production's candidate pool is drawn from the whole 1,866-name discovery
+ * universe; a seed measured over 144 hand-listed tickers anchors every grade the
+ * engine hands out to a population the live board does not have. Sweeping all
+ * 1,866 is the honest ideal and ~9× the wall clock and the Yahoo budget; the
+ * large-cap slice is the affordable approximation, and it is the RIGHT
+ * approximation rather than a random one — it is the part of that universe every
+ * screen can actually reach, on both exchanges the engine trades.
+ *
+ * Selected on the INDEX TAG, never on `capBand`: the tag is what the index
+ * publishes, and a row S&P's committee calls a constituent is one whatever a
+ * market-cap bucket says this month. */
+export const UNIVERSE_NAMES = ['replay', 'discovery-large'] as const
+export type UniverseName = (typeof UNIVERSE_NAMES)[number]
+
+/** The large-cap slice of a discovery seed. Pure, and it takes the rows rather
+ * than reading the file, so a test can exercise it without the committed seed. */
+export const largeCapSlice = (rows: readonly { sym: string; index?: readonly string[] }[]): string[] =>
+  rows.filter(r => (r.index ?? []).some(t => t === 'sp500' || t === 'ftse100')).map(r => r.sym.toUpperCase())
+
+/** Resolve a `--universe` name to the list the walk screens.
+ *
+ * The discovery seed is loaded DYNAMICALLY behind an `existsSync` guard, for the
+ * same reason every stage module in this file is: the pre-Stage-1 baseline
+ * worktree has no discovery layer, and a static import would stop this file
+ * loading there at all. `loadUniverseSeed` is called rather than the JSON read
+ * directly, so the seed's own size floor and shape guard run here too — a
+ * truncated seed must refuse the walk, not silently shrink its universe. */
+export async function resolveUniverse(name: UniverseName): Promise<string[]> {
+  if (name === 'replay') return REPLAY_UNIVERSE
+  const modPath = join(REPO_ROOT, 'shared', 'engine', 'discovery', 'universeSeed.ts')
+  if (!existsSync(modPath))
+    throw new Error(`BLOCKED: --universe ${name} needs shared/engine/discovery/universeSeed.ts, which this tree does not have`)
+  const { loadUniverseSeed } = await import('../shared/engine/discovery/universeSeed')
+  const slice = largeCapSlice(loadUniverseSeed())
+  if (!slice.length) throw new Error(`BLOCKED: --universe ${name} matched no sp500/ftse100 row in the committed discovery seed`)
+  return [...new Set([...REPLAY_UNIVERSE.map(s => s.toUpperCase()), ...slice])]
+}
 
 /** Index/futures series the world-tape read needs — price-only, so the replay
  * can serve them honestly from the same candle cache. */
@@ -788,10 +835,17 @@ const cacheFile = (sym: string) => join(CACHE_DIR, `${sym.replace(/[^A-Za-z0-9]/
 
 let active = 0
 const waiters: (() => void)[] = []
-/** ~2 concurrent Yahoo requests, small gap between starts. Yahoo throttles hard
- * and a 429 storm would poison the whole run's cache. */
+/** How many Yahoo fetches may be in flight. TWO by default, because Yahoo
+ * throttles hard and a 429 storm would poison the whole run's cache. The env
+ * override exists for the cold-cache warm of a ~640-name universe, where the
+ * fetch — not the walk — is the wall clock; the discovery layer's own seed
+ * builder has run against the same host at 8 with no 429, and the UA here is
+ * already the plain `Mozilla/5.0 (MomentumBoard)` that survives it (a full
+ * Chrome UA string is what trips the rate limiter). Default unchanged, so no
+ * run that does not ask for it moves. */
+const FETCH_CONCURRENCY = Math.max(1, Number(process.env.REPLAY_FETCH_CONCURRENCY) || 2)
 async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
-  if (active >= 2) await new Promise<void>(r => waiters.push(r))
+  if (active >= FETCH_CONCURRENCY) await new Promise<void>(r => waiters.push(r))
   active++
   try {
     return await fn()
@@ -2910,7 +2964,14 @@ export async function main() {
   const symbolsArg = symbolsRaw !== null
     ? symbolsRaw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
     : null
-  const askedUniverse = symbolsArg ?? REPLAY_UNIVERSE
+  /** `--universe <name>` — the NAMED pools (see UNIVERSE_NAMES). It and
+   * `--symbols` both answer "what does this walk screen?", so passing both is a
+   * refusal rather than a precedence rule nobody would remember. */
+  const universeRaw = process.argv.includes('--universe') ? arg('universe', '') : null
+  if (universeRaw === '' || universeRaw?.startsWith('--') || (universeRaw !== null && !(UNIVERSE_NAMES as readonly string[]).includes(universeRaw)))
+    throw new Error(`BLOCKED: --universe takes one of ${UNIVERSE_NAMES.join(', ')}${universeRaw ? ` (got ${universeRaw})` : ''}`)
+  if (universeRaw && symbolsArg) throw new Error('BLOCKED: --universe and --symbols both name the walk universe — pass one, not both')
+  const askedUniverse = symbolsArg ?? (universeRaw ? await resolveUniverse(universeRaw as UniverseName) : REPLAY_UNIVERSE)
   // containment (1c A1): crypto is out of the walk universe in EVERY mode —
   // an unguarded baseline walk graded ETH against SPY for weeks.
   const baseUniverse = seedUniverse(askedUniverse)

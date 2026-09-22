@@ -375,13 +375,14 @@ const riskOffReads = async () => [
 // — the number was handed down from a conviction the engine HAS graded to one it
 // has not. Which of the two a fixture gets is decided by its |composite|, and each
 // such case below carries the comparison in a comment.
-// seedGeneration: 4 everywhere a test writes a blob — the committed seed is
-// generation 4 (the partitioned re-walk, 2026-08-13), and Task 1's install swap
+// seedGeneration: 5 everywhere a test writes a blob — the committed seed is
+// generation 5 (the 21-session walk on the large-cap universe, 2026-09-22), and
+// Task 1's install swap
 // REPLACES any stored state announcing a lower generation. A test fixture without
 // the stamp is not "today's stored state"; it is an install target. This number
 // moves with every committed generation, by design: the fixtures claim to BE the
 // current epoch, so a stale stamp is a fixture quietly replaced mid-test.
-const calWith = (key: string): CalibrationState => ({ buckets: { [key]: { n: 32, hits: 22 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+const calWith = (key: string): CalibrationState => ({ buckets: { [key]: { n: 32, hits: 22 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
 
 describe('buildBoard', () => {
   it('scores a rolled-over name as a graded short, writes every blob, paper-only at R0', async () => {
@@ -430,7 +431,7 @@ describe('buildBoard', () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     // both bands covered so the 1.1 short nudge can shift NVDA's band without ungrading it
-    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 20, hits: 14 }, 'short:amber:70+': { n: 20, hits: 14 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 20, hits: 14 }, 'short:amber:70+': { n: 20, hits: 14 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -487,7 +488,7 @@ describe('buildBoard', () => {
     buckets: { [key]: { n: 32, hits: 22, shadowN: 17, shadowHits: 12 } },
     brier: [],
     defVersion: CALIB_DEF_VERSION,
-    seedGeneration: 4,
+    seedGeneration: 5,
   })
 
   it('a SIZED row grades against SIZED history — the seventeen shadow observations no longer buy it an A', async () => {
@@ -544,7 +545,7 @@ describe('buildBoard', () => {
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     // the same fixture as the below-base watch test above: this band has proven it
     // loses, so the grade comes back null and the row publishes at zero size.
-    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -572,7 +573,7 @@ describe('buildBoard', () => {
       brier: [],
       referenceBase: 0.8,
       defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
     })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -715,7 +716,7 @@ describe('buildBoard', () => {
     // call as an invisible shadow; the reader then watched "big names move with
     // an empty board" (live complaint 2026-07-15). Fully-evidenced null-grades
     // now publish as watch with the belowBase flag — no size, honest copy.
-    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: { 'short:amber:55-70': { n: 30, hits: 9 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -740,7 +741,7 @@ describe('buildBoard', () => {
     // bucket edges past the base rate but under B: laplace (11+2)/(20+4)=0.54 → C.
     // No QQQ candles → the regime read is 'unknown' → the evidence contract fails.
     // C plus a failed contract is the ONE combination that still carries no size.
-    await store.write('engine-calibration', { buckets: { 'short:unknown:55-70': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: { 'short:unknown:55-70': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await store.write('risk-state', { rung: 1, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -767,7 +768,7 @@ describe('buildBoard', () => {
     // 2026-08-11 that combination published unsized; now it is a trade at half
     // the rung's risk — a real setup the calibration merely rates modestly. [R12][R14]
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { long2x: 'GLW2' } } })
-    await store.write('engine-calibration', { buckets: { 'long:amber:25-40': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: { 'long:amber:25-40': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await store.write('risk-state', { rung: 3, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] }) // the top rung: leverage is only ever withheld by the GRADE
     const d = deps({
       screens: async () => [],
@@ -797,7 +798,7 @@ describe('buildBoard', () => {
     // above found it — no instrument, no paper-only flip, nothing.
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { long1x: 'GLW1' } } })
-    await store.write('engine-calibration', { buckets: { 'long:amber:25-40': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: { 'long:amber:25-40': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await store.write('risk-state', { rung: 3, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
     const d = deps({
       screens: async () => [],
@@ -851,7 +852,7 @@ describe('buildBoard', () => {
       ytChannels: [],
       levMap: Object.fromEntries(syms.map(s => [s, { short2x: `I${s}` }])),
     })
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     // six flat fillers so the candidate pool clears breadthAbove50's 10-series
     // minimum — breadth known is the confirming leg that lets the contract pass
     const fillers = ['FIL1', 'FIL2', 'FIL3', 'FIL4', 'FIL5', 'FIL6']
@@ -891,7 +892,7 @@ describe('buildBoard', () => {
       ytChannels: [],
       levMap: { CALM: { short2x: 'ICLM' } }, // DROP deliberately has no short route
     })
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 }) // base rate 0.5
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 }) // base rate 0.5
     const d = deps({
       screens: async () => [],
       mediaTitles: async () => [],
@@ -946,7 +947,7 @@ describe('buildBoard', () => {
       ytChannels: [],
       levMap: {}, // not one routable short anywhere
     })
-    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     const d = deps({
       screens: async () => [],
       mediaTitles: async () => [],
@@ -1145,7 +1146,7 @@ describe('buildBoard', () => {
       buckets: { 'short:amber:40-55': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 14 } },
       brier: [],
       defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
     })
     const d = collisionDeps({ dipNews: async () => ({ verdict: 'transient', reason: 'sector sympathy, guidance intact' }) })
     const { board } = await buildBoard(store, d, NOW)
@@ -1179,7 +1180,7 @@ describe('buildBoard', () => {
       buckets: { 'short:amber:40-55': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 14 } },
       brier: [],
       defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
     })
     const d = collisionDeps({ dipNews: async () => ({ verdict: 'structural', reason: 'SEC probe into revenue recognition' }) })
     const { board } = await buildBoard(store, d, NOW)
@@ -1234,7 +1235,7 @@ describe('buildBoard', () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} }) // no inverse ETP anywhere
     // (11+2)/(20+4) = 0.54 → C; no QQQ candles → regime 'unknown' → contract fails
-    await store.write('engine-calibration', { buckets: { 'short:unknown:55-70': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: { 'short:unknown:55-70': { n: 20, hits: 11 } }, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -1707,7 +1708,7 @@ describe('buildBoard', () => {
       buckets: { 'long:amber:25-40': { n: 200, hits: 100 } }, // pooled (100+2)/(200+4) = 0.5
       brier: [],
       defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
       ...(referenceBase == null ? {} : { referenceBase }),
     })
     return store
@@ -1771,12 +1772,12 @@ describe('buildBoard', () => {
     // (Generation 2 made this load-bearing — its `current` carried the walk's
     // nudges. Generation 3's is DEFAULT_WEIGHTS, so the pin now guards the nudge
     // loop rather than the vector; it stays, because the guard is the point.)
-    await store.write('engine-weights', { ...initWeights(), seedGeneration: 4 })
+    await store.write('engine-weights', { ...initWeights(), seedGeneration: 5 })
     await store.write('engine-calibration', {
       buckets: { 'short:amber:40-55': { n: 32, hits: 22 }, 'long:amber:25-40': { n: 16, hits: 11 } },
       brier: [],
       defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
     })
     return store
   }
@@ -1932,7 +1933,7 @@ describe('buildBoard', () => {
       buckets: { 'short:amber:40-55': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 4 } },
       brier: [],
       defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
     })
     const d = collisionDeps({ dipNews: async () => ({ verdict: 'transient', reason: 'sector sympathy, guidance intact' }) })
     const { board } = await buildBoard(store, d, NOW)
@@ -1962,7 +1963,7 @@ describe('buildBoard', () => {
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { GLW: { short2x: 'INV' } } })
     // Pin the weights blob — the seed's own IC is deep enough to nudge inside one
     // run and move both dips' composites off the band boundaries this narrates.
-    await store.write('engine-weights', { ...initWeights(), seedGeneration: 4 })
+    await store.write('engine-weights', { ...initWeights(), seedGeneration: 5 })
     await store.write('engine-calibration', {
       // OXY's deeper dip composites at 41.4 (the 40-55 band), GLW's at 39.3 — both
       // bands proven, so BOTH dip longs are genuinely sized before the cut speaks.
@@ -1981,7 +1982,7 @@ describe('buildBoard', () => {
       },
       brier: [],
       defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
     })
     // the same rolled-over-and-bounced shape as GLW, bouncing less: a DEEPER dip
     // (16.4% vs 14.3%) on a 60-day return path that is all but identical
@@ -2470,8 +2471,8 @@ describe('buildBoard', () => {
     // flat at every |composite|, shrunk toward a parent that IS itself — so each
     // caller picks its grade purely by how deep it makes the bucket. (The collision
     // harness above does the same.)
-    await store.write('engine-calibration', { buckets, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
-    await store.write('engine-weights', { ...initWeights(), seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
+    await store.write('engine-weights', { ...initWeights(), seedGeneration: 5 })
     return store
   }
 
@@ -2880,7 +2881,7 @@ describe('buildBoard', () => {
         buckets: { 'short:amber:25-40': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 14 } },
         brier: [],
         defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
       })
       const { board } = await buildBoard(
         store,
@@ -2960,7 +2961,7 @@ describe('buildBoard', () => {
         buckets: { 'short:amber:25-40': { n: 20, hits: 14 }, 'long:amber:25-40': { n: 20, hits: 14 } },
         brier: [],
         defVersion: CALIB_DEF_VERSION,
-      seedGeneration: 4,
+      seedGeneration: 5,
       })
       const { board } = await buildBoard(
         store,
@@ -3365,7 +3366,7 @@ describe('gradeOutstanding', () => {
       planted({ id: `${date}:NVDA:long`, sym: 'NVDA' }), // an ordinary call — the control
     ])
     await store.write('predictions-index', [date])
-    await store.write('engine-weights', { ...initWeights(), seedGeneration: 4 })
+    await store.write('engine-weights', { ...initWeights(), seedGeneration: 5 })
     await store.write('engine-calibration', calWith('long:amber:25-40')) // known start: no setup buckets yet
     const d = deps({ candles: async sym => (sym === 'GLW' || sym === 'NVDA' ? shorty : sym === 'SPY' ? flat : null) })
 
@@ -3414,7 +3415,7 @@ describe('gradeOutstanding', () => {
       planted({ id: `${date}:NVDA:long`, sym: 'NVDA' }), // an ordinary call — the control
     ])
     await store.write('predictions-index', [date])
-    await store.write('engine-weights', { ...initWeights(), seedGeneration: 4 })
+    await store.write('engine-weights', { ...initWeights(), seedGeneration: 5 })
     await store.write('engine-calibration', calWith('long:amber:25-40')) // known start: no setup buckets yet
     const d = deps({ candles: async sym => (sym === 'GLW' || sym === 'NVDA' ? shorty : sym === 'SPY' ? flat : null) })
 
@@ -3460,7 +3461,7 @@ describe('gradeOutstanding', () => {
     // The legacy SHAPES (cohortless seeded calibration, rung-0 risk-state with no
     // `cohorts`) — stamped at the committed generation so the install swap stays out of the way:
     // what this test guards is the migrate path, not the install.
-    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 20, hits: 14 } }, brier: [], seeded: true, defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    await store.write('engine-calibration', { buckets: { 'short:amber:25-40': { n: 20, hits: 14 } }, brier: [], seeded: true, defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
     await store.write('risk-state', { rung: 0, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
 
     const { graded } = await gradeOutstanding(store, deps(), NOW, null)
@@ -3489,7 +3490,7 @@ describe('gradeOutstanding', () => {
       ic: { ...initWeights().ic, technical: { nAgree: 778, sumAgree: 240, nDisagree: 0, sumDisagree: 0 } },
       gradedSinceNudge: 7,
       history: [],
-      seedGeneration: 4, // gen-4 seed: without the stamp the install swap replaces this blob before the re-base can be observed
+      seedGeneration: 5, // gen-4 seed: without the stamp the install swap replaces this blob before the re-base can be observed
     })
     const zero = { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }
 
@@ -3498,7 +3499,7 @@ describe('gradeOutstanding', () => {
     // definition swap fires and `retireIcEvidence` zeroes the very IC these two
     // fixtures are about — a different mechanism answering for this one. The
     // definition swap is pinned on its own (engine.calibratedHorizon.test.ts).
-    const currentEpoch = (): CalibrationState => ({ buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+    const currentEpoch = (): CalibrationState => ({ buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 5 })
 
     it('re-bases a v2-shaped blob on load and persists it — exactly once, however many runs', async () => {
       const store = memoryStore()
@@ -3532,7 +3533,7 @@ describe('gradeOutstanding', () => {
     it('leaves a blob already on the current vector completely alone', async () => {
       const store = memoryStore()
       await store.write('engine-calibration', currentEpoch())
-      const fresh = { ...initWeights(), seedGeneration: 4 } // gen-4: stamped, or the install swap eats the learned drift
+      const fresh = { ...initWeights(), seedGeneration: 5 } // gen-4: stamped, or the install swap eats the learned drift
       fresh.current.technical = 1.07 // a learned drift under the CURRENT vector
       fresh.ic.momentum = { nAgree: 30, sumAgree: 60, nDisagree: 5, sumDisagree: -8 }
       await store.write('engine-weights', fresh)

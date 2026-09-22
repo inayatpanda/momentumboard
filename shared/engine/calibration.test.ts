@@ -688,19 +688,24 @@ describe('gradeBaseRate — which number a grade is measured against', () => {
   })
 
   it('the COMMITTED seed carries its swept reference — grades anchor to it, not the pool', () => {
-    // Generation 4 shipped 2026-08-13 (the partitioned re-walk): referenceBase
-    // 0.4158, measured by the unconditional sweep over the walk's own 166-symbol
-    // universe (4,178 rows). The number is UNCHANGED across generations 2, 3 AND
-    // 4, and is the cleanest evidence that the anchor is what it claims to be: the
-    // sweep runs `seedFromHistory` over the raw tape, so it never touches the
-    // factor stack, the partition or the blend, and cannot move when any of them
-    // does. Generation 3's buckets moved a great deal (long:green:70+ 1270 rows →
-    // 26) and generation 4 split every one of them into sized and shadow; the
-    // yardstick they are read against has not budged through either.
+    // Generation 5 shipped 2026-09-22 (the 21-session walk on the large-cap
+    // universe): referenceBase 0.3451, measured by the unconditional sweep over the
+    // walk's own 635-symbol asked-universe (11,287 rows).
+    //
+    // IT MOVED, AND THE MOVE IS THE POINT. 0.4158 held across generations 2, 3 and
+    // 4 because all three swept the same 166 names over the same window at the same
+    // TEN-session horizon; the sweep runs `seedFromHistory` over the raw tape, so
+    // the factor stack, the partition and the blend can never touch it. Two things
+    // did change here and both belong in the yardstick: the hit is now the
+    // 21-session excess (CALIB_DEF_VERSION 4 — a longer hold is a harder bar, and
+    // fewer ordinary candidates clear it), and the population is the whole
+    // large-cap universe rather than a hand-listed sleeve of names the board
+    // already liked. An anchor that had NOT moved across those two would have been
+    // the thing to explain.
     const committed = seedJson.calibration as unknown as CalibrationState
-    expect(committed.referenceBase).toBe(0.4158)
-    expect(gradeBaseRate(committed)).toBe(0.4158)
-    expect(gradeBaseRate(committed)).not.toBe(baseHitRate(committed).rate) // pool 0.4169 — close, NOT equal
+    expect(committed.referenceBase).toBe(0.3451)
+    expect(gradeBaseRate(committed)).toBe(0.3451)
+    expect(gradeBaseRate(committed)).not.toBe(baseHitRate(committed).rate) // pool 0.3607 — the board's own rows beat ordinary odds by 1.6pp
   })
 })
 
@@ -715,32 +720,39 @@ describe('the COMMITTED seed was measured under the vector production scores wit
   it('ships current === base === DEFAULT_WEIGHTS on every factor its walk measured', () => {
     const w = seedJson.weights as unknown as WeightsState
     expect(w.current).toEqual(w.base)
-    // A SEED IS AN ARTEFACT WITH A DATE ON IT, and `bandwidth` joined the core on
-    // 2026-09-22 (ENGINE_MODEL_VERSION 4) — after this walk ran. So the committed
-    // vector is DEFAULT_WEIGHTS minus the keys that did not exist when it was
-    // measured, and the assertion is "every factor it DID measure still carries the
-    // ratified number". Typing 0.4 into the artefact by hand would claim a
-    // measurement nobody made; the load path is what closes the gap honestly, and
-    // the next assertion is that it does.
+    // A SEED IS AN ARTEFACT WITH A DATE ON IT. Generation 4 was walked before
+    // `bandwidth` joined the core (2026-09-22, ENGINE_MODEL_VERSION 4), so its
+    // vector was DEFAULT_WEIGHTS minus that key and the load path had to close the
+    // gap. Generation 5 was walked AFTER, on the same 05:20 code the reader runs,
+    // so the artefact carries the whole ratified vector and nothing is left for
+    // `migrateWeights` to fill. The assertion is the stronger one for it: every
+    // factor, not every factor it happened to measure.
     const measured = Object.keys(w.base) as FactorName[]
     for (const f of measured) expect(w.base[f]).toBe(DEFAULT_WEIGHTS[f])
-    expect((Object.keys(DEFAULT_WEIGHTS) as FactorName[]).filter(f => !measured.includes(f))).toEqual(['bandwidth'])
+    expect((Object.keys(DEFAULT_WEIGHTS) as FactorName[]).filter(f => !measured.includes(f))).toEqual([])
+    expect(w.base.bandwidth).toBe(DEFAULT_WEIGHTS.bandwidth)
     expect(w.current.technical).toBe(1) // the #1 factor, switched off at 0.0791 in generation 2
     expect(w.current.technical).toBeGreaterThan(w.current.momentum) // charts before extension (spec §4.2)
     expect(w.current.momentum).toBeGreaterThan(w.current.sector) // …and sector last of the core four
   })
-  it('…and the load path fills what the walk could not have measured', () => {
-    // `migrateWeights` backfills a factor the blob predates from DEFAULT_WEIGHTS —
-    // an old seed may never silently score a new factor at zero — and `rebaseWeights`
-    // then re-bases the whole vector and ZEROES the IC, because a four-core model's
-    // agreements may not steer a five-core one.
+  it('…and the load path has NOTHING to fix — which is the whole §4.4 contract', () => {
+    // THE TRAP THIS PINS. `rebaseWeights` runs on every load and, when the stored
+    // base disagrees with DEFAULT_WEIGHTS, re-bases it and ZEROES the IC beside it —
+    // because a vector's agreements may not steer a different vector. A seed whose
+    // base had drifted would therefore ship "seeded IC for five core factors" that
+    // production deletes on arrival, silently. Generation 4 hit the softer version
+    // of this (it predated `bandwidth`, so `migrateWeights` had a key to backfill);
+    // generation 5 was measured under the shipped vector, so BOTH passes are no-ops
+    // and the walk's factor evidence survives the load intact.
     const w = migrateWeights(JSON.parse(JSON.stringify(seedJson.weights)) as WeightsState)
-    expect(w.base.bandwidth).toBe(DEFAULT_WEIGHTS.bandwidth)
-    expect(w.current.bandwidth).toBe(DEFAULT_WEIGHTS.bandwidth)
-    expect(w.ic.bandwidth).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+    expect(w.base).toEqual(DEFAULT_WEIGHTS)
+    expect(w.current).toEqual(DEFAULT_WEIGHTS)
     const rebased = rebaseWeights(JSON.parse(JSON.stringify(seedJson.weights)) as WeightsState)
     expect(rebased.base).toEqual(DEFAULT_WEIGHTS)
-    expect(rebased.ic.technical).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+    // the measurement the walk actually made is still there after both passes
+    expect(rebased.ic.technical).toEqual((seedJson.weights as unknown as WeightsState).ic.technical)
+    expect(rebased.ic.bandwidth).toEqual((seedJson.weights as unknown as WeightsState).ic.bandwidth)
+    expect(rebased.ic.bandwidth.nAgree + rebased.ic.bandwidth.nDisagree).toBeGreaterThan(0)
   })
   it('kept MEASURING while the applied vector was pinned — the IC is the walk’s', () => {
     // A frozen vector that also froze the measurement would satisfy the test above
@@ -1056,9 +1068,9 @@ describe('the provenance partition — sized rows grade against sized history', 
     // proves it is not invisible on what SHIPS, which is the other half of the
     // claim and the one that would fail silently — a seed emitted without
     // sub-counts would read exactly like generation 3 and nothing would say so.
-    it('the COMMITTED generation-4 seed IS partitioned, and its sized read is a different number', () => {
+    it('the COMMITTED generation-5 seed IS partitioned, and its sized read is a different number', () => {
       const committed = seedJson.calibration as unknown as CalibrationState
-      expect(committed.seedGeneration).toBe(4)
+      expect(committed.seedGeneration).toBe(5)
       const partitioned = Object.entries(committed.buckets).filter(([, b]) => b.shadowN != null)
       expect(partitioned.length).toBeGreaterThan(0)
       // every sub-count is a real slice of its bucket, never a claim beyond it
@@ -1067,13 +1079,13 @@ describe('the provenance partition — sized rows grade against sized history', 
         expect(b.shadowHits ?? 0, k).toBeLessThanOrEqual(b.hits)
         expect(b.shadowHits ?? 0, k).toBeLessThanOrEqual(b.shadowN ?? 0)
       }
-      // the seed's own aggregate: 1,982 of 8,526 graded rows were pre-grade
+      // the seed's own aggregate: 2,756 of 8,832 graded rows were pre-grade
       // shadows (lane stand-down, earnings print, unroutable short), so a sized
-      // read is drawn from 6,544 — and reads a different base for it
+      // read is drawn from 6,076 — and reads a different base for it
       const pooled = baseHitRate(committed)
       const sized = baseHitRate(committed, 'sized')
-      expect(pooled.n).toBe(8526)
-      expect(sized.n).toBe(6544)
+      expect(pooled.n).toBe(8832)
+      expect(sized.n).toBe(6076)
       expect(sized.rate).not.toBe(pooled.rate)
       // …and the difference reaches the curve, not just the base
       const moved = PROBE_X.filter(x => probabilityFor(committed, 'long', 'green', x, 'unknown', 'sized').p !== probabilityFor(committed, 'long', 'green', x, 'unknown').p)
@@ -1089,7 +1101,7 @@ describe('the provenance partition — sized rows grade against sized history', 
     // (replay-window.ts) is what fixed it: the walk now routes the names the
     // owner's map carries, and those shorts accrue as evidence a reader could have
     // acted on.
-    it('generation 4 carries SIZED short evidence — the walk could route shorts, as production does', () => {
+    it('generation 5 carries SIZED short evidence — the walk could route shorts, as production does', () => {
       const committed = seedJson.calibration as unknown as CalibrationState
       const shorts = Object.entries(committed.buckets).filter(([k]) => k.includes('short'))
       expect(shorts.length).toBeGreaterThan(0)
@@ -1634,7 +1646,7 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one, off 
   // "partitioned, all sized" from "never partitioned", and the mirror gave the
   // short families a sized slice to blend from.
   // ---------------------------------------------------------------------------
-  it('the COMMITTED generation-4 families blend where they earned it, and stay mute where they did not', () => {
+  it('the COMMITTED generation-5 families blend where they earned it, and stay mute where they did not', () => {
     const committed = seedJson.calibration as unknown as CalibrationState
     const keys = Object.entries(committed.setupBuckets ?? {})
     expect(keys.length).toBe(16)
@@ -1663,10 +1675,11 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one, off 
       )
       expect(moved, key).toBe(sized >= 30)
     }
-    // the biggest band record in the file — 1,663 rows, not one of them a shadow —
-    // is exactly the case that was mute before the explicit zero, and it now has a say
+    // the biggest ALL-SIZED band record in the file — 1,690 rows, not one of them a
+    // shadow — is exactly the case that was mute before the explicit zero, and it
+    // now has a say
     const big = committed.setupBuckets!['continuation:long:40-55']
-    expect(big.n).toBe(1663)
+    expect(big.n).toBe(1690)
     expect(big.shadowN).toBe(0)
     expect(probabilityFor(committed, 'long', 'green', 47.5, 'unknown', 'sized', 'continuation').p).not.toBe(
       probabilityFor(committed, 'long', 'green', 47.5, 'unknown', 'sized').p,
@@ -1681,8 +1694,8 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one, off 
   })
 
   // …AND THE SEED'S OWN WORST FAMILY IS WHERE THE STEP BROKE [fix wave 2].
-  // `continuation:long` reads 0.4159 / 0.4283 / 0.3393 across its three sized bands
-  // — a fall of 8.9pp at the 55-70 boundary, on 52 outcomes against 1,663. Under the
+  // `continuation:long` reads 0.3912 / 0.4132 / 0.3846 across its three sized bands
+  // — a fall of 2.9pp at the 55-70 boundary, on 22 outcomes against 1,690. Under the
   // step that fall went straight into the published price at x = 56; under the fit
   // the two upper bands are one block and the curve cannot turn down.
   it('the committed seed’s descending family is POOLED, and its blended read never falls', () => {
@@ -1693,7 +1706,7 @@ describe('the setup blend — a family that earned a voice gets 0.3 of one, off 
     }
     expect(lap('continuation:long:55-70')).toBeLessThan(lap('continuation:long:40-55')) // the inversion is in the file
     const mid = lap('continuation:long:40-55'), top = lap('continuation:long:55-70')
-    const nMid = 1663, nTop = 52
+    const nMid = 1690, nTop = 22
     const pooled = (mid * nMid + top * nTop) / (nMid + nTop)
     const ladder = (x: number) => probabilityFor(committed, 'long', 'green', x, 'unknown', 'sized').p
     const blended = (x: number) => probabilityFor(committed, 'long', 'green', x, 'unknown', 'sized', 'continuation').p

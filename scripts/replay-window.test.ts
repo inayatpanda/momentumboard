@@ -96,6 +96,9 @@ import {
   seedArtefactFrom,
   seedLikeState,
   seedUniverse,
+  largeCapSlice,
+  resolveUniverse,
+  UNIVERSE_NAMES,
   sleeveKeys,
   spreadByBand,
   spreadOf,
@@ -143,6 +146,49 @@ describe('SLEEVE_MIRROR', () => {
     expect(REPLAY_UNIVERSE.length).toBe(new Set(REPLAY_UNIVERSE).size)
     for (const s of MIRROR_EXTRAS) expect(REPLAY_UNIVERSE).toContain(s)
     expect(REPLAY_UNIVERSE).toContain('GLW')
+  })
+})
+
+describe('the NAMED walk universes — `--universe discovery-large`', () => {
+  // WHY THIS EXISTS AT ALL. A seed measured over 144 hand-listed tickers anchors
+  // every grade production hands out to a population the live board does not
+  // have: with the scan on, the candidate pool is drawn from the committed
+  // 1,866-name discovery universe. `discovery-large` is the affordable
+  // approximation of that pool, and these are the two claims it makes.
+  it('selects on the INDEX TAG, never on capBand', () => {
+    // A mid-cap row that sits in the S&P 500 is an S&P 500 name; a large-band row
+    // that sits in neither index is not. Selecting on `capBand` would silently
+    // swap one population for another and nothing downstream could tell.
+    const rows = [
+      { sym: 'aaa', index: ['sp500'] },
+      { sym: 'bbb', index: ['ftse100', 'ftse250'] },
+      { sym: 'ccc', index: ['sp400'] },
+      { sym: 'ddd', index: ['ndx'] }, // NDX alone is not the slice — every NDX large-cap is also sp500
+      { sym: 'eee' }, // untagged
+    ]
+    expect(largeCapSlice(rows)).toEqual(['AAA', 'BBB'])
+  })
+
+  it('`replay` is REPLAY_UNIVERSE, byte for byte — the default walk does not move', async () => {
+    expect(await resolveUniverse('replay')).toBe(REPLAY_UNIVERSE)
+    expect(UNIVERSE_NAMES).toContain('discovery-large')
+  })
+
+  it('`discovery-large` is the union, deduped, and it CONTAINS the replay universe', async () => {
+    // The union, not a replacement: MIRROR_EXTRAS carries the names the live
+    // window actually published (NRGV, PATH, UROY …) and no index list has them,
+    // so a walk that swapped the pool would stop scoring the owner's own tape.
+    const u = await resolveUniverse('discovery-large')
+    expect(u.length).toBe(new Set(u).size)
+    for (const s of REPLAY_UNIVERSE) expect(u).toContain(s.toUpperCase())
+    // both exchanges, from the index side rather than from the sleeve
+    expect(u).toContain('AZN.L')
+    expect(u).toContain('JNJ')
+    // …and it is the size the seed walk was run at. A floor, not an equality:
+    // the committed discovery seed is regenerated from live index lists and a
+    // constituent change must not break the harness.
+    expect(u.length).toBeGreaterThan(550)
+    expect(u.length).toBeLessThan(800)
   })
 })
 
@@ -1499,24 +1545,25 @@ describe('--seed-out: the flags refuse to guess', () => {
     }
   }
   it('refuses --seed-out with --plant-a or --baseline — a probe calibration is not a seed', async () => {
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '5', '--plant-a'])).rejects.toThrow(/probe calibration/)
-    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '5', '--baseline'])).rejects.toThrow(/probe calibration/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '6', '--plant-a'])).rejects.toThrow(/probe calibration/)
+    await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '6', '--baseline'])).rejects.toThrow(/probe calibration/)
   })
   it('refuses a generation at or below the committed seed — the walk would warm-start from it', async () => {
-    // the committed seed is generation 4 now (the partitioned re-walk, 2026-08-13);
-    // AT 4 must refuse, and so must every generation the tree has already shipped
-    for (const g of ['1', '2', '3', '4'])
+    // the committed seed is generation 5 now (the 21-session walk on the large-cap
+    // universe, 2026-09-22); AT 5 must refuse, and so must every generation the tree
+    // has already shipped
+    for (const g of ['1', '2', '3', '4', '5'])
       await expect(runWith(['--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', g])).rejects.toThrow(/not above the committed/)
   })
   it('refuses --symbols without a list', async () => {
-    await expect(runWith(['--symbols', '--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '5'])).rejects.toThrow(/--symbols needs/)
+    await expect(runWith(['--symbols', '--seed-out', join(tmpdir(), 'nw.json'), '--seed-generation', '6'])).rejects.toThrow(/--symbols needs/)
   })
   it('refuses --seed-out without a generation — the artefact may not guess which walk made it', async () => {
     await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json')])).rejects.toThrow(/--seed-generation/)
     await expect(runWith(['--seed-out', join(tmpdir(), 'never-written.json'), '--seed-generation', '0'])).rejects.toThrow(/--seed-generation/)
   })
   it('refuses a --seed-out that swallowed the next flag instead of a path', async () => {
-    await expect(runWith(['--seed-out', '--seed-generation', '5'])).rejects.toThrow(/needs a path/)
+    await expect(runWith(['--seed-out', '--seed-generation', '6'])).rejects.toThrow(/needs a path/)
   })
 })
 
@@ -1549,7 +1596,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
     const from = iso(ts[WALK_BARS - WALK_WINDOW])
     const to = iso(ts[WALK_BARS - 1])
     const argv = process.argv
-    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', [...WALK_SYMS, 'ETH-USD'].join(','), '--seed-out', seedPath, '--seed-generation', '5', '--out', outPath]
+    process.argv = ['node', 'replay-window.ts', '--from', from, '--to', to, '--symbols', [...WALK_SYMS, 'ETH-USD'].join(','), '--seed-out', seedPath, '--seed-generation', '6', '--out', outPath]
     // the walk narrates every day; the suite does not need to hear it — but the
     // seed-out summary IS a deliverable, so it is captured rather than discarded
     const logged: string[] = []
@@ -1652,7 +1699,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
     // guarantees 1, 2, 6 on the file the next task actually copies over seed.json
     expect(art.calibration.defVersion).toBe(4) // the 21-session hit (CALIB_DEF_VERSION v4)
     expect(art.calibration.modelVersion).toBe(4) // five-core vector (bandwidth), ENGINE_MODEL_VERSION 4
-    expect(art.calibration.seedGeneration).toBe(5) // 5: the committed seed is generation 4 since 2026-08-13, and the floor refuses ≤4
+    expect(art.calibration.seedGeneration).toBe(6) // 6: the committed seed is generation 5 since 2026-09-22, and the floor refuses ≤5
     expect(art.weights.seedGeneration).toBe(art.calibration.seedGeneration)
 
     // guarantee 7 — the grade anchor, swept over this same window and universe and

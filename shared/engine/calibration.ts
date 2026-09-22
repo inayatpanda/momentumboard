@@ -95,12 +95,14 @@ export const HIT_EXCESS_MIN = 1
  * 21-session excess-vs-SPY with no close through the stop inside those 21
  * sessions — `CALIBRATED_OUTCOME` below is the one place that name lives.
  *
- * THERE IS NO v4 SEED YET. The committed generation-4 artefact (seed.json) was
- * walked at 10d and carries `defVersion: 3`, so `loadState` REFUSES to install it
- * and the engine starts cold: empty v4 buckets, everything pooling to the base
- * rate, every published row grade C until a regenerated v4 seed lands. That is the
- * honest cost of moving the definition and is deliberately not softened by
- * carrying the 10d buckets forward — they counted a different thing.
+ * THE v4 SEED LANDED 2026-09-22 (generation 5). For a few hours there was none:
+ * the committed generation-4 artefact was walked at 10d and carried
+ * `defVersion: 3`, so `loadState` refused it and the engine ran cold — empty v4
+ * buckets, everything pooling to the base rate, every published row a C. That cost
+ * was deliberately not softened by carrying the 10d buckets forward (they counted
+ * a different thing); it was paid off by re-walking. Generation 5 is 8,832 rows
+ * graded at 21 sessions over a 635-name large-cap universe, two years to
+ * 2026-08-20, and it installs.
  *
  * outcome5 and outcome10 are STILL STORED AND STILL DISPLAYED (the ledger keeps
  * all three lenses); they simply train nothing any more. */
@@ -236,8 +238,9 @@ export interface CalibrationState {
 const addEvidence = (a: BucketStat, hit: boolean) => ({ n: a.n + 1, hits: a.hits + (hit ? 1 : 0) })
 
 /** A COLD STATE ON THE CURRENT OUTCOME DEFINITION — what a `CALIB_DEF_VERSION`
- * change leaves behind when no committed seed can fill the hole (the v4 move:
- * seed.json was walked at 10d and refuses to install, see `CALIB_DEF_VERSION`).
+ * change leaves behind when no committed seed can fill the hole — the state the
+ * v4 move ran in until the generation-5 seed was walked (see `CALIB_DEF_VERSION`),
+ * and the state any FUTURE definition change lands in on the morning it ships.
  *
  * EMPTY, NOT MERGED, and that is the whole point: buckets counted under the old
  * definition are not probabilities about the new one, so carrying them forward

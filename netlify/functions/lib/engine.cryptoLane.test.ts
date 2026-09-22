@@ -88,7 +88,7 @@ const storeWith = async (watchlist: string[], levMap: Record<string, { long1x?: 
     buckets: { 'short:amber:55-70': { n: 32, hits: 22 } },
     brier: [],
     defVersion: CALIB_DEF_VERSION,
-    seedGeneration: 4,
+    seedGeneration: 5,
   } as CalibrationState)
   return store
 }
