@@ -454,6 +454,24 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'filings') {
+    const symbol = (url.searchParams.get('symbol') ?? '').trim().toUpperCase()
+    if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })
+    const key = `sec-filings:${symbol}`
+    const hit = await getCached<unknown>(key)
+    if (hit) return json(200, { ok: true, data: hit })
+    try {
+      const { fetchRecentFilings } = await import('./lib/secFilings')
+      const data = await fetchRecentFilings(symbol)
+      await setCached(key, data, 3600)
+      return json(200, { ok: true, data })
+    } catch (e) {
+      // A primary-source outage is not the same thing as a company with no
+      // filings; surface an explicit degraded state and keep the page alive.
+      return json(200, { ok: true, data: { company: null, cik: null, filings: [], asOf: Math.floor(Date.now() / 1000), unavailable: true, error: String(e) } })
+    }
+  }
+
   if (type === 'feed') {
     const hit = await getCached<unknown>('digest-feed')
     if (hit) return json(200, { ok: true, data: hit })
@@ -771,6 +789,17 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
     }
   }
 
+  if (type === 'social-memory') {
+    const symbol = url.searchParams.get('symbol')?.toUpperCase().trim() ?? ''
+    if (!/^[A-Z0-9.-]{1,12}$/.test(symbol)) return json(400, { ok: false, error: 'invalid-symbol' })
+    const [{ buildSocialMemory }, history, extracts] = await Promise.all([
+      import('./lib/socialMemory'),
+      blobAppStore.read<import('../../shared/engine/strategyLab').SocialHistoryPoint[]>('engine-lab-social-history'),
+      blobAppStore.read<import('./lib/videoTrends').VideoExtract[]>('video-extracts'),
+    ])
+    return json(200, { ok: true, data: { symbol, days: buildSocialMemory(symbol, history ?? [], extracts ?? []) } })
+  }
+
   if (type === 'social') {
     const hit = await getCached<unknown>('social-pulse:v2')
     if (hit) return json(200, { ok: true, data: hit })
@@ -778,14 +807,31 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
       const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse, pickDiscoveries, isMega, plausibleCapUsdM } = await import('./lib/social')
       const { appStore: blobAppStore } = await import('./lib/storeProvider')
       const { computeConsensus } = await import('./lib/videoTrends')
-      const [reddit, stocktwits, extracts, cfg] = await Promise.all([
+      const [reddit, stocktwits, extracts, cfg, socialHistory] = await Promise.all([
         fetchRedditTrends(),
         fetchStocktwitsTrending(),
         blobAppStore.read<unknown[]>('video-extracts'),
         blobAppStore.read<{ watchlist: { symbol: string }[] }>('config'),
+        blobAppStore.read<import('../../shared/engine/strategyLab').SocialHistoryPoint[]>('engine-lab-social-history'),
       ])
-      const consensus = computeConsensus(((extracts ?? []) as Parameters<typeof computeConsensus>[0]), Math.floor(Date.now() / 1000))
-      const pulse = combineSocialPulse(reddit, stocktwits, consensus.tickers.map(t => ({ sym: t.sym, net: t.net })), (cfg?.watchlist ?? []).map(w => w.symbol))
+      const nowSec = Math.floor(Date.now() / 1000)
+      const consensus = computeConsensus(((extracts ?? []) as Parameters<typeof computeConsensus>[0]), nowSec)
+      const pulse = combineSocialPulse(reddit, stocktwits, consensus.tickers, (cfg?.watchlist ?? []).map(w => w.symbol))
+      for (const row of pulse) {
+        const seen = (socialHistory ?? []).filter(point => point.rows.some(hist => hist.sym === row.sym))
+        const previous = [...seen].sort((a, b) => b.observedAt - a.observedAt)[0]?.rows.find(hist => hist.sym === row.sym)
+        Object.assign(row, {
+          firstSeenAt: seen.length ? Math.min(...seen.map(point => point.observedAt)) : nowSec,
+          observedDays: Math.max(1, new Set(seen.map(point => new Date(point.observedAt * 1000).toISOString().slice(0, 10))).size),
+          scanVelocity: row.redditMentions != null && previous?.redditMentions != null && previous.redditMentions > 0
+            ? Math.round((row.redditMentions / previous.redditMentions) * 10) / 10
+            : null,
+        })
+      }
+      if (pulse.length) {
+        const { appendSocialHistory } = await import('../../shared/engine/strategyLab')
+        await blobAppStore.write('engine-lab-social-history', appendSocialHistory(socialHistory ?? [], pulse, nowSec))
+      }
 
       // enrich the non-household candidates with market cap (Finnhub, 24h cached)
       const candidates = pulse.filter(p => !isMega(p.sym)).slice(0, 8)
@@ -816,8 +862,8 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
       if (discoveries.length) {
         try {
           const { callLlm } = await import('./ai-insights.mts')
-          const prompt = `You are a seasoned, decisive stock analyst. For each up-and-coming name below (small/mid caps with surging social chatter), give a 2-3 sentence take: what the company does, the most likely driver of the chatter, and YOUR opinion (worth a look / needs a catalyst / likely pump). End each with what would validate it. Respond ONLY with JSON: {"opinions":[{"sym":"X","take":"..."}]}\n${discoveries
-            .map(d => `${d.sym} (${d.companyName ?? '?'}, cap ${d.capUsdM ? `$${(d.capUsdM / 1000).toFixed(1)}B` : 'unknown'}): reddit #${d.redditRank}, mentions ${d.redditMentions} (${d.surgeMultiple ?? '?'}x vs 24h ago), ${d.sources} platforms`)
+          const prompt = `You are a seasoned, sceptical stock analyst. For each up-and-coming name below, give a 2-3 sentence take: what the company does, what the EVIDENCE says is driving attention, and YOUR opinion (worth investigating / needs a catalyst / likely promotion risk). Distinguish creator stance from audience engagement; neither is price confirmation. End with what would validate or invalidate the attention. Respond ONLY with JSON: {"opinions":[{"sym":"X","take":"..."}]}\n${discoveries
+            .map(d => `${d.sym} (${d.companyName ?? '?'}, cap ${d.capUsdM ? `$${(d.capUsdM / 1000).toFixed(1)}B` : 'unknown'}): Reddit #${d.redditRank}, ${d.redditMentions} mentions (${d.surgeMultiple ?? '?'}x vs 24h), rank move ${d.redditRankDelta ?? '?'}, ${d.redditUpvotes ?? '?'} upvotes; ${d.sources} platforms; YouTube ${d.channelBreadth ?? 0} channels, stance net ${d.channelNet ?? 0}, hype flags ${d.channelHype}; evidence ${d.evidenceScore}/100`)
             .join('\n')}`
           const { text } = await callLlm(prompt, { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL, GROQ_API_KEY: process.env.GROQ_API_KEY })
           const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? '{}') as { opinions?: { sym: string; take: string }[] }
@@ -834,7 +880,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
         discoveries,
         alsoLoud: pulse.filter(p => isMega(p.sym)).slice(0, 6).map(p => p.sym),
         pulse: pulse.filter(p => !discoveries.some(d => d.sym === p.sym)),
-        at: Math.floor(Date.now() / 1000),
+        at: nowSec,
       }
       await setCached('social-pulse:v2', data, 3600)
       return json(200, { ok: true, data })

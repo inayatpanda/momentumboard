@@ -44,6 +44,7 @@ interface Env {
   GEMINI_MODEL?: string
   GOOGLE_GEMINI_BASE_URL?: string
   SUPADATA_API_KEY?: string
+  YOUTUBE_API_KEY?: string
 }
 
 export const watchVideo: GeminiVideoCall = async (videoUrl, prompt, env) => {
@@ -100,6 +101,7 @@ export async function routeVideoAnalyze(
     // Gemini valve is what keeps it alive when the Mac is asleep.
     const { fetchTranscriptAny } = await import('./lib/transcripts')
     const { readStoredTranscript, saveTranscript } = await import('./lib/videoTranscriptStore')
+    const { fetchYouTubeCommentSample, audiencePrompt } = await import('./lib/youtubeComments')
     const { EXTRACT_PROMPT, EXTRACT_PROMPT_VIDEO, parseExtract } = await import('./lib/videoTrends')
     const { callLlm } = await import('./ai-insights.mts')
     const extracts = (await store.read<VideoExtract[]>('video-extracts')) ?? []
@@ -107,6 +109,7 @@ export async function routeVideoAnalyze(
     if (extracts.filter(e => nowSec - e.at < 86_400).length >= 25) return new Response('extract-daily-cap', { status: 200 })
     const local = await readStoredTranscript(store, body.url)
     const got = local ? { text: local.text, source: 'local' as const } : await fetchTranscriptAny(body.url, env.SUPADATA_API_KEY)
+    const audienceText = audiencePrompt(await fetchYouTubeCommentSample(body.url, env.YOUTUBE_API_KEY))
     let raw: string | null = null
     let via: 'local' | 'free' | 'supadata' | 'gemini-video' = 'gemini-video'
     if (got) {
@@ -119,7 +122,7 @@ export async function routeVideoAnalyze(
       try {
         // DeepSeek-forced: video condensation must not spend the Groq
         // tokens-per-day budget the morning paper composes against
-        raw = (await callLlm(EXTRACT_PROMPT(body.title ?? '', body.channel ?? '', got.text), { ...env, LLM_PROVIDER: 'openai' })).text
+        raw = (await callLlm(EXTRACT_PROMPT(body.title ?? '', body.channel ?? '', got.text, audienceText), { ...env, LLM_PROVIDER: 'openai' })).text
       } catch (e) {
         return new Response(String(e), { status: 502 }) // LLM down — retryable
       }
@@ -127,7 +130,7 @@ export async function routeVideoAnalyze(
       const geminiToday = extracts.filter(e => e.via === 'gemini-video' && nowSec - e.at < 86_400).length
       if (geminiToday >= GEMINI_EXTRACT_DAILY_CAP) return new Response('gemini-extract-capped', { status: 200 })
       try {
-        raw = await watch(body.url, EXTRACT_PROMPT_VIDEO(body.title ?? '', body.channel ?? ''), env)
+        raw = await watch(body.url, EXTRACT_PROMPT_VIDEO(body.title ?? '', body.channel ?? '', audienceText), env)
         via = 'gemini-video'
       } catch (e) {
         console.log(`EXTRACT: gemini-video rung failed for ${body.url}: ${String(e).slice(0, 200)}`)
@@ -202,6 +205,7 @@ export default async (req: Request) =>
       GEMINI_API_KEY: process.env.GEMINI_API_KEY,
       GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL,
       SUPADATA_API_KEY: process.env.SUPADATA_API_KEY,
+      YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
     },
     blobAppStore,
   )

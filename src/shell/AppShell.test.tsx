@@ -30,26 +30,26 @@ describe('AppShell', () => {
     expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'More'])
   })
 
-  // …and the RAIL shows nine: the ratified five plus four promoted out of
-  // More. Owner 2026-08-17 recut the set three times in one day: Gates &
+  // …and the RAIL shows ten: the ratified five plus five promoted out of
+  // More — Analytics rides the rail until it earns a phone tab of its own. Owner 2026-08-17 recut the set three times in one day: Gates &
   // learning DEMOTED ("present twice, outside and inside More"), in its slot a
   // fresh tab for the daily edition ("instead of Gates and learning… a new
   // fresh tab, move… just the Today paper"), and then The street ("all in a
   // new page/tab altogether") FIRST of the promoted — the most-visited of them.
-  it('carries four rail-only entries — The street, Research, Calendar, The paper; Gates demoted', () => {
+  it('carries five rail-only entries — Analytics, The street, Research, Calendar, The paper; Gates demoted', () => {
     render(<AppShell locationHook={at('/')} />)
     const nav = screen.getByRole('navigation')
     const labels = [...nav.querySelectorAll('.v2-tab-label')].map(el => el.textContent?.trim())
-    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'The street', 'Research', 'Calendar', 'The paper', 'More'])
+    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'Analytics', 'The street', 'Research', 'Calendar', 'The paper', 'More'])
     const railOnly = [...nav.querySelectorAll('.v2-tab.rail-only .v2-tab-label')].map(el => el.textContent?.trim())
-    expect(railOnly).toEqual(['The street', 'Research', 'Calendar', 'The paper'])
+    expect(railOnly).toEqual(['Analytics', 'The street', 'Research', 'Calendar', 'The paper'])
   })
 
   it('the promoted entries link to their real routes', () => {
     render(<AppShell locationHook={at('/')} />)
     const nav = screen.getByRole('navigation')
     const hrefs = [...nav.querySelectorAll('.v2-tab.rail-only')].map(a => a.getAttribute('href'))
-    expect(hrefs).toEqual(['/app/more/street', '/app/more/research', '/app/more/calendar', '/app/more/paper'])
+    expect(hrefs).toEqual(['/app/analytics', '/app/more/street', '/app/more/research', '/app/more/calendar', '/app/more/paper'])
   })
 
   it('lights The street’s own rail row inside the page, with a glyph of its own', () => {
@@ -90,12 +90,18 @@ describe('AppShell', () => {
     render(<AppShell locationHook={at('/stock/NVDA')} />)
     // 5s: the lazy StockPage chunk resolves in ~300ms alone but can exceed
     // RTL's 1s default under full-suite parallel load (verified flake)
-    expect(await screen.findByText(/NVDA/, {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'NVDA' }, { timeout: 5000 })).toBeInTheDocument()
   })
 
   it('routes /board even though it has no tab', async () => {
     render(<AppShell locationHook={at('/board')} />)
     expect(await screen.findByText(/board/i)).toBeInTheDocument()
+  })
+
+  it('routes Analytics as a normal page rather than a drawer', async () => {
+    render(<AppShell locationHook={at('/analytics')} />)
+    expect(await screen.findByRole('heading', { name: /^analytics$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
   })
 
   it('sends unknown routes home to Today', async () => {

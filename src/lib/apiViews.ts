@@ -3,10 +3,11 @@
 // server's Phase-1 projections 1:1; engine types import straight from
 // shared/engine where the precedent already exists (api.ts:4-5).
 
-import { apiGet, type EnginePrediction, type EventRadarEntry, type IntradayFlagsBlob, type LedgerPrediction, type OpenTraceEntry } from './api'
+import { apiGet, type EnginePrediction, type EventRadarEntry, type IntradayFlagsBlob, type LedgerPrediction, type OpenTraceEntry, type PaperBookData } from './api'
 import type { GateCode } from '../../shared/engine/types'
 import type { GateStructuredEntry, GateStateSummary } from '../../shared/engine/gateState'
 import type { MissExample, MissLedgerSummary } from '../../shared/engine/missLedger'
+import type { EngineLabSnapshot, StrategyObservation } from '../../shared/engine/strategyLab'
 
 // --- board ------------------------------------------------------------------
 export interface BoardBlob {
@@ -25,7 +26,14 @@ export interface BoardSlice {
   intradayFlags: IntradayFlagsBlob | null
   eventRadar: { date: string; generatedAt: number; entries: EventRadarEntry[] } | null
   runStatus: { startedAt: number; updatedAt: number; phase: string; completedAt?: number; failedAt?: number; error?: string } | null
-  riskState: { rung?: number; [k: string]: unknown } | null
+  riskState: {
+    rung?: number
+    directions?: {
+      long: { rung: number; gradedAtRung: number; history?: unknown[] }
+      short: { rung: number; gradedAtRung: number; history?: unknown[] }
+    }
+    [k: string]: unknown
+  } | null
   referenceBase: number | null
   yesterday: {
     /** WHICH day is being reported. Rarely the calendar day before the board:
@@ -74,6 +82,20 @@ export interface BoardSlice {
    * different reasons: a slice cached by a bundle that predates the server field
    * has none at all, and a week in which no video was read carries null. */
   channelPicks?: ChannelPick[] | null
+  /** Shadow research sleeves: visible and accountable, never silently promoted
+   * into the sized board. */
+  engineLab?: EngineLabSnapshot | null
+  /** Small provenance projection for Today's decision cockpit. The client
+   * derives freshness from the live clock/run status, while the server supplies
+   * the prior takeable board and the measured evidence that cannot be inferred
+   * from today's cards. */
+  decision?: {
+    priorDate: string | null
+    priorRows: { sym: string; side: 'long' | 'short' }[]
+    liveGraded: number
+    liveHits: number
+    latestBrier: number | null
+  } | null
 }
 
 /** Mirrors `TickerConsensus` in netlify/functions/lib/videoTrends.ts 1:1 — the
@@ -138,6 +160,8 @@ export interface JourneySlice {
   openTrace: OpenTraceEntry | null
   funnel: { date: string; rows: JourneyFunnelRow[]; nearMiss: JourneyNearMiss | null }[]
   calls: JourneyCall[]
+  /** Per-symbol shadow research forecasts. Never a published board call. */
+  lab?: StrategyObservation[]
 }
 
 export const getJourney = (sym: string, days?: number) =>
@@ -165,6 +189,14 @@ export interface LedgerDay {
 }
 
 export const getLedgerDays = (days: number) => apiGet<{ days: LedgerDay[] }>(`/api/engine?view=ledger&days=${days}`)
+
+// --- paper book -------------------------------------------------------------
+export interface PaperBookSlice {
+  book: PaperBookData | null
+  months: { month: string; startGBP: number; endGBP: number; returnPct: number; trades: number; wins: number }[]
+}
+
+export const getPaperBook = () => apiGet<PaperBookSlice>('/api/engine?view=paper-book')
 
 // --- learning ---------------------------------------------------------------
 export interface RegretGate {

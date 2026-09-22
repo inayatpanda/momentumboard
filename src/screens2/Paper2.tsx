@@ -6,27 +6,56 @@
 // list fetch deferred exactly as before.
 
 import { useState } from 'react'
-import { ArchiveList, EditionFrame } from './parts/EditionReader'
+import { ArchiveList, BulletinReader, EditionFrame } from './parts/EditionReader'
+
+type PaperEdition = 'morning' | 'premarket' | 'evening'
+const EDITIONS: { key: PaperEdition; label: string; note: string }[] = [
+  { key: 'morning', label: 'Morning', note: 'research paper' },
+  { key: 'premarket', label: 'Pre-market', note: 'before the US open' },
+  { key: 'evening', label: 'Evening', note: 'session review' },
+]
 
 export default function Paper2() {
   const [openDate, setOpenDate] = useState<string | null>(null)
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [edition, setEdition] = useState<PaperEdition>('morning')
   return (
     <div className="paper2">
       <h1>The paper</h1>
-      <section className="card itl-section" aria-label="The edition">
-        <EditionFrame key={openDate ?? 'latest'} date={openDate ?? undefined} />
-        <details className="itl-archive" open={archiveOpen}>
-          <summary
-            onClick={e => {
-              e.preventDefault()
-              setArchiveOpen(v => !v)
-            }}
+      <div className="paper2-editions" role="tablist" aria-label="Paper edition">
+        {EDITIONS.map(item => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={edition === item.key}
+            className={edition === item.key ? 'active' : ''}
+            onClick={() => setEdition(item.key)}
           >
-            Archive
-          </summary>
-          {archiveOpen && <ArchiveList activeDate={openDate} onPick={setOpenDate} />}
-        </details>
+            <strong>{item.label}</strong>
+            <span>{item.note}</span>
+          </button>
+        ))}
+      </div>
+      <section className="card itl-section" aria-label="The edition">
+        {edition === 'morning' ? (
+          <>
+            <EditionFrame key={openDate ?? 'latest'} date={openDate ?? undefined} />
+            <details className="itl-archive" open={archiveOpen}>
+              <summary
+                onClick={e => {
+                  e.preventDefault()
+                  setArchiveOpen(v => !v)
+                }}
+              >
+                Archive
+              </summary>
+              {archiveOpen && <ArchiveList activeDate={openDate} onPick={setOpenDate} />}
+            </details>
+          </>
+        ) : (
+          <BulletinReader key={edition} kind={edition} />
+        )}
       </section>
     </div>
   )

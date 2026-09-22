@@ -1,6 +1,7 @@
 import type { RegimeColor } from '../types'
 import type { Horizon } from './horizon'
 import type { PostMortem } from './postMortem'
+import type { ForecastContract, StrategySleeve } from './strategyLab'
 
 export type FactorName = 'technical' | 'momentum' | 'sector' | 'social' | 'channels' | 'insiders' | 'news' | 'seasonality' | 'smartMoney' | 'catalyst'
 
@@ -267,6 +268,13 @@ export interface PredOutcome {
 
 export interface Prediction extends GradedCall {
   id: string // `${date}:${sym}:${side}`
+  /** Strategy provenance. Legacy rows are the composite control. */
+  sleeve?: StrategySleeve
+  /** Explicitly names what the displayed probability means. Additive during the
+   * migration: `probability` remains the historic edge-contract value. */
+  forecast?: ForecastContract
+  detectedAt?: number
+  availableAt?: number
   date: string
   name?: string // company display name stamped at publication — presentation only, every surface reads it instead of re-looking it up
   modelVersion?: number // scoring/calibration epoch used to create this prediction

@@ -1,5 +1,5 @@
-// Panel 3 — Learning curves. Two honesty diagrams in one card:
-//   (a) the calibration scatter (reused component) — claimed vs realized odds;
+// Panel 3 — Learning curves. Two evidence views in one card:
+//   (a) measured hit rates by direction and tape, against the honest grade bar;
 //   (b) factor trust — how far each signal's live weight has moved from its base.
 // Single blue hue for the bars (weight is not a market direction), with a faint
 // tick marking where each factor STARTED so the drift is legible.
@@ -20,10 +20,7 @@ export function LearningPanel({ calibration, weights }: { calibration: EngineDat
       <h3 className="section-title">Learning curves</h3>
 
       {calibration ? (
-        <>
-          <CalibrationPlot buckets={calibration.buckets} seeded={calibration.seeded} />
-          <p className="empty-line quant-cap">dots on the diagonal = well-calibrated</p>
-        </>
+        <CalibrationPlot buckets={calibration.buckets} seeded={calibration.seeded} referenceBase={calibration.referenceBase} />
       ) : (
         <p className="empty-line">No calibration data yet.</p>
       )}

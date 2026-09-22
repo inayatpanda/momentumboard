@@ -19,7 +19,7 @@
 //     number the reader had no reason to think was narrow.
 
 import { useSlice } from '../lib/useSlice'
-import { getLearning, getLedgerDays } from '../lib/apiViews'
+import { getLearning, getLedgerDays, getPaperBook } from '../lib/apiViews'
 import type { LearningSlice, LedgerDay } from '../lib/apiViews'
 import type { EngineData } from '../lib/api'
 import { CalibrationPlot } from '../components/CalibrationPlot'
@@ -31,6 +31,7 @@ import { CumulativeLine } from './parts/CumulativeLine'
 import { LedgerDayCards } from './parts/LedgerDayCards'
 import { Regrets } from './parts/Regrets'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
+import { PaperBookPanel } from './parts/PaperBookPanel'
 
 const LEDGER_DAYS = 30
 
@@ -244,13 +245,16 @@ function CalibrationSection({ calibration }: { calibration: LearningSlice['calib
           while this said nothing. An unlabelled calibration plot under a labelled
           equity scorecard reads as "and here is the whole engine's". */}
       <p className="sec-label">Calibration · Equity — excess vs SPY</p>
-      {/* WHAT THE READER IS LOOKING AT (owner iteration 2). The plot was
-          unexplained, so a page the owner called useless had a scatter on it
-          that taught nothing. One sentence, above the plot, in plain words. */}
+      {/* WHAT THE READER IS LOOKING AT (owner iteration 3). A compact setup
+          scorecard replaces the old self-referential claimed-v-realized plot. */}
       <p className="cc-reason rec-calibration-explainer">
-        Each dot: what the engine predicted (x) vs what actually happened (y) — honest predictions sit on the diagonal.
+        Which direction and market regime have actually beaten the ordinary-candidate bar, with sample size and uncertainty shown.
       </p>
-      <CalibrationPlot buckets={calibration.buckets as Record<string, { n: number; hits: number }>} seeded={calibration.seeded} />
+      <CalibrationPlot
+        buckets={calibration.buckets as Record<string, { n: number; hits: number }>}
+        seeded={calibration.seeded}
+        referenceBase={referenceBase}
+      />
       <p className="cc-reason rec-calibration-context">
         {referenceBase != null ? (
           <>
@@ -293,6 +297,7 @@ export default function Record() {
   // chart, the extremes and the cards all rolling the SAME rows (codex #11's
   // rule, now enforced by there being nothing to widen).
   const { data: ledger } = useSlice<{ days: LedgerDay[] }>(`ledger:${LEDGER_DAYS}`, () => getLedgerDays(LEDGER_DAYS))
+  const { data: paperBook } = useSlice('paper-book', getPaperBook)
   const days = ledger?.days ?? []
   const series = cumulativeExcessSeries(days)
   const { best, worst } = bestAndWorst(days)
@@ -318,6 +323,7 @@ export default function Record() {
           the tiles say what each tier did, this says what the whole book did,
           and the plot says whether the probabilities behind it were honest */}
       <CumulativeLine points={series} days={LEDGER_DAYS} />
+      <PaperBookPanel data={paperBook ?? undefined} />
       <ExtremesSection best={best} worst={worst} />
       {learning != null && <CalibrationSection calibration={learning.calibration} />}
       <LedgerSection days={days} />

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createChart, ColorType, CrosshairMode, type IChartApi, type UTCTimestamp } from 'lightweight-charts'
 import type { Candle } from '../../shared/types'
 import { sma } from '../../shared/indicators'
@@ -12,6 +12,10 @@ const MA_STYLES = [
   { period: 50, token: '--amber', fallback: '#f2b843' },
   { period: 200, token: '--muted', fallback: '#93a6ad' },
 ]
+
+type ChartDisplay = 'candles' | 'line'
+const compactVolume = (n: number) => n >= 1_000_000_000 ? `${(n / 1_000_000_000).toFixed(1)}B` : n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K` : `${Math.round(n)}`
+const chartNumber = (n: number) => n >= 1 ? n.toFixed(2) : n.toFixed(4)
 
 export function PriceChart({
   candles,
@@ -37,6 +41,12 @@ export function PriceChart({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi>()
+  const [display, setDisplay] = useState<ChartDisplay>('candles')
+  const [showMAs, setShowMAs] = useState(true)
+  const [showVolume, setShowVolume] = useState(true)
+  const [inspected, setInspected] = useState<Candle | null>(() => candles.at(-1) ?? null)
+
+  useEffect(() => setInspected(candles.at(-1) ?? null), [candles])
 
   useEffect(() => {
     if (!ref.current || candles.length === 0) return
@@ -70,6 +80,7 @@ export function PriceChart({
     const roleColor = (role: ColorRole) => (role === 'up' ? up : role === 'down' ? down : ink)
 
     const candleSeries = chart.addCandlestickSeries({
+      visible: display === 'candles',
       upColor: up,
       downColor: down,
       wickUpColor: up,
@@ -83,17 +94,34 @@ export function PriceChart({
     })
     candleSeries.setData(toCandleSeries(bars))
 
+    const closeSeries = chart.addAreaSeries({
+      visible: display === 'line',
+      lineColor: themed('--blue', '#62c1e5'),
+      topColor: themed('--blue-soft', 'rgba(98,193,229,0.13)'),
+      bottomColor: 'rgba(0, 0, 0, 0)',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: interactive,
+    })
+    closeSeries.setData(toLineSeries(bars, bars.map(c => c.c)))
+    const activeSeries = display === 'candles' ? candleSeries : closeSeries
+
     // volume: very muted — the soft accent tints, a whisper under the candles
     const volUp = themed('--green-soft', 'rgba(43,211,150,0.13)')
     const volDown = themed('--red-soft', 'rgba(255,95,118,0.13)')
-    const volumeSeries = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false })
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false })
-    volumeSeries.setData(toVolumeSeries(bars).map((d, i) => ({ ...d, color: bars[i].c >= bars[i].o ? volUp : volDown })))
+    if (showVolume) {
+      const volumeSeries = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false })
+      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false })
+      volumeSeries.setData(toVolumeSeries(bars).map((d, i) => ({ ...d, color: bars[i].c >= bars[i].o ? volUp : volDown })))
+    }
 
     const closes = bars.map(c => c.c)
-    for (const { period, token, fallback } of drawableMAs(MA_STYLES, bars.length)) {
-      const line = chart.addLineSeries({ color: themed(token, fallback), lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
-      line.setData(toLineSeries(bars, sma(closes, period)))
+    if (showMAs) {
+      for (const { period, token, fallback } of drawableMAs(MA_STYLES, bars.length)) {
+        const line = chart.addLineSeries({ color: themed(token, fallback), lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+        line.setData(toLineSeries(bars, sma(closes, period)))
+      }
     }
 
     // Engine annotations: entry/stop/target as coloured dashes. NO titled axis
@@ -103,12 +131,20 @@ export function PriceChart({
     // legend chips under the chart carry the words, and only the axis shows
     // the bare numbers.
     for (const pl of priceLines) {
-      candleSeries.createPriceLine({ price: pl.price, color: roleColor(pl.role), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' })
+      activeSeries.createPriceLine({ price: pl.price, color: roleColor(pl.role), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' })
     }
     if (marker) {
-      candleSeries.setMarkers([
+      activeSeries.setMarkers([
         { time: bars[bars.length - 1].t as UTCTimestamp, position: marker.position, color: roleColor(marker.role), shape: 'circle', text: marker.text },
       ])
+    }
+
+    if (interactive) {
+      const originalByDisplayTime = new Map(bars.map((bar, i) => [bar.t, candles[i]]))
+      chart.subscribeCrosshairMove(param => {
+        const point = typeof param.time === 'number' ? originalByDisplayTime.get(param.time) : undefined
+        setInspected(point ?? candles.at(-1) ?? null)
+      })
     }
 
     chart.timeScale().fitContent()
@@ -119,14 +155,44 @@ export function PriceChart({
       chart.remove()
       chartRef.current = undefined
     }
-  }, [candles, priceLines, marker, height, interactive, intraday])
+  }, [candles, priceLines, marker, height, interactive, intraday, display, showMAs, showVolume])
+
+  const inspectedIndex = inspected ? candles.findIndex(c => c.t === inspected.t) : -1
+  const previousClose = inspectedIndex > 0 ? candles[inspectedIndex - 1].c : null
+  const inspectedChange = inspected && previousClose ? ((inspected.c / previousClose) - 1) * 100 : null
+  const inspectedStamp = inspected ? new Date(inspected.t * 1000).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: intraday ? undefined : 'numeric',
+    hour: intraday ? '2-digit' : undefined, minute: intraday ? '2-digit' : undefined,
+  }) : ''
 
   return (
-    <div className="chart-box">
+    <div className={`chart-box${interactive ? ' is-interactive' : ''}`}>
+      {interactive && (
+        <div className="chart-toolbar">
+          <div className="chart-toggle" role="group" aria-label="Price display">
+            <button type="button" className={display === 'candles' ? 'active' : ''} aria-pressed={display === 'candles'} onClick={() => setDisplay('candles')}>Candles</button>
+            <button type="button" className={display === 'line' ? 'active' : ''} aria-pressed={display === 'line'} onClick={() => setDisplay('line')}>Line</button>
+          </div>
+          <button type="button" className={`chart-tool${showMAs ? ' active' : ''}`} aria-pressed={showMAs} onClick={() => setShowMAs(v => !v)}>Moving averages</button>
+          <button type="button" className={`chart-tool${showVolume ? ' active' : ''}`} aria-pressed={showVolume} onClick={() => setShowVolume(v => !v)}>Volume</button>
+          <button type="button" className="chart-tool" onClick={() => chartRef.current?.timeScale().fitContent()}>Reset zoom</button>
+        </div>
+      )}
+      {interactive && inspected && (
+        <div className="chart-readout" aria-label="Selected session values">
+          <span>{inspectedStamp}</span>
+          <span>O <b>{chartNumber(inspected.o)}</b></span>
+          <span>H <b>{chartNumber(inspected.h)}</b></span>
+          <span>L <b>{chartNumber(inspected.l)}</b></span>
+          <span>C <b>{chartNumber(inspected.c)}</b></span>
+          {inspectedChange != null && <span className={inspectedChange >= 0 ? 'up-text' : 'down-text'}>{inspectedChange >= 0 ? '+' : ''}{inspectedChange.toFixed(2)}%</span>}
+          <span>Vol <b>{compactVolume(inspected.v)}</b></span>
+        </div>
+      )}
       <div className="chart-legend">
         {/* only the averages this series can actually draw — an MA200 chip over
             78 five-minute bars named a line that was never there */}
-        {drawableMAs(MA_STYLES, candles.length).map(({ period, token }) => (
+        {showMAs && drawableMAs(MA_STYLES, candles.length).map(({ period, token }) => (
           <span key={period} style={{ color: `var(${token})` }}>
             MA{period}
           </span>

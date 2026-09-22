@@ -31,6 +31,9 @@ export const ROUTES: readonly RouteDef[] = [
   { path: '/stock/:sym', key: 'stocks', component: lazy(() => import('../screens2/StockPage')) as RouteDef['component'] },
   { path: '/intel', key: 'intel', label: 'Intel', component: lazy(() => import('../screens2/Intel')) },
   { path: '/record', key: 'record', label: 'Track record', component: lazy(() => import('../screens2/Record')) },
+  // ANALYTICS, on the rail only for now: the screen is routed and reachable at
+  // ≥1024px, and the phone's ratified five are untouched until the tab lands.
+  { path: '/analytics', key: 'more', label: 'Analytics', railOnly: true, component: lazy(() => import('../screens2/Analytics')) },
   // the four promoted onto the desktop rail, BEFORE More so they read as
   // siblings of the ratified tabs rather than as an afterthought below it.
   // Owner 2026-08-17 recut the set twice: Gates & learning DEMOTED ("present

@@ -3,6 +3,7 @@ import type { AppConfig } from '../../shared/config'
 import type { EmptySideReason } from '../../shared/engine/types'
 import type { MissLedgerSummary } from '../../shared/engine/missLedger'
 import type { GateStateSummary } from '../../shared/engine/gateState'
+import type { EngineLabSnapshot, ForecastContract, StrategySleeve } from '../../shared/engine/strategyLab'
 // TYPE-ONLY, and deliberately so: apiViews.ts imports this file for `apiGet`,
 // and a value import back would close the cycle. `ChannelPick` is the client's
 // one mirror of the server's TickerConsensus and belongs beside the board slice
@@ -106,6 +107,19 @@ export const getCandles = (symbol: string, range = '1y') =>
 export const getCalendar = (symbols: string[]) =>
   apiGet<{ earnings: { symbol: string; date: string; hour: string; epsEstimate: number | null }[] }>(`/api/market?type=calendar&symbols=${symbols.join(',')}`).then(d => d.earnings)
 
+export interface SecFiling {
+  accession: string
+  form: string
+  filed: string
+  reportDate: string
+  description: string
+  items: string
+  url: string
+}
+
+export const getFilings = (symbol: string) =>
+  apiGet<{ company: string | null; cik: number | null; filings: SecFiling[]; asOf: number; unavailable?: boolean }>(`/api/market?type=filings&symbol=${encodeURIComponent(symbol)}`)
+
 export const getFeed = () =>
   apiGet<{ news: { title: string; url: string; symbols: string[] }[]; videos: { title: string; url: string; channel: string }[] }>('/api/market?type=feed')
 
@@ -197,17 +211,30 @@ export const getSignalStats = () =>
 export const getSmartMoney = () =>
   apiGet<{ funds: { fund: string; filedAt: string; newPositions: { issuer: string }[]; increased: { issuer: string; pctChange: number }[]; exited: { issuer: string }[] }[]; lagNote: string }>('/api/market?type=smart-money')
 
-interface PulseRow {
+export interface PulseRow {
   sym: string
   name?: string
   redditRank: number | null
   redditMentions: number | null
+  redditUpvotes: number | null
+  redditRankDelta: number | null
+  redditEngagement: number | null
   surging: boolean
   surgeMultiple: number | null
   stocktwits: boolean
   channelNet: number | null
+  channelMentions: number | null
+  channelMentionsPrior: number | null
+  channelVelocity: number | null
+  channelBreadth: number | null
+  channelHype: number
+  channelEvidence: { channel: string; stance: 'bull' | 'bear' | 'neutral'; thesis?: string; levels: number[]; hype: boolean; at: number; url: string }[]
+  evidenceScore?: number
+  scanVelocity?: number | null
   sources: number
   onWatchlist: boolean
+  firstSeenAt?: number
+  observedDays?: number
 }
 
 export const getSocialPulse = () =>
@@ -217,6 +244,37 @@ export const getSocialPulse = () =>
     pulse: PulseRow[]
     at: number
   }>('/api/market?type=social')
+
+export interface SocialMemoryDay {
+  date: string
+  observedAt: number
+  summary: string
+  metrics: {
+    sources: number
+    redditRank: number | null
+    redditMentions: number | null
+    redditUpvotes: number | null
+    surgeMultiple: number | null
+    stocktwits: boolean
+    channelNet: number | null
+    channelMentions: number | null
+    channelBreadth: number | null
+    evidenceScore: number | null
+  }
+  youtube: {
+    at: number
+    title: string
+    channel: string
+    url: string
+    stance: 'bull' | 'bear' | 'neutral'
+    thesis?: string
+    levels: number[]
+    hype: boolean
+  }[]
+}
+
+export const getSocialMemory = (symbol: string) =>
+  apiGet<{ symbol: string; days: SocialMemoryDay[] }>(`/api/market?type=social-memory&symbol=${encodeURIComponent(symbol)}`).then(data => data.days)
 
 // --- THE STREET (owner request) ---------------------------------------------
 // "the summary of youtube video input deserve a section of their own, and there
@@ -374,6 +432,19 @@ export const getReportList = () => apiGet<string[]>('/report?list')
 
 export const getBulletins = () => apiGet<{ date: string; kind: 'premarket' | 'evening' }[]>('/report?bulletins')
 
+export type BulletinKind = 'premarket' | 'evening'
+export interface BulletinEdition {
+  kind: BulletinKind
+  date: string
+  at: number
+  subject: string
+  text: string
+  html: string
+}
+
+export const getBulletinJson = (date: string, kind: BulletinKind) =>
+  apiGet<BulletinEdition>(`/report?format=json&bulletin=${encodeURIComponent(`${date}:${kind}`)}`)
+
 // The paper, inline (CX-19): the same edition the download/print modes serve,
 // as a JSON envelope carrying ready-to-render HTML — so the v2 Intel screen
 // can drop it straight into a sandboxed srcDoc iframe instead of an
@@ -491,6 +562,13 @@ export interface EnginePrediction {
   cohort?: 'crypto'
   evidence?: { coverage: number; famAgree: number; contract: boolean; contextPts: number; detail: string }
   factors: Record<string, { score: number | null; detail: string; weight: number }>
+  /** Visible provenance for the campaign-aware engine. Optional for rows
+   * published before the research-lab migration. */
+  campaignId?: string
+  sleeve?: StrategySleeve
+  forecast?: ForecastContract
+  detectedAt?: number
+  availableAt?: number
   overlay?: { flag: string; reason: string }
   themes?: string[]
   capUsdM?: number | null
@@ -692,6 +770,7 @@ export interface IntradayFlagsBlob {
 }
 
 export interface EngineData {
+  engineLab?: EngineLabSnapshot | null
   runStatus?: {
     startedAt: number
     updatedAt: number

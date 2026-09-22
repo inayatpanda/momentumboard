@@ -110,6 +110,7 @@ import { isRejection, round2, type EmptySideReason, type EngineCall, type Factor
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { primaryThemeOf, themeCandidates, themeHeat, themesOf } from '../../../shared/engine/themes'
 import { traceOpenCall, type OpenTraceEntry } from '../../../shared/engine/openTrace'
+import { appendSocialHistory, buildEngineLab, calibrateLabObservations, gradeStrategyObservation, qualityDipObservations, shortHorizonObservations, socialIgnitionObservations, type ShortHorizonRow, type SocialHistoryPoint, type SocialLabRow, type StrategyLabRecord } from '../../../shared/engine/strategyLab'
 import { SECTOR_MEMBERS, computeSectorRows } from './sectors'
 import type { SocialPulseRow } from './social'
 import type { InsiderSummary } from './insiders'
@@ -2333,6 +2334,19 @@ export async function buildBoard(
     const row: Prediction = {
       ...call,
       id,
+      sleeve: 'composite-control',
+      forecast: {
+        definition: 'benchmark-excess-no-close-stop-v1',
+        label: 'Beat SPY by at least 1pp without a daily close through the stop',
+        horizonSessions: crypto ? CRYPTO_HORIZONS[1] : 10,
+        probabilityEdge: Math.round(p * 100) / 100,
+        probabilityTarget: null,
+        probabilityStop: null,
+        calibratedN: Math.round(nEff),
+        provisional,
+      },
+      detectedAt: nowSec,
+      availableAt: nowSec,
       date: today,
       modelVersion: ENGINE_MODEL_VERSION,
       regime: rowRegime,
@@ -3716,6 +3730,88 @@ export async function buildBoard(
   const globalNews = newsTone(mediaTitles)
   const newsHist = ((await store.read<{ date: string; score: number; label: string }[]>('news-tone-history')) ?? []).filter(h => h.date !== today)
   await store.write('news-tone-history', [...newsHist, { date: today, score: globalNews.score, label: globalNews.label }].slice(-250))
+
+  // Visible research sleeves. They are observations, not board calls: no sleeve
+  // can size money until its own independent campaigns earn calibration.
+  const socialLabRows: SocialLabRow[] = social.map(s => ({
+    sym: s.sym,
+    redditMentions: s.redditMentions,
+    surgeMultiple: s.surgeMultiple,
+    sources: s.sources,
+    stocktwits: s.stocktwits,
+    channelNet: s.channelNet,
+    redditUpvotes: s.redditUpvotes,
+    redditRankDelta: s.redditRankDelta,
+    channelBreadth: s.channelBreadth,
+    channelVelocity: s.channelVelocity,
+    channelHype: s.channelHype ?? undefined,
+    capUsdM: sources.get(s.sym)?.capUsdM ?? null,
+    last: candleMap.get(s.sym)?.at(-1)?.c ?? null,
+  }))
+  const socialHistory = (await store.read<SocialHistoryPoint[]>('engine-lab-social-history')) ?? []
+  const shortAlways = ['GOOG', 'GOOGL']
+  const shortBySym = new Map<string, ShortHorizonRow>()
+  for (const sym of candidateSyms) {
+    const candles = candleMap.get(sym)
+    if (candles) shortBySym.set(sym, { sym, candles, earningsRisk: earningsSet.has(baseSym(sym)) })
+  }
+  await mapLimit(shortAlways, 2, async sym => {
+    if (shortBySym.has(sym)) return
+    const candles = await deps.candles(sym).catch(() => null)
+    if (candles && candles.length >= 90) shortBySym.set(sym, { sym, candles, earningsRisk: earningsSet.has(baseSym(sym)) })
+  })
+  const shortLabRaw = shortHorizonObservations([...shortBySym.values()], nowSec, shortAlways)
+  const qualityLab = qualityDipObservations(
+    candidateSyms.flatMap(sym => {
+      const candles = candleMap.get(sym)
+      return candles ? [{ sym, candles, qualityProxy: sleeveSet.has(sym) || (sources.get(sym)?.capUsdM ?? 0) > 10_000, capUsdM: sources.get(sym)?.capUsdM ?? null }] : []
+    }),
+    spy,
+    nowSec,
+  )
+  const socialLabRaw = socialIgnitionObservations(socialLabRows, socialHistory, nowSec)
+  let labRecords = (await store.read<StrategyLabRecord[]>('engine-lab-ledger')) ?? []
+  // OLDEST open records first, not newest. `labRecords` is append-ordered, so the
+  // tail is the batch pushed last run — precisely the records whose horizon has
+  // NOT elapsed, which `gradeStrategyObservation` answers `null` for every time.
+  // A `slice(-60)` therefore spent the whole grading budget on immature rows and
+  // stranded the mature ones behind it: they never graded, and `slice(-500)`
+  // eventually evicted them ungraded, so the sleeves' evidence counters — the
+  // 40-campaign promotion gate in docs/ENGINE_V2.md — undercounted for ever.
+  // Identical behaviour while fewer than 60 records are open; the budget and its
+  // fetch concurrency are unchanged. [discovery: a 320-name pool rotates the
+  // top-8/top-16 across nearly twice as many symbols, so the open set crosses 60
+  // far sooner than it did at 180.]
+  const openLab = labRecords.filter(r => !r.outcome).slice(0, 60)
+  await mapLimit(openLab, 6, async record => {
+    const candles = candleMap.get(record.sym) ?? (await deps.candles(record.sym).catch(() => null))
+    if (!candles) return
+    const outcome = gradeStrategyObservation(record, candles)
+    if (outcome) record.outcome = outcome
+  })
+  const labCampaignKey = (record: Pick<StrategyLabRecord, 'sleeve' | 'sym' | 'side'>) => record.sleeve === 'short-horizon'
+    ? `${record.sleeve}:${record.sym}`
+    : `${record.sleeve}:${record.sym}:${record.side}`
+  const activeLab = new Set(labRecords.filter(r => !r.outcome).map(labCampaignKey))
+  for (const obs of [...shortLabRaw, ...qualityLab, ...socialLabRaw]) {
+    const key = labCampaignKey(obs)
+    const recordableShortForecast = obs.sleeve === 'short-horizon' && obs.entry != null
+    const recordableSetup = obs.state === 'setup' && obs.side !== 'neutral' && obs.entry != null
+    if ((!recordableShortForecast && !recordableSetup) || activeLab.has(key)) continue
+    labRecords.push(obs)
+    activeLab.add(key)
+  }
+  labRecords = labRecords.slice(-500)
+  const qualityCalibrated = calibrateLabObservations(qualityLab, labRecords)
+  const socialLab = calibrateLabObservations(socialLabRaw, labRecords)
+  const shortLab = calibrateLabObservations(shortLabRaw, labRecords)
+  const qualityEvidenceN = labRecords.filter(r => r.sleeve === 'quality-dip' && r.outcome).length
+  const socialEvidenceN = labRecords.filter(r => r.sleeve === 'social-ignition' && r.outcome).length
+  const shortHorizonEvidenceN = labRecords.filter(r => r.sleeve === 'short-horizon' && r.outcome).length
+  const compositeEvidenceN = Object.values(calibration.buckets).reduce((sum, bucket) => sum + (bucket.n ?? 0), 0)
+  await store.write('engine-lab-ledger', labRecords)
+  await store.write('engine-lab', buildEngineLab({ date: today, nowSec, shortHorizon: shortLab, quality: qualityCalibrated, social: socialLab, compositeEvidenceN, shortHorizonEvidenceN, qualityEvidenceN, socialEvidenceN }))
+  await store.write('engine-lab-social-history', appendSocialHistory(socialHistory, socialLabRows, nowSec))
 
   // …and the empty-side COPY drops the side an experiment seated on (Stage 3d).
   // Every one of those sentences opens "nothing tradeable on the X side today"

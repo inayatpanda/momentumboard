@@ -175,6 +175,8 @@ export const FUNCTION_ENV_VARS = [
   'OPENAI_BASE_URL',
   'LLM_PROVIDER',
   'SUPADATA_API_KEY',
+  'YOUTUBE_API_KEY', // optional comment sampling for creator/audience separation
+  'SEC_USER_AGENT', // optional contact-identifying User-Agent for SEC EDGAR
   'TRANSCRIPT_TOKEN', // the Mac transcript runner's dedicated door (video-transcripts.mts)
   'NEWSLETTER_TOKEN', // the Gmail Apps Script's dedicated door (newsletters.mts)
   // delivery

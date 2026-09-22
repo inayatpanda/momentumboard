@@ -20,6 +20,14 @@ import { exchangeOpenNow } from '../../lib/marketClock'
 import { CohortPill, WhySized } from './CohortMarks'
 import { RouteNote } from './RouteNote'
 
+const SLEEVE_LABEL: Record<NonNullable<EnginePrediction['sleeve']>, string> = {
+  'short-horizon': '2–3 day',
+  'quality-dip': 'Quality dip',
+  'social-ignition': 'Social ignition',
+  'macro-event': 'Macro event',
+  'composite-control': 'Main engine',
+}
+
 /** Within this much of the entry, "1.9% below" is false precision — the reader
  * is AT the entry and the only useful word is that. */
 const AT_ENTRY_PCT = 0.3
@@ -155,6 +163,15 @@ export function CallCard({
         </div>
       ) : (
         <p className="cc-reason">{unsizedReason(kind, row.belowBase)}</p>
+      )}
+      {row.forecast && (
+        <div className="cc-contract" aria-label="Engine forecast contract">
+          <span className="cc-contract-label">{row.sleeve ? SLEEVE_LABEL[row.sleeve] : 'Engine'} · {row.forecast.horizonSessions} sessions</span>
+          <span>{row.forecast.label}</span>
+          <span className="num">
+            {row.forecast.calibratedN > 0 ? `${row.forecast.calibratedN} matured forecasts` : 'new contract · collecting outcomes'}
+          </span>
+        </div>
       )}
       {/* the levels above are the UNDERLYING's, whatever the ticker beside them
           says — and only a geared route decays (parts/RouteNote.tsx) */}

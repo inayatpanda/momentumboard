@@ -36,7 +36,7 @@ export interface LlmResult {
 // The current pins. Change here only for a new DEFAULT; to switch live, set
 // the matching env var instead (no deploy).
 export const DEFAULT_MODELS = {
-  groq: 'llama-3.3-70b-versatile',
+  groq: 'openai/gpt-oss-120b',
   gemini: 'gemini-2.5-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5-20251001',

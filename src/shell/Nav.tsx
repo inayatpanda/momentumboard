@@ -25,6 +25,7 @@ const ICONS: Record<string, string> = {
  * keeps the phone's More tab lit inside their pages — so their glyphs are keyed
  * on PATH instead, and they'd otherwise all wear More's ellipsis. */
 const RAIL_ICONS: Record<string, string> = {
+  '/analytics': '⌁',
   // ❝ — the page is what OTHER PEOPLE said, and every glyph already in use
   // (◆ ≋ ¶ ✓ ⌕ ▦ ≣ ⋯) means something else
   '/more/street': '❝',

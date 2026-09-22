@@ -20,6 +20,7 @@ import { fetchYahooChart } from './lib/yahoo'
 import type { Candle } from '../../shared/types'
 import type { FactorName } from '../../shared/engine/types'
 import type { RegimeColor } from '../../shared/types'
+import type { EngineLabSnapshot } from '../../shared/engine/strategyLab'
 
 // Read-only aggregation of everything the engine knows: the board, the
 // scorecard, the learning state. The app renders this; the engine writes it.
@@ -41,6 +42,10 @@ const json = (data: unknown, status = 200) =>
 export function ledgerRow(p: Prediction) {
   return {
     id: p.id,
+    sleeve: p.sleeve,
+    forecast: p.forecast,
+    detectedAt: p.detectedAt,
+    availableAt: p.availableAt,
     date: p.date,
     sym: p.sym,
     side: p.side,
@@ -225,13 +230,14 @@ export function projectOpenTrace(raw: { date?: string; generatedAt?: number; ent
 
 /** ?view=board — what Today/Board render: ~10 reads instead of ~50. */
 async function viewBoard() {
-  const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration, predIndex, missLedgerBlob, openTrace, videoExtracts] = await Promise.all([
-    blobAppStore.read<{ date?: string }>('engine-board'),
+  const [board, intradayFlagsBlob, eventRadar, runStatus, riskState, calibration, scorecard, predIndex, missLedgerBlob, openTrace, videoExtracts, engineLab] = await Promise.all([
+    blobAppStore.read<{ date: string; generatedAt: number; board: Prediction[] }>('engine-board'),
     blobAppStore.read<{ date: string }>('intraday-flags'),
     blobAppStore.read('event-radar'),
     blobAppStore.read('engine-run-status'),
     blobAppStore.read('risk-state'),
     blobAppStore.read<{ referenceBase?: number | null }>('engine-calibration'),
+    blobAppStore.read('engine-scorecard'),
     blobAppStore.read<string[]>('predictions-index'),
     blobAppStore.read(MISS_LEDGER_KEY),
     // the open book: yesterday's still-open calls walked against closes —
@@ -242,6 +248,7 @@ async function viewBoard() {
     // …and the tracked channels' week, which Today pairs name-by-name with the
     // engine's own stance (owner request)
     blobAppStore.read('video-extracts'),
+    blobAppStore.read<EngineLabSnapshot>('engine-lab'),
   ])
 
   // THE YESTERDAY STRIP (CX-18): the newest GRADED predictions day before the
@@ -316,6 +323,22 @@ async function viewBoard() {
     }
   }
 
+  // DECISION COCKPIT: the previous published board and live evidence are facts
+  // the phone cannot reconstruct from today's narrow slice. Keep this tiny and
+  // semantic: takeable rows only, not shadows/watch rows/route-blocked reads.
+  const priorDate = yesterdayDates.at(-1) ?? null
+  const priorRows = (yesterdayDays.at(-1) ?? [])
+    .filter(p => !p.shadow && !p.watchOnly && !p.observation)
+    .map(p => ({ sym: p.sym, side: p.side }))
+  const score = scorecard && typeof scorecard === 'object' ? scorecard as {
+    lifetime?: { live?: { graded?: number; hits?: number } }
+    brierTail?: { mean?: number }[]
+  } : null
+  const cal = calibration && typeof calibration === 'object' ? calibration as { brier?: { mean?: number }[] } : null
+  const liveGraded = Number(score?.lifetime?.live?.graded ?? 0)
+  const liveHits = Number(score?.lifetime?.live?.hits ?? 0)
+  const latestBrier = score?.brierTail?.at(-1)?.mean ?? cal?.brier?.at(-1)?.mean ?? null
+
   return {
     board: board ?? null,
     // only today's flags — a stale blob from a prior session must not show as live
@@ -327,7 +350,26 @@ async function viewBoard() {
     yesterday,
     openTrace: projectOpenTrace(openTrace ?? null),
     channelPicks: channelPicks(videoExtracts),
+    engineLab: engineLab ?? null,
+    decision: {
+      priorDate,
+      priorRows,
+      liveGraded: Number.isFinite(liveGraded) ? liveGraded : 0,
+      liveHits: Number.isFinite(liveHits) ? liveHits : 0,
+      latestBrier: typeof latestBrier === 'number' && Number.isFinite(latestBrier) ? latestBrier : null,
+    },
   }
+}
+
+/** The paper simulator's accountability projection. It deliberately does not
+ * use the legacy all-engine response: Track record needs two bounded blobs,
+ * not the board, funnel, learning state and every historical projection. */
+async function viewPaperBook() {
+  const [book, months] = await Promise.all([
+    blobAppStore.read('paper-book'),
+    blobAppStore.read('paper-months'),
+  ])
+  return { book: book ?? null, months: arr(months) }
 }
 
 const SYM_RE = /^[A-Z0-9.\-]{1,12}$/
@@ -350,11 +392,12 @@ const slimNearMiss = (m: FunnelNearMiss) => ({
  * verdict, its last-10-days funnel path, and every call on it in the 30-day
  * ledger window. THE funnel's first HTTP door. */
 async function viewJourney(sym: string, days = 30) {
-  const [traceIndex, predIndex, board, openTrace] = await Promise.all([
+  const [traceIndex, predIndex, board, openTrace, engineLab] = await Promise.all([
     blobAppStore.read<string[]>(FUNNEL_TRACE_INDEX_KEY),
     blobAppStore.read<string[]>('predictions-index'),
     blobAppStore.read<{ date: string; board: Prediction[] }>('engine-board'),
     blobAppStore.read<{ entries: { sym: string }[] }>('open-trace'),
+    blobAppStore.read<EngineLabSnapshot>('engine-lab'),
   ])
   const traceDates = (traceIndex ?? []).slice(-10)
   const traces = await Promise.all(traceDates.map(d => blobAppStore.read<FunnelTrace>(funnelTraceKey(d))))
@@ -381,6 +424,7 @@ async function viewJourney(sym: string, days = 30) {
     openTrace: openTrace?.entries?.find(e => e.sym === sym) ?? null,
     funnel,
     calls,
+    lab: (engineLab?.observations ?? []).filter(o => o.sym.toUpperCase() === sym),
   }
 }
 
@@ -612,6 +656,7 @@ export default async (req: Request) => {
       const days = Math.min(30, Math.max(1, Number.isFinite(parsed) ? Math.floor(parsed) : 7))
       return json(await viewLedger(days))
     }
+    if (view === 'paper-book') return json(await viewPaperBook())
     return json({ error: 'unknown view' }, 400)
   }
 
@@ -643,7 +688,7 @@ export default async (req: Request) => {
     blobAppStore.read<{ startedAt: number; updatedAt: number; phase: string; completedAt?: number; failedAt?: number; error?: string; graded?: number; boardSize?: number; rosterSize?: number; holdingsCount?: number; regime?: string }>('engine-run-status'),
   ])
 
-  const [paperBook, paperMonths, patternSightings, eventRadar, intradayFlagsBlob, missLedgerBlob, gateStateBlob] = await Promise.all([
+  const [paperBook, paperMonths, patternSightings, eventRadar, intradayFlagsBlob, missLedgerBlob, gateStateBlob, engineLab] = await Promise.all([
     blobAppStore.read('paper-book'),
     blobAppStore.read('paper-months'),
     blobAppStore.read<import('../../shared/engine/patternScore').PatternSighting[]>('pattern-sightings'),
@@ -664,6 +709,7 @@ export default async (req: Request) => {
     // gate has actually moved or been held, so the panel says nothing rather
     // than announcing that the gates are where they started.
     blobAppStore.read(GATE_STATE_KEY),
+    blobAppStore.read<EngineLabSnapshot>('engine-lab'),
   ])
 
   // pattern scorecard: rolled up at read time (pure + cheap) from the sweep's
@@ -687,6 +733,7 @@ export default async (req: Request) => {
     board,
     openTrace: openTrace ?? null,
     eventRadar: eventRadar ?? null,
+    engineLab: engineLab ?? null,
     // only today's flags — a stale blob from a prior session must not show as live
     intradayFlags: intradayFlagsBlob && intradayFlagsBlob.date === londonToday() ? intradayFlagsBlob : null,
     runStatus: runStatus ?? null,

@@ -25,7 +25,7 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useSlice } from '../lib/useSlice'
 import { getJourney, getVerdict } from '../lib/apiViews'
-import { getCandles, getNews } from '../lib/api'
+import { getCandles, getFilings, getNews } from '../lib/api'
 import { db, getCapital, type RuleItem } from '../lib/db'
 import { mirrorConfig } from '../lib/configMirror'
 import { CHART_RANGES, chartRangeOf, readChartRange, writeChartRange, type ChartRangeId } from '../lib/chartRange'
@@ -41,8 +41,10 @@ import { OpenTraceCard } from './parts/OpenTraceCard'
 import { SessionLine } from './parts/SessionLine'
 import { AskSheet } from './parts/AskSheet'
 import type { OpenTraceEntry } from '../lib/api'
+import { StrategyLabPanel } from './parts/StrategyLabPanel'
 
 const PriceChart = lazy(() => import('../components/PriceChart').then(m => ({ default: m.PriceChart })))
+const RsiChart = lazy(() => import('../components/RsiChart').then(m => ({ default: m.RsiChart })))
 
 const hostOf = (url: string) => {
   try {
@@ -101,6 +103,29 @@ function Catalysts({ sym }: { sym: string }) {
           </a>
         ))
       )}
+    </section>
+  )
+}
+
+function Filings({ sym }: { sym: string }) {
+  const { data } = useSlice(`filings:${sym}`, () => getFilings(sym))
+  if (!data) return null
+  return (
+    <section aria-label="Company filings" className="sp-filings">
+      <p className="sec-label">Primary-source filings{data.company ? ` · ${data.company}` : ''}</p>
+      {data.unavailable ? (
+        <p className="cc-reason">SEC filing feed is temporarily unavailable; absence is not being treated as “no filings”.</p>
+      ) : data.filings.length === 0 ? (
+        <p className="cc-reason">No recent catalyst-class SEC filing surfaced for this symbol.</p>
+      ) : (
+        data.filings.slice(0, 5).map(filing => (
+          <a key={filing.accession} className="catalyst-filing pressable" href={filing.url} target="_blank" rel="noreferrer">
+            <span><b>{filing.form}</b>{filing.description && filing.description !== filing.form ? ` · ${filing.description}` : ''}{filing.items ? ` · items ${filing.items}` : ''}</span>
+            <span>{filing.filed}</span>
+          </a>
+        ))
+      )}
+      <p className="sp-source-line">Source: SEC EDGAR. Links open the original filing.</p>
     </section>
   )
 }
@@ -178,10 +203,23 @@ export default function StockPage({ sym }: { sym: string }) {
   return (
     <div className="stockpage">
       <div className="sp-head">
-        <h1>
-          {sym}
-          {(row?.name ?? quote?.name) && <span className="sp-name">{row?.name ?? quote?.name}</span>}
-        </h1>
+        <div className="sp-title">
+          <button
+            type="button"
+            className="sp-back"
+            aria-label="Back"
+            onClick={() => {
+              if (window.history.length > 1) window.history.back()
+              else window.location.assign('/app/intel')
+            }}
+          >
+            ←
+          </button>
+          <h1>
+            {sym}
+            {(row?.name ?? quote?.name) && <span className="sp-name">{row?.name ?? quote?.name}</span>}
+          </h1>
+        </div>
         {quote && (
           <span
             className={`sp-px num${quote.stale ? ' stale' : ''}`}
@@ -216,6 +254,7 @@ export default function StockPage({ sym }: { sym: string }) {
         {candles.length > 1 ? (
           <Suspense fallback={<div className="skeleton sp-chart-skel" />}>
             <PriceChart candles={candles} priceLines={priceLines} height={260} interactive intraday={intradayRange} />
+            <RsiChart candles={candles} intraday={intradayRange} />
           </Suspense>
         ) : (
           <div className="skeleton sp-chart-skel" />
@@ -254,6 +293,11 @@ export default function StockPage({ sym }: { sym: string }) {
         </>
       )}
 
+      {/* The separate 2–3 day, quality-dip and social-ignition contracts for
+          this symbol. Shadow research is visible here but never masquerades as
+          the published board verdict above. */}
+      <StrategyLabPanel symbol={sym} observations={journey?.lab} />
+
       {/* 5 — every past call, and what price then did */}
       <PastCalls sym={sym} calls={journey?.calls ?? []} />
 
@@ -278,6 +322,7 @@ export default function StockPage({ sym }: { sym: string }) {
         />
       </section>
       <Catalysts sym={sym} />
+      <Filings sym={sym} />
     </div>
   )
 }

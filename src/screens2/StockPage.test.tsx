@@ -17,6 +17,7 @@ import type { JourneyCall, JourneySlice, VerdictRead } from '../lib/apiViews'
 import StockPage from './StockPage'
 
 vi.mock('../components/PriceChart', () => ({ PriceChart: () => <div data-testid="price-chart" /> }))
+vi.mock('../components/RsiChart', () => ({ RsiChart: () => <div data-testid="rsi-chart" /> }))
 
 vi.mock('../lib/apiViews', async () => {
   const actual = await vi.importActual<typeof import('../lib/apiViews')>('../lib/apiViews')
@@ -26,7 +27,7 @@ vi.mock('../lib/apiViews', async () => {
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
   const notMocked = () => Promise.reject(new Error('not mocked in this test'))
-  return { ...actual, getCandles: vi.fn(notMocked), getNews: vi.fn(notMocked) }
+  return { ...actual, getCandles: vi.fn(notMocked), getNews: vi.fn(notMocked), getFilings: vi.fn(notMocked) }
 })
 vi.mock('../lib/configMirror', () => ({ mirrorConfig: vi.fn() }))
 
@@ -146,7 +147,7 @@ describe('StockPage', () => {
     expect(await screen.findByRole('heading', { level: 1, name: /NVDA/ })).toBeInTheDocument()
   })
 
-  it('renders the five ratified sections in DOM order: chart, verdict, factors, funnel, past calls', async () => {
+  it('renders the ratified sections in DOM order, with engine research before past calls', async () => {
     await seedCandles('NVDA')
     await writeSlice(
       'journey:NVDA',
@@ -160,7 +161,7 @@ describe('StockPage', () => {
     expect(await screen.findByTestId('price-chart')).toBeInTheDocument()
     await screen.findByLabelText('Past calls')
     const labels = [...container.querySelectorAll('section[aria-label]')].map(s => s.getAttribute('aria-label'))
-    expect(labels.slice(0, 5)).toEqual(['Price chart', "The engine's verdict", 'Factor votes', 'The funnel path', 'Past calls'])
+    expect(labels.slice(0, 6)).toEqual(['Price chart', "The engine's verdict", 'Factor votes', 'The funnel path', 'NVDA research lab', 'Past calls'])
   })
 
   it('a sized board row shows the grade pill and the calibrated probability', async () => {
@@ -593,7 +594,9 @@ describe('StockPage', () => {
       await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall()] }))
       withRouter('NVDA')
       const past = await screen.findByLabelText('Past calls')
-      expect(within(past).getByLabelText('Grade A')).toBeInTheDocument()
+      // Past calls mounts before the local Dexie slice finishes its first
+      // asynchronous read; wait for the populated state, not just its shell.
+      expect(await within(past).findByLabelText('Grade A')).toBeInTheDocument()
     })
 
     // I5: the list only ever holds a WINDOW, and the way to widen it must be
@@ -670,6 +673,20 @@ describe('StockPage', () => {
       expect(within(strip).getByText('a.example.com')).toBeInTheDocument()
       expect(within(strip).queryByText('Four')).not.toBeInTheDocument()
     })
+
+    it('shows recent primary SEC filings and links to the original documents', async () => {
+      const { getFilings } = await import('../lib/api')
+      vi.mocked(getFilings).mockResolvedValue({
+        company: 'NVIDIA Corp', cik: 1045810, asOf: 1,
+        filings: [{ accession: 'a1', form: '8-K', filed: '2026-08-20', reportDate: '2026-08-20', description: 'Current report', items: '2.02', url: 'https://www.sec.gov/a1' }],
+      })
+      await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
+      withRouter('NVDA')
+      const section = await screen.findByLabelText('Company filings')
+      expect(within(section).getByText(/NVIDIA Corp/)).toBeInTheDocument()
+      expect(within(section).getByRole('link')).toHaveAttribute('href', 'https://www.sec.gov/a1')
+      expect(within(section).getByText(/original filing/i)).toBeInTheDocument()
+    })
   })
 
   describe('the chart', () => {
@@ -679,6 +696,7 @@ describe('StockPage', () => {
       await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
       withRouter('NVDA')
       expect(await screen.findByTestId('price-chart')).toBeInTheDocument()
+      expect(await screen.findByTestId('rsi-chart')).toBeInTheDocument()
       const pills = screen.getByRole('group', { name: /chart range/i })
       expect([...pills.querySelectorAll('button')].map(b => b.textContent)).toEqual(['1D', '1W', '1M', '3M', '6M', '1Y'])
       fireEvent.click(within(pills).getByRole('button', { name: '1Y' }))

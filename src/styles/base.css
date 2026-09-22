@@ -97,6 +97,55 @@ p {
 .v2 .pill.short {
   color: var(--short);
 }
+.v2 .pill.good { color: var(--long); }
+.v2 .pill.bad { color: var(--short); }
+.v2 .pill.warn { color: var(--warn); }
+
+/* Today's first read: what is actionable, what changed, and how much live
+   evidence the engine has earned. */
+.v2 .decision-cockpit {
+  min-width: 0;
+  margin: 10px 0 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-glass);
+  box-shadow: var(--shadow-card);
+}
+.v2 .decision-cockpit-head,
+.v2 .decision-provenance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+}
+.v2 .decision-cockpit-head { font-size: 12.5px; }
+.v2 .decision-cockpit-grid {
+  display: grid;
+  grid-template-columns: minmax(100px, .8fr) minmax(220px, 1.8fr) minmax(130px, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.v2 .decision-tile {
+  min-width: 0;
+  padding: 9px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.v2 .decision-tile .sec-label { margin: 0; font-size: 9px; }
+.v2 .decision-tile strong { font-size: 19px; line-height: 1.2; }
+.v2 .decision-tile strong.decision-change { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.v2 .decision-tile small { color: var(--text-dim); font-size: 10.5px; line-height: 1.4; }
+.v2 .decision-provenance { color: var(--text-dim); font-size: 10px; margin-top: 9px; }
+@media (max-width: 680px) {
+  .v2 .decision-cockpit-grid { grid-template-columns: 1fr 1fr; }
+  .v2 .decision-tile-wide { grid-column: 1 / -1; grid-row: 2; }
+}
 
 /* --- segmented control ----------------------------------------------------- */
 .v2 .seg {
@@ -167,22 +216,20 @@ p {
   user-select: none;
 }
 
-/* --- horizontal snap rail (T212 Discover) ---------------------------------- */
+/* --- responsive rail -------------------------------------------------------
+   The app is phone-first, but the rail must never become a second sideways
+   viewport. Cards wrap in place so every item is discoverable with the same
+   vertical gesture as the rest of the page. */
 .v2 .hrail {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
+  overflow-x: visible;
+  scroll-snap-type: none;
   padding-bottom: 4px;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-.v2 .hrail::-webkit-scrollbar {
-  display: none;
 }
 .v2 .hrail > * {
-  scroll-snap-align: start;
-  flex: none;
+  min-width: 0;
 }
 
 /* --- section label --------------------------------------------------------- */
@@ -217,6 +264,8 @@ p {
 }
 .v2 .v2-tab {
   display: flex;
+  flex: 1 1 0;
+  min-width: 0;
   flex-direction: column;
   align-items: center;
   gap: 3px;
@@ -224,7 +273,7 @@ p {
   font-weight: 600;
   color: var(--text-dim);
   text-decoration: none;
-  padding: 2px 8px;
+  padding: 2px 3px;
   border-radius: 10px;
 }
 .v2 .v2-tab.on {
@@ -234,9 +283,15 @@ p {
   font-size: 17px;
   line-height: 1;
 }
-/* THE RAIL-ONLY ENTRIES (owner iteration 2). Three pages promoted out of More
-   onto the desktop rail; the phone bar stays exactly the five ratified tabs,
-   and CSS alone is what enforces it — the ≥1024px block below reveals them, so
+.v2 .v2-tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* THE RAIL-ONLY ENTRIES (owner iteration 2). Four pages promoted out of More
+   onto the desktop rail; the phone bar carries the six primary routes, and
+   CSS alone hides these extras — the ≥1024px block below reveals them, so
    no JS width check exists to disagree with the media query the rail skin is
    already gated on. */
 .v2 .v2-tab.rail-only {
@@ -263,6 +318,7 @@ p {
     border-right: 1px solid var(--border);
   }
   .v2 .v2-tab {
+    flex: 0 0 auto;
     flex-direction: row;
     gap: 10px;
     font-size: 14px;
@@ -283,6 +339,60 @@ p {
     margin-left: 200px;
     max-width: none;
     padding: 20px 24px 24px;
+  }
+}
+
+/* Analytics is a regular routed page on every viewport. The former desktop
+   slide-over hid it on phones and covered whatever the reader was studying. */
+.v2 .analytics2,
+.v2 .analytics2 .desk2-panels,
+.v2 .analytics2 .card {
+  min-width: 0;
+}
+.v2 .analytics2-head {
+  margin-bottom: 16px;
+}
+.v2 .analytics2-head .sec-label {
+  display: block;
+  margin: 0 0 5px;
+}
+.v2 .analytics2-head h1 {
+  margin: 0;
+}
+.v2 .analytics2-head p {
+  max-width: 720px;
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+.v2 .analytics2 .desk2-panels {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+.v2 .analytics2 .desk2-panels > .card {
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+@media (min-width: 760px) {
+  .v2 .analytics2 .desk2-panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .v2 .analytics2 .quant-hero {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 420px) {
+  .v2 .v2-tab {
+    font-size: 9px;
+  }
+  .v2 .analytics2 .quant-comp {
+    grid-template-columns: minmax(72px, 92px) minmax(0, 1fr) 45px;
+    gap: 7px;
+  }
+  .v2 .analytics2 .quant-fund-flows {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -580,6 +690,56 @@ p {
   gap: 4px;
   font-size: 12px;
   color: var(--text-dim);
+}
+
+/* Visible research sleeves: deliberately quieter than a published call card.
+   They explain what is being measured and keep every probability on its own
+   clock instead of blending it into the main board grade. */
+.v2 .lab2 { margin: 18px 0; }
+.v2 .lab2-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.v2 .lab2-title .sec-label { margin: 0; }
+.v2 .lab2-title > span { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.v2 .lab2-intro { margin: 6px 0 10px; }
+.v2 .lab2-awaiting { display: flex; flex-wrap: wrap; gap: 6px; }
+.v2 .lab2-awaiting span { padding: 5px 8px; border: 1px dashed var(--line-strong); border-radius: 999px; color: var(--text-dim); font-size: 10px; }
+.v2 .lab2-sleeves { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0 0 10px; }
+.v2 .lab2-sleeve { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 7px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); font-size: 10.5px; color: var(--text-dim); }
+.v2 .lab2-sleeve > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 700; }
+.v2 .lab2-sleeve > .num { grid-column: 1 / -1; }
+.v2 .lab2-sleeve-status { border-radius: 999px; padding: 1px 6px; text-transform: uppercase; font-size: 8px; letter-spacing: .04em; }
+.v2 .lab2-sleeve-status.control { color: var(--good); background: color-mix(in srgb, var(--good) 10%, transparent); }
+.v2 .lab2-sleeve-status.shadow,
+.v2 .lab2-sleeve-status.collecting { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.v2 .lab2-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.v2 a.lab2-card { color: inherit; text-decoration: none; }
+.v2 .lab2-card { min-width: 0; padding: 12px; overflow: hidden; }
+.v2 .lab2-head { display: flex; align-items: center; gap: 6px; }
+.v2 .lab2-sym { font-weight: 800; }
+.v2 .lab2-score { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+.v2 .lab2-kind { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 7px 0 5px; color: var(--text); font-size: 12px; font-weight: 700; }
+.v2 .lab2-state { color: var(--text-dim); font-size: 9px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; text-align: right; }
+.v2 .lab2-state.setup { color: var(--good); }
+.v2 .lab2-state.avoid { color: var(--bad); }
+.v2 .lab2-forecast { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; color: var(--text-dim); font-size: 10.5px; }
+.v2 .lab2-forecast span:last-child { grid-column: 1 / -1; }
+.v2 .lab2-forecast span { display: flex; flex-direction: column; gap: 2px; }
+.v2 .lab2-forecast b { color: var(--text); font-size: 12px; }
+.v2 .lab2-levels { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 4px 0 7px; color: var(--text-dim); font-size: 10.5px; }
+.v2 .lab2-levels b { color: var(--text); }
+.v2 .lab2-evidence { display: grid; gap: 5px; margin-top: 8px; }
+.v2 .lab2-evidence p { margin: 0; color: var(--text-dim); font-size: 10.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.v2 .lab2-evidence b { display: block; margin-bottom: 1px; color: var(--text); font-size: 9px; letter-spacing: .035em; text-transform: uppercase; }
+.v2 .lab2-foot { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 9px; padding-top: 7px; border-top: 1px solid var(--line); color: var(--text-dim); font-size: 9.5px; }
+.v2 .lab2-provisional { color: var(--warn); }
+.v2 .lab2-open { display: block; margin-top: 7px; color: var(--accent); font-size: 10.5px; font-weight: 700; }
+.v2 .cc-contract { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; margin: 9px 0 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--text-dim); font-size: 10px; line-height: 1.35; }
+.v2 .cc-contract > span { min-width: 0; overflow-wrap: anywhere; }
+.v2 .cc-contract > span:nth-child(2) { text-align: right; }
+.v2 .cc-contract > span:last-child { grid-column: 1 / -1; }
+.v2 .cc-contract-label { color: var(--text); font-weight: 700; }
+@media (max-width: 420px) {
+  .v2 .lab2-grid { grid-template-columns: 1fr; }
+  .v2 .lab2-sleeves { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* --- the crypto cohort's marks (crypto-v2 wave) ----------------------------
@@ -1154,6 +1314,10 @@ p {
 .v2 .stx-rail-section {
   margin-top: 18px;
 }
+.v2 .stx-rail-section .hrail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .v2 .stx-rail-head {
   display: flex;
   align-items: baseline;
@@ -1167,7 +1331,8 @@ p {
   text-decoration: none;
 }
 .v2 .stx-rail-card {
-  width: 128px;
+  width: auto;
+  min-width: 0;
   padding: 10px;
   position: relative;
   display: flex;
@@ -1204,7 +1369,8 @@ p {
    via color-mix, mixed against a SOLID surface (--surface-1), never the
    .card gradient (color-mix cannot blend a gradient). */
 .v2 .stx-sector-tile {
-  width: 118px;
+  width: auto;
+  min-width: 0;
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -1378,6 +1544,9 @@ p {
   gap: 8px;
   min-width: 0;
 }
+.v2 .sp-title{display:flex;align-items:center;gap:8px;min-width:0}
+.v2 .sp-back{appearance:none;width:34px;height:34px;display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--border);border-radius:11px;background:var(--surface-1);color:var(--text);font-size:20px;line-height:1;cursor:pointer}
+.v2 .sp-back:hover{border-color:var(--accent);color:var(--accent)}
 .v2 .sp-name {
   font-size: 12px;
   font-weight: 400;
@@ -1419,6 +1588,100 @@ p {
 .v2 .sp-chart-skel {
   height: 260px;
 }
+
+/* Full chart controls: wrap onto the available width. This deliberately does
+   not create a second horizontal viewport on phones. */
+.v2 .chart-box.is-interactive {
+  min-width: 0;
+  padding-top: 10px;
+  overflow: hidden;
+}
+.v2 .chart-box.is-interactive .chart-legend,
+.v2 .indicator-chart .chart-legend {
+  position: static;
+  min-height: 18px;
+  padding: 0 10px;
+  margin: 7px 0 0;
+}
+.v2 .chart-toolbar,
+.v2 .chart-readout {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 6px;
+  padding: 0 8px;
+  overflow: visible;
+}
+.v2 .chart-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.v2 .chart-toggle button,
+.v2 .chart-tool {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: var(--text-dim);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.v2 .chart-toggle button.active {
+  color: var(--text);
+  background: var(--surface-1);
+}
+.v2 .chart-tool { border: 1px solid var(--border); }
+.v2 .chart-tool.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-1));
+}
+.v2 .chart-readout {
+  gap: 5px 11px;
+  min-height: 25px;
+  padding-top: 8px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.v2 .chart-readout b { color: var(--text); font-weight: 650; }
+.v2 .indicator-chart { padding-top: 12px; }
+.v2 .indicator-legend { align-items: center; }
+.v2 .indicator-state {
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+.v2 .indicator-state.overbought { color: var(--short); background: color-mix(in srgb, var(--short) 10%, var(--surface-1)); }
+.v2 .indicator-state.oversold { color: var(--long); background: color-mix(in srgb, var(--long) 10%, var(--surface-1)); }
+.v2 .indicator-bands { color: var(--text-dim); font-weight: 500; }
+
+.v2 .sp-filings { margin-top: 18px; }
+.v2 .catalyst-filing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  text-decoration: none;
+}
+.v2 .catalyst-filing span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.v2 .catalyst-filing span:last-child { color: var(--text-dim); white-space: nowrap; }
+.v2 .sp-source-line { margin: 8px 0 0; color: var(--text-dim); font-size: 10px; }
 
 /* --- the verdict hero ------------------------------------------------------ */
 .v2 .sp-hero {
@@ -1970,12 +2233,62 @@ p {
   margin-top: 12px;
 }
 
-/* the paper: edition pill + the sandboxed srcDoc iframe (CX-19) */
+/* The paper: one reader for all three daily editions. The controls are a grid,
+   not a horizontal scroller, so the same hierarchy survives on a 390px phone. */
+.v2 .paper2-editions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin: 0 0 12px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface-2);
+}
+.v2 .paper2-editions button {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-dim);
+  text-align: left;
+  cursor: pointer;
+}
+.v2 .paper2-editions button strong,
+.v2 .paper2-editions button span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .paper2-editions button strong {
+  color: inherit;
+  font-size: 13px;
+}
+.v2 .paper2-editions button span {
+  margin-top: 2px;
+  font-size: 10.5px;
+}
+.v2 .paper2-editions button.active {
+  border-color: var(--border);
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+/* edition pill + the sandboxed srcDoc iframe (CX-19) */
 .v2 .itl-edition-pill-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
+}
+.v2 .itl-published {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11px;
 }
 .v2 iframe.itl-frame {
   display: block;
@@ -2003,6 +2316,26 @@ p {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+.v2 .itl-edition-empty {
+  padding: 28px 4px;
+}
+
+@media (max-width: 520px) {
+  .v2 .paper2-editions button {
+    padding: 9px 7px;
+    text-align: center;
+  }
+  .v2 .paper2-editions button span {
+    font-size: 9px;
+  }
+  .v2 .itl-published {
+    width: 100%;
+    margin-left: 0;
+  }
+  .v2 iframe.itl-frame {
+    height: 66vh;
+  }
 }
 
 /* the news desk: one headline row per item, title above a meta line */
@@ -2385,6 +2718,43 @@ p {
   margin: 0 0 14px;
 }
 
+/* Paper-book execution stats: seven compact tiles that reflow instead of a
+   wide performance table. */
+.v2 .paper-book-panel { margin: 20px 0; }
+.v2 .paper-book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.v2 .paper-book-stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .paper-book-stat > span,
+.v2 .paper-book-stat small { color: var(--text-dim); font-size: 11px; }
+.v2 .paper-book-stat strong { font-size: 20px; }
+.v2 .paper-book-list { margin-top: 14px; }
+.v2 .paper-book-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  min-width: 0;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  text-decoration: none;
+}
+.v2 .paper-book-row .long { color: var(--long); }
+.v2 .paper-book-row .short { color: var(--short); }
+.v2 .paper-book-history,
+.v2 .paper-book-note { overflow-wrap: anywhere; }
+.v2 .paper-book-history { margin: 12px 0 0; color: var(--text-dim); font-size: 11px; }
+
 /* the scorecard: one tile per byGrade key, shadow/wildcard included — never
    styled differently from an ordinary letter, only LABELLED differently
    (Record.tsx's tileLabel) */
@@ -2420,7 +2790,7 @@ p {
 /* do the letters separate? the same byGrade numbers, side by side, so the
    claim a grade makes can be checked in one glance (owner iteration 2) */
 .v2 .rec-grade-wrap {
-  overflow-x: auto;
+  overflow-x: visible;
   margin: -8px 0 18px;
   /* four short columns stretched across a 1200px desk pane puts the tier name
      and its numbers half a screen apart — cap it to a readable measure */
@@ -2428,6 +2798,7 @@ p {
 }
 .v2 .rec-grade-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 12.5px;
 }
@@ -2440,7 +2811,7 @@ p {
   color: var(--text-dim);
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
-  white-space: nowrap;
+  white-space: normal;
 }
 .v2 .rec-grade-table th:first-child,
 .v2 .rec-grade-table td:first-child {
@@ -2450,7 +2821,7 @@ p {
   text-align: right;
   padding: 7px 8px;
   border-bottom: 1px solid var(--border);
-  white-space: nowrap;
+  white-space: normal;
 }
 .v2 .rec-grade-table tr:last-child td {
   border-bottom: none;
@@ -2566,9 +2937,211 @@ p {
   color: var(--short);
 }
 
-/* calibration: CalibrationPlot is reused AS-IS (its own file is untouched) —
-   this wrapper only restyles the legacy .digest-section/.section-title/
-   .empty-line classes it renders, onto the v2 palette. */
+/* Calibration evidence: the old claimed-v-realized scatter derived both axes
+   from the same outcomes. This scorecard instead shows the decision-useful
+   evidence: observed rate, honest benchmark, uncertainty and sample size. */
+.cal-evidence {
+  min-width: 0;
+}
+.cal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.cal-title-row .section-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cal-method {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.cal-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  margin: 8px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.cal-summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+.cal-summary-stat + .cal-summary-stat {
+  border-left: 1px solid var(--border);
+}
+.cal-summary-stat strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.cal-summary-stat > span:last-child {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.cal-summary-label {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.cal-row-head,
+.cal-row {
+  display: grid;
+  grid-template-columns: minmax(145px, .72fr) minmax(220px, 1.55fr) minmax(92px, .5fr);
+  gap: 18px;
+  align-items: center;
+}
+.cal-row-head {
+  padding: 0 12px 7px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.cal-rows {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.cal-row {
+  min-width: 0;
+  padding: 11px 12px;
+  background: var(--surface-1);
+}
+.cal-row + .cal-row {
+  border-top: 1px solid var(--border);
+}
+.cal-setup {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.cal-setup > div,
+.cal-result,
+.cal-sample {
+  min-width: 0;
+}
+.cal-setup strong,
+.cal-setup div > span,
+.cal-sample strong,
+.cal-sample span {
+  display: block;
+}
+.cal-setup strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.cal-setup div > span,
+.cal-sample span,
+.cal-range-copy {
+  color: var(--text-dim);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+.cal-side {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 49px;
+  padding: 5px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.cal-side.long { color: var(--long); }
+.cal-side.short { color: var(--short); }
+.cal-result-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+.cal-result-top strong {
+  font-size: 13px;
+}
+.cal-lift {
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.cal-lift.good { color: var(--long); }
+.cal-lift.bad { color: var(--short); }
+.cal-lift.watch,
+.cal-lift.early { color: var(--warn); }
+.cal-lift.neutral { color: var(--text-dim); }
+.cal-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.cal-range {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.cal-rate,
+.cal-base {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-1px);
+  border-radius: 2px;
+}
+.cal-rate { background: var(--accent); }
+.cal-base {
+  z-index: 1;
+  width: 1px;
+  background: var(--text-dim);
+}
+.cal-range-copy {
+  display: block;
+  margin-top: 3px;
+}
+.cal-sample {
+  text-align: right;
+}
+.cal-sample strong {
+  font-size: 12px;
+}
+.cal-footnote {
+  margin: 9px 2px 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .v2 .rec-calibration {
   margin: 4px 0 18px;
 }
@@ -2592,6 +3165,45 @@ p {
 }
 .v2 .rec-calibration-explainer {
   margin: 0 0 8px;
+}
+
+@media (max-width: 700px) {
+  .cal-title-row {
+    align-items: flex-start;
+  }
+  .cal-method {
+    padding-top: 10px;
+  }
+  .cal-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .cal-summary-best {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border);
+    border-left: 0 !important;
+  }
+  .cal-summary-stat {
+    padding: 10px 11px;
+  }
+  .cal-summary-stat strong {
+    font-size: 15px;
+  }
+  .cal-row-head {
+    display: none;
+  }
+  .cal-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 9px 12px;
+    padding: 12px;
+  }
+  .cal-result {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .cal-sample {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }
 
 /* the ledger, grouped by day */
@@ -3193,10 +3805,11 @@ p {
 }
 
 .v2 .gl-cred-wrap {
-  overflow-x: auto;
+  overflow-x: visible;
 }
 .v2 .gl-cred-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -3212,6 +3825,7 @@ p {
 .v2 .gl-cred-table td {
   padding: 6px 8px 6px 0;
   border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
 }
 .v2 .gl-cred-table th:not(:first-child),
 .v2 .gl-cred-table td:not(:first-child) {
@@ -3587,7 +4201,8 @@ p {
     grid-column: 1 / -1;
   }
   .v2 .desk2 .hrail {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
     overflow-x: visible;
     scroll-snap-type: none;
   }
@@ -3676,48 +4291,7 @@ p {
     height: 100dvh;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 0 28px 40px;
-  }
-  .v2 .desk2-panebar {
-    position: sticky;
-    top: 0;
-    z-index: 3;
-    display: flex;
-    justify-content: flex-end;
-    padding: 12px 0 8px;
-    background: var(--bg);
-  }
-
-  /* the analytics slide-over: desktop-only, lazy-mounted, non-modal */
-  .v2 .desk2-drawer {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(440px, 34vw);
-    z-index: 60;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 14px 16px 28px;
-    background: var(--surface-1);
-    border-left: 1px solid var(--border);
-    box-shadow: var(--shadow-card);
-    animation: desk2-slide-in 200ms ease-out;
-  }
-  .v2 .desk2-drawer-head {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 4px 0 10px;
-    background: var(--surface-1);
-    border-bottom: 1px solid var(--border);
-  }
-  .v2 .desk2-drawer-head .sec-label {
-    margin: 0;
+    padding: 20px 28px 40px;
   }
   .v2 .desk2-panels {
     display: flex;
@@ -3736,15 +4310,6 @@ p {
   .v2 .desk2-panels .quant-comp {
     grid-template-columns: minmax(74px, 106px) minmax(0, 1fr) 48px;
     gap: 8px;
-  }
-}
-
-@keyframes desk2-slide-in {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: none;
   }
 }
 
@@ -3772,3 +4337,63 @@ p {
     transform: none !important;
   }
 }
+/* Social Radar — a three-source comparison that collapses to one readable
+   column on mobile. Every grid child is min-width:0 so theses and URLs wrap;
+   this section must never create page-level horizontal scrolling. */
+.itl-tabs{display:inline-grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin:2px 0 16px;border:1px solid var(--border);border-radius:14px;background:var(--surface-1)}
+.itl-tabs button{appearance:none;border:0;background:transparent;color:var(--text-dim);padding:9px 15px;border-radius:10px;font:inherit;font-weight:750;cursor:pointer}
+.itl-tabs button.active{background:var(--accent);color:#fff}
+.sr-section,.sr-list,.sr-card,.sr-pane{min-width:0}
+.sr-intro{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:12px}
+.sr-intro h2{margin:0 0 5px;font-size:clamp(24px,4vw,34px)}
+.sr-intro p{margin:0;color:var(--text-dim);max-width:760px;line-height:1.45}
+.sr-filters{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px}
+.sr-filters button{cursor:pointer;border:1px solid var(--border);background:var(--surface-1);color:var(--text-dim)}
+.sr-filters button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.sr-list{display:grid;gap:13px}
+.sr-card{padding:0;overflow:hidden}
+.sr-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:15px 16px;border-bottom:1px solid var(--border)}
+.sr-symbol{font-size:25px;font-weight:850;color:var(--text);text-decoration:none}
+.sr-symbol:hover{text-decoration:underline}
+.sr-name{display:block;color:var(--text-dim);margin-top:2px;overflow-wrap:anywhere}
+.sr-badges{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.sr-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.sr-pane{display:flex;flex-direction:column;gap:7px;padding:15px 16px;line-height:1.4;overflow-wrap:anywhere}
+.sr-pane+.sr-pane{border-left:1px solid var(--border)}
+.sr-pane>span:not(.sr-kicker):not(.pill){color:var(--text-dim);font-size:13px}
+.sr-kicker{font-size:11px;font-weight:850;letter-spacing:.11em;text-transform:uppercase;color:var(--text-dim)}
+.sr-muted{color:var(--text-dim)!important;opacity:.76}
+.sr-warning{color:var(--warn)!important}
+.sr-evidence-list{display:grid;gap:7px;margin-top:2px}
+.sr-evidence-list a,.sr-memory-links a{display:block;color:var(--text-dim);font-size:12px;line-height:1.45;text-decoration:none;overflow-wrap:anywhere}
+.sr-evidence-list a:hover,.sr-memory-links a:hover{color:var(--text)}
+.sr-evidence-list .pill,.sr-memory-links .pill{margin-right:5px}
+.sr-opinion{margin:0;padding:12px 16px;border-top:1px solid var(--border);font-size:13px;line-height:1.5;color:var(--text-dim)}
+.sr-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text-dim)}
+.sr-footer .stx-showmore{flex:0 0 auto;width:auto;margin:0}
+.sr-memory-list{display:grid;gap:0;border-top:1px solid var(--border);background:var(--surface-2)}
+.sr-memory-day{padding:13px 16px}
+.sr-memory-day+.sr-memory-day{border-top:1px solid var(--border)}
+.sr-memory-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sr-memory-day p{margin:7px 0;color:var(--text-dim);font-size:13px;line-height:1.5}
+.sr-memory-links{display:grid;gap:5px}
+.sr-footnote{margin:14px 2px 0;color:var(--text-dim);font-size:12px;line-height:1.45}
+.sr-risk-high{color:var(--short)!important;border-color:var(--short)!important}
+.sr-risk-elevated{color:var(--warn)!important}
+
+@media(max-width:760px){
+  .itl-tabs{display:grid;width:100%;box-sizing:border-box}
+  .sr-intro{display:block}
+  .sr-intro>.pill{display:inline-flex;margin-top:9px}
+  .sr-grid{grid-template-columns:1fr}
+  .sr-pane+.sr-pane{border-left:0;border-top:1px solid var(--border)}
+  .sr-card-head,.sr-footer{align-items:flex-start;flex-direction:column}
+  .sr-badges{justify-content:flex-start}
+  .sr-footer .stx-showmore{width:100%}
+}
+
+/* A lazy route from an older installed shell can outlive the deployment that
+   named it. Keep the recovery surface compact and usable at every width. */
+.v2-recovery{max-width:620px;margin:clamp(18px,5vw,56px) auto;padding:clamp(20px,5vw,34px)}
+.v2-recovery h2{margin:8px 0 10px;font-size:clamp(24px,5vw,36px)}
+.v2-recovery p{margin:0 0 18px;color:var(--text-dim);line-height:1.55}

@@ -124,12 +124,18 @@ const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).diges
 // entry, stop, target, watch/shadow/near) is unchanged and was NOT re-stamped —
 // which is the evidence that the hash moved for a new field and not for a new
 // decision. d065d21… was the pre-3c value.
-const GOLDEN_SHA = '492c14e7ad6e23e70d0d54186b6ad06109eb2acd184f471cb16eabf5503e4ead'
+// Re-stamped for the research-lab port: each published row now carries a
+// sleeve, an explicit forecast contract and detection/availability timestamps.
+// The readable decision projection below remains unchanged.
+const GOLDEN_SHA = '96a4ccbc999b73b10ed059d1368cfcf185b7c95c5ea823b61763fcf511d796fa'
 const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-64.8 r=1 e=162 s=170.44 t=150.75 ']
 /** Every key the golden day wrote at BASE. The trace may ADD to this list and
  * may touch nothing in it. */
 const GOLDEN_KEYS = [
   'engine-board',
+  'engine-lab',
+  'engine-lab-ledger',
+  'engine-lab-social-history',
   'engine-roster',
   'engine-roster-log',
   'event-radar',
