@@ -24,6 +24,7 @@ import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLa
 import { dipThesis } from '../../../shared/engine/voice'
 import { classifyVelocity, velocityCall, VELOCITY_DOOR_CAP } from '../../../shared/engine/velocityLane'
 import { clusterCandidates, detectClusters, TREND_DAY_SYMS, TREND_HISTORY_DAYS, type TrendDay } from '../../../shared/engine/hypeCluster'
+import type { DiscoveryCandidate, DiscoveryResult } from '../../../shared/engine/discovery/types'
 import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, VELOCITY_CATALYST_KIND, WILDCARD_CATALYST_KIND, type CatalystTag } from '../../../shared/engine/catalyst'
 import { WILDCARD_SIZE_CAP, selectWildcard, wildcardDisabled } from '../../../shared/engine/wildcardLane'
 import { wildcardThesis } from '../../../shared/engine/voice'
@@ -181,6 +182,23 @@ export interface EngineDeps {
   // stands alone and not one prediction row is touched. Nothing published
   // reads it either way.
   postMortemSentence?: (prompt: string) => Promise<string>
+  // THE SCAN (discovery engine v2 — docs/superpowers/specs/2026-09-22-discovery-engine-v2-design.md).
+  // Every other door above SAMPLES the market: today's top-50 movers, 130 famous
+  // names, whatever the crowd happened to be naming. This one reads a persistent
+  // universe end to end and hands back the names its lenses fired on, with the
+  // bars it already paid for so nothing is fetched twice.
+  //
+  // OPTIONAL, and that is the fail-soft — the same shape postMortemSentence uses.
+  // Absent (every existing fixture, a replay, `DISCOVERY=off`) means the legacy
+  // inflow stands alone and not one line of the run below changes. A null answer
+  // means the same thing for a run where the stage was wired but declined.
+  discovery?: (input: {
+    date: string
+    /** every name a door has already offered today, so the universe can learn who else named it */
+    nominations: { sym: string; origin: string; capBand?: 'large' | 'mid' | 'small'; sector?: string; exchange?: 'US' | 'LSE' }[]
+    spy: Candle[] | null
+    isEtp: (sym: string) => boolean
+  }) => Promise<DiscoveryResult | null>
 }
 
 const londonDate = (nowSec: number) => new Date(nowSec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
@@ -214,7 +232,14 @@ export async function fetchMediaTitles(fetchFn: typeof fetch = fetch): Promise<s
   return out.slice(0, 40)
 }
 
-export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: string; T212_SECRET_KEY?: string; T212_HOST?: string }): EngineDeps {
+export function defaultDeps(
+  env: { FINNHUB_API_KEY?: string; T212_API_KEY?: string; T212_SECRET_KEY?: string; T212_HOST?: string; DISCOVERY?: string },
+  // The scan's bar cache lives in the store, and deps are built before buildBoard
+  // is handed one — so the store arrives the way env does, through the closure.
+  // Optional: absent, the discovery dep reaches for the live store the handlers
+  // already share (storeProvider), which is what predict-background passes anyway.
+  store?: AppStore,
+): EngineDeps {
   // one dated earnings-calendar fetch (next 14 days), memoised so earningsSyms and
   // earningsCalendar share a SINGLE Finnhub call per run rather than hitting the
   // free-tier limit twice for the identical window. Fail-soft to [].
@@ -368,6 +393,41 @@ export function defaultDeps(env: { FINNHUB_API_KEY?: string; T212_API_KEY?: stri
     // both derive from the same memoised fetch above — one HTTP call, two shapes
     earningsSyms: async () => new Set((await fetchEarnings()).map(e => e.sym)),
     earningsCalendar: () => fetchEarnings(),
+    // The universe scan (discovery.ts). `DISCOVERY=off` kills the stage before a
+    // single bar is fetched and the legacy inflow runs exactly as it did.
+    // Fail-soft is total and deliberate — a module that is not there yet, a seed
+    // that will not load, a blown wall-clock budget, a store that refuses — all
+    // land here as a logged null, because the scan is INFLOW: an engine that
+    // cannot see MORE this morning must still see everything it always saw.
+    discovery: async input => {
+      try {
+        const { runDiscovery, discoveryDisabled, discoveryAllowedOnHost } = await import('./discovery')
+        // the lever, read from the caller's bag FIRST and the process second: on
+        // Netlify and in the Worker it arrives as a plain env var, and a bag that
+        // simply doesn't carry the key must not be read as "the lever is off".
+        const lever = env.DISCOVERY ?? (typeof process !== 'undefined' ? process.env?.DISCOVERY : undefined)
+        if (discoveryDisabled({ DISCOVERY: lever })) return null
+        // HOST GATE. The cron Worker dispatches this run into Pages Functions,
+        // and a Cloudflare invocation may make FIFTY subrequests. A ~1,866-name
+        // scan would not just fail there: it would burn the budget the rest of
+        // the run needs, so the paper would break at the quotes and the news
+        // rather than at the scan. Actions and Netlify are Node and uncapped.
+        // `runtimeHost()` is the repo's existing host seam (runtimeEnv.ts) —
+        // reused rather than re-sniffed, because two answers to "where am I" is
+        // one too many.
+        const { runtimeHost } = await import('./runtimeEnv')
+        if (!discoveryAllowedOnHost({ DISCOVERY: lever }, runtimeHost() !== 'workers')) {
+          console.log('DISCOVERY: skipped — host subrequest budget')
+          return null
+        }
+        const { loadUniverseSeed } = await import('../../../shared/engine/discovery/universeSeed')
+        const { appStore } = await import('./storeProvider')
+        return await runDiscovery({ ...input, store: store ?? appStore, seed: loadUniverseSeed() })
+      } catch (e) {
+        console.log('DISCOVERY: failed —', String(e).slice(0, 200))
+        return null
+      }
+    },
   }
 }
 
@@ -1276,6 +1336,15 @@ export const VELOCITY_SHADOW_FIRST = true
  * record costs ZERO calls — and this is the hard ceiling on top of that. */
 export const CLUSTER_CANDLE_CAP = 25
 
+/** THE BOARD'S OWN TAPE LENGTH: one year of daily bars, which is what
+ * `cachedCandles` (Yahoo `range=1y`) hands every candidate the engine has ever
+ * scored. The discovery scan keeps 300 bars per name for its own 52-week
+ * features, so any tape it lends the board is cut back to this before the board
+ * reads it — `swingCapacity` and `patternScore` both consume the WHOLE array,
+ * and the same name measured over 300 bars is a different number from the same
+ * name over 252. A shared tape must not quietly change a score. */
+export const BOARD_CANDLE_BARS = 252
+
 /** Bank one day of the trending record — the ONLY thing that makes co-appearance
  * measurable later (hypeCluster.ts). Append-if-new-date: the FIRST run to record a
  * date owns it, so the afternoon run cannot overwrite the morning's crowd with a
@@ -1550,6 +1619,101 @@ export async function buildBoard(
   // Sleeve BEHAVIOUR is keyed off sleeveSet, never off the source string. [R1]
   for (const r of sleeveTop) addSource(r.sym, 'sleeve')
 
+  // ---- the scan: the universe read, rather than sampled ----
+  // Every door above is a SAMPLE of the market — today's top-50 movers, 130
+  // famous names, whatever the crowd was naming. The scan walks a persistent
+  // universe end to end and offers the names its lenses fired on (spec
+  // 2026-09-22 §4). It is one more GATED source and nothing more: a scan name
+  // faces the same liquidity, capacity, factor and calibration stack as a
+  // screener name, and is never a call by fiat.
+  //
+  // Placed AFTER the sleeve door and BEFORE the cluster's, for the reason the
+  // sleeve sits where it does: addSource keeps the FIRST source, so `scan:<lens>`
+  // lands only on a name no other door claimed. That makes the source string an
+  // exact test for "the scan was its only way in" (the cap budget below reads it)
+  // and leaves screener/holding/watchlist/sleeve attribution untouched on a name
+  // two doors found. Scan BEHAVIOUR is keyed off scanSet, never off the string.
+  //
+  // The nominations cost nothing: they are exactly what the doors above have
+  // already put in `sources`, handed over so the universe can record that the
+  // screeners, the crowd, a theme, a catalyst, the watchlist, the book and the
+  // sleeve all named this morning — the evidence its priority bump is built on.
+  const scanNominations = [...sources].map(([sym, s]) => ({ sym, origin: `nom:${s.source}` }))
+  // …and the call itself, wrapped so that EVERY way it can fail is the same
+  // failure: a rejection, a synchronous throw out of a broken module, an absent
+  // dep. All three are a null scan and a legacy run. `Promise.resolve().then` is
+  // what turns the synchronous throw into the rejection the catch can see.
+  const scan = await Promise.resolve()
+    .then(() => deps.discovery?.({ date: today, nominations: scanNominations, spy, isEtp: (sym: string) => isRouteEtp(sym, cfg.levMap ?? {}) }) ?? null)
+    .catch(() => null)
+  /** What the scan actually put in the pool. The SET, like the sleeve's: a scan
+   * name the gainers screen also found keeps the screener's door and is still a
+   * scan name everywhere membership decides anything. */
+  const scanSet = new Set<string>()
+  /** The subset for which THE SCAN WAS THE ONLY DOOR — the elevation-only set.
+   *
+   * A SET, not a source-string test, and that distinction is finding #2: a name
+   * whose door was stamped `scan:breakout` and which then joined the roster came
+   * back tomorrow through the roster replay ABOVE, still carrying `scan:` — so a
+   * string test called it scan-only for ever, and no later door could correct
+   * the record. Decided HERE, at the door, where "did anyone else claim this
+   * name today?" is a fact rather than an inference. A stored `scan:` source is
+   * explicitly NOT another door: it is this same set, yesterday.
+   *
+   * A scan name that ALSO came in through an ordinary door (screener, holding,
+   * watchlist, catalyst…) is absent from this set and competes for the roster
+   * and the cap budget exactly like the name that door found. */
+  const scanOnlySet = new Set<string>()
+  const scanBySym = new Map<string, DiscoveryCandidate>()
+  /** The bars the scan already paid for. Reused by the candle fill exactly as the
+   * cluster's prefetch is — fetching a tape twice wastes the call and, worse, the
+   * second read can fail where the first succeeded. */
+  const discoveryTapes = new Map<string, Candle[]>()
+  if (scan) {
+    for (const c of scan.candidates) {
+      const key = c.sym.toUpperCase()
+      const claimed = sources.get(key)?.source
+      // "another door" means another door TODAY. A replayed roster source that
+      // is itself `scan:` is this set's own history, not a second opinion.
+      const hadOtherDoor = claimed != null && !claimed.startsWith('scan:')
+      addSource(key, `scan:${c.lenses[0]?.lens ?? 'none'}`)
+      // only what the door ADMITTED: addSource still refuses crypto pairs and
+      // route ETPs, and a refused name must not swell the budget below nor be
+      // handed the dip lane's size evidence on the strength of an index listing.
+      if (!sources.has(key)) continue
+      scanSet.add(key)
+      if (!hadOtherDoor) scanOnlySet.add(key)
+      scanBySym.set(key, c)
+    }
+    // THE SCAN'S TAPES, RESHAPED TO THE BOARD'S OWN SHAPE — both halves matter.
+    //
+    // 1. Only for names the scan ACTUALLY PICKED. The scan holds a tape for every
+    //    universe name it read (~1,900 of them); handing all of them to the fill
+    //    below would have swapped the candle source of EVERY board name — roster,
+    //    holdings, watchlist, sleeve — the day the stage was switched on.
+    // 2. Sliced to the last 252 bars, because that is what `cachedCandles` (the
+    //    1y Yahoo read every other name gets) returns. The scan keeps 300 bars,
+    //    and swingCapacity + patternScore both read the WHOLE array: a 300-bar
+    //    tape gives a different capacity percentile and a different pattern base
+    //    from the same name's 252-bar one, so an unsliced reuse would have moved
+    //    scores for reasons that have nothing to do with the market.
+    // Same name, same window, same numbers, whether the scan ran or not.
+    for (const [sym, tape] of scan.tapes) {
+      const key = sym.toUpperCase()
+      if (!scanSet.has(key)) continue
+      discoveryTapes.set(key, tape.length > BOARD_CANDLE_BARS ? tape.slice(-BOARD_CANDLE_BARS) : tape)
+    }
+    const st = scan.stats
+    const perLens = Object.entries(st.perLens)
+      .filter(([, n]) => n > 0)
+      .map(([lens, n]) => `${lens} ${n}`)
+      .join(', ')
+    console.log(
+      `DISCOVERY: universe ${st.universeSize}, scanned ${st.scanned}, selected ${st.selected}` +
+        `${perLens ? ` (${perLens})` : ''}, ${st.elapsedMs}ms, cache ${st.barsFromCache}/${st.barsFetched}${st.budgetHit ? ' · budget hit' : ''}`,
+    )
+  }
+
   // ---- hype clusters: the crowd's own themes, discovered from the record ----
   // Names the crowd keeps naming TOGETHER whose tapes then actually move together
   // (hypeCluster.ts — both legs required, no theme ever hard-coded). Membership
@@ -1616,7 +1780,9 @@ export async function buildBoard(
     // still a sleeve name. A hype-cluster member sits at the SAME tier: the crowd
     // naming three names together while their tapes move together is evidence of
     // the same weight as "this is a famous name", and both are elevation only.
-    if (sleeveSet.has(sym) || clusterPeers.has(sym)) return 4
+    // A scan pick joins them: a lens firing on a name's own tape is evidence of
+    // the same weight, and it too buys priority and nothing else.
+    if (sleeveSet.has(sym) || clusterPeers.has(sym) || scanSet.has(sym)) return 4
     if (sources.get(sym)?.source.startsWith('channel:')) return 5
     if (sources.get(sym)?.source.startsWith('theme:') || sources.get(sym)?.source === 'rotation') return 6
     if (sources.get(sym)?.source === 'social') return 7
@@ -1628,18 +1794,29 @@ export async function buildBoard(
   // 180 cap itself — worst case +70 vs the old 110, unchanged by the deeper
   // gainers read (a bigger POOL binds the cap more often; it never raises it).
   // Bounded by the mapLimit(8) below — noted, accepted. [R16]
+  //
+  // …and the scan gets its OWN allowance on top, which is why this is an addition
+  // and not one larger number. Tier 4 puts a scan pick ahead of the screens, so a
+  // flat 180 would have let a hundred-name scan evict the very discovery feeds it
+  // is meant to widen — the universe read would have been paid for out of everyone
+  // else's budget. 320 is the ceiling on what one run will ever fetch; the
+  // mapLimit(8) below still binds the RATE. A run with no scan is exactly 180.
+  const candidateBudget = Math.min(180 + scanSet.size, 320)
   const candidateSyms = [...sources.keys()]
     .sort((a, b) => candidatePriority(a) - candidatePriority(b) || a.localeCompare(b))
-    .slice(0, 180)
-  // the budget's own cut, named: everything the sort put past slot 180
+    .slice(0, candidateBudget)
+  // the budget's own cut, named: everything the sort put past the last slot
   const candidateSet = new Set(candidateSyms)
   for (const [sym, s] of sources) {
-    if (!candidateSet.has(sym)) trace.record(sym, 'trimmed', { source: s.source, detail: 'past the 180-candidate evaluation budget' })
+    if (!candidateSet.has(sym))
+      trace.record(sym, 'trimmed', { source: s.source, detail: `past the ${candidateBudget}-candidate evaluation budget` })
   }
   const candleMap = new Map<string, Candle[]>()
   await mapLimit(candidateSyms, 8, async sym => {
     // fail-soft per symbol: one refused read costs one candidate, never the board
-    const c = clusterTapes.get(sym) ?? (await deps.candles(sym).catch(() => null))
+    // both prefetches first: a tape the cluster or the scan already read is the
+    // same tape, and a second read is a wasted call that can fail on its own
+    const c = clusterTapes.get(sym) ?? discoveryTapes.get(sym) ?? (await deps.candles(sym).catch(() => null))
     if (c && c.length >= 30) candleMap.set(sym, c)
   })
   // …and the tape that never arrived. `no-candles`, NOT `no-data`: composeCall's
@@ -1663,6 +1840,11 @@ export async function buildBoard(
   // sleeveSet, never by its cap, and a cluster is priority and narration, never
   // eligibility. Tier 4 elevated them past the CANDIDATE cut (ratified); it was never
   // a claim on this budget. [R17]
+  //
+  // The scan joins them on the same terms and for the same reason: its picks carry
+  // capUsdM null (a lens reads a tape, not a balance sheet) and sit at tier 4, so
+  // unqueued they would take every slot. It does not need the cap either — its
+  // size evidence is the index band it was seeded from (the dip read below).
   const noCapAll = candidateSyms.filter(s => sources.get(s)!.capUsdM == null && candleMap.has(s))
   // Two different tests, deliberately. The sleeve reads the SOURCE STRING, because
   // its door is stamped after every ordinary door and before the cluster's, making
@@ -1674,8 +1856,21 @@ export async function buildBoard(
   // naming keeps the higher door it earned on its own.
   const sleeveOnly = (s: string) => sources.get(s)?.source === 'sleeve'
   const clusterElevated = (s: string) => clusterPeers.has(s) && candidatePriority(s) === 4
-  const elevatedOnly = (s: string) => sleeveOnly(s) || clusterElevated(s)
-  const noCap = [...noCapAll.filter(s => !elevatedOnly(s)), ...noCapAll.filter(elevatedOnly)].slice(0, 15)
+  // the SET this time, not the source string: `scanOnlySet` was decided at the
+  // scan door, where "did another door claim this name today?" is a fact. The
+  // string cannot answer it — a scan name that joined the roster comes back
+  // through the roster replay still stamped `scan:`, so the string says
+  // "scan-only" for ever, whatever happens afterwards. A scan pick the screener
+  // also offered is not in the set and keeps the screener's cap claim, which is
+  // right: that name arrived with a cap the screener carries.
+  const scanOnly = (s: string) => scanOnlySet.has(s)
+  const elevatedOnly = (s: string) => sleeveOnly(s) || clusterElevated(s) || scanOnly(s)
+  // 15 plus the scan's own allowance, ceiling 25 — the same shape as the candidate
+  // budget above and for the same reason. A hundred unpriced scan names behind a
+  // fixed 15 would leave the queue's tail unpriced every morning; letting the scan
+  // BUY its slots keeps a run without one at exactly the 15 it has always spent.
+  const capBudget = Math.min(15 + scanSet.size, 25)
+  const noCap = [...noCapAll.filter(s => !elevatedOnly(s)), ...noCapAll.filter(elevatedOnly)].slice(0, capBudget)
   await mapLimit(noCap, 5, async sym => {
     const cap = await deps.capUsdM(sym)
     if (cap != null) sources.get(sym)!.capUsdM = cap
@@ -1690,7 +1885,27 @@ export async function buildBoard(
   for (const sym of candidateSyms) {
     const candles = candleMap.get(sym)
     if (!candles) continue
-    const quality = sleeveSet.has(sym) || (sources.get(sym)?.capUsdM ?? 0) > 10_000
+    // …or, where no cap was ever fetched, membership of the S&P 500 or the FTSE
+    // 100 — and that is the whole of the claim, stated exactly.
+    //
+    // WHAT THE EVIDENCE IS AND IS NOT. The seed's `capBand` is INDEX MEMBERSHIP,
+    // not a measurement: 'large' is conferred by sp500, ndx OR ftse100, and the
+    // smallest members of those lists are $3–8B companies, not >$10B ones. So a
+    // band is NOT the same claim ">$10B" makes and must not be read as one. What
+    // the two big lists do evidence is the thing the dip lane actually cares
+    // about — a widely held, widely covered name whose fall is news rather than
+    // a liquidity accident. The Nasdaq-100 alone is not enough (it is a
+    // 100-name index with no size floor of its own), and a mid or small band
+    // never was.
+    //
+    // It is a FALLBACK, not an override: a name whose cap the pass above
+    // actually fetched is judged on the number. Only silence lets the listing
+    // speak.
+    const capUsdM = sources.get(sym)?.capUsdM
+    const scanPick = scanBySym.get(sym)
+    const bigIndexListed =
+      capUsdM == null && scanPick?.capBand === 'large' && (scanPick.index ?? []).some(ix => ix === 'sp500' || ix === 'ftse100')
+    const quality = sleeveSet.has(sym) || (capUsdM ?? 0) > 10_000 || bigIndexListed
     if (!quality) continue
     const read = classifyDip(candles)
     if (read?.triggered && read.holding) dipReads.set(sym, read)
@@ -1724,7 +1939,24 @@ export async function buildBoard(
   // roster is the engine's earned hunting ground and must not fill with 130
   // permanent members. A sleeve name that ALSO came through an ordinary door
   // (screener, holding, watchlist…) keeps that source and competes normally. [R2]
-  const rosterCandidates = candidates.filter(c => !(sleeveSet.has(c.sym) && sources.get(c.sym)?.source === 'sleeve'))
+  // …and the scan is watched on exactly the same terms, for a sharper reason.
+  //
+  // The roster is 80 slots, admits on JOIN_CAPACITY and trims the LARGEST CAPS
+  // FIRST — and a scan pick arrives with capUsdM null, which sorts last in a
+  // largest-first trim, i.e. it is the safest thing in the room. The 2026-09-22
+  // dry run selected ~87 names a day; letting them queue for the roster would
+  // have evicted the earned members (the names that showed they can travel)
+  // within a week and replaced them with whatever a lens liked that morning,
+  // permanently, since nothing would then trim them back out.
+  //
+  // The scan does not need the roster: `evalRows` below appends every scan pick
+  // to the day's scoring list directly, so a scan name is READ every day it
+  // fires — it simply never takes a permanent seat. Membership of `scanOnlySet`
+  // is the test, never the source string, and a scan name that ALSO came through
+  // an ordinary door is not in it and competes for the roster normally. [R2/R18]
+  const rosterCandidates = candidates.filter(
+    c => !(sleeveSet.has(c.sym) && sources.get(c.sym)?.source === 'sleeve') && !scanOnlySet.has(c.sym),
+  )
   const { roster, joined, dropped } = updateRoster(currentRoster, rosterCandidates, watchSyms, today, Object.keys(cfg.levMap ?? {}))
   await store.write('engine-roster', roster)
   const rosterLog = ((await store.read<unknown[]>('engine-roster-log')) ?? []) as { date: string }[]
@@ -1789,14 +2021,26 @@ export async function buildBoard(
   // sleeveSet is the test, never the source string, so a sleeve name found by
   // the losers screen and rejected by the roster's join gate is still read. [R1]
   const rosterSymSet = new Set(roster.map(e => e.sym.toUpperCase())) // the NEW roster: a sleeve name that just joined must not be scored twice
+  // …and every scan pick the roster and the sleeve don't already carry. Without
+  // this the scan would have been an expensive way to widen the TRIM: a lens fires,
+  // the name joins the pool, its tape is fetched — and the roster's join gate (which
+  // admits only names that have already shown they can travel) drops it before a
+  // single factor is computed. Seeing more is worth nothing unless what is seen is
+  // scored, so a scan name reaches evaluation on the scan's own evidence, exactly
+  // as a sleeve name reaches it on the sleeve's. It still earns the roster, or not,
+  // on its own merits.
   const evalRows = [
     ...roster.map(e => ({ sym: e.sym, capUsdM: e.capUsdM })),
     ...candidateSyms
       .filter(sym => sleeveSet.has(sym) && !rosterSymSet.has(sym) && candleMap.has(sym))
       .map(sym => ({ sym, capUsdM: sources.get(sym)?.capUsdM ?? null })),
+    ...candidateSyms
+      .filter(sym => scanSet.has(sym) && !sleeveSet.has(sym) && !rosterSymSet.has(sym) && candleMap.has(sym))
+      .map(sym => ({ sym, capUsdM: sources.get(sym)?.capUsdM ?? null })),
   ]
   // The quietest drop in the whole run, and the largest: a candidate with a good
-  // tape that is NEITHER on the roster NOR in the sleeve is never scored at all.
+  // tape that is on NONE of the lists above — roster, sleeve, and the scan when
+  // it ran — is never scored at all.
   // It is the roster trim doing the cutting, one door along — so it is `trimmed`,
   // with the reason spelled out. Side-free, because no side was ever argued: a
   // lane (dip, velocity) may still publish on such a name below, and that
@@ -1804,9 +2048,17 @@ export async function buildBoard(
   // are true — the composite never looked, and the lane called it — and under one
   // row per name only the second survived.
   const evalSet = new Set(evalRows.map(e => e.sym.toUpperCase()))
+  // TWO STRINGS, PINNED (engine.discovery.test.ts asserts both literally).
+  // The scan is a THIRD list, so when it ran the sentence has to name it — but a
+  // run WITHOUT the scan (DISCOVERY=off, a Worker host, a thrown scan) must
+  // produce the funnel trace this engine has always produced, to the byte, and
+  // that means the word-for-word string main ships. A detail string is read back
+  // a quarter later by a human and diffed by a test; it is not decoration.
+  const neverScoredDetail = scan
+    ? 'not on the roster, not in the sleeve, not a scan pick — never scored'
+    : 'not on the roster and not in the sleeve — never scored'
   for (const sym of candidateSyms) {
-    if (candleMap.has(sym) && !evalSet.has(sym))
-      trace.record(sym, 'trimmed', { source: sources.get(sym)?.source, detail: 'not on the roster and not in the sleeve — never scored' })
+    if (candleMap.has(sym) && !evalSet.has(sym)) trace.record(sym, 'trimmed', { source: sources.get(sym)?.source, detail: neverScoredDetail })
   }
 
   const board: Prediction[] = []

@@ -6,14 +6,26 @@ import type { Candle } from '../../../shared/types'
 // the engine's maths works off close arrays and >=date lookups, so the
 // coarser stamps are safe.
 
+/** Quote currencies / crypto counters. A dash followed by one of these is a
+ * PAIR (SOL-USD, ETH-BTC) and Stooq has no reliable mapping for it; a dash
+ * followed by anything else is a US share class — Yahoo writes Berkshire's B
+ * line as `BRK-B` and Brown-Forman's as `BF-B`, and Stooq writes both exactly
+ * the same way. Refusing every dash meant the two biggest names in the S&P that
+ * carry one could never reach the fallback at all. */
+const PAIR_COUNTERS = new Set(['USD', 'USDT', 'USDC', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'BTC', 'ETH'])
+
 export function stooqSymbol(sym: string): string | null {
   const s = sym.toUpperCase()
   if (s.startsWith('^') || s.includes('=')) return null // indices & futures stay Yahoo-only
   if (s.endsWith('.L')) return `${s.slice(0, -2).toLowerCase()}.uk`
   if (s === 'BTC-USD') return 'btcusd'
   if (s === 'ETH-USD') return 'ethusd'
-  if (s.includes('-')) return null // other crypto/classes: no reliable mapping
-  if (/^[A-Z0-9.]{1,10}$/.test(s)) return `${s.toLowerCase().replace(/\./g, '-')}.us` // BRK.B → brk-b.us
+  if (s.includes('-')) {
+    const parts = s.split('-')
+    // one dash only, and the tail must not be a currency: BRK-B yes, SOL-USD no
+    if (parts.length !== 2 || !parts[0] || !parts[1] || PAIR_COUNTERS.has(parts[1])) return null
+  }
+  if (/^[A-Z0-9.-]{1,10}$/.test(s)) return `${s.toLowerCase().replace(/\./g, '-')}.us` // BRK.B and BRK-B → brk-b.us
   return null
 }
 

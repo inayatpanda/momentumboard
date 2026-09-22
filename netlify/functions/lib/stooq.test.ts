@@ -11,6 +11,19 @@ describe('stooqSymbol', () => {
     expect(stooqSymbol('ES=F')).toBeNull()
     expect(stooqSymbol('SOL-USD')).toBeNull()
   })
+
+  // A blanket refusal of '-' meant the two S&P names Yahoo spells with one —
+  // BRK-B and BF-B — could never reach the fallback at all, though Stooq writes
+  // them in exactly the form the US branch already produces.
+  it('maps a dashed US share class, and still refuses a pair', () => {
+    expect(stooqSymbol('BRK-B')).toBe('brk-b.us')
+    expect(stooqSymbol('BF-B')).toBe('bf-b.us')
+    expect(stooqSymbol('brk-b')).toBe('brk-b.us')
+    expect(stooqSymbol('ETH-EUR')).toBeNull()
+    expect(stooqSymbol('DOGE-BTC')).toBeNull()
+    expect(stooqSymbol('A-B-C')).toBeNull() // two dashes is not a share class
+    expect(stooqSymbol('BT-A.L')).toBe('bt-a.uk') // the LSE branch is untouched
+  })
 })
 
 describe('parseStooqCsv', () => {
