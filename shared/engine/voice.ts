@@ -201,7 +201,7 @@ function momentumPhrase(f: FactorScore): string | null {
  *
  * ONE NUMBER IN THIS SENTENCE IS THE OWNER'S WORDING AND NOT THE STUDY'S: the walk
  * requested a 2-year tape but `DBARS_MAX` capped it at 300 bars, giving 188 signal
- * dates — about nine months — so "2-year walk" describes the request rather than
+ * dates — about nine months — so "walk over the last ~300 sessions" describes the request rather than
  * the sample. Flagged here for whoever next edits the copy; the claim it carries
  * (an association, no mechanism) is right either way. */
 const BANDWIDTH_SPEAKS_AT_PCTL = 70
@@ -212,7 +212,7 @@ function bandwidthPhrase(f: FactorScore): string | null {
   // capped at 99 for the same reason the unusual lens floors its own percentile:
   // the widest reading of the window percentiles to exactly 100, and "the 100th
   // percentile of their own year" is not a sentence anyone should read in the paper.
-  return `bands at the ${Math.min(p, 99)}th percentile of their own year — wide bands have carried the better forward record in the engine's 2-year walk`
+  return `bands at the ${Math.min(p, 99)}th percentile of their own year — wide bands have carried the better forward record in the engine's walk over the last ~300 sessions`
 }
 
 /** The name's industry standing, as a bucket. A middling rank is left unsaid:
