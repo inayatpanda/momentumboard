@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   catalystFactor,
   channelsFactor,
-  compressionFactor,
-  COMPRESSION_MIN_BARS,
+  bandwidthFactor,
+  BANDWIDTH_MIN_BARS,
   insiderFactor,
   momentumFactor,
   newsFactor,
@@ -222,62 +222,68 @@ describe('momentumFactor — the 60-session leg and the RS-leader flag', () => {
   })
 })
 
-/** THE COMPRESSION FACTOR (2026-09-22 walk-forward study). A squeeze is fuel and
- * the trend says which way, so every case below is a pair: how tight the bands
- * are, and what the chart is doing. */
-describe('compressionFactor', () => {
-  /** 200 closes drifting at `drift`, oscillating ±6 for all but the last 30 bars
-   * and ±0.05 after that: a chart that has COILED, whatever direction it coiled
-   * in. Flip the amplitudes and the same tape has just BLOWN OUT instead. */
-  const coil = (drift: number, n = 200) => Array.from({ length: n }, (_, i) => 100 * (1 + drift * i) + (i < n - 30 ? 6 : 0.05) * Math.sin(i))
-  const blowout = (drift: number, n = 200) => Array.from({ length: n }, (_, i) => 100 * (1 + drift * i) + (i < n - 30 ? 0.05 : 6) * Math.sin(i))
+/** THE BANDWIDTH FACTOR (2026-09-22 walk-forward study, direction adjudicated for
+ * the study's decile table on the same day). Wide bands score high and the trend
+ * says which way, so every case below is a pair: where the bands sit inside the
+ * name's own 120 sessions, and what the chart is doing. */
+describe('bandwidthFactor', () => {
+  /** 200 closes drifting at `drift`, oscillating ±0.05 for all but the last 30
+   * bars and ±6 after that: a chart whose bands have BLOWN OUT, whichever way it
+   * is travelling. Flip the amplitudes and the same tape has coiled instead. */
+  const widened = (drift: number, n = 200) => Array.from({ length: n }, (_, i) => 100 * (1 + drift * i) + (i < n - 30 ? 0.05 : 6) * Math.sin(i))
+  const coiled = (drift: number, n = 200) => Array.from({ length: n }, (_, i) => 100 * (1 + drift * i) + (i < n - 30 ? 6 : 0.05) * Math.sin(i))
 
-  it('a tight base in an uptrend is a LONG, near the full ±50', () => {
-    const f = compressionFactor(coil(0.004))
+  it('wide bands in an uptrend are a LONG, near the full ±50', () => {
+    const f = bandwidthFactor(widened(0.004))
     expect(f.score).toBeGreaterThan(40)
-    expect(f.detail).toContain('p0 of its own 120 sessions')
+    expect(f.detail).toContain('of its own 120 sessions')
     expect(f.detail).toContain('signed by a 50-EMA rising')
   })
 
-  it('…and the identical base in a downtrend is a SHORT — the squeeze has no side of its own', () => {
-    const f = compressionFactor(coil(-0.002))
+  it('…and the identical width in a downtrend is a SHORT — the bands have no side of their own', () => {
+    const f = bandwidthFactor(widened(-0.002))
     expect(f.score).toBeLessThan(-40)
     expect(f.detail).toContain('signed by a 50-EMA falling')
   })
 
-  it('wide bands score ~0 either way: no squeeze is no fuel, whatever the trend', () => {
-    expect(Math.abs(compressionFactor(blowout(0.004)).score!)).toBeLessThan(5)
-    expect(Math.abs(compressionFactor(blowout(-0.002)).score!)).toBeLessThan(5)
-    expect(compressionFactor(blowout(0.004)).score).toBeGreaterThan(0) // …and it still carries the sign
-    expect(compressionFactor(blowout(-0.002)).score).toBeLessThan(0)
+  it('a COILED base scores ~0 either way — the study\'s weak end, not its strong one', () => {
+    expect(Math.abs(bandwidthFactor(coiled(0.004)).score!)).toBeLessThan(5)
+    expect(Math.abs(bandwidthFactor(coiled(-0.002)).score!)).toBeLessThan(5)
+    expect(bandwidthFactor(coiled(0.004)).score).toBeGreaterThanOrEqual(0) // …and it still carries the sign
+    expect(bandwidthFactor(coiled(-0.002)).score).toBeLessThanOrEqual(0)
   })
 
-  it('is monotone in the squeeze — a tighter base always scores more of the same sign', () => {
-    const at = (quietFrom: number) =>
-      compressionFactor(Array.from({ length: 200 }, (_, i) => 100 * (1 + 0.004 * i) + (i < quietFrom ? 6 : 0.05) * Math.sin(i))).score!
-    expect(at(170)).toBeGreaterThan(at(185))
-    expect(at(185)).toBeGreaterThan(at(199))
+  it('is monotone in the width — wider bands always score more of the same sign', () => {
+    // one tape family, one knob: 170 bars oscillating ±3, then thirty bars at
+    // amplitude `a`. The percentile is a reading of today's width against the
+    // name's OWN last 120, so `a` walks it from the bottom of that distribution to
+    // the top — 0.05 → p0, 3 → p23, 9 → p97 — and the score walks with it.
+    const at = (a: number) => bandwidthFactor(Array.from({ length: 200 }, (_, i) => 100 * (1 + 0.004 * i) + (i < 170 ? 3 : a) * Math.sin(i))).score!
+    expect(at(9)).toBeGreaterThan(at(6))
+    expect(at(6)).toBeGreaterThan(at(3))
+    expect(at(3)).toBeGreaterThan(at(1))
+    expect(at(1)).toBeGreaterThan(at(0.05))
   })
 
   it('a tape under 140 closes is NULL — the percentile needs 20 bars for a width and 120 widths to rank it', () => {
-    expect(compressionFactor(coil(0.004, COMPRESSION_MIN_BARS - 1)).score).toBeNull()
-    expect(compressionFactor(coil(0.004, COMPRESSION_MIN_BARS - 1)).detail).toContain('insufficient history')
-    expect(compressionFactor(coil(0.004, COMPRESSION_MIN_BARS)).score).not.toBeNull()
-    expect(compressionFactor(null).score).toBeNull()
+    expect(bandwidthFactor(widened(0.004, BANDWIDTH_MIN_BARS - 1)).score).toBeNull()
+    expect(bandwidthFactor(widened(0.004, BANDWIDTH_MIN_BARS - 1)).detail).toContain('insufficient history')
+    expect(bandwidthFactor(widened(0.004, BANDWIDTH_MIN_BARS)).score).not.toBeNull()
+    expect(bandwidthFactor(null).score).toBeNull()
   })
 
   it('falls back to the 20-session return when the 50-EMA is FLAT, and says which it used', () => {
     // wide for 110 bars, then dead level, then one 1% session: the 50-EMA has moved
     // 0.035% in twenty sessions (flat) while the 20-session return is a clean +1%.
     const settled = (last: number) => Array.from({ length: 200 }, (_, i) => (i < 110 ? 100 + 3 * Math.sin(i) : i === 199 ? last : 100))
-    const up = compressionFactor(settled(101))
+    const up = bandwidthFactor(settled(101))
     expect(up.score).toBeGreaterThan(0)
     expect(up.detail).toContain('signed by a 20-session return of +1%')
-    expect(compressionFactor(settled(99)).score).toBeLessThan(0)
+    expect(bandwidthFactor(settled(99)).score).toBeLessThan(0)
   })
 
-  it('a coiled chart going NOWHERE is null, not a zero — there is no direction to lend it', () => {
-    const f = compressionFactor(Array.from({ length: 200 }, () => 100))
+  it('a chart going NOWHERE is null, not a zero — there is no direction to lend it', () => {
+    const f = bandwidthFactor(Array.from({ length: 200 }, () => 100))
     expect(f.score).toBeNull()
     expect(f.detail).toContain('nothing to sign it with')
   })

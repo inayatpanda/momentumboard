@@ -6,7 +6,7 @@ import type { ForecastContract, StrategySleeve } from './strategyLab'
 export type FactorName =
   | 'technical'
   | 'momentum'
-  | 'compression'
+  | 'bandwidth'
   | 'sector'
   | 'social'
   | 'channels'

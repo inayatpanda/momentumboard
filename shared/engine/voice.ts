@@ -48,7 +48,7 @@ import { round1 } from './types'
  * being embedded — see `safe`. */
 export const BANNED_TOKENS: readonly string[] = [
   // the eleven factor names
-  'technical', 'momentum', 'compression', 'sector', 'social', 'channels', 'insiders', 'news', 'seasonality', 'smartMoney', 'catalyst',
+  'technical', 'momentum', 'bandwidth', 'sector', 'social', 'channels', 'insiders', 'news', 'seasonality', 'smartMoney', 'catalyst',
   // the eight technical stages
   'early-reversal', 'falling-knife', 'pullback', 'basing', 'trending', 'extended', 'exhausted', 'weak',
   // the setup families
@@ -186,22 +186,33 @@ function momentumPhrase(f: FactorScore): string | null {
   return `${mag} points of ${pp >= 0 ? 'out' : 'under'}performance against the S&P over the last month`
 }
 
-/** THE COILED BASE, and only when it is genuinely coiled. The factor scores the
- * whole 0–1 range linearly, but a width in the middle of its own 120-session
+/** THE BAND READING, and only when it is genuinely at one end. The factor scores
+ * the whole 0–1 range linearly, but a width in the middle of its own 120-session
  * distribution is an ordinary chart — saying "its bands are in the 54th
  * percentile" is a measurement, not a reason, and the same silence sectorPhrase
- * keeps about a middling rank is the right one here. The direction is NOT quoted:
- * composeCall only ever hands this factor the microphone on the side its score
- * already argues, and the chart factor is the one that speaks about trend. */
-const COMPRESSION_SPEAKS_AT_PCTL = 30
+ * keeps about a middling rank is the right one here.
+ *
+ * NO CAUSAL CLAIM. The sentence reports where the bands sit and what the engine's
+ * own walk recorded, and stops: an association measured over one sample is not a
+ * mechanism, and the reader is told which of the two they are getting. The
+ * direction is NOT quoted — composeCall only ever hands this factor the microphone
+ * on the side its score already argues, and the chart factor is the one that
+ * speaks about trend.
+ *
+ * ONE NUMBER IN THIS SENTENCE IS THE OWNER'S WORDING AND NOT THE STUDY'S: the walk
+ * requested a 2-year tape but `DBARS_MAX` capped it at 300 bars, giving 188 signal
+ * dates — about nine months — so "2-year walk" describes the request rather than
+ * the sample. Flagged here for whoever next edits the copy; the claim it carries
+ * (an association, no mechanism) is right either way. */
+const BANDWIDTH_SPEAKS_AT_PCTL = 70
 
-function compressionPhrase(f: FactorScore): string | null {
+function bandwidthPhrase(f: FactorScore): string | null {
   const p = num(f.detail, /\bp(\d+)\b/)
-  if (p == null || p > COMPRESSION_SPEAKS_AT_PCTL) return null
-  // floored at 1 for the same reason the unusual lens floors its own percentile:
-  // the tightest reading of the window percentiles to exactly 0, and "the tightest
-  // 0% of the last six months" is not a sentence anyone should read in the paper.
-  return `its trading range squeezed into the tightest ${Math.max(p, 1)}% of the last six months`
+  if (p == null || p < BANDWIDTH_SPEAKS_AT_PCTL) return null
+  // capped at 99 for the same reason the unusual lens floors its own percentile:
+  // the widest reading of the window percentiles to exactly 100, and "the 100th
+  // percentile of their own year" is not a sentence anyone should read in the paper.
+  return `bands at the ${Math.min(p, 99)}th percentile of their own year — wide bands have carried the better forward record in the engine's 2-year walk`
 }
 
 /** The name's industry standing, as a bucket. A middling rank is left unsaid:
@@ -283,7 +294,7 @@ type PhraseWriter = (f: FactorScore, side: 'long' | 'short') => string | null
 const FACTOR_PHRASE: Record<FactorName, PhraseWriter> = {
   technical: technicalPhrase,
   momentum: momentumPhrase,
-  compression: compressionPhrase,
+  bandwidth: bandwidthPhrase,
   sector: sectorPhrase,
   seasonality: seasonalityPhrase,
   social: socialPhrase,

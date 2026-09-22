@@ -192,78 +192,70 @@ function rsLeader(closes: number[], rs21: number, rs60: number | null, candles: 
   return (close - ema21) / atr14 < RS_LEADER_MAX_ATR
 }
 
-/** A SQUEEZE IS FUEL; THE TREND SAYS WHICH WAY — the compression factor.
+/** WIDE BANDS, NOT A COILED ONE — the bandwidth factor.
  *
- * THE EVIDENCE. The 2026-09-22 walk-forward study
- * (docs/superpowers/plans/2026-09-22-discovery-walk-forward-results.md) swept 14
- * price features over ~348k name-dates and found exactly one whose information
+ * THE EVIDENCE, AND THE DIRECTION IT ACTUALLY POINTS. The 2026-09-22 walk-forward
+ * study (docs/superpowers/plans/2026-09-22-discovery-walk-forward-results.md) swept
+ * 14 price features over ~348k name-dates and found exactly one whose information
  * coefficient keeps its SIGN in both halves of the sample, on both venues, and
  * STRENGTHENS with the horizon: `bbWidthPctl120`, where today's Bollinger width
  * sits inside the last 120 readings of the name's own width. IC t 3.0 at 10
- * sessions and 5.5 at 20; the top decile beat the bottom by +0.58pp over 10
- * sessions and +1.00pp over 20. Ten of the fourteen — every feature shaped like a
- * trailing return — flip IC sign between the halves. This factor exists because
- * compression is the one reading that did not.
+ * sessions, 5.5 at 20.
  *
- * THE STRENGTH is the SQUEEZE, `1 − percentile`: a name whose bands are the
- * tightest they have been in 120 sessions scores 1, one whose bands are the
- * widest scores 0. Linear, because the study's deciles are monotone across the
- * whole range rather than a top-decile effect.
+ * That IC is POSITIVE and the deciles are cut on the percentile ITSELF, so D10 is
+ * the WIDEST bands: +0.49pp over 10 sessions against the tightest decile's −0.08pp,
+ * and +1.08pp over 20 against +0.07pp. Wide-and-expanding beat coiled-and-quiet in
+ * that sample. This factor was first built the other way round, as a "bandwidth"
+ * squeeze scoring `1 − percentile`, on a label in the study's prose rather than on
+ * its table; the owner adjudicated for the table on 2026-09-22 and the factor was
+ * flipped and renamed with it. The name is `bandwidth` now precisely so that the
+ * code cannot go on asserting a direction the data does not.
  *
- * THE SIGN IS BORROWED, and that is the whole design. A squeeze has no side —
- * coiled is coiled — so the score is signed by the direction the core is already
+ * THE STRENGTH IS THE PERCENTILE, unaltered: bands at the widest they have been in
+ * 120 sessions score 1, bands at their tightest score 0. Linear, because the
+ * study's deciles are monotone across the whole range rather than a top-decile
+ * effect.
+ *
+ * NO CAUSAL CLAIM IS MADE OR IMPLIED, here or in the reader's copy (voice.ts). The
+ * study measured an association over one regime of one sample and said so at
+ * length; "wide bands have carried the better forward record" is the strongest
+ * sentence the evidence supports, and it is the sentence the reader gets.
+ *
+ * THE SIGN IS BORROWED, and that is unchanged by the flip. Bandwidth has no side —
+ * wide is wide — so the score is signed by the direction the core is already
  * arguing: the 50-EMA's slope over 20 sessions, and where that is flat or
  * unreadable, the 20-session return. When BOTH are flat or unknown there is no
- * direction to lend and the factor returns NULL rather than guessing: a coiled
+ * direction to lend and the factor returns NULL rather than guessing: a volatile
  * chart going nowhere is not evidence for either side.
  *
  * WHAT WAS MEASURED, AND WHAT IS ASSUMED. The study scored LONGS — forward excess
- * vs SPY on names held long — so the positive IC above is evidence about the long
- * side only. A short inherits the sign by SYMMETRY, on the unverified assumption
- * that a coiled base breaking down is worth what a coiled base breaking up is
- * worth. Nothing in the study tested it. It is seeded at 0.4 against technical's
+ * vs SPY on names held long — so the evidence above is about the long side only. A
+ * short inherits the sign by SYMMETRY, on the unverified assumption that wide bands
+ * under a falling 50-EMA are worth what wide bands under a rising one are worth.
+ * Nothing in the study tested it. The factor is seeded at 0.4 against technical's
  * 1.0 (composite.ts) precisely so the IC loop can price both sides from live
  * outcomes rather than from that assumption.
- *
- * ⚠ ONE OPEN QUESTION, AND IT IS THE DIRECTION ITSELF — RAISED 2026-09-22, NOT
- * SETTLED. The spec this factor was built to says "1 − percentile, so a tight base
- * scores high", and that is what the code above does. The study's own DECILE TABLE
- * points the other way: `bbWidthPctl120` has a POSITIVE IC, and its deciles are cut
- * on the percentile itself, so D10 is the WIDEST bands — which returned +1.08pp
- * over 20 sessions against D1's (the tightest) +0.07pp, and +0.49pp against −0.08pp
- * over 10. A positive IC on a width percentile says wide-and-expanding beat
- * coiled-and-quiet in that sample; the word "compression" in the study's prose and
- * in the brief is a LABEL on the metric, not a reading of its sign. So this factor
- * as written is anti-correlated with the one relationship the study found stable,
- * unless the label is right and the table is being misread.
- *
- * It ships in the instructed direction because that is the ruling, and the whole
- * question is one character wide: `1 - pctl` becomes `pctl` (and this comment and
- * the factor's name change with it). Nothing else in the design moves — the sign
- * borrowing, the null branch, the weight, the evidence contract and the discovery
- * bump are all direction-agnostic. It is the first thing to settle before this
- * reaches a live board.
  *
  * MINIMUM 140 CLOSES: 20 to make the first Bollinger width, 120 widths to rank
  * today's inside, and 71 for the 50-EMA slope — the width percentile is the
  * binding one. */
-export const COMPRESSION_MIN_BARS = 140
-/** A full squeeze in a clear trend is worth half a maxed-out chart read. Below
+export const BANDWIDTH_MIN_BARS = 140
+/** Maximum bandwidth in a clear trend is worth half a maxed-out chart read. Below
  * momentum's ±80 and technical's ±100, above sector's ±40 — the ordering the
- * evidence supports: compression is the most reliable of the price features and
- * by some distance the smallest in magnitude (+1.00pp per decile spread). */
-const COMPRESSION_MAX_PTS = 50
+ * evidence supports: this is the most reliable of the price features and by some
+ * distance the smallest in effect (+1.00pp per decile spread over 20 sessions). */
+const BANDWIDTH_MAX_PTS = 50
 /** WHAT COUNTS AS FLAT, and why it is not `=== 0`. Both direction readings are
  * floating-point percentages off real closes, so exact zero is unreachable in
  * practice and testing for it would make the fallback — and the null branch the
- * whole "a coiled chart going nowhere is not evidence" argument rests on — dead
- * code that only ever looked safe. A 50-EMA that has moved 0.05% in twenty
- * sessions has moved 0.0025% a session: that is a level, not a direction, and the
- * same threshold reads the same way on a 20-session return. */
+ * whole "a chart going nowhere is not evidence" argument rests on — dead code that
+ * only ever looked safe. A 50-EMA that has moved 0.05% in twenty sessions has moved
+ * 0.0025% a session: that is a level, not a direction, and the same threshold reads
+ * the same way on a 20-session return. */
 const FLAT_PCT = 0.05
 
-export function compressionFactor(closes: number[] | null): FactorScore {
-  if (!closes || closes.length < COMPRESSION_MIN_BARS) return { score: null, detail: 'insufficient history for a 120-session width percentile' }
+export function bandwidthFactor(closes: number[] | null): FactorScore {
+  if (!closes || closes.length < BANDWIDTH_MIN_BARS) return { score: null, detail: 'insufficient history for a 120-session width percentile' }
   const pctl = bbWidthPctl120Of(closes)
   if (pctl == null) return { score: null, detail: 'no Bollinger width read' }
   const band = `Bollinger width p${Math.round(pctl * 100)} of its own 120 sessions`
@@ -276,8 +268,7 @@ export function compressionFactor(closes: number[] | null): FactorScore {
     : ret20 != null && Math.abs(ret20) > FLAT_PCT ? { dir: Math.sign(ret20), why: `a 20-session return of ${ret20 >= 0 ? '+' : ''}${round1(ret20)}%` }
     : null
   if (!from) return { score: null, detail: `${band}, but nothing to sign it with — the 50-EMA is flat and so are 20 sessions` }
-  const squeeze = 1 - pctl
-  return { score: round1(from.dir * squeeze * COMPRESSION_MAX_PTS), detail: `${band} (squeeze ${round1(squeeze * 100) / 100}), signed by ${from.why}` }
+  return { score: round1(from.dir * pctl * BANDWIDTH_MAX_PTS), detail: `${band} (bandwidth ${round1(pctl * 100) / 100}), signed by ${from.why}` }
 }
 
 export function sectorFactor(rankPct: number | null): FactorScore {

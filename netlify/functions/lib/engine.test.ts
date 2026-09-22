@@ -239,16 +239,26 @@ const crashBounce = (paidVol: number): Candle[] => {
 }
 
 // The same idea one gate lower: a −2/session slide then a paid five-session bounce.
-// The core read (−21.3) dies in the dead zone, so the composite publishes NOTHING
+// The core read (−21.6) dies in the dead zone, so the composite publishes NOTHING
 // and the name lands in the near-miss list as the closest thing to a short — the
 // row the velocity long has to suppress [C10].
+//
+// THE BOUNCE WAS STEEPENED on 2026-09-22 (176/183/190/197/196 → 178/187/196/205/204)
+// and the reason is worth stating, because it is a fixture keeping its MEANING
+// rather than keeping its numbers. `bandwidth` joined the core and `momentum` grew
+// a 60-session leg: on the shallower bounce the same chart composited −26.4, which
+// is OUTSIDE the ±25 dead zone, so BNC published as a live short and there was no
+// near miss left for the velocity long to suppress. A steeper bounce restores the
+// dead-zone read (−21.6) this fixture exists to produce, on the same shape — a
+// paid five-session recovery off a −2/session slide, 2.5M on the third bar. [F3] is
+// pinned here and nowhere else, so the fixture has to keep working.
 const slideBounceTape = (() => {
   const bars = mk(i => (i < 200 ? 80 + i : 280 - (i - 200) * 2), 255)
-  append(bars, 176)
-  append(bars, 183)
-  append(bars, 190, 2_500_000)
-  append(bars, 197)
-  append(bars, 196)
+  append(bars, 178)
+  append(bars, 187)
+  append(bars, 196, 2_500_000)
+  append(bars, 205)
+  append(bars, 204)
   return bars
 })()
 
@@ -364,7 +374,7 @@ describe('buildBoard', () => {
   it('scores a rolled-over name as a graded short, writes every blob, paper-only at R0', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
-    await store.write('engine-calibration', calWith('short:amber:40-55'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -434,7 +444,7 @@ describe('buildBoard', () => {
   it('maps an instrument once the rung and levMap allow it', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
-    await store.write('engine-calibration', calWith('short:amber:40-55'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     await store.write('risk-state', { rung: 1, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -470,7 +480,7 @@ describe('buildBoard', () => {
   it('a SIZED row grades against SIZED history — the seventeen shadow observations no longer buy it an A', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
-    await store.write('engine-calibration', partitionedCal('short:amber:40-55'))
+    await store.write('engine-calibration', partitionedCal('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -493,7 +503,7 @@ describe('buildBoard', () => {
     // against — and it reads the pooled 0.63 the sized row above was denied.
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
-    await store.write('engine-calibration', partitionedCal('short:amber:40-55'))
+    await store.write('engine-calibration', partitionedCal('short:amber:55-70'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -794,7 +804,7 @@ describe('buildBoard', () => {
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
     // no QQQ → regime 'unknown' → the contract fails on the missing regime leg,
     // while the band itself has proven itself → grade A on thin evidence.
-    await store.write('engine-calibration', calWith('short:unknown:40-55'))
+    await store.write('engine-calibration', calWith('short:unknown:55-70'))
     await store.write('risk-state', { rung: 2, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -1420,7 +1430,7 @@ describe('buildBoard', () => {
   it('per-cohort rung: a large-cap call trades at the LARGE sleeve’s rung, not the combined top-level', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
-    await store.write('engine-calibration', calWith('short:amber:40-55'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     // combined/top-level parked at R0, but the LARGE sleeve already earned R1.
     // NVDA's screener cap is 50_000 → large cohort, so it must trade at R1.
     await store.write('risk-state', {
@@ -2754,7 +2764,7 @@ describe('buildBoard', () => {
       // composite read RICH as a marginal SHORT and published it as the day's near
       // miss — and it no longer is, because the composite moved. This tape is a
       // pure oscillator whose 120-session Bollinger width sits at its own median
-      // (p50) under a rising 50-EMA, so `compression` scores +25.2 and tips a core
+      // (p50) under a rising 50-EMA, so `bandwidth` scores +25.2 and tips a core
       // of −4.7 to +0.5: RICH now argues a dead-zone LONG, there is no short near
       // miss to suppress, and the board says nothing about RICH on either side.
       // A knife-edge fixture is the wrong place to pin a claim anyway — [F3] is
@@ -2923,7 +2933,7 @@ describe('buildBoard', () => {
   it('a SIZED velocity long suppresses the same-sym short NEAR MISS — a shadowed one leaves it standing [C10, F3]', async () => {
     wildcardOff()
     // A watchlist name is evaluated whatever it looks like, so the composite really
-    // does read this chart: its −21.3 core dies in the dead zone and the name lands
+    // does read this chart: its −21.6 core dies in the dead zone and the name lands
     // in the near-miss list as the closest thing to a short.
     const run = async (capUsdM: number) => {
       const store = memoryStore()

@@ -28,7 +28,7 @@ const gateOf = (input: ComposeInput): { gate: GateCode; side: 'long' | 'short' |
 const nullFactors = (): Record<FactorName, FactorScore> => ({
   technical: { score: null, detail: '' },
   momentum: { score: null, detail: '' },
-  compression: { score: null, detail: '' },
+  bandwidth: { score: null, detail: '' },
   sector: { score: null, detail: '' },
   social: { score: null, detail: '' },
   channels: { score: null, detail: '' },
@@ -255,38 +255,39 @@ describe('composeCall', () => {
   })
 })
 
-/** COMPRESSION IS CORE (2026-09-22, ENGINE_MODEL_VERSION 4). Four claims, and the
+/** BANDWIDTH IS CORE (2026-09-22, ENGINE_MODEL_VERSION 4). Four claims, and the
  * fourth is the one that had to be decided rather than discovered. */
-describe('compression joins the core', () => {
-  it('is a CORE family at the seeded 0.4 — technical 1.0, momentum 0.9, compression 0.4', () => {
-    expect(FACTOR_FAMILY.compression).toBe('core')
-    expect(DEFAULT_WEIGHTS.compression).toBe(0.4)
-    expect(DEFAULT_WEIGHTS.compression).toBeLessThan(DEFAULT_WEIGHTS.momentum)
-    expect(DEFAULT_WEIGHTS.compression).toBeGreaterThan(DEFAULT_WEIGHTS.sector)
+describe('bandwidth joins the core', () => {
+  it('is a CORE family at the seeded 0.4 — technical 1.0, momentum 0.9, bandwidth 0.4', () => {
+    expect(FACTOR_FAMILY.bandwidth).toBe('core')
+    expect(DEFAULT_WEIGHTS.bandwidth).toBe(0.4)
+    expect(DEFAULT_WEIGHTS.bandwidth).toBeLessThan(DEFAULT_WEIGHTS.momentum)
+    expect(DEFAULT_WEIGHTS.bandwidth).toBeGreaterThan(DEFAULT_WEIGHTS.sector)
   })
 
   it('moves the composite by exactly its weight over the core denominator', () => {
     // (1.0×84 + 0.9×40 + 0.4×50) / (1.0 + 0.9 + 0.4) = 140 / 2.3 = 60.87
-    const call = drafted(base({ factors: { ...longFactors(), compression: { score: 50, detail: 'p2 squeeze' } } }))!
+    const call = drafted(base({ factors: { ...longFactors(), bandwidth: { score: 50, detail: 'p100 — the widest of its own year' } } }))!
     expect(call.composite).toBeCloseTo(60.9, 1)
-    // …and a null compression renormalises away, leaving the four-core read intact
+    // …and a null bandwidth renormalises away, leaving the four-core read intact
     expect(drafted(base({ factors: longFactors() }))!.composite).toBeCloseTo(63.2, 1)
   })
 
   it('cannot create a call on its own — the dead zone still gates it', () => {
-    // a maximal squeeze and nothing else: 0.4×50 / 0.4 = 50, which DOES clear the
+    // maximal bandwidth and nothing else: 0.4×50 / 0.4 = 50, which DOES clear the
     // dead zone, so the gate that matters is the one below it
-    const alone = { ...nullFactors(), compression: { score: 50, detail: 'p0 squeeze' } }
+    const alone = { ...nullFactors(), bandwidth: { score: 50, detail: 'p100 — the widest of its own year' } }
     expect(drafted(base({ factors: alone }))!.composite).toBeCloseTo(50, 1)
-    // …and a squeeze on a chart with no fuel behind it dies in the dead zone like
-    // any other lonely core read
-    const thin = { ...nullFactors(), compression: { score: 20, detail: 'p60 squeeze' } }
+    // …and a middling width on a chart with nothing behind it dies in the dead zone
+    // like any other lonely core read
+    const thin = { ...nullFactors(), bandwidth: { score: 20, detail: 'p40' } }
     expect(gateOf(base({ factors: thin }))).toMatchObject({ gate: 'dead-zone-core', side: 'long' })
-    // the real production shape: a marginal chart that compression drags UNDER the
-    // gate rather than over it — a wide-band name earns no fuel and dilutes the read
+    // the real production shape: a marginal chart that bandwidth drags UNDER the
+    // gate rather than over it — a COILED name sits at the weak end of the study's
+    // only stable feature, scores near zero, and dilutes the read
     const marginal = { ...nullFactors(), technical: { score: 26, detail: 'basing' }, momentum: { score: 26, detail: '' } }
     expect(drafted(base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' }))).not.toBeNull()
-    expect(gateOf(base({ factors: { ...marginal, compression: { score: 0.5, detail: 'p99' } }, stage: 'basing', entryQuality: 'neutral' }))).toMatchObject({
+    expect(gateOf(base({ factors: { ...marginal, bandwidth: { score: 0.5, detail: 'p1 — the tightest of its own year' } }, stage: 'basing', entryQuality: 'neutral' }))).toMatchObject({
       gate: 'dead-zone-core',
     })
   })
@@ -295,11 +296,11 @@ describe('compression joins the core', () => {
     // It is price-derived, point-in-time and measured, so it counts like sector and
     // seasonality do. The caveat lives beside the contract in composite.ts: its SIGN
     // is borrowed from the same trend the chart read describes, so technical +
-    // compression is a weaker corroboration than technical + sector.
-    const agreeing = drafted(base({ factors: { ...nullFactors(), technical: { score: 84, detail: '' }, compression: { score: 30, detail: '' } }, volumeConfirmed: true }))!
+    // bandwidth is a weaker corroboration than technical + sector.
+    const agreeing = drafted(base({ factors: { ...nullFactors(), technical: { score: 84, detail: '' }, bandwidth: { score: 30, detail: '' } }, volumeConfirmed: true }))!
     expect(agreeing.evidence.famAgree).toBe(2)
     // …and it can only ever ADD a family when it actually agrees
-    const opposing = drafted(base({ factors: { ...nullFactors(), technical: { score: 84, detail: '' }, compression: { score: -30, detail: '' } }, volumeConfirmed: true }))!
+    const opposing = drafted(base({ factors: { ...nullFactors(), technical: { score: 84, detail: '' }, bandwidth: { score: -30, detail: '' } }, volumeConfirmed: true }))!
     expect(opposing.evidence.famAgree).toBe(1)
     expect(opposing.evidence.contract).toBe(false)
   })
@@ -315,7 +316,7 @@ describe('two-layer composite: core decides, context colours', () => {
     smartMoney: { score: 30, detail: 'fund added' },
     technical: { score: null, detail: '' },
     momentum: { score: null, detail: '' },
-    compression: { score: null, detail: '' },
+    bandwidth: { score: null, detail: '' },
     sector: { score: null, detail: '' },
     seasonality: { score: null, detail: '' },
   })
@@ -400,7 +401,7 @@ describe('two-layer composite: core decides, context colours', () => {
 
   it('coverage reports the core weight actually present', () => {
     // technical 1.0 + momentum 0.9 = 1.9 present, of the core total
-    // 1.0 + 0.9 + compression 0.4 + sector 0.3 + seasonality 0.3 = 2.9 →
+    // 1.0 + 0.9 + bandwidth 0.4 + sector 0.3 + seasonality 0.3 = 2.9 →
     // 1.9/2.9 = 0.66. It was 0.76 over a four-factor core: a fifth core factor
     // LOWERS coverage on a two-factor read, which is the honest direction — the
     // same two factors now account for less of what the core could have been.
@@ -566,7 +567,7 @@ describe('composeCall names the gate that said no', () => {
   // no reordered evidence, no drifted level. Naming the noes may not touch a yes.
   //
   // TWO FIELDS MOVED ON 2026-09-22, and only because the CORE ITSELF did: adding
-  // `compression` to FACTOR_FAMILY puts a fifth weight in the core denominator
+  // `bandwidth` to FACTOR_FAMILY puts a fifth weight in the core denominator
   // coverage is measured against (0.76 → 0.66, and the sentence built from it),
   // and puts a fifth entry in `factors`. THE COMPOSITE DID NOT MOVE — 63.2 then,
   // 63.2 now — because a null factor renormalises away: that number is the pin
@@ -583,7 +584,7 @@ describe('composeCall names the gate that said no', () => {
       factors: {
         technical: { score: 84, detail: 'early-reversal volume-confirmed', weight: 1 },
         momentum: { score: 40, detail: '+10pp', weight: 0.9 },
-        compression: { score: null, detail: '', weight: 0.4 },
+        bandwidth: { score: null, detail: '', weight: 0.4 },
         sector: { score: null, detail: '', weight: 0.3 },
         social: { score: null, detail: '', weight: 0.5 },
         channels: { score: null, detail: '', weight: 0.5 },

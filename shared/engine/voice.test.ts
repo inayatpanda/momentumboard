@@ -18,7 +18,7 @@ import {
 import {
   catalystFactor,
   channelsFactor,
-  compressionFactor,
+  bandwidthFactor,
   insiderFactor,
   momentumFactor,
   newsFactor,
@@ -34,9 +34,9 @@ import type { FactorName, FactorScore } from './types'
 
 const STAGES: Stage[] = ['early-reversal', 'basing', 'pullback', 'trending', 'weak', 'extended', 'exhausted', 'falling-knife']
 
-/** 200 closes drifting at `drift` that coil in the last 30 bars — a real
- * `compressionFactor` reading rather than a hand-typed detail string. */
-const coiled = (drift: number) => Array.from({ length: 200 }, (_, i) => 100 * (1 + drift * i) + (i < 170 ? 6 : 0.05) * Math.sin(i))
+/** 200 closes drifting at `drift` whose bands BLOW OUT over the last 30 bars — a
+ * real `bandwidthFactor` reading rather than a hand-typed detail string. */
+const widened = (drift: number) => Array.from({ length: 200 }, (_, i) => 100 * (1 + drift * i) + (i < 170 ? 0.05 : 6) * Math.sin(i))
 
 /** Every phrase this module can emit, for the sweep. Built from REAL factor
  * outputs wherever a factor produces them, so the humanisation stays pinned to
@@ -45,7 +45,7 @@ const coiled = (drift: number) => Array.from({ length: 200 }, (_, i) => 100 * (1
 const realFactors = (): [FactorName, FactorScore][] => [
   ['technical', technicalFactor({ stage: 'pullback', volumeConfirmed: true, rvol: 1.8, emaStack: { aligned: 'bull' }, volThrust: 1.7 })],
   ['momentum', momentumFactor([...Array(21).fill(100), 118], [...Array(21).fill(100), 103])],
-  ['compression', compressionFactor(coiled(0.004))],
+  ['bandwidth', bandwidthFactor(widened(0.004))],
   ['sector', sectorFactor(0.86)],
   ['seasonality', seasonalityFactor({ reliable: true, months: [{ month: 8, name: 'August', avgPct: 3.1, n: 7 }] } as never, 8)],
   ['social', socialFactor({ redditRank: 4, surgeMultiple: 2.4, sources: 3 }, 55)],
@@ -69,7 +69,7 @@ const bearFactors = (): [FactorName, FactorScore][] => [
   // …and the other bearish branch of the chart factor: a turn nothing paid for
   ['technical', technicalFactor({ stage: 'early-reversal', volumeConfirmed: false, rvol: null, emaStack: null, volThrust: null })],
   ['momentum', momentumFactor([...Array(21).fill(100), 88], [...Array(21).fill(100), 103])],
-  ['compression', compressionFactor(coiled(-0.002))],
+  ['bandwidth', bandwidthFactor(widened(-0.002))],
   ['sector', sectorFactor(0.18)],
   ['seasonality', seasonalityFactor({ reliable: true, months: [{ month: 8, name: 'August', avgPct: -3.1, n: 7 }] } as never, 8)],
   ['channels', channelsFactor([{ channel: 'Stocks with Josh', stance: 'bear' }], () => 1)],
@@ -134,16 +134,23 @@ describe('factorPhrase — one clause per factor, from that factor\'s own detail
     }
   })
 
-  it('the squeeze speaks only when the base is genuinely tight — a middling width is a measurement', () => {
-    // p0 of its own 120 sessions — the tightest base this name has printed, and the
-    // printed figure is floored at 1 rather than reading "the tightest 0%"
-    expect(factorPhrase('compression', compressionFactor(coiled(0.004)), 'long')).toBe('its trading range squeezed into the tightest 1% of the last six months')
-    // …and the same SHAPE of sentence on a short, because a coil has no side of its own
-    expect(factorPhrase('compression', compressionFactor(coiled(-0.002)), 'short')).toBe('its trading range squeezed into the tightest 10% of the last six months')
+  it('the bands speak only at the wide end — a middling width is a measurement, not a reason', () => {
+    // p95 of its own 120 sessions: the study's better-performing end, and the copy
+    // reports an association and stops short of any mechanism
+    expect(factorPhrase('bandwidth', bandwidthFactor(widened(0.004)), 'long')).toBe(
+      "bands at the 95th percentile of their own year — wide bands have carried the better forward record in the engine's 2-year walk",
+    )
+    // …and the same SHAPE of sentence on a short, because the bands have no side
+    // of their own
+    expect(factorPhrase('bandwidth', bandwidthFactor(widened(-0.002)), 'short')).toBe(
+      "bands at the 94th percentile of their own year — wide bands have carried the better forward record in the engine's 2-year walk",
+    )
     // a width sitting mid-distribution says nothing rather than saying it hollowly
-    expect(factorPhrase('compression', { score: 12, detail: 'Bollinger width p54 of its own 120 sessions (squeeze 0.46), signed by a 50-EMA rising 2% over 20 sessions' }, 'long')).toBeNull()
-    // and a null factor never speaks at all
-    expect(factorPhrase('compression', compressionFactor(null), 'long')).toBeNull()
+    expect(factorPhrase('bandwidth', { score: 27, detail: 'Bollinger width p54 of its own 120 sessions (bandwidth 0.54), signed by a 50-EMA rising 2% over 20 sessions' }, 'long')).toBeNull()
+    // …and so does a coiled one: this factor's weak end is not a reason either way
+    expect(factorPhrase('bandwidth', { score: 2, detail: 'Bollinger width p4 of its own 120 sessions (bandwidth 0.04), signed by a 50-EMA rising 2% over 20 sessions' }, 'long')).toBeNull()
+    // a null factor never speaks at all
+    expect(factorPhrase('bandwidth', bandwidthFactor(null), 'long')).toBeNull()
   })
 
   it('reads the numbers out of the detail rather than inventing them', () => {

@@ -715,7 +715,7 @@ describe('the COMMITTED seed was measured under the vector production scores wit
   it('ships current === base === DEFAULT_WEIGHTS on every factor its walk measured', () => {
     const w = seedJson.weights as unknown as WeightsState
     expect(w.current).toEqual(w.base)
-    // A SEED IS AN ARTEFACT WITH A DATE ON IT, and `compression` joined the core on
+    // A SEED IS AN ARTEFACT WITH A DATE ON IT, and `bandwidth` joined the core on
     // 2026-09-22 (ENGINE_MODEL_VERSION 4) — after this walk ran. So the committed
     // vector is DEFAULT_WEIGHTS minus the keys that did not exist when it was
     // measured, and the assertion is "every factor it DID measure still carries the
@@ -724,7 +724,7 @@ describe('the COMMITTED seed was measured under the vector production scores wit
     // the next assertion is that it does.
     const measured = Object.keys(w.base) as FactorName[]
     for (const f of measured) expect(w.base[f]).toBe(DEFAULT_WEIGHTS[f])
-    expect((Object.keys(DEFAULT_WEIGHTS) as FactorName[]).filter(f => !measured.includes(f))).toEqual(['compression'])
+    expect((Object.keys(DEFAULT_WEIGHTS) as FactorName[]).filter(f => !measured.includes(f))).toEqual(['bandwidth'])
     expect(w.current.technical).toBe(1) // the #1 factor, switched off at 0.0791 in generation 2
     expect(w.current.technical).toBeGreaterThan(w.current.momentum) // charts before extension (spec §4.2)
     expect(w.current.momentum).toBeGreaterThan(w.current.sector) // …and sector last of the core four
@@ -735,9 +735,9 @@ describe('the COMMITTED seed was measured under the vector production scores wit
     // then re-bases the whole vector and ZEROES the IC, because a four-core model's
     // agreements may not steer a five-core one.
     const w = migrateWeights(JSON.parse(JSON.stringify(seedJson.weights)) as WeightsState)
-    expect(w.base.compression).toBe(DEFAULT_WEIGHTS.compression)
-    expect(w.current.compression).toBe(DEFAULT_WEIGHTS.compression)
-    expect(w.ic.compression).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+    expect(w.base.bandwidth).toBe(DEFAULT_WEIGHTS.bandwidth)
+    expect(w.current.bandwidth).toBe(DEFAULT_WEIGHTS.bandwidth)
+    expect(w.ic.bandwidth).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
     const rebased = rebaseWeights(JSON.parse(JSON.stringify(seedJson.weights)) as WeightsState)
     expect(rebased.base).toEqual(DEFAULT_WEIGHTS)
     expect(rebased.ic.technical).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
@@ -1823,37 +1823,37 @@ describe('weight learning', () => {
     expect(w.gradedSinceNudge).toBe(1)
   })
 
-  /** THE POINT OF SEEDING `compression` LOW (0.4) is that the loop can move it, so
+  /** THE POINT OF SEEDING `bandwidth` LOW (0.4) is that the loop can move it, so
    * this is the test that the loop CAN. A new factor that the IC machinery cannot
    * see is a constant with extra steps. */
-  it('the IC loop learns compression like any other factor — the whole reason it seeds at 0.4', () => {
+  it('the IC loop learns bandwidth like any other factor — the whole reason it seeds at 0.4', () => {
     let w = initWeights()
-    expect(w.base.compression).toBe(0.4)
+    expect(w.base.bandwidth).toBe(0.4)
     // Twenty agreements that won and twenty disagreements that lost: the two-sided
-    // floor is satisfied on compression alone, so the nudge is compression's.
+    // floor is satisfied on bandwidth alone, so the nudge is bandwidth's.
     for (let i = 0; i < 20; i++) {
-      w = updateIcStats(w, pred('long', { compression: 40 }), { ...win, excessPct: 20 })
-      w = updateIcStats(w, pred('long', { compression: -40 }), { ...win, excessPct: -20 })
+      w = updateIcStats(w, pred('long', { bandwidth: 40 }), { ...win, excessPct: 20 })
+      w = updateIcStats(w, pred('long', { bandwidth: -40 }), { ...win, excessPct: -20 })
     }
-    expect(w.ic.compression.nAgree).toBe(20)
-    expect(w.ic.compression.nDisagree).toBe(20)
+    expect(w.ic.bandwidth.nAgree).toBe(20)
+    expect(w.ic.bandwidth.nDisagree).toBe(20)
     w = maybeNudgeWeights(w, '2026-09-22')
-    expect(w.current.compression).toBeCloseTo(0.4 * 1.15, 5)
-    expect(w.history.at(-1)!.changes.compression).toBeDefined()
+    expect(w.current.bandwidth).toBeCloseTo(0.4 * 1.15, 5)
+    expect(w.history.at(-1)!.changes.bandwidth).toBeDefined()
     // …and the band holds it: half its base at worst, 1.5× at best, forever
-    expect(w.current.compression).toBeLessThanOrEqual(1.5 * 0.4)
+    expect(w.current.bandwidth).toBeLessThanOrEqual(1.5 * 0.4)
   })
 
-  it('…and it books a compression SHORT the same way — the sign convention is one convention', () => {
+  it('…and it books a bandwidth SHORT the same way — the sign convention is one convention', () => {
     let w = initWeights()
-    // signed toward long, so a NEGATIVE compression score AGREES with a short
-    w = updateIcStats(w, pred('short', { compression: -40 }), win)
-    expect(w.ic.compression.nAgree).toBe(1)
-    w = updateIcStats(w, pred('short', { compression: 40 }), win)
-    expect(w.ic.compression.nDisagree).toBe(1)
+    // signed toward long, so a NEGATIVE bandwidth score AGREES with a short
+    w = updateIcStats(w, pred('short', { bandwidth: -40 }), win)
+    expect(w.ic.bandwidth.nAgree).toBe(1)
+    w = updateIcStats(w, pred('short', { bandwidth: 40 }), win)
+    expect(w.ic.bandwidth.nDisagree).toBe(1)
     // null is skipped, as it is for every factor: "we could not look" is not evidence
     w = updateIcStats(w, pred('long', {}), win)
-    expect(w.ic.compression.nAgree + w.ic.compression.nDisagree).toBe(2)
+    expect(w.ic.bandwidth.nAgree + w.ic.bandwidth.nDisagree).toBe(2)
   })
 
   it('maybeNudgeWeights: no-op under 15 graded; a TWO-SIDED factor drifts 15%; logs history', () => {
@@ -2078,7 +2078,7 @@ describe('zero is a READING for some factors and a silence for others', () => {
   })
 
   it('everything else still skips a zero — a mute factor is not evidence against the call', () => {
-    for (const name of ['technical', 'momentum', 'compression', 'sector', 'social', 'channels', 'smartMoney', 'catalyst'] as FactorName[]) {
+    for (const name of ['technical', 'momentum', 'bandwidth', 'sector', 'social', 'channels', 'smartMoney', 'catalyst'] as FactorName[]) {
       expect(ZERO_IS_A_READING[name]).toBe(false)
       expect(booked(name, 0)).toBe(0)
     }

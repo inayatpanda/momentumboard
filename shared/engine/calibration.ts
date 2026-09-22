@@ -101,12 +101,12 @@ export const CALIB_DEF_VERSION = 3
  * the Brier trail mixes them; `modelVersion` is the ONLY thing that separates
  * the two epochs, which is the whole reason this bump exists. It gates nothing
  * v4 (2026-09-22, "option 1"): the CORE COMPOSITION CHANGED. A fifth core factor,
- * `compression` — the Bollinger-width percentile the walk-forward study found to
+ * `bandwidth` — the Bollinger-width percentile the walk-forward study found to
  * be the only sign-stable price feature — joins technical/momentum/sector/
  * seasonality at a seeded weight of 0.4, and `momentum` grew a 60-session RS leg
  * and an RS-leader flag. Every core composite therefore moves: a fifth weight in
- * `coreDen` renormalises the whole read, and a name with no squeeze now scores
- * near zero on a factor that still carries weight. A v3 row and a v4 row are not
+ * `coreDen` renormalises the whole read, and a name whose bands are at their
+ * tightest now scores near zero on a factor that still carries weight. A v3 row and a v4 row are not
  * the same model and their Brier trails must be separable.
  * It gates nothing at load time — CALIB_DEF_VERSION is untouched, so no live
  * bucket is discarded (what counts as a hit has not changed, only what we predict

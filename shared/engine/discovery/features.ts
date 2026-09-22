@@ -42,7 +42,7 @@ const median = (xs: number[]): number | null => {
 
 /** % change from `k` sessions ago to the last close.
  *
- * EXPORTED because `compressionFactor` (../factors.ts) needs the same 20-session
+ * EXPORTED because `bandwidthFactor` (../factors.ts) needs the same 20-session
  * return as its fallback direction, and a second copy of two lines of arithmetic
  * is still a second definition that can drift. */
 export const retPct = (closes: number[], k: number): number | null => {
@@ -82,8 +82,8 @@ export const selfPercentile = (window: number[]): number | null => {
  * printed in 120 sessions, 1 = the widest.
  *
  * Exported and called from BOTH `computeFeatures` (which publishes it as
- * `Features.bbWidthPctl120`, the discovery scan's feature) and
- * `compressionFactor` (shared/engine/factors.ts, the core factor). They are two
+ * `Features.bbWidthPctl120`, the discovery scan's feature) and `bandwidthFactor`
+ * (shared/engine/factors.ts, the core factor). They are two
  * consumers of ONE definition on purpose: the walk-forward study measured this
  * exact number, and a factor scoring a second, subtly different percentile would
  * be claiming the study's evidence for arithmetic the study never saw.
@@ -95,7 +95,7 @@ export function bbWidthPctl120Of(closes: number[]): number | null {
 
 /** The 50-EMA's slope over the last 20 sessions, as a % of its current level.
  * Same single definition, same two consumers as `bbWidthPctl120Of` above — here
- * it is the direction `compressionFactor` signs a squeeze with. */
+ * it is the direction `bandwidthFactor` signs a width reading with. */
 export function ema50Slope20Of(closes: number[]): number | null {
   const s = emaSeries(closes, 50)
   const last = s[closes.length - 1] ?? null

@@ -183,11 +183,15 @@ const sectorCapFor = (lens: LensId): number => Math.max(1, Math.floor(LENS_TOP_N
  *               honest t_NW is 1.6, short of 2, which is exactly why it is
  *               spelled here as PRIORITY rather than as conviction: the study's
  *               own verdict is "a WATCHLIST, not a sized call".
- *   compression the only feature whose IC keeps its sign across both halves AND
+ *   bandwidth   the only feature whose IC keeps its sign across both halves AND
  *               both venues while reaching |t| ≥ 2 — IC t 3.0 at 10 sessions,
- *               5.5 at 20, top-minus-bottom decile +0.58pp/+1.00pp. The cut at
- *               0.2 is the tightest fifth of the name's own 120-session
- *               Bollinger width, comfortably inside the study's D1 bucket.
+ *               5.5 at 20. That IC is POSITIVE and the deciles are cut on the
+ *               percentile itself, so the study's better-performing end is the
+ *               WIDEST bands: D10 returned +0.49pp/+1.08pp against D1's
+ *               −0.08pp/+0.07pp. The cut at 0.8 is the widest fifth of the name's
+ *               own 120-session Bollinger width, comfortably inside that D10
+ *               bucket. (It was a `≤ 0.2` bump on the opposite reading until the
+ *               owner adjudicated for the table on 2026-09-22.)
  *
  * THIS ORDERS, IT NEVER ADMITS OR REFUSES. Every candidate in `kept` already
  * entered the pool by clearing its lens's own gate and the per-lens top-N; all
@@ -199,8 +203,8 @@ const sectorCapFor = (lens: LensId): number => Math.max(1, Math.floor(LENS_TOP_N
  * The sizes are deliberately small relative to a lens score: 0.15 moves a name
  * past a rival about 0.21 of a lens score ahead of it (the 0.7 multiplier), which
  * reorders neighbours rather than teleporting a weak leader to the top. */
-export const PRIORITY_BUMP = { rsLeader: 0.15, compression: 0.1 } as const
-export const COMPRESSION_PCTL_MAX = 0.2
+export const PRIORITY_BUMP = { rsLeader: 0.15, bandwidth: 0.1 } as const
+export const BANDWIDTH_PCTL_MIN = 0.8
 
 /** Best-lens quality is 70% of the answer; independent corroboration is 30%.
  *
@@ -213,13 +217,13 @@ export const COMPRESSION_PCTL_MAX = 0.2
 export const priorityFor = (
   bestScore: number,
   nominatorCount: number,
-  evidence: { rsLeader?: boolean; compressed?: boolean } = {},
+  evidence: { rsLeader?: boolean; wideBands?: boolean } = {},
 ): number =>
   round4(
     bestScore * 0.7 +
       0.3 * Math.min(1, nominatorCount / 2) +
       (evidence.rsLeader ? PRIORITY_BUMP.rsLeader : 0) +
-      (evidence.compressed ? PRIORITY_BUMP.compression : 0),
+      (evidence.wideBands ? PRIORITY_BUMP.bandwidth : 0),
   )
 
 /**
@@ -294,7 +298,7 @@ export function selectCandidates(
       // `lenses[0]` would have said otherwise on the strength of a sort.
       priority: priorityFor(lenses[0].score, noms.length, {
         rsLeader: lenses.some(l => l.lens === 'rs-leader'),
-        compressed: f.bbWidthPctl120 != null && f.bbWidthPctl120 <= COMPRESSION_PCTL_MAX,
+        wideBands: f.bbWidthPctl120 != null && f.bbWidthPctl120 >= BANDWIDTH_PCTL_MIN,
       }),
       nominators: noms,
     })

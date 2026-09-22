@@ -24,13 +24,13 @@ export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
   momentum: 0.9,
   // SEEDED LOW, on the repo's rule for a new factor: 0.4 against technical's 1.0,
   // and the IC loop moves it from live outcomes inside [0.5x, 1.5x] of this
-  // anchor. Low is not a verdict on the evidence — compression is the ONLY
-  // feature in the 2026-09-22 walk-forward study whose IC keeps its sign across
-  // both halves and both venues — it is a verdict on the size of it: the top
-  // decile beat the bottom by 1.00pp over 20 sessions, and the honest
-  // out-of-sample composite behind that number reads t_NW 0.4. A real signal
-  // worth a small, learnable weight is exactly what 0.4 says.
-  compression: 0.4,
+  // anchor. Low is not a verdict on the evidence — bandwidth is the ONLY feature
+  // in the 2026-09-22 walk-forward study whose IC keeps its sign across both
+  // halves and both venues — it is a verdict on the SIZE of it: the widest decile
+  // beat the tightest by 1.00pp over 20 sessions, and the honest out-of-sample
+  // composite behind that number reads t_NW 0.4. A real signal worth a small,
+  // learnable weight is exactly what 0.4 says.
+  bandwidth: 0.4,
   catalyst: 0.6, // a live, dated event — the strongest thing that isn't price
   news: 0.5,
   channels: 0.5,
@@ -52,7 +52,7 @@ export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
 export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
   technical: 'core',
   momentum: 'core',
-  compression: 'core', // Bollinger-width percentile off the name's own closes — price, every session
+  bandwidth: 'core', // Bollinger-width percentile off the name's own closes — price, every session
   sector: 'core', // derived entirely from market prices — belongs in the core
   seasonality: 'core', // price-derived (own candle history)
   social: 'context',
@@ -119,9 +119,9 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
  *                         and the factor's own comment says why: "wait — no edge
  *                         either side until the turn confirms".
  *   momentum    silence — 21d RS exactly equal to SPY's. An arithmetic tie.
- *   compression silence — a squeeze of exactly zero is today's Bollinger width
- *                         printing the WIDEST of its own last 120 sessions
- *                         (percentile exactly 1). A boundary value on a
+ *   bandwidth   silence — a score of exactly zero is today's Bollinger width
+ *                         printing the TIGHTEST of its own last 120 sessions
+ *                         (percentile exactly 0). A boundary value on a
  *                         continuous scale, reached by the arithmetic rather than
  *                         by a branch that means "we looked and there is no
  *                         signal" — the same verdict the table gives technical
@@ -148,7 +148,7 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
 export const ZERO_IS_A_READING: Record<FactorName, boolean> = {
   technical: false,
   momentum: false,
-  compression: false,
+  bandwidth: false,
   sector: false,
   seasonality: true,
   social: false,
@@ -393,7 +393,7 @@ export function composeCall(input: ComposeInput): CallOrRejection {
   // (sector / breadth / volume), and ≥2 core families agreeing with the side.
   // Two agreeing families means technical-plus-nothing never acts alone.
   //
-  // DOES `compression` COUNT AS AN AGREEING FAMILY? YES — decided 2026-09-22, and
+  // DOES `bandwidth` COUNT AS AN AGREEING FAMILY? YES — decided 2026-09-22, and
   // by construction rather than by a special case: it is a core family, so the
   // filter below picks it up like sector and seasonality. It is price-derived,
   // point-in-time, computed off the same closes every session for every name, and
@@ -402,13 +402,14 @@ export function composeCall(input: ComposeInput): CallOrRejection {
   // out of the evidence count while letting it move the composite, which is the
   // worst of both.
   //
-  // THE CAVEAT, STATED BECAUSE IT WEAKENS THE CONTRACT: compression's SIGN is
+  // THE CAVEAT, STATED BECAUSE IT WEAKENS THE CONTRACT: bandwidth's SIGN is
   // borrowed from the 50-EMA slope (factors.ts), and the technical read is built
   // on the same trend. So on a trending chart the two will usually agree, and
-  // "technical plus compression" is a WEAKER corroboration than "technical plus
+  // "technical plus bandwidth" is a WEAKER corroboration than "technical plus
   // sector" or "technical plus momentum" — two readings of one trend, not two
-  // independent votes. Its STRENGTH is independent (a squeeze is not a trend) and
-  // its weight is the smallest in the core, which is what bounds the cost. If the
+  // independent votes. Its STRENGTH is independent (how wide the bands are is not
+  // a statement about trend) and its weight is the smallest in the core, which is
+  // what bounds the cost. If the
   // contract's pass rate jumps on the next live board, that is the mechanism, and
   // the answer is a stronger contract rather than a quieter factor.
   const coreFamilies = (Object.keys(FACTOR_FAMILY) as FactorName[]).filter(n => FACTOR_FAMILY[n] === 'core')

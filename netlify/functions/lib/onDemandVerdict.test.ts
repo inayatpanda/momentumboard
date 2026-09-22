@@ -20,7 +20,7 @@ const flatSpy = (n = 60): Candle[] => trendCandles(n, 100, 0)
 
 // Momentum-only weights make the composite's SIGN follow relative strength
 // alone — the one thing the fixture genuinely controls.
-const MOMENTUM_ONLY = { technical: 0, momentum: 2, compression: 0, sector: 0, seasonality: 0, social: 0, channels: 0, insiders: 0, news: 0, smartMoney: 0, catalyst: 0 }
+const MOMENTUM_ONLY = { technical: 0, momentum: 2, bandwidth: 0, sector: 0, seasonality: 0, social: 0, channels: 0, insiders: 0, news: 0, smartMoney: 0, catalyst: 0 }
 
 const deps = (candles: Candle[] | null, spy: Candle[] | null = flatSpy()) => ({
   candles: async (sym: string) => (sym === 'SPY' ? spy : candles),
@@ -36,9 +36,9 @@ describe('onDemandVerdict', () => {
     const computed = Object.fromEntries(v.computed.map(f => [f.name, f]))
     expect(computed.technical.score).not.toBeNull()
     expect(computed.momentum.score).toBeGreaterThan(0) // outran a flat SPY by construction
-    // 60 bars is short of compressionFactor's 140-close floor, so the third price
+    // 60 bars is short of bandwidthFactor's 140-close floor, so the third price
     // factor is ATTEMPTED and comes back null — named here rather than hidden.
-    expect(v.nulls.sort()).toEqual(['catalyst', 'channels', 'compression', 'insiders', 'news', 'seasonality', 'sector', 'smartMoney', 'social'])
+    expect(v.nulls.sort()).toEqual(['bandwidth', 'catalyst', 'channels', 'insiders', 'news', 'seasonality', 'sector', 'smartMoney', 'social'])
     expect(v.core).not.toBeNull()
     expect(v.core!).toBeGreaterThan(0)
     expect(v.lean).toBe('long')

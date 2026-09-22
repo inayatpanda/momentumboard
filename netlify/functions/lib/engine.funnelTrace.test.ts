@@ -101,11 +101,11 @@ const goldenStore = async () => {
     ytChannels: [],
     levMap: { NVDA: { short2x: 'INV' } },
   })
-  await store.write('engine-calibration', calWith('short:amber:40-55'))
+  await store.write('engine-calibration', calWith('short:amber:55-70'))
   // TWO bearish channels, not one, and the second is load-bearing: this fixture's
   // job includes proving that MOVING the context cap moves what publishes, which
   // only one video could do while the core had four factors to divide by. A fifth
-  // core weight (`compression`, 2026-09-22) grew coreDen ~18%, which shrank the
+  // core weight (`bandwidth`, 2026-09-22) grew coreDen ~18%, which shrank the
   // same context vote below the 12-point cap and quietly turned that assertion
   // into a tautology. A second stance puts the context layer back ON the cap.
   await store.write('video-extracts', [
@@ -137,19 +137,18 @@ const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).diges
 //
 // RE-STAMPED AGAIN on 2026-09-22, and this time THE DECISION MOVED — so the
 // readable projection moved with it and the reason is written down rather than
-// hashed away. `compression` joined the CORE (ENGINE_MODEL_VERSION 3 → 4), which
+// hashed away. `bandwidth` joined the CORE (ENGINE_MODEL_VERSION 3 → 4), which
 // puts a fifth weight in the denominator every core composite is divided by, and
 // `momentum` grew a 60-session relative-strength leg. On this tape those two
-// changes read: technical −45, momentum −80 (clamped either way), compression
-// −0.2 — a name in a straight-line slide prints the WIDEST Bollinger width of its
-// own last 120 sessions, which is the null end of the only feature the
-// walk-forward study found stable, so it earns no fuel and dilutes the read. The
-// short goes −64.8 → −56.7. The GRADE, the rung, the entry, the stop and the
-// target are all unchanged, and the planted band moved 55-70 → 40-55 so the
-// evidence still sits at-or-below the conviction it prices (see `calWith`).
-// 96a4ccbc… was the pre-compression value.
-const GOLDEN_SHA = '88c8e1693c8ed6f1824d60f73110c00ee1c14d426d4e164453ac21ddd54a1b8b'
-const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-56.7 r=1 e=162 s=170.44 t=150.75 ']
+// changes read: technical −45, momentum −80 (clamped either way), bandwidth −50 —
+// a name in a straight-line slide prints the WIDEST Bollinger width of its own
+// last 120 sessions, and the study's positive IC on that percentile puts the
+// widest decile at its better-performing end, so it DEEPENS the read. The short
+// goes −64.8 → −63.5. The grade, the rung, the entry, the stop, the target and
+// the planted band (55-70, whose 62.5 midpoint the read still clears) are all
+// unchanged. 96a4ccbc… was the pre-bandwidth value.
+const GOLDEN_SHA = '6d221d1760fca88fbaaf29b71f0267bbe52c1852e19ab72e7d11385eb59a7d45'
+const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-63.5 r=1 e=162 s=170.44 t=150.75 ']
 /** Every key the golden day wrote at BASE. The trace may ADD to this list and
  * may touch nothing in it. */
 const GOLDEN_KEYS = [
@@ -248,11 +247,11 @@ describe('the funnel trace', () => {
     expect(trace.gates).toEqual({ deadZone: 20, minExpectedMovePct: 1.25, contextMaxPts: 14 })
     // …and the move is VISIBLE in what published, by exactly the amount the moved
     // gate allows and not a point more: this day's context layer sits ON the cap,
-    // so raising it 12 → 14 moves the composite −56.7 → −58.7. The grade, the
+    // so raising it 12 → 14 moves the composite −63.5 → −65.5. The grade, the
     // rung and every level are untouched — the dead zone at 20 changes what a
-    // MARGINAL name does, and NVDA at −58.7 was never marginal.
+    // MARGINAL name does, and NVDA at −65.5 was never marginal.
     const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
-    expect(projection(ledger)).toEqual(GOLDEN_ROWS.map(r => r.replace('c=-56.7', 'c=-58.7')))
+    expect(projection(ledger)).toEqual(GOLDEN_ROWS.map(r => r.replace('c=-63.5', 'c=-65.5')))
   })
 
   it('a name a door offered and the pool refused is counted, never listed', async () => {
@@ -262,7 +261,7 @@ describe('the funnel trace', () => {
     // scored. That is the whole bounded population `not-candidate` can honestly
     // count: the universe of names nobody nominated is infinite.
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' } } })
-    await store.write('engine-calibration', calWith('short:amber:40-55'))
+    await store.write('engine-calibration', calWith('short:amber:55-70'))
     await buildBoard(
       store,
       deps({
@@ -403,13 +402,18 @@ describe('the funnel trace', () => {
     const store = recordingStore()
     // Two mild slides, both shorts, both dying in the dead zone — and they die at
     // different PASSES. Under a risk-on tape a short is nudged ×0.85, so SB's core
-    // (−27.1) clears the gate on pass 1 and is dragged back under to −23 by the
-    // re-score, while SA (−24.8) never cleared it at all. Same code, materially
+    // (−27.3) clears the gate on pass 1 and is dragged back under to −23.2 by the
+    // re-score, while SA (−24.7) never cleared it at all. Same code, materially
     // different evidence, and Task 1's seam is exactly that the row records the
     // SECOND pass's verdict — so the row has to admit which pass it was.
-    const drift = (r: number) => mk(j => (200 - j * r) * (1 + 0.05 * Math.sin(j / 3)))
+    const drift = (r: number, amp = 0.05) => mk(j => (200 - j * r) * (1 + amp * Math.sin(j / 3)))
+    // SA's oscillation was narrowed 5% → 3% on 2026-09-22. `bandwidth` reads the
+    // width of that oscillation against the name's own year, so at 5% BOTH tapes
+    // composited past the gate on pass 1 and the fixture lost the contrast it is
+    // built on — the whole point is one name that never cleared and one that
+    // cleared and was dragged back. A quieter SA restores it, on the same shape.
     const tapes = new Map([
-      ['SA', drift(0.05)],
+      ['SA', drift(0.05, 0.03)],
       ['SB', drift(0.15)],
     ])
     await store.write('config', { watchlist: [{ symbol: 'SA' }, { symbol: 'SB' }], rules: [], ytChannels: [], levMap: {} })
@@ -660,18 +664,11 @@ describe('the funnel trace', () => {
 
   it('a shadow past the 5-per-side budget never reaches the ledger, so it reads shadow-capped rather than called-shadow', async () => {
     const store = recordingStore()
-    // TEN unroutable shorts, of which NINE publish as route-blocked shadows: one
-    // is promoted to fill the empty side, and pickShadow then takes the best five
-    // of the remaining eight. The three the budget dropped are in NOTHING the
-    // reader or the ledger ever sees — and must stop claiming they published.
-    //
-    // It was nine names until 2026-09-22. `compression` joining the core
-    // renormalises every composite over a fifth weight, and R06's core landed at
-    // −24.3 — inside the ±25 dead zone by seven tenths of a point — so the
-    // fixture published eight and the budget only ever had two to drop. A tenth
-    // variant restores the NINE publishers the claim is about; the claim, the
-    // budget and the counts below are untouched.
-    const syms = Array.from({ length: 10 }, (_, i) => `R${String(i).padStart(2, '0')}`)
+    // Nine unroutable shorts: every one publishes as a route-blocked shadow, one is
+    // promoted to fill the empty side, and pickShadow then takes the best five of
+    // the remaining eight. The three the budget dropped are in NOTHING the reader
+    // or the ledger ever sees — and must stop claiming they published.
+    const syms = Array.from({ length: 9 }, (_, i) => `R${String(i).padStart(2, '0')}`)
     const tapes = new Map(syms.map((s, i) => [s, shortyVariant(0.7 + i * 0.4)]))
     await store.write('config', { watchlist: syms.map(symbol => ({ symbol })), rules: [], ytChannels: [], levMap: {} }) // NO routes at all
     await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
