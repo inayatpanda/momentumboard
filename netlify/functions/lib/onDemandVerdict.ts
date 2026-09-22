@@ -1,7 +1,8 @@
 // THE ON-DEMAND READ (PWA rebuild): "ask about any stock" answered by the
 // ENGINE, not the LLM. Pure assembly over the exact functions buildBoard uses —
-// technicalStage for the chart read, technicalFactor/momentumFactor for the two
-// price factors, coreCompositeOf for the composite — so this read can never
+// technicalStage for the chart read, technicalFactor/momentumFactor/
+// compressionFactor for the three price factors, coreCompositeOf for the
+// composite — so this read can never
 // fork from the board's arithmetic. Factors that need universe or social
 // context (sector ranks, news batches, channel calls…) are NOT recomputed here:
 // they return null and are NAMED in `nulls`, because a partial read that says
@@ -16,7 +17,7 @@ import type { Candle } from '../../../shared/types'
 import type { FactorName, FactorScore } from '../../../shared/engine/types'
 import type { RegimeColor } from '../../../shared/types'
 import { technicalStage } from '../../../shared/technicals'
-import { momentumFactor, technicalFactor } from '../../../shared/engine/factors'
+import { compressionFactor, momentumFactor, technicalFactor } from '../../../shared/engine/factors'
 import { coreCompositeOf } from '../../../shared/engine/composite'
 import { atr } from '../../../shared/indicators'
 import { isCryptoSymbol } from '../../../shared/symbols'
@@ -111,7 +112,11 @@ export async function onDemandVerdict(sym: string, deps: VerdictDeps, ctx: Verdi
   const read = technicalStage(sym, candles)
   const factors: Record<FactorName, FactorScore> = {
     technical: technicalFactor(read),
-    momentum: momentumFactor(candles.map(c => c.c), spy ? spy.map(c => c.c) : null),
+    momentum: momentumFactor(candles.map(c => c.c), spy ? spy.map(c => c.c) : null, candles),
+    // the third price factor, computed here for the same reason as the other two:
+    // this read must never fork from the board's arithmetic. It is null under 140
+    // closes, which `nulls` below then names.
+    compression: compressionFactor(candles.map(c => c.c)),
     sector: NOT_ON_DEMAND,
     seasonality: NOT_ON_DEMAND,
     social: NOT_ON_DEMAND,
@@ -133,7 +138,7 @@ export async function onDemandVerdict(sym: string, deps: VerdictDeps, ctx: Verdi
     lean: core == null || core === 0 ? 'none' : core > 0 ? 'long' : 'short',
     core,
     stage: read?.stage ?? null,
-    computed: (['technical', 'momentum'] as const).map(name => ({ name, ...factors[name] })),
+    computed: (['technical', 'momentum', 'compression'] as const).map(name => ({ name, ...factors[name] })),
     // EVERY closed eye is named, the attempted price factors included — a short
     // tape that nulls the chart read shows up here, not just in `computed`.
     nulls: (Object.keys(factors) as FactorName[]).filter(n => factors[n].score == null),

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   catalystFactor,
   channelsFactor,
+  compressionFactor,
+  COMPRESSION_MIN_BARS,
   insiderFactor,
   momentumFactor,
   newsFactor,
@@ -13,6 +15,7 @@ import {
 } from './factors'
 import type { SeasonalitySummary } from '../seasonality'
 import type { Stage } from '../technicals'
+import type { Candle } from '../types'
 
 /** v2 shape: neither of the two new legs is known. Every one of these numbers is
  *  the number the factor printed before the stack and the thrust existed — a
@@ -156,6 +159,127 @@ describe('momentumFactor', () => {
     expect(momentumFactor(rocket, flat).score).toBe(80)
     expect(momentumFactor(null, flat).score).toBeNull()
     expect(momentumFactor(flat.slice(0, 10), flat).score).toBeNull()
+  })
+})
+
+describe('momentumFactor — the 60-session leg and the RS-leader flag', () => {
+  const spy = Array.from({ length: 200 }, () => 100)
+  /** A clean linear leader: `drift` per bar off a flat SPY, no noise, so every leg
+   * of the gate is arithmetic rather than luck. */
+  const ramp = (drift: number, n = 200) => Array.from({ length: n }, (_, i) => 100 * (1 + drift * i))
+  const candlesOf = (closes: number[]): Candle[] =>
+    closes.map((c, i) => ({ t: 1_700_000_000 + i * 86_400, o: c, h: c * 1.01, l: c * 0.99, c, v: 1_000_000 }))
+
+  it('a tape too short for 60 sessions scores EXACTLY what it always did — one leg, one sentence', () => {
+    const short = ramp(0.005, 40)
+    const f = momentumFactor(short, spy.slice(0, 40), candlesOf(short))
+    expect(f.detail).toMatch(/^21d RS vs SPY \+\d/)
+    expect(f.detail).not.toContain('60d')
+    // the pin: the 21-session leg is still rs × 4 and nothing else
+    const rs = ((short[39] - short[18]) / short[18]) * 100
+    expect(f.score).toBeCloseTo(Math.round(rs * 4 * 10) / 10, 1)
+  })
+
+  it('adds the 60-session leg at 0.35 pt/pp — a quarter of the short leg at equal drift', () => {
+    const xs = ramp(0.005)
+    const f = momentumFactor(xs, spy, candlesOf(xs))
+    const rs21 = ((xs[199] - xs[178]) / xs[178]) * 100
+    const rs60 = ((xs[199] - xs[139]) / xs[139]) * 100
+    expect(f.score).toBeCloseTo(Math.round((rs21 * 4 + rs60 * 0.35) * 10) / 10, 1)
+    expect(f.detail).toContain('60d +')
+  })
+
+  it('flags an RS leader: ahead on both windows, above a rising 50-EMA, not extended', () => {
+    const xs = ramp(0.005)
+    expect(momentumFactor(xs, spy, candlesOf(xs)).detail).toContain('RS leader')
+  })
+
+  it('…and refuses the flag on every leg it fails', () => {
+    // ahead on 21 sessions but not 60 — a one-month wonder, which is exactly what
+    // the long window is here to tell apart from a leader
+    const lateRun = Array.from({ length: 200 }, (_, i) => (i < 179 ? 100 : 100 * (1 + 0.004 * (i - 179))))
+    expect(momentumFactor(lateRun, spy, candlesOf(lateRun)).detail).not.toContain('RS leader')
+    // a leader you would have to CHASE: today gaps 10% clear of the 21-EMA, well
+    // past 2 ATR, which is a climax setup wearing a leader's clothes
+    const ext = ramp(0.006).map((c, i) => (i === 199 ? c * 1.1 : c))
+    expect(momentumFactor(ext, spy, candlesOf(ext)).detail).not.toContain('RS leader')
+    expect(momentumFactor(ext, spy, candlesOf(ext)).score).toBeGreaterThan(0) // the SCORE is untouched
+    // and a leg it cannot MEASURE is a refusal, never a pass: no candles, no ATR,
+    // no extension read
+    expect(momentumFactor(ramp(0.005), spy).detail).not.toContain('RS leader')
+    // a laggard is never a leader, however the rest of the gate reads
+    const down = ramp(-0.002)
+    expect(momentumFactor(down, spy, candlesOf(down)).detail).not.toContain('RS leader')
+  })
+
+  it('the flag pays NOTHING — leadership buys attention in discovery, not conviction here', () => {
+    const xs = ramp(0.005)
+    const withFlag = momentumFactor(xs, spy, candlesOf(xs))
+    const withoutTheExtensionRead = momentumFactor(xs, spy) // same tape, no candles → no flag
+    expect(withFlag.detail).toContain('RS leader')
+    expect(withoutTheExtensionRead.detail).not.toContain('RS leader')
+    expect(withFlag.score).toBe(withoutTheExtensionRead.score)
+  })
+})
+
+/** THE COMPRESSION FACTOR (2026-09-22 walk-forward study). A squeeze is fuel and
+ * the trend says which way, so every case below is a pair: how tight the bands
+ * are, and what the chart is doing. */
+describe('compressionFactor', () => {
+  /** 200 closes drifting at `drift`, oscillating ±6 for all but the last 30 bars
+   * and ±0.05 after that: a chart that has COILED, whatever direction it coiled
+   * in. Flip the amplitudes and the same tape has just BLOWN OUT instead. */
+  const coil = (drift: number, n = 200) => Array.from({ length: n }, (_, i) => 100 * (1 + drift * i) + (i < n - 30 ? 6 : 0.05) * Math.sin(i))
+  const blowout = (drift: number, n = 200) => Array.from({ length: n }, (_, i) => 100 * (1 + drift * i) + (i < n - 30 ? 0.05 : 6) * Math.sin(i))
+
+  it('a tight base in an uptrend is a LONG, near the full ±50', () => {
+    const f = compressionFactor(coil(0.004))
+    expect(f.score).toBeGreaterThan(40)
+    expect(f.detail).toContain('p0 of its own 120 sessions')
+    expect(f.detail).toContain('signed by a 50-EMA rising')
+  })
+
+  it('…and the identical base in a downtrend is a SHORT — the squeeze has no side of its own', () => {
+    const f = compressionFactor(coil(-0.002))
+    expect(f.score).toBeLessThan(-40)
+    expect(f.detail).toContain('signed by a 50-EMA falling')
+  })
+
+  it('wide bands score ~0 either way: no squeeze is no fuel, whatever the trend', () => {
+    expect(Math.abs(compressionFactor(blowout(0.004)).score!)).toBeLessThan(5)
+    expect(Math.abs(compressionFactor(blowout(-0.002)).score!)).toBeLessThan(5)
+    expect(compressionFactor(blowout(0.004)).score).toBeGreaterThan(0) // …and it still carries the sign
+    expect(compressionFactor(blowout(-0.002)).score).toBeLessThan(0)
+  })
+
+  it('is monotone in the squeeze — a tighter base always scores more of the same sign', () => {
+    const at = (quietFrom: number) =>
+      compressionFactor(Array.from({ length: 200 }, (_, i) => 100 * (1 + 0.004 * i) + (i < quietFrom ? 6 : 0.05) * Math.sin(i))).score!
+    expect(at(170)).toBeGreaterThan(at(185))
+    expect(at(185)).toBeGreaterThan(at(199))
+  })
+
+  it('a tape under 140 closes is NULL — the percentile needs 20 bars for a width and 120 widths to rank it', () => {
+    expect(compressionFactor(coil(0.004, COMPRESSION_MIN_BARS - 1)).score).toBeNull()
+    expect(compressionFactor(coil(0.004, COMPRESSION_MIN_BARS - 1)).detail).toContain('insufficient history')
+    expect(compressionFactor(coil(0.004, COMPRESSION_MIN_BARS)).score).not.toBeNull()
+    expect(compressionFactor(null).score).toBeNull()
+  })
+
+  it('falls back to the 20-session return when the 50-EMA is FLAT, and says which it used', () => {
+    // wide for 110 bars, then dead level, then one 1% session: the 50-EMA has moved
+    // 0.035% in twenty sessions (flat) while the 20-session return is a clean +1%.
+    const settled = (last: number) => Array.from({ length: 200 }, (_, i) => (i < 110 ? 100 + 3 * Math.sin(i) : i === 199 ? last : 100))
+    const up = compressionFactor(settled(101))
+    expect(up.score).toBeGreaterThan(0)
+    expect(up.detail).toContain('signed by a 20-session return of +1%')
+    expect(compressionFactor(settled(99)).score).toBeLessThan(0)
+  })
+
+  it('a coiled chart going NOWHERE is null, not a zero — there is no direction to lend it', () => {
+    const f = compressionFactor(Array.from({ length: 200 }, () => 100))
+    expect(f.score).toBeNull()
+    expect(f.detail).toContain('nothing to sign it with')
   })
 })
 

@@ -100,9 +100,24 @@ export const CALIB_DEF_VERSION = 3
  * A v2 row and a v3 row in the same ledger were scored by different models and
  * the Brier trail mixes them; `modelVersion` is the ONLY thing that separates
  * the two epochs, which is the whole reason this bump exists. It gates nothing
- * at load time — CALIB_DEF_VERSION is untouched, so no live bucket is discarded
- * (what counts as a hit has not changed, only what we predict about it). */
-export const ENGINE_MODEL_VERSION = 3
+ * v4 (2026-09-22, "option 1"): the CORE COMPOSITION CHANGED. A fifth core factor,
+ * `compression` — the Bollinger-width percentile the walk-forward study found to
+ * be the only sign-stable price feature — joins technical/momentum/sector/
+ * seasonality at a seeded weight of 0.4, and `momentum` grew a 60-session RS leg
+ * and an RS-leader flag. Every core composite therefore moves: a fifth weight in
+ * `coreDen` renormalises the whole read, and a name with no squeeze now scores
+ * near zero on a factor that still carries weight. A v3 row and a v4 row are not
+ * the same model and their Brier trails must be separable.
+ * It gates nothing at load time — CALIB_DEF_VERSION is untouched, so no live
+ * bucket is discarded (what counts as a hit has not changed, only what we predict
+ * about it), `migrateCalibration` only BACKFILLS an absent stamp, and the bucket
+ * KEYS (`${cohort}:${side}:${regime}:${band}`) are byte-identical. What does move
+ * at load is the weight vector: `rebaseWeights` sees a key the stored base does
+ * not carry, re-bases base AND current to DEFAULT_WEIGHTS and ZEROES the IC
+ * columns — which is the correct and intended consequence of composing
+ * differently, since every agreement in that state was measured on a four-core
+ * model. */
+export const ENGINE_MODEL_VERSION = 4
 
 export interface CalibrationState {
   // Keys are EITHER cohort-tagged `${cohort}:${side}:${regime}:${band}` (cohort ∈

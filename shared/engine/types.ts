@@ -3,7 +3,18 @@ import type { Horizon } from './horizon'
 import type { PostMortem } from './postMortem'
 import type { ForecastContract, StrategySleeve } from './strategyLab'
 
-export type FactorName = 'technical' | 'momentum' | 'sector' | 'social' | 'channels' | 'insiders' | 'news' | 'seasonality' | 'smartMoney' | 'catalyst'
+export type FactorName =
+  | 'technical'
+  | 'momentum'
+  | 'compression'
+  | 'sector'
+  | 'social'
+  | 'channels'
+  | 'insiders'
+  | 'news'
+  | 'seasonality'
+  | 'smartMoney'
+  | 'catalyst'
 
 export interface FactorScore {
   score: number | null // signed −100..+100 toward LONG; null = no data (weight renormalises away)

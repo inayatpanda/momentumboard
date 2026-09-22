@@ -364,7 +364,7 @@ describe('buildBoard', () => {
   it('scores a rolled-over name as a graded short, writes every blob, paper-only at R0', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
-    await store.write('engine-calibration', calWith('short:amber:55-70'))
+    await store.write('engine-calibration', calWith('short:amber:40-55'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -434,7 +434,7 @@ describe('buildBoard', () => {
   it('maps an instrument once the rung and levMap allow it', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
-    await store.write('engine-calibration', calWith('short:amber:55-70'))
+    await store.write('engine-calibration', calWith('short:amber:40-55'))
     await store.write('risk-state', { rung: 1, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -470,7 +470,7 @@ describe('buildBoard', () => {
   it('a SIZED row grades against SIZED history — the seventeen shadow observations no longer buy it an A', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
-    await store.write('engine-calibration', partitionedCal('short:amber:55-70'))
+    await store.write('engine-calibration', partitionedCal('short:amber:40-55'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -493,7 +493,7 @@ describe('buildBoard', () => {
     // against — and it reads the pooled 0.63 the sized row above was denied.
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
-    await store.write('engine-calibration', partitionedCal('short:amber:55-70'))
+    await store.write('engine-calibration', partitionedCal('short:amber:40-55'))
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
     ])
@@ -794,7 +794,7 @@ describe('buildBoard', () => {
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
     // no QQQ → regime 'unknown' → the contract fails on the missing regime leg,
     // while the band itself has proven itself → grade A on thin evidence.
-    await store.write('engine-calibration', calWith('short:unknown:55-70'))
+    await store.write('engine-calibration', calWith('short:unknown:40-55'))
     await store.write('risk-state', { rung: 2, sinceDate: '2026-01-01', gradedAtRung: 0, history: [] })
     await store.write('video-extracts', [
       { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
@@ -1420,7 +1420,7 @@ describe('buildBoard', () => {
   it('per-cohort rung: a large-cap call trades at the LARGE sleeve’s rung, not the combined top-level', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'SNVD' } } })
-    await store.write('engine-calibration', calWith('short:amber:55-70'))
+    await store.write('engine-calibration', calWith('short:amber:40-55'))
     // combined/top-level parked at R0, but the LARGE sleeve already earned R1.
     // NVDA's screener cap is 50_000 → large cohort, so it must trade at R1.
     await store.write('risk-state', {
@@ -2749,10 +2749,18 @@ describe('buildBoard', () => {
       expect(probe.shadow).toBe(true)
       expect(probe.riskPct).toBe(0)
       expect(board.some(b => b.sym === 'RICH' && b.side === 'long')).toBe(false)
-      // …and [F3] again, from the other end of the board: with the long shadowed,
-      // the short near miss on this same chart is NOT suppressed. An unsized row
-      // takes nothing away from the reader, including the day's only word on RICH.
-      expect(board.find(b => b.sym === 'RICH' && b.side === 'short')!.nearMiss).toBe(true)
+      // …and [F3] from the other end of the board: an unsized row takes nothing
+      // away from the reader. That USED to be observable on this very chart — the
+      // composite read RICH as a marginal SHORT and published it as the day's near
+      // miss — and it no longer is, because the composite moved. This tape is a
+      // pure oscillator whose 120-session Bollinger width sits at its own median
+      // (p50) under a rising 50-EMA, so `compression` scores +25.2 and tips a core
+      // of −4.7 to +0.5: RICH now argues a dead-zone LONG, there is no short near
+      // miss to suppress, and the board says nothing about RICH on either side.
+      // A knife-edge fixture is the wrong place to pin a claim anyway — [F3] is
+      // pinned whole, in BOTH branches, on a chart with a real short read: see
+      // 'a SIZED velocity long suppresses the same-sym short NEAR MISS' below.
+      expect(board.some(b => b.sym === 'RICH')).toBe(false)
     } else {
       expect(probe.riskPct).toBe(RUNG_RISK_PCT[probe.riskRung] * VELOCITY_DOOR_CAP.early)
       expect(probe.riskPct).toBe(0.3125) // rung 1, quartered by the early door

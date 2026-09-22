@@ -47,8 +47,8 @@ import { round1 } from './types'
  * (a catalyst reason, a YouTube channel's name) is checked against it before
  * being embedded — see `safe`. */
 export const BANNED_TOKENS: readonly string[] = [
-  // the ten factor names
-  'technical', 'momentum', 'sector', 'social', 'channels', 'insiders', 'news', 'seasonality', 'smartMoney', 'catalyst',
+  // the eleven factor names
+  'technical', 'momentum', 'compression', 'sector', 'social', 'channels', 'insiders', 'news', 'seasonality', 'smartMoney', 'catalyst',
   // the eight technical stages
   'early-reversal', 'falling-knife', 'pullback', 'basing', 'trending', 'extended', 'exhausted', 'weak',
   // the setup families
@@ -186,6 +186,24 @@ function momentumPhrase(f: FactorScore): string | null {
   return `${mag} points of ${pp >= 0 ? 'out' : 'under'}performance against the S&P over the last month`
 }
 
+/** THE COILED BASE, and only when it is genuinely coiled. The factor scores the
+ * whole 0–1 range linearly, but a width in the middle of its own 120-session
+ * distribution is an ordinary chart — saying "its bands are in the 54th
+ * percentile" is a measurement, not a reason, and the same silence sectorPhrase
+ * keeps about a middling rank is the right one here. The direction is NOT quoted:
+ * composeCall only ever hands this factor the microphone on the side its score
+ * already argues, and the chart factor is the one that speaks about trend. */
+const COMPRESSION_SPEAKS_AT_PCTL = 30
+
+function compressionPhrase(f: FactorScore): string | null {
+  const p = num(f.detail, /\bp(\d+)\b/)
+  if (p == null || p > COMPRESSION_SPEAKS_AT_PCTL) return null
+  // floored at 1 for the same reason the unusual lens floors its own percentile:
+  // the tightest reading of the window percentiles to exactly 0, and "the tightest
+  // 0% of the last six months" is not a sentence anyone should read in the paper.
+  return `its trading range squeezed into the tightest ${Math.max(p, 1)}% of the last six months`
+}
+
 /** The name's industry standing, as a bucket. A middling rank is left unsaid:
  * "ranks in the 51st percentile" is a measurement, not a reason. */
 function sectorPhrase(f: FactorScore): string | null {
@@ -265,6 +283,7 @@ type PhraseWriter = (f: FactorScore, side: 'long' | 'short') => string | null
 const FACTOR_PHRASE: Record<FactorName, PhraseWriter> = {
   technical: technicalPhrase,
   momentum: momentumPhrase,
+  compression: compressionPhrase,
   sector: sectorPhrase,
   seasonality: seasonalityPhrase,
   social: socialPhrase,

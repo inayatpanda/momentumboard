@@ -101,9 +101,16 @@ const goldenStore = async () => {
     ytChannels: [],
     levMap: { NVDA: { short2x: 'INV' } },
   })
-  await store.write('engine-calibration', calWith('short:amber:55-70'))
+  await store.write('engine-calibration', calWith('short:amber:40-55'))
+  // TWO bearish channels, not one, and the second is load-bearing: this fixture's
+  // job includes proving that MOVING the context cap moves what publishes, which
+  // only one video could do while the core had four factors to divide by. A fifth
+  // core weight (`compression`, 2026-09-22) grew coreDen ~18%, which shrank the
+  // same context vote below the 12-point cap and quietly turned that assertion
+  // into a tautology. A second stance puts the context layer back ON the cap.
   await store.write('video-extracts', [
     { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    { url: 'yt/2', channel: 'The Chart Room', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
   ])
   return store
 }
@@ -127,8 +134,22 @@ const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).diges
 // Re-stamped for the research-lab port: each published row now carries a
 // sleeve, an explicit forecast contract and detection/availability timestamps.
 // The readable decision projection below remains unchanged.
-const GOLDEN_SHA = '96a4ccbc999b73b10ed059d1368cfcf185b7c95c5ea823b61763fcf511d796fa'
-const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-64.8 r=1 e=162 s=170.44 t=150.75 ']
+//
+// RE-STAMPED AGAIN on 2026-09-22, and this time THE DECISION MOVED — so the
+// readable projection moved with it and the reason is written down rather than
+// hashed away. `compression` joined the CORE (ENGINE_MODEL_VERSION 3 → 4), which
+// puts a fifth weight in the denominator every core composite is divided by, and
+// `momentum` grew a 60-session relative-strength leg. On this tape those two
+// changes read: technical −45, momentum −80 (clamped either way), compression
+// −0.2 — a name in a straight-line slide prints the WIDEST Bollinger width of its
+// own last 120 sessions, which is the null end of the only feature the
+// walk-forward study found stable, so it earns no fuel and dilutes the read. The
+// short goes −64.8 → −56.7. The GRADE, the rung, the entry, the stop and the
+// target are all unchanged, and the planted band moved 55-70 → 40-55 so the
+// evidence still sits at-or-below the conviction it prices (see `calWith`).
+// 96a4ccbc… was the pre-compression value.
+const GOLDEN_SHA = '88c8e1693c8ed6f1824d60f73110c00ee1c14d426d4e164453ac21ddd54a1b8b'
+const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-56.7 r=1 e=162 s=170.44 t=150.75 ']
 /** Every key the golden day wrote at BASE. The trace may ADD to this list and
  * may touch nothing in it. */
 const GOLDEN_KEYS = [
@@ -227,11 +248,11 @@ describe('the funnel trace', () => {
     expect(trace.gates).toEqual({ deadZone: 20, minExpectedMovePct: 1.25, contextMaxPts: 14 })
     // …and the move is VISIBLE in what published, by exactly the amount the moved
     // gate allows and not a point more: this day's context layer sits ON the cap,
-    // so raising it 12 → 14 moves the composite −64.8 → −66.8. The grade, the
+    // so raising it 12 → 14 moves the composite −56.7 → −58.7. The grade, the
     // rung and every level are untouched — the dead zone at 20 changes what a
-    // MARGINAL name does, and NVDA at −66.8 was never marginal.
+    // MARGINAL name does, and NVDA at −58.7 was never marginal.
     const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
-    expect(projection(ledger)).toEqual(GOLDEN_ROWS.map(r => r.replace('c=-64.8', 'c=-66.8')))
+    expect(projection(ledger)).toEqual(GOLDEN_ROWS.map(r => r.replace('c=-56.7', 'c=-58.7')))
   })
 
   it('a name a door offered and the pool refused is counted, never listed', async () => {
@@ -241,7 +262,7 @@ describe('the funnel trace', () => {
     // scored. That is the whole bounded population `not-candidate` can honestly
     // count: the universe of names nobody nominated is infinite.
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' } } })
-    await store.write('engine-calibration', calWith('short:amber:55-70'))
+    await store.write('engine-calibration', calWith('short:amber:40-55'))
     await buildBoard(
       store,
       deps({
@@ -639,11 +660,18 @@ describe('the funnel trace', () => {
 
   it('a shadow past the 5-per-side budget never reaches the ledger, so it reads shadow-capped rather than called-shadow', async () => {
     const store = recordingStore()
-    // Nine unroutable shorts: every one publishes as a route-blocked shadow, one is
-    // promoted to fill the empty side, and pickShadow then takes the best five of
-    // the remaining eight. The three the budget dropped are in NOTHING the reader
-    // or the ledger ever sees — and must stop claiming they published.
-    const syms = Array.from({ length: 9 }, (_, i) => `R${String(i).padStart(2, '0')}`)
+    // TEN unroutable shorts, of which NINE publish as route-blocked shadows: one
+    // is promoted to fill the empty side, and pickShadow then takes the best five
+    // of the remaining eight. The three the budget dropped are in NOTHING the
+    // reader or the ledger ever sees — and must stop claiming they published.
+    //
+    // It was nine names until 2026-09-22. `compression` joining the core
+    // renormalises every composite over a fifth weight, and R06's core landed at
+    // −24.3 — inside the ±25 dead zone by seven tenths of a point — so the
+    // fixture published eight and the budget only ever had two to drop. A tenth
+    // variant restores the NINE publishers the claim is about; the claim, the
+    // budget and the counts below are untouched.
+    const syms = Array.from({ length: 10 }, (_, i) => `R${String(i).padStart(2, '0')}`)
     const tapes = new Map(syms.map((s, i) => [s, shortyVariant(0.7 + i * 0.4)]))
     await store.write('config', { watchlist: syms.map(symbol => ({ symbol })), rules: [], ytChannels: [], levMap: {} }) // NO routes at all
     await store.write('engine-calibration', { buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })

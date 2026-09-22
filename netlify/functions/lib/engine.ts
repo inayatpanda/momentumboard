@@ -8,6 +8,7 @@ import { seasonalitySummary } from '../../../shared/seasonality'
 import {
   catalystFactor,
   channelsFactor,
+  compressionFactor,
   insiderFactor,
   momentumFactor,
   newsFactor,
@@ -2510,7 +2511,12 @@ export async function buildBoard(
 
     const factors: Record<FactorName, FactorScore> = {
       technical: technicalFactor(read),
-      momentum: momentumFactor(closes, spyCloses),
+      momentum: momentumFactor(closes, spyCloses, candles),
+      // THE COMPRESSION READ (factors.ts): the Bollinger-width percentile the
+      // 2026-09-22 walk-forward study found to be the only sign-stable price
+      // feature, signed by the trend the chart read is already arguing. Off the
+      // SAME closes every other price factor reads, so nothing extra is fetched.
+      compression: compressionFactor(closes),
       sector: sectorFactor(sectorRankPct(entry.sym)),
       social: socialFactor(
         socialBySym.has(entry.sym)
@@ -3555,6 +3561,16 @@ export async function buildBoard(
         const factors: Record<FactorName, FactorScore> = {
           technical: technicalFactor(read),
           momentum: cryptoMomentumFactor(closes),
+          // · compression — NOT READ, and deliberately, on the same argument as
+          //                 seasonality above. The percentile is computable off
+          //                 any closes, but the evidence behind the factor is not
+          //                 transferable: the walk-forward study measured 1,855
+          //                 EQUITIES on daily SESSION bars against SPY, and a
+          //                 24/7 pair's "120 sessions" is a different window over
+          //                 a tape with no close, no open and no index to be
+          //                 relative to. A number computed on evidence that never
+          //                 covered it is worse than no number in a CORE family.
+          compression: { score: null, detail: 'not read for crypto — the compression study measured equity sessions' },
           sector: sectorFactor(null),
           social: { score: null, detail: `not read for crypto — ${CRYPTO_CHART_ONLY_DIRECTIVE}` },
           channels: { score: null, detail: `not read for crypto — ${CRYPTO_CHART_ONLY_DIRECTIVE}` },

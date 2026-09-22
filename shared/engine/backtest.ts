@@ -4,7 +4,7 @@ import { swingCapacity } from '../indicators'
 import { technicalStage } from '../technicals'
 import { refineRegime, regimeFromCandles } from '../setups'
 import { seasonalitySummary } from '../seasonality'
-import { momentumFactor, seasonalityFactor, technicalFactor } from './factors'
+import { compressionFactor, momentumFactor, seasonalityFactor, technicalFactor } from './factors'
 import { composeCall, DEFAULT_WEIGHTS } from './composite'
 import {
   CALIB_DEF_VERSION,
@@ -19,7 +19,7 @@ import {
 import { isRejection, round1, type FactorName, type FactorScore, type Prediction } from './types'
 
 // Pre-seeds the engine from candle history: only the factors computable from
-// bars alone (technical, momentum, seasonality) replay; the rest start at
+// bars alone (technical, momentum, compression, seasonality) replay; the rest start at
 // neutral prior weight and learn live. Weekly sampling (step 5) keeps the seed
 // sample count up; at the 10-session horizon adjacent windows now overlap ~1wk,
 // which mildly correlates neighbouring outcomes but is fine for a PRIOR (live
@@ -48,6 +48,7 @@ const HORIZON = 10
 const nullFactors = (): Record<FactorName, FactorScore> => ({
   technical: { score: null, detail: '' },
   momentum: { score: null, detail: '' },
+  compression: { score: null, detail: '' },
   sector: { score: null, detail: '' },
   social: { score: null, detail: '' },
   channels: { score: null, detail: '' },
@@ -128,7 +129,12 @@ export function seedFromHistory(
 
       const factors = nullFactors()
       factors.technical = technicalFactor(read)
-      factors.momentum = momentumFactor(sliceCloses, spyCloses.slice(0, j + 1))
+      factors.momentum = momentumFactor(sliceCloses, spyCloses.slice(0, j + 1), slice)
+      // replayable from bars, so the walk scores it — the same rule that admits
+      // technical, momentum and seasonality here and keeps sector, news and the
+      // social reads out. Null until the slice holds 140 closes, which is honest:
+      // the early samples of a walk genuinely could not read a 120-session width.
+      factors.compression = compressionFactor(sliceCloses)
       if (slice.length >= 500) {
         const month = new Date(candles[i].t * 1000).getUTCMonth() + 1
         factors.seasonality = seasonalityFactor(seasonalitySummary(slice), month)

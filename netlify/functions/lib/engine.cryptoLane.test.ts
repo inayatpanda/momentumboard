@@ -85,7 +85,12 @@ const storeWith = async (watchlist: string[], levMap: Record<string, { long1x?: 
   const store = memoryStore()
   await store.write('config', { watchlist: watchlist.map(symbol => ({ symbol })), rules: [], ytChannels: [], levMap })
   await store.write('engine-calibration', {
-    buckets: { 'short:amber:55-70': { n: 32, hits: 22 } },
+    // 40-55, not 55-70: the equity short in this fixture (NVDA on `shorty`) reads
+    // |composite| ~56, and evidence booked at the 62.5 midpoint of 55-70 would sit
+    // ABOVE the conviction being priced — `belowEvidence`, which caps the grade at
+    // C and takes the route with it. The band moved when `compression` joined the
+    // core (ENGINE_MODEL_VERSION 4); the claim this fixture makes did not.
+    buckets: { 'short:amber:40-55': { n: 32, hits: 22 } },
     brier: [],
     defVersion: CALIB_DEF_VERSION,
     seedGeneration: 4,

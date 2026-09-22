@@ -40,15 +40,19 @@ const median = (xs: number[]): number | null => {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
 }
 
-/** % change from `k` sessions ago to the last close. */
-const retPct = (closes: number[], k: number): number | null => {
+/** % change from `k` sessions ago to the last close.
+ *
+ * EXPORTED because `compressionFactor` (../factors.ts) needs the same 20-session
+ * return as its fallback direction, and a second copy of two lines of arithmetic
+ * is still a second definition that can drift. */
+export const retPct = (closes: number[], k: number): number | null => {
   const base = closes[closes.length - 1 - k]
   if (base == null || base <= 0) return null
   return ((closes[closes.length - 1] - base) / base) * 100
 }
 
 /** Bollinger(20, 2) width as a fraction of the mid band: 4σ/mid. */
-function bbWidths(closes: number[], period = 20): number[] {
+export function bbWidths(closes: number[], period = 20): number[] {
   const out: number[] = []
   for (let i = period - 1; i < closes.length; i++) {
     const w = closes.slice(i - period + 1, i + 1)
@@ -61,7 +65,7 @@ function bbWidths(closes: number[], period = 20): number[] {
 }
 
 /** Percentile rank of the last value inside its own window, ties averaged. */
-const selfPercentile = (window: number[]): number | null => {
+export const selfPercentile = (window: number[]): number | null => {
   if (window.length < 2) return null
   const today = window[window.length - 1]
   let less = 0
@@ -71,6 +75,32 @@ const selfPercentile = (window: number[]): number | null => {
     else if (w === today) equal++
   }
   return (less + equal / 2) / window.length
+}
+
+/** THE COMPRESSION READING, IN ONE PLACE: where today's Bollinger width sits in
+ * the last 120 readings of this name's own width. 0 = the tightest base it has
+ * printed in 120 sessions, 1 = the widest.
+ *
+ * Exported and called from BOTH `computeFeatures` (which publishes it as
+ * `Features.bbWidthPctl120`, the discovery scan's feature) and
+ * `compressionFactor` (shared/engine/factors.ts, the core factor). They are two
+ * consumers of ONE definition on purpose: the walk-forward study measured this
+ * exact number, and a factor scoring a second, subtly different percentile would
+ * be claiming the study's evidence for arithmetic the study never saw.
+ *
+ * Null under 139 closes — 20 to make the first width, 120 widths to rank it in. */
+export function bbWidthPctl120Of(closes: number[]): number | null {
+  return selfPercentile(bbWidths(closes).slice(-120))
+}
+
+/** The 50-EMA's slope over the last 20 sessions, as a % of its current level.
+ * Same single definition, same two consumers as `bbWidthPctl120Of` above — here
+ * it is the direction `compressionFactor` signs a squeeze with. */
+export function ema50Slope20Of(closes: number[]): number | null {
+  const s = emaSeries(closes, 50)
+  const last = s[closes.length - 1] ?? null
+  const prior = s[closes.length - 21] ?? null
+  return last != null && prior != null && last > 0 ? ((last - prior) / last) * 100 : null
 }
 
 /** Relative strength vs the index, in percentage points.
@@ -126,8 +156,7 @@ export function computeFeatures(sym: string, candles: Candle[], spyCandles: Cand
   const ema8 = ema8s[n - 1]
   const ema21 = ema21s[n - 1]
   const ema50 = ema50s[n - 1]
-  const ema50Prior = ema50s[n - 21] ?? null
-  const ema50Slope20 = ema50 != null && ema50Prior != null && ema50 > 0 ? ((ema50 - ema50Prior) / ema50) * 100 : null
+  const ema50Slope20 = ema50Slope20Of(closes)
 
   // RVOL baseline EXCLUDES today — the same trailing convention the dip lane and
   // technicals use. Dividing today by a median it is itself inside flattens the
@@ -149,8 +178,7 @@ export function computeFeatures(sym: string, candles: Candle[], spyCandles: Cand
     return up
   }
 
-  const widths = bbWidths(closes)
-  const bbWidthPctl120 = selfPercentile(widths.slice(-120))
+  const bbWidthPctl120 = bbWidthPctl120Of(closes)
 
   const spyRet = (k: number) => (spyCandles && spyCandles.length ? spyReturn(spyCandles, last.t, k) : null)
   const rel = (k: number): number | null => {
