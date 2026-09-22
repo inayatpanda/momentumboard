@@ -665,7 +665,6 @@ const strongLenses = LENS_KEYS.filter(k => {
   return Number.isFinite(s.t) && s.t >= 2.5 && a.mean > 0 && b.mean > 0
 })
 const strongFeatures = featureStats.filter(f => Math.abs(f.icTH1) >= 2.5 && Math.abs(f.icTH2) >= 2.5 && Math.sign(f.icH1) === Math.sign(f.icH2))
-const deadFeatures = featureStats.filter(f => Math.abs(f.icT) < 1.5)
 
 w(`${H2} e. Verdict`)
 w()

@@ -454,3 +454,34 @@ export function velocityThesis(input: {
     : `a ${round1(input.paidMult)}x up-day`
   return { thesis: `Long ${input.sym} — ${DOOR_PHRASE[input.door]} on ${volume}. ${falsifier}`, falsifier }
 }
+
+/** HOW MANY GRADED CAMPAIGNS the earnings-fade lane needs before its record is
+ * worth arguing with — quoted in the row's own sentence so the copy and the
+ * ruling cannot disagree about the number the reader is told.
+ *
+ * Forty is the owner's bar (2026-09-22, "option 1"), and it is deliberately far
+ * short of the 212 name-dates the walk-forward study swept: those were one
+ * season's BARS, replayed, and these are the engine's own live calls under its
+ * own gates. The lane is shadow until then and shadow after then too — the
+ * number is what makes the promise falsifiable, not a scheduled promotion. */
+export const EARNINGS_FADE_MIN_CAMPAIGNS = 40
+
+/** The earnings-fade lane's two sentences.
+ *
+ *   "Short ABC — post-earnings pop: +12.4% surprise, gapped +6.1%; the tape's
+ *    record says a pop like this fades. Shadow only until n≥40 campaigns.
+ *    Wrong if it closes above 61.20."
+ *
+ * The middle clause is the whole disclosure, and it is IN THE ROW rather than in
+ * a footnote on purpose: a reader meeting this row has to be told, in the row's
+ * own words, that the engine is collecting evidence and not offering a trade.
+ * (`fades` rather than `fade` is not a typo — `fade` is a SetupFamily value and
+ * therefore a banned token, and the plural verb is the sentence that survives
+ * the sweep unharmed.) */
+export function earningsFadeThesis(input: { sym: string; surprisePct: number; gapPct: number; stop: number }): { thesis: string; falsifier: string } {
+  const falsifier = fixedFalsifier('short', input.stop)
+  const thesis =
+    `Short ${input.sym} — post-earnings pop: +${round1(input.surprisePct)}% surprise, gapped +${round1(input.gapPct)}%; ` +
+    `the tape's record says a pop like this fades. Shadow only until n≥${EARNINGS_FADE_MIN_CAMPAIGNS} campaigns. ${falsifier}`
+  return { thesis, falsifier }
+}
