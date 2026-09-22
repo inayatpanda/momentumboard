@@ -135,15 +135,19 @@ describe('factorPhrase — one clause per factor, from that factor\'s own detail
   })
 
   it('the bands speak only at the wide end — a middling width is a measurement, not a reason', () => {
-    // p95 of its own 120 sessions: the study's better-performing end, and the copy
-    // reports an association and stops short of any mechanism
+    // p96 of its own 120 sessions: the study's better-performing end, and the copy
+    // reports an association and stops short of any mechanism.
+    // RE-STAMPED 2026-09-22 (was p95): `selfPercentile` stopped
+    // ranking today inside its own comparison group, which was shrinking every
+    // reading toward the middle by 1/(2n). Same tape, same factor, one honest
+    // percentile point further out — not a re-fit.
     expect(factorPhrase('bandwidth', bandwidthFactor(widened(0.004)), 'long')).toBe(
-      "bands at the 95th percentile of their own year — wide bands have carried the better forward record in the engine's walk over the last ~300 sessions",
+      "bands at the 96th percentile of their own last 120 sessions — wide bands have carried the better forward record in the engine's walk over the last ~300 sessions",
     )
     // …and the same SHAPE of sentence on a short, because the bands have no side
     // of their own
     expect(factorPhrase('bandwidth', bandwidthFactor(widened(-0.002)), 'short')).toBe(
-      "bands at the 94th percentile of their own year — wide bands have carried the better forward record in the engine's walk over the last ~300 sessions",
+      "bands at the 94th percentile of their own last 120 sessions — wide bands have carried the better forward record in the engine's walk over the last ~300 sessions",
     )
     // a width sitting mid-distribution says nothing rather than saying it hollowly
     expect(factorPhrase('bandwidth', { score: 27, detail: 'Bollinger width p54 of its own 120 sessions (bandwidth 0.54), signed by a 50-EMA rising 2% over 20 sessions' }, 'long')).toBeNull()

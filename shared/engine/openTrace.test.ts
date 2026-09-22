@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CALIBRATED_HORIZON_SESSIONS } from './calibration'
 import { traceOpenCall, verdictFor } from './openTrace'
 import { velocityTrail } from './velocityLane'
 import type { Candle } from '../types'
@@ -43,8 +44,24 @@ describe('traceOpenCall — the walk', () => {
     expect(e.movePct).toBe(3)
     expect(e.progressPct).toBe(30) // 3 of the 10-point entry→target span
     expect(e.day).toBe(2) // entry session + one more close
-    expect(e.gradesInSessions).toBe(9) // 10-session calibrated grade, minus the 1 session already elapsed past entry
+    expect(e.gradesInSessions).toBe(CALIBRATED_HORIZON_SESSIONS - 1) // the calibrated grade, minus the 1 session already elapsed past entry
+    expect(e.gradesInSessions).toBe(20)
     expect(e.verdict).toBe('intact') // <30 candles → no stage read, moving with the call
+  })
+
+  // THE CLOCK IS THE CALIBRATED ONE. `GRADE_HORIZON` was pinned at 10 while
+  // CALIB_DEF_VERSION v4 moved the grade to 21 sessions, so a call a fortnight old
+  // was told it had already matured — the countdown hit zero eleven sessions before
+  // anything could grade it, and the open book dropped the row on the same clock.
+  it('counts down to the CALIBRATED horizon, and a 12-session-old call is still counting', () => {
+    const twelve = traceOpenCall(call(), series(Array.from({ length: 12 }, (_, i) => 100 + i * 0.1)), none)!
+    expect(twelve.day).toBe(12)
+    expect(twelve.status).toBe('in-play')
+    expect(twelve.gradesInSessions).toBe(CALIBRATED_HORIZON_SESSIONS + 1 - 12) // 10, not 0
+    expect(twelve.gradesInSessions).toBeGreaterThan(0)
+    // …and it reaches zero on the session the grade can actually land, never before
+    const matured = traceOpenCall(call(), series(Array.from({ length: CALIBRATED_HORIZON_SESSIONS + 1 }, (_, i) => 100 + i * 0.1)), none)!
+    expect(matured.gradesInSessions).toBe(0)
   })
 
   it('shorts are side-adjusted: falling price = positive move and progress', () => {

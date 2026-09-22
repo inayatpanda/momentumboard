@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { buildBoard, type EngineDeps } from './engine'
+import { LANE_SHADOW_RESERVE, buildBoard, pickShadowSide, type EngineDeps } from './engine'
 import { memoryStore } from './store'
 import type { NasdaqEarningsRow } from './nasdaqEarnings'
 import { CALIB_DEF_VERSION } from '../../../shared/engine/calibration'
-import { EARNINGS_FADE_CATALYST_KIND, LANE_CATALYST_KINDS } from '../../../shared/engine/catalyst'
+import { DIP_CATALYST_KIND, EARNINGS_FADE_CATALYST_KIND, LANE_CATALYST_KINDS } from '../../../shared/engine/catalyst'
 import { funnelTraceKey, type FunnelTrace } from '../../../shared/engine/funnelTrace'
 import type { Prediction } from '../../../shared/engine/types'
 import type { Candle } from '../../../shared/types'
@@ -176,5 +176,56 @@ describe('the earnings-fade lane on the board', () => {
     // …and the world-tape stamp records no nudge, for the same family reason:
     // nothing multiplied a composite that was constructed from the gap's size.
     expect(row.worldTape?.mult ?? 1).toBe(1)
+  })
+})
+
+// THE SHADOW BUDGET WAS STARVING THE LANE IT IS THE ONLY ROUTE FOR.
+//
+// A fade row is shadow-only by ruling, so `pickShadow` is its entire path into
+// the ledger — and `pickShadow` ranked on |composite| alone. The lane builds its
+// call from the size of the gap and lands at |25..55|; an ordinary shadow on a
+// screener-topping name sits in the 70s and 80s. Five of those and the lane
+// published, was counted as published in the funnel trace, and then vanished.
+describe('the shadow budget reserves slots for the lanes', () => {
+  const row = (id: string, composite: number, kind?: string) => ({ id, composite, ...(kind ? { catalyst: { kind, reason: '' } } : {}) })
+  const loud = [row('a', 88), row('b', 84), row('c', 80), row('d', 76), row('e', 72), row('f', 70)]
+
+  it('keeps two of five for lane rows the |composite| sort would always outrank', () => {
+    const fade = row('fade', 40, EARNINGS_FADE_CATALYST_KIND)
+    const dip = row('dip', 30, DIP_CATALYST_KIND)
+    const picked = pickShadowSide([...loud, fade, dip], 5)
+    expect(picked.map(p => p.id)).toEqual(['fade', 'dip', 'a', 'b', 'c'])
+    expect(picked.length).toBe(5)
+    // the reservation is a floor, not the budget: three slots still go to the board
+    expect(picked.filter(p => !LANE_CATALYST_KINDS.has(p.catalyst?.kind ?? '')).length).toBe(5 - LANE_SHADOW_RESERVE)
+  })
+
+  it('lane rows compete among themselves on |composite| for the two', () => {
+    const picked = pickShadowSide(
+      [...loud, row('fade-small', 26, EARNINGS_FADE_CATALYST_KIND), row('fade-big', 55, EARNINGS_FADE_CATALYST_KIND), row('dip', 44, DIP_CATALYST_KIND)],
+      5,
+    )
+    expect(picked.slice(0, 2).map(p => p.id)).toEqual(['fade-big', 'dip']) // 55, then 44
+    expect(picked.map(p => p.id)).not.toContain('fade-small') // a third lane row waits its turn
+  })
+
+  it('an unfilled reservation falls through — a day with no lanes picks what it always did', () => {
+    expect(pickShadowSide(loud, 5).map(p => p.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    // …and one lane row takes one slot, not two
+    const one = pickShadowSide([...loud, row('fade', 40, EARNINGS_FADE_CATALYST_KIND)], 5)
+    expect(one.map(p => p.id)).toEqual(['fade', 'a', 'b', 'c', 'd'])
+  })
+
+  it('a lane row that already outranks the board is never counted twice', () => {
+    const picked = pickShadowSide([row('x', 20), row('loudFade', 99, EARNINGS_FADE_CATALYST_KIND)], 5)
+    expect(picked.map(p => p.id)).toEqual(['loudFade', 'x'])
+    expect(new Set(picked.map(p => p.id)).size).toBe(picked.length)
+  })
+
+  it('never exceeds the cap, and a cap under the reservation is still respected', () => {
+    const pool = [...loud, row('fade', 40, EARNINGS_FADE_CATALYST_KIND), row('dip', 30, DIP_CATALYST_KIND)]
+    expect(pickShadowSide(pool, 1).map(p => p.id)).toEqual(['fade'])
+    expect(pickShadowSide(pool, 0)).toEqual([])
+    expect(pickShadowSide([], 5)).toEqual([])
   })
 })

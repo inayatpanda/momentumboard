@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeFeatures, emaSeries } from './features'
+import { bbWidths, computeFeatures, emaSeries, selfPercentile } from './features'
 import { emaLast, swingCapacity } from '../../indicators'
 import * as F from './synthetic.fixtures'
 import { HYGIENE, type Features } from './types'
@@ -124,6 +124,31 @@ describe('computeFeatures', () => {
     expect(coiled).toBeGreaterThanOrEqual(0)
     expect(coiled).toBeLessThanOrEqual(0.3)
     expect(computeFeatures('X', F.dipTape(), spy)!.bbWidthPctl120!).toBeGreaterThan(0.5)
+  })
+
+  // TODAY IS NOT IN ITS OWN COMPARISON GROUP. Ranking today inside a window that
+  // contains it floors the answer at 1/(2n) and caps it at 1 − 1/(2n): at n=120
+  // the tightest base a name can print read 0.004 and the widest 0.996, so a
+  // bandwidth score of exactly 0 was unreachable and the silence adjudication for
+  // it (ZERO_IS_A_READING.bandwidth) described a state the arithmetic forbade.
+  it('selfPercentile ranks today against the PRIOR readings, so 0 and 1 are both reachable', () => {
+    expect(selfPercentile([5, 4, 3, 2, 1])).toBe(0) // strictly the tightest it has been
+    expect(selfPercentile([1, 2, 3, 4, 5])).toBe(1) // strictly the widest
+    expect(selfPercentile([1, 3, 2])).toBe(0.5) // one below, one above
+    expect(selfPercentile([2, 2, 2])).toBe(0.5) // a plateau sits in the middle of itself
+    expect(selfPercentile([1, 2])).toBe(1)
+    expect(selfPercentile([7])).toBeNull() // no prior is not a comparison
+    expect(selfPercentile([])).toBeNull()
+  })
+
+  it('…and a real tightest-in-120 tape therefore percentiles to exactly 0', () => {
+    // A width series that narrows monotonically: today IS the tightest reading,
+    // and the honest answer to "where does it sit in its own history" is the floor.
+    const widths = Array.from({ length: 120 }, (_, i) => 1 - i * 0.001)
+    expect(widths[widths.length - 1]).toBeLessThan(widths[0])
+    expect(selfPercentile(widths)).toBe(0)
+    // and bbWidths feeds exactly this shape of series
+    expect(bbWidths([100, 101, 102]).length).toBe(0) // under one period: nothing to rank
   })
 
   it('lowerHighs compares the two most recent 10-session windows', () => {

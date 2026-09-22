@@ -209,10 +209,15 @@ const BANDWIDTH_SPEAKS_AT_PCTL = 70
 function bandwidthPhrase(f: FactorScore): string | null {
   const p = num(f.detail, /\bp(\d+)\b/)
   if (p == null || p < BANDWIDTH_SPEAKS_AT_PCTL) return null
-  // capped at 99 for the same reason the unusual lens floors its own percentile:
+  // "OF THEIR OWN YEAR" WAS WRONG, and the number it described is not a year's:
+  // the window is the name's last 120 Bollinger-width readings (bbWidthPctl120Of,
+  // discovery/features.ts), which is a bit under six months of sessions. The copy
+  // now says what the arithmetic did all along.
+  // Capped at 99 for the same reason the unusual lens floors its own percentile:
   // the widest reading of the window percentiles to exactly 100, and "the 100th
-  // percentile of their own year" is not a sentence anyone should read in the paper.
-  return `bands at the ${Math.min(p, 99)}th percentile of their own year — wide bands have carried the better forward record in the engine's walk over the last ~300 sessions`
+  // percentile of their own last 120 sessions" is not a sentence anyone should
+  // read in the paper.
+  return `bands at the ${Math.min(p, 99)}th percentile of their own last 120 sessions — wide bands have carried the better forward record in the engine's walk over the last ~300 sessions`
 }
 
 /** The name's industry standing, as a bucket. A middling rank is left unsaid:

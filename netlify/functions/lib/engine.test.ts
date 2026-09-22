@@ -3568,7 +3568,9 @@ describe('traceOpenIdeas', () => {
       base({}), // open live → traced
       base({ id: `${date}:NVDA:short`, side: 'short', shadow: true }), // shadow → never traced
       base({ id: `${date}:WCHY:long`, sym: 'WCHY', watchOnly: true }), // watch-only → not a position, never traced
-      base({ id: `${date}:AAPL:long`, sym: 'AAPL', outcome10: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } }), // graded (10d) → done
+      // GRADED means the CALIBRATED grade landed (outcome21 since v4), not the
+      // 10-session display lens — see the 12-session fixture below.
+      base({ id: `${date}:AAPL:long`, sym: 'AAPL', outcome21: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } }), // graded → done
     ])
     await store.write('predictions-index', [date])
     await store.write('engine-board', { date: today, board: [{ sym: 'NVDA', side: 'long' }] })
@@ -3585,6 +3587,46 @@ describe('traceOpenIdeas', () => {
     expect(e.movePct).toBeLessThan(0)
     expect(e.requalified).toBe(true)
     expect(e.verdict).toBe('still-on') // re-qualified beats the drift
+  })
+
+  // THE OPEN BOOK QUIT AT TEN WHILE THE GRADE WAS AT 21. Two hard-coded tens did
+  // it — a `.slice(-10)` on the predictions index and `!p.outcome10` as the test
+  // for "still open" — so a call published a fortnight ago was dropped from the
+  // reader's open positions eleven sessions before the engine graded it. The row
+  // was neither open nor graded anywhere the reader could see it.
+  it('a call 12 sessions old with no CALIBRATED grade is still open, and counts down to 21', async () => {
+    const store = memoryStore()
+    const today = new Date(NOW * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
+    const entryIdx = shorty.length - 12 // 12 sessions of closes, entry session included
+    const date = new Date(shorty[entryIdx].t * 1000).toISOString().slice(0, 10)
+    await store.write(`predictions:${date}`, [
+      {
+        id: `${date}:NVDA:long`,
+        date,
+        sym: 'NVDA',
+        side: 'long',
+        grade: 'B',
+        entry: shorty[entryIdx].c,
+        stop: shorty[entryIdx].c * 0.8,
+        target: shorty[entryIdx].c * 1.2,
+        // the 10-session DISPLAY lens has landed; the calibrated one has not.
+        // Under the old code this single field erased the row from the open book.
+        outcome10: { excessPct: -3, rawPct: -3, spyPct: 0, stopped: false, hit: false },
+      } as Partial<Prediction>,
+    ])
+    // …and the index window has to outlive the horizon too: eleven dates of
+    // padding in front, which a `.slice(-10)` would have cut the call off behind.
+    const padding = Array.from({ length: 11 }, (_, i) => new Date((shorty[entryIdx].t - (11 - i) * 86_400) * 1000).toISOString().slice(0, 10))
+    await store.write('predictions-index', [...padding, date])
+    await store.write('engine-board', { date: today, board: [] })
+
+    const { traced } = await traceOpenIdeas(store, deps(), NOW)
+    expect(traced).toBe(1)
+    const e = (await store.read<{ entries: OpenTraceEntry[] }>('open-trace'))!.entries[0]
+    expect(e.sym).toBe('NVDA')
+    expect(e.day).toBe(12)
+    expect(e.status).toBe('in-play')
+    expect(e.gradesInSessions).toBe(10) // 21 + 1 − 12: still a fortnight of clock to run
   })
 
   // "re-qualified" claims the engine WOULD TAKE THIS TRADE AGAIN today. A near

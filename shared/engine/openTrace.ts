@@ -1,5 +1,6 @@
 import type { Candle } from '../types'
 import { technicalStage, type Stage } from '../technicals'
+import { CALIBRATED_HORIZON_SESSIONS } from './calibration'
 import { effectiveVelocityStop } from './velocityLane'
 import { round1 } from './types'
 
@@ -31,7 +32,7 @@ import { round1 } from './types'
 //     reader's discipline lives — "you would be out of this by now" — and telling a
 //     reader to hold a broken momentum name because a stale printed number has not
 //     been touched is the failure this exists to prevent.
-// A row can therefore read "stopped" here while its formal grade, ten sessions on,
+// A row can therefore read "stopped" here while its formal grade, three weeks on,
 // measures something the trail never had to survive. That is the intended split,
 // not a bug; `stop` on every entry is always the PUBLISHED number, and `trailStop`
 // carries the level the walk actually enforced.
@@ -59,17 +60,23 @@ export interface OpenTraceEntry {
   movePct: number // side-adjusted move from the published entry level
   progressPct: number | null // % of the entry→target distance covered (signed)
   day: number // sessions since the call, entry session = day 1
-  gradesInSessions: number // sessions until the 10-session (calibrated) grade can land
+  gradesInSessions: number // sessions until the calibrated grade can land (CALIBRATED_HORIZON_SESSIONS)
   stage: Stage | null
   requalified: boolean // made today's live board again, same side
   verdict: TraceVerdict | null // in-play only; crossed calls speak for themselves
   note: string
 }
 
-// A call is graded 10 sessions after its entry session (the calibrated horizon,
-// CALIB_DEF_VERSION v3), so an open call lives through days 1..10 of this clock
-// before the ledger takes over.
-const GRADE_HORIZON = 10
+// A call is graded CALIBRATED_HORIZON_SESSIONS after its entry session, so an
+// open call lives through days 1..N of this clock before the ledger takes over.
+//
+// IT IS THE CONSTANT, NOT A COPY OF ITS VALUE. This was hard-coded 10 and stayed
+// there when CALIB_DEF_VERSION v4 moved the calibrated grade to 21 sessions
+// (calibration.ts), so the trace counted a call down to a maturity date eleven
+// sessions before the grade could possibly land — and told the reader "grades in
+// 0 sessions" for a fortnight while the row was still open. The two numbers are
+// one fact; importing it is what stops them drifting again.
+const GRADE_HORIZON = CALIBRATED_HORIZON_SESSIONS
 
 // Stages that contradict the side: holding a long into these means the setup
 // that earned the call is gone; a short fighting a turn-up is the mirror.

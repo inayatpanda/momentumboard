@@ -158,15 +158,30 @@ export const calibratedOutcomeOf = (pred: { outcome21?: PredOutcome }): PredOutc
  * `coreDen` renormalises the whole read, and a name whose bands are at their
  * tightest now scores near zero on a factor that still carries weight. A v3 row and a v4 row are not
  * the same model and their Brier trails must be separable.
- * It gates nothing at load time — CALIB_DEF_VERSION is untouched, so no live
- * bucket is discarded (what counts as a hit has not changed, only what we predict
- * about it), `migrateCalibration` only BACKFILLS an absent stamp, and the bucket
- * KEYS (`${cohort}:${side}:${regime}:${band}`) are byte-identical. What does move
- * at load is the weight vector: `rebaseWeights` sees a key the stored base does
- * not carry, re-bases base AND current to DEFAULT_WEIGHTS and ZEROES the IC
- * columns — which is the correct and intended consequence of composing
- * differently, since every agreement in that state was measured on a four-core
- * model. */
+ * NO BUCKET IS DISCARDED at load: CALIB_DEF_VERSION is untouched, so what counts
+ * as a hit has not changed — only what we predict about it — `migrateCalibration`
+ * only BACKFILLS an absent stamp, and the bucket KEYS
+ * (`${cohort}:${side}:${regime}:${band}`) are byte-identical.
+ *
+ * WHAT PROTECTS THIS DEPLOY IS `retireIcOnModelBump`, AND IT HAD TO BE WRITTEN.
+ * The claim that used to stand here — "`rebaseWeights` sees a key the stored base
+ * does not carry, so it re-bases and zeroes the IC" — is FALSE on the live path,
+ * and it is worth saying why rather than quietly deleting it. `loadState` calls
+ * `rebaseWeights(migrateWeights(blob, DEFAULT_WEIGHTS, today), …)`, and
+ * `migrateWeights` runs FIRST and backfills every missing key from
+ * DEFAULT_WEIGHTS. By the time `rebaseWeights` looks, `state.base` already carries
+ * `bandwidth: 0.4`, its fingerprint check matches, and it returns untouched. A
+ * blob whose IC was measured on the four-core model would have gone on steering
+ * the nudge loop for the five-core one, indefinitely and silently.
+ *
+ * So the model bump gets its own door, on its own stamp: `WeightsState.modelVersion`
+ * (absent = backfilled, never a mismatch — a blob written before the field existed
+ * is not evidence of a different model) compared against this constant, and a
+ * genuine disagreement retires the IC columns with a journal line. Same argument
+ * as the CALIB_DEF_VERSION door in `loadState`, one floor up: a re-composition
+ * invalidates the factor evidence exactly as a re-definition does. The weight
+ * VECTOR is kept either way — that is `rebaseWeights`'s decision, on its own
+ * trigger. */
 export const ENGINE_MODEL_VERSION = 4
 
 export interface CalibrationState {
@@ -1061,6 +1076,18 @@ export interface WeightsState {
    * buckets beside another's factor evidence would grade tomorrow's calls with
    * a yardstick that never measured them. ABSENT MEANS 1 (migrateWeights). */
   seedGeneration?: number
+  /** WHICH SCORING MODEL THE IC COLUMNS BELOW WERE MEASURED ON
+   * (`ENGINE_MODEL_VERSION`). The calibration blob has carried this stamp since
+   * it existed; the weights blob — the one that actually holds the factor
+   * evidence a model change invalidates — did not, which is how a four-core IC
+   * survived the five-core bump. Read by `retireIcOnModelBump`.
+   *
+   * ABSENT MEANS "the current model", backfilled and never retired: every blob
+   * written before this field existed, the live one included, has no claim to be
+   * from a different epoch and treating absence as a mismatch would throw away
+   * the seed's factor evidence on the very first load after this ships. Only an
+   * explicit, different number is a bump. */
+  modelVersion?: number
 }
 
 const FACTOR_NAMES = Object.keys(DEFAULT_WEIGHTS) as FactorName[]
@@ -1117,6 +1144,33 @@ export function retireIcEvidence(state: WeightsState, dateISO: string, why: stri
   state.history.push({ date: dateISO, changes: {}, evidence: `${why} — ${retired} factor observation(s) retired, IC evidence reset` })
   if (state.history.length > 100) state.history = state.history.slice(-100)
   return state
+}
+
+/** RETIRE THE FACTOR EVIDENCE MEASURED ON A SUPERSEDED SCORING MODEL.
+ *
+ * The `ENGINE_MODEL_VERSION` twin of the `CALIB_DEF_VERSION` door in `loadState`.
+ * A definition bump changes what a hit IS; a model bump changes what was
+ * PREDICTED — a fifth core factor renormalises `coreDen`, so every composite the
+ * old blob's agreements were measured against was a different number. Feeding
+ * that IC to the nudge loop lets a retired model steer its replacement, which is
+ * the same failure through a different door.
+ *
+ * WHY IT IS NOT `rebaseWeights`: that function's trigger is a disagreement
+ * between the stored BASE and DEFAULT_WEIGHTS, and `migrateWeights` runs before
+ * it on the load path and backfills exactly that disagreement away. See
+ * ENGINE_MODEL_VERSION's comment — the version stamp is the only channel left
+ * that can tell the two epochs apart.
+ *
+ * ABSENT IS BACKFILLED, NOT RETIRED (see `WeightsState.modelVersion`), and the
+ * stamp is written on every pass so the next load is a no-op. Idempotent, and
+ * silent when there is nothing banked — `retireIcEvidence` owns that test — which
+ * matters because this runs on every board build and only the grading pass writes
+ * back. */
+export function retireIcOnModelBump(state: WeightsState, dateISO: string = new Date().toISOString().slice(0, 10)): WeightsState {
+  const stored = state.modelVersion
+  state.modelVersion = ENGINE_MODEL_VERSION
+  if (stored == null || stored === ENGINE_MODEL_VERSION) return state
+  return retireIcEvidence(state, dateISO, `engine model v${stored} → v${ENGINE_MODEL_VERSION}`)
 }
 
 /** Forward-migrate a stored/seeded weights snapshot that predates a newly added

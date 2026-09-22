@@ -2,6 +2,7 @@ import type { Candle } from '../types'
 import { isCryptoSymbol } from '../symbols'
 import { round1, type PredOutcome } from './types'
 import {
+  CALIBRATED_HORIZON_SESSIONS,
   ENGINE_MODEL_VERSION,
   baseHitRate,
   gradeBaseRate,
@@ -588,13 +589,14 @@ export const CRYPTO_LOOKBACKS = {
 
   // ── the open-trace clock. Not an indicator, but the one other place that
   // walks an entry bar and a horizon over a tape — and it currently holds the
-  // equity answers to BOTH questions this module re-answers: GRADE_HORIZON 10
-  // and an entry of `t >= dayEpoch` (the publication day). Fed a crypto row
-  // unchanged, the trace and the grade would disagree about the entry bar AND
-  // the maturity date in front of a reader. B2 either hands it the crypto
+  // equity answers to BOTH questions this module re-answers: GRADE_HORIZON (now
+  // CALIBRATED_HORIZON_SESSIONS, and no longer a hard-coded 10 that outlived the
+  // v4 horizon move) and an entry of `t >= dayEpoch` (the publication day). Fed a
+  // crypto row unchanged, the trace and the grade would disagree about the entry
+  // bar AND the maturity date in front of a reader. B2 either hands it the crypto
   // clock or keeps crypto rows out of it — a decision, not a discovery.
-  openTraceGradeHorizon10: {
-    equity: 10,
+  openTraceGradeHorizon: {
+    equity: CALIBRATED_HORIZON_SESSIONS,
     crypto: CRYPTO_GRADE_HORIZON,
     rule: 'horizon',
     site: 'openTrace.ts GRADE_HORIZON / entry findIndex / gradesInSessions',

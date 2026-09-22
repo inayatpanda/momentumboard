@@ -58,6 +58,7 @@ import {
   probabilityFor,
   rebaseWeights,
   retireIcEvidence,
+  retireIcOnModelBump,
   updateCalibration,
   updateIcStats,
   type CalibrationState,
@@ -524,6 +525,19 @@ export function defaultDeps(
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T
 
+/** ONCE PER PROCESS, not once per load. The seed refusal is a fact about the
+ * COMMITTED ARTEFACT — in production it cannot change while the process lives —
+ * and `loadState` runs on every board build AND every grading pass, so the line
+ * printed several times a run, burying the lines that describe what the run
+ * actually did.
+ *
+ * Keyed by the refused artefact (`defVersion:generation`) rather than a bare
+ * boolean, which is once-per-process for the one seed a deployed process can
+ * ever see, and still says something on the only occasion a second key can
+ * arise: a DIFFERENT artefact being refused. A silent second refusal would be
+ * the one case where the flag cost information rather than noise. */
+const seedRefusalsLogged = new Set<string>()
+
 async function loadState(store: AppStore, today: string) {
   // Read both learning blobs first — the stored one wins, the committed seed is
   // the cold start — then decide whether the seed SUPERSEDES what was read
@@ -619,12 +633,17 @@ async function loadState(store: AppStore, today: string) {
     weightsBlob = clone(seedWeights)
   }
   // …and when it is NOT installable, say so once rather than leaving a production
-  // runlog silent about a seed that is sitting there and will never land.
-  if (!seedInstallable)
+  // runlog silent about a seed that is sitting there and will never land. ONCE is
+  // literal (`seedRefusalLogged`): the artefact cannot become installable while
+  // the process runs, so repeating it on every load is noise, not information.
+  const refusalKey = `${seedCal.defVersion ?? 1}:${seedGen}`
+  if (!seedInstallable && !seedRefusalsLogged.has(refusalKey)) {
+    seedRefusalsLogged.add(refusalKey)
     console.log(
       `CALIBRATION: the committed seed (generation ${seedGen}, defVersion ${seedCal.defVersion ?? 1}) is REFUSED — it measures outcome ` +
         `definition v${seedCal.defVersion ?? 1} and the engine grades v${CALIB_DEF_VERSION}. Regenerate the seed at the current horizon.`,
     )
+  }
   // migrateWeights backfills factors added after a snapshot was stored/seeded
   // (seed.json predates smartMoney) so an old blob never silently zeroes them.
   // rebaseWeights then handles the case migrateWeights must NOT: the owner
@@ -641,7 +660,16 @@ async function loadState(store: AppStore, today: string) {
   // used to be enforced only by the nudge loop, so a stored out-of-band vector
   // scored real boards until fifteen more predictions matured. It takes `today`
   // for the same reason rebaseWeights does: a history entry dated by the run.
-  const weights = rebaseWeights(migrateWeights(weightsBlob, DEFAULT_WEIGHTS, today), DEFAULT_WEIGHTS, today)
+  //
+  // …AND `retireIcOnModelBump` SITS BETWEEN THEM, because neither of the other two
+  // can do its job. The comment on ENGINE_MODEL_VERSION used to claim rebaseWeights
+  // caught a model change by spotting a key the stored base lacked — but
+  // migrateWeights has already backfilled that key by the time it looks, so the
+  // fingerprint matches and it returns untouched. A four-core IC would have gone on
+  // steering a five-core model. The stamp is the only channel that can tell the two
+  // epochs apart; an absent one is backfilled rather than retired, so a seed
+  // installing its measured IC is never stripped on the way in.
+  const weights = rebaseWeights(retireIcOnModelBump(migrateWeights(weightsBlob, DEFAULT_WEIGHTS, today), today), DEFAULT_WEIGHTS, today)
   calibration = migrateCalibration(calibration)
   const channelCred = (await store.read<ChannelCredState>('channel-credibility')) ?? {}
   return { weights, calibration, channelCred }
@@ -673,6 +701,45 @@ async function loadCryptoState(store: AppStore, today: string): Promise<{ cal: C
  * can say no, so a young trail never blocks a promotion on absence of evidence. */
 const brierImprovingOf = (b: { mean: number }[]): boolean =>
   b.length >= 10 ? b.slice(-5).reduce((s, x) => s + x.mean, 0) / 5 <= b.slice(-10, -5).reduce((s, x) => s + x.mean, 0) / 5 : true
+
+/** TWO OF THE FIVE SHADOW SLOTS A SIDE ARE RESERVED FOR THE LANES, and the
+ * reservation is what makes the lanes reachable at all.
+ *
+ * The shadow budget was a plain `|composite|` sort, and it is the LAST filter of
+ * the run — so the five loudest composites on a side took every slot. A lane row
+ * cannot compete on that axis by construction: the earnings-fade, dip, velocity
+ * and wildcard lanes build their own calls off their own triggers and land at
+ * |25..55|, against a screener-topping composite in the 70s and 80s. The result
+ * was a budget that spent itself on the ordinary board every morning while the
+ * lanes — which exist precisely to collect evidence the ordinary board cannot —
+ * published nothing and therefore learned nothing. A lane that can never be
+ * sampled is a lane that can never be measured, and the earnings-fade lane in
+ * particular is shadow-only by ruling: the budget IS its entire route to the
+ * ledger.
+ *
+ * TWO, not five: the reservation must not become the budget. Three slots a side
+ * stay open to whatever the board ranks highest — including a lane row, if it
+ * happens to rank there — so the ordinary population keeps supplying the bulk of
+ * the calibration evidence and the lanes are guaranteed a hearing rather than a
+ * majority. Lane rows compete among THEMSELVES on |composite| for the two, and an
+ * absent lane costs nothing: an unfilled reserved slot falls straight through to
+ * the ordinary ranking, so a day with no lane rows picks exactly what it always
+ * did.
+ *
+ * Pure and exported because it is a RULE about a budget, and the rule is what the
+ * tests are about. Dedup, side and shadow filtering all happen at the caller. */
+export const LANE_SHADOW_RESERVE = 2
+
+export function pickShadowSide<T extends { id: string; composite: number; catalyst?: { kind: string } }>(eligible: T[], cap: number): T[] {
+  if (cap <= 0) return []
+  const byConviction = (a: T, b: T) => Math.abs(b.composite) - Math.abs(a.composite)
+  const reserved = eligible
+    .filter(b => LANE_CATALYST_KINDS.has(b.catalyst?.kind ?? ''))
+    .sort(byConviction)
+    .slice(0, Math.min(LANE_SHADOW_RESERVE, cap))
+  const taken = new Set(reserved.map(b => b.id))
+  return [...reserved, ...eligible.filter(b => !taken.has(b.id)).sort(byConviction)].slice(0, cap)
+}
 
 const mapLimit = async <T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> => {
   const out: R[] = []
@@ -3135,10 +3202,10 @@ export async function buildBoard(
     }
   }
   const pickShadow = (side: 'long' | 'short', cap: number) =>
-    board
-      .filter(b => b.side === side && !!b.shadow && !outstandingShadowKeys.has(`${b.sym}:${b.side}`))
-      .sort((a, b) => Math.abs(b.composite) - Math.abs(a.composite))
-      .slice(0, cap)
+    pickShadowSide(
+      board.filter(b => b.side === side && !!b.shadow && !outstandingShadowKeys.has(`${b.sym}:${b.side}`)),
+      cap,
+    )
   // live picks pass diversity gates: max 3 per group per side, and no name
   // moving in lockstep (60d return corr > 0.75) with one already picked —
   // correlated bets are one bet. Grouping: sector-ETF mapping where it exists

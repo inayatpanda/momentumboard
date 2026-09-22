@@ -21,9 +21,18 @@
 //
 // Neither call alone gives both, so the calendar has to be SNAPSHOTTED FORWARD
 // (to learn the timing) and the same date RE-READ afterwards (to learn the
-// outcome). That is `snapshotEarningsCalendar`: ten forward dates a run, merged
-// into one durable blob that keeps the first `time` it ever saw for a date+sym
-// and lets the numbers fill in later.
+// outcome). That is `snapshotEarningsCalendar`: a forward fortnight AND a short
+// backward window, every run, merged into one durable blob that keeps the first
+// `time` it ever saw for a date+sym and lets the numbers fill in later.
+//
+// THE BACKWARD WINDOW IS NOT OPTIONAL, and its absence is the bug this file
+// shipped with. A snapshot that only ever asked for today+1…today+N never once
+// asks Nasdaq for a date that has already printed, so `eps` and `surprisePct`
+// were structurally unlearnable — and the earnings-fade lane
+// (earningsFadeLane.ts), whose entire trigger is a SURPRISE on a past print,
+// could not fire on any real run however the tape behaved. The forward pass
+// still owns `time`; the backward pass is the only thing that can ever own a
+// number.
 //
 // Nothing here decides anything. It is a feed: rows in, normalised rows out,
 // fail-soft to [] at every step — a calendar outage must cost the engine its
@@ -57,15 +66,59 @@ export interface NasdaqEarningsRow {
  * shape change is a new blob and never a migration of a live one. */
 export const EARNINGS_CALENDAR_KEY = 'earnings-calendar:v1'
 
-/** How far forward each snapshot reaches. Ten calls a run at ~101 rows a date
- * is the whole US calendar a fortnight out, and it is the window `time` is
- * actually available in. */
-export const SNAPSHOT_DAYS = 10
+/** How far forward each snapshot reaches. FOURTEEN, because fourteen is the
+ * window the engine actually slices: `earningsRisk` is judged over
+ * `upcomingEarnings(…, 14)` and the run log says "next 14d". Reaching only ten
+ * quietly shrank that horizon by four days — the rule went on asking a
+ * fortnight-shaped question of a ten-day calendar and read "no print known" for
+ * the difference, which is the one answer a risk flag must never invent. The two
+ * numbers are ONE fact and the suite pins the pair. ~101 rows a date is the whole
+ * US calendar, and this is the window `time` is available in. */
+export const SNAPSHOT_DAYS = 14
 
-/** Per-date cache TTL. Six hours means a run started any time in a trading day
- * re-reads the near dates at most four times, and the far dates (whose rows
- * barely move) are paid for once a morning. */
+/** …and how far BACK it re-reads. `eps` / `surprise` exist only on a date that
+ * has already printed, so this window is the only source of an outcome the blob
+ * will ever have. Three days back, plus today, covers a Monday run re-reading
+ * Friday's prints (a weekend date returns nothing and costs nothing), which is
+ * the longest ordinary gap the US calendar produces. */
+export const REREAD_DAYS = 3
+
+/** Per-date cache TTL for a FORWARD date. Six hours means a run started any time
+ * in a trading day re-reads the near dates at most four times, and the far dates
+ * (whose rows barely move) are paid for once a morning. */
 export const SNAPSHOT_TTL_SEC = 21_600
+
+/** …and for a date inside the RE-READ window, where six hours would defeat the
+ * point of re-reading at all. A print lands during the session; an entry written
+ * before it would hand every run for the rest of the day the same eps-less body,
+ * and a date that ages out of the window while still cached never fills in at
+ * all. One hour is short enough that the run after the print reaches Nasdaq and
+ * long enough that repeated runs in a morning are not a fetch storm.
+ *
+ * THE KEY IS ALSO DIFFERENT (`:past:`), and that is the load-bearing half: a date
+ * in this window was almost certainly fetched as a FORWARD date on an earlier run
+ * and cached for six hours under the plain key. Sharing the key would serve the
+ * re-read that stale, pre-print body — the exact masking this window exists to
+ * end — so the two readings of one date are cached as the two different answers
+ * they are. */
+export const REREAD_TTL_SEC = 3_600
+
+/** The fan-out bound. The dates are independent, so they go out together — but
+ * `Promise.all` over the whole window is eighteen simultaneous calls at one
+ * anonymous, key-less endpoint, which is how a free feed stops being free. Four
+ * at a time drains the window in five waves and keeps the request shape
+ * unremarkable. */
+export const SNAPSHOT_CONCURRENCY = 4
+
+/** Bounded fan-out: `limit` at a time, results in input order. A local copy of
+ * the engine's own helper rather than an import — engine.ts pulls in the whole
+ * board and imports THIS file, so sharing four lines would buy a cycle for
+ * nothing. */
+const mapLimit = async <T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> => {
+  const out: R[] = []
+  for (let i = 0; i < items.length; i += limit) out.push(...(await Promise.all(items.slice(i, i + limit).map(fn))))
+  return out
+}
 
 /** How long a date stays in the blob after its print. 45 SESSIONS, converted at
  * the ordinary 5-in-7 weekday rate — the calendar is dated in calendar days and
@@ -93,14 +146,24 @@ export function parseMoney(raw: unknown): number | null {
 }
 
 /** The plain numeric fields (`surprise`, `noOfEsts`) — same `N/A` sentinel, no
- * currency dressing. */
+ * currency dressing.
+ *
+ * …AND THE SAME ACCOUNTANCY MINUS. One formatter renders these tables, and it
+ * emits a negative `% Surprise` as `-57.58` on some rows and `(57.58)` on
+ * others. Reading the second as +57.58 flips the sign of the exact field the
+ * earnings-fade lane triggers on — a miss printed to the reader as a beat, and a
+ * shadow short published on a pop that never happened. `parseMoney` has always
+ * handled the convention; this is the same rule, written once per parser because
+ * they are two entry points into one of Nasdaq's habits. */
 export function parseNum(raw: unknown): number | null {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null
   if (typeof raw !== 'string') return null
   const s = raw.trim()
   if (!s || s.toUpperCase() === 'N/A') return null
-  const n = Number(s.replace(/[,%\s]/g, ''))
-  return Number.isFinite(n) ? n : null
+  const negative = s.startsWith('(') && s.endsWith(')')
+  const n = Number(s.replace(/[(),%\s]/g, ''))
+  if (!Number.isFinite(n)) return null
+  return negative ? -n : n
 }
 
 /** THE SYMBOL, in the form the rest of the engine speaks. Nasdaq files share
@@ -220,48 +283,75 @@ export function pruneEarningsRows(rows: Record<string, NasdaqEarningsRow>, today
   return out
 }
 
-/** THE DAILY SNAPSHOT. Fetches today+1 … today+SNAPSHOT_DAYS (each date cached
- * ~6h so a second run in the same morning costs nothing), merges every row into
- * the durable blob under the rule above, prunes, writes, and hands back the
- * whole calendar.
+/** THE DAILY SNAPSHOT — TWO WINDOWS, ONE BLOB.
  *
- * The forward window deliberately starts at +1: today's date already reads as a
- * past date for the rows that printed pre-market, so it cannot be trusted for
- * `time` — and it is re-read as history on every subsequent run anyway, because
- * a date fetched forward stays in the blob.
+ *   FORWARD  today+1 … today+SNAPSHOT_DAYS, cached ~6h, the only source of
+ *            `time`: which session carries the reaction.
+ *   RE-READ  today−REREAD_DAYS … today, cached ~1h under their own key, the
+ *            only source of `epsActual` / `surprisePct`: what the print did.
+ *
+ * Every row from both merges into the durable blob under `mergeEarningsRow` —
+ * first-seen `time` kept, numbers filled in — then prunes, writes, and hands
+ * back the whole calendar.
+ *
+ * The forward window deliberately still starts at +1, and today is now reached
+ * by the OTHER window instead: today's date already reads as history for the
+ * rows that printed pre-market, so it is worth an outcome and cannot be trusted
+ * for `time`. That is exactly the split the two windows make.
+ *
+ * `snapshotDates` is exported and pure so the windows can be asserted without a
+ * clock, a store or a fetch.
  *
  * Fail-soft at three levels: one date's fetch failing costs that date, the
  * store read failing starts from an empty calendar, and the store write failing
  * still returns the merged rows to this caller. */
+export interface SnapshotDate {
+  iso: string
+  /** false = inside the re-read window (today or earlier). */
+  forward: boolean
+  cacheKey: string
+  ttlSec: number
+}
+
+export function snapshotDates(todayISO: string): SnapshotDate[] {
+  const out: SnapshotDate[] = []
+  for (let d = -REREAD_DAYS; d <= SNAPSHOT_DAYS; d++) {
+    const iso = addDays(todayISO, d)
+    if (!iso) continue
+    const forward = d > 0
+    out.push({
+      iso,
+      forward,
+      // …and the two windows never share a cache entry (see REREAD_TTL_SEC).
+      cacheKey: forward ? `nasdaq-earnings:${iso}` : `nasdaq-earnings:past:${iso}`,
+      ttlSec: forward ? SNAPSHOT_TTL_SEC : REREAD_TTL_SEC,
+    })
+  }
+  return out
+}
+
 export async function snapshotEarningsCalendar(
   store: AppStore,
   todayISO: string,
   fetchFn: typeof fetch = fetch,
 ): Promise<NasdaqEarningsRow[]> {
   const { getCached, setCached } = await import('./cache')
-  const dates: string[] = []
-  for (let d = 1; d <= SNAPSHOT_DAYS; d++) {
-    const iso = addDays(todayISO, d)
-    if (iso) dates.push(iso)
-  }
+  const dates = snapshotDates(todayISO)
 
-  const fetched = await Promise.all(
-    dates.map(async iso => {
-      const cacheKey = `nasdaq-earnings:${iso}`
-      try {
-        const hit = await getCached<NasdaqEarningsRow[]>(cacheKey)
-        if (hit) return hit
-      } catch {
-        /* a cache that cannot be read is a cache miss, never a failed snapshot */
-      }
-      const rows = await fetchNasdaqEarnings(iso, fetchFn)
-      // Only a NON-EMPTY answer is worth caching: an empty list is either a
-      // holiday or an outage, and caching an outage for six hours would hold the
-      // calendar dark long after the endpoint came back.
-      if (rows.length) await setCached(cacheKey, rows, SNAPSHOT_TTL_SEC).catch(() => {})
-      return rows
-    }),
-  )
+  const fetched = await mapLimit(dates, SNAPSHOT_CONCURRENCY, async ({ iso, cacheKey, ttlSec }) => {
+    try {
+      const hit = await getCached<NasdaqEarningsRow[]>(cacheKey)
+      if (hit) return hit
+    } catch {
+      /* a cache that cannot be read is a cache miss, never a failed snapshot */
+    }
+    const rows = await fetchNasdaqEarnings(iso, fetchFn)
+    // Only a NON-EMPTY answer is worth caching: an empty list is either a
+    // holiday or an outage, and caching an outage would hold the calendar dark
+    // long after the endpoint came back.
+    if (rows.length) await setCached(cacheKey, rows, ttlSec).catch(() => {})
+    return rows
+  })
 
   let existing: Record<string, NasdaqEarningsRow> = {}
   try {

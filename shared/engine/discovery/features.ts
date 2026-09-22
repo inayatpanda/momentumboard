@@ -64,17 +64,34 @@ export function bbWidths(closes: number[], period = 20): number[] {
   return out
 }
 
-/** Percentile rank of the last value inside its own window, ties averaged. */
+/** Percentile rank of the last value against the values BEFORE it, ties averaged.
+ *
+ * TODAY IS NOT IN ITS OWN COMPARISON GROUP, and that is a correctness point
+ * rather than a nicety. Ranking today against a window that contains today puts a
+ * floor of `1/(2n)` under the answer and a ceiling of `1 − 1/(2n)` over it: at
+ * n=120 the tightest base a name can ever print reads 0.004, not 0, so a
+ * `bandwidth` score of exactly zero was UNREACHABLE — and the adjudication that
+ * calls that zero a silence (`ZERO_IS_A_READING.bandwidth`, composite.ts) was
+ * describing a state the arithmetic could not produce. It also quietly shrinks
+ * every reading toward the middle, which is not what "where does today sit in its
+ * own history" means.
+ *
+ * So the rank is over the PRIOR readings only: strictly tighter than everything
+ * before it is 0, strictly wider is 1, and both ends are now reachable. Ties are
+ * still averaged, so a name whose width has not moved sits in the middle of its
+ * own plateau rather than at the top of it. Null under two values — one prior is
+ * a comparison, none is not. */
 export const selfPercentile = (window: number[]): number | null => {
   if (window.length < 2) return null
   const today = window[window.length - 1]
+  const prior = window.slice(0, -1)
   let less = 0
   let equal = 0
-  for (const w of window) {
+  for (const w of prior) {
     if (w < today) less++
     else if (w === today) equal++
   }
-  return (less + equal / 2) / window.length
+  return (less + equal / 2) / prior.length
 }
 
 /** THE COMPRESSION READING, IN ONE PLACE: where today's Bollinger width sits in
@@ -87,6 +104,12 @@ export const selfPercentile = (window: number[]): number | null => {
  * consumers of ONE definition on purpose: the walk-forward study measured this
  * exact number, and a factor scoring a second, subtly different percentile would
  * be claiming the study's evidence for arithmetic the study never saw.
+ *
+ * The window is the last 120 widths INCLUDING today's, and today is ranked
+ * against the 119 before it (`selfPercentile`) — so the reading is "against its
+ * own recent history", with today excluded from the history it is measured
+ * against. Every stamped value in the tests moved by that much when the
+ * self-inclusion came out; they were re-measured, not re-fitted.
  *
  * Null under 139 closes — 20 to make the first width, 120 widths to rank it in. */
 export function bbWidthPctl120Of(closes: number[]): number | null {

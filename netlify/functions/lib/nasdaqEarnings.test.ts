@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   EARNINGS_CALENDAR_KEY,
   PRUNE_CALENDAR_DAYS,
+  REREAD_DAYS,
+  REREAD_TTL_SEC,
+  SNAPSHOT_CONCURRENCY,
   SNAPSHOT_DAYS,
+  SNAPSHOT_TTL_SEC,
   earningsCalendarRows,
   fetchNasdaqEarnings,
   mergeEarningsRow,
@@ -10,6 +14,7 @@ import {
   parseMoney,
   parseNum,
   pruneEarningsRows,
+  snapshotDates,
   snapshotEarningsCalendar,
   upcomingEarnings,
   type EarningsCalendarBlob,
@@ -101,6 +106,18 @@ describe('the money/number parsers', () => {
     expect(parseNum('N/A')).toBeNull()
     // 0 is a READING, not an absence — a surprise of exactly zero is a real fact
     expect(parseNum('0')).toBe(0)
+  })
+
+  it('reads the accountancy minus in a PLAIN numeric too — the same formatter writes both', () => {
+    // `% Surprise` comes back parenthesised on some rows and signed on others.
+    // Read the first as positive and a miss is published to the reader as a beat.
+    expect(parseNum('(300)')).toBe(-300)
+    expect(parseNum('(57.58)')).toBe(-57.58)
+    expect(parseNum('(1,250)')).toBe(-1250)
+    expect(parseNum('(12.5%)')).toBe(-12.5)
+    expect(parseNum('(0)')).toBe(-0)
+    // …and an unmatched bracket is not a number at all, never a silent 0
+    expect(parseNum('(oops)')).toBeNull()
   })
 })
 
@@ -213,14 +230,56 @@ describe('pruning', () => {
   })
 })
 
+describe('the snapshot window', () => {
+  it('reaches BACK as well as forward — an outcome only exists on a past date', () => {
+    const w = snapshotDates('2030-03-01')
+    expect(w.map(d => d.iso)).toEqual([
+      '2030-02-26', '2030-02-27', '2030-02-28', '2030-03-01', // today−3 … today: the re-read
+      '2030-03-02', '2030-03-03', '2030-03-04', '2030-03-05', '2030-03-06', '2030-03-07', '2030-03-08',
+      '2030-03-09', '2030-03-10', '2030-03-11', '2030-03-12', '2030-03-13', '2030-03-14', '2030-03-15',
+    ])
+    expect(w.length).toBe(SNAPSHOT_DAYS + REREAD_DAYS + 1)
+    expect(w.filter(d => d.forward).length).toBe(SNAPSHOT_DAYS)
+  })
+
+  it('caches the two readings of one date under DIFFERENT keys and different TTLs', () => {
+    // The masking mechanism, pinned: a date is fetched forward (6h) days before
+    // it is re-read as history, so a shared key would serve the re-read the
+    // stale pre-print body and the surprise could never land.
+    const w = snapshotDates('2030-03-01')
+    const past = w.find(d => d.iso === '2030-03-01')!
+    const fwd = w.find(d => d.iso === '2030-03-05')!
+    expect(past).toMatchObject({ forward: false, cacheKey: 'nasdaq-earnings:past:2030-03-01', ttlSec: REREAD_TTL_SEC })
+    expect(fwd).toMatchObject({ forward: true, cacheKey: 'nasdaq-earnings:2030-03-05', ttlSec: SNAPSHOT_TTL_SEC })
+    expect(new Set(w.map(d => d.cacheKey)).size).toBe(w.length)
+    expect(REREAD_TTL_SEC).toBeLessThanOrEqual(3_600) // short enough that the re-read reaches Nasdaq
+  })
+
+  it('reaches exactly as far forward as the engine slices — 14 days, the horizon it logs', () => {
+    // upcomingEarnings' default IS the engine's earnings-risk window; a snapshot
+    // that stopped at 10 made every print in days 11–14 read as "no print known".
+    expect(SNAPSHOT_DAYS).toBe(14)
+    const w = snapshotDates('2030-03-01')
+    const edge = row({ sym: 'EDGE', date: '2030-03-15' }) // today+14
+    expect(upcomingEarnings([edge], '2030-03-01').map(r => r.sym)).toEqual(['EDGE'])
+    expect(w.map(d => d.iso)).toContain(edge.date)
+  })
+})
+
 describe('snapshotEarningsCalendar', () => {
   // Distinct base dates per test: lib/cache.ts falls back to a module-level Map
   // under vitest, and it is shared across the file.
-  it('fetches today+1 … today+10, once per date, and re-uses the per-date cache within the TTL', async () => {
+  it('fetches the whole window once per date, four at a time, and re-uses the per-date cache', async () => {
     const store = memoryStore()
     const asked: string[] = []
+    let inFlight = 0
+    let peak = 0
     const fetchFn = (async (url: string) => {
       asked.push(new URL(url).searchParams.get('date')!)
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      await Promise.resolve()
+      inFlight--
       return {
         ok: true,
         json: async () => ({
@@ -230,44 +289,67 @@ describe('snapshotEarningsCalendar', () => {
     }) as unknown as typeof fetch
 
     const first = await snapshotEarningsCalendar(store, '2030-03-01', fetchFn)
-    expect(asked.length).toBe(SNAPSHOT_DAYS)
-    expect(asked[0]).toBe('2030-03-02') // starts at today+1: today's rows already read as history
-    expect(asked[SNAPSHOT_DAYS - 1]).toBe('2030-03-11')
-    expect(first.length).toBe(SNAPSHOT_DAYS)
+    const window = SNAPSHOT_DAYS + REREAD_DAYS + 1
+    expect(asked.length).toBe(window)
+    expect(asked[0]).toBe('2030-02-26') // today−3: the re-read window leads
+    expect(asked[asked.length - 1]).toBe('2030-03-15') // today+14
+    // BOUNDED FAN-OUT, not Promise.all over the whole window: one anonymous
+    // key-less endpoint, eighteen dates.
+    expect(peak).toBeLessThanOrEqual(SNAPSHOT_CONCURRENCY)
+    expect(first.length).toBe(window)
     expect(first.every(r => r.time === 'pre')).toBe(true)
     expect(first.every(r => r.marketCapUsdM === 2_000)).toBe(true)
 
-    // A second run the same morning costs NOTHING: every date is inside the ~6h
-    // cache window, which is what keeps ten calls a run from becoming ten calls a
-    // scheduled job.
+    // A second run the same morning costs NOTHING: every date is inside its own
+    // cache window, which is what keeps a per-run fan-out from becoming a
+    // per-invocation one.
     asked.length = 0
     await snapshotEarningsCalendar(store, '2030-03-01', fetchFn)
     expect(asked).toEqual([])
 
     const blob = await store.read<EarningsCalendarBlob>(EARNINGS_CALENDAR_KEY)
     expect(blob?.v).toBe(1)
-    expect(Object.keys(blob!.rows).length).toBe(SNAPSHOT_DAYS)
+    expect(Object.keys(blob!.rows).length).toBe(window)
   })
 
-  it('the post-print re-read fills in eps/surprise and CANNOT erase the session timing', async () => {
-    // The blob already holds what a forward read learned: this name reports
-    // pre-market. The snapshot now re-reads the same date as history — where
-    // Nasdaq answers `time-not-supplied` on every row — and the merge has to keep
-    // the timing while taking the numbers.
+  it('LEARNS THE SURPRISE: seen forward with a time, re-read as history with the print', async () => {
+    // The whole reason this module exists, end to end and through the cache —
+    // and the thing the forward-only window could never do, which is why the
+    // earnings-fade lane had never fired.
     const store = memoryStore()
-    await store.write(EARNINGS_CALENDAR_KEY, {
-      v: 1,
-      updatedAt: 'x',
-      rows: { '2031-05-04:ZZC': row({ sym: 'ZZC', date: '2031-05-04', time: 'pre', epsForecast: 1 }) },
-    } satisfies EarningsCalendarBlob)
-    const history = okFetch({
-      data: { rows: [{ symbol: 'ZZC', time: 'time-not-supplied', eps: '$1.20', surprise: '20', epsForecast: '$1.00', noOfEsts: '4' }] },
-    })
-    const rows = await snapshotEarningsCalendar(store, '2031-05-03', history)
-    const reread = rows.find(r => r.date === '2031-05-04')!
-    expect(reread.time).toBe('pre') // FIRST SEEN WINS — the one field only a forward read carries
-    expect(reread.surprisePct).toBe(20)
-    expect(reread.epsActual).toBe(1.2)
+    const printDate = '2031-05-06'
+    const bodyFor = (rows: unknown[]) => ({ ok: true, json: async () => ({ data: { rows } }) })
+
+    // RUN ONE, three days early. The date is in the FUTURE: Nasdaq gives the
+    // session timing and no numbers — and the row is cached under the forward
+    // key for six hours.
+    const forward = (async (url: string) => {
+      const date = new URL(url).searchParams.get('date')!
+      return bodyFor(date === printDate ? [{ symbol: 'ZZD', time: 'time-pre-market', epsForecast: '$1.00', noOfEsts: '4' }] : [])
+    }) as unknown as typeof fetch
+    const first = await snapshotEarningsCalendar(store, '2031-05-03', forward)
+    expect(first.find(r => r.date === printDate)).toMatchObject({ sym: 'ZZD', time: 'pre', epsActual: null, surprisePct: null })
+
+    // RUN TWO, two days later. The same date is now PAST, so it falls in the
+    // re-read window — under its own cache key, so the six-hour forward entry
+    // written above cannot serve it.
+    const asked: string[] = []
+    const history = (async (url: string) => {
+      const date = new URL(url).searchParams.get('date')!
+      asked.push(date)
+      return bodyFor(
+        date === printDate
+          ? [{ symbol: 'ZZD', time: 'time-not-supplied', eps: '$1.20', surprise: '(20)', epsForecast: '$1.00', noOfEsts: '4' }]
+          : [],
+      )
+    }) as unknown as typeof fetch
+    const second = await snapshotEarningsCalendar(store, '2031-05-08', history)
+    expect(asked).toContain(printDate) // the re-read actually reached Nasdaq
+
+    const merged = second.find(r => r.date === printDate)!
+    expect(merged.time).toBe('pre') // FIRST SEEN WINS — the field only a forward read carries
+    expect(merged.epsActual).toBe(1.2) // …and the numbers fill in
+    expect(merged.surprisePct).toBe(-20) // …parenthesised minus and all: a MISS, not a beat
   })
 
   it('prunes on write, so the blob cannot grow without bound', async () => {

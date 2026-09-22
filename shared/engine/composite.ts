@@ -63,6 +63,37 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
   catalyst: 'context',
 }
 
+/** THE CORE FAMILIES THAT MAY COUNT TOWARD `famAgree` — a SUBSET of the core, and
+ * the difference between the two sets is the whole point of this constant.
+ *
+ * `FACTOR_FAMILY` answers "does this factor set direction and eligibility?".
+ * This answers a stricter question: "is this factor an INDEPENDENT vote that a
+ * second one corroborating the first has actually earned something from?" The
+ * evidence contract is `famAgree >= 2`, and its one job is that technical-plus-
+ * nothing never acts alone. A family that agrees BY CONSTRUCTION satisfies the
+ * count without supplying the corroboration, which does not weaken the contract
+ * so much as delete it.
+ *
+ * BANDWIDTH IS EXCLUDED, decided 2026-09-22 and reversing the decision recorded
+ * one paragraph further down the previous version of this file. Its SIGN is not
+ * its own: `bandwidthFactor` (factors.ts) borrows it from the 50-EMA's 20-session
+ * slope, falling back to the 20-session return — and the technical read is built
+ * on that same trend. So on any trending chart "technical + bandwidth" is one
+ * reading counted twice, and the pair cleared a contract that exists to demand
+ * two. It is not a judgement on the feature: bandwidth is the only price feature
+ * in the walk-forward study whose IC keeps its sign across both halves and both
+ * venues, it stays a core factor, it still moves the composite at its seeded
+ * weight, and its zeros still book as evidence under `ZERO_IS_A_READING`. It
+ * simply may not also VOUCH for the read it borrowed its direction from.
+ *
+ * The way back in is measurable rather than editorial: an IC column with real
+ * two-sided evidence, gathered while the factor was scoring but not vouching.
+ * When bandwidth has earned its own direction, it joins this set and the change
+ * is one line with a walk behind it. */
+export const CONTRACT_FAMILIES: ReadonlySet<FactorName> = new Set<FactorName>(
+  (Object.keys(FACTOR_FAMILY) as FactorName[]).filter(n => FACTOR_FAMILY[n] === 'core' && n !== 'bandwidth'),
+)
+
 /** IS A ZERO SCORE A READING, OR A SILENCE? [stage 3c, spec §4.3(b)]
  *
  * `updateIcStats` (calibration.ts) used to skip `score === 0` beside `score ==
@@ -130,6 +161,14 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
  *                         short tape, an unreadable width, a chart with no
  *                         direction to borrow — is already NULL, so nothing the
  *                         loop needs is being thrown away here.
+ *                         THIS LINE WAS DEAD UNTIL 2026-09-22, which is worth
+ *                         recording: `selfPercentile` ranked today inside a
+ *                         window containing today, so the percentile floor was
+ *                         1/240 and |score| ≥ 0.2 — the adjudication described a
+ *                         state the arithmetic could not produce. Today is now
+ *                         ranked against the PRIOR readings only
+ *                         (discovery/features.ts) and the zero is reachable, so
+ *                         the entry finally decides something.
  *   sector      silence — rank exactly at the median. An arithmetic tie.
  *   channels    silence — bulls and bears exactly cancelling. A split panel is
  *                         disorder, not a vote (the same argument the technical
@@ -393,28 +432,14 @@ export function composeCall(input: ComposeInput): CallOrRejection {
   // (sector / breadth / volume), and ≥2 core families agreeing with the side.
   // Two agreeing families means technical-plus-nothing never acts alone.
   //
-  // DOES `bandwidth` COUNT AS AN AGREEING FAMILY? YES — decided 2026-09-22, and
-  // by construction rather than by a special case: it is a core family, so the
-  // filter below picks it up like sector and seasonality. It is price-derived,
-  // point-in-time, computed off the same closes every session for every name, and
-  // measured — it is the one feature in the walk-forward study whose IC sign held
-  // across both halves and both venues. Excluding it would mean keeping a factor
-  // out of the evidence count while letting it move the composite, which is the
-  // worst of both.
-  //
-  // THE CAVEAT, STATED BECAUSE IT WEAKENS THE CONTRACT: bandwidth's SIGN is
-  // borrowed from the 50-EMA slope (factors.ts), and the technical read is built
-  // on the same trend. So on a trending chart the two will usually agree, and
-  // "technical plus bandwidth" is a WEAKER corroboration than "technical plus
-  // sector" or "technical plus momentum" — two readings of one trend, not two
-  // independent votes. Its STRENGTH is independent (how wide the bands are is not
-  // a statement about trend) and its weight is the smallest in the core, which is
-  // what bounds the cost. If the
-  // contract's pass rate jumps on the next live board, that is the mechanism, and
-  // the answer is a stronger contract rather than a quieter factor.
-  const coreFamilies = (Object.keys(FACTOR_FAMILY) as FactorName[]).filter(n => FACTOR_FAMILY[n] === 'core')
+  // DOES `bandwidth` COUNT AS AN AGREEING FAMILY? NO — see `CONTRACT_FAMILIES`
+  // above for the argument. Its sign is borrowed from the 50-EMA slope the
+  // technical read is already built on, so counting it would let one reading of
+  // one trend satisfy a contract whose entire purpose is to demand two. The
+  // factor still scores, still moves the composite and still learns; it is only
+  // barred from vouching for the read it borrowed its direction from.
   const dir = side === 'long' ? 1 : -1
-  const famAgree = coreFamilies.filter(n => {
+  const famAgree = [...CONTRACT_FAMILIES].filter(n => {
     const s = input.factors[n]?.score
     return s != null && s !== 0 && Math.sign(s) === dir
   }).length

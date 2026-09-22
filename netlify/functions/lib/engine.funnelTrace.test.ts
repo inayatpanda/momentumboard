@@ -147,8 +147,27 @@ const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).diges
 // goes −64.8 → −63.5. The grade, the rung, the entry, the stop, the target and
 // the planted band (55-70, whose 62.5 midpoint the read still clears) are all
 // unchanged. 96a4ccbc… was the pre-bandwidth value.
-const GOLDEN_SHA = '6d221d1760fca88fbaaf29b71f0267bbe52c1852e19ab72e7d11385eb59a7d45'
-const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-63.5 r=1 e=162 s=170.44 t=150.75 ']
+//
+// RE-STAMPED AGAIN, same day, for the two bandwidth corrections. Both causes are
+// named because the readable projection moved by 0.1 and the hash by more:
+//
+//  1. THE COMPOSITE, −63.5 → −63.6. `selfPercentile` (discovery/features.ts) no
+//     longer ranks today's Bollinger width inside a window that contains it. On
+//     this straight-line slide today IS the widest of its own 120 readings, so
+//     the percentile reads a true 1.0 where self-inclusion capped it at 0.9958 —
+//     the factor scores −50.0 instead of −49.8 and the short deepens by a tenth.
+//     The floor moved with the ceiling: a percentile of exactly 0 is reachable
+//     now, which is what the zero-adjudication for this factor always assumed.
+//  2. THE EVIDENCE BLOCK, in the hash only. `bandwidth` no longer counts toward
+//     `famAgree` (CONTRACT_FAMILIES, composite.ts): its sign is borrowed from the
+//     same 50-EMA slope the chart read is built on, so it cannot also vouch for
+//     it. This row's count drops by one and its `detail` string with it. The
+//     CONTRACT still passes on technical + momentum, so the grade, the rung, the
+//     levels and the decision are all unchanged — which is the point.
+//
+// 6d221d17… was the value before these two.
+const GOLDEN_SHA = '5b78a4fa64ae7969e3cddfee2046629038e112b5e6ae28a029055ce9395623fb'
+const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-63.6 r=1 e=162 s=170.44 t=150.75 ']
 /** Every key the golden day wrote at BASE. The trace may ADD to this list and
  * may touch nothing in it. */
 const GOLDEN_KEYS = [
@@ -247,11 +266,11 @@ describe('the funnel trace', () => {
     expect(trace.gates).toEqual({ deadZone: 20, minExpectedMovePct: 1.25, contextMaxPts: 14 })
     // …and the move is VISIBLE in what published, by exactly the amount the moved
     // gate allows and not a point more: this day's context layer sits ON the cap,
-    // so raising it 12 → 14 moves the composite −63.5 → −65.5. The grade, the
+    // so raising it 12 → 14 moves the composite −63.6 → −65.6. The grade, the
     // rung and every level are untouched — the dead zone at 20 changes what a
-    // MARGINAL name does, and NVDA at −65.5 was never marginal.
+    // MARGINAL name does, and NVDA at −65.6 was never marginal.
     const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
-    expect(projection(ledger)).toEqual(GOLDEN_ROWS.map(r => r.replace('c=-63.5', 'c=-65.5')))
+    expect(projection(ledger)).toEqual(GOLDEN_ROWS.map(r => r.replace('c=-63.6', 'c=-65.6')))
   })
 
   it('a name a door offered and the pool refused is counted, never listed', async () => {

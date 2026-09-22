@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CONTEXT_MAX_PTS, DEFAULT_WEIGHTS, FACTOR_FAMILY, LONG_REGIME_MULT, composeCall, coreCompositeOf, setupFamilyOf, type ComposeInput } from './composite'
+import { CONTEXT_MAX_PTS, CONTRACT_FAMILIES, DEFAULT_WEIGHTS, FACTOR_FAMILY, LONG_REGIME_MULT, composeCall, coreCompositeOf, setupFamilyOf, type ComposeInput } from './composite'
 import { AGGRESSIVE_GATES, MODERATE_GATES } from './catalyst'
 import { catalystFactor } from './factors'
 import { bannedTokensIn } from './voice'
@@ -292,17 +292,64 @@ describe('bandwidth joins the core', () => {
     })
   })
 
-  it('COUNTS as an agreeing core family — decided yes, with the caveat stated', () => {
-    // It is price-derived, point-in-time and measured, so it counts like sector and
-    // seasonality do. The caveat lives beside the contract in composite.ts: its SIGN
-    // is borrowed from the same trend the chart read describes, so technical +
-    // bandwidth is a weaker corroboration than technical + sector.
-    const agreeing = drafted(base({ factors: { ...nullFactors(), technical: { score: 84, detail: '' }, bandwidth: { score: 30, detail: '' } }, volumeConfirmed: true }))!
-    expect(agreeing.evidence.famAgree).toBe(2)
-    // …and it can only ever ADD a family when it actually agrees
-    const opposing = drafted(base({ factors: { ...nullFactors(), technical: { score: 84, detail: '' }, bandwidth: { score: -30, detail: '' } }, volumeConfirmed: true }))!
-    expect(opposing.evidence.famAgree).toBe(1)
-    expect(opposing.evidence.contract).toBe(false)
+  // …AND DOES NOT COUNT TOWARD THE EVIDENCE CONTRACT — decided 2026-09-22, the
+  // other way round from the first ruling. `famAgree >= 2` exists so that
+  // technical-plus-nothing never acts alone, and bandwidth's SIGN is borrowed from
+  // the 50-EMA slope the technical read is already built on: the pair agrees BY
+  // CONSTRUCTION on any trending chart, so counting it made the second family free
+  // and deleted the contract rather than weakening it.
+  describe('…but is barred from vouching for the chart read it borrowed its sign from', () => {
+    // momentum present but MUTE (an exact RS tie) isolates the question: the
+    // contract's "momentum was measured" clause is satisfied, and the only thing
+    // deciding famAgree is whether bandwidth may vote.
+    const withMomentumMute = (bandwidth: number | null) =>
+      drafted(base({
+        factors: {
+          ...nullFactors(),
+          technical: { score: 84, detail: '' },
+          momentum: { score: 0, detail: 'RS exactly flat' },
+          bandwidth: { score: bandwidth, detail: '' },
+        },
+        volumeConfirmed: true,
+      }))!
+
+    it('CONTRACT_FAMILIES is the core minus bandwidth — one list, stated once', () => {
+      expect([...CONTRACT_FAMILIES].sort()).toEqual(['momentum', 'seasonality', 'sector', 'technical'])
+      expect(CONTRACT_FAMILIES.has('bandwidth')).toBe(false)
+      expect(FACTOR_FAMILY.bandwidth).toBe('core') // …and it is still core, still scoring
+      for (const f of CONTRACT_FAMILIES) expect(FACTOR_FAMILY[f]).toBe('core') // never a context family
+    })
+
+    it('technical + bandwidth alone fails the contract — one trend is not two votes', () => {
+      const pair = withMomentumMute(30)
+      expect(pair.evidence.famAgree).toBe(1) // the chart read, and nothing else
+      expect(pair.evidence.contract).toBe(false) // → published watch-only, low evidence coverage
+      expect(pair.evidence.detail).toContain('1 core family agree')
+      // the control: the SAME row with bandwidth absent reads identically, which is
+      // the point — bandwidth changed nothing about the evidence either way
+      const without = withMomentumMute(null)
+      expect(without.evidence.famAgree).toBe(1)
+      expect(without.evidence.contract).toBe(false)
+    })
+
+    it('technical + momentum still clears it, with or without bandwidth beside them', () => {
+      const pair = drafted(base({ factors: { ...longFactors() }, volumeConfirmed: true }))!
+      expect(pair.evidence.famAgree).toBe(2)
+      expect(pair.evidence.contract).toBe(true)
+      // bandwidth agreeing adds colour to the composite and nothing to the count
+      const trio = drafted(base({ factors: { ...longFactors(), bandwidth: { score: 30, detail: '' } }, volumeConfirmed: true }))!
+      expect(trio.evidence.famAgree).toBe(2)
+      expect(trio.evidence.contract).toBe(true)
+      expect(trio.composite).not.toBe(pair.composite) // it still moves the number
+    })
+
+    it('a third REAL family still counts — the bar excludes bandwidth, not everything', () => {
+      const withSector = drafted(base({
+        factors: { ...longFactors(), sector: { score: 30, detail: '' }, bandwidth: { score: 30, detail: '' } },
+        volumeConfirmed: true,
+      }))!
+      expect(withSector.evidence.famAgree).toBe(3)
+    })
   })
 })
 
