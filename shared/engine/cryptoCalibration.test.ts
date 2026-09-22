@@ -73,7 +73,14 @@ describe('the crypto partition — its own blob, its own state', () => {
 
   it('carries the equity def version NUMBER under its own constant — one may move without the other', () => {
     expect(CRYPTO_CALIB_DEF_VERSION).toBe(3)
-    expect(CRYPTO_CALIB_DEF_VERSION).toBe(CALIB_DEF_VERSION) // true today, and deliberately two constants
+    // …AND THEY HAVE NOW MOVED APART, which is the whole reason there are two
+    // constants. The equity hit went from 10 sessions to 21 (CALIB_DEF_VERSION v4,
+    // owner ruling 2026-09-22); the crypto hit is still 14 crypto bars against no
+    // benchmark, because that ruling was about the equity holding period and this
+    // partition was deliberately left alone. A single shared constant would have
+    // silently reseeded the crypto blob on an equity decision.
+    expect(CRYPTO_CALIB_DEF_VERSION).not.toBe(CALIB_DEF_VERSION)
+    expect(CALIB_DEF_VERSION).toBe(4)
   })
 
   it('loads: absent → cold, current definition → kept and migrated, stale definition → discarded', () => {

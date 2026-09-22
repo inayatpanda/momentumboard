@@ -2337,10 +2337,14 @@ describe('updateCalibration + brier', () => {
     cal = updateCalibration(cal, { side: 'long', regime: 'green', composite: 30 }, { excessPct: -2, rawPct: -2, spyPct: 0, stopped: true, hit: false })
     expect(cal.buckets['long:green:25-40']).toEqual({ n: 2, hits: 1 })
   })
+  // the field is `outcome`, not a horizon name: BOTH partitions feed this
+  // function from their own grading sites, and since v4 they disagree about which
+  // stored field is calibrated (equity outcome21 @21 sessions, crypto outcome10
+  // @14 bars). Each resolves its own lens before it gets here.
   it('brierPoint averages (p − hit)²', () => {
     const preds = [
-      { probability: 0.7, outcome10: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
-      { probability: 0.7, outcome10: { excessPct: -1, rawPct: -1, spyPct: 0, stopped: false, hit: false } },
+      { probability: 0.7, outcome: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
+      { probability: 0.7, outcome: { excessPct: -1, rawPct: -1, spyPct: 0, stopped: false, hit: false } },
     ]
     expect(brierPoint(preds)).toBeCloseTo((0.09 + 0.49) / 2, 5)
     expect(brierPoint([{ probability: 0.5 }])).toBeNull()

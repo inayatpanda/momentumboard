@@ -327,11 +327,14 @@ export type BoardExportSource = Omit<BoardRow, 'name'>
 /** How far back the paper looks for its own recent losses. Five trading days:
  * far enough that a quiet week still has something to answer for, near enough
  * that the reader remembers the call. */
-// 16, not 5: a row published on day D earns its post-mortem when outcome10
-// lands — ten sessions later — so the newest FIVE publication dates are
-// structurally the five that cannot carry one (3b final review, Important 1).
-// Sixteen dates ≈ one grading horizon plus a paper week of stamped losers.
-export const PAPER_POSTMORTEM_DAYS = 16
+// 27, not 5: a row published on day D earns its post-mortem when its CALIBRATED
+// grade lands — 21 sessions later since CALIB_DEF_VERSION v4, ten before it — so
+// the newest TWENTY-ONE publication dates are structurally the ones that cannot
+// carry one (3b final review, Important 1). Twenty-seven dates ≈ one grading
+// horizon plus a paper week of stamped losers, which is the same rule the 16 was:
+// it moved because the horizon did, and leaving it would have the paper look for
+// explanations only in the window where none can exist yet.
+export const PAPER_POSTMORTEM_DAYS = 27
 export const PAPER_POSTMORTEM_MAX = 6
 
 export interface PaperPostMortem {

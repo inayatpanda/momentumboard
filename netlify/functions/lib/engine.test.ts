@@ -142,15 +142,28 @@ const breakTape240 = (() => {
   append(bars, 105, 3_000_000)
   return bars
 })()
-// …and the SAME tape nineteen sessions later, the break having run +0.8%/session.
-// The board is built on the day (breakTape240); the grader comes back once the
-// outcome exists, exactly as production does.
+// …and the SAME tape TWENTY-TWO sessions later, the break having run +0.8%/session.
+// Nineteen until CALIB_DEF_VERSION v4: the calibrated grade moved to 21 sessions,
+// and the entry bar here is the first APPENDED one (the call publishes the morning
+// after the break bar), so the tape needs 21 bars behind that entry before anything
+// is graded at all. The board is built on the day (breakTape240); the grader comes
+// back once the outcome exists, exactly as production does.
 const breakTapeMatured = (() => {
   const bars = breakTape240.map(c => ({ ...c }))
-  for (let i = 1; i <= 19; i++) append(bars, Math.round(105 * (1 + 0.008 * i) * 100) / 100)
+  for (let i = 1; i <= 22; i++) append(bars, Math.round(105 * (1 + 0.008 * i) * 100) / 100)
   return bars
 })()
 const NOW_240 = Math.floor(breakTape240[breakTape240.length - 1].t + 86_400)
+/** …and the morning the grader actually runs on that tape. It has to be AFTER the
+ * matured tape's last bar, not `NOW` (which is pinned to `shorty`'s 260 bars and
+ * now falls INSIDE the matured window) — a grading pass dated before the outcome
+ * it is reading would be the fixture telling itself a comfortable lie. */
+const NOW_240_MATURED = Math.floor(breakTapeMatured[breakTapeMatured.length - 1].t + 86_400)
+/** SPY, long enough to reach the calibrated horizon on the matured tape above.
+ * `flat` stops at 260 bars and the benchmark leg is graded on the SAME window as
+ * the name — `gradePrediction` returns null the moment EITHER series runs out — so
+ * a 21-session grade on an entry at bar 241 needs a benchmark that goes to 262. */
+const flatLongSpy = mk(() => 500, 300)
 
 // The early door again, on a tape that actually GOES somewhere: a ±10% swinger, so
 // swing-capacity is 8.2 rather than breakTape240's flat 0. Under v2 that number was
@@ -652,7 +665,9 @@ describe('buildBoard', () => {
     const priorDate = '2026-05-01'
     await store.write('predictions-index', [priorDate])
     await store.write(`predictions:${priorDate}`, [
-      { id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: true, outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true }, outcome10: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
+      // GRADED means the CALIBRATED grade (outcome21 since v4) — a row carrying only
+      // the 5 and 10 lenses has not fed the learning loop, so it still holds its slot.
+      { id: `${priorDate}:NVDA:short`, sym: 'NVDA', side: 'short', shadow: true, outcome5: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true }, outcome10: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true }, outcome21: { excessPct: 1, rawPct: 1, spyPct: 0, stopped: false, hit: true } },
     ])
 
     await buildBoard(store, deps({ earningsSyms: async () => new Set(['NVDA']) }), NOW)
@@ -1090,14 +1105,17 @@ describe('buildBoard', () => {
       const store = await dedupStore({
         observation: true,
         watchOnly: true,
+        // …and GRADED is the calibrated lens (outcome21 since v4), not the 10 one
         outcome10: { excessPct: -3, rawPct: -3, spyPct: 0, stopped: false, hit: true },
+        outcome21: { excessPct: -3, rawPct: -3, spyPct: 0, stopped: false, hit: true },
       })
       await buildBoard(store, dedupDeps, NOW)
       expect((await ledgerOf(store))!.some(p => p.sym === 'NVDA')).toBe(true)
     })
 
     it('…but once it has GRADED, the slot is free again', async () => {
-      const store = await dedupStore({ observation: true, watchOnly: true, outcome10: { excessPct: -3, rawPct: -3, spyPct: 0, stopped: false, hit: true } })
+      const graded21 = { excessPct: -3, rawPct: -3, spyPct: 0, stopped: false, hit: true }
+      const store = await dedupStore({ observation: true, watchOnly: true, outcome10: graded21, outcome21: graded21 })
       const { board } = await buildBoard(store, dedupDeps, NOW)
       expect(board.find(b => b.sym === 'NVDA')?.observation).toBe(true)
     })
@@ -2548,7 +2566,7 @@ describe('buildBoard', () => {
     expect(sameSide.trail).toBeUndefined()
   })
 
-  it('(3) …and nineteen sessions on, the graded break teaches calibration and its own setup family — never the technical factor, and never the ladder while it is shadowed', async () => {
+  it('(3) …and a calibrated horizon on, the graded break teaches calibration and its own setup family — never the technical factor, and never the ladder while it is shadowed', async () => {
     const store = await velocityStore({ 'long:amber:25-40': { n: 20, hits: 14 }, 'short:amber:25-40': { n: 20, hits: 14 } })
     await breakoutBoard(store)
     const date = new Date(NOW_240 * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
@@ -2559,8 +2577,8 @@ describe('buildBoard', () => {
     // at zero" then means exactly that, with no control row to hide behind.
     const graded = await gradeOutstanding(
       store,
-      deps({ candles: async s => (s === 'VELO' ? breakTapeMatured : s === 'SPY' ? flat : null) }),
-      NOW,
+      deps({ candles: async s => (s === 'VELO' ? breakTapeMatured : s === 'SPY' ? flatLongSpy : null) }),
+      NOW_240_MATURED,
       null,
     )
     expect(graded.graded).toBe(1)
@@ -3130,6 +3148,17 @@ describe('buildBoard', () => {
   })
 })
 
+/** THE PLANTED ENTRY BAR for the grading fixtures below, and it MOVED 240 → 230
+ * with CALIB_DEF_VERSION v4. The calibrated grade now lands at 21 sessions, and a
+ * row planted at bar 240 of a 260-bar tape has only 19 bars behind it: it fills
+ * outcome5 and outcome10 and then teaches nothing at all. Ten bars earlier is the
+ * smallest honest change that lets the calibrated lens actually land (230 + 21 =
+ * 251 < 260) on the same falling-knife shape, at the same stop distances, so every
+ * assertion below is still about what it was about. The one fixture deliberately
+ * left at bar 240 is the pending-queue test, whose whole point is a row that has
+ * NOT reached its calibrated grade. */
+const PLANT = 230
+
 describe('gradeOutstanding', () => {
   it('migrates the bounded index into a durable pending queue so old calls cannot age out ungraded', async () => {
     const store = memoryStore()
@@ -3145,9 +3174,13 @@ describe('gradeOutstanding', () => {
     const fillers = Array.from({ length: 30 }, (_, i) => `2026-03-${String(i + 1).padStart(2, '0')}`)
     await store.write('predictions-index', [date, ...fillers])
 
-    expect((await gradeOutstanding(store, deps(), NOW, null)).graded).toBe(1)
-    // 5d and 10d graded; the date legitimately stays pending until the 21d
-    // (month-scale) outcome can mature — the fixture has only 19 bars after entry
+    // ZERO graded, and that is the v4 statement this fixture now makes twice over.
+    // The bounded index WAS migrated — the row was visited and its 5d and 10d
+    // lenses filled, which could not have happened if the date had aged out — but
+    // `graded` counts a row at its CALIBRATED lens, which since v4 is 21 sessions,
+    // and this fixture has only 19 bars after entry. So: the ledger lenses fill,
+    // nothing is claimed as graded, and the date stays durably pending.
+    expect((await gradeOutstanding(store, deps(), NOW, null)).graded).toBe(0)
     expect(await store.read('predictions-pending')).toEqual([date])
     expect((await store.read<Prediction[]>(`predictions:${date}`))![0].outcome10).toBeDefined()
     expect((await store.read<Prediction[]>(`predictions:${date}`))![0].outcome21).toBeUndefined()
@@ -3165,8 +3198,9 @@ describe('gradeOutstanding', () => {
 
   it('grades a matured prediction, updates calibration, risk and scorecard', async () => {
     const store = memoryStore()
-    // prediction planted at bar 240 (2026-01-28); 19 bars of history follow
-    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    // prediction planted at bar PLANT; enough history follows for the 21-session
+    // calibrated grade to land (see PLANT)
+    const date = new Date(shorty[PLANT].t * 1000).toISOString().slice(0, 10)
     const planted: Partial<Prediction> = {
       id: `${date}:NVDA:short`,
       date,
@@ -3177,10 +3211,10 @@ describe('gradeOutstanding', () => {
       probability: 0.67,
       provisional: false,
       grade: 'A',
-      priceAtPrediction: shorty[239].c,
-      entry: shorty[239].c,
-      stop: shorty[239].c * 1.1,
-      target: shorty[239].c * 0.9,
+      priceAtPrediction: shorty[PLANT - 1].c,
+      entry: shorty[PLANT - 1].c,
+      stop: shorty[PLANT - 1].c * 1.1,
+      target: shorty[PLANT - 1].c * 0.9,
       instrument: null,
       riskPct: 1, // a SIZED call — the reader had money on this one [stage 3c]
       factors: { technical: { score: -30, detail: '', weight: 1 } } as never,
@@ -3247,7 +3281,7 @@ describe('gradeOutstanding', () => {
   // place. Pinned end-to-end: a run containing NOTHING BUT watch rows.
   it('a watch-only row never enters rung progression — it learns, the ladder does not move', async () => {
     const store = memoryStore()
-    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    const date = new Date(shorty[PLANT].t * 1000).toISOString().slice(0, 10)
     const watchRow: Partial<Prediction> = {
       id: `${date}:XLK:short`,
       date,
@@ -3261,10 +3295,10 @@ describe('gradeOutstanding', () => {
       watchOnly: true,
       riskPct: 0,
       setup: 'continuation',
-      priceAtPrediction: shorty[239].c,
-      entry: shorty[239].c,
-      stop: shorty[239].c * 1.1,
-      target: shorty[239].c * 0.9,
+      priceAtPrediction: shorty[PLANT - 1].c,
+      entry: shorty[PLANT - 1].c,
+      stop: shorty[PLANT - 1].c * 1.1,
+      target: shorty[PLANT - 1].c * 0.9,
       instrument: null,
       factors: { technical: { score: -30, detail: '', weight: 1 } } as never,
     }
@@ -3287,7 +3321,7 @@ describe('gradeOutstanding', () => {
 
   it('a graded DIP call never touches factor IC — the lane must not train the technical factor', async () => {
     const store = memoryStore()
-    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    const date = new Date(shorty[PLANT].t * 1000).toISOString().slice(0, 10)
     // Two identical long calls on the same tape, both carrying the dip lane's
     // constant technical +40 placeholder. Only one is tagged as a dip call.
     const planted = (over: Partial<Prediction>): Partial<Prediction> => ({
@@ -3300,10 +3334,10 @@ describe('gradeOutstanding', () => {
       grade: 'B',
       setup: 'reversal',
       capUsdM: 35_000,
-      priceAtPrediction: shorty[239].c,
-      entry: shorty[239].c,
-      stop: shorty[239].c * 0.5, // wide enough that the bleed never stops it out
-      target: shorty[239].c * 1.2,
+      priceAtPrediction: shorty[PLANT - 1].c,
+      entry: shorty[PLANT - 1].c,
+      stop: shorty[PLANT - 1].c * 0.5, // wide enough that the bleed never stops it out
+      target: shorty[PLANT - 1].c * 1.2,
       instrument: null,
       factors: { technical: { score: 40, detail: 'dip lane', weight: 0 } } as never,
       ...over,
@@ -3338,7 +3372,7 @@ describe('gradeOutstanding', () => {
   // family books its own bucket with ZERO changes to calibration.ts.
   it('a graded VELOCITY call never touches factor IC either — the quarantine is the lane family, not a dip special case', async () => {
     const store = memoryStore()
-    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    const date = new Date(shorty[PLANT].t * 1000).toISOString().slice(0, 10)
     const planted = (over: Partial<Prediction>): Partial<Prediction> => ({
       date,
       side: 'long',
@@ -3349,10 +3383,10 @@ describe('gradeOutstanding', () => {
       grade: 'B',
       setup: 'reversal',
       capUsdM: 35_000,
-      priceAtPrediction: shorty[239].c,
-      entry: shorty[239].c,
-      stop: shorty[239].c * 0.5, // wide enough that the bleed never stops it out
-      target: shorty[239].c * 1.2,
+      priceAtPrediction: shorty[PLANT - 1].c,
+      entry: shorty[PLANT - 1].c,
+      stop: shorty[PLANT - 1].c * 0.5, // wide enough that the bleed never stops it out
+      target: shorty[PLANT - 1].c * 1.2,
       instrument: null,
       factors: { technical: { score: 40, detail: 'velocity lane', weight: 0 } } as never,
       ...over,
@@ -3384,7 +3418,7 @@ describe('gradeOutstanding', () => {
 
   it('production migration: a legacy rung-0 risk-state + cohortless seeded calibration load and behave; a known-cap grade books into its cohort bucket', async () => {
     const store = memoryStore()
-    const date = new Date(shorty[240].t * 1000).toISOString().slice(0, 10)
+    const date = new Date(shorty[PLANT].t * 1000).toISOString().slice(0, 10)
     const planted: Partial<Prediction> = {
       id: `${date}:NVDA:short`,
       date,
@@ -3395,10 +3429,10 @@ describe('gradeOutstanding', () => {
       probability: 0.67,
       provisional: false,
       grade: 'A',
-      priceAtPrediction: shorty[239].c,
-      entry: shorty[239].c,
-      stop: shorty[239].c * 1.1,
-      target: shorty[239].c * 0.9,
+      priceAtPrediction: shorty[PLANT - 1].c,
+      entry: shorty[PLANT - 1].c,
+      stop: shorty[PLANT - 1].c * 1.1,
+      target: shorty[PLANT - 1].c * 0.9,
       instrument: null,
       capUsdM: 50_000, // LARGE cohort — the grade must book into the large bucket
       factors: { technical: { score: -30, detail: '', weight: 1 } } as never,
@@ -3441,8 +3475,16 @@ describe('gradeOutstanding', () => {
     })
     const zero = { nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }
 
+    // …on a store already on the CURRENT outcome definition. Without the
+    // calibration blob the cold start clones the committed v3 seed, the v4
+    // definition swap fires and `retireIcEvidence` zeroes the very IC these two
+    // fixtures are about — a different mechanism answering for this one. The
+    // definition swap is pinned on its own (engine.calibratedHorizon.test.ts).
+    const currentEpoch = (): CalibrationState => ({ buckets: {}, brier: [], defVersion: CALIB_DEF_VERSION, seedGeneration: 4 })
+
     it('re-bases a v2-shaped blob on load and persists it — exactly once, however many runs', async () => {
       const store = memoryStore()
+      await store.write('engine-calibration', currentEpoch())
       await store.write('engine-weights', v2Blob())
       const d = deps({ candles: async sym => (sym === 'SPY' ? flat : null) })
 
@@ -3471,6 +3513,7 @@ describe('gradeOutstanding', () => {
 
     it('leaves a blob already on the current vector completely alone', async () => {
       const store = memoryStore()
+      await store.write('engine-calibration', currentEpoch())
       const fresh = { ...initWeights(), seedGeneration: 4 } // gen-4: stamped, or the install swap eats the learned drift
       fresh.current.technical = 1.07 // a learned drift under the CURRENT vector
       fresh.ic.momentum = { nAgree: 30, sumAgree: 60, nDisagree: 5, sumDisagree: -8 }

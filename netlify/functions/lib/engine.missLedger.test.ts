@@ -14,8 +14,12 @@ const T0 = Date.parse('2026-01-05') / 1000
 const DAY = 86_400
 const BARS = 60
 const dateOf = (i: number) => new Date((T0 + i * DAY) * 1000).toISOString().slice(0, 10)
-/** flat SPY has 60 bars, so idx + 10 < 60 ⇒ the newest matured trace day is 49. */
-const TRACE_DATE = dateOf(49)
+/** flat SPY has 60 bars and MISS_HORIZON is the CALIBRATED horizon, 21 sessions
+ * since CALIB_DEF_VERSION v4 — so idx + 21 < 60 ⇒ the newest matured trace day is
+ * 38, where it used to be 49 at the 10-session clock. The regret ledger runs
+ * further behind the board than it did, deliberately: a miss and a hit have to be
+ * measured over the same window or `cost` vs `saved` compares two questions. */
+const TRACE_DATE = dateOf(38)
 const NOW = Math.floor(T0 + BARS * DAY)
 
 const tape = (closeAt: (i: number) => number, openAt: (i: number) => number = closeAt): Candle[] =>
@@ -26,8 +30,8 @@ const tape = (closeAt: (i: number) => number, openAt: (i: number) => number = cl
   })
 
 const flat = tape(() => 100)
-const runner = tape(i => (i < 49 ? 100 : 100 * 1.03 ** (i - 49)))
-const faller = tape(i => (i < 49 ? 100 : 100 * 0.97 ** (i - 49)))
+const runner = tape(i => (i < 38 ? 100 : 100 * 1.03 ** (i - 38)))
+const faller = tape(i => (i < 38 ? 100 : 100 * 0.97 ** (i - 38)))
 
 const fetched: string[] = []
 const deps = (over: Partial<EngineDeps> = {}): EngineDeps =>
@@ -151,7 +155,7 @@ describe('gradeOutstanding → the miss ledger', () => {
     for (const [trace, index] of [
       [null, [TRACE_DATE]],
       [null, []],
-      [traceOf({ date: dateOf(55) }), [dateOf(55)]], // 55 + 10 ≥ 60: nothing has matured
+      [traceOf({ date: dateOf(55) }), [dateOf(55)]], // 55 + 21 ≥ 60: nothing has matured
     ] as [FunnelTrace | null, string[]][]) {
       const store = await seeded(trace, index)
       await expect(gradeOutstanding(store, deps(), NOW)).resolves.toEqual({ graded: 0 })

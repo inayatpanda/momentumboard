@@ -2,9 +2,17 @@ import type { SetupFamily } from './types'
 
 // WHICH clock does a published row run on? The reader asked for two honest
 // buckets instead of one undifferentiated list (2026-07-15): a "this week"
-// prediction — the calibrated call the engine will actually be graded on (at 10
-// sessions) — versus a "developing" build that only pays off over the next 2-4
-// weeks and so is a watch, not a trade. The distinction is about SHAPE, not grade:
+// prediction — the calibrated call the engine will actually be graded on (at 21
+// sessions since CALIB_DEF_VERSION v4) — versus a "developing" build that only pays
+// off over the next 2-4 weeks and so is a watch, not a trade.
+//
+// THE LABELS ARE ABOUT SHAPE, NOT ABOUT THE GRADING CLOCK, and the v4 horizon move
+// (10→21 sessions) deliberately leaves them alone. 'week' has always meant "an
+// observation about THIS week's tape — a call the engine is willing to make now",
+// and 'developing' "a build that has not resolved into a call yet". Both are still
+// graded on the one calibrated horizon; renaming 'week' because that horizon
+// lengthened would collapse the distinction the reader actually asked for into a
+// duplicate of the grading clock. The distinction is about SHAPE, not grade:
 // a name coiling in a base or pulling back into support is a multi-week story
 // even when it clears every gate, while a plain grade-C continuation watch is a
 // short-horizon observation on this week's tape.
@@ -27,7 +35,7 @@ export interface HorizonInput {
  * to confirm). Everything else on the watch list — chiefly plain grade-C
  * continuation reads — stays 'week': an observation about THIS week's tape. */
 export function horizonOf(row: HorizonInput): Horizon {
-  // a trade is the calibrated call the engine gets graded on (at 10 sessions)
+  // a trade is the calibrated call the engine gets graded on (at 21 sessions)
   if (!row.watchOnly) return 'week'
   // watch rows: is the SHAPE a longer build?
   if (row.belowBase) return 'developing'

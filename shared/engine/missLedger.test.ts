@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Candle } from '../types'
-import { gradePrediction } from './calibration'
+import { CALIBRATED_HORIZON_SESSIONS, gradePrediction } from './calibration'
 import { MODERATE_GATES } from './catalyst'
 import type { FunnelTrace, FunnelTraceRow } from './funnelTrace'
 import type { GateCode } from './types'
@@ -45,9 +45,9 @@ const flat = tape(
   () => 100,
   () => 100,
 )
-/** +2.3% a session from bar 30 on: over 10 sessions from bar 30's open this is a
- * long the engine refused. Opens 3% under the prior close, so close-based and
- * open-based bases disagree loudly. */
+/** +2.3% a session from bar 30 on: over MISS_HORIZON sessions from bar 30's open
+ * this is a long the engine refused. Opens 3% under the prior close, so
+ * close-based and open-based bases disagree loudly. */
 const runner = tape(
   i => (i < 30 ? 100 : 100 * 1.023 ** (i - 30)),
   i => (i < 30 ? 100 : 0.97 * 100 * 1.023 ** (i - 30)),
@@ -108,16 +108,19 @@ describe('missExcess — the entry basis, mirrored', () => {
   })
 
   it('uses the entry session OPEN, not the prior close', () => {
+    // the exit bar is ENTRY + MISS_HORIZON, read off the constant rather than
+    // written out — the horizon moved 10 → 21 with CALIB_DEF_VERSION v4 and a
+    // hardcoded exit index is how this stops testing what it claims to.
     const base = runner[30].o
-    const raw = ((runner[40].c - base) / base) * 100
+    const raw = ((runner[30 + MISS_HORIZON].c - base) / base) * 100
     expect(missExcess(runner, flat, ENTRY)!.long).toBe(Math.round(raw * 10) / 10)
     // the prior-close basis would have produced a materially different number
-    const wrong = ((runner[40].c - runner[29].c) / runner[29].c) * 100
+    const wrong = ((runner[30 + MISS_HORIZON].c - runner[29].c) / runner[29].c) * 100
     expect(Math.round(wrong * 10) / 10).not.toBe(missExcess(runner, flat, ENTRY)!.long)
   })
 
   it('returns null when the horizon has not matured, when the date is off the tape, or when SPY is short', () => {
-    expect(missExcess(runner, flat, dateOf(55))).toBeNull() // 55 + 10 >= 60
+    expect(missExcess(runner, flat, dateOf(55))).toBeNull() // 55 + MISS_HORIZON >= 60
     expect(missExcess(runner, flat, dateOf(400))).toBeNull()
     expect(missExcess(runner, flat.slice(0, 32), ENTRY)).toBeNull()
     expect(missExcess(runner, flat, 'not-a-date')).toBeNull()
@@ -126,7 +129,14 @@ describe('missExcess — the entry basis, mirrored', () => {
 
   it('the miss bar is +5pp — deliberately five times the hit bar', () => {
     expect(MISS_EXCESS_MIN).toBe(5)
-    expect(MISS_HORIZON).toBe(10)
+    // …and the horizon is the CALIBRATED one, which moved 10 → 21 sessions with
+    // CALIB_DEF_VERSION v4 (owner ruling 2026-09-22). Regret and a hit must be
+    // measured over the same window or `cost` vs `saved` compares two different
+    // questions, so this is pinned to the shared constant and to its value.
+    expect(MISS_HORIZON).toBe(21)
+    expect(MISS_HORIZON).toBe(CALIBRATED_HORIZON_SESSIONS)
+    // the fetch budget bounds ONE day's fetches and is a property of the funnel's
+    // width, not of the horizon — unmoved, deliberately.
     expect(MISS_FETCH_BUDGET).toBe(40)
   })
 })
@@ -347,10 +357,10 @@ describe('bounds', () => {
 })
 
 describe('maturedTraceDate — SESSIONS back, never calendar days', () => {
-  it('picks the newest trace date with a full ten sessions of SPY after it', () => {
-    const index = [dateOf(40), dateOf(45), dateOf(48), dateOf(49), dateOf(52)]
-    // flat has 60 bars: idx + 10 < 60 ⇒ idx ≤ 49
-    expect(maturedTraceDate(index, flat)).toBe(dateOf(49))
+  it('picks the newest trace date with a full calibrated horizon of SPY after it', () => {
+    const index = [dateOf(30), dateOf(34), dateOf(37), dateOf(38), dateOf(52)]
+    // flat has 60 bars: idx + MISS_HORIZON (21) < 60 ⇒ idx ≤ 38
+    expect(maturedTraceDate(index, flat)).toBe(dateOf(38))
   })
 
   it('returns null when nothing has matured, and ignores junk dates', () => {
@@ -360,8 +370,8 @@ describe('maturedTraceDate — SESSIONS back, never calendar days', () => {
   })
 
   it('is unmoved by a GAP in the index — an outage day shifts positions, sessions do not', () => {
-    expect(maturedTraceDate([dateOf(10), dateOf(49)], flat)).toBe(dateOf(49))
-    expect(maturedTraceDate([dateOf(49), dateOf(10)], flat)).toBe(dateOf(49))
+    expect(maturedTraceDate([dateOf(10), dateOf(38)], flat)).toBe(dateOf(38))
+    expect(maturedTraceDate([dateOf(38), dateOf(10)], flat)).toBe(dateOf(38))
   })
 })
 

@@ -1,5 +1,6 @@
 import type { Candle } from '../types'
 import { isCryptoSymbol } from '../symbols'
+import { CALIBRATED_HORIZON_SESSIONS } from './calibration'
 import type { FunnelTrace } from './funnelTrace'
 import { round1, type GateCode } from './types'
 
@@ -8,8 +9,8 @@ import { round1, type GateCode } from './types'
 // Stage 3a gave the funnel a record: one row per (name, side) per day, naming
 // the gate that ended its run. A record of refusals is only half an answer,
 // though — "the dead zone turned down 40 names" says nothing until you know what
-// those 40 names went on to do. This module is the other half: ten sessions
-// later it walks that day's refusals, measures what each one did against SPY,
+// those 40 names went on to do. This module is the other half: a calibrated
+// horizon later it walks that day's refusals, measures what each one did vs SPY,
 // and charges the outcome to the gate that refused it.
 //
 // The arithmetic is an OBSERVATION and nothing else. Nothing here is read by the
@@ -51,10 +52,22 @@ import { round1, type GateCode } from './types'
 // Read `saved` as "of the names we did consider, how many did this gate keep us
 // out of", never as the gate's total defensive value.
 
-/** The CALIBRATED horizon — the same ten sessions `gradePrediction` grades a real
- * call at, so a miss and a hit are measured over the same window or the
- * comparison means nothing. */
-export const MISS_HORIZON = 10
+/** The CALIBRATED horizon — the same sessions `gradePrediction` grades a real call
+ * at, so a miss and a hit are measured over the same window or the comparison
+ * means nothing. It is IMPORTED rather than repeated for exactly that reason: the
+ * 10→21 move (CALIB_DEF_VERSION v4) is the second time this number has changed,
+ * and a local copy is how regret quietly ends up measured on a clock the hit
+ * abandoned.
+ *
+ * TWO CONSEQUENCES OF THE LONGER WINDOW, stated rather than discovered later.
+ * `maturedTraceDate` now waits 21 SPY sessions after a trace day before that day
+ * may be worked, so the regret ledger runs about a fortnight further behind the
+ * board than it did — the cadence is unchanged (one day per pass, newest matured
+ * first) and the 60-day prune still cannot reach a day that has not been worked.
+ * `MISS_FETCH_BUDGET` is untouched and still holds: the budget bounds ONE day's
+ * fetches, and a day's refusal count is a property of the funnel, not of how long
+ * the ledger waited to price it. */
+export const MISS_HORIZON = CALIBRATED_HORIZON_SESSIONS
 /** ±5pp (spec §4.3). See the header: deliberately five times the hit bar. */
 export const MISS_EXCESS_MIN = 5
 /** Names still in the grading run's candle cache cost nothing. Everything else is
@@ -113,7 +126,7 @@ export function regretDisabled(): boolean {
  *    measured by NOTHING; a 3c reader must not assume grading covers it
  *    (3b final review, Important 3).
  *  - `called-wildcard` — the EXPERIMENT SLOT took this exact row (Stage 3d). It
- *    is sized, it is graded, and ten sessions later its REAL outcome is charged
+ *    is sized, it is graded, and a calibrated horizon later its REAL outcome is charged
  *    to the gate that had refused it, as `causal` evidence and as one sided
  *    outcome (see `accrueCausalOutcome`). Miss-checking it as well would charge
  *    that same gate a second, stopless copy of the same fortnight — one event,
@@ -150,7 +163,7 @@ export interface MissExample {
   wildcard?: true
   /** Did the reader's quarter-size position come good? Present only on a causal
    * example, because it is the only kind that HAD a position: `hit` is
-   * gradePrediction's own verdict, over the same ten sessions, with the published
+   * gradePrediction's own verdict, over the same calibrated horizon, with the published
    * stop walked. A miss example has no stop and therefore no such answer. */
   hit?: boolean
 }
@@ -162,7 +175,7 @@ export interface MissExample {
  * position: no stop was ever published for it, so the excess is what was
  * available rather than what would have been got (rule 2 of the header). The
  * wildcard slot buys the other kind, one row at a time: it takes a trade a gate
- * refused, at a quarter of the rung, with a real stop, and ten sessions later
+ * refused, at a quarter of the rung, with a real stop, and a calibrated horizon later
  * this is where that outcome lands.
  *
  * ADDITIVE and OPTIONAL. Absent means "no experiment has ever graded against this
@@ -249,8 +262,9 @@ export function normaliseMissLedger(raw: unknown): MissLedger {
 }
 
 /** THE ENTRY BASIS, MIRRORED FROM `gradePrediction` (calibration.ts) LINE FOR
- * LINE — the entry session's OPEN for both the name and SPY, the close ten
- * sessions on, side-adjusted, rounded at the same place with the sign applied
+ * LINE — the entry session's OPEN for both the name and SPY, the close
+ * MISS_HORIZON sessions on, side-adjusted, rounded at the same place with the
+ * sign applied
  * INSIDE the rounding. If these two ever diverge, a miss and a hit stop being
  * commensurable and every cost/saved comparison downstream is measuring two
  * different things. A test pins the equality on a shared fixture, on both sides.

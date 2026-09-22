@@ -314,7 +314,9 @@ describe('the wildcard publishes — quarter size, real stop, no leverage', () =
         riskPct: 0.25,
         catalyst: { kind: WILDCARD_CATALYST_KIND, reason: 'closed' },
         wildcard: { gate: 'dead-zone-core', priority: 1, hypothesis: 'closed', gateEvidenceN: 0 },
+        // the slot is released by the CALIBRATED grade, which is outcome21 since v4
         outcome10: { excessPct: 3, rawPct: 3, spyPct: 0, stopped: false, hit: true },
+        outcome21: { excessPct: 3, rawPct: 3, spyPct: 0, stopped: false, hit: true },
       } as unknown as Prediction,
     ])
     const board = boardOf(await buildBoard(store, gatesOnlyDeps(), NOW))
@@ -590,9 +592,14 @@ describe('the causal write-back — the one measurement in this engine that is n
   // boolean: a row graded before this field existed carries `booked: undefined`,
   // which must read as "settled long ago", never as "owed". `false` is written
   // WITH the grade, so only a row this engine graded can ever be re-offered.
+  // …and "graded" means the CALIBRATED grade, which since CALIB_DEF_VERSION v4 is
+  // `outcome21`. A row carrying only the 10 lens has NOT been graded — it has one
+  // ledger reading and no verdict — so this fixture plants both, which is what a
+  // row graded under an earlier deploy and left alone actually looks like.
   it('a wildcard graded before the receipt existed is never re-booked', async () => {
+    const graded = { excessPct: 9, rawPct: 10, spyPct: 1, stopped: false, hit: true }
     const store = await gradedStore([
-      gRow('WON', { outcome10: { excessPct: 9, rawPct: 10, spyPct: 1, stopped: false, hit: true } } as Partial<Prediction>),
+      gRow('WON', { outcome10: graded, outcome21: graded } as Partial<Prediction>),
     ])
     await gradeOutstanding(store, gDeps(), GNOW, null)
     expect(await store.read<MissLedger>(MISS_LEDGER_KEY)).toBeNull()

@@ -8,6 +8,7 @@ import { momentumFactor, seasonalityFactor, technicalFactor } from './factors'
 import { composeCall, DEFAULT_WEIGHTS } from './composite'
 import {
   CALIB_DEF_VERSION,
+  CALIBRATED_HORIZON_SESSIONS,
   HIT_EXCESS_MIN,
   initWeights,
   maybeNudgeWeights,
@@ -21,9 +22,12 @@ import { isRejection, round1, type FactorName, type FactorScore, type Prediction
 // Pre-seeds the engine from candle history: only the factors computable from
 // bars alone (technical, momentum, seasonality) replay; the rest start at
 // neutral prior weight and learn live. Weekly sampling (step 5) keeps the seed
-// sample count up; at the 10-session horizon adjacent windows now overlap ~1wk,
-// which mildly correlates neighbouring outcomes but is fine for a PRIOR (live
-// grading is non-overlapping). Deterministic by construction — no clocks, no RNG.
+// sample count up; at the 21-session calibrated horizon adjacent windows now
+// overlap ~3wk, which correlates neighbouring outcomes more than the 10d walk did
+// but is still fine for a PRIOR (live grading is non-overlapping). Stated rather
+// than hidden: the seed's effective sample is smaller than its `n` implies, and it
+// is a prior the live loop overwrites. Deterministic by construction — no clocks,
+// no RNG.
 // The replay regime matches the live engine's: SPY+QQQ slope, refined by
 // universe breadth and the VIX level (both optional — omitted, the base
 // SPY-slope read stands alone, as before).
@@ -34,16 +38,20 @@ import { isRejection, round1, type FactorName, type FactorScore, type Prediction
 // capacity threshold, so every FUTURE regeneration samples a different
 // population from the committed `seed.json`, which was replayed under the old
 // flat capacity floors. That is a scoring-epoch difference, not a hit-definition
-// one: CALIB_DEF_VERSION stays 3 (the seed's buckets still measure the same
-// 10-session excess) and the two epochs are distinguished by
+// one: CALIB_DEF_VERSION is unmoved by it (the seed's buckets still measure the
+// same calibrated excess) and the two epochs are distinguished by
 // ENGINE_MODEL_VERSION on the rows they produce. Do not mix a regenerated seed
 // with the committed one — regenerate whole.
 
 const STEP = 5
 const WARMUP = 80
-// the CALIBRATED horizon — reader holds 1-2wk+, so a hit is the 10-session
-// excess vs SPY (matches gradePrediction's 10d lens + CALIB_DEF_VERSION v3)
-const HORIZON = 10
+// THE CALIBRATED HORIZON, imported rather than repeated. The reference sweep this
+// module emits produces `referenceBase` — the anchor every grade is measured
+// against (spec §9) — and the emitter only RANGE-CHECKS that number, so a walk
+// swept at a different horizon from the one `gradePrediction` grades at would
+// install silently and anchor every letter to an outcome definition nobody is
+// being scored on. One constant, one definition (calibration.ts).
+const HORIZON: number = CALIBRATED_HORIZON_SESSIONS
 
 const nullFactors = (): Record<FactorName, FactorScore> => ({
   technical: { score: null, detail: '' },

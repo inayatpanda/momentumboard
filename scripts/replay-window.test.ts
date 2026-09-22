@@ -615,7 +615,7 @@ describe('brierOf', () => {
     // which is why brierOf exists at all — this pins the two to one definition.
     const rows = [row({ probability: 0.6, outcome10: o(true) }), row({ probability: 0.3, outcome10: o(false) }), row({ probability: 0.5, outcome10: o(true) })]
     const mine = brierOf(rows)
-    const theirs = brierPoint(rows.map(r => ({ probability: r.probability, outcome10: { ...r.outcome10!, rawPct: 0, spyPct: 0 } })))
+    const theirs = brierPoint(rows.map(r => ({ probability: r.probability, outcome: { ...r.outcome10!, rawPct: 0, spyPct: 0 } })))
     expect(mine.n).toBe(3)
     expect(mine.mean!).toBeCloseTo(theirs!, 12)
     expect(mine.mean!).toBeCloseTo((0.4 ** 2 + 0.3 ** 2 + 0.5 ** 2) / 3, 12)
@@ -1158,7 +1158,9 @@ describe('seedArtefactFrom — guarantee 1: the artefact describes ITSELF', () =
     // sees the number, not that migrateCalibration would have backfilled one.
     const cal = (JSON.parse(JSON.stringify(emit())) as SeedArtefact).calibration
     expect(cal.defVersion).toBe(CALIB_DEF_VERSION)
-    expect(cal.defVersion).toBe(3) // pinned as a literal: the hit definition does NOT move in stage 2b
+    // pinned as a literal so a hit-definition change has to come here and say so:
+    // 3 until 2026-09-22, when the calibrated horizon moved 10 → 21 sessions
+    expect(cal.defVersion).toBe(4)
     expect(cal.modelVersion).toBe(ENGINE_MODEL_VERSION)
     expect(cal.seedGeneration).toBe(2)
     expect(cal.seeded).toBe(true)
@@ -1519,7 +1521,7 @@ describe('--seed-out: the flags refuse to guess', () => {
 })
 
 describe('--seed-out: the walk serialises what it learned', () => {
-  it('emits a v3 artefact from the carrying store, and a crypto name in the universe contributes nothing', async () => {
+  it('emits a current-definition artefact from the carrying store, and a crypto name in the universe contributes nothing', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'replay-seed-'))
     const ts = busDays(WALK_BARS)
     const write = (sym: string, candles: Candle[]) =>
@@ -1648,7 +1650,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
     expect(art.calibration.evidence!.seed.n).toBeGreaterThan(0) // the window is long enough to grade something
 
     // guarantees 1, 2, 6 on the file the next task actually copies over seed.json
-    expect(art.calibration.defVersion).toBe(3)
+    expect(art.calibration.defVersion).toBe(4) // the 21-session hit (CALIB_DEF_VERSION v4)
     expect(art.calibration.modelVersion).toBe(3)
     expect(art.calibration.seedGeneration).toBe(5) // 5: the committed seed is generation 4 since 2026-08-13, and the floor refuses ≤4
     expect(art.weights.seedGeneration).toBe(art.calibration.seedGeneration)
@@ -2075,7 +2077,7 @@ describe('completedCryptoTail — the cache is cut at the FETCH clock, not the r
 
 describe('postMortemViolations — the crypto partition explains itself to nobody, and that is the design', () => {
   const led = (over: Partial<Row>): { date: string; board: Row[]; ledger: Row[] }[] => [
-    { date: '2026-07-14', board: [], ledger: [row({ storedOutcome10: { hit: false, excessPct: -9, stopped: true }, ...over })] },
+    { date: '2026-07-14', board: [], ledger: [row({ storedOutcomeCalibrated: { hit: false, excessPct: -9, stopped: true }, ...over })] },
   ]
   it('still fails an EQUITY loser that explains nothing', () => {
     expect(postMortemViolations(led({})).join('\n')).toMatch(/explains nothing/)
@@ -2088,12 +2090,17 @@ describe('postMortemViolations — the crypto partition explains itself to nobod
   })
 })
 
-describe('gradedOnDate — eleven SESSIONS, expressed in whatever days the spine keeps', () => {
+describe('gradedOnDate — HORIZON + 1 sessions, expressed in whatever days the spine keeps', () => {
   const spy = [day('2026-07-01', 1), day('2026-07-02', 1), day('2026-07-06', 1), day('2026-07-07', 1), day('2026-07-08', 1)]
-  it('is dates[i + 11] on an equity spine — the rule that shipped, unchanged', () => {
-    const dates = Array.from({ length: 20 }, (_, k) => `2026-07-${String(k + 1).padStart(2, '0')}`)
-    expect(gradedOnDate(dates, null, 0)).toBe(dates[11])
-    expect(gradedOnDate(dates, null, 3)).toBe(dates[14])
+  // eleven until CALIB_DEF_VERSION v4 moved the calibrated grade to 21 sessions.
+  // The RULE is unchanged and is what this pins: a row published on walk day i is
+  // first gradeable on walk day i + POSTMORTEM_HORIZON_MIRROR + 1, so the offset is
+  // read off the constant rather than written out.
+  const AFTER = POSTMORTEM_HORIZON_MIRROR + 1
+  it('is dates[i + horizon + 1] on an equity spine — the rule that shipped, unchanged', () => {
+    const dates = Array.from({ length: 40 }, (_, k) => `2026-07-${String(k + 1).padStart(2, '0')}`)
+    expect(gradedOnDate(dates, null, 0)).toBe(dates[AFTER])
+    expect(gradedOnDate(dates, null, 3)).toBe(dates[3 + AFTER])
   })
   it('and the last walked day when the window ends before the grade could land', () => {
     expect(gradedOnDate(['a', 'b', 'c'], null, 0)).toBe('c')
@@ -2240,7 +2247,7 @@ describe('missAccrualViolations — one day per pass, and never twice', () => {
 describe('postMortemViolations — every graded loser explains itself', () => {
   const graded = (over: Partial<Keyed> = {}, o: { hit: boolean; stopped: boolean; excessPct: number } | null = { hit: false, stopped: true, excessPct: -6 }, pm?: PostMortemLike | null) => ({
     ...row(over),
-    storedOutcome10: o,
+    storedOutcomeCalibrated: o,
     ...(pm === undefined ? {} : { postMortem: pm }),
   })
   const pm = (over: Partial<PostMortemLike> = {}): PostMortemLike => ({ cls: 'stopped', detail: 'closed through the 9 stop', at: 1_700_000_000, ...over })
@@ -2320,7 +2327,7 @@ describe('the walk measures regret — and the board still never noticed', () =>
    * gets could only have come from the regret machinery.
    *
    * The comparison is over PUBLISHED FIELDS. `postMortem` is additive on a ledger
-   * row and `storedOutcome10` is the harness reading the engine's grade back, so
+   * row and `storedOutcomeCalibrated` is the harness reading the engine's grade back, so
    * both are stripped BY NAME — and the strip is not a loophole, because the test
    * separately asserts that those two are the ONLY keys the active run's rows
    * carry that the stubbed run's do not. */
@@ -2424,9 +2431,9 @@ describe('the walk measures regret — and the board still never noticed', () =>
         const mirror = [...off.days[i].board, ...off.days[i].ledger][j]
         for (const k of Object.keys(r)) if (!(k in mirror)) added.add(k)
       }
-    expect([...added].sort()).toEqual(['postMortem', 'storedOutcome10'])
+    expect([...added].sort()).toEqual(['postMortem', 'storedOutcomeCalibrated'])
     // …and once they are stripped, every published field is byte-identical
-    const strip = ({ postMortem: _p, storedOutcome10: _s, ...rest }: RunFile['days'][number]['board'][number]) => rest
+    const strip = ({ postMortem: _p, storedOutcomeCalibrated: _s, ...rest }: RunFile['days'][number]['board'][number]) => rest
     const published = (r: RunFile) =>
       JSON.stringify(r.days.map(d => ({ date: d.date, regime: d.regime, rosterSize: d.rosterSize, baseRate: d.baseRate, shape: d.shape, board: d.board.map(strip), ledger: d.ledger.map(strip) })))
     expect(published(off)).toBe(published(live))
@@ -2496,7 +2503,7 @@ const graded = { hit: true, excessPct: 7.8, stopped: false }
 
 describe('wildcardCensus — the experiments, read back out of a walk', () => {
   it('reads the record off the row, stamps the session, and dedupes the two cuts', () => {
-    const days = seat(blankWalk(3), 1, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'cleared the bar', at: 1 } })
+    const days = seat(blankWalk(3), 1, { storedOutcomeCalibrated: graded, postMortem: { cls: 'won', detail: 'cleared the bar', at: 1 } })
     const c = wildcardCensus(days)
     expect(c).toHaveLength(1)
     expect(c[0]).toMatchObject({ at: 1, date: '2026-07-02', sym: 'WILD', side: 'long', gate: 'entry-wait', priority: 1, gateEvidenceN: 0, riskPct: 0.25 })
@@ -2519,7 +2526,7 @@ describe('wildcardCensus — the experiments, read back out of a walk', () => {
 })
 
 describe('wildcardViolations — what the slot may never do over a window', () => {
-  const clean = () => seat(blankWalk(4), 1, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) })
+  const clean = () => seat(blankWalk(4), 1, { storedOutcomeCalibrated: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) })
   const ledgerFor = (date = '2026-07-02') => causalLedger('entry-wait', [{ date, sym: 'WILD', side: 'long', excessPct: 7.8, hit: true }])
 
   it('a clean window says nothing', () => {
@@ -2545,17 +2552,17 @@ describe('wildcardViolations — what the slot may never do over a window', () =
 
   it('ONE SLOT ACROSS DAYS — and the .slice(-10) boundary is where it is tested', () => {
     // released exactly at lookback + 1 sessions: legal, and the whole cadence
-    const atRelease = seat(seat(blankWalk(30), 0, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) }), WILDCARD_SLOT_LOOKBACK + 1, {}, 'LATER')
+    const atRelease = seat(seat(blankWalk(30), 0, { storedOutcomeCalibrated: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) }), WILDCARD_SLOT_LOOKBACK + 1, {}, 'LATER')
     const led = causalLedger('entry-wait', [{ date: atRelease[0].date, sym: 'WILD', side: 'long', excessPct: 7.8, hit: true }])
     expect(wildcardViolations(atRelease, led).filter(v => /spent the slot/.test(v))).toEqual([])
     // …and ONE session earlier is two experiments running at once
-    const early = seat(seat(blankWalk(30), 0, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) }), WILDCARD_SLOT_LOOKBACK, {}, 'LATER')
+    const early = seat(seat(blankWalk(30), 0, { storedOutcomeCalibrated: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) }), WILDCARD_SLOT_LOOKBACK, {}, 'LATER')
     expect(wildcardViolations(early, led).some(v => /spent the slot 1 session\(s\) early/.test(v))).toBe(true)
   })
 
   it('the shape of an experiment: size, accrual, contract, stop, and the funnel record', () => {
     const bad = (over: Partial<Keyed>, trace?: DayTrace) => {
-      const d = seat(blankWalk(4), 1, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }), ...over })
+      const d = seat(blankWalk(4), 1, { storedOutcomeCalibrated: graded, postMortem: { cls: 'won', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }), ...over })
       if (trace) d[1] = { ...d[1], trace }
       return wildcardViolations(d, ledgerFor())
     }
@@ -2580,7 +2587,7 @@ describe('wildcardViolations — what the slot may never do over a window', () =
     const open = seat(blankWalk(4), 1)
     expect(wildcardViolations(open, ledgerFor()).some(v => /before the engine ever graded it/.test(v))).toBe(true)
     // graded, charged, and no receipt
-    const noReceipt = seat(blankWalk(4), 1, { storedOutcome10: graded, postMortem: { cls: 'won', detail: 'x', at: 1 } })
+    const noReceipt = seat(blankWalk(4), 1, { storedOutcomeCalibrated: graded, postMortem: { cls: 'won', detail: 'x', at: 1 } })
     expect(wildcardViolations(noReceipt, ledgerFor()).some(v => /booked=undefined/.test(v))).toBe(true)
     // the wrong gate
     expect(
@@ -2616,7 +2623,7 @@ describe('wildcardViolations — what the slot may never do over a window', () =
   })
 
   it('a WINNING experiment is examined too — that asymmetry is what the slot ended', () => {
-    const won = seat(blankWalk(4), 1, { storedOutcome10: graded, postMortem: { cls: 'stopped', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) })
+    const won = seat(blankWalk(4), 1, { storedOutcomeCalibrated: graded, postMortem: { cls: 'stopped', detail: 'x', at: 1 }, wildcard: wcRecord({ booked: true }) })
     expect(wildcardViolations(won, ledgerFor()).some(v => /won and reads 'stopped'/.test(v))).toBe(true)
   })
 
@@ -2649,7 +2656,7 @@ describe('wildcardControlledDiff — the lane changes nothing it was not given',
 
   it('a row moving BEFORE the first outcome accrues is the lane perturbing the board', () => {
     const { off, on } = arms(30)
-    seat(on, 0, { storedOutcome10: graded })
+    seat(on, 0, { storedOutcomeCalibrated: graded })
     ordinary(off, 2, { probability: 0.45 }); ordinary(on, 2, { probability: 0.46 })
     const d = wildcardControlledDiff(runOf(off), runOf(on))
     expect(d.firstAccrual).toBe(POSTMORTEM_HORIZON_MIRROR + 1)
@@ -2659,7 +2666,7 @@ describe('wildcardControlledDiff — the lane changes nothing it was not given',
 
   it('…and the SAME move after it is the one channel the design ratified', () => {
     const { off, on } = arms(30)
-    seat(on, 0, { storedOutcome10: graded })
+    seat(on, 0, { storedOutcomeCalibrated: graded })
     const at = POSTMORTEM_HORIZON_MIRROR + 2
     ordinary(off, at, { probability: 0.45, grade: 'C' }); ordinary(on, at, { probability: 0.46, grade: 'B' })
     const d = wildcardControlledDiff(runOf(off), runOf(on))
@@ -2671,7 +2678,7 @@ describe('wildcardControlledDiff — the lane changes nothing it was not given',
 
   it('a composite, a level or an accrual stamp moving is a lane reaching where it was never given', () => {
     const { off, on } = arms(30)
-    seat(on, 0, { storedOutcome10: graded })
+    seat(on, 0, { storedOutcomeCalibrated: graded })
     const at = POSTMORTEM_HORIZON_MIRROR + 2
     ordinary(off, at, { composite: 40 }); ordinary(on, at, { composite: 41 })
     const d = wildcardControlledDiff(runOf(off), runOf(on))
@@ -2681,12 +2688,12 @@ describe('wildcardControlledDiff — the lane changes nothing it was not given',
 
   it('a size may move only behind a grade that moved', () => {
     const { off, on } = arms(30)
-    seat(on, 0, { storedOutcome10: graded })
+    seat(on, 0, { storedOutcomeCalibrated: graded })
     const at = POSTMORTEM_HORIZON_MIRROR + 2
     ordinary(off, at, { riskPct: 1 }); ordinary(on, at, { riskPct: 0.5 })
     expect(wildcardControlledDiff(runOf(off), runOf(on)).unearned.map(u => u.fields)).toEqual([['riskPct'], ['riskPct']])
     const b = arms(30)
-    seat(b.on, 0, { storedOutcome10: graded })
+    seat(b.on, 0, { storedOutcomeCalibrated: graded })
     ordinary(b.off, at, { riskPct: 1, grade: 'B' }); ordinary(b.on, at, { riskPct: 0.5, grade: 'C' })
     const d = wildcardControlledDiff(runOf(b.off), runOf(b.on))
     expect(d.unearned).toEqual([])

@@ -86,8 +86,56 @@ export const HIT_EXCESS_MIN = 1
  * at 10d 2026-07-16. A hit is now the 10-session excess-vs-SPY, not the 5-session
  * one, so every pre-v3 live bucket is discarded on load and rebuilt from the 10d
  * seed. Grading still stores outcome5/10/21 — the ledger keeps all three lenses;
- * only what CALIBRATION learns moved to 10d. */
-export const CALIB_DEF_VERSION = 3
+ * only what CALIBRATION learns moved to 10d.
+ *
+ * v4 (2026-09-22, owner ruling "option 1"): calibrated horizon 10→21 sessions.
+ * The reader holds one to two weeks and up to a month, and the walk-forward study
+ * (docs/superpowers/plans/2026-09-22-discovery-walk-forward-results.md) found what
+ * little signal there is strengthens at the longer horizon. A hit is now the
+ * 21-session excess-vs-SPY with no close through the stop inside those 21
+ * sessions — `CALIBRATED_OUTCOME` below is the one place that name lives.
+ *
+ * THERE IS NO v4 SEED YET. The committed generation-4 artefact (seed.json) was
+ * walked at 10d and carries `defVersion: 3`, so `loadState` REFUSES to install it
+ * and the engine starts cold: empty v4 buckets, everything pooling to the base
+ * rate, every published row grade C until a regenerated v4 seed lands. That is the
+ * honest cost of moving the definition and is deliberately not softened by
+ * carrying the 10d buckets forward — they counted a different thing.
+ *
+ * outcome5 and outcome10 are STILL STORED AND STILL DISPLAYED (the ledger keeps
+ * all three lenses); they simply train nothing any more. */
+export const CALIB_DEF_VERSION = 4
+
+/** THE CALIBRATED OUTCOME — the ONE name for the lens every equity learning seam
+ * reads: the calibration buckets, the setup buckets, the factor IC, the Brier
+ * trail, the risk ladder's counters and evidence window, the scorecard panes, the
+ * lifetime counters and the wildcard's causal outcome. One constant, so the
+ * horizon can only ever be moved in one place and cannot drift between seams.
+ *
+ * It is a `Prediction` FIELD NAME rather than a session count because that is what
+ * every seam actually needs, and because the two partitions disagree about the
+ * count: this module's `21` is 21 SESSIONS, while a `cohort: 'crypto'` row stores
+ * 29 crypto bars under `outcome21` and grades on its own constant
+ * (`CRYPTO_GRADE_HORIZON`, cryptoCalibration.ts). The crypto partition is not
+ * governed by this constant and never reads it. */
+export const CALIBRATED_OUTCOME = 'outcome21' as const
+
+/** …and the same horizon as a SESSION COUNT, for the two callers that grade a row
+ * themselves instead of reading a stored field: `gradePrediction`'s horizon
+ * argument (the grading pass passes it explicitly, lens by lens) and the
+ * reference sweep in backtest.ts, whose `referenceBase` must be measured on the
+ * SAME hit the buckets beside it were measured on — the emitter only range-checks
+ * the number it gets, so a horizon mismatch there would install silently and
+ * every grade would be struck against an anchor from a different definition.
+ *
+ * The two constants are one fact and must move together; the test suite pins the
+ * pair so neither can be edited alone. */
+export const CALIBRATED_HORIZON_SESSIONS = 21 as const
+
+/** …and the accessor every seam routes through, so a grep for the calibrated lens
+ * finds one function instead of a field name spelled out in twenty places.
+ * `undefined` means "not matured yet" — the row stays pending. */
+export const calibratedOutcomeOf = (pred: { outcome21?: PredOutcome }): PredOutcome | undefined => pred[CALIBRATED_OUTCOME]
 /** Bump when factor semantics, composition, or bucket interpretation changes.
  * Unlike CALIB_DEF_VERSION this does not redefine a hit; it identifies which
  * scoring model emitted a prediction.
@@ -171,6 +219,31 @@ export interface CalibrationState {
 }
 
 const addEvidence = (a: BucketStat, hit: boolean) => ({ n: a.n + 1, hits: a.hits + (hit ? 1 : 0) })
+
+/** A COLD STATE ON THE CURRENT OUTCOME DEFINITION — what a `CALIB_DEF_VERSION`
+ * change leaves behind when no committed seed can fill the hole (the v4 move:
+ * seed.json was walked at 10d and refuses to install, see `CALIB_DEF_VERSION`).
+ *
+ * EMPTY, NOT MERGED, and that is the whole point: buckets counted under the old
+ * definition are not probabilities about the new one, so carrying them forward
+ * would price every published row off a hit that no longer exists. Everything
+ * pools to the base rate, `probabilityFor` reads its provisional path, and
+ * `gradeFor` answers C until real v4 evidence accrues or a v4 seed lands.
+ *
+ * `seedGeneration: 0` is deliberate and is NOT the legacy "absence means 1": it
+ * means no seed artefact has ever installed here, so the FIRST v4 seed of any
+ * generation supersedes it (`loadState`'s install rule compares two numbers). The
+ * same value, for the same reason, that `emptyCryptoCalibration` uses. */
+export function emptyCalibration(): CalibrationState {
+  return migrateCalibration({
+    buckets: {},
+    setupBuckets: {},
+    brier: [],
+    defVersion: CALIB_DEF_VERSION,
+    modelVersion: ENGINE_MODEL_VERSION,
+    seedGeneration: 0,
+  })
+}
 
 /** Backfill provenance for legacy calibration blobs. Existing seeded state is
  * conservatively labelled seed/prior; all newly graded observations are then
@@ -992,6 +1065,42 @@ export function initWeights(base: Record<FactorName, number> = DEFAULT_WEIGHTS):
   }
 }
 
+/** RETIRE THE FACTOR EVIDENCE MEASURED UNDER A SUPERSEDED OUTCOME DEFINITION.
+ *
+ * `rebaseWeights` already owns the argument (see its header): every agreement and
+ * disagreement in `ic` is a sum of `outcome.excessPct`, so evidence gathered under
+ * one definition of a hit may not steer the nudge loop under another. A
+ * `CALIB_DEF_VERSION` bump is exactly that situation arriving through a different
+ * door — the vector did not change, the YARDSTICK did — so the IC columns and the
+ * nudge cadence are zeroed and the reason is journalled.
+ *
+ * WHAT IS DELIBERATELY KEPT: `base` and `current`. The owner-ratified order has
+ * not moved and no one asked for the live vector to be thrown away; re-basing it
+ * is `rebaseWeights`'s decision to make, on its own trigger, and making it here
+ * would hide a model change inside a horizon change.
+ *
+ * IDEMPOTENT, and silent when there is nothing to retire: the weights blob carries
+ * no `defVersion` of its own (the two blobs are stored separately and a load can
+ * be interrupted between the writes), so "already retired" is read off the state —
+ * all columns zero and no nudge banked. That matters because `loadState` runs on
+ * every board build as well as every grading pass, and only the grading pass
+ * writes back. */
+export function retireIcEvidence(state: WeightsState, dateISO: string, why: string): WeightsState {
+  const cols = Object.values(state.ic ?? {}) as IcStat[]
+  const banked = cols.some(c => c.nAgree > 0 || c.nDisagree > 0 || c.sumAgree !== 0 || c.sumDisagree !== 0) || (state.gradedSinceNudge ?? 0) > 0
+  if (!banked) return state
+  const retired = cols.reduce((s, c) => s + c.nAgree + c.nDisagree, 0)
+  state.ic = Object.fromEntries((Object.keys(state.ic ?? {}) as FactorName[]).map(n => [n, zeroIc()])) as Record<FactorName, IcStat>
+  state.gradedSinceNudge = 0
+  // `changes: {}` and no `ic` number, because nothing was measured and no weight
+  // moved — the entry exists to say WHY the columns behind the next nudge are
+  // empty. Same defensive assumption `rebaseWeights` makes about a stored blob.
+  if (!Array.isArray(state.history)) state.history = []
+  state.history.push({ date: dateISO, changes: {}, evidence: `${why} — ${retired} factor observation(s) retired, IC evidence reset` })
+  if (state.history.length > 100) state.history = state.history.slice(-100)
+  return state
+}
+
 /** Forward-migrate a stored/seeded weights snapshot that predates a newly added
  * factor: backfill any missing key into base/current (from defaults) and ic
  * (zeroed) so an old blob never silently zeroes a new factor's weight. Mutates
@@ -1248,9 +1357,14 @@ export function maybeNudgeWeights(state: WeightsState, dateISO: string): Weights
   return state
 }
 
-// The emitted probability is calibrated on the 10-session outcome (CALIB_DEF_VERSION
-// v3), so Brier — realized vs predicted — must score against outcome10, or it would
-// grade the probability against a horizon it never predicted.
+// The emitted probability is calibrated on ONE outcome, so Brier — realized vs
+// predicted — must score against THAT outcome or it would grade the probability
+// against a horizon it never predicted. For equities that is the 21-session grade
+// (`CALIBRATED_OUTCOME`, CALIB_DEF_VERSION v4); for the crypto partition it is the
+// 14-bar one. Which is why the field here is called `outcome` and not after a
+// horizon: BOTH partitions feed this function, from their own grading sites, each
+// having already resolved its own calibrated lens. Naming a lens here was safe
+// only while the two agreed on the field, and they no longer do.
 //
 // The continuous probability flows in here unchanged, and for a while the trail
 // will MIX epochs: rows stamped modelVersion 2 carry a four-step read, rows
@@ -1259,9 +1373,9 @@ export function maybeNudgeWeights(state: WeightsState, dateISO: string): Weights
 // stamp on each Prediction is what makes the two separable after the fact.
 // `brierImproving` gates risk-rung promotion (riskLadder.ts), so the crossover
 // window is the one place to read the trail with the epoch in mind.
-export function brierPoint(preds: { probability: number; outcome10?: PredOutcome }[]): number | null {
-  const graded = preds.filter(p => p.outcome10)
+export function brierPoint(preds: { probability: number; outcome?: PredOutcome }[]): number | null {
+  const graded = preds.filter(p => p.outcome)
   if (!graded.length) return null
-  const sum = graded.reduce((s, p) => s + (p.probability - (p.outcome10!.hit ? 1 : 0)) ** 2, 0)
+  const sum = graded.reduce((s, p) => s + (p.probability - (p.outcome!.hit ? 1 : 0)) ** 2, 0)
   return sum / graded.length
 }

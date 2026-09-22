@@ -1121,14 +1121,17 @@ export interface Row {
   outcome5?: { hit: boolean; excessPct: number; stopped: boolean } | null
   outcome10?: { hit: boolean; excessPct: number; stopped: boolean } | null
   // ---- read back off the stored prediction at walk end (Stage 3b) ----
-  /** THE ENGINE'S OWN 10-session grade, as it stands in `predictions:${date}` when
-   * the walk finishes — NOT `outcome10` above, which the harness recomputes over
+  /** THE ENGINE'S OWN CALIBRATED grade — `outcome21` since CALIB_DEF_VERSION v4,
+   * `outcome10` before it — as it stands in `predictions:${date}` when the walk
+   * finishes. NOT `outcome5`/`outcome10` above, which the harness recomputes over
    * the full untruncated history for every row including the ones the engine
    * never got to grade. The post-mortem invariant is about what the ENGINE
-   * classified of what the ENGINE graded, so it reads this and only this.
+   * classified of what the ENGINE graded, so it reads this and only this — and it
+   * is named for the ROLE rather than the horizon precisely because the horizon
+   * has now moved twice.
    * `null` = the engine never graded the row; absent = the walk could not read it
    * back at all (a near miss, or a pre-Stage-3b tree). */
-  storedOutcome10?: { hit: boolean; excessPct: number; stopped: boolean } | null
+  storedOutcomeCalibrated?: { hit: boolean; excessPct: number; stopped: boolean } | null
   /** The deterministic post-mortem the engine stamped on this row when it graded
    * it a loser (postMortem.ts). ADDITIVE and always optional — it is written
    * ELEVEN sessions after the day that published the row, so it is backfilled at
@@ -1473,9 +1476,13 @@ export const POSTMORTEM_CLASS_MIRROR: readonly string[] = ['stopped', 'thesis-br
  * measured day may legally vanish between two passes is `recordMissDay` pruning
  * the oldest once this many are held. */
 export const MISS_LEDGER_DAYS_MAX_MIRROR = 60
-/** postMortem.ts `POSTMORTEM_HORIZON` — the calibrated ten sessions, used here
- * only to work out which morning the engine graded a row on. */
-export const POSTMORTEM_HORIZON_MIRROR = 10
+/** postMortem.ts `POSTMORTEM_HORIZON` — the CALIBRATED horizon, used here only to
+ * work out which morning the engine graded a row on. Ten until
+ * CALIB_DEF_VERSION v4 moved the equity hit to 21 sessions (owner ruling
+ * 2026-09-22); the post-mortem lands with the calibrated grade, so this moved with
+ * it or the walk would re-derive every classification against a question the
+ * engine never asked. */
+export const POSTMORTEM_HORIZON_MIRROR = 21
 /** How many graded losers the walk re-classifies from scratch. Twenty is enough
  * to catch a precedence rule that stopped holding and cheap enough to run on
  * every window: the coverage claim (`classified === losers`) is TOTAL, and this
@@ -1774,10 +1781,10 @@ export function missAccrualViolations(prev: MissLedgerLike | null | undefined, n
 
 /** EVERY GRADED LOSER EXPLAINS ITSELF — and nothing else does.
  *
- * Read off `storedOutcome10`, which is the ENGINE's own grade as it stands in the
+ * Read off `storedOutcomeCalibrated`, which is the ENGINE's own grade as it stands in the
  * prediction blob at walk end, never the harness's independent regrade: the
  * question is whether the engine classified what the engine graded. A row the
- * walk could not read back at all (`storedOutcome10` undefined — a near miss, or
+ * walk could not read back at all (`storedOutcomeCalibrated` undefined — a near miss, or
  * a pre-Stage-3b tree) is skipped rather than failed.
  *
  * …AND A CRYPTO ROW IS NOT ONE OF THEM, by the same exclusion the engine states
@@ -1791,7 +1798,7 @@ export function postMortemViolations(days: { date: string; board: Row[]; ledger:
   const v: string[] = []
   for (const day of days) {
     for (const r of day.ledger) {
-      if (r.storedOutcome10 === undefined) continue
+      if (r.storedOutcomeCalibrated === undefined) continue
       if (r.cohort === 'crypto') {
         // …and the exclusion is asserted in BOTH directions: a crypto row that
         // somehow carried one would mean the engine's own guard had failed.
@@ -1800,7 +1807,7 @@ export function postMortemViolations(days: { date: string; board: Row[]; ledger:
       }
       const key = `${day.date}:${r.sym}:${r.side}`
       const pm = r.postMortem
-      if (!r.storedOutcome10) {
+      if (!r.storedOutcomeCalibrated) {
         if (pm) v.push(`${key}: carries a post-mortem although the engine never graded it`)
         continue
       }
@@ -1810,12 +1817,12 @@ export function postMortemViolations(days: { date: string; board: Row[]; ledger:
       // carry one, a winning anything-else must not, and both then fall through
       // to the same shape checks below.
       const experiment = r.catalyst === WILDCARD_CATALYST_KIND_MIRROR
-      if (r.storedOutcome10.hit && !experiment) {
+      if (r.storedOutcomeCalibrated.hit && !experiment) {
         if (pm) v.push(`${key}: won and still carries a post-mortem — winners get nothing`)
         continue
       }
       if (!pm) {
-        v.push(`${key}: the engine graded it ${r.storedOutcome10.hit ? 'a winning experiment' : 'a loser'} and it explains nothing`)
+        v.push(`${key}: the engine graded it ${r.storedOutcomeCalibrated.hit ? 'a winning experiment' : 'a loser'} and it explains nothing`)
         continue
       }
       if (!POSTMORTEM_CLASS_MIRROR.includes(pm.cls)) v.push(`${key}: '${pm.cls}' is not a declared post-mortem class`)
@@ -1922,13 +1929,15 @@ export interface PostMortemCensus {
 //   · SEPARABLE — see `wildcardControlledDiff`, which does that half against a
 //     lane-off arm of the same window.
 
-/** engine.ts's outstanding scan reads the last ten dated prediction blobs
- * (`predictions-index … .slice(-10)`), and that number is INLINE there — nothing
- * exports it, so this is a mirror with no import to drift against. It is checked
- * below against `POSTMORTEM_HORIZON_MIRROR` instead, which is the check that
- * matters: the two constants together decide whether the slot is released by the
- * experiment's OUTCOME or merely by the window sliding out from under it. */
-export const WILDCARD_SLOT_LOOKBACK = 10
+/** engine.ts's outstanding scan reads the last `CALIBRATED_HORIZON_SESSIONS` dated
+ * prediction blobs (`predictions-index … .slice(-CALIBRATED_HORIZON_SESSIONS)`),
+ * and it is a mirror with no import so the check below has something to fail
+ * against. It is checked against `POSTMORTEM_HORIZON_MIRROR`, which is the check
+ * that matters: the two constants together decide whether the slot is released by
+ * the experiment's OUTCOME or merely by the window sliding out from under it. Ten
+ * until v4 — and with the grade at 21 sessions a ten-date window would have
+ * released every slot eleven sessions before its evidence existed. */
+export const WILDCARD_SLOT_LOOKBACK = 21
 
 /** types.ts's `Prediction['wildcard']`, structurally (see `Row.wildcard`). */
 export interface WildcardRecordLike {
@@ -2005,7 +2014,7 @@ export function wildcardCensus(days: { date: string; board: Row[]; ledger: Row[]
         setup: r.setup,
         regime: r.regime,
         paperOnly: r.side === 'short' && !r.instrument,
-        outcome: r.storedOutcome10 ?? null,
+        outcome: r.storedOutcomeCalibrated ?? null,
         tapeOutcome: r.outcome10 ?? null,
         postMortem: r.postMortem?.cls ?? null,
         booked: r.wildcard?.booked,
@@ -3410,7 +3419,7 @@ export async function main() {
       for (const r of [...day.board, ...day.ledger]) {
         const p = byKey.get(`${r.sym.toUpperCase()}:${r.side}`)
         if (!p) continue // a near miss is on the board and never in the prediction blob
-        r.storedOutcome10 = p.outcome10 ? { hit: p.outcome10.hit, excessPct: p.outcome10.excessPct, stopped: p.outcome10.stopped } : null
+        r.storedOutcomeCalibrated = p.outcome21 ? { hit: p.outcome21.hit, excessPct: p.outcome21.excessPct, stopped: p.outcome21.stopped } : null
         if (p.postMortem) r.postMortem = p.postMortem as PostMortemLike
         // …and the EXPERIMENT'S RECEIPT, for exactly the reason the two above are
         // re-read here: `rowOf` snapshots the row the morning it published, and
@@ -3440,9 +3449,12 @@ export async function main() {
         // explain and quietly move `graded`, `losers` and the hit denominators
         // of an instrument the partition is not part of.
         if ((p as { cohort?: string }).cohort === 'crypto') continue
-        if (!p.outcome10) continue
+        // the CALIBRATED grade (v4: outcome21) — the lens the engine's own
+        // post-mortem is stamped at, or the census counts a different population
+        // from the one it is auditing
+        if (!p.outcome21) continue
         census.graded++
-        if (p.outcome10.hit) continue
+        if (p.outcome21.hit) continue
         census.losers++
         const pm = p.postMortem as PostMortemLike | undefined
         if (!pm) continue
@@ -3463,7 +3475,7 @@ export async function main() {
       samples.push({
         key: l.key,
         row: { side: l.pred.side, date: l.pred.date, stop: l.pred.stop, trail: l.pred.trail, catalyst: l.pred.catalyst ?? null },
-        outcome: l.pred.outcome10!,
+        outcome: l.pred.outcome21!,
         postMortem: l.pred.postMortem as PostMortemLike,
         candles: tape,
       })

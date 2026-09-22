@@ -36,6 +36,9 @@ import {
   baseHitRate,
   brierPoint,
   CALIB_DEF_VERSION,
+  CALIBRATED_HORIZON_SESSIONS,
+  calibratedOutcomeOf,
+  emptyCalibration,
   gradeBaseRate,
   gradeFor,
   gradePrediction,
@@ -45,6 +48,7 @@ import {
   migrateWeights,
   probabilityFor,
   rebaseWeights,
+  retireIcEvidence,
   updateCalibration,
   updateIcStats,
   type CalibrationState,
@@ -445,11 +449,50 @@ async function loadState(store: AppStore, today: string) {
   let calibration = (await store.read<CalibrationState>('engine-calibration')) ?? clone(seed.calibration as unknown as CalibrationState)
   const seedCal = seed.calibration as unknown as CalibrationState
   const seedWeights = seed.weights as unknown as WeightsState
-  // the outcome definition changed → stored buckets counted a different thing
-  // and their hit rates aren't probabilities anymore. Swap in the reseeded
-  // calibration — but only when the committed seed itself is on the current
-  // definition; never regress live state to a stale seed.
-  if (calibration.defVersion !== CALIB_DEF_VERSION && seedCal.defVersion === CALIB_DEF_VERSION) calibration = clone(seedCal)
+  // THE DEFINITION SWAP. The outcome definition changed → stored buckets counted
+  // a different thing and their hit rates aren't probabilities anymore. They are
+  // RETIRED, never merged, and the only question is what stands in their place.
+  //
+  //  · A seed ON THE CURRENT DEFINITION replaces them, exactly as it always has —
+  //    and never a stale one: live state is not regressed to a seed measuring an
+  //    outcome the engine has already moved past.
+  //  · NO SUCH SEED AND THE ENGINE GOES COLD. That is the v4 (10→21 session) case
+  //    today: the committed generation-4 artefact was walked at 10d and still says
+  //    `defVersion: 3`, so it cannot install, and the honest state is EMPTY v4
+  //    buckets — every read pools to the base rate, every published row grades C —
+  //    until a regenerated v4 seed lands. Carrying the 10d buckets forward to
+  //    avoid an all-C board would price the reader's money off a hit definition
+  //    nobody is being scored on, which is the one thing this version gate exists
+  //    to prevent.
+  //
+  // The FACTOR IC goes with them (`retireIcEvidence`): every column in the weights
+  // blob is a sum of `outcome.excessPct` measured under the retired definition, so
+  // feeding it to the nudge loop would let the old yardstick steer the new one. The
+  // ratified weight vector itself is kept — that is `rebaseWeights`'s decision, on
+  // its own trigger, and a horizon change may not smuggle a model change through.
+  if (calibration.defVersion !== CALIB_DEF_VERSION) {
+    const from = calibration.defVersion ?? 1
+    const buckets = Object.keys(calibration.buckets ?? {}).length
+    const setups = Object.keys(calibration.setupBuckets ?? {}).length
+    const brierN = calibration.brier?.length ?? 0
+    const live = calibration.evidence?.live?.n ?? 0
+    if (seedCal.defVersion === CALIB_DEF_VERSION) {
+      calibration = clone(seedCal)
+      console.log(
+        `CALIBRATION: outcome definition v${from} → v${CALIB_DEF_VERSION} — RETIRED ${buckets} bucket(s), ${setups} setup bucket(s) ` +
+          `and ${brierN} Brier point(s) (${live} live rows); reseeded from the committed generation ${seedCal.seedGeneration ?? 1} seed`,
+      )
+    } else {
+      calibration = emptyCalibration()
+      console.log(
+        `CALIBRATION: outcome definition v${from} → v${CALIB_DEF_VERSION} — RETIRED ${buckets} bucket(s), ${setups} setup bucket(s) ` +
+          `and ${brierN} Brier point(s) (${live} live rows). The committed seed is v${seedCal.defVersion ?? 1} and CANNOT install, so the ` +
+          `engine runs on EMPTY v${CALIB_DEF_VERSION} buckets — everything pools to the base rate and every row grades C — until a ` +
+          `v${CALIB_DEF_VERSION} seed lands`,
+      )
+    }
+    weightsBlob = retireIcEvidence(weightsBlob, today, `calibration outcome definition v${from} → v${CALIB_DEF_VERSION}`)
+  }
   // A regenerated seed at the SAME outcome definition announces itself by
   // generation. The stored blob wins forever otherwise — that is correct for
   // live accrual, but it means a better seed could never land (stage 2b).
@@ -458,6 +501,13 @@ async function loadState(store: AppStore, today: string) {
   // Both halves are gated on the SEED's defVersion for the same reason the swap
   // above is: an artefact measuring a different hit must not install, however
   // loudly it announces itself.
+  //
+  // …AND THE REFUSAL IS THE LOUD HALF OF IT TODAY. `seed.json` announces generation
+  // 4 but `defVersion: 3`: it out-ranks anything a cold v4 state carries and would
+  // install on the spot if generation were the only test. It is refused, and the
+  // refusal is logged, because a generation says which WALK measured the buckets
+  // and a defVersion says WHAT it measured — an artefact that measured the wrong
+  // thing does not become right by being newer.
   const seedInstallable = seedCal.defVersion === CALIB_DEF_VERSION
   const storedGen = calibration.seedGeneration ?? 1
   const seedGen = seedCal.seedGeneration ?? 1
@@ -480,6 +530,13 @@ async function loadState(store: AppStore, today: string) {
     console.log(`WEIGHTS: seed generation ${storedWeightsGen} → ${seedWeightsGen} — replacing the learned IC with the deeper seed's`)
     weightsBlob = clone(seedWeights)
   }
+  // …and when it is NOT installable, say so once rather than leaving a production
+  // runlog silent about a seed that is sitting there and will never land.
+  if (!seedInstallable)
+    console.log(
+      `CALIBRATION: the committed seed (generation ${seedGen}, defVersion ${seedCal.defVersion ?? 1}) is REFUSED — it measures outcome ` +
+        `definition v${seedCal.defVersion ?? 1} and the engine grades v${CALIB_DEF_VERSION}. Regenerate the seed at the current horizon.`,
+    )
   // migrateWeights backfills factors added after a snapshot was stored/seeded
   // (seed.json predates smartMoney) so an old blob never silently zeroes them.
   // rebaseWeights then handles the case migrateWeights must NOT: the owner
@@ -610,8 +667,9 @@ const isWildcardRow = (p: Prediction): boolean => p.catalyst?.kind === WILDCARD_
  * It runs BEFORE the miss accrual and therefore before the gate feedback that
  * follows both, on purpose: `accrueCausalOutcome` books into `sidedCost` /
  * `sidedSaved`, which is what eligibility reads, so a causal outcome reaches the
- * feedback loop on the day it grades rather than waiting a further ten sessions
- * for a miss population to mature behind it (the plan's "no lag" clause). Each
+ * feedback loop on the day it grades rather than waiting a further calibrated
+ * horizon for a miss population to mature behind it (the plan's "no lag" clause,
+ * and worth more now that the horizon is 21 sessions). Each
  * hook re-reads the blob for itself, so the two writes cannot clobber one
  * another.
  *
@@ -723,7 +781,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
    * partition's own `newlyGraded`, feeding its own Brier trail. There is no
    * wildcard column: the experiment slot refuses crypto outright
    * (`wildcardLane.ts`), and that exclusion is a Phase-A guard that STAYS. */
-  const cryptoGraded: { probability: number; outcome10?: PredOutcome; shadow: boolean }[] = []
+  const cryptoGraded: { probability: number; outcome?: PredOutcome; shadow: boolean }[] = []
   /** …and the crypto ladder's own evidence window and its own newly-graded
    * count, the exact shape `allOutcomes` / `newByCohort` have for equities. */
   const cryptoOutcomes: OutcomeLite[] = []
@@ -759,7 +817,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // `updateCalibration` (it was the reader's money at a real size),
   // `graded`/`predictions-pending` (it graded), the per-row ledger, and the
   // causal column of the miss ledger, which is the whole reason it was bought.
-  const newlyGraded: { probability: number; outcome10?: PredOutcome; shadow: boolean; wildcard: boolean }[] = []
+  const newlyGraded: { probability: number; outcome?: PredOutcome; shadow: boolean; wildcard: boolean }[] = []
   // each non-shadow outcome carries its cohort so the risk ladder can split large
   // vs small; unknown-cap calls stay in the combined stream but neither sleeve.
   const allOutcomes: (OutcomeLite & { cohort: CapCohortOrUnknown })[] = []
@@ -810,15 +868,38 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       const candles = cryptoBasisRow ? await getCryptoCandles(pred.sym) : await getCandles(pred.sym)
       if (!candles) continue
       /** The three lenses, on whichever clock owns this row. Crypto's are 7 / 14
-       * / 29 CRYPTO BARS — the ×7/5 images of a week, the calibrated horizon and
-       * a month — and they land in the same three fields because renaming them
-       * would rewrite every stored row for a cosmetic gain. `outcome10` is the
-       * calibrated one in both partitions, which is what keeps every "learn at
-       * the 10 field" site below correct without a second test. */
+       * / 29 CRYPTO BARS — the ×7/5 images of a week, its own calibrated horizon
+       * and a month — and they land in the same three fields because renaming them
+       * would rewrite every stored row for a cosmetic gain.
+       *
+       * THE TWO PARTITIONS NO LONGER SHARE A CALIBRATED FIELD (v4). Equity moved
+       * to `outcome21` — 21 sessions, `CALIBRATED_OUTCOME` in calibration.ts —
+       * while crypto's calibrated grade is still `outcome10`, which on a cohort row
+       * means 14 crypto bars (`CRYPTO_GRADE_HORIZON`). So "learn at the calibrated
+       * field" is now TWO sites, one per partition, and each says which it is. */
       const gradeAt = (lens: 0 | 1 | 2, equityHorizon: 5 | 10 | 21) =>
         cryptoBasisRow ? gradeCryptoPrediction(pred, candles, CRYPTO_HORIZONS[lens]) : gradePrediction(pred, candles, spy, equityHorizon)
-      // grading stores all three lenses (5/10/21d); only the 10-session outcome
-      // — the CALIBRATED horizon (reader holds 1-2wk+) — feeds the learning loop.
+      // CONTAINMENT (1c A1): a legacy crypto row RESOLVES — its outcomes fill so
+      // the ledger's history completes and the row stops being outstanding — but
+      // it TEACHES nothing. Its grade was struck against SPY on a clock the asset
+      // doesn't keep; booking it anywhere the equity engine learns (calibration,
+      // IC, Brier, rungs, panes, the gate ledger, the paper's sentence) would be
+      // learning from a measurement the engine now knows was malformed. Phase B
+      // gives crypto its own everything.
+      //
+      // `|| cryptoBasisRow` closes the one seam between the two accrual paths: the
+      // symbol test and the cohort stamp are independent, so a row that were
+      // somehow stamped 'crypto' under a non-crypto symbol would otherwise book
+      // into BOTH blobs. The stamp chose the row's population at publication and is
+      // never revised (the accrual doctrine), so the equity loop refuses anything
+      // the stamp claims — whatever the symbol says.
+      //
+      // HOISTED out of the grade block it used to live in, because the two
+      // partitions now learn at different lenses and both blocks need the answer.
+      const cryptoRow = isCryptoSymbol(pred.sym) || cryptoBasisRow
+      const wildcardRow = isWildcardRow(pred)
+      // grading stores all three lenses (5/10/21d); only ONE of them trains
+      // anything, and which one depends on the partition (see `gradeAt`).
       if (!pred.outcome5) {
         const o = gradeAt(0, 5)
         if (o) {
@@ -826,27 +907,51 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           changed = true
         }
       }
+      // THE 10 LENS. For an equity row this is now a LEDGER LENS ONLY — stored,
+      // displayed, and training nothing (CALIB_DEF_VERSION v4 moved the hit to 21
+      // sessions). For a `cohort: 'crypto'` row it is still the partition's own
+      // calibrated grade at 14 bars, and everything the crypto blob learns, it
+      // learns here — unchanged, deliberately: the crypto partition was not part
+      // of the horizon ruling and its clock did not move.
       if (!pred.outcome10) {
         const o = gradeAt(1, 10)
         if (o) {
           pred.outcome10 = o
-          // CONTAINMENT (1c A1): a legacy crypto row RESOLVES — its outcomes
-          // fill so the ledger's history completes and the row stops being
-          // outstanding — but it TEACHES nothing. Its grade was struck against
-          // SPY on a clock the asset doesn't keep; booking it anywhere the
-          // equity engine learns (calibration, IC, Brier, rungs, panes, the
-          // gate ledger, the paper's sentence) would be learning from a
-          // measurement the engine now knows was malformed. Phase B gives
-          // crypto its own everything.
-          //
-          // `|| cryptoBasisRow` closes the one seam between the two accrual
-          // paths: the symbol test and the cohort stamp are independent, so a
-          // row that were somehow stamped 'crypto' under a non-crypto symbol
-          // would otherwise book into BOTH blobs. The stamp chose the row's
-          // population at publication and is never revised (the accrual
-          // doctrine), so the equity loop refuses anything the stamp claims —
-          // whatever the symbol says.
-          const cryptoRow = isCryptoSymbol(pred.sym) || cryptoBasisRow
+          changed = true
+          // the OTHER partition learns here, in its own object, under its own key
+          // (Phase-A relaxation 1 — see the seam at the top of this function).
+          // `updateCryptoCalibration` forces `capUsdM` to null, so the row books
+          // the cohortless key that is the only scheme this blob will ever hold;
+          // everything else the equity path does — the sized/shadow sub-counts, the
+          // setup-family buckets, the evidence counters — happens INSIDE the crypto
+          // state. Nothing pools: the two objects have no key in common and no read
+          // walks both.
+          if (cryptoBasisRow && !cryptoOff) {
+            updateCryptoCalibration(cryptoCal, pred, o)
+            cryptoGraded.push({ probability: pred.probability, outcome: o, shadow: !!pred.shadow })
+            if (!pred.shadow && !pred.watchOnly) cryptoNewActionable++
+          }
+          // `graded` counts a row once, WHEN ITS OWN CALIBRATED LENS LANDS — here
+          // for a cohort row (14 bars), at the 21 lens below for everything else.
+          // Not gated on `cryptoOff`, exactly as it was not before: the lever
+          // governs accrual, never whether a row that resolved is reported as
+          // resolved.
+          if (cryptoBasisRow) graded++
+        }
+      }
+      // THE CALIBRATED GRADE FOR EVERY EQUITY ROW (CALIB_DEF_VERSION v4, owner
+      // ruling 2026-09-22): 21 sessions — one to two weeks up to a month, the
+      // reader's actual holding period. Calibration buckets, setup buckets,
+      // factor-IC weights, the Brier trail, the scorecard panes, the risk-ladder
+      // counters and the wildcard's causal outcome ALL learn here and nowhere else.
+      // A row therefore stays pending until this lands (~31 sessions with the 21
+      // lens itself needing a full window after the call), which is the honest cost
+      // of grading on the horizon the reader actually trades.
+      if (!pred.outcome21) {
+        const o = gradeAt(2, 21)
+        if (o) {
+          pred.outcome21 = o
+          changed = true
           // EVERY LOSER EXPLAINS ITSELF (postMortem.ts). Deterministic, pure, and
           // computed here because here is the only place the loss and the tape
           // that caused it are both in scope — it rides the store.write below for
@@ -865,7 +970,12 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // wider question: it delegates every loser to `classifyLoser`
           // unchanged, and gives a winner the one class the loser order cannot
           // honestly produce.
-          const wildcardRow = isWildcardRow(pred)
+          //
+          // It moved here WITH the grade, not with the field it used to sit
+          // beside: a post-mortem is "why did the calibrated call fail", and
+          // leaving it at 10d would have it explain a loss the engine is no longer
+          // scored on — and, worse, contradict the grade on rows that recovered or
+          // broke between the two lenses.
           if ((!o.hit || wildcardRow) && !regretDisabled() && !cryptoRow) {
             pred.postMortem = { ...classifyOutcome(pred, o, candles), at: nowSec }
             // …and if the reader had money on it, queue it for the paper's one
@@ -887,22 +997,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // equity gate with it would be exactly the contamination A1 stops.
           // `booked` stays absent — no debt is ever minted, none can go unsettled.
           if (wildcardRow && pred.wildcard && !regretDisabled() && !cryptoRow) pred.wildcard.booked = false
-          // THE calibrated grade: calibration buckets, factor-IC weights, the
-          // Brier trail and the risk-ladder counters all learn here, at 10d.
+          // THE calibrated grade: calibration buckets, setup buckets, factor-IC
+          // weights, the Brier trail and the risk-ladder counters all learn here,
+          // at 21 sessions.
           if (!cryptoRow) updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
-          // …and the OTHER partition learns here, in its own object, under its
-          // own key (Phase-A relaxation 1 — see the seam at the top of this
-          // function). `updateCryptoCalibration` forces `capUsdM` to null, so
-          // the row books the cohortless key that is the only scheme this blob
-          // will ever hold; everything else the equity path does — the
-          // sized/shadow sub-counts, the setup-family buckets, the evidence
-          // counters — happens INSIDE the crypto state. Nothing pools: the two
-          // objects have no key in common and no read walks both.
-          if (cryptoBasisRow && !cryptoOff) {
-            updateCryptoCalibration(cryptoCal, pred, o)
-            cryptoGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow })
-            if (!pred.shadow && !pred.watchOnly) cryptoNewActionable++
-          }
           // …but NOT factor IC for a lane call — ANY lane (LANE_CATALYST_KINDS,
           // catalyst.ts). A lane call carries a constant technical placeholder
           // (dipLane.ts, velocityLane.ts) rather than a measured factor vote, so
@@ -910,8 +1008,9 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // lane's P&L — a signal it never cast. Calibration buckets and setup
           // buckets above still accrue: only factor-IC is excluded.
           if (!LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '') && !cryptoRow) w = updateIcStats(w, pred, o)
-          if (!cryptoRow) newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow, wildcard: wildcardRow })
-          graded++
+          if (!cryptoRow) newlyGraded.push({ probability: pred.probability, outcome: o, shadow: !!pred.shadow, wildcard: wildcardRow })
+          // one row, one count, at its own calibrated lens (see the 10 block)
+          if (!cryptoBasisRow) graded++
           // …and the risk ladder's graded-at-rung counter, which the WILDCARD is
           // blind to (Stage 3d). A wildcard is the engine deliberately overriding
           // its own no at a quarter of the rung; letting that outcome count
@@ -921,21 +1020,14 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // row are ordinary trades the reader carries at full weight, and they
           // go on moving the rung exactly as they always have.
           if (!pred.shadow && !pred.watchOnly && !wildcardRow && !cryptoRow) newByCohort[capCohortOf(pred.capUsdM)]++
-          changed = true
-        }
-      }
-      // ~a month — the reader's stated holding period tops out around 4 weeks,
-      // so the ledger keeps the month-scale truth alongside the 5d/10d reads
-      if (!pred.outcome21) {
-        const o = gradeAt(2, 21)
-        if (o) {
-          pred.outcome21 = o
-          changed = true
         }
       }
       // shadows and watch-only calls feed calibration/IC above but never the
       // risk ladder — the rung is earned on calls the reader could actually take,
-      // on the same 10d outcome the ladder learns from (the calibrated horizon).
+      // on the SAME calibrated outcome the ladder learns from, which since v4 is
+      // the 21-session one (`calibratedOutcomeOf`). The counter above and this
+      // evidence window read one field or they drift apart by exactly the rows
+      // that graded between the two lenses.
       // …and neither does a WILDCARD, for the reason on the counter above: the
       // rung is earned on the calls the engine BELIEVED, and this is the one it
       // published because it did not. The counter and this evidence window must
@@ -947,8 +1039,9 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // tracker carries no gearing, so a routed spot position is an ordinary
       // stop-out and is counted as one. Inert for equity: every equity route is
       // a 2× or 3× ETP, so `leverage > 1` is `!!instrument` there.
-      if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym) && pred.cohort !== 'crypto')
-        allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1, cohort: capCohortOf(pred.capUsdM) })
+      const calibrated = calibratedOutcomeOf(pred)
+      if (calibrated && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym) && pred.cohort !== 'crypto')
+        allOutcomes.push({ hit: calibrated.hit, stopped: calibrated.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1, cohort: capCohortOf(pred.capUsdM) })
       // …and the crypto ladder's evidence window, which is the SAME sentence
       // over a disjoint population: the crypto stream never enters `allOutcomes`
       // (the guard one line up is unconditional and stays that way) and the
@@ -977,9 +1070,9 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // and must read as "settled long ago"; treating absence as a debt would have
       // the first run after this ships re-book every wildcard still inside the
       // 30-date window.
-      if (pred.outcome10 && pred.wildcard?.booked === false && isWildcardRow(pred) && !regretDisabled())
+      if (calibrated && pred.wildcard?.booked === false && isWildcardRow(pred) && !regretDisabled())
         causalOutcomes.push({
-          ev: { date: pred.date, sym: pred.sym, side: pred.side, excessPct: pred.outcome10.excessPct, gate: pred.wildcard.gate, hit: pred.outcome10.hit },
+          ev: { date: pred.date, sym: pred.sym, side: pred.side, excessPct: calibrated.excessPct, gate: pred.wildcard.gate, hit: calibrated.hit },
           pred,
           date,
         })
@@ -1009,7 +1102,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
         thesis: pred.thesis,
         falsifier: pred.falsifier,
         catalyst: pred.catalyst ?? null,
-        outcome: pred.outcome10!,
+        outcome: calibratedOutcomeOf(pred)!,
         postMortem: pred.postMortem!, // mutated in place — it rides the write below
       }))
       const stat = await annotatePostMortems(asks, deps.postMortemSentence)
@@ -1107,9 +1200,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     nowSec,
   )
 
-  // scorecard: the rolled-up honesty pane. Aggregates the 10d outcome — the
-  // calibrated horizon the grades are earned on — so the pane measures the same
-  // thing the engine learned from (the per-row ledger still shows 5d + 10d).
+  // scorecard: the rolled-up honesty pane. Aggregates the CALIBRATED outcome —
+  // 21 sessions since v4 (`calibratedOutcomeOf`) — so the pane measures the same
+  // thing the engine learned from (the per-row ledger still shows all three
+  // lenses, 5d / 10d / 21d, and a row appears here only once the 21 one lands).
   const byGrade: Record<string, { n: number; hits: number; sumExcess: number }> = {}
   const byRegime: Record<string, { n: number; hits: number }> = {}
   const bySetup: Record<string, { n: number; hits: number; sumExcess: number }> = {}
@@ -1149,7 +1243,8 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   for (const date of fullIndex.slice(-30)) {
     const preds = predictionsByDate.get(date) ?? (await store.read<Prediction[]>(`predictions:${date}`)) ?? []
     for (const p of preds) {
-      if (!p.outcome10) continue
+      const o = calibratedOutcomeOf(p)
+      if (!o) continue
       // CONTAINMENT (1c A1): a legacy crypto row's outcome was struck against
       // SPY on the wrong clock — it appears in NO pane. Phase B gives the
       // cohort its own panes.
@@ -1160,21 +1255,21 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // statement, and a shadowed wildcard is not seated at all today.
       const g = (byGrade[p.shadow ? 'shadow' : wildcardRow ? 'wildcard' : p.grade] ??= { n: 0, hits: 0, sumExcess: 0 })
       g.n++
-      if (p.outcome10.hit) g.hits++
-      g.sumExcess += p.outcome10.excessPct
+      if (o.hit) g.hits++
+      g.sumExcess += o.excessPct
       if (p.setup) {
         // per-setup honesty (shadows included — the panes ask "does this SHAPE
         // of call work?", and shadows are exactly the shapes being auditioned;
         // a wildcard is that shape actually carried, with a stop)
         const s = (bySetup[p.setup] ??= { n: 0, hits: 0, sumExcess: 0 })
         s.n++
-        if (p.outcome10.hit) s.hits++
-        s.sumExcess += p.outcome10.excessPct
+        if (o.hit) s.hits++
+        s.sumExcess += o.excessPct
       }
       if (!p.shadow && !wildcardRow) {
         const r = (byRegime[p.regime] ??= { n: 0, hits: 0 })
         r.n++
-        if (p.outcome10.hit) r.hits++
+        if (o.hit) r.hits++
       }
       // …and `'won'` never enters the how-we-lose roll-up. It is the one class
       // that names no failure at all (postMortem.ts's `classifyOutcome`, reachable
@@ -1186,10 +1281,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
         byPostMortem[k] = (byPostMortem[k] ?? 0) + 1
       }
       if (p.overlay) {
-        const o = (overlays[p.overlay.flag] ??= { n: 0, hits: 0 })
-        o.n++
+        const ov = (overlays[p.overlay.flag] ??= { n: 0, hits: 0 })
+        ov.n++
         // a veto "hits" when it dodged a loser; boost/caution graded straight
-        if (p.overlay.flag === 'veto' ? !p.outcome10.hit : p.outcome10.hit) o.hits++
+        if (p.overlay.flag === 'veto' ? !o.hit : o.hit) ov.hits++
       }
     }
   }
@@ -1205,8 +1300,8 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   for (const g of skillGraded) {
     const side = g.shadow ? lifetime.shadow : lifetime.live
     side.graded++
-    if (g.outcome10!.hit) side.hits++
-    side.sumExcess += g.outcome10!.excessPct
+    if (g.outcome!.hit) side.hits++
+    side.sumExcess += g.outcome!.excessPct
   }
   await store.write('engine-scorecard', {
     byGrade,
@@ -2779,10 +2874,18 @@ export async function buildBoard(
   }
 
   // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side
-  // still has a shadow that hasn't reached its calibrated grade (no outcome10) on
-  // a recent prior date — three correlated CEG shorts teach nothing while starving
-  // the tiny shadow budget of fresh names. Gated on outcome10 (not outcome5) so a
-  // slot frees only once its evidence has actually fed the learning loop, at 10d.
+  // still has a shadow that hasn't reached its CALIBRATED grade on a recent prior
+  // date — three correlated CEG shorts teach nothing while starving the tiny shadow
+  // budget of fresh names. Gated on the calibrated outcome (not outcome5, and since
+  // CALIB_DEF_VERSION v4 not outcome10 either) so a slot frees only once its
+  // evidence has actually fed the learning loop — which is now at 21 sessions.
+  // THE LOOKBACK MOVED WITH IT. It was ten dates, which was exactly the old
+  // horizon; leaving it there would release every slot below by the WINDOW sliding
+  // out from under an ungraded row rather than by the row grading, which is the one
+  // thing the rule exists to prevent (the walk pins the identity —
+  // replay-window.ts `WILDCARD_SLOT_LOOKBACK` vs `POSTMORTEM_HORIZON_MIRROR`).
+  // The cost is real and accepted: a name shadowed three weeks ago holds its slot
+  // for three weeks, because that is how long its evidence takes to arrive.
   // Ordinary live (non-shadow) calls are never deduped — on EITHER side of the
   // comparison. An ungraded LIVE call from yesterday holds no shadow slot, and
   // counting it used to make today's shadow of that name vanish from the ledger
@@ -2797,7 +2900,7 @@ export async function buildBoard(
   // signal is counted twice. The promotion's own rank already refuses to re-promote
   // such a name (outstandingObservationKeys, below); the shadow path has to refuse
   // it for the same reason, or the double-count simply moves one lane over.
-  const priorDates = ((await store.read<string[]>('predictions-index')) ?? []).filter(d => d !== today).slice(-10)
+  const priorDates = ((await store.read<string[]>('predictions-index')) ?? []).filter(d => d !== today).slice(-CALIBRATED_HORIZON_SESSIONS)
   const outstandingShadowKeys = new Set<string>()
   /** The same idea one lane over: a PROMOTED OBSERVATION from a recent day that
    * has not graded yet. A promoted row is a live ledger row, not a shadow, so it
@@ -2815,19 +2918,26 @@ export async function buildBoard(
    * a name: an open experiment on ABC blocks a new one on XYZ, which is the whole
    * cadence. The causal evidence is meant to arrive one clean sample at a time.
    *
-   * `outcome10` is the release, exactly as it is for a shadow slot: a wildcard
-   * has closed when the calibrated horizon has graded it, not when the reader
-   * stopped looking at it. And the ten prior dates this loop already reads ARE
-   * that horizon, so the slot reopens about when it should. The honest boundary:
+   * THE CALIBRATED OUTCOME is the release, exactly as it is for a shadow slot: a
+   * wildcard has closed when the calibrated horizon has graded it, not when the
+   * reader stopped looking at it. And the prior dates this loop reads ARE that
+   * horizon (`CALIBRATED_HORIZON_SESSIONS`), so the slot reopens on the session the
+   * grade lands and not one earlier — the identity the walk asserts as a constant
+   * relation rather than a coincidence. The honest boundary:
    * a wildcard whose tape never arrived stops holding the slot once it falls out
    * of this window — which is the same bound the shadow dedup has lived under,
    * and the alternative is one dead name ending the experiment lane for good. */
   let outstandingWildcard = false
   for (const date of priorDates) {
     for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
-      if ((p.shadow || p.observation) && !p.outcome10) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
-      if (p.observation && !p.outcome10) outstandingObservationKeys.add(`${p.sym}:${p.side}`)
-      if (isWildcardRow(p) && !p.outcome10) outstandingWildcard = true
+      // …read through `calibratedOutcomeOf` like every other "has this graded?"
+      // test in the engine. A crypto shadow is held a few bars longer than its own
+      // 14-bar grade needs (its outcome21 is 29 bars) — stated rather than special
+      // -cased: the slot is a budget for fresh NAMES, and one clock for it is worth
+      // more than a partition-aware one.
+      if ((p.shadow || p.observation) && !calibratedOutcomeOf(p)) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
+      if (p.observation && !calibratedOutcomeOf(p)) outstandingObservationKeys.add(`${p.sym}:${p.side}`)
+      if (isWildcardRow(p) && !calibratedOutcomeOf(p)) outstandingWildcard = true
     }
   }
   const pickShadow = (side: 'long' | 'short', cap: number) =>
@@ -3414,13 +3524,13 @@ export async function buildBoard(
             //
             // AND THE SLOT IS NOT SPENT (adjudicated, fix wave F-3). The one-slot
             // invariant is enforced by the outstanding scan, which reads
-            // `predictions:<date>` for a wildcard row with no `outcome10` — and
+            // `predictions:<date>` for a wildcard row with no calibrated outcome — and
             // this row reaches no ledger at all: `shadows` was assembled before
             // this lane ran, so a row pushed into `board` afterwards is in neither
             // collection, and the splice above leaves `board` as it found it. The
             // slot is therefore spent on EVIDENCE and never on an attempt, which
             // is the only reading consistent with why it exists: holding the lane
-            // shut for the ten sessions a refused row would have taken to grade
+            // shut for the calibrated horizon a refused row would have taken to grade
             // would cost the engine a real causal sample to punish it for a bug.
             const at = board.indexOf(row)
             if (at !== -1) board.splice(at, 1)
@@ -3718,6 +3828,11 @@ export async function buildBoard(
     if (prev?.overlay) p.overlay = prev.overlay
     if (prev?.outcome5) p.outcome5 = prev.outcome5
     if (prev?.outcome10) p.outcome10 = prev.outcome10
+    // …and the CALIBRATED one, which a rerun could otherwise drop on a row that
+    // matured between the morning's two passes. It is stored like the other two
+    // (only ~31 sessions of reruns could ever see it here) and losing it would
+    // re-open a settled wildcard debt and re-book a graded row.
+    if (prev?.outcome21) p.outcome21 = prev.outcome21
   }
   await store.write(`predictions:${today}`, final)
   const index = (await store.read<string[]>('predictions-index')) ?? []

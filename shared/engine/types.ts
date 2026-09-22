@@ -281,7 +281,7 @@ export interface Prediction extends GradedCall {
   regime: RegimeColor | 'unknown'
   priceAtPrediction: number
   themes?: string[] // theme tags (themes.ts) — identification, never a score
-  // which clock the row runs on: 'week' = the calibrated call (graded at 10 sessions);
+  // which clock the row runs on: 'week' = the calibrated call (graded at 21 sessions);
   // 'developing' = a watch whose SHAPE is a 2-4 week build (horizon.ts). Presentation-only taxonomy.
   horizon?: Horizon
   capUsdM?: number | null // market cap in $M when known — lets the UI band micro/small/mid/large
@@ -396,7 +396,7 @@ export interface Prediction extends GradedCall {
      *   absent  — this row has not graded yet, OR it graded before the receipt
      *             existed. Either way nothing is owed: a row that predates the
      *             field cannot be re-offered, so no migration can double-count.
-     *   `false` — written WITH the 10d grade: "the ledger is owed this outcome".
+     *   `false` — written WITH the calibrated (21d) grade: "the ledger is owed this outcome".
      *   `true`  — the ledger has it. Written after the blob write returns.
      *
      * Why it exists: the grade is made durable long before the ledger hook runs
@@ -411,7 +411,7 @@ export interface Prediction extends GradedCall {
      * "nothing is owed" — which is right for that run and permanent afterwards,
      * because the debt collector reads `booked === false` and this row never said
      * it. The sample is not lost, only unsettled: `wildcard.gate` beside
-     * `outcome10` is the whole of what `accrueCausalOutcome` needs, so a
+     * `outcome21` is the whole of what `accrueCausalOutcome` needs, so a
      * regret-off window is recoverable BY HAND and never automatically. */
     booked?: boolean
   }
@@ -426,16 +426,21 @@ export interface Prediction extends GradedCall {
   // `stop`, so the calibration contract (CALIB_DEF_VERSION) is untouched; the trail
   // governs the open book's narrative and the £10k book's exits.
   trail?: 'velocity'
+  // THE TWO LEDGER LENSES. Still graded, still stored, still displayed on every
+  // receipt surface — and since CALIB_DEF_VERSION v4 they TRAIN NOTHING. The
+  // calibrated grade is `outcome21` (calibration.ts `CALIBRATED_OUTCOME`).
   outcome5?: PredOutcome
   outcome10?: PredOutcome
-  // WHY IT LOST, decided the moment the 10-session grade lands and never
+  // WHY IT LOST, decided the moment the calibrated (21-session) grade lands and never
   // revisited (postMortem.ts). Written for every graded loser — sized, watch and
   // shadow alike — and for no winner, which is why it is optional: its absence on
   // a graded row means "this one won", and on an ungraded row means "not yet".
   // Purely additive and purely an observation: nothing about the board, the
   // ledger, a grade or a size reads it.
   postMortem?: PostMortem
-  outcome21?: PredOutcome // ~a month — the reader's actual holding period upper bound
+  // THE CALIBRATED OUTCOME (CALIB_DEF_VERSION v4): ~a month, the reader's actual
+  // holding period upper bound, and the one lens every learning seam reads.
+  outcome21?: PredOutcome
 }
 
 export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x))

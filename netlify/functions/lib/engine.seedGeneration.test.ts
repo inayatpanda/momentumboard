@@ -305,14 +305,63 @@ describe('the generation-keyed seed install', () => {
       expect(cal.defVersion).toBe(CALIB_DEF_VERSION)
     })
 
-    it('still refuses to regress live state to a seed on the same retired definition', async () => {
-      seedStub.calibration = seedCal({ defVersion: CALIB_DEF_VERSION - 1 })
-      seedStub.weights = seedW()
+    // …and when there is no seed to swap in, the stored blob is RETIRED rather
+    // than kept. That is the sharper half of the same rule and the v4 (10→21
+    // session) case exactly: the committed artefact still measures the old hit, so
+    // it may not install — and buckets counted under a definition the engine has
+    // moved past are not probabilities about the new one, so they may not stand
+    // either. The honest state is cold, and the engine says so in the runlog.
+    it('retires the stored blob to an EMPTY current-definition state when no seed can replace it', async () => {
+      seedStub.calibration = seedCal({ defVersion: CALIB_DEF_VERSION - 1, seedGeneration: 9 })
+      seedStub.weights = seedW({ seedGeneration: 9 })
 
       const { cal } = await load(storedCal({ defVersion: CALIB_DEF_VERSION - 1 }), storedW())
 
-      expect(cal.buckets[LIVE_KEY]).toEqual({ n: 12, hits: 5 })
+      expect(cal.buckets).toEqual({}) // the retired live bucket is gone…
+      expect(cal.buckets[SEED_KEY]).toBeUndefined() // …and the stale seed did NOT regress it
+      expect(cal.setupBuckets).toEqual({})
+      expect(cal.brier).toEqual([]) // the trail scored a probability against the old horizon
+      expect(cal.defVersion).toBe(CALIB_DEF_VERSION)
+      // seedGeneration 0, not the legacy "absent means 1": no artefact has installed
+      // here, so the FIRST seed on the new definition — whatever its generation —
+      // supersedes this cold state.
+      expect(cal.seedGeneration).toBe(0)
+      expect(logged()).toContain(`outcome definition v${CALIB_DEF_VERSION - 1} → v${CALIB_DEF_VERSION}`)
+      expect(logged()).toContain('CANNOT install')
+    })
+
+    // …and the generation channel cannot talk its way past the definition gate.
+    // `seed.json` announces generation 4 today and would out-rank a cold v4 state
+    // on generation alone; it is refused because a generation says WHICH walk
+    // measured the buckets and defVersion says WHAT it measured.
+    it('refuses a HIGHER-generation seed that measures a retired definition, and says so in the runlog', async () => {
+      seedStub.calibration = seedCal({ defVersion: CALIB_DEF_VERSION - 1, seedGeneration: 4 })
+      seedStub.weights = seedW({ seedGeneration: 4 })
+
+      const { cal, w } = await load(storedCal({ defVersion: CALIB_DEF_VERSION - 1, seedGeneration: 1 }), storedW({ seedGeneration: 1 }))
+
       expect(cal.buckets[SEED_KEY]).toBeUndefined()
+      expect(w.ic.technical).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 }) // the seed's IC never landed…
+      expect(logged()).toContain('is REFUSED')
+      expect(logged()).toContain(`defVersion ${CALIB_DEF_VERSION - 1}`)
+    })
+
+    // THE FACTOR IC GOES WITH THE BUCKETS. Every column is a sum of
+    // `outcome.excessPct` measured under the retired definition, so letting it
+    // steer the nudge loop would have the old yardstick set the new one's weights.
+    // The ratified VECTOR is kept — that is `rebaseWeights`'s call, on its own
+    // trigger, and a horizon change may not smuggle a model change through.
+    it('retires the factor IC alongside the buckets, keeps the weight vector, and journals why', async () => {
+      seedStub.calibration = seedCal({ defVersion: CALIB_DEF_VERSION - 1 })
+      seedStub.weights = seedW({ defVersion: undefined } as Partial<WeightsState>)
+
+      const { w } = await load(storedCal({ defVersion: CALIB_DEF_VERSION - 1 }), storedW())
+
+      expect(w.ic.technical).toEqual({ nAgree: 0, sumAgree: 0, nDisagree: 0, sumDisagree: 0 })
+      expect(w.gradedSinceNudge).toBe(0)
+      expect(w.current.technical).toBe(1.07) // the learned drift is NOT collateral damage
+      expect(w.history.at(-1)!.evidence).toContain('outcome definition')
+      expect(w.history.at(-1)!.evidence).toContain('IC evidence reset')
     })
   })
 
