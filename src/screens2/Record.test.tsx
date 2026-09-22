@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
-import type { JourneyCall, LearningSlice, LedgerDay, RegretGate } from '../lib/apiViews'
+import type { JourneyCall, LearningSlice, LedgerDay, PaperBookSlice, RegretGate } from '../lib/apiViews'
 import type { MissExample } from '../../shared/engine/missLedger'
 import { WILDCARD_WARNING } from '../../shared/engine/voice'
 import Record from './Record'
@@ -19,6 +19,7 @@ vi.mock('../lib/apiViews', async () => {
     ...actual,
     getLearning: () => new Promise<never>(() => {}),
     getLedgerDays: () => new Promise<never>(() => {}),
+    getPaperBook: () => new Promise<never>(() => {}),
   }
 })
 
@@ -110,6 +111,24 @@ describe('Record', () => {
   it('has a heading containing "Track record"', async () => {
     withRouter()
     expect(await screen.findByRole('heading', { name: /track record/i })).toBeInTheDocument()
+  })
+
+  it('shows paper-book drawdown, expectancy, exposure and turnover without a wide table', async () => {
+    const paper: PaperBookSlice = {
+      book: {
+        month: '2026-08', startGBP: 10_000, cash: 7_500,
+        positions: [{ sym: 'NVDA', side: 'long', grade: 'A', openedDate: '2026-08-19', entry: 100, stop: 94, target: 112, qty: 20, costGBP: 2_000 }],
+        closed: [{ sym: 'AMD', side: 'long', grade: 'B', openedDate: '2026-08-01', entry: 100, stop: 94, target: 112, qty: 10, costGBP: 1_000, closedDate: '2026-08-10', exit: 110, plGBP: 100, plPct: 10, reason: 'target' }],
+        history: [{ date: '2026-08-01', equity: 10_000 }, { date: '2026-08-10', equity: 10_500 }, { date: '2026-08-21', equity: 10_100 }],
+      },
+      months: [],
+    }
+    await db.slices.put({ key: 'paper-book', data: paper, fetchedAt: Date.now() })
+    withRouter()
+    const panel = await screen.findByLabelText('Paper book')
+    for (const label of ['Maximum drawdown', 'Profit factor', 'Expectancy', 'Exposure', 'Turnover']) expect(within(panel).getByText(label)).toBeInTheDocument()
+    expect(within(panel).getByRole('link', { name: /NVDA/ })).toHaveAttribute('href', '/app/stock/NVDA')
+    expect(panel.querySelector('table')).toBeNull()
   })
 
   describe('scorecard tiles', () => {
@@ -507,8 +526,8 @@ describe('Record', () => {
     await seedLearning(mkLearning({ calibration: { buckets: {}, brier: [], seeded: true, modelVersion: null, referenceBase: 0.41, evidence: null } }))
     withRouter()
     const cal = await screen.findByLabelText('Calibration')
-    expect(within(cal).getByText(/what the engine predicted \(x\) vs what actually happened \(y\)/i)).toBeInTheDocument()
-    expect(within(cal).getByText(/honest predictions sit on the diagonal/i)).toBeInTheDocument()
+    expect(within(cal).getByText(/which direction and market regime have actually beaten/i)).toBeInTheDocument()
+    expect(within(cal).getByText(/sample size and uncertainty shown/i)).toBeInTheDocument()
   })
 
   describe('regrets', () => {

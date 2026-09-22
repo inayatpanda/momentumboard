@@ -9,14 +9,13 @@ import Today from '../screens2/Today'
 export interface RouteDef {
   path: string
   /** nav highlight group — which tab lights up while this route is active */
-  key: 'today' | 'stocks' | 'intel' | 'record' | 'more'
+  key: 'today' | 'stocks' | 'intel' | 'record' | 'analytics' | 'more'
   label?: string
   /** A LABEL THE LEFT RAIL SHOWS AND THE PHONE NEVER DOES (owner iteration 2:
    * "More section - we can bring more sections from it into main tabs shown
    * outside on Nav bar"). The desktop rail has vertical room the phone's five
    * ratified tabs do not, so these three are promoted out of More there and
-   * hidden below 1024px by CSS alone — no JS width check, so the phone bar is
-   * byte-identical to what was ratified. `key` stays 'more', which is what
+   * hidden below 1024px by CSS alone — no JS width check. `key` stays 'more', which is what
    * keeps the phone's More tab lighting up inside these pages.  */
   railOnly?: true
   component: ComponentType<Record<string, never>> | LazyExoticComponent<ComponentType<Record<string, never>>> | ComponentType<{ sym: string }>
@@ -31,6 +30,7 @@ export const ROUTES: readonly RouteDef[] = [
   { path: '/stock/:sym', key: 'stocks', component: lazy(() => import('../screens2/StockPage')) as RouteDef['component'] },
   { path: '/intel', key: 'intel', label: 'Intel', component: lazy(() => import('../screens2/Intel')) },
   { path: '/record', key: 'record', label: 'Track record', component: lazy(() => import('../screens2/Record')) },
+  { path: '/analytics', key: 'analytics', label: 'Analytics', component: lazy(() => import('../screens2/Analytics')) },
   // the four promoted onto the desktop rail, BEFORE More so they read as
   // siblings of the ratified tabs rather than as an afterthought below it.
   // Owner 2026-08-17 recut the set twice: Gates & learning DEMOTED ("present

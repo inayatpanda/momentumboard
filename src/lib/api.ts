@@ -3,13 +3,24 @@ import type { AppConfig } from '../../shared/config'
 import type { EmptySideReason } from '../../shared/engine/types'
 import type { MissLedgerSummary } from '../../shared/engine/missLedger'
 import type { GateStateSummary } from '../../shared/engine/gateState'
+import type { EngineLabSnapshot, ForecastContract, StrategySleeve } from '../../shared/engine/strategyLab'
 // TYPE-ONLY, and deliberately so: apiViews.ts imports this file for `apiGet`,
 // and a value import back would close the cycle. `ChannelPick` is the client's
 // one mirror of the server's TickerConsensus and belongs beside the board slice
 // it has always ridden — The street's wire carries the same rows, uncapped.
 import type { ChannelPick } from './apiViews'
+import { deviceLlmHeader, hasDeviceGroqKey } from './deviceLlm'
 
 export const getToken = () => localStorage.getItem('mb-token')
+
+/** Validate the shared preview password before storing it. The same endpoint
+ * also accepts the owner's admin token, preserving owner access. */
+export async function unlockWithPassword(password: string): Promise<void> {
+  const candidate = password.trim()
+  const res = await fetch(apiUrl('/api/licences?check=1'), { headers: { 'x-app-token': candidate } })
+  if (!res.ok) throw new Error('incorrect-password')
+  setToken(candidate)
+}
 
 // --- THE DMG FREE TIER (owner decision, 2026-08-15) -------------------------
 // The desktop build bakes a SHARED licence token (VITE_FREE_TOKEN, set only in
@@ -30,7 +41,11 @@ export function seedFreeTierToken(): void {
  * pollinate watchlists between installs (sync.ts / configMirror.ts no-op). */
 export function isSharedFreeToken(): boolean {
   const free = import.meta.env.VITE_FREE_TOKEN
-  return !!free && getToken() === free
+  const token = getToken()
+  // The friends preview replaced the old baked free-tier licence. Keep the
+  // legacy branch only so existing installs remain sync-isolated while they
+  // migrate through the password gate.
+  return token === 'millionaireclub' || (!!free && token === free)
 }
 export const setToken = (t: string) => localStorage.setItem('mb-token', t)
 export const clearToken = () => localStorage.removeItem('mb-token')
@@ -97,6 +112,15 @@ export async function apiGet<T>(path: string): Promise<T> {
   return body.data
 }
 
+/** Device-local BYOK: the key is read from IndexedDB only for an LLM request,
+ * crosses TLS transiently, and is never written to server configuration. */
+export async function apiLlmGet<T>(path: string, keyOverride?: string): Promise<T> {
+  const res = await fetch(apiUrl(path), { headers: { 'x-app-token': getToken() ?? '', ...(await deviceLlmHeader(keyOverride)) } })
+  const body = (await res.json()) as ApiEnvelope<T>
+  if (!body.ok || body.data === undefined) throw new Error(body.error ?? `http-${res.status}`)
+  return body.data
+}
+
 export const getQuotes = (symbols: string[]) =>
   apiGet<{ quotes: (Quote | null)[] }>(`/api/market?type=quote&symbols=${symbols.join(',')}`).then(d => d.quotes)
 
@@ -105,6 +129,19 @@ export const getCandles = (symbol: string, range = '1y') =>
 
 export const getCalendar = (symbols: string[]) =>
   apiGet<{ earnings: { symbol: string; date: string; hour: string; epsEstimate: number | null }[] }>(`/api/market?type=calendar&symbols=${symbols.join(',')}`).then(d => d.earnings)
+
+export interface SecFiling {
+  accession: string
+  form: string
+  filed: string
+  reportDate: string
+  description: string
+  items: string
+  url: string
+}
+
+export const getFilings = (symbol: string) =>
+  apiGet<{ company: string | null; cik: number | null; filings: SecFiling[]; asOf: number; unavailable?: boolean }>(`/api/market?type=filings&symbol=${encodeURIComponent(symbol)}`)
 
 export const getFeed = () =>
   apiGet<{ news: { title: string; url: string; symbols: string[] }[]; videos: { title: string; url: string; channel: string }[] }>('/api/market?type=feed')
@@ -197,17 +234,30 @@ export const getSignalStats = () =>
 export const getSmartMoney = () =>
   apiGet<{ funds: { fund: string; filedAt: string; newPositions: { issuer: string }[]; increased: { issuer: string; pctChange: number }[]; exited: { issuer: string }[] }[]; lagNote: string }>('/api/market?type=smart-money')
 
-interface PulseRow {
+export interface PulseRow {
   sym: string
   name?: string
   redditRank: number | null
   redditMentions: number | null
+  redditUpvotes: number | null
+  redditRankDelta: number | null
+  redditEngagement: number | null
   surging: boolean
   surgeMultiple: number | null
   stocktwits: boolean
   channelNet: number | null
+  channelMentions: number | null
+  channelMentionsPrior: number | null
+  channelVelocity: number | null
+  channelBreadth: number | null
+  channelHype: number
+  channelEvidence: { channel: string; stance: 'bull' | 'bear' | 'neutral'; thesis?: string; levels: number[]; hype: boolean; at: number; url: string }[]
+  evidenceScore?: number
+  scanVelocity?: number | null
   sources: number
   onWatchlist: boolean
+  firstSeenAt?: number
+  observedDays?: number
 }
 
 export const getSocialPulse = () =>
@@ -217,6 +267,37 @@ export const getSocialPulse = () =>
     pulse: PulseRow[]
     at: number
   }>('/api/market?type=social')
+
+export interface SocialMemoryDay {
+  date: string
+  observedAt: number
+  summary: string
+  metrics: {
+    sources: number
+    redditRank: number | null
+    redditMentions: number | null
+    redditUpvotes: number | null
+    surgeMultiple: number | null
+    stocktwits: boolean
+    channelNet: number | null
+    channelMentions: number | null
+    channelBreadth: number | null
+    evidenceScore: number | null
+  }
+  youtube: {
+    at: number
+    title: string
+    channel: string
+    url: string
+    stance: 'bull' | 'bear' | 'neutral'
+    thesis?: string
+    levels: number[]
+    hype: boolean
+  }[]
+}
+
+export const getSocialMemory = (symbol: string) =>
+  apiGet<{ symbol: string; days: SocialMemoryDay[] }>(`/api/market?type=social-memory&symbol=${encodeURIComponent(symbol)}`).then(data => data.days)
 
 // --- THE STREET (owner request) ---------------------------------------------
 // "the summary of youtube video input deserve a section of their own, and there
@@ -265,7 +346,7 @@ export interface StreetWire {
 export const getStreetWire = () => apiGet<StreetWire>('/api/market?type=street')
 
 export const evaluateNote = (text: string, kind: string) =>
-  apiGet<{ take: string }>(`/api/market?type=evaluate-note&text=${encodeURIComponent(text)}&kind=${kind}`).then(d => d.take)
+  apiLlmGet<{ take: string }>(`/api/market?type=evaluate-note&text=${encodeURIComponent(text)}&kind=${kind}`).then(d => d.take)
 
 // `context` (CX-20) is the v2 Ask sheet's own compact JSON of the journey
 // page's hero state — sized/refused/on-demand, grade-or-not, core/lean, the
@@ -273,7 +354,7 @@ export const evaluateNote = (text: string, kind: string) =>
 // as its own query param so the server's 400-char clamp on `q` never touches
 // it. Optional: the legacy AskDesk card calls this with two args, unchanged.
 export const askDesk = (symbol: string, q: string, context?: unknown) =>
-  apiGet<{ answer: string; at: number }>(
+  apiLlmGet<{ answer: string; at: number }>(
     `/api/market?type=ask&symbol=${encodeURIComponent(symbol)}&q=${encodeURIComponent(q)}${context !== undefined ? `&context=${encodeURIComponent(JSON.stringify(context))}` : ''}`,
   )
 
@@ -323,20 +404,28 @@ export const getIpos = () =>
   apiGet<{ upcoming: IpoRow[]; recent: IpoRow[]; at: number }>('/api/market?type=ipos')
 
 export const getTickerBrief = (symbol: string) =>
-  apiGet<{ sym: string; brief: string; at: number }>(`/api/market?type=brief&symbol=${encodeURIComponent(symbol)}`)
+  apiLlmGet<{ sym: string; brief: string; at: number }>(`/api/market?type=brief&symbol=${encodeURIComponent(symbol)}`)
 
 export const getLicences = () =>
   apiGet<{ key: string; label: string; createdAt: number; revoked?: boolean; unlockLink: string }[]>('/api/licences')
 
-export const getLlmKeyStatus = () => apiGet<{ hasKey: boolean }>('/api/config?view=llm-key')
+export const getLegacyLlmKeyStatus = () => apiGet<{ hasLegacyServerKey: boolean }>('/api/config?view=llm-key')
 
-export async function putLlmKey(groqKey: string) {
+/** Device-local status used by the reader-facing Ask sheet. */
+export async function getLlmKeyStatus(): Promise<{ hasKey: boolean }> {
+  return { hasKey: await hasDeviceGroqKey() }
+}
+
+export async function deleteLegacyLlmKey() {
   const res = await fetch(apiUrl('/api/config?view=llm-key'), {
-    method: 'PUT',
-    headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
-    body: JSON.stringify({ groqKey }),
+    method: 'DELETE',
+    headers: { 'x-app-token': getToken() ?? '' },
   })
   if (!res.ok) throw new Error('failed')
+}
+
+export async function probeGroqKey(groqKey: string) {
+  return apiLlmGet<{ provider: string; model: string }>('/api/market?type=llm-probe', groqKey)
 }
 
 export async function createLicence(label: string) {
@@ -374,6 +463,19 @@ export const getReportList = () => apiGet<string[]>('/report?list')
 
 export const getBulletins = () => apiGet<{ date: string; kind: 'premarket' | 'evening' }[]>('/report?bulletins')
 
+export type BulletinKind = 'premarket' | 'evening'
+export interface BulletinEdition {
+  kind: BulletinKind
+  date: string
+  at: number
+  subject: string
+  text: string
+  html: string
+}
+
+export const getBulletinJson = (date: string, kind: BulletinKind) =>
+  apiGet<BulletinEdition>(`/report?format=json&bulletin=${encodeURIComponent(`${date}:${kind}`)}`)
+
 // The paper, inline (CX-19): the same edition the download/print modes serve,
 // as a JSON envelope carrying ready-to-render HTML — so the v2 Intel screen
 // can drop it straight into a sandboxed srcDoc iframe instead of an
@@ -409,7 +511,7 @@ export const getRunlog = () =>
   apiGet<{ at: number; events: number; sent: number; errors: string[] }[]>('/api/config?view=runlog')
 
 export const getAiRead = () =>
-  apiGet<{ text?: string; provider?: string; at?: number; unconfigured?: boolean; empty?: boolean }>('/api/ai')
+  apiLlmGet<{ text?: string; provider?: string; at?: number; unconfigured?: boolean; empty?: boolean }>('/api/ai')
 
 export const getNews = (symbol: string) =>
   apiGet<{ items: { title: string; url: string; publishedSec: number }[] }>(`/api/market?type=news&symbol=${encodeURIComponent(symbol)}`).then(d => d.items)
@@ -491,6 +593,13 @@ export interface EnginePrediction {
   cohort?: 'crypto'
   evidence?: { coverage: number; famAgree: number; contract: boolean; contextPts: number; detail: string }
   factors: Record<string, { score: number | null; detail: string; weight: number }>
+  /** Visible provenance for the campaign-aware engine. Optional for rows
+   * published before the research-lab migration. */
+  campaignId?: string
+  sleeve?: StrategySleeve
+  forecast?: ForecastContract
+  detectedAt?: number
+  availableAt?: number
   overlay?: { flag: string; reason: string }
   themes?: string[]
   capUsdM?: number | null
@@ -692,6 +801,7 @@ export interface IntradayFlagsBlob {
 }
 
 export interface EngineData {
+  engineLab?: EngineLabSnapshot | null
   runStatus?: {
     startedAt: number
     updatedAt: number

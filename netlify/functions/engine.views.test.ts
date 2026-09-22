@@ -71,6 +71,32 @@ describe('engine ?view= slices', () => {
     expect(r.data).not.toHaveProperty('holdingsReads')
   })
 
+  it('?view=board projects the prior takeable board and measured evidence for the decision cockpit', async () => {
+    await seed('engine-board', { date: '2026-08-21', generatedAt: 1_000, regime: 'green', board: [{ sym: 'NEW', side: 'long' }] })
+    await seed('predictions-index', ['2026-08-20', '2026-08-21'])
+    await seed('predictions:2026-08-20', [
+      { sym: 'AAA', side: 'short' },
+      { sym: 'WATCH', side: 'long', watchOnly: true },
+      { sym: 'ROUTELESS', side: 'short', observation: true },
+      { sym: 'SHADOW', side: 'long', shadow: true },
+    ])
+    await seed('engine-scorecard', { lifetime: { live: { graded: 12, hits: 7 } }, brierTail: [{ mean: 0.19 }] })
+    const r = await body(await handler(req('?view=board')))
+    expect(r.data.decision).toEqual({
+      priorDate: '2026-08-20', priorRows: [{ sym: 'AAA', side: 'short' }],
+      liveGraded: 12, liveHits: 7, latestBrier: 0.19,
+    })
+  })
+
+  it('?view=paper-book serves only the simulator and banked-month projection', async () => {
+    await seed('paper-book', { month: '2026-08', startGBP: 10_000, cash: 8_000, positions: [], closed: [], history: [{ date: '2026-08-21', equity: 10_200 }] })
+    await seed('paper-months', [{ month: '2026-07', startGBP: 10_000, endGBP: 10_500, returnPct: 5, trades: 4, wins: 3 }])
+    await seed('engine-board', { date: 'SECRET-BOARD', board: [{ sym: 'SECRET' }] })
+    const r = await body(await handler(req('?view=paper-book')))
+    expect(r.data).toMatchObject({ book: { month: '2026-08', startGBP: 10_000 }, months: [{ month: '2026-07', returnPct: 5 }] })
+    expect(JSON.stringify(r.data)).not.toContain('SECRET-BOARD')
+  })
+
   it('?view=board carries the yesterday strip: wins/losses + the day’s top regret (CX-18)', async () => {
     await seed('engine-board', { date: '2026-08-14', board: [] })
     await seed('predictions-index', ['2026-08-12', '2026-08-13'])

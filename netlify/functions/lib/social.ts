@@ -1,3 +1,5 @@
+import { normaliseTradableMention } from '../../../shared/marketEntities'
+
 // Unified social pulse: Reddit (via ApeWisdom aggregator), StockTwits trending,
 // and our own YouTube channel consensus, combined per ticker. Cross-platform
 // agreement is the signal; a single platform's noise is not.
@@ -8,6 +10,8 @@ export interface RedditTrend {
   rank: number
   mentions: number
   mentions24hAgo: number
+  upvotes?: number
+  rank24hAgo?: number | null
 }
 
 export interface SocialPulseRow {
@@ -15,12 +19,25 @@ export interface SocialPulseRow {
   name?: string
   redditRank: number | null
   redditMentions: number | null
+  redditUpvotes?: number | null
+  redditRankDelta?: number | null
+  redditEngagement?: number | null
   surging: boolean // mentions ≥2x vs 24h ago
   surgeMultiple: number | null
   stocktwits: boolean
   channelNet: number | null // bull-bear balance from YouTube consensus
+  channelMentions?: number | null
+  channelMentionsPrior?: number | null
   sources: number
   onWatchlist: boolean
+  // Richer evidence is optional because an upstream source can be unavailable
+  // without invalidating the base pulse row.
+  channelBreadth?: number | null
+  channelVelocity?: number | null
+  channelHype?: number
+  channelEvidence?: { channel: string; stance: 'bull' | 'bear' | 'neutral'; thesis?: string; levels: number[]; hype: boolean; at: number; url: string }[]
+  evidenceScore?: number
+  scanVelocity?: number | null
 }
 
 export async function fetchRedditTrends(fetchFn: typeof fetch = fetch): Promise<RedditTrend[]> {
@@ -33,13 +50,15 @@ export async function fetchRedditTrends(fetchFn: typeof fetch = fetch): Promise<
       console.warn(`SOCIAL: apewisdom (reddit) HTTP ${res.status} — reddit sentiment missing this cycle`)
       return []
     }
-    const j = (await res.json()) as { results?: { ticker: string; name: string; rank: number; mentions: number | string; mentions_24h_ago: number | string }[] }
+    const j = (await res.json()) as { results?: { ticker: string; name: string; rank: number; mentions: number | string; mentions_24h_ago: number | string; upvotes?: number | string; rank_24h_ago?: number | string }[] }
     const rows = (j.results ?? []).slice(0, 30).map(r => ({
       ticker: r.ticker.toUpperCase(),
       name: r.name,
       rank: r.rank,
       mentions: Number(r.mentions) || 0,
       mentions24hAgo: Number(r.mentions_24h_ago) || 0,
+      ...(r.upvotes != null ? { upvotes: Number(r.upvotes) || 0 } : {}),
+      ...(r.rank_24h_ago != null ? { rank24hAgo: Number(r.rank_24h_ago) || null } : {}),
     }))
     if (!rows.length) console.warn('SOCIAL: apewisdom (reddit) returned 0 rows — reddit sentiment empty this cycle')
     return rows
@@ -129,7 +148,10 @@ export function plausibleCapUsdM(capUsdM: number | null | undefined, sym?: strin
 export function combineSocialPulse(
   reddit: RedditTrend[],
   stocktwits: string[],
-  channelConsensus: { sym: string; net: number }[],
+  channelConsensus: {
+    sym: string; net: number; mentions7d?: number; mentionsPrior7d?: number; mentionVelocity?: number | null
+    channels?: number; hypeCount?: number; evidence?: SocialPulseRow['channelEvidence']
+  }[],
   watchlist: string[],
 ): SocialPulseRow[] {
   const bySym = new Map<string, SocialPulseRow>()
@@ -137,39 +159,74 @@ export function combineSocialPulse(
     sym,
     redditRank: null,
     redditMentions: null,
+    redditUpvotes: null,
+    redditRankDelta: null,
+    redditEngagement: null,
     surging: false,
     surgeMultiple: null,
     stocktwits: false,
     channelNet: null,
+    channelMentions: null,
+    channelMentionsPrior: null,
+    channelVelocity: null,
+    channelBreadth: null,
+    channelHype: 0,
+    channelEvidence: [],
+    evidenceScore: 0,
     sources: 0,
-    onWatchlist: watchlist.some(w => w.split('.')[0].split('-')[0] === sym),
+    onWatchlist: watchlist.some(w => normaliseTradableMention(w) === sym),
   })
 
   for (const r of reddit) {
-    const row = bySym.get(r.ticker) ?? base(r.ticker)
+    const sym = normaliseTradableMention(r.ticker)
+    if (!sym) continue
+    const row = bySym.get(sym) ?? base(sym)
     row.name = r.name
     row.redditRank = r.rank
     row.redditMentions = r.mentions
+    row.redditUpvotes = r.upvotes ?? null
+    row.redditRankDelta = r.rank24hAgo == null ? null : r.rank24hAgo - r.rank
+    row.redditEngagement = r.mentions > 0 && r.upvotes != null ? Math.round((r.upvotes / r.mentions) * 10) / 10 : null
     row.surgeMultiple = r.mentions24hAgo > 0 ? Math.round((r.mentions / r.mentions24hAgo) * 10) / 10 : null
     row.surging = row.surgeMultiple != null && row.surgeMultiple >= 2
     row.sources++
-    bySym.set(r.ticker, row)
+    bySym.set(sym, row)
   }
-  for (const sym of stocktwits) {
+  for (const raw of stocktwits) {
+    const sym = normaliseTradableMention(raw)
+    if (!sym) continue
     const row = bySym.get(sym) ?? base(sym)
     row.stocktwits = true
     row.sources++
     bySym.set(sym, row)
   }
   for (const c of channelConsensus) {
-    const sym = c.sym.split('.')[0].split('-')[0]
+    const sym = normaliseTradableMention(c.sym)
+    if (!sym) continue
     const row = bySym.get(sym) ?? base(sym)
     row.channelNet = c.net
+    row.channelMentions = c.mentions7d ?? null
+    row.channelMentionsPrior = c.mentionsPrior7d ?? null
+    row.channelVelocity = c.mentionVelocity ?? null
+    row.channelBreadth = c.channels ?? null
+    row.channelHype = c.hypeCount ?? 0
+    row.channelEvidence = c.evidence ?? []
     row.sources++
     bySym.set(sym, row)
   }
 
+  for (const row of bySym.values()) {
+    let score = row.sources * 18
+    if ((row.surgeMultiple ?? 0) >= 2) score += Math.min(20, Math.round((row.surgeMultiple ?? 0) * 4))
+    if ((row.redditRankDelta ?? 0) > 0) score += Math.min(12, row.redditRankDelta ?? 0)
+    if ((row.redditEngagement ?? 0) >= 3) score += 8
+    if ((row.channelBreadth ?? 0) >= 2) score += 10
+    if ((row.channelVelocity ?? 0) >= 1.5) score += 8
+    if ((row.channelHype ?? 0) > 0) score -= Math.min(15, (row.channelHype ?? 0) * 5)
+    row.evidenceScore = Math.max(0, Math.min(100, score))
+  }
+
   return [...bySym.values()]
-    .sort((a, b) => b.sources - a.sources || (b.redditMentions ?? 0) - (a.redditMentions ?? 0))
+    .sort((a, b) => (b.evidenceScore ?? 0) - (a.evidenceScore ?? 0) || (b.redditMentions ?? 0) - (a.redditMentions ?? 0))
     .slice(0, 15)
 }

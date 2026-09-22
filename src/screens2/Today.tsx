@@ -28,6 +28,8 @@ import { SessionLine } from './parts/SessionLine'
 import { StaleBoardNote } from './parts/StaleBoardNote'
 import { TodayHeadlines } from './parts/TodayHeadlines'
 import { YesterdayStrip } from './parts/YesterdayStrip'
+import { StrategyLabPanel } from './parts/StrategyLabPanel'
+import { DecisionCockpit } from './parts/DecisionCockpit'
 
 /** THE TAPE LINE (owner iteration 2). The board blob has always carried the
  * world tape's own sentence and the day's news tone, and the screen showed a
@@ -93,6 +95,7 @@ export default function Today() {
           and the stamp the board has always carried and nothing ever showed. */}
       <SessionLine generatedAt={blob?.generatedAt} />
       <TapeLine blob={blob} />
+      <DecisionCockpit data={data} />
       {/* …and what the desk has taken in SINCE the run (dynamism wave): three
           headlines, each a door into Intel's news desk. News keeps its one
           home; this is the doorway, not a feed. */}
@@ -131,6 +134,10 @@ export default function Today() {
           sections (the rule OpenCallsStrip's header states). */}
       <OpenCallsStrip entries={data?.openTrace?.entries} closed={data?.openTrace?.closed} />
       <EventRadarStrip radar={data?.eventRadar} />
+      {/* The new engine is visible, not a silent scoring change. It sits before
+          social commentary because these are StreetSignal's own independently
+          measured forecasts. */}
+      <StrategyLabPanel lab={data?.engineLab} />
       {/* …and then the OTHER voice in the room (owner request): what the tracked
           channels have been recommending this week, each name beside the
           engine's own stance on it. Reads only what this slice already carries

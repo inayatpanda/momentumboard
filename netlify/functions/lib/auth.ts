@@ -21,6 +21,10 @@ export interface AuthResult {
   house?: boolean // carried from the licence — grants server-key LLM access without admin powers
 }
 
+/** Temporary friends-and-family gate. It is deliberately user-scoped: the
+ * shared password can never inherit administrator powers. */
+export const TEMP_READER_PASSWORD = 'millionaireclub'
+
 /** First candidate that is actually SET — a blank value counts as unset.
  *
  * The H-1 scoped-token cutover (REPORT_PUBLISH_TOKEN / HELM_EXPORT_TOKEN /
@@ -44,6 +48,8 @@ export async function authenticate(headers: Headers, env: { APP_TOKEN?: string }
   const token = headers.get('x-app-token')
   if (!token) return null
   if (env.APP_TOKEN && token === env.APP_TOKEN) return { level: 'admin', ns: '' }
+  const readerPassword = process.env.READER_PASSWORD?.trim() || TEMP_READER_PASSWORD
+  if (token === readerPassword) return { level: 'user', ns: 'u:friends:' }
   let licences = (await store.read<Licence[]>('licences')) ?? []
   let lic = licences.find(l => l.key === token && !l.revoked)
   // MISS → one strong-consistency retry. Blob reads are eventual, so a key

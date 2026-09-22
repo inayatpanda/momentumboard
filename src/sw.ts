@@ -30,15 +30,33 @@ precacheAndRoute(self.__WB_MANIFEST)
 registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html'), { allowlist: [/^\/app(\/|$)/] }))
 
 // Hashed lazy chunks: immutable by filename, so CacheFirst is exactly right.
+// Cloudflare's SPA fallback returns index.html with status 200 for an unknown
+// asset path. Never cache that HTML as JavaScript: doing so poisons the exact
+// chunk URL even after a later deployment restores it.
+const assetResponseOnly = {
+  cacheWillUpdate: async ({ request, response }: { request: Request; response: Response }) => {
+    if (response.status !== 200) return null
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
+    if (request.destination === 'script' && !/(javascript|ecmascript)/.test(contentType)) return null
+    if (request.destination === 'style' && !contentType.includes('text/css')) return null
+    return response
+  },
+}
+
 // Bounded — the precache carries the shell, this only accumulates visited
-// screens' chunks.
+// screens' chunks. The v2 name deliberately leaves the poisoned v1 cache
+// behind until activation, where it is removed below.
 registerRoute(
   ({ url, request }) => url.pathname.startsWith('/assets/') && (request.destination === 'script' || request.destination === 'style'),
   new CacheFirst({
-    cacheName: 'lazy-chunks',
-    plugins: [new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 30 * 86_400 })],
+    cacheName: 'lazy-chunks-v2',
+    plugins: [assetResponseOnly, new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 30 * 86_400 })],
   }),
 )
+
+self.addEventListener('activate', event => {
+  event.waitUntil(caches.delete('lazy-chunks'))
+})
 
 // The UpdateBanner's explicit consent — the ONLY skipWaiting in this worker.
 self.addEventListener('message', event => {

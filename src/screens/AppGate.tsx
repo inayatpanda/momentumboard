@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { setToken, startTrial } from '../lib/api'
-import { humanError } from '../lib/format'
+import { unlockWithPassword } from '../lib/api'
 
 // THE APP GATE: what an unlicensed device sees at /app/ — the app's own front
 // door, NOT the marketing website. The site (Landing/SitePages) is a separate
@@ -11,31 +10,18 @@ import { humanError } from '../lib/format'
 export function AppGate({ onUnlocked }: { onUnlocked: () => void }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [key, setKey] = useState('')
+  const [password, setPassword] = useState('')
 
-  const unlock = () => {
-    // accept a bare key OR a whole pasted unlock link (…/?key=mb_…)
-    const raw = key.trim()
-    const fromLink = raw.match(/[?&]key=([^&\s]+)/)
-    const token = (fromLink ? fromLink[1] : raw).trim()
-    if (!token) return
-    setToken(token)
-    // fresh-unlock grace: a just-minted key can 401 off a stale replica —
-    // the boot check must not burn it (same contract as main.tsx ?key links)
-    localStorage.setItem('mb-token-at', String(Date.now()))
-    onUnlocked()
-  }
-
-  const trial = async () => {
-    if (pending) return
+  const unlock = async () => {
+    if (!password.trim() || pending) return
     setError(null)
     setPending(true)
     try {
-      await startTrial() // stores the token itself
+      await unlockWithPassword(password)
       localStorage.setItem('mb-token-at', String(Date.now()))
       onUnlocked()
-    } catch (err) {
-      setError(humanError(err))
+    } catch {
+      setError('Incorrect password. Check it and try again.')
       setPending(false)
     }
   }
@@ -46,25 +32,25 @@ export function AppGate({ onUnlocked }: { onUnlocked: () => void }) {
         <h1 className="app-gate-name">
           The Street <span>Signal</span>
         </h1>
-        <p className="app-gate-sub">Enter your licence key once — this device stays unlocked.</p>
+        <p className="app-gate-sub">Friends preview — enter the shared password once on this device.</p>
         <form
           className="app-gate-form"
           onSubmit={e => {
             e.preventDefault()
-            unlock()
+            void unlock()
           }}
         >
           <input
             type="password"
-            placeholder="Licence key or unlock link"
-            autoComplete="off"
+            placeholder="Shared password"
+            autoComplete="current-password"
             autoFocus
-            value={key}
-            onChange={e => setKey(e.target.value)}
-            aria-label="Licence key"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            aria-label="Shared password"
           />
-          <button type="submit" className="app-gate-unlock" disabled={!key.trim()}>
-            Unlock
+          <button type="submit" className="app-gate-unlock" disabled={pending || !password.trim()}>
+            {pending ? 'Checking…' : 'Enter'}
           </button>
         </form>
         {error && (
@@ -72,10 +58,6 @@ export function AppGate({ onUnlocked }: { onUnlocked: () => void }) {
             {error}
           </p>
         )}
-        <div className="app-gate-or">No key yet?</div>
-        <button className="app-gate-trial" onClick={trial} disabled={pending}>
-          {pending ? 'Setting up your access…' : 'Start a free 7-day reader pass'}
-        </button>
         <a className="app-gate-site" href="https://thestreetsignal.rqai.co.uk/" target="_blank" rel="noreferrer">
           About The Street Signal ↗
         </a>

@@ -1,11 +1,9 @@
-// THE ANALYTICS DRAWER'S CONTENTS (plan Task 22; spec §3.8) — the four quant
-// panels the retired Quant screen used to deck out (src/screens/Quant.tsx),
-// stacked in the desk's right slide-over. Desktop only, and LAZY: this module
-// is imported only when the drawer opens, so neither a phone nor a desktop
-// reader who never opens it pays a byte or a request for it.
+// THE ROUTED ANALYTICS SCREEN'S CONTENTS — the four quant panels the retired
+// Quant screen used to deck out. The route is lazy, so a reader who never opens
+// Analytics pays neither its component bytes nor its data requests.
 //
 // DATA — every panel is fed through `useSlice`, never a bare fetch, so the
-// drawer paints from Dexie first and shares the board/learning slices the rest
+// screen paints from Dexie first and shares the board/learning slices the rest
 // of the shell already has warm. All six sources are cutover-safe: `board` and
 // `learning` are the new view slices, and seasonality / smart-money / candles /
 // event-dossiers are /api/market and /api/config endpoints that survive the

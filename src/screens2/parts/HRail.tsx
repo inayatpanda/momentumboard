@@ -1,5 +1,6 @@
-// HRail (plan Task 15) — the T212-Discover-style horizontal snap-scroll rail
-// shared by Top movers / Top losers / Sectors on the Stocks screen. A rail's
+// HRail (plan Task 15) — the responsive card rail shared by Top movers / Top
+// losers / Sectors on the Stocks screen. Cards wrap into the page width; the
+// app deliberately has no nested sideways scrolling. A rail's
 // data must cost NOTHING at boot: `onVisible` fires exactly once, the first
 // time this rail's section scrolls into the viewport (IntersectionObserver),
 // and the caller is trusted to gate its own fetch behind that — HRail itself

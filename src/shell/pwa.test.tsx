@@ -19,6 +19,9 @@ describe('service worker contract', () => {
     expect(sw).toContain('NavigationRoute')
     expect(sw).toContain("addEventListener('push'")
     expect(sw).toContain('CacheFirst') // hashed lazy chunks
+    expect(sw).toContain('cacheWillUpdate') // reject Cloudflare's HTML SPA fallback for missing JS
+    expect(sw).toContain("caches.delete('lazy-chunks')") // clear the pre-fix poisoned cache on activation
+    expect(sw).toContain("cacheName: 'lazy-chunks-v2'")
   })
 
   it('vite precaches only the entry closure and prompts for updates', () => {

@@ -2,8 +2,8 @@
 // tab bar under 1024px, left rail at ≥1024px (the old TabBar's proven split,
 // src/index.css:9-13's warning honoured).
 //
-// The PHONE bar is exactly the five ratified labels and nothing may change
-// that. The RAIL has vertical room the phone does not, so owner iteration 2
+// The phone bar carries the six current primary destinations, including the
+// routed Analytics screen. The RAIL has vertical room the phone does not, so owner iteration 2
 // promoted three pages out of More onto it ("More section - we can bring more
 // sections from it into main tabs shown outside on Nav bar"). Those three carry
 // `railOnly` and are hidden below 1024px by CSS ALONE — no width check, no
@@ -18,6 +18,7 @@ const ICONS: Record<string, string> = {
   stocks: '≋',
   intel: '¶',
   record: '✓',
+  analytics: '⌁',
   more: '⋯',
 }
 

@@ -1,5 +1,5 @@
 // The v2 shell (plan Task 10 + CX-3/9/11): wouter under /app, exactly the
-// ratified five nav labels, deep-linkable stock pages, and an unknown-route
+// six primary nav labels, deep-linkable stock pages, and an unknown-route
 // catch-all that lands on Today.
 
 import { render, screen } from '@testing-library/react'
@@ -16,21 +16,22 @@ describe('AppShell', () => {
     expect(await screen.findByRole('heading', { name: /today/i })).toBeInTheDocument()
   })
 
-  // THE PHONE BAR IS THE RATIFIED FIVE, and owner iteration 2 did not touch it:
+  // THE PHONE BAR HAS SIX PRIMARY DESTINATIONS; the four pages promoted only
   // the three pages promoted onto the desktop rail carry `.rail-only`, which is
   // `display: none` until 1024px. jsdom applies no stylesheet, so "what the
   // phone shows" is asserted as "the entries that are NOT rail-only" — the same
   // predicate the CSS reads, and the only form that is honest here (a
   // visibility assertion in jsdom would pass for a reason unrelated to the
   // media query).
-  it('shows exactly the five ratified nav labels, in order — Board is routable but unlabelled', () => {
+  it('shows the six primary nav labels, in order — Board is routable but unlabelled', () => {
     render(<AppShell locationHook={at('/')} />)
     const nav = screen.getByRole('navigation')
     const labels = [...nav.querySelectorAll('.v2-tab:not(.rail-only) .v2-tab-label')].map(el => el.textContent?.trim())
-    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'More'])
+    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'Analytics', 'More'])
+    expect(labels).not.toContain('Journal')
   })
 
-  // …and the RAIL shows nine: the ratified five plus four promoted out of
+  // …and the RAIL shows ten: the primary six plus four promoted out of
   // More. Owner 2026-08-17 recut the set three times in one day: Gates &
   // learning DEMOTED ("present twice, outside and inside More"), in its slot a
   // fresh tab for the daily edition ("instead of Gates and learning… a new
@@ -40,7 +41,7 @@ describe('AppShell', () => {
     render(<AppShell locationHook={at('/')} />)
     const nav = screen.getByRole('navigation')
     const labels = [...nav.querySelectorAll('.v2-tab-label')].map(el => el.textContent?.trim())
-    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'The street', 'Research', 'Calendar', 'The paper', 'More'])
+    expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'Analytics', 'The street', 'Research', 'Calendar', 'The paper', 'More'])
     const railOnly = [...nav.querySelectorAll('.v2-tab.rail-only .v2-tab-label')].map(el => el.textContent?.trim())
     expect(railOnly).toEqual(['The street', 'Research', 'Calendar', 'The paper'])
   })
@@ -90,12 +91,18 @@ describe('AppShell', () => {
     render(<AppShell locationHook={at('/stock/NVDA')} />)
     // 5s: the lazy StockPage chunk resolves in ~300ms alone but can exceed
     // RTL's 1s default under full-suite parallel load (verified flake)
-    expect(await screen.findByText(/NVDA/, {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'NVDA' }, { timeout: 5000 })).toBeInTheDocument()
   })
 
   it('routes /board even though it has no tab', async () => {
     render(<AppShell locationHook={at('/board')} />)
     expect(await screen.findByText(/board/i)).toBeInTheDocument()
+  })
+
+  it('routes Analytics as a normal page rather than a drawer', async () => {
+    render(<AppShell locationHook={at('/analytics')} />)
+    expect(await screen.findByRole('heading', { name: /^analytics$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
   })
 
   it('sends unknown routes home to Today', async () => {

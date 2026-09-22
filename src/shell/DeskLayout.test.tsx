@@ -18,7 +18,7 @@ import AppShell from './AppShell'
 
 // Every network getter the desk can reach is a never-resolving promise: the
 // screens paint from Dexie (local-first) and nothing escapes to fetch. The
-// four drawer fetchers are spies so "lazy" can be asserted as a fact.
+// analytics fetchers are spies so the routed screen's lazy loading can be asserted.
 const spies = vi.hoisted(() => ({
   getSeasonality: vi.fn(() => new Promise<never>(() => {})),
   getSmartMoney: vi.fn(() => new Promise<never>(() => {})),
@@ -154,7 +154,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     expect(document.querySelector('.desk2')).toBeNull()
     expect(screen.queryByRole('complementary', { name: /board column/i })).toBeNull()
     const nav = screen.getByRole('navigation')
-    // the PHONE bar is the ratified five: owner iteration 2's three promoted
+    // the PHONE bar carries the six current primary destinations; promoted
     // entries carry `.rail-only`, which CSS hides below 1024px (jsdom applies
     // no stylesheet, so the predicate the CSS reads is what is asserted)
     expect([...nav.querySelectorAll('.v2-tab:not(.rail-only) .v2-tab-label')].map(el => el.textContent?.trim())).toEqual([
@@ -162,6 +162,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
       'Stocks',
       'Intel',
       'Track record',
+      'Analytics',
       'More',
     ])
   })
@@ -198,21 +199,23 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     expect(document.querySelectorAll('.sp-chart')).toHaveLength(1)
   })
 
-  it('lazy-mounts the analytics drawer: no panel fetch until it is opened', async () => {
+  it('keeps analytics lazy until its routed nav destination is opened', async () => {
     setViewport(1440)
-    render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
+    const location = memoryLocation({ path: '/app/', record: true })
+    render(<AppShell locationHook={location.hook} />)
 
     await screen.findByRole('heading', { name: /today/i })
     expect(spies.getSmartMoney).not.toHaveBeenCalled()
     expect(spies.getSeasonality).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: /analytics/i }))
+    fireEvent.click(screen.getByRole('link', { name: /analytics/i }))
 
-    expect(await screen.findByRole('dialog', { name: /analytics/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /^analytics$/i })).toBeInTheDocument()
     await waitFor(() => expect(spies.getSmartMoney).toHaveBeenCalledTimes(1))
     expect(spies.getSeasonality).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('heading', { name: /next-day lean/i })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
   })
 
   it('is reactive: widening the window past 1200px builds the desk without a reload', async () => {
@@ -247,11 +250,12 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     expect(details.open).toBe(true)
   })
 
-  it('below 1200px the analytics drawer does not exist at all', async () => {
+  it('below 1200px Analytics remains a normal nav link, never a drawer', async () => {
     setViewport(1024)
     render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
 
     await screen.findByRole('heading', { name: /today/i })
-    expect(screen.queryByRole('button', { name: /analytics/i })).toBeNull()
+    expect(screen.getByRole('link', { name: /analytics/i })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
   })
 })

@@ -261,7 +261,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'How do I get access?',
-    a: 'Every device gets a free 7-day reader pass — no card, no signup. After that, licences are issued personally by the publisher: ask whoever shared StreetSignal with you. A licence key unlocks a device once and stays unlocked.',
+    a: 'StreetSignal is currently a private friends preview. There is no signup or individual licence: open the app and enter the shared preview password once on each device.',
   },
   {
     q: 'Why does it sometimes say "no qualified trades today"?',
@@ -281,7 +281,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'Can I install it like an app?',
-    a: 'Yes, everywhere. Mac and Windows have real installers — free from the front page ("Take it with you"). On Android, open this site and tap Install app; on iPhone, Safari → Share → Add to Home Screen. Downloads are free; your licence or reader pass unlocks the app itself, once per device.',
+    a: 'Yes, everywhere. Mac and Windows have real installers — free from the front page ("Take it with you"). On Android, open this site and tap Install app; on iPhone, Safari → Share → Add to Home Screen. Use the shared friends-preview password once per device.',
   },
   {
     q: 'What happens when a call goes wrong?',

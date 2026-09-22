@@ -1,12 +1,11 @@
-// Settings v2 (plan Task 21). No useSlice/Dexie here — Settings reads the
-// licence probe + BYOK/notifications/config rows straight off lib/api, same
-// as the legacy screen, so these tests mock '../lib/api' directly (Board.
-// test.tsx's importActual-merge pattern) rather than seeding a slice.
+// Settings v2. Reader access is handled once by the shared-password gate;
+// Settings itself contains no licence UI. The owner probe remains internal so
+// owner-only briefing recipients do not appear for friends.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Settings from './Settings'
 
 vi.mock('../lib/api', async () => {
@@ -40,7 +39,7 @@ describe('Settings', () => {
   it('contains no literal "212" anywhere in its rendered output or its own source (owner decision D11)', async () => {
     asNonAdmin()
     const { container } = render(<Settings />)
-    await waitFor(() => expect(screen.getByText('Licensed device')).toBeInTheDocument())
+    await screen.findByText('Your AI key')
     expect(container.textContent).not.toMatch(/212/)
 
     // cwd-relative, not import.meta.url — jsdom serves modules from http://
@@ -56,21 +55,22 @@ describe('Settings', () => {
     }
   })
 
-  it('shows the admin-unlock row and hides the licence manager + BYOK key for a non-admin device', async () => {
+  it('shows device-local Groq controls and no licence controls for a friend device', async () => {
     asNonAdmin()
     render(<Settings />)
-    expect(await screen.findByText('Unlock admin')).toBeInTheDocument()
-    expect(screen.queryByText('Licences')).not.toBeInTheDocument()
-    expect(screen.queryByText('Briefing recipients')).not.toBeInTheDocument()
-    // BYOK is the inverse gate: non-admin devices DO see it
     expect(await screen.findByText('Your AI key')).toBeInTheDocument()
+    expect(screen.getByLabelText('Groq API key')).toBeInTheDocument()
+    expect(screen.queryByText('Licences')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unlock admin')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Licence status')).not.toBeInTheDocument()
+    expect(screen.queryByText('Briefing recipients')).not.toBeInTheDocument()
   })
 
-  it('shows the licence manager + briefing recipients and hides admin-unlock + BYOK for an admin device', async () => {
+  it('shows briefing recipients but no licence manager or BYOK for the owner', async () => {
     asAdmin()
     render(<Settings />)
-    expect(await screen.findByText('Licences')).toBeInTheDocument()
-    expect(screen.getByText('Briefing recipients')).toBeInTheDocument()
+    expect(await screen.findByText('Briefing recipients')).toBeInTheDocument()
+    expect(screen.queryByText('Licences')).not.toBeInTheDocument()
     expect(screen.queryByText('Unlock admin')).not.toBeInTheDocument()
     expect(screen.queryByText('Your AI key')).not.toBeInTheDocument()
   })
@@ -99,53 +99,11 @@ describe('Settings', () => {
   })
 })
 
-// VISIBILITY WAVE (2026-08-17) — the live walkthrough watched /api/licences
-// 401 three times on one Settings paint. The shared DMG token cannot be the
-// admin key, so the answer was known before the request left: asking anyway is
-// noise in the log, three red rows in the reader's devtools, and a "Checking
-// licence…" flicker on a device with no licence to check.
-describe('Settings on the shared free token', () => {
-  const FREE = 'mb_freefreefreefreefreefreefreefreefre'
-
-  beforeEach(() => {
-    vi.stubEnv('VITE_FREE_TOKEN', FREE)
-    localStorage.setItem('mb-token', FREE)
-  })
-
-  afterEach(() => {
-    vi.unstubAllEnvs()
-  })
-
-  it('never asks the server about a licence it already knows the answer for', async () => {
+describe('Settings access model', () => {
+  it('never renders the retired licence, trial, or free-tier language', async () => {
     asNonAdmin()
-    render(<Settings />)
-    expect(await screen.findByText('Free preview')).toBeInTheDocument()
-    expect(getLicences).not.toHaveBeenCalled()
-  })
-
-  it('says what the free tier IS, and never quotes the shared key back as the reader’s own', async () => {
-    asNonAdmin()
-    render(<Settings />)
-    const row = await screen.findByLabelText('Licence status')
-    expect(within(row).getByText(/free preview — licence binding comes later/i)).toBeInTheDocument()
-    expect(row.textContent).not.toMatch(/ending …/)
-    expect(row.textContent).not.toContain(FREE.slice(-6))
-    // and it never flickers through the probe state it is not in
-    expect(within(row).queryByText(/checking licence/i)).not.toBeInTheDocument()
-  })
-
-  it('is treated as a non-admin device — the unlock hatch stays, the manager does not', async () => {
-    asNonAdmin()
-    render(<Settings />)
-    expect(await screen.findByText('Unlock admin')).toBeInTheDocument()
-    expect(screen.queryByText('Licences')).not.toBeInTheDocument()
-  })
-
-  it('a personal key on the same build still asks the server', async () => {
-    localStorage.setItem('mb-token', 'mb_personal_key_9999')
-    asNonAdmin()
-    render(<Settings />)
-    await waitFor(() => expect(screen.getByText('Licensed device')).toBeInTheDocument())
-    expect(getLicences).toHaveBeenCalled()
+    const { container } = render(<Settings />)
+    await screen.findByText('Your AI key')
+    expect(container.textContent).not.toMatch(/licen[cs]e|trial|free preview/i)
   })
 })

@@ -1,5 +1,6 @@
-// Stocks (plan Task 15) — search + the user's watchlist + T212-Discover-style
-// horizontal rails (Top movers / Top losers / Sectors).
+// Stocks (plan Task 15) — search + the user's watchlist + responsive card
+// rails (Top movers / Top losers / Sectors). Rails wrap; the app keeps one
+// vertical scrolling direction on phones.
 //
 // Rails cost NOTHING at boot: HRail's IntersectionObserver only tells this
 // screen a rail scrolled into view; the actual `useSlice` call for that

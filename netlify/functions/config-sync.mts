@@ -84,7 +84,7 @@ export async function routeConfig(
     }
     if (url.searchParams.get('view') === 'llm-key') {
       const creds = await store.read<{ groqKey?: string }>(`${ns}llm`)
-      return json(200, { ok: true, data: { hasKey: !!creds?.groqKey } }) // never echo the key itself
+      return json(200, { ok: true, data: { hasLegacyServerKey: !!creds?.groqKey } }) // never echo the key itself
     }
     if (url.searchParams.get('view') === 'sectors') {
       const { getCached } = await import('./lib/cache')
@@ -140,12 +140,12 @@ export async function routeConfig(
     return json(200, { ok: true, data: await store.read(`${ns}config`) })
   }
 
-  if (method === 'PUT' && url.searchParams.get('view') === 'llm-key') {
-    // licensees store their OWN AI key (BYO); the owner's key lives in server env only
-    const { groqKey } = (bodyText ? JSON.parse(bodyText) : {}) as { groqKey?: string }
-    if (groqKey && (typeof groqKey !== 'string' || groqKey.length > 200)) return json(400, { ok: false, error: 'invalid-key' })
-    await store.write(`${ns}llm`, groqKey ? { groqKey: groqKey.trim() } : {})
-    return json(200, { ok: true })
+  if (url.searchParams.get('view') === 'llm-key') {
+    if (method === 'DELETE') {
+      await store.write(`${ns}llm`, {})
+      return json(200, { ok: true })
+    }
+    if (method === 'PUT') return json(410, { ok: false, error: 'device-only-key' })
   }
 
   if (method === 'PUT') {

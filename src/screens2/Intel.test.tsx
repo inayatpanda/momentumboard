@@ -15,7 +15,7 @@ import { Route, Router, Switch } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
 import { writeSlice } from '../lib/store'
-import type { CongressTrade, InsiderCluster, NewsDeskItem, getCongress } from '../lib/api'
+import type { CongressTrade, InsiderCluster, NewsDeskItem, PulseRow, getCongress } from '../lib/api'
 import Intel, { daysLate, orderClusters } from './Intel'
 import { getCongress as getCongressFn, getInsiderClusters, getNewsDesk, getSocialPulse } from '../lib/api'
 
@@ -92,6 +92,7 @@ const withRouter = (path = '/app/intel') =>
 
 beforeEach(async () => {
   await Promise.all([db.slices.clear(), db.candles.clear(), db.quotes.clear()])
+  window.history.replaceState({}, '', '/app/intel')
   vi.clearAllMocks()
 })
 
@@ -103,6 +104,32 @@ describe('Intel', () => {
   it('has a heading containing "Intel"', () => {
     withRouter()
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
+  })
+
+  it('opens Social Radar with clickable tickers and the three evidence panes', async () => {
+    const row: PulseRow = {
+      sym: 'NVDA', name: 'NVIDIA', redditRank: 2, redditMentions: 140, redditUpvotes: 320,
+      redditRankDelta: 4, redditEngagement: 2.3, surging: true, surgeMultiple: 2.4,
+      stocktwits: true, channelNet: 2, channelMentions: 3, channelMentionsPrior: 1,
+      channelVelocity: 3, channelBreadth: 2, channelHype: 0,
+      channelEvidence: [{ channel: 'Channel A', stance: 'bull', thesis: 'Demand is improving', levels: [130], hype: false, at: 1, url: 'https://youtube.com/watch?v=abcdefghijk' }],
+      evidenceScore: 78, sources: 3, onWatchlist: false, observedDays: 1,
+    }
+    await writeSlice('intel:social', { discoveries: [], alsoLoud: [], pulse: [row], at: Math.floor(Date.now() / 1000) })
+    withRouter()
+    fireEvent.click(screen.getByRole('tab', { name: /social radar/i }))
+    expect(window.location.search).toBe('?view=social')
+    expect(await screen.findByText('Social tape')).toBeInTheDocument()
+    expect(screen.getByText('YouTube claim')).toBeInTheDocument()
+    expect(screen.getByText('Independent engine verdict')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
+    expect(screen.getByRole('button', { name: /view dated memory/i })).toBeInTheDocument()
+  })
+
+  it('restores Social Radar from the URL after returning from a stock', () => {
+    window.history.replaceState({}, '', '/app/intel?view=social')
+    withRouter()
+    expect(screen.getByRole('tab', { name: /social radar/i })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('one section erroring never blanks the others — seeded news paints while insiders and congress stay pending', async () => {
@@ -125,9 +152,9 @@ describe('Intel', () => {
     await waitFor(() => expect(getNewsDesk).toHaveBeenCalledTimes(2))
     expect(getInsiderClusters).toHaveBeenCalledTimes(2)
     await waitFor(() => expect(getCongressFn).toHaveBeenCalledTimes(2))
-    // the pulse is not this page's feed any more — refreshing Intel must not
-    // spend a request on a section that is not here
-    expect(getSocialPulse).not.toHaveBeenCalled()
+    // Social Radar is again an Intel view; a page refresh keeps its comparison
+    // tape current even when Markets is the selected subtab.
+    expect(getSocialPulse).toHaveBeenCalledTimes(1)
   })
 
   // THE JUMP RAIL (owner iteration 2): "scrolling is difficult to reach

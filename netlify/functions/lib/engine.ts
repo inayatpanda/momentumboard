@@ -101,7 +101,7 @@ import { GATE_STATE_KEY, advanceGateState, effectiveGates, gateEligibility, gate
 import { classifyOutcome, postMortemKey } from '../../../shared/engine/postMortem'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
-import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, spotInstrument, RUNG_RISK_PCT, type CohortRung, type RiskState } from '../../../shared/engine/riskLadder'
+import { computeCohortRung, computeRung, cohortRungOf, directionRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, spotInstrument, RUNG_RISK_PCT, type CohortRung, type RiskState } from '../../../shared/engine/riskLadder'
 import { capCohortOf, SMALL_CAP_MAX_USD_M, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
@@ -109,6 +109,7 @@ import { isRejection, round2, type EmptySideReason, type EngineCall, type Factor
 import type { OutcomeLite } from '../../../shared/engine/riskLadder'
 import { primaryThemeOf, themeCandidates, themeHeat, themesOf } from '../../../shared/engine/themes'
 import { traceOpenCall, type OpenTraceEntry } from '../../../shared/engine/openTrace'
+import { appendSocialHistory, buildEngineLab, calibrateLabObservations, gradeStrategyObservation, qualityDipObservations, shortHorizonObservations, socialIgnitionObservations, type ShortHorizonRow, type SocialHistoryPoint, type SocialLabRow, type StrategyLabRecord } from '../../../shared/engine/strategyLab'
 import { SECTOR_MEMBERS, computeSectorRows } from './sectors'
 import type { SocialPulseRow } from './social'
 import type { InsiderSummary } from './insiders'
@@ -672,6 +673,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // per-cohort tally of NON-shadow calls graded THIS run — feeds each sleeve's
   // graded-at-rung counter so it stays honest even while a young cohort pools.
   const newByCohort: Record<CapCohortOrUnknown, number> = { large: 0, small: 0, unknown: 0 }
+  const newBySide: Record<'long' | 'short', number> = { long: 0, short: 0 }
   // EVERY ROW GRADED THIS RUN, tagged rather than pre-filtered.
   //
   // `wildcard` rides along instead of the experiment being dropped at the push,
@@ -730,6 +732,9 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     predictionsByDate.set(date, preds)
     let changed = false
     for (const pred of preds) {
+      // Daily refreshes of one economic idea keep separate dated receipts, but
+      // only the campaign owner is an independent learning observation.
+      const independentCampaign = !pred.campaignId || pred.campaignId === pred.id
       // WHICH PARTITION MEASURES THIS ROW — decided once, here, and it decides
       // the tape, the clock and the basis together. `cohort` is the stamp the
       // crypto lane wrote at publication (types.ts): a row without it is an
@@ -828,7 +833,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           if (wildcardRow && pred.wildcard && !regretDisabled() && !cryptoRow) pred.wildcard.booked = false
           // THE calibrated grade: calibration buckets, factor-IC weights, the
           // Brier trail and the risk-ladder counters all learn here, at 10d.
-          if (!cryptoRow) updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
+          if (!cryptoRow && independentCampaign) updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
           // …and the OTHER partition learns here, in its own object, under its
           // own key (Phase-A relaxation 1 — see the seam at the top of this
           // function). `updateCryptoCalibration` forces `capUsdM` to null, so
@@ -837,7 +842,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // sized/shadow sub-counts, the setup-family buckets, the evidence
           // counters — happens INSIDE the crypto state. Nothing pools: the two
           // objects have no key in common and no read walks both.
-          if (cryptoBasisRow && !cryptoOff) {
+          if (cryptoBasisRow && !cryptoOff && independentCampaign) {
             updateCryptoCalibration(cryptoCal, pred, o)
             cryptoGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow })
             if (!pred.shadow && !pred.watchOnly) cryptoNewActionable++
@@ -848,8 +853,8 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // booking its outcome would train the technical factor's IC on the
           // lane's P&L — a signal it never cast. Calibration buckets and setup
           // buckets above still accrue: only factor-IC is excluded.
-          if (!LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '') && !cryptoRow) w = updateIcStats(w, pred, o)
-          if (!cryptoRow) newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow, wildcard: wildcardRow })
+          if (independentCampaign && !LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '') && !cryptoRow) w = updateIcStats(w, pred, o)
+          if (independentCampaign && !cryptoRow) newlyGraded.push({ probability: pred.probability, outcome10: o, shadow: !!pred.shadow, wildcard: wildcardRow })
           graded++
           // …and the risk ladder's graded-at-rung counter, which the WILDCARD is
           // blind to (Stage 3d). A wildcard is the engine deliberately overriding
@@ -859,7 +864,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // that is tested and not the whole lane family — a dip and a velocity
           // row are ordinary trades the reader carries at full weight, and they
           // go on moving the rung exactly as they always have.
-          if (!pred.shadow && !pred.watchOnly && !wildcardRow && !cryptoRow) newByCohort[capCohortOf(pred.capUsdM)]++
+          if (independentCampaign && !pred.shadow && !pred.watchOnly && !wildcardRow && !cryptoRow) {
+            newByCohort[capCohortOf(pred.capUsdM)]++
+            newBySide[pred.side]++
+          }
           changed = true
         }
       }
@@ -886,8 +894,8 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // tracker carries no gearing, so a routed spot position is an ordinary
       // stop-out and is counted as one. Inert for equity: every equity route is
       // a 2× or 3× ETP, so `leverage > 1` is `!!instrument` there.
-      if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym) && pred.cohort !== 'crypto')
-        allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1, cohort: capCohortOf(pred.capUsdM) })
+      if (independentCampaign && pred.outcome10 && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym) && pred.cohort !== 'crypto')
+        allOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1, side: pred.side, cohort: capCohortOf(pred.capUsdM) })
       // …and the crypto ladder's evidence window, which is the SAME sentence
       // over a disjoint population: the crypto stream never enters `allOutcomes`
       // (the guard one line up is unconditional and stays that way) and the
@@ -904,7 +912,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // `gradedAtRung`, which they never moved), and at rung 0 demotion floors.
       // The alternative — marking outcomes with the lever state they graded
       // under — buys a field on every row to close a drift that cannot promote.
-      if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !cryptoOff && pred.cohort === 'crypto')
+      if (independentCampaign && pred.outcome10 && !pred.shadow && !pred.watchOnly && !cryptoOff && pred.cohort === 'crypto')
         cryptoOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1 })
       // THE DEBT COLLECTION (Stage 3d fix wave). Read off the ROW rather than off
       // "did it grade in this pass", which is what makes a failed ledger write
@@ -1002,6 +1010,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     cohorts: {
       large: computeCohortRung(risk.cohorts!.large, cohortRecent('large'), newByCohort.large, combinedNext, brierImproving, override, today),
       small: computeCohortRung(risk.cohorts!.small, cohortRecent('small'), newByCohort.small, combinedNext, brierImproving, override, today),
+    },
+    directions: {
+      long: computeRung(risk.directions!.long, allOutcomes.filter(o => o.side === 'long').slice(-60), newBySide.long, brierImproving, override, today),
+      short: computeRung(risk.directions!.short, allOutcomes.filter(o => o.side === 'short').slice(-60), newBySide.short, brierImproving, override, today),
     },
   }
 
@@ -2056,7 +2068,9 @@ export async function buildBoard(
     // book's. `cohortRungOf` would send it to the combined rung (its cap is
     // null, so its cohort is 'unknown'), which is precisely the inheritance the
     // partition exists to refuse.
-    const rung = crypto ? crypto.rung : cohortRungOf(risk, cohort)
+    const capRung = cohortRungOf(risk, cohort)
+    const sideRung = directionRungOf(risk, call.side)
+    const rung = crypto ? crypto.rung : sideRung == null ? capRung : Math.min(capRung, sideRung)
     // sizedFraction === 1 implies tierFraction === 1, i.e. fullTrade, so `grade` is
     // non-null here for exactly the reason it was under the old `fullTrade` test.
     // …and BELOW full size, a CRYPTO row mints its 1× tracker (Stage 1c-R). The
@@ -2081,6 +2095,19 @@ export async function buildBoard(
     const row: Prediction = {
       ...call,
       id,
+      sleeve: 'composite-control',
+      forecast: {
+        definition: 'benchmark-excess-no-close-stop-v1',
+        label: 'Beat SPY by at least 1pp without a daily close through the stop',
+        horizonSessions: crypto ? CRYPTO_HORIZONS[1] : 10,
+        probabilityEdge: Math.round(p * 100) / 100,
+        probabilityTarget: null,
+        probabilityStop: null,
+        calibratedN: Math.round(nEff),
+        provisional,
+      },
+      detectedAt: nowSec,
+      availableAt: nowSec,
       date: today,
       modelVersion: ENGINE_MODEL_VERSION,
       regime: rowRegime,
@@ -3444,6 +3471,20 @@ export async function buildBoard(
     if (name) p.name = name
   })
 
+  // Keep a dated publication receipt while grouping repeated daily refreshes
+  // into one independent economic campaign for calibration and sizing.
+  const activeCampaigns = new Map<string, string>()
+  const campaignKey = (p: Prediction) => `${p.sleeve ?? 'composite-control'}:${p.sym.toUpperCase()}:${p.side}:${p.setup ?? 'unknown'}`
+  for (const date of priorDates) {
+    for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
+      if (!p.outcome10 && !activeCampaigns.has(campaignKey(p))) activeCampaigns.set(campaignKey(p), p.campaignId ?? p.id)
+    }
+  }
+  for (const p of final) {
+    const key = campaignKey(p)
+    p.campaignId = activeCampaigns.get(key) ?? p.id
+  }
+
   // reruns preserve overlays and outcomes already earned today
   const existing = (await store.read<Prediction[]>(`predictions:${today}`)) ?? []
   const byId = new Map(existing.map(p => [p.id, p]))
@@ -3464,6 +3505,77 @@ export async function buildBoard(
   const globalNews = newsTone(mediaTitles)
   const newsHist = ((await store.read<{ date: string; score: number; label: string }[]>('news-tone-history')) ?? []).filter(h => h.date !== today)
   await store.write('news-tone-history', [...newsHist, { date: today, score: globalNews.score, label: globalNews.label }].slice(-250))
+
+  // Visible research sleeves. They are observations, not board calls: no sleeve
+  // can size money until its own independent campaigns earn calibration.
+  const socialLabRows: SocialLabRow[] = social.map(s => ({
+    sym: s.sym,
+    redditMentions: s.redditMentions,
+    surgeMultiple: s.surgeMultiple,
+    sources: s.sources,
+    stocktwits: s.stocktwits,
+    channelNet: s.channelNet,
+    redditUpvotes: s.redditUpvotes,
+    redditRankDelta: s.redditRankDelta,
+    channelBreadth: s.channelBreadth,
+    channelVelocity: s.channelVelocity,
+    channelHype: s.channelHype ?? undefined,
+    capUsdM: sources.get(s.sym)?.capUsdM ?? null,
+    last: candleMap.get(s.sym)?.at(-1)?.c ?? null,
+  }))
+  const socialHistory = (await store.read<SocialHistoryPoint[]>('engine-lab-social-history')) ?? []
+  const shortAlways = ['GOOG', 'GOOGL']
+  const shortBySym = new Map<string, ShortHorizonRow>()
+  for (const sym of candidateSyms) {
+    const candles = candleMap.get(sym)
+    if (candles) shortBySym.set(sym, { sym, candles, earningsRisk: earningsSet.has(baseSym(sym)) })
+  }
+  await mapLimit(shortAlways, 2, async sym => {
+    if (shortBySym.has(sym)) return
+    const candles = await deps.candles(sym).catch(() => null)
+    if (candles && candles.length >= 90) shortBySym.set(sym, { sym, candles, earningsRisk: earningsSet.has(baseSym(sym)) })
+  })
+  const shortLabRaw = shortHorizonObservations([...shortBySym.values()], nowSec, shortAlways)
+  const qualityLab = qualityDipObservations(
+    candidateSyms.flatMap(sym => {
+      const candles = candleMap.get(sym)
+      return candles ? [{ sym, candles, qualityProxy: sleeveSet.has(sym) || (sources.get(sym)?.capUsdM ?? 0) > 10_000, capUsdM: sources.get(sym)?.capUsdM ?? null }] : []
+    }),
+    spy,
+    nowSec,
+  )
+  const socialLabRaw = socialIgnitionObservations(socialLabRows, socialHistory, nowSec)
+  let labRecords = (await store.read<StrategyLabRecord[]>('engine-lab-ledger')) ?? []
+  const openLab = labRecords.filter(r => !r.outcome).slice(-60)
+  await mapLimit(openLab, 6, async record => {
+    const candles = candleMap.get(record.sym) ?? (await deps.candles(record.sym).catch(() => null))
+    if (!candles) return
+    const outcome = gradeStrategyObservation(record, candles)
+    if (outcome) record.outcome = outcome
+  })
+  const labCampaignKey = (record: Pick<StrategyLabRecord, 'sleeve' | 'sym' | 'side'>) => record.sleeve === 'short-horizon'
+    ? `${record.sleeve}:${record.sym}`
+    : `${record.sleeve}:${record.sym}:${record.side}`
+  const activeLab = new Set(labRecords.filter(r => !r.outcome).map(labCampaignKey))
+  for (const obs of [...shortLabRaw, ...qualityLab, ...socialLabRaw]) {
+    const key = labCampaignKey(obs)
+    const recordableShortForecast = obs.sleeve === 'short-horizon' && obs.entry != null
+    const recordableSetup = obs.state === 'setup' && obs.side !== 'neutral' && obs.entry != null
+    if ((!recordableShortForecast && !recordableSetup) || activeLab.has(key)) continue
+    labRecords.push(obs)
+    activeLab.add(key)
+  }
+  labRecords = labRecords.slice(-500)
+  const qualityCalibrated = calibrateLabObservations(qualityLab, labRecords)
+  const socialLab = calibrateLabObservations(socialLabRaw, labRecords)
+  const shortLab = calibrateLabObservations(shortLabRaw, labRecords)
+  const qualityEvidenceN = labRecords.filter(r => r.sleeve === 'quality-dip' && r.outcome).length
+  const socialEvidenceN = labRecords.filter(r => r.sleeve === 'social-ignition' && r.outcome).length
+  const shortHorizonEvidenceN = labRecords.filter(r => r.sleeve === 'short-horizon' && r.outcome).length
+  const compositeEvidenceN = Object.values(calibration.buckets).reduce((sum, bucket) => sum + (bucket.n ?? 0), 0)
+  await store.write('engine-lab-ledger', labRecords)
+  await store.write('engine-lab', buildEngineLab({ date: today, nowSec, shortHorizon: shortLab, quality: qualityCalibrated, social: socialLab, compositeEvidenceN, shortHorizonEvidenceN, qualityEvidenceN, socialEvidenceN }))
+  await store.write('engine-lab-social-history', appendSocialHistory(socialHistory, socialLabRows, nowSec))
 
   // …and the empty-side COPY drops the side an experiment seated on (Stage 3d).
   // Every one of those sentences opens "nothing tradeable on the X side today"

@@ -31,9 +31,11 @@ import { useSlice } from '../lib/useSlice'
 import { usePullRefresh, useSlicesRefresh, type SliceRefreshEntry } from '../lib/usePullRefresh'
 import { RefreshStrip } from './parts/RefreshStrip'
 import { db } from '../lib/db'
-import { getCongress, getInsiderClusters, getNewsDesk } from '../lib/api'
+import { getCongress, getInsiderClusters, getNewsDesk, getSocialPulse } from '../lib/api'
 import type { CongressTrade, InsiderCluster } from '../lib/api'
 import { compactUsd, decodeEntities, longDate, relativeStamp } from '../lib/format'
+import { getBoardSlice } from '../lib/apiViews'
+import { SocialRadar } from './parts/SocialRadar'
 
 const PAGE = 30
 const FEED_PAGE = 12
@@ -363,19 +365,37 @@ const REFRESH_ENTRIES: SliceRefreshEntry[] = [
   { key: 'intel:news', fetcher: getNewsDesk },
   { key: 'intel:insiders', fetcher: getInsiderClusters },
   { key: 'intel:congress', fetcher: congressFetcher },
+  { key: 'intel:social', fetcher: getSocialPulse },
+  { key: 'board', fetcher: getBoardSlice },
 ]
 
 export default function Intel() {
+  const [view, setView] = useState<'markets' | 'social'>(() =>
+    new URLSearchParams(window.location.search).get('view') === 'social' ? 'social' : 'markets',
+  )
   const { refresh, refreshing } = useSlicesRefresh(REFRESH_ENTRIES)
   const { pull } = usePullRefresh(refresh)
+  const selectView = (next: 'markets' | 'social') => {
+    setView(next)
+    const url = next === 'social' ? `${window.location.pathname}?view=social` : window.location.pathname
+    window.history.replaceState(window.history.state, '', url)
+  }
   return (
     <div className="itl">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
       <h1>Intel</h1>
-      <JumpChips />
-      <NewsSection />
-      <InsidersSection />
-      <CongressSection />
+      <div className="itl-tabs" role="tablist" aria-label="Intel views">
+        <button type="button" role="tab" aria-selected={view === 'markets'} className={view === 'markets' ? 'active' : ''} onClick={() => selectView('markets')}>Markets</button>
+        <button type="button" role="tab" aria-selected={view === 'social'} className={view === 'social' ? 'active' : ''} onClick={() => selectView('social')}>Social Radar</button>
+      </div>
+      {view === 'markets' ? (
+        <>
+          <JumpChips />
+          <NewsSection />
+          <InsidersSection />
+          <CongressSection />
+        </>
+      ) : <SocialRadar />}
     </div>
   )
 }

@@ -68,6 +68,7 @@ export async function routeReport(
 
   if (method === 'GET') {
     const wantedDate = url?.searchParams.get('date')
+    const asJson = url?.searchParams.get('format') === 'json'
     if (url?.searchParams.get('list') != null) {
       const index = (await store.read<string[]>('report-index')) ?? []
       return json(200, { ok: true, data: index.slice().reverse() })
@@ -79,8 +80,13 @@ export async function routeReport(
     const wantedBulletin = url?.searchParams.get('bulletin') // "<date>:<kind>"
     if (wantedBulletin) {
       const [bDate, bKind] = wantedBulletin.split(':')
-      const day = (await store.read<{ kind: string; html: string }[]>(`bulletins:${bDate}`)) ?? []
+      const day =
+        (await store.read<{ kind: string; date: string; at: number; subject: string; text: string; html: string }[]>(`bulletins:${bDate}`)) ?? []
       const hit = day.find(b => b.kind === bKind)
+      if (asJson) {
+        if (!hit) return json(404, { ok: false, error: 'no bulletin for that date and edition' })
+        return json(200, { ok: true, data: hit })
+      }
       return page(hit ? 200 : 404, hit?.html ?? PLACEHOLDER)
     }
     const asFile = url?.searchParams.get('download') != null
@@ -88,7 +94,6 @@ export async function routeReport(
     // app can render the paper inline (sandboxed srcDoc) — the route's
     // X-Frame-Options stays DENY, and srcDoc is not a navigation. Read-only,
     // additive: HTML/download modes and the publish path are untouched.
-    const asJson = url?.searchParams.get('format') === 'json'
     if (wantedDate) {
       const archived = await store.read<StoredReport>(`report:${wantedDate}`)
       if (asJson) {

@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AskSheet, ASK_DAILY_CAP, ASK_NEEDS_KEY, buildAskContext, isNoKeyAnswer } from './parts/AskSheet'
 import type { EnginePrediction } from '../lib/api'
 import type { JourneyFunnelRow, VerdictRead } from '../lib/apiViews'
+import { clearDeviceGroqKey, setDeviceGroqKey } from '../lib/deviceLlm'
 
 const FACTOR_NAMES = ['technical', 'momentum', 'sector', 'social', 'channels', 'insiders', 'news', 'seasonality', 'smartMoney', 'catalyst'] as const
 const emptyFactors = () => Object.fromEntries(FACTOR_NAMES.map(n => [n, { score: null, detail: '', weight: 0 }])) as EnginePrediction['factors']
@@ -74,8 +75,9 @@ const contextFromUrl = (url: string): { sym: string; state: string; grade: strin
 describe('AskSheet', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear()
+    await clearDeviceGroqKey()
     fetchMock = vi.fn(() => jsonResponse({ answer: 'A grounded answer.', at: 1 }))
     vi.stubGlobal('fetch', fetchMock)
   })
@@ -291,22 +293,20 @@ describe('AskSheet', () => {
     it('a free device that HAS saved a key is open for business', async () => {
       vi.stubEnv('VITE_FREE_TOKEN', FREE)
       localStorage.setItem('mb-token', FREE)
-      fetchMock.mockImplementation(() => jsonResponse({ hasKey: true }))
+      await setDeviceGroqKey('gsk_abcdefghijklmnopqrstuvwxyz123456')
       render(<Harness />)
       const input = await screen.findByLabelText(/ask a question about nvda/i)
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      await waitFor(() => expect(input).not.toBeDisabled())
       expect(input).not.toBeDisabled()
       expect(screen.queryByText(`${ASK_NEEDS_KEY}.`)).not.toBeInTheDocument()
     })
 
-    it('a failed probe leaves the sheet open — it must never lock a sheet that would have worked', async () => {
-      vi.stubEnv('VITE_FREE_TOKEN', FREE)
-      localStorage.setItem('mb-token', FREE)
-      fetchMock.mockImplementation(() => Promise.reject(new Error('offline')))
+    it('the friends password uses the same device-key check as the old shared build', async () => {
+      localStorage.setItem('mb-token', 'millionaireclub')
       render(<Harness />)
       const input = await screen.findByLabelText(/ask a question about nvda/i)
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-      expect(input).not.toBeDisabled()
+      await waitFor(() => expect(input).toBeDisabled())
+      expect(screen.getByText(`${ASK_NEEDS_KEY}.`)).toBeInTheDocument()
     })
 
     it('a personal licence is never probed at all', async () => {

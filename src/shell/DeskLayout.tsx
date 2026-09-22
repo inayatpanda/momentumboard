@@ -14,15 +14,15 @@
 // one routed screen exists, so the pane can never hold two (asserted in
 // DeskLayout.test.tsx anyway — the property is worth pinning, not assuming).
 //
-// The Analytics drawer is desktop-only and lazy: `AnalyticsPanels` is a
-// separate chunk, imported the first time the reader opens it.
+// Analytics is a normal routed screen in the shared navigation. It used to be
+// a desktop-only drawer, which made it unreachable on phones and covered the
+// screen instead of behaving like the rest of the app.
 
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { useLocation } from 'wouter'
 import { Nav } from './Nav'
 
 const BoardColumn = lazy(() => import('../screens2/parts/BoardColumn'))
-const AnalyticsPanels = lazy(() => import('./AnalyticsPanels'))
 
 /** The one width that decides the desk, in the shell's own words. It matches
  *  the `@media (min-width: 1200px)` block in src/styles/base.css — change one,
@@ -59,13 +59,6 @@ export function useIsDesk(): boolean {
   return desk
 }
 
-const PanelsFallback = () => (
-  <>
-    <div className="skeleton" style={{ height: 150, marginBottom: 12 }} />
-    <div className="skeleton" style={{ height: 220 }} />
-  </>
-)
-
 export default function DeskLayout({ children }: { children: ReactNode }) {
   // THE COLUMN EARNS ITS PLACE OR IT LEAVES (owner review of the first DMG,
   // 2026-08-15). Master–detail is the STOCK flow: the board column beside a
@@ -76,25 +69,6 @@ export default function DeskLayout({ children }: { children: ReactNode }) {
   // /board at desk is simply the Board page, full width, hash and all.)
   const [path] = useLocation()
   const withColumn = path.startsWith('/stock/')
-  const [analytics, setAnalytics] = useState(false)
-  const toggleRef = useRef<HTMLButtonElement>(null)
-  const drawerRef = useRef<HTMLElement>(null)
-  // closing hands focus back to the button that opened it — the drawer is
-  // non-modal, so nothing else about the page is trapped while it is open
-  const close = useCallback(() => {
-    setAnalytics(false)
-    toggleRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
-    if (!analytics) return
-    drawerRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [analytics, close])
 
   return (
     <div className={withColumn ? 'desk2' : 'desk2 desk2-wide'}>
@@ -120,34 +94,7 @@ export default function DeskLayout({ children }: { children: ReactNode }) {
         </aside>
       )}
 
-      <main className="v2-page desk2-detail">
-        <div className="desk2-panebar">
-          <button
-            type="button"
-            ref={toggleRef}
-            className="mini-btn ghost desk2-analytics-btn"
-            aria-expanded={analytics}
-            onClick={() => setAnalytics(v => !v)}
-          >
-            Analytics
-          </button>
-        </div>
-        {children}
-      </main>
-
-      {analytics && (
-        <aside className="desk2-drawer" ref={drawerRef} tabIndex={-1} role="dialog" aria-modal="false" aria-label="Analytics">
-          <header className="desk2-drawer-head">
-            <span className="sec-label">Analytics</span>
-            <button type="button" className="mini-btn ghost" onClick={close}>
-              Close
-            </button>
-          </header>
-          <Suspense fallback={<PanelsFallback />}>
-            <AnalyticsPanels />
-          </Suspense>
-        </aside>
-      )}
+      <main className="v2-page desk2-detail">{children}</main>
     </div>
   )
 }

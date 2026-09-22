@@ -46,4 +46,31 @@ describe('report ?format=json', () => {
     expect(res.headers.get('content-type')).toContain('text/html')
     expect(await res.text()).toContain('The Edition')
   })
+
+  it('serves a dated pre-market or evening bulletin as a JSON envelope for the app reader', async () => {
+    const bulletin = {
+      kind: 'evening',
+      date: '2026-08-13',
+      at: 1_765_641_900,
+      subject: 'Evening report',
+      text: 'The session',
+      html: '<!doctype html><html><body><h1>Evening edition</h1></body></html>',
+    }
+    const store = memStore({ 'bulletins:2026-08-13': [bulletin] })
+    const res = await routeReport(
+      'GET',
+      new Headers(),
+      null,
+      {},
+      store,
+      noTelegram,
+      new URL('https://x/report?bulletin=2026-08-13:evening&format=json'),
+    )
+    expect(res.headers.get('content-type')).toContain('application/json')
+    const body = (await res.json()) as { ok: boolean; data: typeof bulletin }
+    expect(body.ok).toBe(true)
+    expect(body.data.kind).toBe('evening')
+    expect(body.data.at).toBe(1_765_641_900)
+    expect(body.data.html).toContain('Evening edition')
+  })
 })

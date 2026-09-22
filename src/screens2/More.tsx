@@ -96,7 +96,7 @@ export default function More() {
       </div>
       <div className="menu-group">
         <div className="menu-title">App</div>
-        <Row href="/settings" icon={<IconGear />} label="Settings" sub="Licence, notifications, AI key" />
+        <Row href="/settings" icon={<IconGear />} label="Settings" sub="Notifications, AI key and app preferences" />
         <ThemeRow />
         <InstallRow />
       </div>

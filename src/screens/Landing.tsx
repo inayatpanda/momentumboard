@@ -1,6 +1,3 @@
-import { useState } from 'react'
-import { setToken, startTrial } from '../lib/api'
-import { humanError } from '../lib/format'
 import { SiteNav } from './SitePages'
 
 // LANDING: the public face of the paper — everything a visitor without a licence
@@ -39,21 +36,7 @@ const FEATURES: Feature[] = [
 ]
 
 export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => void; licensed?: boolean }) {
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const beginTrial = async () => {
-    if (pending) return
-    setError(null)
-    setPending(true)
-    try {
-      await startTrial() // stores the token itself (calls setToken internally)
-      onUnlocked()
-    } catch (err) {
-      setError(humanError(err))
-      setPending(false)
-    }
-  }
+  const openApp = () => { if (licensed) onUnlocked(); else location.assign('/app/') }
 
   return (
     <div className="landing">
@@ -77,8 +60,8 @@ export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => vo
             public — every call lands in a ledger, hit or miss.
           </p>
           <div className="landing-hero-actions">
-            <button className="landing-hero-primary" onClick={licensed ? onUnlocked : beginTrial} disabled={pending}>
-              {licensed ? 'Open the app' : pending ? 'Setting up your access…' : 'Start free — 7 days'}
+            <button className="landing-hero-primary" onClick={openApp}>
+              Open the app
             </button>
             <a className="landing-hero-secondary" href="#access">I already have access</a>
           </div>
@@ -121,7 +104,7 @@ export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => vo
             </div>
           </div>
           <p className="landing-honesty" style={{ marginTop: 10 }}>
-            Free to download — a licence or reader pass unlocks the app itself, once, on each device.
+            Free to download — the friends-preview password opens the app on each device.
           </p>
         </section>
 
@@ -135,43 +118,19 @@ export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => vo
           <div className="landing-gate-card">
             <h2>Reader access</h2>
             <p>
-              StreetSignal is licence-only. Enter your key once — this device stays unlocked.
-              Licence-holders: the one-tap unlock link in your welcome message does this
-              automatically.
+              StreetSignal is currently in a private friends preview. Open the app and enter the shared password once on each device.
             </p>
 
             {licensed ? (
               <>
                 {/* the licensed reader browsing the public site — no gate, just the way back */}
                 <button className="landing-trial-btn" onClick={onUnlocked}>Open the app</button>
-                <p className="landing-trial-note">This device is already licensed — you were viewing the public site.</p>
+                <p className="landing-trial-note">This device already has access — you were viewing the public site.</p>
               </>
             ) : (
               <>
-                <button className="landing-trial-btn" onClick={beginTrial} disabled={pending}>
-                  {pending ? 'Setting up your access…' : 'Start free access — 7 days'}
-                </button>
-                <p className="landing-trial-note">
-                  No card, no signup — a 7-day reader pass for this device. After that, licences are
-                  issued personally by the publisher: ask whoever shared StreetSignal with you.
-                </p>
-                {error && <p className="landing-error" role="alert">{error}</p>}
-
-                <div className="landing-or">Already have a licence?</div>
-                <form
-                  className="landing-key-form"
-                  onSubmit={e => {
-                    e.preventDefault()
-                    const t = new FormData(e.currentTarget).get('t') as string
-                    if (t && t.trim()) {
-                      setToken(t.trim())
-                      onUnlocked()
-                    }
-                  }}
-                >
-                  <input name="t" type="password" placeholder="Licence key" autoComplete="off" />
-                  <button>Unlock</button>
-                </form>
+                <button className="landing-trial-btn" onClick={openApp}>Enter the friends preview</button>
+                <p className="landing-trial-note">No signup and no individual licence. Ask the person who shared StreetSignal with you for the current preview password.</p>
               </>
             )}
           </div>

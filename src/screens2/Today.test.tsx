@@ -5,7 +5,7 @@
 // asserts on the cached paint, the same pattern src/lib/useSlice.test.tsx
 // uses for its "never" fetcher.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -106,6 +106,24 @@ describe('CallCard', () => {
     expect(screen.getByText('128.4')).toHaveClass('num')
     expect(screen.getByText('121.1')).toHaveClass('num')
     expect(screen.getByText('141')).toHaveClass('num')
+  })
+
+  it('shows the new engine sleeve, horizon and matured sample on a published call', () => {
+    withRouter(<CallCard row={mkRow({
+      sleeve: 'composite-control',
+      campaignId: 'NVDA:long:2026-08-14',
+      forecast: {
+        definition: 'target-before-stop-v1',
+        label: 'target before stop',
+        horizonSessions: 10,
+        calibratedN: 42,
+        provisional: false,
+      },
+    })} />)
+    const contract = screen.getByLabelText('Engine forecast contract')
+    expect(contract).toHaveTextContent('Main engine · 10 sessions')
+    expect(contract).toHaveTextContent('target before stop')
+    expect(contract).toHaveTextContent('42 matured forecasts')
   })
 
   it('a near-miss row shows no grade pill and no probability text', () => {
@@ -738,6 +756,23 @@ describe('ChannelPicksStrip', () => {
 })
 
 describe('Today', () => {
+  it('surfaces the short-horizon decision cockpit and changes since the prior run', async () => {
+    const data = mkBoardData([mkRow({ sym: 'NVDA', side: 'long' }), mkRow({ id: 'r2', sym: 'AMD', side: 'short' })])
+    data.board!.generatedAt = Math.floor(Date.now() / 1000)
+    data.riskState = { rung: 2, directions: { long: { rung: 2, gradedAtRung: 18 }, short: { rung: 1, gradedAtRung: 9 } } }
+    data.decision = {
+      priorDate: '2026-08-13', priorRows: [{ sym: 'NVDA', side: 'short' }, { sym: 'OLD', side: 'long' }],
+      liveGraded: 10, liveHits: 6, latestBrier: 0.21,
+    }
+    await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
+    withRouter(<Today />)
+    const cockpit = await screen.findByLabelText('Decision cockpit')
+    expect(within(cockpit).getByText(/2–3 sessions/i)).toBeInTheDocument()
+    expect(within(cockpit).getByText(/NVDA short→long/)).toBeInTheDocument()
+    expect(within(cockpit).getByText(/Brier 0.210/)).toBeInTheDocument()
+    expect(within(cockpit).getByText(/long R2 \(n=18\).*short R1 \(n=9\)/i)).toBeInTheDocument()
+  })
+
   it('paints a cached board slice without waiting for the network', async () => {
     await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() - 200_000 })
     withRouter(<Today />)

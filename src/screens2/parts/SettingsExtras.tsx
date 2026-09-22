@@ -6,7 +6,8 @@
 // can never drift from More's cycle row or index.html's boot script).
 
 import { useEffect, useState, type CSSProperties } from 'react'
-import { apiGet, getLlmKeyStatus, putConfig, putLlmKey } from '../../lib/api'
+import { apiGet, deleteLegacyLlmKey, getLegacyLlmKeyStatus, probeGroqKey, putConfig } from '../../lib/api'
+import { clearDeviceGroqKey, hasDeviceGroqKey, setDeviceGroqKey } from '../../lib/deviceLlm'
 import { enablePush, pushSupported, type PushStatus } from '../../lib/push'
 import { applyTheme, getThemePref, resolvedDark, type ThemePref } from '../../lib/theme'
 import type { AppConfig, ReportEdition, ReportRecipient } from '../../../shared/config'
@@ -36,10 +37,20 @@ export function ByoAiKey({ isAdmin }: { isAdmin: boolean | null }) {
   const [hasKey, setHasKey] = useState(false)
   const [key, setKey] = useState('')
   const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [legacyRemoved, setLegacyRemoved] = useState(false)
+  const [lastTest, setLastTest] = useState<{ provider: string; model: string; at: number } | null>(() => {
+    try { return JSON.parse(localStorage.getItem('streetsignal-groq-status') ?? 'null') }
+    catch { return null }
+  })
   useEffect(() => {
-    getLlmKeyStatus()
-      .then(s => setHasKey(s.hasKey))
-      .catch(() => {})
+    hasDeviceGroqKey().then(setHasKey).catch(() => {})
+    getLegacyLlmKeyStatus().then(async s => {
+      if (!s.hasLegacyServerKey) return
+      await deleteLegacyLlmKey()
+      setLegacyRemoved(true)
+    }).catch(() => {})
   }, [])
   if (isAdmin !== false) return null
   return (
@@ -52,30 +63,54 @@ export function ByoAiKey({ isAdmin }: { isAdmin: boolean | null }) {
         <span className="set-main">
           <span>Your AI key</span>
           <span className="sub">
-            AI briefs and note feedback run on your own free Groq key (console.groq.com). {hasKey ? 'A key is saved for this licence.' : 'No key saved yet — AI features are off until you add one.'}
+            {hasKey ? 'Groq is connected from this device.' : 'Add a Groq key to enable AI briefs, Ask the Desk, and note feedback on this device.'}
           </span>
         </span>
+        {hasKey && (
+          <button className="remove" aria-label="Disconnect Groq" onClick={async () => {
+            await clearDeviceGroqKey()
+            await deleteLegacyLlmKey().catch(() => {})
+            setHasKey(false)
+            setSaved(false)
+            setLastTest(null)
+            localStorage.removeItem('streetsignal-groq-status')
+          }}>✕</button>
+        )}
       </div>
       <div className="set-inrow">
         <input className="set-in" type="password" placeholder="gsk_..." value={key} onChange={e => setKey(e.target.value)} style={{ flex: 1 }} aria-label="Groq API key" />
         <button
           type="button"
           className="mini-btn"
+          disabled={busy || !key.trim()}
           onClick={async () => {
+            setBusy(true)
+            setError('')
             try {
-              await putLlmKey(key.trim())
-              setHasKey(!!key.trim())
+              const probe = await probeGroqKey(key.trim())
+              await setDeviceGroqKey(key.trim())
+              await deleteLegacyLlmKey().catch(() => {})
+              setHasKey(true)
+              const status = { provider: probe.provider, model: probe.model, at: Date.now() }
+              setLastTest(status)
+              localStorage.setItem('streetsignal-groq-status', JSON.stringify(status))
               setKey('')
               setSaved(true)
               setTimeout(() => setSaved(false), 2500)
-            } catch {
-              /* leave input for retry */
+            } catch (e) {
+              setError((e as Error).message === 'invalid-key' ? 'That does not look like a Groq key.' : 'Groq rejected the key or could not be reached. Nothing was saved.')
+            } finally {
+              setBusy(false)
             }
           }}
         >
-          {saved ? 'Saved' : 'Save'}
+          {busy ? 'Testing…' : saved ? 'Connected' : 'Save & test'}
         </button>
       </div>
+      {error && <p className="set-err" role="alert">{error}</p>}
+      {hasKey && lastTest && <p className="set-note">Last successful test: {lastTest.provider} · {lastTest.model} · {new Date(lastTest.at).toLocaleString('en-GB')}.</p>}
+      {legacyRemoved && <p className="set-note">An older server-stored copy was removed. Re-enter the key here if you still want Groq on this device.</p>}
+      <p className="set-note">Stored only in this app profile on this device. It is sent over TLS to StreetSignal only when an AI feature is used, never added to config sync or server storage.</p>
     </section>
   )
 }

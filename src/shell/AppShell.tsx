@@ -13,6 +13,7 @@ import { Nav } from './Nav'
 import { OfflinePill } from './OfflinePill'
 import { UpdateBanner } from './UpdateBanner'
 import { ROUTES } from './routes'
+import { ChunkRecoveryBoundary } from './ChunkRecoveryBoundary'
 
 const PageFallback = () => (
   <div style={{ padding: 24 }}>
@@ -32,25 +33,27 @@ export default function AppShell({ locationHook }: { locationHook?: BaseLocation
   // shell is byte-for-byte what it was: one page column and the bottom tabs.
   const desk = useIsDesk()
   const outlet = (
-    <Suspense fallback={<PageFallback />}>
-      <Switch>
-        {ROUTES.map(r =>
-          r.path.includes(':') ? (
-            <Route key={r.path} path={r.path}>
-              {params => {
-                const C = r.component as React.ComponentType<{ sym: string }>
-                return <C sym={String((params as { sym?: string }).sym ?? '').toUpperCase()} />
-              }}
-            </Route>
-          ) : (
-            <Route key={r.path} path={r.path} component={r.component as React.ComponentType} />
-          ),
-        )}
-        <Route>
-          <Redirect to="/" />
-        </Route>
-      </Switch>
-    </Suspense>
+    <ChunkRecoveryBoundary>
+      <Suspense fallback={<PageFallback />}>
+        <Switch>
+          {ROUTES.map(r =>
+            r.path.includes(':') ? (
+              <Route key={r.path} path={r.path}>
+                {params => {
+                  const C = r.component as React.ComponentType<{ sym: string }>
+                  return <C sym={String((params as { sym?: string }).sym ?? '').toUpperCase()} />
+                }}
+              </Route>
+            ) : (
+              <Route key={r.path} path={r.path} component={r.component as React.ComponentType} />
+            ),
+          )}
+          <Route>
+            <Redirect to="/" />
+          </Route>
+        </Switch>
+      </Suspense>
+    </ChunkRecoveryBoundary>
   )
   return (
     <div className="v2">
