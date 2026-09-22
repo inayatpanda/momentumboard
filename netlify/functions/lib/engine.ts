@@ -23,12 +23,20 @@ import { rankSleeve, sleeveWithDefaults } from '../../../shared/engine/coreSleev
 import { classifyDip, dipCall, type DipRead } from '../../../shared/engine/dipLane'
 import { dipThesis } from '../../../shared/engine/voice'
 import { classifyVelocity, velocityCall, VELOCITY_DOOR_CAP } from '../../../shared/engine/velocityLane'
+import {
+  EARNINGS_FADE_MAX_PER_RUN,
+  classifyEarningsFade,
+  earningsFadeCall,
+  earningsFadeDisabled,
+  type EarningsFadeRead,
+} from '../../../shared/engine/earningsFadeLane'
 import { clusterCandidates, detectClusters, TREND_DAY_SYMS, TREND_HISTORY_DAYS, type TrendDay } from '../../../shared/engine/hypeCluster'
 import type { DiscoveryCandidate, DiscoveryResult } from '../../../shared/engine/discovery/types'
-import { DIP_CATALYST_KIND, LANE_CATALYST_KINDS, VELOCITY_CATALYST_KIND, WILDCARD_CATALYST_KIND, type CatalystTag } from '../../../shared/engine/catalyst'
+import { DIP_CATALYST_KIND, EARNINGS_FADE_CATALYST_KIND, LANE_CATALYST_KINDS, VELOCITY_CATALYST_KIND, WILDCARD_CATALYST_KIND, type CatalystTag } from '../../../shared/engine/catalyst'
 import { WILDCARD_SIZE_CAP, selectWildcard, wildcardDisabled } from '../../../shared/engine/wildcardLane'
 import { wildcardThesis } from '../../../shared/engine/voice'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
+import type { NasdaqEarningsRow } from './nasdaqEarnings'
 import { DIP_NEWS_BUDGET, unservedVenue, type DipNewsVerdict } from './dipNews'
 import { annotatePostMortems, POSTMORTEM_LLM_MAX_TOKENS, type PostMortemAsk } from './postMortemLlm'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
@@ -169,6 +177,19 @@ export interface EngineDeps {
   // In defaultDeps both share ONE Finnhub call; earningsSyms derives its Set from
   // this. Fail-soft: any error → [] (the radar just goes empty, the board is fine).
   earningsCalendar: () => Promise<{ sym: string; date: string; hour?: string }[]>
+  // THE DATED CALENDAR WITH ITS NUMBERS ON IT — the same nasdaq.com snapshot the
+  // two deps above are now served from, handed over whole: the print date, which
+  // SIDE of the session it landed on (`pre`/`post`, knowable only from a forward
+  // read — nasdaqEarnings.ts explains why), the reported EPS and the % surprise.
+  // Read by the earnings-fade lane, which needs all three to find the reaction
+  // bar and to know whether the print was a beat.
+  //
+  // OPTIONAL, and that is the fail-soft — the same shape `postMortemSentence` and
+  // `discovery` use. Absent (every existing fixture, a replay, a host with no
+  // store) means the lane simply never runs and not one other line of the board
+  // changes. A rejecting dep is the same thing: the lane treats it as an empty
+  // calendar and publishes nothing.
+  earningsEvents?: () => Promise<NasdaqEarningsRow[]>
   // overnight world tape: latest daily % change for the Asia/Europe indices, US
   // futures and VIX (^VIX carried in the same list, split out in buildBoard).
   // Fail-soft: any read the source can't supply is null — a vote it cannot cast.
@@ -241,24 +262,83 @@ export function defaultDeps(
   // already share (storeProvider), which is what predict-background passes anyway.
   store?: AppStore,
 ): EngineDeps {
-  // one dated earnings-calendar fetch (next 14 days), memoised so earningsSyms and
-  // earningsCalendar share a SINGLE Finnhub call per run rather than hitting the
-  // free-tier limit twice for the identical window. Fail-soft to [].
+  // THE EARNINGS CALENDAR, KEY-FIRST NO LONGER (2026-09-22).
+  //
+  // Every earnings fact the engine owns used to come from ONE Finnhub call, and
+  // this deployment's Finnhub account refuses roughly 78% of them — so the fact
+  // the whole `earningsRisk` rule stands on was arriving intermittently and
+  // failing SILENTLY (the catch below returns [], which reads exactly like "no
+  // name reports this fortnight"). nasdaq.com's own calendar is free, key-less
+  // and has answered 200 on every probe (nasdaqEarnings.ts). So:
+  //
+  //   PRIMARY   the nasdaq snapshot — ten forward dates a run, cached ~6h each,
+  //             merged into one durable blob that keeps the session timing a
+  //             forward read is the only source of. Sliced to the same 14-day
+  //             window the Finnhub call used, so `earningsRisk` is judged over
+  //             exactly the horizon it always was.
+  //   SUPPLEMENT Finnhub, and only when a key exists AND the call actually
+  //             succeeds: names it knows about that the snapshot does not are
+  //             ADDED. It can no longer remove or overwrite anything, which is
+  //             what makes a 78% refusal rate harmless instead of invisible.
+  //
+  // Both deps below still share ONE memoised fetch per run, and the log line
+  // names which source served how much — a calendar that quietly went empty is
+  // the failure this whole change exists to end.
+  let nasdaqOnce: Promise<NasdaqEarningsRow[]> | null = null
+  const fetchNasdaqCalendar = () => {
+    if (!nasdaqOnce)
+      nasdaqOnce = (async () => {
+        try {
+          const { snapshotEarningsCalendar } = await import('./nasdaqEarnings')
+          // deps are built before buildBoard is handed a store, so it arrives
+          // through the closure exactly as it does for `discovery`; absent, the
+          // live store the handlers already share.
+          const target = store ?? (await import('./storeProvider')).appStore
+          const rows = await snapshotEarningsCalendar(target, new Date().toISOString().slice(0, 10))
+          return rows
+        } catch (e) {
+          console.log('EARNINGS: nasdaq snapshot failed —', String(e).slice(0, 160))
+          return []
+        }
+      })()
+    return nasdaqOnce
+  }
+
   let earningsOnce: Promise<{ sym: string; date: string; hour?: string }[]> | null = null
   const fetchEarnings = () => {
     if (!earningsOnce)
       earningsOnce = (async () => {
-        try {
-          const from = new Date().toISOString().slice(0, 10)
-          const to = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
-          const res = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${env.FINNHUB_API_KEY ?? ''}`)
-          const j = (await res.json()) as { earningsCalendar?: { symbol?: string; date?: string; hour?: string }[] }
-          return (j.earningsCalendar ?? [])
-            .filter(e => e.symbol)
-            .map(e => ({ sym: e.symbol as string, date: e.date ?? '', hour: e.hour || undefined }))
-        } catch {
-          return []
+        const todayISO = new Date().toISOString().slice(0, 10)
+        const { upcomingEarnings } = await import('./nasdaqEarnings')
+        // `hour` is Finnhub's vocabulary and the event radar prints it, so the
+        // snapshot's own `time` is translated into it rather than the radar
+        // learning a second spelling of one fact.
+        const primary = upcomingEarnings(await fetchNasdaqCalendar(), todayISO, 14).map(r => ({
+          sym: r.sym,
+          date: r.date,
+          hour: r.time === 'pre' ? 'bmo' : r.time === 'post' ? 'amc' : undefined,
+        }))
+        const bySym = new Map(primary.map(e => [e.sym.toUpperCase(), e]))
+        let added = 0
+        if (env.FINNHUB_API_KEY) {
+          try {
+            const to = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
+            const res = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${todayISO}&to=${to}&token=${env.FINNHUB_API_KEY}`)
+            if (res.ok) {
+              const j = (await res.json()) as { earningsCalendar?: { symbol?: string; date?: string; hour?: string }[] }
+              for (const e of j.earningsCalendar ?? []) {
+                const sym = (e.symbol ?? '').trim().toUpperCase()
+                if (!sym || bySym.has(sym)) continue
+                bySym.set(sym, { sym: e.symbol as string, date: e.date ?? '', hour: e.hour || undefined })
+                added++
+              }
+            }
+          } catch {
+            /* the supplement is a supplement: a refusal costs nothing now */
+          }
         }
+        console.log(`EARNINGS: calendar — nasdaq ${primary.length} rows in the next 14d, finnhub added ${added}`)
+        return [...bySym.values()]
       })()
     return earningsOnce
   }
@@ -391,9 +471,14 @@ export function defaultDeps(
       const { fetchT212Positions } = await import('./t212lib')
       return fetchT212Positions({ T212_API_KEY: env.T212_API_KEY, T212_SECRET_KEY: env.T212_SECRET_KEY, T212_HOST: env.T212_HOST })
     },
-    // both derive from the same memoised fetch above — one HTTP call, two shapes
+    // all three derive from the same memoised snapshot above — one set of HTTP
+    // calls, three shapes
     earningsSyms: async () => new Set((await fetchEarnings()).map(e => e.sym)),
     earningsCalendar: () => fetchEarnings(),
+    // the WHOLE snapshot, past prints included: the fade lane reads dates that
+    // have already happened (that is where `eps` and `surprise` live), so it
+    // must not be handed the forward-only slice the two deps above take.
+    earningsEvents: () => fetchNasdaqCalendar(),
     // The universe scan (discovery.ts). `DISCOVERY=off` kills the stage before a
     // single bar is fetched and the legacy inflow runs exactly as it did.
     // Fail-soft is total and deliberate — a module that is not there yet, a seed
@@ -2777,6 +2862,107 @@ export async function buildBoard(
       console.log(`BOARD: velocity read on ${sym} failed —`, String(e).slice(0, 160))
     }
   }
+
+  // ---- the earnings-fade lane: PUBLISHED, GRADED, NEVER SIZED ----
+  //
+  // The walk-forward study over two years of bars found exactly one relationship
+  // that was monotone, sign-stable and t_NW-significant, and it ran the wrong
+  // way: a name that beat on EPS AND gapped up 3%+ lost 1.47pp to SPY over ten
+  // sessions and 3.43pp over twenty (n = 212, one season). Read as a long it is
+  // the opposite of an edge; read as a short it is a candidate event lane. The
+  // owner's ruling (2026-09-22, "option 1") is that it ships as a SHADOW lane —
+  // the rows publish, they grade, they never carry a penny — so the engine
+  // accrues its OWN evidence under its OWN gates instead of arguing from one
+  // replayed earnings season. `forceShadow` is passed as a literal `true` below,
+  // not as a constant a future edit can flip, because a flag named
+  // `..._SHADOW_FIRST` is an invitation and this one is a ruling.
+  //
+  // It runs LAST of the three lanes and after the candle fill, for the ordinary
+  // reason: it reads `candleMap`, and one chart gets one row per side, so a name
+  // that already carries a short — composite or lane — keeps it.
+  //
+  // THE EVENT COMES FROM THE SNAPSHOT, not from `earningsSet`. That set is a
+  // forward-looking fortnight of bare symbols; this lane needs a PAST print with
+  // its surprise attached and the session it landed on, which is exactly what
+  // `deps.earningsEvents` carries (nasdaqEarnings.ts). The dep is optional and
+  // the lane is wholly skipped when it is absent, so every existing fixture
+  // builds a byte-identical board.
+  //
+  // Symbols are matched EXACTLY, not by `baseSym`: the snapshot already speaks
+  // Yahoo's form (`BRK.B` → `BRK-B`), and stripping to the root would let one
+  // company's print be attributed to another's share class.
+  let earningsFadeCount = 0
+  if (!earningsFadeDisabled() && deps.earningsEvents) {
+    try {
+      const events = await deps.earningsEvents().catch(() => [] as NasdaqEarningsRow[])
+      // The LATEST print per name. A calendar 45 sessions deep holds a name's
+      // previous quarter too, and a stale row would have its reaction bar decades
+      // outside the two-session window — the classifier would refuse it anyway,
+      // but reading one row per name keeps the pass O(candidates).
+      const latestBySym = new Map<string, NasdaqEarningsRow>()
+      for (const e of events) {
+        if (!e?.sym || !e.date) continue
+        const key = e.sym.toUpperCase()
+        const prev = latestBySym.get(key)
+        if (!prev || e.date > prev.date) latestBySym.set(key, e)
+      }
+      const shortRows = new Set(board.filter(b => b.side === 'short').map(b => b.sym.toUpperCase()))
+      const fadeCandidates: { sym: string; read: EarningsFadeRead; call: EngineCall; capUsdM: number | null }[] = []
+      for (const [sym, candles] of candleMap) {
+        const key = sym.toUpperCase()
+        if (shortRows.has(key)) continue
+        const event = latestBySym.get(key)
+        if (!event) continue
+        // Per-SYMBOL fail-soft, exactly as the velocity lane takes it: one
+        // unreadable tape costs that name its call and nothing else.
+        try {
+          const read = classifyEarningsFade(candles, event, spy)
+          if (!read) continue
+          // The snapshot carries a market cap of its own, which is the only cap
+          // many just-reported names have in this run — the cap cache is filled
+          // for candidates, and a name can reach `candleMap` without one.
+          const capUsdM = sources.get(sym)?.capUsdM ?? event.marketCapUsdM ?? null
+          const raw = earningsFadeCall(sym, candles, read, capUsdM)
+          if (!raw) continue
+          fadeCandidates.push({ sym, read, call: raw, capUsdM })
+        } catch (e) {
+          console.log(`BOARD: earnings-fade read on ${sym} failed —`, String(e).slice(0, 160))
+        }
+      }
+      // LARGEST GAP FIRST, capped. One earnings morning can print thirty
+      // qualifying pops, and publishing all of them would spend the whole
+      // 5-per-side shadow budget on a single correlated bet — the very starvation
+      // the budget's own dedup rule exists to prevent.
+      fadeCandidates.sort((a, b) => b.read.gapPct - a.read.gapPct)
+      for (const { sym, read, call, capUsdM } of fadeCandidates.slice(0, EARNINGS_FADE_MAX_PER_RUN)) {
+        publishCall(
+          // earnings honesty applied here like every other lane — the lane is pure
+          // and has no forward calendar of its own.
+          { ...call, earningsRisk: earningsSet.has(baseSym(sym)) },
+          capUsdM,
+          { kind: EARNINGS_FADE_CATALYST_KIND, side: 'short', reason: read.detail, strength: 40 },
+          true, // ALWAYS shadow. Not a default, not a flag — the ruling.
+        )
+        // publishCall writes `called-shadow` under the name's own DISCOVERY door,
+        // which is true and not enough: a reader auditing the trace has to be able
+        // to tell a lane's deliberate shadow from a grade-null one. The lane
+        // re-attributes its own row — same gate, its own source — which is what
+        // makes the day's fade rows countable in the record.
+        trace.revise(sym, 'called-shadow', {
+          side: 'short',
+          source: `lane:${EARNINGS_FADE_CATALYST_KIND}`,
+          detail: `shadow only, never sized · ${read.detail}`,
+        })
+        earningsFadeCount++
+        console.log(`BOARD: earnings fade (shadow) on ${sym} — ${read.detail}`)
+      }
+    } catch (e) {
+      // Lane-wide fail-soft: a calendar outage, a dep that throws, a shape the
+      // snapshot changed under us. The board is exactly what it would have been.
+      console.log('BOARD: earnings-fade lane failed —', String(e).slice(0, 160))
+    }
+  }
+  if (earningsFadeCount) console.log(`BOARD: earnings-fade lane published ${earningsFadeCount} shadow short${earningsFadeCount === 1 ? '' : 's'}`)
 
   // one outstanding shadow per sym+side: skip a shadow candidate whose sym+side
   // still has a shadow that hasn't reached its calibrated grade (no outcome10) on

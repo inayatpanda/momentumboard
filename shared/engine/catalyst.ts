@@ -38,6 +38,16 @@ export const VELOCITY_CATALYST_KIND = 'velocity' as const
 // and a velocity row DO move the rung and must go on doing so.
 export const WILDCARD_CATALYST_KIND = 'wildcard' as const
 
+// …and for the EARNINGS-FADE LANE (earningsFadeLane.ts): the shadow lane that
+// shorts a post-earnings pop because two years of bars say such pops give the
+// gap back (the walk-forward study's only sign-stable, significant relationship).
+// Its composite is CONSTRUCTED from the gap's own size, exactly as the dip's is
+// from depth and the velocity lane's from the run, so it joins the lane family
+// below for the identical two reasons — and one this lane needs more than the
+// others: it is published shadow-only FOREVER until the owner says otherwise, so
+// its outcomes are the one population the factor stack must never be trained on.
+export const EARNINGS_FADE_CATALYST_KIND = 'earnings-fade' as const
+
 export interface CatalystTag {
   kind:
     | 'news'
@@ -48,6 +58,7 @@ export interface CatalystTag {
     | typeof DIP_CATALYST_KIND
     | typeof VELOCITY_CATALYST_KIND
     | typeof WILDCARD_CATALYST_KIND
+    | typeof EARNINGS_FADE_CATALYST_KIND
   side: 'long' | 'short' | null // null = "in play", no clean direction — relaxes the gate but casts no vote
   reason: string
   strength: number // 0..100 — how direct/material the catalyst is
@@ -72,7 +83,16 @@ export interface CatalystTag {
 // worldMult was ever applied to it. Booking its outcome into factor IC would
 // train the stack on a number it did not produce, and printing a world-tape
 // multiplier beside it would advertise an adjustment that never happened.
-export const LANE_CATALYST_KINDS: ReadonlySet<string> = new Set([DIP_CATALYST_KIND, VELOCITY_CATALYST_KIND, WILDCARD_CATALYST_KIND])
+export const LANE_CATALYST_KINDS: ReadonlySet<string> = new Set([
+  DIP_CATALYST_KIND,
+  VELOCITY_CATALYST_KIND,
+  WILDCARD_CATALYST_KIND,
+  // The EARNINGS FADE joins on both arguments and cannot be left off either: its
+  // composite is the gap's size, which no factor voted on, and its rows are
+  // shadow by construction — so booking them into factor IC would train the whole
+  // stack on a lane the engine deliberately refuses to size.
+  EARNINGS_FADE_CATALYST_KIND,
+])
 
 // The gates composeCall applies, parameterised by the reader's risk appetite.
 // The dead zone and calibration grading still apply, so "aggressive" widens the

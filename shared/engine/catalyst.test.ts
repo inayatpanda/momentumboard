@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AGGRESSIVE_GATES,
   DIP_CATALYST_KIND,
+  EARNINGS_FADE_CATALYST_KIND,
   LANE_CATALYST_KINDS,
   MODERATE_GATES,
   VELOCITY_CATALYST_KIND,
@@ -24,21 +25,38 @@ describe('lane catalyst kinds', () => {
     // the wildcard joins on the family's own argument: its composite is the
     // gate-free CORE read carried off a near-miss row, so no factor voted on the
     // row that published and no worldMult was ever applied to it
-    expect([...LANE_CATALYST_KINDS].sort()).toEqual(['dip', 'velocity', 'wildcard'])
+    expect([...LANE_CATALYST_KINDS].sort()).toEqual(['dip', 'earnings-fade', 'velocity', 'wildcard'])
   })
 
   it('a velocity tag is a legal CatalystTag, and every pre-existing kind survives', () => {
     const tag: CatalystTag = { kind: VELOCITY_CATALYST_KIND, side: 'long', reason: 'breakout · 3.1× volume', strength: 40 }
     expect(LANE_CATALYST_KINDS.has(tag.kind)).toBe(true)
     // the union only ever GROWS: a removed member would break this list at compile time
-    const kinds: CatalystTag['kind'][] = ['news', 'event', 'ipo', 'listing', 'earnings', DIP_CATALYST_KIND, VELOCITY_CATALYST_KIND, WILDCARD_CATALYST_KIND]
-    expect(new Set(kinds).size).toBe(8)
+    const kinds: CatalystTag['kind'][] = [
+      'news',
+      'event',
+      'ipo',
+      'listing',
+      'earnings',
+      DIP_CATALYST_KIND,
+      VELOCITY_CATALYST_KIND,
+      WILDCARD_CATALYST_KIND,
+      EARNINGS_FADE_CATALYST_KIND,
+    ]
+    expect(new Set(kinds).size).toBe(9)
   })
 
   it('an ordinary news/ipo catalyst is NOT a lane kind — it casts a measured vote and must keep learning', () => {
     expect(LANE_CATALYST_KINDS.has('news')).toBe(false)
     expect(LANE_CATALYST_KINDS.has('ipo')).toBe(false)
     expect(LANE_CATALYST_KINDS.has('')).toBe(false) // the `?? ''` fallback of an untagged row
+    // …and the plain `earnings` tag is NOT the fade LANE. One is a scheduled
+    // event putting a name in play for a measured, voted composite; the other is
+    // a constructed short the factor stack never saw. Two words apart, two
+    // different populations — and pooling them would train the stack on the one
+    // lane the engine refuses to size.
+    expect(LANE_CATALYST_KINDS.has('earnings')).toBe(false)
+    expect(LANE_CATALYST_KINDS.has(EARNINGS_FADE_CATALYST_KIND)).toBe(true)
   })
 })
 
