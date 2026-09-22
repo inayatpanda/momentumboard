@@ -176,11 +176,13 @@ describe('crypto momentum — absolute, 29 bars, denominated in the pair’s own
 
   it('takes NO benchmark argument at all — there is nothing to subtract', () => {
     // one REQUIRED argument (the pair's own closes) against the equity factor's
-    // two: the second one over there is `spyCloses`, and the crypto partition
-    // grades absolute, so a benchmark leg here would argue about a different
-    // question from the one the outcome will be measured on.
+    // three: the second one over there is `spyCloses` and the third the candles
+    // its RS-leader gate measures extension from, and the crypto partition grades
+    // absolute, so a benchmark leg here would argue about a different question
+    // from the one the outcome will be measured on. The count is what matters —
+    // ONE argument means there is nothing to be relative to.
     expect(cryptoMomentumFactor.length).toBe(1)
-    expect(momentumFactor.length).toBe(2)
+    expect(momentumFactor.length).toBe(3)
   })
 
   it('signs with the move, both ways', () => {

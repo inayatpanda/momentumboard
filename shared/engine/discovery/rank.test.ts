@@ -1,7 +1,19 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { applyHygiene, percentileRanks, priorityFor, quotesInPence, scaleDollarVol, selectCandidates, sessionsBetween, unusualRatio, PERCENTILE_FIELDS } from './rank'
+import {
+  applyHygiene,
+  percentileRanks,
+  priorityFor,
+  quotesInPence,
+  scaleDollarVol,
+  selectCandidates,
+  sessionsBetween,
+  unusualRatio,
+  BANDWIDTH_PCTL_MIN,
+  PERCENTILE_FIELDS,
+  PRIORITY_BUMP,
+} from './rank'
 import * as F from './synthetic.fixtures'
 import { HYGIENE, LENS_TOP_N, type Features, type LensHit, type LensId, type UniverseMember } from './types'
 
@@ -202,6 +214,74 @@ describe('selectCandidates', () => {
     expect(priorityFor(0.6, 1)).toBeLessThan(priorityFor(0.6, 2))
     expect(priorityFor(0.6, 0)).toBe(0.42)
   })
+  /** THE WALK-FORWARD BUMPS (2026-09-22). Two readings the study found worth
+   * ORDERING a queue by — and nothing worth sizing on, which is why they live here
+   * and not in the composite. */
+  it('leaves every old caller exactly where it was — the evidence argument defaults to nothing', () => {
+    expect(priorityFor(0.6, 0)).toBe(0.42)
+    expect(priorityFor(0.6, 0, {})).toBe(0.42)
+    expect(priorityFor(0.6, 2, { rsLeader: false, wideBands: false })).toBe(priorityFor(0.6, 2))
+  })
+
+  it('adds the rs-leader and bandwidth bumps, together and separately', () => {
+    expect(priorityFor(0.6, 0, { rsLeader: true })).toBeCloseTo(0.42 + PRIORITY_BUMP.rsLeader, 4)
+    expect(priorityFor(0.6, 0, { wideBands: true })).toBeCloseTo(0.42 + PRIORITY_BUMP.bandwidth, 4)
+    expect(priorityFor(0.6, 0, { rsLeader: true, wideBands: true })).toBeCloseTo(0.42 + PRIORITY_BUMP.rsLeader + PRIORITY_BUMP.bandwidth, 4)
+    // leadership outranks the width reading, because the study's lens edge
+    // (+1.1pp/10d) is the larger of the two
+    expect(PRIORITY_BUMP.rsLeader).toBeGreaterThan(PRIORITY_BUMP.bandwidth)
+  })
+
+  it('an rs-leader sorts ahead of an equal-scoring rival on another lens', () => {
+    const hits = new Map<string, LensHit[]>([['AAA', [hit('rs-leader', 0.6)]], ['ZZZ', [hit('breakout', 0.6)]]])
+    const members = new Map([['AAA', F.member({ sym: 'AAA' })], ['ZZZ', F.member({ sym: 'ZZZ' })]])
+    const features = new Map([['AAA', f('AAA')], ['ZZZ', f('ZZZ')]])
+    const { candidates } = selectCandidates(hits, members, features, new Map())
+    expect(candidates.map(c => c.sym)).toEqual(['AAA', 'ZZZ'])
+    expect(candidates[0].priority).toBe(priorityFor(0.6, 0, { rsLeader: true }))
+    expect(candidates[1].priority).toBe(priorityFor(0.6, 0))
+  })
+
+  it('…and reads ANY kept reading, not just the best one — a leader is a leader whatever sorted first', () => {
+    // `unusual` outscores `rs-leader` here, so `lenses[0]` is NOT the leader row
+    const hits = new Map<string, LensHit[]>([['AAA', [hit('unusual', 0.9), hit('rs-leader', 0.3)]], ['ZZZ', [hit('unusual', 0.9)]]])
+    const members = new Map([['AAA', F.member({ sym: 'AAA' })], ['ZZZ', F.member({ sym: 'ZZZ' })]])
+    const features = new Map([['AAA', f('AAA')], ['ZZZ', f('ZZZ')]])
+    const { candidates } = selectCandidates(hits, members, features, new Map())
+    expect(candidates[0].sym).toBe('AAA')
+    expect(candidates[0].lenses[0].lens).toBe('unusual')
+    expect(candidates[0].priority).toBe(priorityFor(0.9, 0, { rsLeader: true }))
+  })
+
+  it('WIDE bands sort ahead of a coiled rival, at the study cut and not a basis point short of it', () => {
+    const hits = new Map<string, LensHit[]>([['AAA', [hit('breakout', 0.6)]], ['ZZZ', [hit('breakout', 0.6)]]])
+    const members = new Map([['AAA', F.member({ sym: 'AAA' })], ['ZZZ', F.member({ sym: 'ZZZ' })]])
+    const wide = new Map([['AAA', f('AAA', { bbWidthPctl120: BANDWIDTH_PCTL_MIN })], ['ZZZ', f('ZZZ', { bbWidthPctl120: 0.1 })]])
+    expect(selectCandidates(hits, members, wide, new Map()).candidates.map(c => c.sym)).toEqual(['AAA', 'ZZZ'])
+    // one basis point tighter and the bump is gone — the cut is a cut
+    const justTight = new Map([['AAA', f('AAA', { bbWidthPctl120: BANDWIDTH_PCTL_MIN - 0.0001 })], ['ZZZ', f('ZZZ', { bbWidthPctl120: 0.1 })]])
+    const tight = selectCandidates(hits, members, justTight, new Map()).candidates
+    expect(tight[0].priority).toBe(tight[1].priority)
+    // an unreadable width never earns a bump: an unknown must not pass a gate
+    const unknown = new Map([['AAA', f('AAA', { bbWidthPctl120: null })], ['ZZZ', f('ZZZ', { bbWidthPctl120: 0.1 })]])
+    const none = selectCandidates(hits, members, unknown, new Map()).candidates
+    expect(none[0].priority).toBe(none[1].priority)
+  })
+
+  it('ORDERS the pool and never admits to it: same names in, same names out', () => {
+    // one lens for everybody, so the per-lens top-N and the sector cap decide the
+    // MEMBERSHIP exactly as they always did and the bump can only touch the ORDER
+    const { hits, members, features } = bench(15)
+    const banded = new Map([...features].map(([sym, feat], i) => [sym, { ...feat, bbWidthPctl120: i % 3 ? 0.1 : 0.95 }] as const))
+    const plain = selectCandidates(hits, members, features, new Map())
+    const bumped = selectCandidates(hits, members, new Map(banded), new Map())
+    expect(bumped.candidates.map(c => c.sym).sort()).toEqual(plain.candidates.map(c => c.sym).sort())
+    expect(bumped.candidates.length).toBe(plain.candidates.length)
+    expect([...bumped.cut.keys()].sort()).toEqual([...plain.cut.keys()].sort())
+    // …and the order DID move, or this test would pass on a dead bump
+    expect(bumped.candidates.map(c => c.sym)).not.toEqual(plain.candidates.map(c => c.sym))
+  })
+
   it('is deterministic: shuffling every input map changes nothing', () => {
     const { hits, members, features } = bench(20, { sector: 'Health' })
     const noms = new Map([['S03', ['nom:social']], ['S07', ['nom:news', 'nom:social']]])

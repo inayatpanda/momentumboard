@@ -26,7 +26,7 @@ import {
 export * from './types'
 export { computeFeatures, emaSeries } from './features'
 export { runLenses, unusualLens, rsLeaderLens, pullbackLens, breakoutLens, dipLens, weakLens, climaxLens } from './lenses'
-export { applyHygiene, percentileRanks, priorityFor, quotesInPence, scaleDollarVol, selectCandidates, unusualRatio, PERCENTILE_FIELDS } from './rank'
+export { applyHygiene, percentileRanks, priorityFor, quotesInPence, scaleDollarVol, selectCandidates, unusualRatio, BANDWIDTH_PCTL_MIN, PERCENTILE_FIELDS, PRIORITY_BUMP } from './rank'
 export { buildUniverse, type UniverseNomination } from './universe'
 
 export interface DiscoverPureInput {

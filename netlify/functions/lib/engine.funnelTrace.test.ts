@@ -102,8 +102,15 @@ const goldenStore = async () => {
     levMap: { NVDA: { short2x: 'INV' } },
   })
   await store.write('engine-calibration', calWith('short:amber:55-70'))
+  // TWO bearish channels, not one, and the second is load-bearing: this fixture's
+  // job includes proving that MOVING the context cap moves what publishes, which
+  // only one video could do while the core had four factors to divide by. A fifth
+  // core weight (`bandwidth`, 2026-09-22) grew coreDen ~18%, which shrank the
+  // same context vote below the 12-point cap and quietly turned that assertion
+  // into a tautology. A second stance puts the context layer back ON the cap.
   await store.write('video-extracts', [
     { url: 'yt/1', channel: 'Stocks with Josh', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
+    { url: 'yt/2', channel: 'The Chart Room', at: NOW - 2 * 86_400, tickers: [{ sym: 'NVDA', stance: 'bear', levels: [] }], themes: [] },
   ])
   return store
 }
@@ -127,8 +134,21 @@ const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).diges
 // Re-stamped for the research-lab port: each published row now carries a
 // sleeve, an explicit forecast contract and detection/availability timestamps.
 // The readable decision projection below remains unchanged.
-const GOLDEN_SHA = '96a4ccbc999b73b10ed059d1368cfcf185b7c95c5ea823b61763fcf511d796fa'
-const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-64.8 r=1 e=162 s=170.44 t=150.75 ']
+//
+// RE-STAMPED AGAIN on 2026-09-22, and this time THE DECISION MOVED — so the
+// readable projection moved with it and the reason is written down rather than
+// hashed away. `bandwidth` joined the CORE (ENGINE_MODEL_VERSION 3 → 4), which
+// puts a fifth weight in the denominator every core composite is divided by, and
+// `momentum` grew a 60-session relative-strength leg. On this tape those two
+// changes read: technical −45, momentum −80 (clamped either way), bandwidth −50 —
+// a name in a straight-line slide prints the WIDEST Bollinger width of its own
+// last 120 sessions, and the study's positive IC on that percentile puts the
+// widest decile at its better-performing end, so it DEEPENS the read. The short
+// goes −64.8 → −63.5. The grade, the rung, the entry, the stop, the target and
+// the planted band (55-70, whose 62.5 midpoint the read still clears) are all
+// unchanged. 96a4ccbc… was the pre-bandwidth value.
+const GOLDEN_SHA = '6d221d1760fca88fbaaf29b71f0267bbe52c1852e19ab72e7d11385eb59a7d45'
+const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-63.5 r=1 e=162 s=170.44 t=150.75 ']
 /** Every key the golden day wrote at BASE. The trace may ADD to this list and
  * may touch nothing in it. */
 const GOLDEN_KEYS = [
@@ -227,11 +247,11 @@ describe('the funnel trace', () => {
     expect(trace.gates).toEqual({ deadZone: 20, minExpectedMovePct: 1.25, contextMaxPts: 14 })
     // …and the move is VISIBLE in what published, by exactly the amount the moved
     // gate allows and not a point more: this day's context layer sits ON the cap,
-    // so raising it 12 → 14 moves the composite −64.8 → −66.8. The grade, the
+    // so raising it 12 → 14 moves the composite −63.5 → −65.5. The grade, the
     // rung and every level are untouched — the dead zone at 20 changes what a
-    // MARGINAL name does, and NVDA at −66.8 was never marginal.
+    // MARGINAL name does, and NVDA at −65.5 was never marginal.
     const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
-    expect(projection(ledger)).toEqual(GOLDEN_ROWS.map(r => r.replace('c=-64.8', 'c=-66.8')))
+    expect(projection(ledger)).toEqual(GOLDEN_ROWS.map(r => r.replace('c=-63.5', 'c=-65.5')))
   })
 
   it('a name a door offered and the pool refused is counted, never listed', async () => {
@@ -382,13 +402,18 @@ describe('the funnel trace', () => {
     const store = recordingStore()
     // Two mild slides, both shorts, both dying in the dead zone — and they die at
     // different PASSES. Under a risk-on tape a short is nudged ×0.85, so SB's core
-    // (−27.1) clears the gate on pass 1 and is dragged back under to −23 by the
-    // re-score, while SA (−24.8) never cleared it at all. Same code, materially
+    // (−27.3) clears the gate on pass 1 and is dragged back under to −23.2 by the
+    // re-score, while SA (−24.7) never cleared it at all. Same code, materially
     // different evidence, and Task 1's seam is exactly that the row records the
     // SECOND pass's verdict — so the row has to admit which pass it was.
-    const drift = (r: number) => mk(j => (200 - j * r) * (1 + 0.05 * Math.sin(j / 3)))
+    const drift = (r: number, amp = 0.05) => mk(j => (200 - j * r) * (1 + amp * Math.sin(j / 3)))
+    // SA's oscillation was narrowed 5% → 3% on 2026-09-22. `bandwidth` reads the
+    // width of that oscillation against the name's own year, so at 5% BOTH tapes
+    // composited past the gate on pass 1 and the fixture lost the contrast it is
+    // built on — the whole point is one name that never cleared and one that
+    // cleared and was dragged back. A quieter SA restores it, on the same shape.
     const tapes = new Map([
-      ['SA', drift(0.05)],
+      ['SA', drift(0.05, 0.03)],
       ['SB', drift(0.15)],
     ])
     await store.write('config', { watchlist: [{ symbol: 'SA' }, { symbol: 'SB' }], rules: [], ytChannels: [], levMap: {} })

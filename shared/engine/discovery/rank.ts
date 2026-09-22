@@ -173,13 +173,58 @@ export function applyHygiene(
 /** At most 30% of one lens's picks from one sector, and never fewer than 1. */
 const sectorCapFor = (lens: LensId): number => Math.max(1, Math.floor(LENS_TOP_N[lens] * LENS_SECTOR_SHARE_MAX))
 
+/** WHAT THE WALK-FORWARD STUDY BUYS AT THE FRONT OF THE POOL (2026-09-22).
+ *
+ * The study swept eight lenses and fourteen features over ~348k name-dates and
+ * found two things worth ordering a queue by, and nothing worth sizing on:
+ *
+ *   rs-leader   the best lens at every horizon — +1.10pp over 10 sessions,
+ *               +2.55pp over 20, hit 46.5%/49.7%, positive in BOTH halves. Its
+ *               honest t_NW is 1.6, short of 2, which is exactly why it is
+ *               spelled here as PRIORITY rather than as conviction: the study's
+ *               own verdict is "a WATCHLIST, not a sized call".
+ *   bandwidth   the only feature whose IC keeps its sign across both halves AND
+ *               both venues while reaching |t| ≥ 2 — IC t 3.0 at 10 sessions,
+ *               5.5 at 20. That IC is POSITIVE and the deciles are cut on the
+ *               percentile itself, so the study's better-performing end is the
+ *               WIDEST bands: D10 returned +0.49pp/+1.08pp against D1's
+ *               −0.08pp/+0.07pp. The cut at 0.8 is the widest fifth of the name's
+ *               own 120-session Bollinger width, comfortably inside that D10
+ *               bucket. (It was a `≤ 0.2` bump on the opposite reading until the
+ *               owner adjudicated for the table on 2026-09-22.)
+ *
+ * THIS ORDERS, IT NEVER ADMITS OR REFUSES. Every candidate in `kept` already
+ * entered the pool by clearing its lens's own gate and the per-lens top-N; all
+ * these two numbers decide is who the downstream fetch and scoring budget reaches
+ * FIRST. Nothing is dropped because it lacks them, and nothing is added because
+ * it has them. The bumps are additive and can carry a priority above 1 — it is a
+ * sort key, not a probability, and clamping would only manufacture ties.
+ *
+ * The sizes are deliberately small relative to a lens score: 0.15 moves a name
+ * past a rival about 0.21 of a lens score ahead of it (the 0.7 multiplier), which
+ * reorders neighbours rather than teleporting a weak leader to the top. */
+export const PRIORITY_BUMP = { rsLeader: 0.15, bandwidth: 0.1 } as const
+export const BANDWIDTH_PCTL_MIN = 0.8
+
 /** Best-lens quality is 70% of the answer; independent corroboration is 30%.
  *
  * Two nominators (news AND social, say) is the most the bump ever pays: the
  * third source is usually the first two repeated, and a loud name must not be
- * able to out-rank a good one on volume of chatter alone. */
-export const priorityFor = (bestScore: number, nominatorCount: number): number =>
-  round4(bestScore * 0.7 + 0.3 * Math.min(1, nominatorCount / 2))
+ * able to out-rank a good one on volume of chatter alone.
+ *
+ * `evidence` defaults to nothing, so a caller that knows neither reading scores
+ * exactly what it scored before this argument existed. */
+export const priorityFor = (
+  bestScore: number,
+  nominatorCount: number,
+  evidence: { rsLeader?: boolean; wideBands?: boolean } = {},
+): number =>
+  round4(
+    bestScore * 0.7 +
+      0.3 * Math.min(1, nominatorCount / 2) +
+      (evidence.rsLeader ? PRIORITY_BUMP.rsLeader : 0) +
+      (evidence.wideBands ? PRIORITY_BUMP.bandwidth : 0),
+  )
 
 /**
  * Per lens: order by score (ties → symbol, so the output never depends on Map
@@ -248,7 +293,13 @@ export function selectCandidates(
       index: member.index ? [...member.index] : undefined,
       lenses,
       features: f,
-      priority: priorityFor(lenses[0].score, noms.length),
+      // ANY kept reading, not just the best one: a name whose top lens is
+      // `unusual` and whose second is `rs-leader` IS a leader, and reading only
+      // `lenses[0]` would have said otherwise on the strength of a sort.
+      priority: priorityFor(lenses[0].score, noms.length, {
+        rsLeader: lenses.some(l => l.lens === 'rs-leader'),
+        wideBands: f.bbWidthPctl120 != null && f.bbWidthPctl120 >= BANDWIDTH_PCTL_MIN,
+      }),
       nominators: noms,
     })
   }

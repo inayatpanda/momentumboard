@@ -22,6 +22,15 @@ import { composeThesis, factorPhrase } from './voice'
 export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
   technical: 1.0,
   momentum: 0.9,
+  // SEEDED LOW, on the repo's rule for a new factor: 0.4 against technical's 1.0,
+  // and the IC loop moves it from live outcomes inside [0.5x, 1.5x] of this
+  // anchor. Low is not a verdict on the evidence — bandwidth is the ONLY feature
+  // in the 2026-09-22 walk-forward study whose IC keeps its sign across both
+  // halves and both venues — it is a verdict on the SIZE of it: the widest decile
+  // beat the tightest by 1.00pp over 20 sessions, and the honest out-of-sample
+  // composite behind that number reads t_NW 0.4. A real signal worth a small,
+  // learnable weight is exactly what 0.4 says.
+  bandwidth: 0.4,
   catalyst: 0.6, // a live, dated event — the strongest thing that isn't price
   news: 0.5,
   channels: 0.5,
@@ -43,6 +52,7 @@ export const DEFAULT_WEIGHTS: Record<FactorName, number> = {
 export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
   technical: 'core',
   momentum: 'core',
+  bandwidth: 'core', // Bollinger-width percentile off the name's own closes — price, every session
   sector: 'core', // derived entirely from market prices — belongs in the core
   seasonality: 'core', // price-derived (own candle history)
   social: 'context',
@@ -109,6 +119,17 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
  *                         and the factor's own comment says why: "wait — no edge
  *                         either side until the turn confirms".
  *   momentum    silence — 21d RS exactly equal to SPY's. An arithmetic tie.
+ *   bandwidth   silence — a score of exactly zero is today's Bollinger width
+ *                         printing the TIGHTEST of its own last 120 sessions
+ *                         (percentile exactly 0). A boundary value on a
+ *                         continuous scale, reached by the arithmetic rather than
+ *                         by a branch that means "we looked and there is no
+ *                         signal" — the same verdict the table gives technical
+ *                         and momentum. Rare by construction (~one name-day in
+ *                         120 before ties), and every "we could not look" — a
+ *                         short tape, an unreadable width, a chart with no
+ *                         direction to borrow — is already NULL, so nothing the
+ *                         loop needs is being thrown away here.
  *   sector      silence — rank exactly at the median. An arithmetic tie.
  *   channels    silence — bulls and bears exactly cancelling. A split panel is
  *                         disorder, not a vote (the same argument the technical
@@ -127,6 +148,7 @@ export const FACTOR_FAMILY: Record<FactorName, 'core' | 'context'> = {
 export const ZERO_IS_A_READING: Record<FactorName, boolean> = {
   technical: false,
   momentum: false,
+  bandwidth: false,
   sector: false,
   seasonality: true,
   social: false,
@@ -370,6 +392,26 @@ export function composeCall(input: ComposeInput): CallOrRejection {
   // AND momentum present, the regime known, at least one confirming leg
   // (sector / breadth / volume), and ≥2 core families agreeing with the side.
   // Two agreeing families means technical-plus-nothing never acts alone.
+  //
+  // DOES `bandwidth` COUNT AS AN AGREEING FAMILY? YES — decided 2026-09-22, and
+  // by construction rather than by a special case: it is a core family, so the
+  // filter below picks it up like sector and seasonality. It is price-derived,
+  // point-in-time, computed off the same closes every session for every name, and
+  // measured — it is the one feature in the walk-forward study whose IC sign held
+  // across both halves and both venues. Excluding it would mean keeping a factor
+  // out of the evidence count while letting it move the composite, which is the
+  // worst of both.
+  //
+  // THE CAVEAT, STATED BECAUSE IT WEAKENS THE CONTRACT: bandwidth's SIGN is
+  // borrowed from the 50-EMA slope (factors.ts), and the technical read is built
+  // on the same trend. So on a trending chart the two will usually agree, and
+  // "technical plus bandwidth" is a WEAKER corroboration than "technical plus
+  // sector" or "technical plus momentum" — two readings of one trend, not two
+  // independent votes. Its STRENGTH is independent (how wide the bands are is not
+  // a statement about trend) and its weight is the smallest in the core, which is
+  // what bounds the cost. If the
+  // contract's pass rate jumps on the next live board, that is the mechanism, and
+  // the answer is a stronger contract rather than a quieter factor.
   const coreFamilies = (Object.keys(FACTOR_FAMILY) as FactorName[]).filter(n => FACTOR_FAMILY[n] === 'core')
   const dir = side === 'long' ? 1 : -1
   const famAgree = coreFamilies.filter(n => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CONTEXT_MAX_PTS, DEFAULT_WEIGHTS, LONG_REGIME_MULT, composeCall, coreCompositeOf, setupFamilyOf, type ComposeInput } from './composite'
+import { CONTEXT_MAX_PTS, DEFAULT_WEIGHTS, FACTOR_FAMILY, LONG_REGIME_MULT, composeCall, coreCompositeOf, setupFamilyOf, type ComposeInput } from './composite'
 import { AGGRESSIVE_GATES, MODERATE_GATES } from './catalyst'
 import { catalystFactor } from './factors'
 import { bannedTokensIn } from './voice'
@@ -28,6 +28,7 @@ const gateOf = (input: ComposeInput): { gate: GateCode; side: 'long' | 'short' |
 const nullFactors = (): Record<FactorName, FactorScore> => ({
   technical: { score: null, detail: '' },
   momentum: { score: null, detail: '' },
+  bandwidth: { score: null, detail: '' },
   sector: { score: null, detail: '' },
   social: { score: null, detail: '' },
   channels: { score: null, detail: '' },
@@ -254,6 +255,57 @@ describe('composeCall', () => {
   })
 })
 
+/** BANDWIDTH IS CORE (2026-09-22, ENGINE_MODEL_VERSION 4). Four claims, and the
+ * fourth is the one that had to be decided rather than discovered. */
+describe('bandwidth joins the core', () => {
+  it('is a CORE family at the seeded 0.4 — technical 1.0, momentum 0.9, bandwidth 0.4', () => {
+    expect(FACTOR_FAMILY.bandwidth).toBe('core')
+    expect(DEFAULT_WEIGHTS.bandwidth).toBe(0.4)
+    expect(DEFAULT_WEIGHTS.bandwidth).toBeLessThan(DEFAULT_WEIGHTS.momentum)
+    expect(DEFAULT_WEIGHTS.bandwidth).toBeGreaterThan(DEFAULT_WEIGHTS.sector)
+  })
+
+  it('moves the composite by exactly its weight over the core denominator', () => {
+    // (1.0×84 + 0.9×40 + 0.4×50) / (1.0 + 0.9 + 0.4) = 140 / 2.3 = 60.87
+    const call = drafted(base({ factors: { ...longFactors(), bandwidth: { score: 50, detail: 'p100 — the widest of its own year' } } }))!
+    expect(call.composite).toBeCloseTo(60.9, 1)
+    // …and a null bandwidth renormalises away, leaving the four-core read intact
+    expect(drafted(base({ factors: longFactors() }))!.composite).toBeCloseTo(63.2, 1)
+  })
+
+  it('cannot create a call on its own — the dead zone still gates it', () => {
+    // maximal bandwidth and nothing else: 0.4×50 / 0.4 = 50, which DOES clear the
+    // dead zone, so the gate that matters is the one below it
+    const alone = { ...nullFactors(), bandwidth: { score: 50, detail: 'p100 — the widest of its own year' } }
+    expect(drafted(base({ factors: alone }))!.composite).toBeCloseTo(50, 1)
+    // …and a middling width on a chart with nothing behind it dies in the dead zone
+    // like any other lonely core read
+    const thin = { ...nullFactors(), bandwidth: { score: 20, detail: 'p40' } }
+    expect(gateOf(base({ factors: thin }))).toMatchObject({ gate: 'dead-zone-core', side: 'long' })
+    // the real production shape: a marginal chart that bandwidth drags UNDER the
+    // gate rather than over it — a COILED name sits at the weak end of the study's
+    // only stable feature, scores near zero, and dilutes the read
+    const marginal = { ...nullFactors(), technical: { score: 26, detail: 'basing' }, momentum: { score: 26, detail: '' } }
+    expect(drafted(base({ factors: marginal, stage: 'basing', entryQuality: 'neutral' }))).not.toBeNull()
+    expect(gateOf(base({ factors: { ...marginal, bandwidth: { score: 0.5, detail: 'p1 — the tightest of its own year' } }, stage: 'basing', entryQuality: 'neutral' }))).toMatchObject({
+      gate: 'dead-zone-core',
+    })
+  })
+
+  it('COUNTS as an agreeing core family — decided yes, with the caveat stated', () => {
+    // It is price-derived, point-in-time and measured, so it counts like sector and
+    // seasonality do. The caveat lives beside the contract in composite.ts: its SIGN
+    // is borrowed from the same trend the chart read describes, so technical +
+    // bandwidth is a weaker corroboration than technical + sector.
+    const agreeing = drafted(base({ factors: { ...nullFactors(), technical: { score: 84, detail: '' }, bandwidth: { score: 30, detail: '' } }, volumeConfirmed: true }))!
+    expect(agreeing.evidence.famAgree).toBe(2)
+    // …and it can only ever ADD a family when it actually agrees
+    const opposing = drafted(base({ factors: { ...nullFactors(), technical: { score: 84, detail: '' }, bandwidth: { score: -30, detail: '' } }, volumeConfirmed: true }))!
+    expect(opposing.evidence.famAgree).toBe(1)
+    expect(opposing.evidence.contract).toBe(false)
+  })
+})
+
 describe('two-layer composite: core decides, context colours', () => {
   const loudContext = (): Record<FactorName, FactorScore> => ({
     social: { score: 60, detail: 'reddit hot' },
@@ -264,6 +316,7 @@ describe('two-layer composite: core decides, context colours', () => {
     smartMoney: { score: 30, detail: 'fund added' },
     technical: { score: null, detail: '' },
     momentum: { score: null, detail: '' },
+    bandwidth: { score: null, detail: '' },
     sector: { score: null, detail: '' },
     seasonality: { score: null, detail: '' },
   })
@@ -348,10 +401,11 @@ describe('two-layer composite: core decides, context colours', () => {
 
   it('coverage reports the core weight actually present', () => {
     // technical 1.0 + momentum 0.9 = 1.9 present, of the core total
-    // 1.0 + 0.9 + sector 0.3 + seasonality 0.3 = 2.5 → 1.9/2.5 = 0.76.
-    // Sector's demotion RAISES coverage on a two-factor read: the same two
-    // factors now account for more of what the core could have been.
-    expect(drafted(base({ factors: longFactors() }))!.evidence.coverage).toBeCloseTo(0.76, 2)
+    // 1.0 + 0.9 + bandwidth 0.4 + sector 0.3 + seasonality 0.3 = 2.9 →
+    // 1.9/2.9 = 0.66. It was 0.76 over a four-factor core: a fifth core factor
+    // LOWERS coverage on a two-factor read, which is the honest direction — the
+    // same two factors now account for less of what the core could have been.
+    expect(drafted(base({ factors: longFactors() }))!.evidence.coverage).toBeCloseTo(0.66, 2)
   })
 
   it('coreCompositeOf is composeCall\'s core read with every gate removed', () => {
@@ -508,9 +562,16 @@ describe('composeCall names the gate that said no', () => {
   })
 
   // THE ZERO-BEHAVIOUR-CHANGE PIN. This object was captured from composeCall at
-  // 8af0bd3, BEFORE the return shape changed, and is pasted verbatim. A passing
+  // 8af0bd3, BEFORE the return shape changed, and was pasted verbatim. A passing
   // call must still hand back exactly this and nothing else — no `rejected` key,
   // no reordered evidence, no drifted level. Naming the noes may not touch a yes.
+  //
+  // TWO FIELDS MOVED ON 2026-09-22, and only because the CORE ITSELF did: adding
+  // `bandwidth` to FACTOR_FAMILY puts a fifth weight in the core denominator
+  // coverage is measured against (0.76 → 0.66, and the sentence built from it),
+  // and puts a fifth entry in `factors`. THE COMPOSITE DID NOT MOVE — 63.2 then,
+  // 63.2 now — because a null factor renormalises away: that number is the pin
+  // that matters and it is untouched.
   it('a call that clears every gate returns the pre-3a draft, unchanged', () => {
     const r = composeCall(base({ factors: longFactors() }))
     expect(isRejection(r)).toBe(false)
@@ -519,10 +580,11 @@ describe('composeCall names the gate that said no', () => {
       side: 'long',
       composite: 63.2,
       setup: 'reversal',
-      evidence: { coverage: 0.76, famAgree: 2, contract: false, contextPts: 0, detail: 'core coverage 76% · 2 core families agree · context +0pt' },
+      evidence: { coverage: 0.66, famAgree: 2, contract: false, contextPts: 0, detail: 'core coverage 66% · 2 core families agree · context +0pt' },
       factors: {
         technical: { score: 84, detail: 'early-reversal volume-confirmed', weight: 1 },
         momentum: { score: 40, detail: '+10pp', weight: 0.9 },
+        bandwidth: { score: null, detail: '', weight: 0.4 },
         sector: { score: null, detail: '', weight: 0.3 },
         social: { score: null, detail: '', weight: 0.5 },
         channels: { score: null, detail: '', weight: 0.5 },
