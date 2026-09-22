@@ -11,7 +11,7 @@ import { round1, type GateCode } from './types'
 //
 // Every gate in this engine accumulates CORRELATIONAL regret and nothing else.
 // Stage 3a recorded which gate refused which name; Stage 3b priced those
-// refusals ten sessions later — but a refusal has no stop, was never a position,
+// refusals a calibrated horizon later — but a refusal has no stop, was never a position,
 // and the excess it "cost" is therefore an upper bound on a trade nobody took
 // (missLedger.ts's header, rule 2). The one thing that evidence can never become
 // is CAUSAL: what would actually have happened to a reader who took the row the

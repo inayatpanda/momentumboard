@@ -213,9 +213,11 @@ export function LedgerPage() {
       <h2>How a call is scored</h2>
       <p>
         Every published call is measured against what price actually did at 5, 10 and 21 sessions — side-adjusted excess return over
-        the S&amp;P 500, from the first tradeable print. Beating the index by a rounding error does not count: a hit must clear a full
-        percentage point of excess. Stops are judged on daily closes, so an intraday wick through the level is survivable — but a
-        close through it is a miss forever, no matter what happens after.
+        the S&amp;P 500, from the first tradeable print. The grade the engine is scored on, and learns from, is the 21-session one:
+        about a month, which is the far end of how long a swing position is actually held. Beating the index by a rounding error does
+        not count: a hit must clear a full percentage point of excess. Stops are judged on daily closes, so an intraday wick through
+        the level is survivable — but a close through it is a miss forever, no matter what happens after — and it counts against the
+        call wherever inside those 21 sessions it happens.
       </p>
       <h2>Nothing resets, nothing hides</h2>
       <p>

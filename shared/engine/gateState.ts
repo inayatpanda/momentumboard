@@ -7,7 +7,8 @@ import type { GateCode } from './types'
 // THE GATES MOVE — bounded, evidenced, announced.
 //
 // Stage 3a gave the funnel a record of every refusal; Stage 3b priced those
-// refusals ten sessions later and charged each one to the gate that made it.
+// refusals a calibrated horizon later (MISS_HORIZON — 21 sessions since
+// CALIB_DEF_VERSION v4) and charged each one to the gate that made it.
 // This module is the third step and the only one that changes a published
 // number: a gate whose refusals have demonstrably cost the reader more than they
 // saved may move ONE notch, and a gate whose refusals have demonstrably saved

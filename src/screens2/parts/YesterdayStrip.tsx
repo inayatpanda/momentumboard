@@ -22,7 +22,9 @@ export function YesterdayStrip({ yesterday }: { yesterday: BoardSlice['yesterday
         {date ? shortDateWithWeekday(date) : 'Yesterday'}
       </span>
       {/* THE PARTITION (crypto-v2 wave, finding 5). An equity verdict is an
-          excess over SPY across ten sessions; a cohort verdict is an absolute
+          excess over SPY across the horizon the server names in `horizon`
+          (5 or 10 sessions — the ledger lenses, not the 21-session calibrated
+          grade the scorecard reports); a cohort verdict is an absolute
           move across fourteen crypto bars. One line summing both means neither,
           and a weekend on which only the coins graded read as a generic engine
           result over a market that was shut. The split is shown only when a

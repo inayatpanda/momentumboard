@@ -8,9 +8,16 @@ import { isCryptoSymbol } from '../../shared/symbols'
 
 export type LedgerStatus = 'open' | 'hit' | 'miss' | 'stopped'
 
-// Resolution is judged at the CALIBRATED horizon (10 sessions): a row is "open"
-// until its 10d grade lands, then hit/miss/stopped. The per-row table still shows
-// both the 5d and 10d excess columns — this is only the headline status.
+// Resolution here is judged at the 10-SESSION LENS: a row is "open" until its 10d
+// grade lands, then hit/miss/stopped. The per-row table still shows both the 5d
+// and 10d excess columns — this is only the headline status.
+//
+// NOT the calibrated horizon any more. CALIB_DEF_VERSION v4 moved the grade the
+// ENGINE learns from to 21 sessions, and this screen deliberately did not follow:
+// it is the reader's running receipt, and making a call read "open" for a month
+// before it says anything would empty the pane for weeks. So the two numbers now
+// answer different questions — "how is it going?" here, "was the engine right?" in
+// the scorecard — and this comment exists so nobody reads one as the other.
 export function statusOf(p: LedgerPrediction): LedgerStatus {
   if (!p.outcome10) return 'open'
   if (p.outcome10.stopped) return 'stopped'
@@ -63,7 +70,7 @@ export interface LedgerSummary {
   hits: number
   stopped: number
   hitRate: number | null // hits / graded
-  avgExcess10: number | null // mean excess vs SPY @10d (calibrated horizon) across graded
+  avgExcess10: number | null // mean excess vs SPY @10d (the ledger lens, NOT the calibrated grade) across graded
 }
 
 export interface GradeBucket {

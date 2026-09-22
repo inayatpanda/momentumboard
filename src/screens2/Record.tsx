@@ -82,7 +82,8 @@ function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
   return (
     <section aria-label="Scorecard">
       {/* NAMED AS THE EQUITY PARTITION (crypto-v2 wave, finding 4). Every number
-          under this header is an excess against SPY over ten sessions, and the
+          under this header is an excess against SPY over the CALIBRATED horizon —
+          21 sessions, about a month, since CALIB_DEF_VERSION v4 — and the
           grading pass keeps every cohort row out of `engine-scorecard` on
           purpose — so an unqualified "Scorecard" reads as the whole record when
           it is one partition of it. The cohort's own panel sits below. */}
