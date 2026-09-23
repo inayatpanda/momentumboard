@@ -36,6 +36,7 @@
 // names, so `hosting.test.ts`'s pins on that set are unaffected.
 
 import type { PagesContext } from '../netlify/functions/lib/router'
+import { DEVICE_LLM_HEADER } from '../shared/llmKey'
 
 /** The two origins a Tauri v2 webview serves bundled assets from. macOS uses
  * the first; the second is Windows/Linux, kept so a later wrap on either needs
@@ -43,11 +44,15 @@ import type { PagesContext } from '../netlify/functions/lib/router'
 export const TAURI_ORIGINS = ['tauri://localhost', 'http://tauri.localhost'] as const
 
 /** The custom request headers the client sends: the licence token on /api/*,
- * the report token on /report, and content-type on every write. A header
- * missing here fails the preflight for whichever call needs it, and nothing
- * else — which is exactly the kind of partial breakage that is hard to read
- * from the app, so keep it in step with src/lib/api.ts. */
-const ALLOW_HEADERS = 'content-type, x-app-token, x-report-token'
+ * the report token on /report, the reader's device-held Groq key on the four
+ * LLM endpoints, and content-type on every write. A header missing here fails
+ * the preflight for whichever call needs it, and nothing else — which is
+ * exactly the kind of partial breakage that is hard to read from the app, so
+ * keep it in step with src/lib/api.ts.
+ *
+ * `x-groq-api-key` is DESKTOP-CRITICAL: the web build is same-origin and never
+ * preflights, so a missing name here would break BYOK on the DMG alone. */
+const ALLOW_HEADERS = `content-type, x-app-token, x-report-token, ${DEVICE_LLM_HEADER}`
 
 /** Everything the API answers to. `dispatch` handles method policy per route;
  * this only says which methods a preflight may ask about. */

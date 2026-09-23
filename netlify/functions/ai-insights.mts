@@ -4,6 +4,7 @@ import { cachedQuote, cachedCandles } from './lib/marketCache'
 import { fetchNews } from './lib/news'
 import { detectSetups, regimeFromCandles } from '../../shared/setups'
 import type { AppConfig } from '../../shared/config'
+import { DEVICE_LLM_HEADER, isGroqKeyShape, type LlmKeySource } from '../../shared/llmKey'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -36,19 +37,35 @@ export async function routeAi(headers: Headers, env: Env, store: AppStore, llm: 
   if (!auth) return json(401, { ok: false, error: 'unauthorized' })
   const ns = auth.ns
 
-  // The owner's keys live in server env; licensees bring their own (strict: no fallback to ours)
+  // The owner's keys live in server env; licensees bring their own (strict: no
+  // fallback to ours). The reader's DEVICE key wins — it rides the same header
+  // market-data.mts honours — and the old server-stored blob stays readable
+  // behind it so a licensee who has not migrated yet still gets their AI read.
+  // `llmKeySource: 'server'` on the way out is the migration tell.
+  let llmKeySource: LlmKeySource | null = null
   let llmEnv: Env & { strict?: boolean } = env
   if (auth.level !== 'admin') {
-    const creds = await store.read<{ groqKey?: string }>(`${ns}llm`)
-    if (!creds?.groqKey) return json(200, { ok: true, data: { unconfigured: true, byok: true } })
-    llmEnv = { GROQ_API_KEY: creds.groqKey, strict: true }
+    const deviceGroqKey = headers.get(DEVICE_LLM_HEADER)?.trim() ?? ''
+    if (deviceGroqKey && isGroqKeyShape(deviceGroqKey)) {
+      llmEnv = { GROQ_API_KEY: deviceGroqKey, strict: true }
+      llmKeySource = 'device'
+    } else {
+      const creds = await store.read<{ groqKey?: string }>(`${ns}llm`)
+      if (!creds?.groqKey) return json(200, { ok: true, data: { unconfigured: true, byok: true } })
+      llmEnv = { GROQ_API_KEY: creds.groqKey, strict: true }
+      llmKeySource = 'server'
+    }
   } else if (!env.GEMINI_API_KEY && !env.GROQ_API_KEY && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
     return json(200, { ok: true, data: { unconfigured: true } })
   }
 
+  // The hint rides OUTSIDE the cached record: the cache is the read itself,
+  // and which key produced it is a fact about this request, not about the text.
+  const keyHint = llmKeySource === 'server' ? { llmKeySource: 'server' as const } : {}
+
   const cached = await store.read<{ text: string; provider: string; at: number }>(`${ns}ai-read`)
   const nowSec = Math.floor(Date.now() / 1000)
-  if (cached && nowSec - cached.at < CACHE_SEC) return json(200, { ok: true, data: cached })
+  if (cached && nowSec - cached.at < CACHE_SEC) return json(200, { ok: true, data: { ...cached, ...keyHint } })
 
   const cfg = await store.read<AppConfig>(`${ns}config`)
   if (!cfg?.watchlist?.length) return json(200, { ok: true, data: { empty: true } })
@@ -79,7 +96,7 @@ In 150-200 words: what genuinely stands out today, which watchlist setups (if an
     const { text, provider } = await llm(prompt, llmEnv)
     const data = { text, provider, at: nowSec }
     await store.write(`${ns}ai-read`, data)
-    return json(200, { ok: true, data })
+    return json(200, { ok: true, data: { ...data, ...keyHint } })
   } catch (e) {
     return json(502, { ok: false, error: String(e) })
   }

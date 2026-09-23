@@ -5,6 +5,7 @@ import { fetchSymbolNews } from './lib/news'
 import { getCached, setCached } from './lib/cache'
 import type { Quote } from '../../shared/types'
 import { isYahooSymbol } from '../../shared/symbols'
+import { DEVICE_LLM_HEADER, isGroqKeyShape, type LlmKeySource } from '../../shared/llmKey'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -355,15 +356,61 @@ export async function routeRequest(
   if (!auth) return json(401, { ok: false, error: 'unauthorized' })
   const type = url.searchParams.get('type')
 
-  // Admin AI calls use the server's keys; licensees use their own stored key or none.
+  // WHOSE KEY ANSWERS THIS REQUEST — a THREE-tier ladder, in this order.
+  //
+  //   1. the device header (`x-groq-api-key`). The preferred path and the only
+  //      one new keys take: it is held in the reader's own IndexedDB, exists
+  //      only for the life of this request, and wins for EVERY caller — admin
+  //      and house included, so the owner can test a licensee's key as one.
+  //   2. the server env, for admin + house licences (the owner's own devices).
+  //   3. THE OLD SERVER-STORED BLOB, still read. This is a transition, not a
+  //      cutover: a licensee who saved their key before the device path existed
+  //      keeps a working app on every device they already use. The response
+  //      then carries `llmKeySource: 'server'` so Settings can ask them, once,
+  //      to re-enter it on-device — the key itself is never handed back.
+  //
+  // BYOK stays STRICT in tiers 1 and 3 (lib/llm.ts): a licensee's request may
+  // use ONLY the licensee's key, never a fall-through to the owner's.
+  let llmKeySource: LlmKeySource | null = null
   const llmEnvForCaller = async (): Promise<{ [k: string]: unknown } | null> => {
+    llmKeySource = null
+    const deviceGroqKey = headers.get(DEVICE_LLM_HEADER)?.trim() ?? ''
+    if (deviceGroqKey) {
+      if (!isGroqKeyShape(deviceGroqKey)) return null
+      llmKeySource = 'device'
+      return { GROQ_API_KEY: deviceGroqKey, strict: true }
+    }
     // house licences are the owner's own devices — they ride the server's keys
     // like the admin token does. Ordinary licensees still bring their own key
     // (Helm: /house <label> flips a licence either way).
     if (auth.level === 'admin' || auth.house)
       return { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL, GROQ_API_KEY: process.env.GROQ_API_KEY }
     const creds = await blobAppStore.read<{ groqKey?: string }>(`${auth.ns}llm`)
-    return creds?.groqKey ? { GROQ_API_KEY: creds.groqKey, strict: true } : null
+    if (!creds?.groqKey) return null
+    llmKeySource = 'server'
+    return { GROQ_API_KEY: creds.groqKey, strict: true }
+  }
+
+  /** The migration tell, merged into an LLM answer's payload. Only ever set
+   * when the OLD server copy served the request — a device key says nothing. */
+  const keyHint = () => (llmKeySource === 'server' ? { llmKeySource: 'server' as const } : {})
+
+  // Does this candidate key actually work? Round-trips the header to Groq
+  // WITHOUT storing anything anywhere, so Settings can say "connected" on
+  // evidence rather than on hope. Header-only by design: with no header there
+  // is nothing to test, and an admin must not be told their env key is "their"
+  // key. The key never touches the store on this path or any other.
+  if (type === 'llm-probe') {
+    if (!headers.get(DEVICE_LLM_HEADER)) return json(400, { ok: false, error: 'no-key' })
+    const llmEnv = await llmEnvForCaller()
+    if (!llmEnv) return json(400, { ok: false, error: 'invalid-key' })
+    try {
+      const { callLlm, modelFor } = await import('./lib/llm')
+      const result = await callLlm('Reply with exactly OK.', { ...llmEnv, maxTokens: 96 })
+      return json(200, { ok: true, data: { provider: result.provider, model: modelFor('groq', llmEnv) } })
+    } catch (e) {
+      return json(400, { ok: false, error: String(e).slice(0, 240) })
+    }
   }
 
   if (type === 'movers') {
@@ -692,7 +739,7 @@ Ground your answer ONLY in this measured evidence (do not invent numbers):
 Answer in 3-6 direct sentences: address the question specifically, cite the relevant numbers above, name the level or event that would change your read, and be honest where the evidence is thin or the question isn't answerable from charts. End with one short note that this is analysis, not advice.`
       const { callLlm } = await import('./lib/llm')
       const { text } = await callLlm(prompt, { ...llmEnv, maxTokens: 900 })
-      return json(200, { ok: true, data: { answer: text.trim(), at: nowSec } })
+      return json(200, { ok: true, data: { answer: text.trim(), at: nowSec, ...keyHint() } })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
     }
@@ -709,7 +756,7 @@ Answer in 3-6 direct sentences: address the question specifically, cite the rele
       const prompt = `A retail swing trader logged this personal ${kind}: "${text}"
 As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this consistent with market evidence and research, partially true, or a common misconception? Be direct — the trader explicitly WANTS pushback when wrong. If it's testable, say what data would settle it. No flattery.`
       const { text: take } = await callLlm(prompt, llmEnv)
-      return json(200, { ok: true, data: { take: take.trim() } })
+      return json(200, { ok: true, data: { take: take.trim(), ...keyHint() } })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
     }
@@ -782,8 +829,11 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
       const prompt = `You are a decisive, seasoned analyst. In 3-4 sentences, brief a swing trader on WHAT HAS CHANGED lately for ${symbol}${quote?.name ? ` (${quote.name})` : ''}: price ${quote?.price ?? '?'} (${quote?.changePct?.toFixed(1) ?? '?'}% today), active technical states: ${setups.join(', ') || 'none'}, latest headlines: ${news.slice(0, 3).map(n => n.title).join(' | ') || 'none notable'}. Give your read and the one thing to watch next. No hedging filler; end with one honesty note only if truly needed.`
       const { text } = await callLlm(prompt, briefLlmEnv)
       const data = { sym: symbol, brief: text.trim(), at: nowSec }
+      // the hint stays OUT of the cached record: cached briefs are served to
+      // every licensee, and whose key paid for this one is not a fact about
+      // the brief. It is a fact about THIS request.
       await setCached(key, data, 21_600)
-      return json(200, { ok: true, data })
+      return json(200, { ok: true, data: { ...data, ...keyHint() } })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
     }

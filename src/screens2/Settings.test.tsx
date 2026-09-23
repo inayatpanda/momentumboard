@@ -14,7 +14,7 @@ vi.mock('../lib/api', async () => {
   return {
     ...actual,
     getLicences: vi.fn(),
-    getLlmKeyStatus: vi.fn(() => Promise.resolve({ hasKey: false })),
+    getLlmKeyStatus: vi.fn(() => Promise.resolve({ hasKey: false, llmKeySource: null })),
     apiGet: vi.fn(() => Promise.reject(new Error('not mocked'))),
   }
 })

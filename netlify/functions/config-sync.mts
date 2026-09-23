@@ -83,8 +83,12 @@ export async function routeConfig(
       })
     }
     if (url.searchParams.get('view') === 'llm-key') {
+      // NEVER echoes the key itself — not the value, not a prefix, not a
+      // length. Existence only, plus where it lives, so Settings can tell a
+      // licensee still on the old server-stored copy to move it on-device.
       const creds = await store.read<{ groqKey?: string }>(`${ns}llm`)
-      return json(200, { ok: true, data: { hasKey: !!creds?.groqKey } }) // never echo the key itself
+      const hasKey = !!creds?.groqKey
+      return json(200, { ok: true, data: { hasKey, llmKeySource: hasKey ? 'server' : null } })
     }
     if (url.searchParams.get('view') === 'sectors') {
       const { getCached } = await import('./lib/cache')
@@ -140,12 +144,17 @@ export async function routeConfig(
     return json(200, { ok: true, data: await store.read(`${ns}config`) })
   }
 
-  if (method === 'PUT' && url.searchParams.get('view') === 'llm-key') {
-    // licensees store their OWN AI key (BYO); the owner's key lives in server env only
-    const { groqKey } = (bodyText ? JSON.parse(bodyText) : {}) as { groqKey?: string }
-    if (groqKey && (typeof groqKey !== 'string' || groqKey.length > 200)) return json(400, { ok: false, error: 'invalid-key' })
-    await store.write(`${ns}llm`, groqKey ? { groqKey: groqKey.trim() } : {})
-    return json(200, { ok: true })
+  if (url.searchParams.get('view') === 'llm-key') {
+    // READABLE, NOT WRITABLE. The stored copy stays legible to the LLM routes
+    // so licensees who saved one before the device path existed keep working,
+    // but nothing writes a NEW one: the key belongs in the reader's own
+    // IndexedDB (src/lib/deviceLlm.ts), and the server holding a provider
+    // credential is the thing this release is retiring.
+    if (method === 'DELETE') {
+      await store.write(`${ns}llm`, {})
+      return json(200, { ok: true })
+    }
+    if (method === 'PUT') return json(410, { ok: false, error: 'device-only-key' })
   }
 
   if (method === 'PUT') {

@@ -5,8 +5,9 @@
 // and the theme picker (AppearanceGroup:440-467, now on lib/theme.ts so it
 // can never drift from More's cycle row or index.html's boot script).
 
-import { useEffect, useState, type CSSProperties } from 'react'
-import { apiGet, getLlmKeyStatus, putConfig, putLlmKey } from '../../lib/api'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { apiGet, deleteServerLlmKey, getLlmKeyStatus, probeGroqKey, putConfig } from '../../lib/api'
+import { clearDeviceGroqKey, setDeviceGroqKey } from '../../lib/deviceLlm'
 import { enablePush, pushSupported, type PushStatus } from '../../lib/push'
 import { applyTheme, getThemePref, resolvedDark, type ThemePref } from '../../lib/theme'
 import type { AppConfig, ReportEdition, ReportRecipient } from '../../../shared/config'
@@ -29,19 +30,67 @@ const hueOf = (s: string) => {
   return h
 }
 
+/** THE MIGRATION LINE. Shown to exactly one population: a licensee whose key
+ * is still in the old server-side blob and who has not yet put one on this
+ * device. The button fetches nothing — the server never returns a stored key —
+ * it only puts the cursor in the field so the reader can re-enter it here. */
+export const SERVER_KEY_NOTICE = 'Your key is stored on the server; move it to this device'
+
 /** Licensees run AI features on THEIR OWN key (free at console.groq.com); the
  * owner's key lives in server env and is never used for licensees. Inverse
- * gate: only NON-admin devices see this row. */
+ * gate: only NON-admin devices see this row.
+ *
+ * THE KEY LIVES ON THE DEVICE NOW (IndexedDB, src/lib/deviceLlm.ts). The
+ * pre-device server copy is still honoured by the LLM routes for this release,
+ * so nobody is stranded mid-upgrade; this row's job is to end that state — ask
+ * for the key once, on-device, then delete the server copy. */
 export function ByoAiKey({ isAdmin }: { isAdmin: boolean | null }) {
   const [hasKey, setHasKey] = useState(false)
+  const [onServer, setOnServer] = useState(false)
   const [key, setKey] = useState('')
   const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     getLlmKeyStatus()
-      .then(s => setHasKey(s.hasKey))
+      .then(s => {
+        setHasKey(s.hasKey)
+        setOnServer(s.llmKeySource === 'server')
+      })
       .catch(() => {})
   }, [])
   if (isAdmin !== false) return null
+  const disconnect = async () => {
+    await clearDeviceGroqKey()
+    await deleteServerLlmKey().catch(() => {})
+    setHasKey(false)
+    setOnServer(false)
+    setSaved(false)
+  }
+  const saveAndTest = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      // PROVE IT FIRST. The probe round-trips the candidate key to Groq and
+      // stores nothing; only a key that actually answered is written to the
+      // device, so "connected" is evidence rather than hope.
+      await probeGroqKey(key.trim())
+      await setDeviceGroqKey(key.trim())
+      // …and only once a device copy exists does the server copy go, so a
+      // failed migration never leaves the reader with neither.
+      await deleteServerLlmKey().catch(() => {})
+      setHasKey(true)
+      setOnServer(false)
+      setKey('')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      setError((e as Error).message === 'invalid-key' ? 'That does not look like a Groq key.' : 'Groq rejected the key or could not be reached. Nothing was saved.')
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <section className="menu-group">
       <div className="menu-title">AI</div>
@@ -52,30 +101,38 @@ export function ByoAiKey({ isAdmin }: { isAdmin: boolean | null }) {
         <span className="set-main">
           <span>Your AI key</span>
           <span className="sub">
-            AI briefs and note feedback run on your own free Groq key (console.groq.com). {hasKey ? 'A key is saved for this licence.' : 'No key saved yet — AI features are off until you add one.'}
+            AI briefs, Ask the Desk and note feedback run on your own free Groq key (console.groq.com).{' '}
+            {hasKey ? (onServer ? 'A key is saved for this licence.' : 'A key is saved on this device.') : 'No key saved yet — AI features are off until you add one.'}
           </span>
         </span>
+        {hasKey && !onServer && (
+          <button className="remove" aria-label="Disconnect Groq" onClick={disconnect}>
+            ✕
+          </button>
+        )}
       </div>
+      {onServer && (
+        <div className="set-inrow">
+          <p className="set-note" style={{ padding: 0, flex: 1 }}>
+            {SERVER_KEY_NOTICE}.
+          </p>
+          <button type="button" className="mini-btn" onClick={() => inputRef.current?.focus()}>
+            Move it here
+          </button>
+        </div>
+      )}
       <div className="set-inrow">
-        <input className="set-in" type="password" placeholder="gsk_..." value={key} onChange={e => setKey(e.target.value)} style={{ flex: 1 }} aria-label="Groq API key" />
-        <button
-          type="button"
-          className="mini-btn"
-          onClick={async () => {
-            try {
-              await putLlmKey(key.trim())
-              setHasKey(!!key.trim())
-              setKey('')
-              setSaved(true)
-              setTimeout(() => setSaved(false), 2500)
-            } catch {
-              /* leave input for retry */
-            }
-          }}
-        >
-          {saved ? 'Saved' : 'Save'}
+        <input ref={inputRef} className="set-in" type="password" placeholder="gsk_..." value={key} onChange={e => setKey(e.target.value)} style={{ flex: 1 }} aria-label="Groq API key" />
+        <button type="button" className="mini-btn" disabled={busy || !key.trim()} onClick={saveAndTest}>
+          {busy ? 'Testing…' : saved ? 'Connected' : 'Save & test'}
         </button>
       </div>
+      {error && (
+        <p className="set-err" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="set-note">Stored only in this app profile on this device. It is sent over TLS when an AI feature runs, and never added to config sync or server storage.</p>
     </section>
   )
 }

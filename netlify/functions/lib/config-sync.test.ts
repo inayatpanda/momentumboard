@@ -96,3 +96,50 @@ describe('config-sync', () => {
     expect(body.data.coreSleeve).toEqual(['ZZZZ'])
   })
 })
+
+// THE SERVER-STORED KEY, BEING RETIRED. Readable (so nobody is stranded
+// mid-upgrade) but no longer writable, and never echoed back — migrating means
+// the reader re-enters the key on-device, not that the server hands it over.
+describe('config-sync — the legacy llm-key path', () => {
+  const STORED_KEY = 'gsk_storedKEY0123456789abcdefghij'
+  const seeded = async () => {
+    const store = memoryStore()
+    await store.write('llm', { groqKey: STORED_KEY })
+    return store
+  }
+  const get = (store: Parameters<typeof routeConfig>[5]) => routeConfig(new URL('http://x/api/config?view=llm-key'), 'GET', headers, null, env, store)
+
+  it('GET reports existence AND where the key lives, never the key itself', async () => {
+    const store = await seeded()
+    const res = await get(store)
+    const text = await res.text()
+    expect(JSON.parse(text).data).toEqual({ hasKey: true, llmKeySource: 'server' })
+    expect(text).not.toContain(STORED_KEY)
+  })
+
+  it('GET with nothing stored says so, with no source to migrate from', async () => {
+    expect((await (await get(memoryStore())).json()).data).toEqual({ hasKey: false, llmKeySource: null })
+  })
+
+  it('PUT is gone: 410, and the stored value is untouched', async () => {
+    const store = await seeded()
+    const res = await routeConfig(new URL('http://x/api/config?view=llm-key'), 'PUT', headers, JSON.stringify({ groqKey: 'gsk_someNEWkey0123456789abcdefgh' }), env, store)
+    expect(res.status).toBe(410)
+    expect((await res.json()).error).toBe('device-only-key')
+    expect(await store.read('llm')).toEqual({ groqKey: STORED_KEY })
+  })
+
+  it('DELETE clears the server copy — what Settings calls once a device key exists', async () => {
+    const store = await seeded()
+    const res = await routeConfig(new URL('http://x/api/config?view=llm-key'), 'DELETE', headers, null, env, store)
+    expect(res.status).toBe(200)
+    expect(await store.read('llm')).toEqual({})
+    expect((await (await get(store)).json()).data).toEqual({ hasKey: false, llmKeySource: null })
+  })
+
+  it('an ordinary config PUT is unaffected by the llm-key branch', async () => {
+    const store = memoryStore()
+    expect((await routeConfig(new URL('http://x/api/config'), 'PUT', headers, JSON.stringify(goodConfig), env, store)).status).toBe(200)
+  })
+})
+

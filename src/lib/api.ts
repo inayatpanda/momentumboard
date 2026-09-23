@@ -9,6 +9,8 @@ import type { EngineLabSnapshot, ForecastContract, StrategySleeve } from '../../
 // one mirror of the server's TickerConsensus and belongs beside the board slice
 // it has always ridden — The street's wire carries the same rows, uncapped.
 import type { ChannelPick } from './apiViews'
+import type { LlmKeySource } from '../../shared/llmKey'
+import { deviceLlmHeader, hasDeviceGroqKey } from './deviceLlm'
 
 export const getToken = () => localStorage.getItem('mb-token')
 
@@ -93,6 +95,19 @@ export async function validateAccess(): Promise<boolean> {
 
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(apiUrl(path), { headers: { 'x-app-token': getToken() ?? '' } })
+  const body = (await res.json()) as ApiEnvelope<T>
+  if (!body.ok || body.data === undefined) throw new Error(body.error ?? `http-${res.status}`)
+  return body.data
+}
+
+/** THE ONLY CALLER THAT ATTACHES THE BYOK CREDENTIAL. The device key is read
+ * from IndexedDB for this one request, crosses TLS, and is never written to
+ * server configuration — so it rides exactly the four endpoints below that
+ * invoke an LLM (evaluate-note, ask, brief, /api/ai) and nothing else.
+ *
+ * `keyOverride` is Settings testing a candidate key BEFORE it is stored. */
+export async function apiLlmGet<T>(path: string, keyOverride?: string): Promise<T> {
+  const res = await fetch(apiUrl(path), { headers: { 'x-app-token': getToken() ?? '', ...(await deviceLlmHeader(keyOverride)) } })
   const body = (await res.json()) as ApiEnvelope<T>
   if (!body.ok || body.data === undefined) throw new Error(body.error ?? `http-${res.status}`)
   return body.data
@@ -323,7 +338,7 @@ export interface StreetWire {
 export const getStreetWire = () => apiGet<StreetWire>('/api/market?type=street')
 
 export const evaluateNote = (text: string, kind: string) =>
-  apiGet<{ take: string }>(`/api/market?type=evaluate-note&text=${encodeURIComponent(text)}&kind=${kind}`).then(d => d.take)
+  apiLlmGet<{ take: string }>(`/api/market?type=evaluate-note&text=${encodeURIComponent(text)}&kind=${kind}`).then(d => d.take)
 
 // `context` (CX-20) is the v2 Ask sheet's own compact JSON of the journey
 // page's hero state — sized/refused/on-demand, grade-or-not, core/lean, the
@@ -331,7 +346,7 @@ export const evaluateNote = (text: string, kind: string) =>
 // as its own query param so the server's 400-char clamp on `q` never touches
 // it. Optional: the legacy AskDesk card calls this with two args, unchanged.
 export const askDesk = (symbol: string, q: string, context?: unknown) =>
-  apiGet<{ answer: string; at: number }>(
+  apiLlmGet<{ answer: string; at: number; llmKeySource?: LlmKeySource }>(
     `/api/market?type=ask&symbol=${encodeURIComponent(symbol)}&q=${encodeURIComponent(q)}${context !== undefined ? `&context=${encodeURIComponent(JSON.stringify(context))}` : ''}`,
   )
 
@@ -381,20 +396,38 @@ export const getIpos = () =>
   apiGet<{ upcoming: IpoRow[]; recent: IpoRow[]; at: number }>('/api/market?type=ipos')
 
 export const getTickerBrief = (symbol: string) =>
-  apiGet<{ sym: string; brief: string; at: number }>(`/api/market?type=brief&symbol=${encodeURIComponent(symbol)}`)
+  apiLlmGet<{ sym: string; brief: string; at: number; llmKeySource?: LlmKeySource }>(`/api/market?type=brief&symbol=${encodeURIComponent(symbol)}`)
 
 export const getLicences = () =>
   apiGet<{ key: string; label: string; createdAt: number; revoked?: boolean; unlockLink: string }[]>('/api/licences')
 
-export const getLlmKeyStatus = () => apiGet<{ hasKey: boolean }>('/api/config?view=llm-key')
+/** Does this reader have a working AI key, and WHERE does it live?
+ *
+ * Device first — that path is local and cannot fail — then the server's own
+ * answer about the pre-device copy it still honours. Deliberately NOT
+ * swallowed: a network failure must propagate so callers that fail open (the
+ * Ask sheet) can tell "no key" apart from "could not ask". The server never
+ * returns the key itself on this or any route. */
+export async function getLlmKeyStatus(): Promise<{ hasKey: boolean; llmKeySource: LlmKeySource | null }> {
+  if (await hasDeviceGroqKey()) return { hasKey: true, llmKeySource: 'device' }
+  const s = await apiGet<{ hasKey: boolean; llmKeySource: LlmKeySource | null }>('/api/config?view=llm-key')
+  return { hasKey: !!s.hasKey, llmKeySource: s.hasKey ? 'server' : null }
+}
 
-export async function putLlmKey(groqKey: string) {
+/** Drop the pre-device server copy. Called once a device key exists, so the
+ * migration ends with the server holding no provider credential at all.
+ * There is no matching read/PUT: the key only ever goes ON to a device now. */
+export async function deleteServerLlmKey() {
   const res = await fetch(apiUrl('/api/config?view=llm-key'), {
-    method: 'PUT',
-    headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
-    body: JSON.stringify({ groqKey }),
+    method: 'DELETE',
+    headers: { 'x-app-token': getToken() ?? '' },
   })
   if (!res.ok) throw new Error('failed')
+}
+
+/** Round-trip a CANDIDATE key to Groq without storing it anywhere. */
+export async function probeGroqKey(groqKey: string) {
+  return apiLlmGet<{ provider: string; model: string }>('/api/market?type=llm-probe', groqKey)
 }
 
 export async function createLicence(label: string) {
@@ -480,7 +513,7 @@ export const getRunlog = () =>
   apiGet<{ at: number; events: number; sent: number; errors: string[] }[]>('/api/config?view=runlog')
 
 export const getAiRead = () =>
-  apiGet<{ text?: string; provider?: string; at?: number; unconfigured?: boolean; empty?: boolean }>('/api/ai')
+  apiLlmGet<{ text?: string; provider?: string; at?: number; unconfigured?: boolean; empty?: boolean; llmKeySource?: LlmKeySource }>('/api/ai')
 
 export const getNews = (symbol: string) =>
   apiGet<{ items: { title: string; url: string; publishedSec: number }[] }>(`/api/market?type=news&symbol=${encodeURIComponent(symbol)}`).then(d => d.items)

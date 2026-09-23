@@ -37,7 +37,7 @@ describe('the preflight, for the desktop shell only', () => {
 
     expect(res.status).toBe(204)
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe(origin)
-    expect(res.headers.get('Access-Control-Allow-Headers')).toBe('content-type, x-app-token, x-report-token')
+    expect(res.headers.get('Access-Control-Allow-Headers')).toBe('content-type, x-app-token, x-report-token, x-groq-api-key')
     expect(res.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, PUT, DELETE, OPTIONS')
     expect(res.headers.get('Access-Control-Max-Age')).toBe('86400')
     // The preflight is answered HERE. Letting it fall through would run the
@@ -54,12 +54,15 @@ describe('the preflight, for the desktop shell only', () => {
   // GET with no custom header is a simple request. Losing one of these names
   // silently kills whichever call needs it — /report is the token that is easy
   // to forget, because the paper is the one screen fed by a non-/api path.
-  it('permits the two custom auth headers the client actually sends', async () => {
+  it('permits the custom headers the client actually sends', async () => {
     const res = await onRequest(contextFor(requestFrom(TAURI_ORIGINS[0], { method: 'OPTIONS' })))
     const allowed = res.headers.get('Access-Control-Allow-Headers')!.split(',').map(h => h.trim())
     expect(allowed).toContain('x-app-token')
     expect(allowed).toContain('x-report-token')
     expect(allowed).toContain('content-type')
+    // BYOK is desktop-critical here: the web build is same-origin and never
+    // preflights, so omitting this name would break the DMG and nothing else.
+    expect(allowed).toContain('x-groq-api-key')
   })
 })
 

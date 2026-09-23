@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AskSheet, ASK_DAILY_CAP, ASK_NEEDS_KEY, buildAskContext, isNoKeyAnswer } from './parts/AskSheet'
 import type { EnginePrediction } from '../lib/api'
 import type { JourneyFunnelRow, VerdictRead } from '../lib/apiViews'
+import { clearDeviceGroqKey, setDeviceGroqKey } from '../lib/deviceLlm'
 
 const FACTOR_NAMES = ['technical', 'momentum', 'sector', 'social', 'channels', 'insiders', 'news', 'seasonality', 'smartMoney', 'catalyst'] as const
 const emptyFactors = () => Object.fromEntries(FACTOR_NAMES.map(n => [n, { score: null, detail: '', weight: 0 }])) as EnginePrediction['factors']
@@ -74,8 +75,9 @@ const contextFromUrl = (url: string): { sym: string; state: string; grade: strin
 describe('AskSheet', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear()
+    await clearDeviceGroqKey() // the BYOK key now lives in IndexedDB, which survives a localStorage.clear()
     fetchMock = vi.fn(() => jsonResponse({ answer: 'A grounded answer.', at: 1 }))
     vi.stubGlobal('fetch', fetchMock)
   })
@@ -280,7 +282,7 @@ describe('AskSheet', () => {
     it('disables the input up front when the free device holds no key', async () => {
       vi.stubEnv('VITE_FREE_TOKEN', FREE)
       localStorage.setItem('mb-token', FREE)
-      fetchMock.mockImplementation(() => jsonResponse({ hasKey: false }))
+      fetchMock.mockImplementation(() => jsonResponse({ hasKey: false, llmKeySource: null }))
       render(<Harness />)
       const input = await screen.findByLabelText(/ask a question about nvda/i)
       await waitFor(() => expect(input).toBeDisabled())
@@ -288,10 +290,21 @@ describe('AskSheet', () => {
       expect(screen.getByRole('button', { name: /^ask$/i })).toBeDisabled()
     })
 
-    it('a free device that HAS saved a key is open for business', async () => {
+    it('a free device holding a DEVICE key is open for business, without asking the server at all', async () => {
       vi.stubEnv('VITE_FREE_TOKEN', FREE)
       localStorage.setItem('mb-token', FREE)
-      fetchMock.mockImplementation(() => jsonResponse({ hasKey: true }))
+      await setDeviceGroqKey('gsk_abcdefghijklmnopqrstuvwxyz123456')
+      render(<Harness />)
+      const input = await screen.findByLabelText(/ask a question about nvda/i)
+      await waitFor(() => expect(input).not.toBeDisabled())
+      expect(screen.queryByText(`${ASK_NEEDS_KEY}.`)).not.toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalled() // the device answers locally
+    })
+
+    it('a free device whose key is still the SERVER copy is open too — the transition strands nobody', async () => {
+      vi.stubEnv('VITE_FREE_TOKEN', FREE)
+      localStorage.setItem('mb-token', FREE)
+      fetchMock.mockImplementation(() => jsonResponse({ hasKey: true, llmKeySource: 'server' }))
       render(<Harness />)
       const input = await screen.findByLabelText(/ask a question about nvda/i)
       await waitFor(() => expect(fetchMock).toHaveBeenCalled())
