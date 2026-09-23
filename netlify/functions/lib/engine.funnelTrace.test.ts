@@ -166,7 +166,14 @@ const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).diges
 //     levels and the decision are all unchanged — which is the point.
 //
 // 6d221d17… was the value before these two.
-const GOLDEN_SHA = '5b78a4fa64ae7969e3cddfee2046629038e112b5e6ae28a029055ce9395623fb'
+//
+// RE-STAMPED AGAIN for the campaign id: every published row now carries a
+// `campaignId` — the dated id of the FIRST still-open publication of the same
+// sleeve/symbol/side/setup, which on this one-day fixture is the row's own id.
+// It is a new key on every ledger row and nothing else: the composite, the
+// grade, the rung, the levels and the readable projection below are all
+// unchanged and were NOT re-stamped. 5b78a4fa… was the pre-campaign value.
+const GOLDEN_SHA = '9b1fdad56dfdb12355a06e3d82b2d34911b1eb99f35747fa6064ffe823cf7fee'
 const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-63.6 r=1 e=162 s=170.44 t=150.75 ']
 /** Every key the golden day wrote at BASE. The trace may ADD to this list and
  * may touch nothing in it. */

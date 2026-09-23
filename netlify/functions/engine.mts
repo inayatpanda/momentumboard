@@ -42,6 +42,7 @@ const json = (data: unknown, status = 200) =>
 export function ledgerRow(p: Prediction) {
   return {
     id: p.id,
+    campaignId: p.campaignId,
     sleeve: p.sleeve,
     forecast: p.forecast,
     detectedAt: p.detectedAt,

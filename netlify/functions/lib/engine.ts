@@ -116,7 +116,7 @@ import { GATE_STATE_KEY, advanceGateState, effectiveGates, gateEligibility, gate
 import { classifyOutcome, postMortemKey } from '../../../shared/engine/postMortem'
 import { horizonOf } from '../../../shared/engine/horizon'
 import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
-import { computeCohortRung, computeRung, cohortRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, spotInstrument, RUNG_RISK_PCT, type CohortRung, type RiskState } from '../../../shared/engine/riskLadder'
+import { computeCohortRung, computeRung, cohortRungOf, directionRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, spotInstrument, RUNG_RISK_PCT, type CohortRung, type RiskState } from '../../../shared/engine/riskLadder'
 import { capCohortOf, SMALL_CAP_MAX_USD_M, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
 import type { T212Position } from './t212lib'
@@ -946,6 +946,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   // per-cohort tally of NON-shadow calls graded THIS run — feeds each sleeve's
   // graded-at-rung counter so it stays honest even while a young cohort pools.
   const newByCohort: Record<CapCohortOrUnknown, number> = { large: 0, small: 0, unknown: 0 }
+  const newBySide: Record<'long' | 'short', number> = { long: 0, short: 0 }
   // EVERY ROW GRADED THIS RUN, tagged rather than pre-filtered.
   //
   // `wildcard` rides along instead of the experiment being dropped at the push,
@@ -1004,6 +1005,9 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     predictionsByDate.set(date, preds)
     let changed = false
     for (const pred of preds) {
+      // Daily refreshes of one economic idea keep separate dated receipts, but
+      // only the campaign owner is an independent learning observation.
+      const independentCampaign = !pred.campaignId || pred.campaignId === pred.id
       // WHICH PARTITION MEASURES THIS ROW — decided once, here, and it decides
       // the tape, the clock and the basis together. `cohort` is the stamp the
       // crypto lane wrote at publication (types.ts): a row without it is an
@@ -1081,7 +1085,9 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // setup-family buckets, the evidence counters — happens INSIDE the crypto
           // state. Nothing pools: the two objects have no key in common and no read
           // walks both.
-          if (cryptoBasisRow && !cryptoOff) {
+          // …campaign-gated exactly as the equity seam below is, and for the
+          // same reason: a refreshed coin row is one idea, not two observations.
+          if (cryptoBasisRow && !cryptoOff && independentCampaign) {
             updateCryptoCalibration(cryptoCal, pred, o)
             cryptoGraded.push({ probability: pred.probability, outcome: o, shadow: !!pred.shadow })
             if (!pred.shadow && !pred.watchOnly) cryptoNewActionable++
@@ -1154,17 +1160,23 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           if (wildcardRow && pred.wildcard && !regretDisabled() && !cryptoRow) pred.wildcard.booked = false
           // THE calibrated grade: calibration buckets, setup buckets, factor-IC
           // weights, the Brier trail and the risk-ladder counters all learn here,
-          // at 21 sessions.
-          if (!cryptoRow) updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
+          // at 21 sessions — and only for the row that OWNS its campaign. A daily
+          // refresh of the same idea keeps its own receipt above and teaches
+          // nothing here: one idea, one vote.
+          if (!cryptoRow && independentCampaign) updateCalibration(calibration, pred, o) // cohort read off pred.capUsdM inside
           // …but NOT factor IC for a lane call — ANY lane (LANE_CATALYST_KINDS,
           // catalyst.ts). A lane call carries a constant technical placeholder
           // (dipLane.ts, velocityLane.ts) rather than a measured factor vote, so
           // booking its outcome would train the technical factor's IC on the
           // lane's P&L — a signal it never cast. Calibration buckets and setup
           // buckets above still accrue: only factor-IC is excluded.
-          if (!LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '') && !cryptoRow) w = updateIcStats(w, pred, o)
-          if (!cryptoRow) newlyGraded.push({ probability: pred.probability, outcome: o, shadow: !!pred.shadow, wildcard: wildcardRow })
-          // one row, one count, at its own calibrated lens (see the 10 block)
+          if (independentCampaign && !LANE_CATALYST_KINDS.has(pred.catalyst?.kind ?? '') && !cryptoRow) w = updateIcStats(w, pred, o)
+          if (independentCampaign && !cryptoRow) newlyGraded.push({ probability: pred.probability, outcome: o, shadow: !!pred.shadow, wildcard: wildcardRow })
+          // one row, one count, at its own calibrated lens (see the 10 block).
+          // NOT campaign-gated, deliberately: `graded` is the ledger's count of
+          // receipts that resolved, not the learning denominator. A refresh row
+          // still grades, still stores its three lenses and still leaves
+          // `predictions-pending` — it simply casts no vote above.
           if (!cryptoBasisRow) graded++
           // …and the risk ladder's graded-at-rung counter, which the WILDCARD is
           // blind to (Stage 3d). A wildcard is the engine deliberately overriding
@@ -1174,7 +1186,12 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
           // that is tested and not the whole lane family — a dip and a velocity
           // row are ordinary trades the reader carries at full weight, and they
           // go on moving the rung exactly as they always have.
-          if (!pred.shadow && !pred.watchOnly && !wildcardRow && !cryptoRow) newByCohort[capCohortOf(pred.capUsdM)]++
+          // …and the per-SIDE counter beside it, feeding the directional ladder
+          // on exactly the population the cap-cohort counter feeds.
+          if (independentCampaign && !pred.shadow && !pred.watchOnly && !wildcardRow && !cryptoRow) {
+            newByCohort[capCohortOf(pred.capUsdM)]++
+            newBySide[pred.side]++
+          }
         }
       }
       // shadows and watch-only calls feed calibration/IC above but never the
@@ -1194,9 +1211,12 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // tracker carries no gearing, so a routed spot position is an ordinary
       // stop-out and is counted as one. Inert for equity: every equity route is
       // a 2× or 3× ETP, so `leverage > 1` is `!!instrument` there.
+      // …and it is campaign-gated for the reason the counter above is: the
+      // counter and this window must describe the same population or the rung's
+      // promotion arithmetic and its demotion arithmetic stop agreeing.
       const calibrated = calibratedOutcomeOf(pred)
-      if (calibrated && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym) && pred.cohort !== 'crypto')
-        allOutcomes.push({ hit: calibrated.hit, stopped: calibrated.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1, cohort: capCohortOf(pred.capUsdM) })
+      if (independentCampaign && calibrated && !pred.shadow && !pred.watchOnly && !isWildcardRow(pred) && !isCryptoSymbol(pred.sym) && pred.cohort !== 'crypto')
+        allOutcomes.push({ hit: calibrated.hit, stopped: calibrated.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1, side: pred.side, cohort: capCohortOf(pred.capUsdM) })
       // …and the crypto ladder's evidence window, which is the SAME sentence
       // over a disjoint population: the crypto stream never enters `allOutcomes`
       // (the guard one line up is unconditional and stays that way) and the
@@ -1213,7 +1233,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
       // `gradedAtRung`, which they never moved), and at rung 0 demotion floors.
       // The alternative — marking outcomes with the lever state they graded
       // under — buys a field on every row to close a drift that cannot promote.
-      if (pred.outcome10 && !pred.shadow && !pred.watchOnly && !cryptoOff && pred.cohort === 'crypto')
+      if (independentCampaign && pred.outcome10 && !pred.shadow && !pred.watchOnly && !cryptoOff && pred.cohort === 'crypto')
         cryptoOutcomes.push({ hit: pred.outcome10.hit, stopped: pred.outcome10.stopped, leveraged: (pred.instrument?.leverage ?? 0) > 1 })
       // THE DEBT COLLECTION (Stage 3d fix wave). Read off the ROW rather than off
       // "did it grade in this pass", which is what makes a failed ledger write
@@ -1311,6 +1331,10 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     cohorts: {
       large: computeCohortRung(risk.cohorts!.large, cohortRecent('large'), newByCohort.large, combinedNext, brierImproving, override, today),
       small: computeCohortRung(risk.cohorts!.small, cohortRecent('small'), newByCohort.small, combinedNext, brierImproving, override, today),
+    },
+    directions: {
+      long: computeRung(risk.directions!.long, allOutcomes.filter(o => o.side === 'long').slice(-60), newBySide.long, brierImproving, override, today),
+      short: computeRung(risk.directions!.short, allOutcomes.filter(o => o.side === 'short').slice(-60), newBySide.short, brierImproving, override, today),
     },
   }
 
@@ -2559,7 +2583,19 @@ export async function buildBoard(
     // book's. `cohortRungOf` would send it to the combined rung (its cap is
     // null, so its cohort is 'unknown'), which is precisely the inheritance the
     // partition exists to refuse.
-    const rung = crypto ? crypto.rung : cohortRungOf(risk, cohort)
+    // …and the DIRECTIONAL ladder caps what survives that, a second time. A
+    // profitable SHORT record may not finance LONG risk: each side earns its own
+    // rung from its own outcomes (`directions`, riskLadder.ts), and an equity
+    // call sizes at the LOWER of its cap-cohort rung and its side rung. Lower,
+    // not the side's own: the two ladders are both real constraints and neither
+    // may lift the other. `directionRungOf` returns null while a side is COLD —
+    // no history of its own and under COHORT_STANDALONE_N of its own graded
+    // calls — and such a row falls back to the cap-cohort rung exactly as it did
+    // before this existed, which is what keeps the migration a no-op. Crypto is
+    // outside both: its ladder is a bare rung with no `directions` at all.
+    const capRung = cohortRungOf(risk, cohort)
+    const sideRung = directionRungOf(risk, call.side)
+    const rung = crypto ? crypto.rung : sideRung == null ? capRung : Math.min(capRung, sideRung)
     // sizedFraction === 1 implies tierFraction === 1, i.e. fullTrade, so `grade` is
     // non-null here for exactly the reason it was under the old `fullTrade` test.
     // …and BELOW full size, a CRYPTO row mints its 1× tracker (Stage 1c-R). The
@@ -3189,6 +3225,28 @@ export async function buildBoard(
    * of this window — which is the same bound the shadow dedup has lived under,
    * and the alternative is one dead name ending the experiment lane for good. */
   let outstandingWildcard = false
+  /** THE OPEN CAMPAIGNS (docs/ENGINE_V2.md, "Independent campaigns"). One
+   * economic idea — a sleeve, a symbol, a side and a setup — refreshed on five
+   * daily boards is ONE observation and not five. Every publication keeps its
+   * own dated `id` and its own receipt; `campaignId` points each refresh at the
+   * FIRST still-open row of that key, and `gradeOutstanding` lets only the owner
+   * move calibration, factor IC, the Brier trail and the risk ladder.
+   *
+   * Filled from the SAME prior-date scan the three slot rules above use, for the
+   * ordinary reason: it is the same population read off the same dates, and a
+   * second pass over `priorDates` would double this build's blob reads to buy
+   * nothing. `priorDates` is ascending, so first-writer-wins is
+   * earliest-open-row-wins.
+   *
+   * "Open" is `calibratedOutcomeOf`, the clock every other "has this graded?"
+   * test in the engine now reads. Since CALIB_DEF_VERSION v4 that is 21 sessions:
+   * a row whose 10-lens has filled is still live evidence, and this morning's
+   * copy of it is still the same idea. Keying the window off `outcome10` would
+   * end a campaign eleven sessions before the thing it protects — the calibrated
+   * grade — actually lands, which is the whole double-count back again. */
+  const activeCampaigns = new Map<string, string>()
+  const campaignKey = (p: Pick<Prediction, 'sleeve' | 'sym' | 'side' | 'setup'>) =>
+    `${p.sleeve ?? 'composite-control'}:${p.sym.toUpperCase()}:${p.side}:${p.setup ?? 'unknown'}`
   for (const date of priorDates) {
     for (const p of (await store.read<Prediction[]>(`predictions:${date}`)) ?? []) {
       // …read through `calibratedOutcomeOf` like every other "has this graded?"
@@ -3199,6 +3257,7 @@ export async function buildBoard(
       if ((p.shadow || p.observation) && !calibratedOutcomeOf(p)) outstandingShadowKeys.add(`${p.sym}:${p.side}`)
       if (p.observation && !calibratedOutcomeOf(p)) outstandingObservationKeys.add(`${p.sym}:${p.side}`)
       if (isWildcardRow(p) && !calibratedOutcomeOf(p)) outstandingWildcard = true
+      if (!calibratedOutcomeOf(p) && !activeCampaigns.has(campaignKey(p))) activeCampaigns.set(campaignKey(p), p.campaignId ?? p.id)
     }
   }
   const pickShadow = (side: 'long' | 'short', cap: number) =>
@@ -4090,6 +4149,18 @@ export async function buildBoard(
     const name = await deps.companyName(p.sym).catch(() => null)
     if (name) p.name = name
   })
+
+  // THE CAMPAIGN STAMP, on the LEDGER collection — so every row that will ever
+  // be graded carries one: composite calls, watch rows, promoted observations,
+  // the wildcard, the crypto lane, and all three shadow lanes (dip, velocity and
+  // the earnings fade, which reach `final` through `shadows`). A row whose key
+  // has no still-open prior publication opens its own campaign and owns it,
+  // which is what every row on a cold book does.
+  //
+  // Deliberately AFTER `final` is assembled and before it is written: nothing
+  // may reach `predictions:${today}` unstamped, or `gradeOutstanding` would read
+  // it as an independent observation for ever (the stamp is never revised).
+  for (const p of final) p.campaignId = activeCampaigns.get(campaignKey(p)) ?? p.id
 
   // reruns preserve overlays and outcomes already earned today
   const existing = (await store.read<Prediction[]>(`predictions:${today}`)) ?? []

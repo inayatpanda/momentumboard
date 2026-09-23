@@ -279,6 +279,10 @@ export interface PredOutcome {
 
 export interface Prediction extends GradedCall {
   id: string // `${date}:${sym}:${side}`
+  /** One economic idea may be refreshed on several daily boards. `id` remains
+   * the dated publication; campaignId points every refresh at the first row so
+   * calibration and risk evidence can count the idea once. */
+  campaignId?: string
   /** Strategy provenance. Legacy rows are the composite control. */
   sleeve?: StrategySleeve
   /** Explicitly names what the displayed probability means. Additive during the

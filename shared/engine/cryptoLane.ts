@@ -366,7 +366,7 @@ export const CRYPTO_RISK_KEY = 'crypto-risk'
 /** A cold crypto ladder: rung 0, no history. `initRisk`'s own rung shape,
  * reused so the two ladders can never drift in their fields. */
 export const initCryptoRisk = (today: string): CohortRung => {
-  const { cohorts: _cohorts, ...rung } = initRisk(today)
+  const { cohorts: _cohorts, directions: _directions, ...rung } = initRisk(today)
   return rung
 }
 

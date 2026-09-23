@@ -22,6 +22,9 @@ export interface CohortRung {
  * `cohorts` = the per-sleeve rungs (absent on legacy blobs → migrateRisk seeds them). */
 export interface RiskState extends CohortRung {
   cohorts?: { large: CohortRung; small: CohortRung }
+  /** Directional ladders prevent a profitable short book from financing long
+   * risk (or vice versa). They start at R0 on migration and earn independently. */
+  directions?: { long: CohortRung; short: CohortRung }
 }
 
 export const RUNG_RISK_PCT = [1.0, 1.25, 1.5, 2.0] as const
@@ -30,12 +33,14 @@ export interface OutcomeLite {
   hit: boolean
   stopped: boolean
   leveraged: boolean
+  side?: 'long' | 'short'
+  netR?: number
 }
 
 const initRung = (today: string): CohortRung => ({ rung: 0, sinceDate: today, gradedAtRung: 0, history: [] })
 
 export function initRisk(today: string): RiskState {
-  return { ...initRung(today), cohorts: { large: initRung(today), small: initRung(today) } }
+  return { ...initRung(today), cohorts: { large: initRung(today), small: initRung(today) }, directions: { long: initRung(today), short: initRung(today) } }
 }
 
 const cloneRung = (r: CohortRung): CohortRung => ({ rung: r.rung, sinceDate: r.sinceDate, gradedAtRung: r.gradedAtRung, history: [...r.history] })
@@ -46,9 +51,16 @@ const cloneRung = (r: CohortRung): CohortRung => ({ rung: r.rung, sinceDate: r.s
  * cohort intact (nothing lost) and both cohorts start where the book already is.
  * Idempotent: a blob that already has cohorts is returned untouched. */
 export function migrateRisk(state: RiskState): RiskState {
-  if (state.cohorts) return state
+  if (state.cohorts && state.directions) return state
   const base = cloneRung(state)
-  return { ...state, cohorts: { large: cloneRung(base), small: cloneRung(base) } }
+  return {
+    ...state,
+    cohorts: state.cohorts ?? { large: cloneRung(base), small: cloneRung(base) },
+    directions: state.directions ?? {
+      long: { ...initRung(state.sinceDate), rung: base.rung },
+      short: { ...initRung(state.sinceDate), rung: base.rung },
+    },
+  }
 }
 
 const PROMOTE_MIN_GRADED = 25
@@ -139,6 +151,12 @@ export function computeCohortRung(
 export function cohortRungOf(state: RiskState, cohort: CapCohortOrUnknown): number {
   if (cohort !== 'unknown' && state.cohorts) return state.cohorts[cohort].rung
   return state.rung
+}
+
+export function directionRungOf(state: RiskState, side: 'long' | 'short'): number | null {
+  const own = state.directions?.[side]
+  if (!own) return null
+  return own.gradedAtRung >= COHORT_STANDALONE_N || own.history.length > 0 ? own.rung : null
 }
 
 /** The owner's instrument map: an underlying → the ISA-eligible tickers that
