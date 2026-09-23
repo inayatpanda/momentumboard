@@ -801,7 +801,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
   }
 
   if (type === 'social') {
-    const hit = await getCached<unknown>('social-pulse:v2')
+    const hit = await getCached<unknown>('social-pulse:v3')
     if (hit) return json(200, { ok: true, data: hit })
     try {
       const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse, pickDiscoveries, isMega, plausibleCapUsdM } = await import('./lib/social')
@@ -882,7 +882,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
         pulse: pulse.filter(p => !discoveries.some(d => d.sym === p.sym)),
         at: nowSec,
       }
-      await setCached('social-pulse:v2', data, 3600)
+      await setCached('social-pulse:v3', data, 3600)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
