@@ -1,3 +1,4 @@
+import { SOCIAL_JOBS_KEY, enqueueSocialJobs, mutateSocialJobs, type SocialJob } from './lib/socialJobs'
 // /api/video-transcripts — the Mac runner's two doors: `GET ?pending=1` lists
 // inbox videos still missing a transcript, `POST` submits one. Guarded by its
 // OWN token (TRANSCRIPT_TOKEN): the shared free-tier licence must never be able
@@ -76,6 +77,26 @@ describe('POST', () => {
     expect((await post({ ...sub, url: 'https://evil.example/x' })).status).toBe(400)
     expect((await post({ ...sub, text: 'too short' })).status).toBe(400)
     expect((await post(null)).status).toBe(400)
+    expect((await routeVideoTranscripts(auth, 'POST', new URLSearchParams(), '{broken', ENV, store)).status).toBe(400)
+    expect((await post({ ...sub, url: 'https://evil.test/youtube.com' })).status).toBe(400)
+  })
+  it('revives extraction after captions arrive, without duplicating live jobs', async () => {
+    await post(sub)
+    await post({ ...sub, url: 'https://youtu.be/abcdefghijk' })
+    const jobs = (await store.read<SocialJob[]>(SOCIAL_JOBS_KEY))!
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0]).toMatchObject({ url: sub.url, mode: 'extract' })
+  })
+  it('does not enqueue extraction when it already completed', async () => {
+    await store.write('video-extracts', [{ url: 'https://youtu.be/abcdefghijk' }])
+    await post(sub)
+    expect(await store.read('work-queue')).toBeNull()
+  })
+  it('wakes a deferred extraction when its missing transcript arrives', async () => {
+    await enqueueSocialJobs(store, [{ url: sub.url, title: sub.title, channel: sub.channel }], 100)
+    await mutateSocialJobs(store, rows => { rows[0].stage = 'needs-attention'; rows[0].attempts = 6; rows[0].nextAttemptAt = 9999999999 })
+    await post(sub)
+    expect((await store.read<SocialJob[]>(SOCIAL_JOBS_KEY))?.[0]).toMatchObject({ stage: 'queued', nextAttemptAt: 0, attempts: 0 })
   })
 
   it('only the runner source is accepted over this door', async () => {
@@ -86,4 +107,16 @@ describe('POST', () => {
     expect(res.status).toBe(200)
     expect(rows[0].source).toBe('local')
   })
+})
+
+it('rotates unavailable captions out of the local runner slots so untried videos can proceed', async () => {
+  const now = Math.floor(Date.now() / 1000)
+  await store.write('video-inbox', Array.from({ length: 21 }, (_, i) => ({ url: Y(`v${String(i).padStart(10, '0')}`), title: 'Video', channel: 'Channel', at: now - i })))
+  const first = (await (await get('pending=1')).json()).data
+  expect(first).toHaveLength(20)
+  await post({ url: first[0].url, status: 'unavailable' })
+  const second = (await (await get('pending=1')).json()).data
+  expect(second).toHaveLength(20)
+  expect(second.some((v: { url: string }) => v.url === first[0].url)).toBe(false)
+  expect(second.at(-1).url).toBe(Y('v0000000020'))
 })

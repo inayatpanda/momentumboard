@@ -118,6 +118,25 @@ beforeEach(async () => {
 })
 
 describe('Street2', () => {
+  it('shows processing failures and deferred work separately from completed videos', async () => {
+    await seedWire({ videoIngestion: { pendingTranscripts: 8, queued: 3, deferred: 2, failed: 1,
+      lastTranscriptAt: hoursAgo(1), lastExtractAt: hoursAgo(2), nextRetryAt: null,
+      recentFailures: [{ title: 'A video', reason: 'transcript-unavailable', at: hoursAgo(1) }],
+    } })
+    withRouter()
+    const status = await screen.findByLabelText('YouTube processing status')
+    expect(status).toHaveTextContent('8 awaiting captions · 3 queued analyses · 2 deferred · 1 failed')
+    expect(status).toHaveTextContent('transcript-unavailable')
+  })
+
+  it('offers a retry when the video feed fails on first load', async () => {
+    vi.mocked(getStreetWire).mockRejectedValueOnce(new Error('http-503'))
+    withRouter()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Video analysis could not be loaded')
+    expect(screen.getByRole('button', { name: 'Retry video feed' })).toBeInTheDocument()
+    expect(screen.queryByText('Loading video evidence…')).not.toBeInTheDocument()
+  })
+
   it('has a heading "The street"', () => {
     withRouter()
     expect(screen.getByRole('heading', { level: 1, name: /the street/i })).toBeInTheDocument()

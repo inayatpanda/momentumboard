@@ -70,6 +70,8 @@ export const HANDLERS = {
   'telegram-webhook': () => import('../telegram-webhook.mts'),
   'video-analyze-background': () => import('../video-analyze-background.mts'),
   'video-transcripts': () => import('../video-transcripts.mts'),
+  'video-capture-poll': () => import('../video-capture-poll.mts'),
+  'video-jobs': () => import('../video-jobs.mts'),
   watchdog: () => import('../watchdog.mts'),
 } satisfies Record<string, () => Promise<HandlerModule>>
 

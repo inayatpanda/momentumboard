@@ -46,6 +46,8 @@ export interface VideoItem {
   title: string
   url: string
   channel: string
+  channelId?: string
+  publishedAt?: number
 }
 
 export interface AlertState {

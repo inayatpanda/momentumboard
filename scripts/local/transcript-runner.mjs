@@ -17,6 +17,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { fetchCaptionTranscript } from '../../shared/youtubeCaptions.mjs'
 
 const BASE = process.env.STREETSIGNAL_URL ?? 'https://thestreetsignal.rqai.co.uk'
 const TOKEN_FILE = join(homedir(), '.config', 'streetsignal', 'transcript-token')
@@ -30,54 +31,8 @@ const token = (() => {
   }
 })()
 
-const ANDROID_UA = 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip'
-
-const videoIdFrom = url => url.match(/(?:v=|youtu\.be\/|\/shorts\/)([A-Za-z0-9_-]{11})/)?.[1] ?? null
-
-/** Same track choice as netlify/functions/lib/transcripts.ts: human english
- * beats auto english beats whatever exists. */
-const pickTrack = tracks => {
-  const en = tracks.find(t => t.languageCode?.startsWith('en') && t.kind !== 'asr')
-  return en ?? tracks.find(t => t.languageCode?.startsWith('en')) ?? tracks[0] ?? null
-}
-
-const parseTimedText = xml => {
-  const parts = []
-  for (const m of xml.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)) {
-    const text = m[1].replace(/<[^>]+>/g, '')
-    if (text.trim()) parts.push(text)
-  }
-  return parts
-    .join(' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-async function fetchCaptions(url) {
-  const id = videoIdFrom(url)
-  if (!id) return { fail: 'bad-url' }
-  const res = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'user-agent': ANDROID_UA },
-    body: JSON.stringify({ context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30, hl: 'en' } }, videoId: id }),
-  })
-  if (!res.ok) return { fail: `innertube ${res.status}` }
-  const j = await res.json()
-  const track = pickTrack(j.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [])
-  if (!track) return { fail: 'no-caption-tracks' }
-  const cap = await fetch(track.baseUrl, { headers: { 'user-agent': ANDROID_UA } })
-  if (!cap.ok) return { fail: `timedtext ${cap.status}` }
-  const text = parseTimedText(await cap.text())
-  return text.length > 100 ? { text } : { fail: `too-short (${text.length})` }
-}
-
 const api = (path, init = {}) =>
-  fetch(`${BASE}${path}`, { ...init, headers: { 'x-transcript-token': token, 'content-type': 'application/json', ...init.headers } })
+  fetch(`${BASE}${path}`, { ...init, signal: AbortSignal.timeout(30_000), headers: { 'x-transcript-token': token, 'content-type': 'application/json', ...init.headers } })
 
 const pendingRes = await api('/api/video-transcripts?pending=1')
 if (!pendingRes.ok) {
@@ -92,19 +47,25 @@ if (!pending.length) {
 
 let stored = 0
 for (const v of pending) {
-  const got = await fetchCaptions(v.url)
+  const got = await fetchCaptionTranscript(v.url)
   if (got.fail) {
     // fresh uploads grow auto-captions minutes-to-hours later; the next run
     // simply finds the video still pending — that IS the retry
     console.log(`skip  ${v.url} — ${got.fail}`)
+    // Rotate failures behind untried videos instead of monopolising the 20 slots.
+    try { await api('/api/video-transcripts', { method: 'POST', body: JSON.stringify({ url: v.url, status: 'unavailable' }) }) } catch { /* next poll retries */ }
     continue
   }
-  const res = await api('/api/video-transcripts', {
-    method: 'POST',
-    body: JSON.stringify({ url: v.url, title: v.title, channel: v.channel, text: got.text }),
-  })
-  console.log(`${res.ok ? 'sent ' : 'FAIL '} ${v.url} — ${got.text.length} chars, ${res.status} ${await res.text().catch(() => '')}`)
-  if (res.ok) stored++
+  try {
+    const res = await api('/api/video-transcripts', {
+      method: 'POST',
+      body: JSON.stringify({ url: v.url, title: v.title, channel: v.channel, text: got.text, segments: got.segments, language: got.language, automatic: got.automatic }),
+    })
+    console.log(`${res.ok ? 'sent ' : 'FAIL '} ${v.url} — ${got.text.length} chars, ${res.status} ${await res.text().catch(() => '')}`)
+    if (res.ok) stored++
+  } catch {
+    console.log(`FAIL  ${v.url} — submission failed; retained in pending inbox for the next run`)
+  }
   await new Promise(r => setTimeout(r, 1500)) // be a polite client, not a scraper burst
 }
 console.log(`done: ${stored}/${pending.length} stored`)

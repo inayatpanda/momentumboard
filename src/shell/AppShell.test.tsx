@@ -11,9 +11,9 @@ import AppShell from './AppShell'
 const at = (path: string) => memoryLocation({ path: `/app${path}` }).hook
 
 describe('AppShell', () => {
-  it('opens on Today at /app/', async () => {
+  it('opens the Research desk on the Today route at /app/', async () => {
     render(<AppShell locationHook={at('/')} />)
-    expect(await screen.findByRole('heading', { name: /today/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Research desk' })).toBeInTheDocument()
   })
 
   // THE PHONE BAR IS THE RATIFIED FIVE, and owner iteration 2 did not touch it:
@@ -25,7 +25,7 @@ describe('AppShell', () => {
   // media query).
   it('shows exactly the five ratified nav labels, in order — Board is routable but unlabelled', () => {
     render(<AppShell locationHook={at('/')} />)
-    const nav = screen.getByRole('navigation')
+    const nav = screen.getByRole('navigation', { name: 'Primary' })
     const labels = [...nav.querySelectorAll('.v2-tab:not(.rail-only) .v2-tab-label')].map(el => el.textContent?.trim())
     expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'More'])
   })
@@ -38,7 +38,7 @@ describe('AppShell', () => {
   // new page/tab altogether") FIRST of the promoted — the most-visited of them.
   it('carries five rail-only entries — Analytics, The street, Research, Calendar, The paper; Gates demoted', () => {
     render(<AppShell locationHook={at('/')} />)
-    const nav = screen.getByRole('navigation')
+    const nav = screen.getByRole('navigation', { name: 'Primary' })
     const labels = [...nav.querySelectorAll('.v2-tab-label')].map(el => el.textContent?.trim())
     expect(labels).toEqual(['Today', 'Stocks', 'Intel', 'Track record', 'Analytics', 'The street', 'Research', 'Calendar', 'The paper', 'More'])
     const railOnly = [...nav.querySelectorAll('.v2-tab.rail-only .v2-tab-label')].map(el => el.textContent?.trim())
@@ -47,14 +47,14 @@ describe('AppShell', () => {
 
   it('the promoted entries link to their real routes', () => {
     render(<AppShell locationHook={at('/')} />)
-    const nav = screen.getByRole('navigation')
+    const nav = screen.getByRole('navigation', { name: 'Primary' })
     const hrefs = [...nav.querySelectorAll('.v2-tab.rail-only')].map(a => a.getAttribute('href'))
     expect(hrefs).toEqual(['/app/analytics', '/app/more/street', '/app/more/research', '/app/more/calendar', '/app/more/paper'])
   })
 
   it('lights The street’s own rail row inside the page, with a glyph of its own', () => {
     render(<AppShell locationHook={at('/more/street')} />)
-    const nav = screen.getByRole('navigation')
+    const nav = screen.getByRole('navigation', { name: 'Primary' })
     expect(nav).toHaveClass('on-promoted')
     const street = [...nav.querySelectorAll('.v2-tab')].find(a => a.textContent?.includes('The street'))!
     expect(street).toHaveClass('on')
@@ -66,7 +66,7 @@ describe('AppShell', () => {
 
   it('a promoted page lights its own row, and marks the nav so the rail can dim the More parent', () => {
     render(<AppShell locationHook={at('/more/research')} />)
-    const nav = screen.getByRole('navigation')
+    const nav = screen.getByRole('navigation', { name: 'Primary' })
     expect(nav).toHaveClass('on-promoted')
     const research = [...nav.querySelectorAll('.v2-tab')].find(a => a.textContent?.includes('Research'))!
     expect(research).toHaveClass('on')
@@ -79,7 +79,7 @@ describe('AppShell', () => {
 
   it('the demoted Gates page routes fine but lights only More — no rail row of its own', async () => {
     render(<AppShell locationHook={at('/more/gates')} />)
-    const nav = screen.getByRole('navigation')
+    const nav = screen.getByRole('navigation', { name: 'Primary' })
     expect(nav).not.toHaveClass('on-promoted')
     expect([...nav.querySelectorAll('.v2-tab-label')].some(el => el.textContent?.includes('Gates'))).toBe(false)
     const more = [...nav.querySelectorAll('.v2-tab')].find(a => a.textContent?.includes('More'))!
@@ -104,8 +104,8 @@ describe('AppShell', () => {
     expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
   })
 
-  it('sends unknown routes home to Today', async () => {
+  it('sends unknown routes home to the Research desk', async () => {
     render(<AppShell locationHook={at('/no-such-page')} />)
-    expect(await screen.findByRole('heading', { name: /today/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Research desk' })).toBeInTheDocument()
   })
 })

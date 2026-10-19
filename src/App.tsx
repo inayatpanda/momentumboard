@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { syncFromServer } from './lib/sync'
 import { seedStarterWatchlist } from './lib/starter'
-import { Landing } from './screens/Landing'
 import { AppGate } from './screens/AppGate'
-import { EnginePage, FaqPage, LedgerPage, PaperPage, siteRouteFor } from './screens/SitePages'
 // The v2 shell IS the app (plan Task 24). Static import on purpose: it folds
 // the shell + base.css into the entry, so a first-visit install that goes
 // offline before opening still has the whole app (the walkthrough's precache
-// covers the entry closure). AppShell owns its own <Suspense> for the lazy
-// routes, so this component needs none.
+// covers the entry closure). AppShell owns <Suspense> for its lazy routes;
+// the separate public-site boundary lives below.
 import AppShell from './shell/AppShell'
 import { clearToken, getToken, validateAccess } from './lib/api'
 import { isDesktopShell } from './lib/platform'
+import { ChunkRecoveryBoundary } from './shell/ChunkRecoveryBoundary'
+
+// Public marketing pages are a separate surface. Product/PWA launches should
+// not download their prose and page-specific styles before Today can render.
+const PublicSite = lazy(() => import('./screens/PublicSite'))
 
 /** The surfaces this component still owns after the cutover deletion wave:
  *  the public website, the licence front door, and the boot-time sync. Every
@@ -86,12 +89,11 @@ export default function App() {
   // Sub-pages (/engine, /paper, /ledger, /faq) are real URLs — the netlify.toml
   // catch-all serves index.html and the path picks the page here.
   if (surface === 'site') {
-    const page = siteRouteFor(location.pathname)
-    if (page === 'engine') return <EnginePage />
-    if (page === 'paper') return <PaperPage />
-    if (page === 'ledger') return <LedgerPage />
-    if (page === 'faq') return <FaqPage />
-    return <Landing licensed={licensed} onUnlocked={enterApp} />
+    return <ChunkRecoveryBoundary>
+      <Suspense fallback={<main style={{ padding: 32 }} role="status">Loading StreetSignal…</main>}>
+        <PublicSite licensed={licensed} onUnlocked={enterApp} />
+      </Suspense>
+    </ChunkRecoveryBoundary>
   }
 
   // an unlicensed device AT /app/ gets the app's own front door — never the

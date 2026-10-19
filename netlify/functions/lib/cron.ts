@@ -186,6 +186,7 @@ export const CRON_JOBS: readonly CronJob[] = [
     enabled: () => readEnv('WORKER_OWNS_PREDICT') === '1',
     why: 'the morning engine run — owned by GitHub Actions unless WORKER_OWNS_PREDICT=1',
   },
+  { name: 'video-capture-poll', schedule: '*/5 * * * *', trigger: '*/5 * * * *', auth: 'cron-body', why: 'collect saved transcript jobs before provider results expire; never starts paid work' },
 ]
 
 /** M1 left `sweepExpired` written, tested and uncalled. This calls it: the

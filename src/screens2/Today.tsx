@@ -1,14 +1,5 @@
-// Today — the home screen (plan Task 13). The ratified "Today stack" layout
-// (brainstorm/67693-1786687483/content/home-layout.html, option A): today's
-// sized calls as big cards up top, then one counts rail (developing / watch /
-// refused), then the yesterday strip — everything else is one tap deeper.
-//
-// Data: ONE slice, `board` (getBoardSlice) — the amendments folded the
-// original brief's second fetch (`ledger:2` for yesterday) and the funnel
-// count into the board slice itself / a no-fetch chip, so Today never awaits
-// more than the one slice it paints from cache first (CX-4's local-first
-// contract, useSlice.ts).
-
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
 import { isNewSince, useNoteSeen, useSeenBaseline } from '../lib/lastSeen'
 import { useLiveQuotes } from '../lib/useLiveQuotes'
@@ -29,123 +20,137 @@ import { StaleBoardNote } from './parts/StaleBoardNote'
 import { TodayHeadlines } from './parts/TodayHeadlines'
 import { YesterdayStrip } from './parts/YesterdayStrip'
 import { StrategyLabPanel } from './parts/StrategyLabPanel'
+import { LearningPanel } from './parts/LearningPanel'
 import { DecisionCockpit } from './parts/DecisionCockpit'
+import '../styles/research.css'
 
-/** THE TAPE LINE (owner iteration 2). The board blob has always carried the
- * world tape's own sentence and the day's news tone, and the screen showed a
- * one-word regime pill and nothing else — so the reader got the engine's
- * verdict on the day with none of the reading behind it. One quiet line under
- * the header; nothing when the blob carries neither. */
-function TapeLine({ blob }: { blob: BoardBlob | null }) {
+const DESK_VIEWS = ['today', 'research', 'learning'] as const
+type DeskView = typeof DESK_VIEWS[number]
+const VIEW_LABELS: Record<DeskView, string> = { today: 'Today', research: 'Research', learning: 'Learning' }
+
+function useMobileDesk() {
+  const read = () => typeof window !== 'undefined' && window.innerWidth <= 760
+  const [mobile, setMobile] = useState(read)
+  useEffect(() => {
+    const update = () => setMobile(read())
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return mobile
+}
+
+function MarketContext({ blob }: { blob: BoardBlob | null }) {
   const detail = blob?.worldTape?.detail?.trim()
   const tone = blob?.newsTone?.label
-  if (!detail && !tone) return null
-  return (
-    <p className="cc-reason today-tape">
-      {detail}
-      {detail && tone ? ' · ' : ''}
-      {tone && <>news tone: {tone}</>}
-    </p>
-  )
+  return <section className="research-weather" aria-label="Market context">
+    <div className="research-weather-title">
+      <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true"><path d="M4 24h26M8 29h18M10 24a7 7 0 0 1 14 0M17 4v5M5 10l4 4M29 10l-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+      <div><span className="research-eyebrow">Daily weather</span><strong>Market context</strong></div>
+    </div>
+    <dl className="research-weather-readings">
+      <div><dt>International tape</dt><dd>{blob?.worldTape?.tone ?? 'Awaiting data'}</dd></div>
+      <div><dt>News tone</dt><dd>{tone ?? 'Awaiting data'}</dd></div>
+      <div><dt>Board regime</dt><dd>{blob?.regime ?? 'Awaiting data'}</dd></div>
+    </dl>
+    {(detail || tone) && <p className="today-tape research-weather-note">{detail}{detail && tone ? ' · ' : ''}{tone && <>news tone: {tone}</>}</p>}
+  </section>
 }
 
 export default function Today() {
-  // The slice's OWN refresh, which no screen had ever called (dynamism wave):
-  // a pull on the phone, the ↻ at desk, both driving the one board slice.
-  const { data, refreshing, refresh } = useSlice('board', getBoardSlice)
+  // One cached board slice owns the published calls, research and learning.
+  const [newsOpen, setNewsOpen] = useState(false)
+  const [view, setView] = useState<DeskView>('today')
+  const mobile = useMobileDesk()
+  const tabs = useRef<Partial<Record<DeskView, HTMLButtonElement | null>>>({})
+  const { data, refreshing, refresh, error } = useSlice('board', getBoardSlice)
   const { pull } = usePullRefresh(refresh)
   const blob = data?.board ?? null
   const rows = blob?.board ?? []
-  // "sized" mirrors src/components/EngineBoard.tsx:251's `trades` split — the
-  // only rows a grade pill and a probability may ever show on (CallCard's own
-  // hard rule, checked again there rather than trusted from here). Shared
-  // taxonomy helper (src/lib/boardTaxonomy.ts) so Today, Board, and
-  // CountsRail can never drift on what counts as "sized".
   const { sized, developing, watch, observations } = splitBoardRows(rows)
-  // WHICH "nothing sized" SENTENCE (T13a). A day the engine looked at and
-  // published nothing at all is not the day it published five rows that cleared
-  // every gate and had nowhere to be placed — and until now both got the
-  // "nothing cleared its gates" line, printed directly above the rail counting
-  // the rows that did. Near misses are deliberately NOT counted here: they
-  // cleared no gate, so on a board of nothing but near misses the first
-  // sentence is the true one.
   const clearedButUnsized = developing.length + watch.length + observations.length > 0
-  // THE LIVE LINE'S SYMBOLS (dynamism wave): the cards the reader can act on —
-  // the sized rows, plus the wildcard slot, which is a published call whatever
-  // else it is. Nothing else: a quote batch is an API call, and the rows below
-  // the fold are watching, not waiting on a price.
   const liveSyms = [...new Set([...sized, ...rows.filter(r => r.wildcard)].map(r => r.sym))]
   const liveQuotes = useLiveQuotes(liveSyms)
-  // …and whether any of this is NEW to the reader (dynamism wave, feature 7).
   const seen = useSeenBaseline()
   const boardIsNew = isNewSince(blob?.generatedAt, seen?.boardGeneratedAt ?? null)
   useNoteSeen({ boardGeneratedAt: blob?.generatedAt ?? null })
 
   return (
-    <div className="today">
+    <div className="today research-desk">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
-      <div className="today-head">
-        <h1>Today</h1>
-        {/* the board itself turned over since the last visit (dynamism wave) —
-            keyed on the board's own generatedAt, never on when it was fetched */}
-        {boardIsNew && <span className="new-dot" aria-label="New board since your last visit" />}
-        {blob && <span className={`pill ${blob.regime === 'green' ? 'accent' : ''}`}>{blob.regime}</span>}
-      </div>
-      {/* WHEN the reader is (dynamism wave): the session's own state, ticking,
-          and the stamp the board has always carried and nothing ever showed. */}
-      <SessionLine generatedAt={blob?.generatedAt} />
-      <TapeLine blob={blob} />
-      <DecisionCockpit data={data} />
-      {/* …and what the desk has taken in SINCE the run (dynamism wave): three
-          headlines, each a door into Intel's news desk. News keeps its one
-          home; this is the doorway, not a feed. */}
-      <TodayHeadlines />
-      {/* …and WHICH DAY these cards belong to (dynamism wave): a weekend
-          reader was shown Friday's board unlabelled. Nothing when it is
-          today's — the fresh case must stay silent. */}
-      <StaleBoardNote date={blob?.date} />
-      {data && blob === null ? (
-        // the slice RESOLVED and there is no board (cold store, pre-run
-        // morning) — an empty state, never a skeleton that looks hung (A1)
-        <p className="cc-reason">{NO_BOARD_YET}</p>
-      ) : blob === null ? (
-        <>
-          <div className="skeleton" style={{ height: 118, marginBottom: 10 }} />
-          <div className="skeleton" style={{ height: 118 }} />
-        </>
-      ) : sized.length === 0 ? (
-        <p className="cc-reason">{clearedButUnsized ? NO_SIZED_NO_ROUTE : NO_SIZED_TODAY}</p>
-      ) : (
-        <div className="today-cards">
-          {sized.map(row => (
-            <CallCard key={row.id} row={row} quote={liveQuotes[row.sym]} />
-          ))}
+      <header className="research-hero">
+        <div>
+          <p className="research-eyebrow">StreetSignal / today</p>
+          <div className="research-heading"><h1>{mobile ? 'Your daily brief' : 'Research desk'}</h1>{boardIsNew && <span className="new-dot" aria-label="New board since your last visit" />}</div>
+          {!mobile && <p className="research-deck">Understand the setup. Test the thesis. Learn from the outcome.</p>}
+          <SessionLine generatedAt={blob?.generatedAt} />
         </div>
-      )}
-      {/* the morning's setups at today's prices — the board slice has always
-          carried them and no v2 screen read them (crypto-v2 wave, finding 8).
-          Under the cards, because they are those same cards' levels being
-          reached, never new calls. */}
-      <IntradayFlagsStrip blob={data?.intradayFlags ?? null} />
-      {/* …and then the calls ALREADY on the table (owner iteration 2): the open
-          book first, because that is where the reader's money is, then the
-          dated prints the engine is watching but refuses to bet. Both render
-          nothing at all until their bytes exist — no skeletons on secondary
-          sections (the rule OpenCallsStrip's header states). */}
-      <OpenCallsStrip entries={data?.openTrace?.entries} closed={data?.openTrace?.closed} />
-      <EventRadarStrip radar={data?.eventRadar} />
-      {/* The new engine is visible, not a silent scoring change. It sits before
-          social commentary because these are StreetSignal's own independently
-          measured forecasts. */}
-      <StrategyLabPanel lab={data?.engineLab} />
-      {/* …and then the OTHER voice in the room (owner request): what the tracked
-          channels have been recommending this week, each name beside the
-          engine's own stance on it. Reads only what this slice already carries
-          — the picks, today's board rows and the open book — so a name in
-          neither says "no view" rather than borrowing a grade. */}
-      <ChannelPicksStrip picks={data?.channelPicks} board={rows} openCalls={data?.openTrace?.entries} />
-      <CountsRail board={rows} />
-      <YesterdayStrip yesterday={data?.yesterday ?? null} />
+        <nav className="research-jump" aria-label="Research desk sections">
+          <a href="#published-calls">Calls <span aria-hidden="true">↗</span></a>
+          <a href="#opportunities">Research <span aria-hidden="true">↗</span></a>
+          <a href="#historical-learning">Learning <span aria-hidden="true">↗</span></a>
+        </nav>
+      </header>
+      {mobile && <nav className="mobile-desk-tabs" role="tablist" aria-label="Daily brief views">
+        {DESK_VIEWS.map(key => <button key={key} ref={el => { tabs.current[key] = el }} type="button" role="tab"
+          id={`brief-tab-${key}`} aria-selected={view === key} aria-controls={`brief-panel-${key}`} tabIndex={view === key ? 0 : -1}
+          onClick={() => setView(key)} onKeyDown={event => {
+            const index = DESK_VIEWS.indexOf(key)
+            const next = event.key === 'ArrowRight' ? DESK_VIEWS[(index + 1) % DESK_VIEWS.length]
+              : event.key === 'ArrowLeft' ? DESK_VIEWS[(index + DESK_VIEWS.length - 1) % DESK_VIEWS.length]
+                : event.key === 'Home' ? DESK_VIEWS[0] : event.key === 'End' ? DESK_VIEWS[DESK_VIEWS.length - 1] : null
+            if (next) { event.preventDefault(); setView(next); tabs.current[next]?.focus() }
+          }}>{VIEW_LABELS[key]}</button>)}
+      </nav>}
+      {!mobile && <><MarketContext blob={blob} /><DecisionCockpit data={data} /></>}
+      {error && <section className="card research-error" role="alert" aria-label="Board refresh failed">
+        <p><strong>{blob ? 'The board could not refresh. Showing the saved board.' : "Today's board could not load."}</strong></p>
+        <p>{error}</p>
+        <button type="button" className="mini-btn" onClick={refresh} disabled={refreshing}>Retry board</button>
+      </section>}
+      <div id="brief-panel-today" role={mobile ? 'tabpanel' : undefined} aria-labelledby={mobile ? 'brief-tab-today' : undefined} hidden={mobile && view !== 'today'}>
+      {mobile && <details className="mobile-market-details">
+        <summary><span>Market backdrop</span><span className="mobile-market-tone">{blob?.worldTape?.tone ?? 'Awaiting data'}</span><span className="mobile-market-chevron" aria-hidden="true">⌄</span></summary>
+        <MarketContext blob={blob} /><DecisionCockpit data={data} />
+      </details>}
+      <section id="published-calls" className="research-section research-calls" aria-label="Published and active calls">
+        <div className="research-section-head">
+          <div><p className="research-eyebrow">01 / The live board</p><h2>Published calls</h2></div>
+          {blob && <span className="research-count num">{sized.length} sized {sized.length === 1 ? 'call' : 'calls'}</span>}
+        </div>
+        <StaleBoardNote date={blob?.date} />
+        {error && blob === null ? null : data && blob === null ? <p className="research-empty">{NO_BOARD_YET}</p>
+          : blob === null ? <div aria-label="Loading board"><div className="skeleton" style={{ height: 118, marginBottom: 10 }} /><div className="skeleton" style={{ height: 118 }} /></div>
+          : sized.length === 0 ? <p className="research-empty">{clearedButUnsized ? NO_SIZED_NO_ROUTE : NO_SIZED_TODAY}</p>
+          : <div className="today-cards">{sized.map(row => <CallCard key={row.id} row={row} quote={liveQuotes[row.sym]} />)}</div>}
+        <IntradayFlagsStrip blob={data?.intradayFlags ?? null} />
+        <OpenCallsStrip entries={data?.openTrace?.entries} closed={data?.openTrace?.closed} />
+        <CountsRail board={rows} />
+      </section>
+      {mobile && <nav className="mobile-brief-links" aria-label="Explore intelligence">
+        <Link href="/intel#news"><span>News & events<small>Headlines and upcoming catalysts</small></span><span aria-hidden="true">↗</span></Link>
+        <Link href="/more/street"><span>YouTube & social<small>Claims, sources and outcomes</small></span><span aria-hidden="true">↗</span></Link>
+      </nav>}
+      </div>
+      <div id="brief-panel-research" role={mobile ? 'tabpanel' : undefined} aria-labelledby={mobile ? 'brief-tab-research' : undefined} hidden={mobile && view !== 'research'}>
+      <div id="opportunities"><StrategyLabPanel lab={data?.engineLab} /></div>
+      </div>
+      <div id="brief-panel-learning" role={mobile ? 'tabpanel' : undefined} aria-labelledby={mobile ? 'brief-tab-learning' : undefined} hidden={mobile && view !== 'learning'}>
+      <div id="historical-learning" className="research-section">
+        <LearningPanel learning={data?.engineLab?.learning} />
+        <YesterdayStrip yesterday={data?.yesterday ?? null} />
+      </div>
+      </div>
+      {!mobile && <section className="research-section research-intelligence" aria-label="News and social intelligence">
+        <div className="research-section-head"><div><p className="research-eyebrow">04 / Wider context</p><h2>Intelligence notebook</h2></div><span className="research-section-note">Open the evidence behind the noise</span></div>
+        <div className="research-notebook-grid">
+          <details className="research-disclosure" onToggle={e => setNewsOpen(e.currentTarget.open)}><summary><span><strong>News & upcoming events</strong><small>Latest headlines and the earnings calendar</small></span><span className="research-disclosure-plus" aria-hidden="true">+</span></summary>
+            <div className="research-disclosure-body">{newsOpen && <TodayHeadlines />}<EventRadarStrip radar={data?.eventRadar} /><Link className="research-text-link" href="/intel#news">Open the news desk →</Link></div>
+          </details>
+          <details className="research-disclosure"><summary><span><strong>What the channels are saying</strong><small>Video commentary alongside the engine’s own view</small></span><span className="research-disclosure-plus" aria-hidden="true">+</span></summary>
+            <div className="research-disclosure-body"><ChannelPicksStrip picks={data?.channelPicks} board={rows} openCalls={data?.openTrace?.entries} />{!data?.channelPicks?.length && <p className="research-muted">No channel picks are available in this board snapshot.</p>}<Link className="research-text-link" href="/more/street">Open the Street →</Link></div>
+          </details>
+        </div>
+      </section>}
     </div>
   )
 }

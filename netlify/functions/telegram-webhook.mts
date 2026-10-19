@@ -1,7 +1,8 @@
+import { appendSocialDisplay } from './lib/socialPublish'
 import type { Context } from '@netlify/functions'
 import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { sendTelegram } from './lib/telegram'
-import { parseCallText, toExtract, type PunditExtract } from './lib/punditCalls'
+import { parseCallText, toExtract } from './lib/punditCalls'
 import { addLicenceVerified, generateLicenceKey, readLicencesFresh, scopedToken, type Licence } from './lib/auth'
 import { CANONICAL_SITE } from './lib/site'
 
@@ -63,9 +64,7 @@ export async function routeTelegramWebhook(
     // log a pundit's forwarded stock call into the graded channel-stance store
     const { name, tickers } = parseCallText(rawText) // RAW text — not the lowercased copy
     if (name && tickers.length) {
-      const extracts = (await store.read<PunditExtract[]>('video-extracts')) ?? []
-      extracts.push(toExtract(name, tickers, nowSec, 'telegram-bridge'))
-      await store.write('video-extracts', extracts.slice(-400))
+      await appendSocialDisplay(store, [toExtract(name, tickers, nowSec, 'telegram-bridge')])
       await reply(`logged: ${name} — ${tickers.map(t => `${t.sym} ${t.stance}`).join(', ')}`)
     } else {
       await reply('Usage: /call obi $TSLA long [$PLTR short] or /call obi <forwarded text>')

@@ -116,7 +116,7 @@ describe('the long tail moved out of the five-minute loop', () => {
     seedCache('candles:AAPL:1y', { candles: candles(150) })
     for (const sym of ['CL=F', 'GC=F', '^VIX', 'DX-Y.NYB', 'NG=F']) seedCache(`candles:${sym}:1y`, { candles: candles(70) })
     // one video already discovered by the alert loop and waiting for the queue
-    await seed('app', 'video-inbox', [{ url: 'https://youtube.com/watch?v=abc', title: 'NVDA to the moon', channel: 'Stocks with Josh', at: NOW_SEC - 60 }])
+    await seed('app', 'video-inbox', [{ url: 'https://youtube.com/watch?v=abcdefghijk', title: 'NVDA to the moon', channel: 'Stocks with Josh', at: NOW_SEC - 60 }])
 
     hits = []
     globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -163,16 +163,16 @@ describe('the long tail moved out of the five-minute loop', () => {
     expect(await readApp<{ at: number }>('trending')).toMatchObject({ at: NOW_SEC })
 
     // the video the alert loop recorded is queued exactly once per tier
-    const queue = (await readApp<{ kind: string; body: { url: string; mode: string } }[]>('work-queue')) ?? []
-    expect(queue.map(q => q.body.mode).sort()).toEqual(['extract', 'watch'])
-    expect(queue.every(q => q.kind === 'video')).toBe(true)
+    const queue = (await readApp<{ url: string; mode: string }[]>('social-jobs:v1')) ?? []
+    expect(queue.map(q => q.mode).sort()).toEqual(['extract', 'watch'])
+    expect(queue.every(q => q.url.includes('abcdefghijk'))).toBe(true)
   })
 
   it('never queues the same video twice, however many times it runs', async () => {
     await tickTail()
     vi.setSystemTime(NOW_MS + 15 * 60_000) // past the tail's own slot window
     await tickTail()
-    const queue = (await readApp<unknown[]>('work-queue')) ?? []
+    const queue = (await readApp<unknown[]>('social-jobs:v1')) ?? []
     expect(queue).toHaveLength(2) // one watch + one extract, from the first run only
   })
 

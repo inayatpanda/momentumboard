@@ -182,7 +182,10 @@ export const calibratedOutcomeOf = (pred: { outcome21?: PredOutcome }): PredOutc
  * invalidates the factor evidence exactly as a re-definition does. The weight
  * VECTOR is kept either way — that is `rebaseWeights`'s decision, on its own
  * trigger. */
-export const ENGINE_MODEL_VERSION = 4
+// v5: social context uses one latest vote per channel/symbol and a uniform
+// prior. Legacy channel grades and favourite preferences no longer boost a vote;
+// source-matched outcomes collect separately under social-next-open-10-v1.
+export const ENGINE_MODEL_VERSION = 5
 
 export interface CalibrationState {
   // Keys are EITHER cohort-tagged `${cohort}:${side}:${regime}:${band}` (cohort ∈

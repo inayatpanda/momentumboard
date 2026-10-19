@@ -8,19 +8,22 @@ const body = (url: string) => JSON.stringify({ url, title: 'TSLA levels', channe
 
 describe('video analysis', () => {
   it('requires a token and a youtube url', async () => {
-    expect((await routeVideoAnalyze(new Headers(), body('https://youtube.com/watch?v=x'), env, memoryStore())).status).toBe(401)
+    expect((await routeVideoAnalyze(new Headers(), body('https://youtube.com/watch?v=x0000000000'), env, memoryStore())).status).toBe(401)
     expect((await routeVideoAnalyze(auth, JSON.stringify({ url: 'https://evil.com/v' }), env, memoryStore())).status).toBe(400)
+    expect((await routeVideoAnalyze(auth, '{broken', env, memoryStore())).status).toBe(400)
+    expect((await routeVideoAnalyze(auth, body('https://youtube.com.evil.test/watch?v=abcdefghijk'), env, memoryStore())).status).toBe(400)
   })
 
   it('analyzes, stores, and dedupes', async () => {
     const store = memoryStore()
     const watch = vi.fn(async () => 'TSLA discussed; support drawn at 180; bullish.')
-    const first = await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=a1'), env, store, watch)
+    const first = await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=a1000000000'), env, store, watch)
     expect(first.status).toBe(200)
     const list = (await store.read<VideoAnalysis[]>('video-analyses'))!
     expect(list[0].analysis).toContain('support drawn at 180')
     // same url again: no second Gemini call
-    await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=a1'), env, store, watch)
+    await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=a1000000000'), env, store, watch)
+    await routeVideoAnalyze(auth, body('https://youtu.be/a1000000000?t=90'), env, store, watch)
     expect(watch).toHaveBeenCalledTimes(1)
   })
 
@@ -29,7 +32,8 @@ describe('video analysis', () => {
     const now = Math.floor(Date.now() / 1000)
     await store.write('video-analyses', [1, 2, 3].map(i => ({ url: `u${i}`, title: '', channel: '', analysis: 'x', at: now - 100 })))
     const watch = vi.fn(async () => 'y')
-    const res = await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=new'), env, store, watch)
+    const res = await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=new00000000'), env, store, watch)
+    expect(res.status).toBe(429)
     expect(await res.text()).toBe('daily-cap')
     expect(watch).not.toHaveBeenCalled()
   })

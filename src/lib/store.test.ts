@@ -5,6 +5,7 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import Dexie from 'dexie'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from './db'
 import { SLICE_TTL, gcSlices, invalidateSlices, readSlice, revalidate, sliceEvents, ttlFor, writeSlice } from './store'
@@ -55,6 +56,49 @@ describe('slice store', () => {
       return { fresh: false }
     }, { force: true })
     expect(calls).toBe(1)
+  })
+
+  it('a late superseded fetch cannot overwrite a completed forced refresh', async () => {
+    let finishOld!: (v: string) => void
+    const oldFetcher = vi.fn(() => new Promise<string>(resolve => { finishOld = resolve }))
+    const old = revalidate('board:late', oldFetcher)
+    await vi.waitFor(() => expect(oldFetcher).toHaveBeenCalledOnce())
+    await revalidate('board:late', async () => 'new', { force: true })
+    finishOld('old')
+    await old
+    expect((await readSlice('board:late'))?.data).toBe('new')
+  })
+
+  it('registers ownership before an old cache lookup can yield to a forced refresh', async () => {
+    let releaseRead!: () => void
+    const readStarted = new Promise<void>(resolve => { releaseRead = resolve })
+    const get = db.slices.get.bind(db.slices)
+    vi.spyOn(db.slices, 'get').mockImplementationOnce(() => Dexie.Promise.resolve(readStarted).then(() => undefined))
+    const old = revalidate('board:cache-race', async () => 'old')
+    await Promise.resolve()
+    await revalidate('board:cache-race', async () => 'new', { force: true })
+    releaseRead()
+    await old
+    expect((await get('board:cache-race'))?.data).toBe('new')
+  })
+
+  it('a replaced request settling does not release the newer in-flight request', async () => {
+    let finishOld!: (v: string) => void
+    let finishNew!: (v: string) => void
+    const first = vi.fn(() => new Promise<string>(r => { finishOld = r }))
+    const second = vi.fn(() => new Promise<string>(r => { finishNew = r }))
+    const old = revalidate('board:race', first)
+    await vi.waitFor(() => expect(first).toHaveBeenCalledOnce())
+    const fresh = revalidate('board:race', second, { force: true })
+    await vi.waitFor(() => expect(second).toHaveBeenCalledOnce())
+    finishOld('old')
+    await old
+    const unnecessary = vi.fn(async () => 'third')
+    const joined = revalidate('board:race', unnecessary)
+    finishNew('new')
+    expect(await fresh).toBe('new')
+    expect(await joined).toBe('new')
+    expect(unnecessary).not.toHaveBeenCalled()
   })
 
   it('ttlFor knows the per-slice windows: journey 2 min, board/quotes 2 min, ledger 15 min, default 15 min', () => {

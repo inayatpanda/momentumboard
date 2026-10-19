@@ -67,6 +67,30 @@ describe('apiGet', () => {
     await expect(apiGet('/x')).rejects.toThrow('unauthorized')
   })
 
+  it('preserves the HTTP failure when an upstream returns HTML', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>Bad gateway</html>', { status: 502 }))
+    await expect(apiGet('/x')).rejects.toThrow('http-502')
+  })
+
+  it('rejects a failing HTTP response even if its envelope claims success', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, data: {} }), { status: 503 }))
+    await expect(apiGet('/x')).rejects.toThrow('http-503')
+  })
+
+  it('aborts a stalled request so the screen can offer a retry', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+      }))
+      const check = expect(apiGet('/x')).rejects.toThrow('request timed out')
+      await vi.advanceTimersByTimeAsync(30_000)
+      await check
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   // The seam has to be USED, not merely exist: every typed getter in this file
   // and in apiViews.ts reaches the network through this one function, so if it
   // stops absolute-ising, the whole desktop build goes offline at once.

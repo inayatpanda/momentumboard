@@ -1,3 +1,5 @@
+import { appendSocialDisplay } from './lib/socialPublish'
+import { enqueueSocialJobs } from './lib/socialJobs'
 import type { Config } from '@netlify/functions'
 import { cachedCandles, cachedQuote } from './lib/marketCache'
 import { appStore as blobAppStore } from './lib/storeProvider'
@@ -38,8 +40,6 @@ const FIRED_KEY = 'alert-tail-fired'
 const FIRED_CAP = 300
 /** Urls already queued for the video worker. The queue itself is capped and
  * drains, so it cannot be the memory of what has been dispatched. */
-const DISPATCHED_KEY = 'video-dispatched'
-const DISPATCHED_CAP = 300
 /** Keys this handler owns, for the one-time hand-over from alert-state. */
 const OWNED_KEY = /^(macro|shock|stretch):/
 
@@ -108,7 +108,7 @@ export default async (req: Request) => {
     try {
       const q = (await store.read<unknown[]>('work-queue')) ?? []
       for (const it of items) q.push({ id: crypto.randomUUID(), kind: it.kind, body: it.body, at: nowSec, attempts: 0 })
-      await store.write('work-queue', q.slice(-100))
+      await store.write('work-queue', q)
     } catch {
       errors.push('work-enqueue')
     }
@@ -176,21 +176,11 @@ export default async (req: Request) => {
   // cap is picked up on the next run instead of being dropped for good.
   try {
     const inbox = (await store.read<InboxVideo[]>('video-inbox')) ?? []
-    const dispatched = (await store.read<string[]>(DISPATCHED_KEY)) ?? []
-    const known = new Set(dispatched)
-    const fresh = inbox.filter(v => v && typeof v.url === 'string' && !known.has(v.url))
-    if (fresh.length) {
-      // depth tier: Josh always, others only when the title names a watchlist ticker
-      const worthWatching = fresh.filter(v => v.channel === 'Stocks with Josh' || symbols.some(s => (v.title ?? '').toUpperCase().includes(s.split('.')[0].split('-')[0]))).slice(0, 2)
-      const extract = fresh.slice(0, 8)
-      const queued = [
-        ...worthWatching.map(v => ({ kind: 'video' as const, body: { url: v.url, title: v.title, channel: v.channel, mode: 'watch' } })),
-        ...extract.map(v => ({ kind: 'video' as const, body: { url: v.url, title: v.title, channel: v.channel, mode: 'extract' } })),
-      ]
-      await enqueueWork(queued)
-      const urls = [...new Set([...worthWatching, ...extract].map(v => v.url))]
-      await store.write(DISPATCHED_KEY, [...dispatched, ...urls].slice(-DISPATCHED_CAP))
-    }
+    // The durable queue is dispatch memory. No rolling array or paid tier can
+    // mark an unqueued extraction as complete. Discovery metadata travels with it.
+    const eligible = inbox.filter(v => v && typeof v.url === 'string')
+    const worthWatching = eligible.filter(v => v.channel === 'Stocks with Josh' || symbols.some(s => (v.title ?? '').toUpperCase().includes(s.split('.')[0].split('-')[0]))).slice(-2)
+    await enqueueSocialJobs(store, [...eligible.map(v => ({ ...v, mode: 'extract' as const })), ...worthWatching.map(v => ({ ...v, mode: 'watch' as const }))], nowSec)
   } catch (e) {
     errors.push(`video-dispatch: ${e}`)
   }
@@ -235,17 +225,7 @@ export default async (req: Request) => {
       ...(await fetchRedditPunditPosts(DEFAULT_PUNDIT_REDDITS, sinceSec)),
       ...(await Promise.all(DEFAULT_PUNDIT_FEEDS.map(f => fetchPunditTagFeed(f.url, f.name, sinceSec)))).flat(),
     ]
-    if (fresh.length) {
-      const extracts = (await store.read<{ url: string }[]>('video-extracts')) ?? []
-      const known = new Set(extracts.map(e => e.url))
-      const added: unknown[] = []
-      for (const e of fresh) {
-        if (known.has(e.url)) continue
-        known.add(e.url)
-        added.push(e)
-      }
-      if (added.length) await store.write('video-extracts', [...extracts, ...added].slice(-400))
-    }
+    await appendSocialDisplay(store, fresh)
   } catch (e) {
     errors.push(`pundit-bridge: ${e}`)
   }

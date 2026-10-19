@@ -12,15 +12,15 @@ const mkCandles = (startClose: number, slope: number, days = 40): Candle[] =>
   })
 
 describe('credibilityOf', () => {
-  it('empty state → prior only: favourites 0.6, others 0.5', () => {
-    expect(credibilityOf({}, 'Stocks with Josh', ['Stocks with Josh'])).toBeCloseTo(0.6, 5)
+  it('subscriptions do not confer accuracy: all channels start at 0.5', () => {
+    expect(credibilityOf({}, 'Stocks with Josh', ['Stocks with Josh'])).toBeCloseTo(0.5, 5)
     expect(credibilityOf({}, 'Random', ['Stocks with Josh'])).toBeCloseTo(0.5, 5)
   })
   it('evidence dominates the prior as calls accumulate', () => {
     const state: ChannelCredState = { Josh: { graded: 20, hits: 16, sumExcess: 40, recent: [] } }
     // (16 + 0.5×8)/(20+8) = 20/28
     expect(credibilityOf(state, 'Josh', [])).toBeCloseTo(20 / 28, 4)
-    expect(credibilityOf(state, 'Josh', ['Josh'])).toBeCloseTo((16 + 0.6 * 8) / 28, 4)
+    expect(credibilityOf(state, 'Josh', ['Josh'])).toBeCloseTo((16 + 0.5 * 8) / 28, 4)
   })
 })
 

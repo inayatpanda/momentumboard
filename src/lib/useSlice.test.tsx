@@ -3,7 +3,7 @@
 // fails while cache exists. The whole local-first feel in one hook.
 
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from './db'
 import { invalidateSlices, writeSlice } from './store'
 import { useSlice } from './useSlice'
@@ -15,6 +15,53 @@ beforeEach(async () => {
 const never = () => new Promise<never>(() => {})
 
 describe('useSlice', () => {
+  it('reports a cold server failure and recovers on retry', async () => {
+    const fetcher = vi.fn().mockRejectedValueOnce(new Error('Service temporarily unavailable')).mockResolvedValue({ v: 2 })
+    const { result } = renderHook(() => useSlice('board:cold-error', fetcher))
+    await waitFor(() => expect(result.current.error).toBe('Service temporarily unavailable'))
+    expect(result.current.data).toBeNull()
+    expect(result.current.refreshing).toBe(false)
+    expect(result.current.offline).toBe(false)
+    act(() => result.current.refresh())
+    await waitFor(() => expect(result.current.data).toEqual({ v: 2 }))
+    expect(result.current.error).toBeNull()
+  })
+
+  it('clears old ticker data immediately when a new uncached key fails', async () => {
+    await writeSlice('journey:OLD', { sym: 'OLD' })
+    const { result, rerender } = renderHook(({ k }: { k: string }) => useSlice(k, async () => {
+      throw new Error('New ticker unavailable')
+    }), { initialProps: { k: 'journey:OLD' } })
+    await waitFor(() => expect(result.current.data).toEqual({ sym: 'OLD' }))
+    rerender({ k: 'journey:NEW' })
+    expect(result.current.data).toBeNull()
+    await waitFor(() => expect(result.current.error).toBe('New ticker unavailable'))
+    expect(result.current.data).toBeNull()
+    expect(result.current.fetchedAt).toBeNull()
+  })
+
+  it('keeps a saved board visible while reporting a failed refresh', async () => {
+    await db.slices.put({ key: 'board:stale-error', data: { v: 1 }, fetchedAt: Date.now() - 200_000 })
+    const { result } = renderHook(() => useSlice('board:stale-error', async () => { throw new Error('Upstream unavailable') }))
+    await waitFor(() => expect(result.current.error).toBe('Upstream unavailable'))
+    expect(result.current.data).toEqual({ v: 1 })
+    expect(result.current.refreshing).toBe(false)
+  })
+
+  it('does not let a superseded request replace the latest failure state', async () => {
+    let rejectOld!: (error: Error) => void
+    const fetcher = vi.fn()
+      .mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject }))
+      .mockRejectedValueOnce(new Error('Latest failure'))
+    const { result } = renderHook(() => useSlice('board:request-generation', fetcher))
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
+    act(() => result.current.refresh())
+    await waitFor(() => expect(result.current.error).toBe('Latest failure'))
+    await act(async () => { rejectOld(new TypeError('Old connection failure')) })
+    expect(result.current.error).toBe('Latest failure')
+    expect(result.current.offline).toBe(false)
+  })
+
   it('paints cached data without waiting for the network', async () => {
     await db.slices.put({ key: 'board', data: { cached: true }, fetchedAt: Date.now() - 10 * 60_000 })
     const { result } = renderHook(() => useSlice<{ cached: boolean }>('board', never))

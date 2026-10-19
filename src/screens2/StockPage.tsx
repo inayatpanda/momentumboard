@@ -42,6 +42,8 @@ import { SessionLine } from './parts/SessionLine'
 import { AskSheet } from './parts/AskSheet'
 import type { OpenTraceEntry } from '../lib/api'
 import { StrategyLabPanel } from './parts/StrategyLabPanel'
+import { BusinessHealthPanel } from './parts/BusinessHealthPanel'
+import '../styles/dossier.css'
 
 const PriceChart = lazy(() => import('../components/PriceChart').then(m => ({ default: m.PriceChart })))
 const RsiChart = lazy(() => import('../components/RsiChart').then(m => ({ default: m.RsiChart })))
@@ -60,7 +62,7 @@ const hostOf = (url: string) => {
  * votes (from `computed`/`nulls`), and the funnel path, which cannot exist
  * for a name that was never in the funnel. */
 function OnDemandRead({ sym, openTrace }: { sym: string; openTrace?: OpenTraceEntry | null }) {
-  const { data } = useSlice(`verdict:${sym}`, () => getVerdict(sym))
+  const { data, error, refresh, refreshing } = useSlice(`verdict:${sym}`, () => getVerdict(sym))
   const [added, setAdded] = useState(false)
   const [askOpen, setAskOpen] = useState(false)
   const addToWatchlist = async () => {
@@ -68,6 +70,7 @@ function OnDemandRead({ sym, openTrace }: { sym: string; openTrace?: OpenTraceEn
     setAdded(true)
     mirrorConfig() // CX-22: server-side alerts and cross-device sync depend on it
   }
+  if (!data && error) return <p role="alert">The stock analysis could not be loaded. <button onClick={refresh} disabled={refreshing}>Retry stock analysis</button></p>
   if (!data) return <div className="skeleton" style={{ height: 140 }} />
   return (
     <>
@@ -86,13 +89,13 @@ function OnDemandRead({ sym, openTrace }: { sym: string; openTrace?: OpenTraceEn
 }
 
 function Catalysts({ sym }: { sym: string }) {
-  const { data } = useSlice(`news:${sym}`, () => getNews(sym))
+  const { data, error } = useSlice(`news:${sym}`, () => getNews(sym))
   const items = (data ?? []).slice(0, 3)
   return (
     <section aria-label="Catalysts">
       <p className="sec-label">Catalysts</p>
       {items.length === 0 ? (
-        <p className="cc-reason">No recent headlines for this name.</p>
+        <p className="cc-reason">{error ? 'Recent headlines could not be loaded; news risk is unknown.' : !data ? 'Checking recent headlines…' : 'No recent headlines for this name.'}</p>
       ) : (
         /* two wires can carry the SAME url (a syndicated headline) — keying on
            the url alone drops the duplicate rather than showing both */
@@ -138,8 +141,8 @@ export default function StockPage({ sym }: { sym: string }) {
     setRange(id)
     writeChartRange(id) // it applies to the NEXT stock page too, not just this one
   }
-  const { data: journey } = useSlice(`journey:${sym}`, () => getJourney(sym))
-  const { data: chart } = useSlice(`candles:${sym}:${range}`, () => getCandles(sym, range))
+  const { data: journey, error: journeyError, refresh: retryJourney } = useSlice(`journey:${sym}`, () => getJourney(sym))
+  const { data: chart, error: chartError, refresh: retryChart } = useSlice(`candles:${sym}:${range}`, () => getCandles(sym, range))
   const [rules, setRules] = useState<RuleItem[]>([])
   const [capital, setCapital] = useState(5000)
   const [askOpen, setAskOpen] = useState(false)
@@ -201,7 +204,8 @@ export default function StockPage({ sym }: { sym: string }) {
   }
 
   return (
-    <div className="stockpage">
+    <div className="stockpage company-dossier">
+      <p className="dossier-kicker">StreetSignal / Company dossier</p>
       <div className="sp-head">
         <div className="sp-title">
           <button
@@ -231,10 +235,18 @@ export default function StockPage({ sym }: { sym: string }) {
         )}
       </div>
       <SessionLine />
+      <nav className="dossier-nav" aria-label="Company research sections">
+        <a href={`#${sym}-price`}>Price & trend</a>
+        <a href={`#${sym}-thesis`}>Investment case</a>
+        <a href={`#${sym}-business`}>Report history</a>
+        <a href={`#${sym}-history`}>Track record</a>
+        <a href={`#${sym}-tools`}>Risk & tools</a>
+      </nav>
 
 
       {/* 1 — the chart, pinned at the top */}
-      <section className="sp-chart" aria-label="Price chart">
+      <section id={`${sym}-price`} className="sp-chart dossier-chart" aria-label="Price chart">
+        <div className="dossier-section-head"><div><span className="dossier-eyebrow">01 / Market behaviour</span><h2>Price & trend</h2></div><span className="dossier-caption">Select a range. Inspect the evidence.</span></div>
         <div className="seg" role="group" aria-label="Chart range">
           {CHART_RANGES.map(r => (
             <button key={r.id} aria-pressed={r.id === range} onClick={() => pickRange(r.id)}>
@@ -256,12 +268,19 @@ export default function StockPage({ sym }: { sym: string }) {
             <PriceChart candles={candles} priceLines={priceLines} height={260} interactive intraday={intradayRange} />
             <RsiChart candles={candles} intraday={intradayRange} />
           </Suspense>
+        ) : chartError ? (
+          <p role="alert">The price chart could not be loaded. <button onClick={retryChart}>Retry chart</button></p>
+        ) : chart ? (
+          <p className="cc-reason">Not enough price history is available for this range.</p>
         ) : (
           <div className="skeleton sp-chart-skel" />
         )}
       </section>
 
-      {journey == null ? (
+      <div id={`${sym}-thesis`} className="dossier-section">
+      {journey == null && journeyError ? (
+        <p role="alert">The engine’s stock record could not be loaded. <button onClick={retryJourney}>Retry engine record</button></p>
+      ) : journey == null ? (
         <>
           <div className="skeleton" style={{ height: 150, marginTop: 14 }} />
           <div className="skeleton" style={{ height: 90, marginTop: 10 }} />
@@ -297,14 +316,19 @@ export default function StockPage({ sym }: { sym: string }) {
           this symbol. Shadow research is visible here but never masquerades as
           the published board verdict above. */}
       <StrategyLabPanel symbol={sym} observations={journey?.lab} />
+      </div>
+      <BusinessHealthPanel sym={sym} />
 
       {/* 5 — every past call, and what price then did */}
+      <div id={`${sym}-history`} className="dossier-section">
       <PastCalls sym={sym} calls={journey?.calls ?? []} />
 
       {/* 6 — only while a published call is still open */}
       {journey?.openTrace && <OpenTraceCard trace={journey.openTrace} />}
+      </div>
 
       {/* 7 — the utilities */}
+      <div id={`${sym}-tools`} className="dossier-section dossier-tools">
       <section aria-label="Alerts">
         <p className="sec-label">Price alerts</p>
         <AlertEditor symbol={sym} rules={rules} onSave={saveRule} onDelete={deleteRule} />
@@ -323,6 +347,7 @@ export default function StockPage({ sym }: { sym: string }) {
       </section>
       <Catalysts sym={sym} />
       <Filings sym={sym} />
+      </div>
     </div>
   )
 }

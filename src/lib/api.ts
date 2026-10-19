@@ -1,3 +1,5 @@
+import type { SocialClaim, SocialCoverage } from '../../shared/socialEvidence'
+import type { SocialLearningSummary } from '../../shared/engine/socialOutcomes'
 import type { ApiEnvelope, Candle, Quote } from '../../shared/types'
 import type { AppConfig } from '../../shared/config'
 import type { EmptySideReason } from '../../shared/engine/types'
@@ -93,11 +95,26 @@ export async function validateAccess(): Promise<boolean> {
   }
 }
 
+async function requestEnvelope<T>(path: string, headers: Record<string, string>, timeoutMs: number): Promise<T> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(apiUrl(path), { headers, signal: controller.signal })
+    const body = await res.json().catch(() => null) as ApiEnvelope<T> | null
+    if (!res.ok || !body?.ok || body.data === undefined) {
+      throw new Error(body?.error ?? `http-${res.status}`)
+    }
+    return body.data
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('The request timed out. Please try refreshing again.')
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(apiUrl(path), { headers: { 'x-app-token': getToken() ?? '' } })
-  const body = (await res.json()) as ApiEnvelope<T>
-  if (!body.ok || body.data === undefined) throw new Error(body.error ?? `http-${res.status}`)
-  return body.data
+  return requestEnvelope(path, { 'x-app-token': getToken() ?? '' }, 30_000)
 }
 
 /** THE ONLY CALLER THAT ATTACHES THE BYOK CREDENTIAL. The device key is read
@@ -107,10 +124,7 @@ export async function apiGet<T>(path: string): Promise<T> {
  *
  * `keyOverride` is Settings testing a candidate key BEFORE it is stored. */
 export async function apiLlmGet<T>(path: string, keyOverride?: string): Promise<T> {
-  const res = await fetch(apiUrl(path), { headers: { 'x-app-token': getToken() ?? '', ...(await deviceLlmHeader(keyOverride)) } })
-  const body = (await res.json()) as ApiEnvelope<T>
-  if (!body.ok || body.data === undefined) throw new Error(body.error ?? `http-${res.status}`)
-  return body.data
+  return requestEnvelope(path, { 'x-app-token': getToken() ?? '', ...(await deviceLlmHeader(keyOverride)) }, 90_000)
 }
 
 export const getQuotes = (symbols: string[]) =>
@@ -134,6 +148,9 @@ export interface SecFiling {
 
 export const getFilings = (symbol: string) =>
   apiGet<{ company: string | null; cik: number | null; filings: SecFiling[]; asOf: number; unavailable?: boolean }>(`/api/market?type=filings&symbol=${encodeURIComponent(symbol)}`)
+
+export const getBusinessHealth = (symbol: string) =>
+  apiGet<import('../../shared/businessHealth').BusinessHealthSnapshot>(`/api/market?type=business-health&symbol=${encodeURIComponent(symbol)}`)
 
 export const getFeed = () =>
   apiGet<{ news: { title: string; url: string; symbols: string[] }[]; videos: { title: string; url: string; channel: string }[] }>('/api/market?type=feed')
@@ -302,13 +319,18 @@ export const getSocialMemory = (symbol: string) =>
 
 /** One analysed video, as the wire renders it. */
 export interface StreetVideo {
+  provenance?: 'first-party' | 'third-party' | 'manual'
+  publishedAt?: number
+  claims?: SocialClaim[]
+  coverage?: SocialCoverage
+  evidenceVersion?: string
   url: string
   title: string
   channel: string
   /** UNIX SECONDS, like the news desk's — `relativeStamp` reads the unit by
    * magnitude, so nothing downstream has to know which this is. */
   at: number
-  tickers: { sym: string; stance: 'bull' | 'bear' | 'neutral' }[]
+  tickers: { sym: string; stance: 'bull' | 'bear' | 'neutral'; company?: string; thesis?: string; evidenceQuote?: string; hype?: boolean }[]
   themes: string[]
   /** HOW THE FACTS WERE OBTAINED: 'gemini-video' means the model watched the
    * video, anything else means it read words. Absent on rows older than the
@@ -327,12 +349,27 @@ export interface StreetRead {
 }
 
 export interface StreetWire {
+  socialLearning?: SocialLearningSummary
   videos: StreetVideo[]
   reads: StreetRead[]
   /** The FULL cross-channel consensus — uncapped, unlike the board slice's
    * eight-name `channelPicks`, which is capped to fit a home screen. */
   consensus: ChannelPick[]
   at: number
+  videoIngestion?: {
+    workerLastSeenAt?: number | null
+    workerStale?: boolean
+    oldestPendingAt?: number | null
+    jobs?: { id: string; title: string; url: string; mode: string; stage: string; at: number; attempts: number; nextAttemptAt: number; reason?: string }[]
+    pendingTranscripts: number
+    queued: number
+    deferred: number
+    failed: number
+    lastTranscriptAt: number | null
+    lastExtractAt: number | null
+    nextRetryAt: number | null
+    recentFailures: { title: string; reason: string; at: number }[]
+  }
 }
 
 export const getStreetWire = () => apiGet<StreetWire>('/api/market?type=street')
@@ -931,3 +968,8 @@ export interface EngineData {
 }
 
 export const getEngine = () => apiGet<EngineData>('/api/engine')
+
+export async function retrySocialJob(id: string): Promise<void> {
+  const res = await fetch(apiUrl('/api/fn/video-jobs'), { method: 'POST', headers: { 'content-type': 'application/json', 'x-app-token': getToken() ?? '' }, body: JSON.stringify({ id }), signal: AbortSignal.timeout(20_000) })
+  if (!res.ok) throw new Error(res.status === 401 ? 'Owner access is required to retry processing.' : 'Retry could not be queued. Try again later.')
+}

@@ -6,7 +6,7 @@
 // uses for its "never" fetcher.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
 import { db } from '../lib/db'
@@ -767,7 +767,8 @@ describe('Today', () => {
     await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
     withRouter(<Today />)
     const cockpit = await screen.findByLabelText('Decision cockpit')
-    expect(within(cockpit).getByText(/2–3 sessions/i)).toBeInTheDocument()
+    expect(within(cockpit).getByText(/published calls/i)).toBeInTheDocument()
+    expect(within(cockpit).queryByText(/2–3 sessions/i)).not.toBeInTheDocument()
     expect(within(cockpit).getByText(/NVDA short→long/)).toBeInTheDocument()
     expect(within(cockpit).getByText(/Brier 0.210/)).toBeInTheDocument()
     expect(within(cockpit).getByText(/long R2 \(n=18\).*short R1 \(n=9\)/i)).toBeInTheDocument()
@@ -777,7 +778,7 @@ describe('Today', () => {
     await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() - 200_000 })
     withRouter(<Today />)
     expect(await screen.findByText('NVDA')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: /today/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: /research desk/i })).toBeInTheDocument()
   })
 
   // THE TIME-AWARENESS LINE (dynamism wave). The board has always carried its
@@ -861,6 +862,7 @@ describe('Today', () => {
       fetchedAt: Date.now(),
     })
     withRouter(<Today />)
+    fireEvent.click(screen.getByText('News & upcoming events'))
     expect(await screen.findByLabelText('Headlines')).toBeInTheDocument()
     expect(screen.getByText('Chipmaker lifts guidance')).toBeInTheDocument()
   })
@@ -1006,6 +1008,7 @@ describe('Today', () => {
     await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
     withRouter(<Today />)
     expect(await screen.findByLabelText('Channel picks')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('What the channels are saying'))
     expect(screen.getByRole('link', { name: 'GME' })).toBeInTheDocument()
     expect(screen.getByText('no view')).toBeInTheDocument() // GME — the engine has no read
     expect(screen.getAllByLabelText('Grade A').length).toBeGreaterThan(0) // NVDA — it does
@@ -1044,5 +1047,61 @@ describe('Today', () => {
     })
     withRouter(<Today />)
     expect(await screen.findByText(/PLTR/)).toBeInTheDocument()
+  })
+})
+
+
+describe('Research desk hierarchy', () => {
+  it('keeps published calls visible while letting readers open secondary intelligence', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    const calls = await screen.findByLabelText('Published and active calls')
+    expect(await within(calls).findByText('NVDA')).toBeVisible()
+    expect(screen.getByLabelText('Market context')).toHaveTextContent('Awaiting data')
+    expect(screen.getByLabelText('Historical learning')).toHaveTextContent('Historical learning is not available')
+    const news = screen.getByText('News & upcoming events').closest('details')!
+    expect(news).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByText('News & upcoming events'))
+    expect(news).toHaveAttribute('open')
+    expect(screen.getByRole('link', { name: 'Open the news desk →' })).toHaveAttribute('href', '/app/intel#news')
+  })
+})
+
+describe('Mobile daily brief', () => {
+  const originalWidth = window.innerWidth
+  beforeEach(() => { Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 }) })
+  afterEach(() => { Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth }) })
+
+  it('starts with calls, keeping research and learning out of the first view', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    expect(await screen.findByText('NVDA')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Your daily brief' })).toBeVisible()
+    expect(screen.getByRole('tabpanel', { name: 'Today' })).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Research lab' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Historical learning' })).toBeNull()
+    const context = screen.getByText('Market backdrop').closest('details')!
+    expect(context).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByText('Market backdrop'))
+    expect(context).toHaveAttribute('open')
+    expect(screen.getByLabelText('Decision cockpit')).toBeVisible()
+    expect(screen.getByRole('link', { name: /YouTube & social/ })).toHaveAttribute('href', '/app/more/street')
+  })
+
+  it('switches views with touch or keyboard and restores the full desk on resize', async () => {
+    await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
+    withRouter(<Today />)
+    await screen.findByText('NVDA')
+    fireEvent.click(screen.getByRole('tab', { name: 'Research' }))
+    expect(screen.getByRole('region', { name: 'Research lab' })).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Published and active calls' })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Research' }), { key: 'ArrowRight' })
+    expect(screen.getByRole('tab', { name: 'Learning' })).toHaveFocus()
+    expect(screen.getByRole('region', { name: 'Historical learning' })).toBeVisible()
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
+    fireEvent(window, new Event('resize'))
+    expect(screen.queryByRole('tablist', { name: 'Daily brief views' })).toBeNull()
+    expect(screen.getByRole('region', { name: 'Published and active calls' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Research lab' })).toBeVisible()
   })
 })

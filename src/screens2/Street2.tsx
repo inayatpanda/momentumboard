@@ -1,3 +1,4 @@
+import { ClaimEvidence, ProcessingJobs, SocialLearning } from './parts/SocialEvidence'
 // THE STREET (owner request, 2026-08-17):
 //   "i think the summary of youtube video input deserve a section of their own,
 //    and there should be a system where the youtube suggestions are also
@@ -28,7 +29,7 @@ import { useState } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
 import { usePullRefresh, useSlicesRefresh, type SliceRefreshEntry } from '../lib/usePullRefresh'
-import { getSocialPulse, getStreetWire, type StreetRead, type StreetVideo } from '../lib/api'
+import { getSocialPulse, getStreetWire, type StreetRead, type StreetVideo, type StreetWire } from '../lib/api'
 import { getBoardSlice } from '../lib/apiViews'
 import type { ChannelPick } from '../lib/apiViews'
 import type { EnginePrediction, OpenTraceEntry } from '../lib/api'
@@ -60,10 +61,35 @@ function ViaMark({ via }: { via: StreetVideo['via'] }) {
   if (!via) return null
   const watched = via === 'gemini-video'
   return (
-    <span className="stt-via" title={watched ? 'A model watched the video itself — chart levels included.' : 'A model read the words: the transcript, not the charts.'}>
+    <span className="stt-via" title={watched ? 'A model reviewed the video; visual details require verification.' : 'A model read the words: the transcript, not the charts.'}>
       {watched ? 'watched' : 'read'}
     </span>
   )
+}
+
+function VideoHealth({ health, onRefresh }: { health: StreetWire['videoIngestion']; onRefresh: () => unknown }) {
+  if (!health) return null
+  return <section className="card itl-section" aria-label="YouTube processing status">
+    <h2 className="sec-label">YouTube processing</h2>
+    <p className="cc-reason">{health.pendingTranscripts} awaiting captions · {health.queued} queued analyses · {health.deferred} deferred · {health.failed} failed</p>
+    <p className="cc-reason">{health.lastExtractAt ? `Latest completed analysis ${relativeStamp(health.lastExtractAt)}.` : 'No completed video analysis yet.'} {health.nextRetryAt ? `Next retry eligible ${new Date(health.nextRetryAt * 1000).toLocaleString()}; completion depends on the next worker run.` : ''}</p>
+    {(health.pendingTranscripts > 0 || health.deferred > 0) && <p className="cc-reason">Caption access and daily analysis limits can delay videos. Refresh checks progress; it does not start a new analysis.</p>}
+    <ProcessingJobs health={health} onRefresh={onRefresh} />
+    {health.recentFailures.length > 0 && <details>
+      <summary>Recent processing problems</summary>
+      <ul>{health.recentFailures.map((failure, i) => <li key={`${failure.at}-${i}`}>{failure.title || 'Video'}: {failure.reason}</li>)}</ul>
+    </details>}
+  </section>
+}
+
+// A deliberately small text renderer: React escapes source text, and no HTML
+// or model-provided links are executed. The original video stays the source.
+function NarrativeText({ text }: { text: string }) {
+  const inline = (value: string) => value.split(/(\*\*[^*]+\*\*)/g).map((part, i) => part.startsWith('**') && part.endsWith('**') ? <strong key={i}>{part.slice(2, -2)}</strong> : part)
+  return <>{text.split(/\n\s*\n/).filter(Boolean).map((block, i) => {
+    const lines = block.split('\n').filter(line => line.trim())
+    return <div key={i} style={{ marginBottom: 12 }}>{lines.map((line, j) => <p key={j} style={{ margin: '4px 0' }}>{inline(line.replace(/^\s*#{1,6}\s+/, '').replace(/^\s*[-*]\s+/, '• '))}</p>)}</div>
+  })}</>
 }
 
 /** (a) THE CHANNELS' PICKS — AND WHAT THE ENGINE THINKS. The full board, not
@@ -128,6 +154,16 @@ function WireSection({ videos }: { videos: StreetVideo[] }) {
                 ))}
               </div>
             )}
+            {v.provenance === 'third-party' && <p className="social-evidence__note">Third-party coverage. The creator’s original statement has not been checked; excluded from consensus and learning.</p>}
+            {v.provenance === 'manual' && <p className="social-evidence__note">Manually forwarded view. Excluded from automated consensus and learning.</p>}
+            <ClaimEvidence video={v} />
+            {!v.claims && v.tickers.some(t => t.thesis || t.evidenceQuote) && <details className="cc-reason">
+              <summary>What was said and supporting words</summary>
+              {v.tickers.filter(t => t.thesis || t.evidenceQuote).map((ticker, j) => <div key={`${ticker.sym}-evidence-${j}`}>
+                <p><b>{ticker.company ?? ticker.sym}</b>{ticker.company ? ` (${ticker.sym})` : ''}: {ticker.thesis || 'Source excerpt only.'}{ticker.hype && ' Promotional language flagged.'}</p>
+                {ticker.evidenceQuote && <blockquote>{ticker.evidenceQuote}</blockquote>}
+              </div>)}
+            </details>}
           </div>
         ))}
       </div>
@@ -148,11 +184,11 @@ function ReadsSection({ reads }: { reads: StreetRead[] }) {
   return (
     <section id="reads" className="card itl-section stt-reads">
       <h2 className="sec-label">The deep reads</h2>
-      <p className="cc-reason itl-feed-intro">The handful of videos the desk analysed in full, in its own words.</p>
+      <p className="cc-reason itl-feed-intro">AI summaries of the source material. Check the original video before relying on company identities, quoted levels or the creator’s claims.</p>
       <div className="stt-read-list">
         {reads.map((r, i) => (
           <figure className="stt-read" key={`${r.url}-${i}`}>
-            <blockquote className="stt-read-body">{r.analysis}</blockquote>
+            <blockquote className="stt-read-body"><NarrativeText text={r.analysis} /></blockquote>
             <figcaption className="stt-read-cap">
               <b className="stt-chan">{r.channel}</b>
               <a className="stt-read-title" href={r.url} target="_blank" rel="noreferrer">
@@ -176,7 +212,7 @@ const REFRESH_ENTRIES: SliceRefreshEntry[] = [
 ]
 
 export default function Street2() {
-  const { data: wire } = useSlice('street:wire', getStreetWire)
+  const { data: wire, error: wireError, refreshing: wireLoading, refresh: retryWire } = useSlice('street:wire', getStreetWire)
   const { data: boardSlice } = useSlice('board', getBoardSlice)
   const { refresh, refreshing } = useSlicesRefresh(REFRESH_ENTRIES)
   const { pull } = usePullRefresh(refresh)
@@ -192,7 +228,14 @@ export default function Street2() {
     <div className="stt">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
       <h1>The street</h1>
-      <p className="cc-reason stt-intro">Everything other people are saying — and what the engine says back.</p>
+      <p className="cc-reason stt-intro">Follow a view from its source to its evidence, then see how it performs.</p>
+      {wireError && <section role="alert" className="card itl-section">
+        <p>{wire ? 'The latest video update failed. Showing saved results.' : 'Video analysis could not be loaded.'}</p>
+        <p className="cc-reason">{wireError}</p>
+        <button type="button" onClick={retryWire} disabled={wireLoading}>Retry video feed</button>
+      </section>}
+      {!wire && !wireError && <p className="cc-reason" role="status">Loading video evidence…</p>}
+      <VideoHealth health={wire?.videoIngestion} onRefresh={refresh} />
       {nothingYet && <p className="cc-reason">The channels haven’t said anything the engine has read yet — the wire fills as videos land.</p>}
       <div className="stt-grid">
         {/* the wrappers are LAYOUT ONLY: `display: contents` on the phone, so
@@ -200,6 +243,7 @@ export default function Street2() {
             real columns at desk width, where each side flows independently
             instead of leaving a hole under whichever section is shorter */}
         <div className="stt-col">
+          <SocialLearning learning={wire?.socialLearning} />
           <PicksSection consensus={consensus} board={boardSlice?.board?.board ?? []} openCalls={boardSlice?.openTrace?.entries} />
           <div className="stt-social">
             <SocialPulse />

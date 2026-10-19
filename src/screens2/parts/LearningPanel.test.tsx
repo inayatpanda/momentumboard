@@ -1,0 +1,73 @@
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { buildResearchLearning, type ResearchLearningSnapshot, type ResearchLearningStats } from '../../../shared/engine/researchLearning'
+import { LearningPanel } from './LearningPanel'
+
+function fixture(): ResearchLearningSnapshot {
+  const base = buildResearchLearning([], 1_792_382_400)
+  const stats: ResearchLearningStats = {
+    ...base.strategies[0].overall, independentN: 40, filledN: 35, cancelledN: 5,
+    meanNetReturnPct: 1.2, medianNetReturnPct: 0.8, directionN: 40, directionAccuracy: 0.6,
+    brierN: 40, brierScore: 0.22, baselinePairedN: 40, pairedBrierScore: 0.22,
+    baselineBrierScore: 0.2, brierSkillScore: -0.1,
+  }
+  const conditionStats = { ...stats, independentN: 8, filledN: 6, meanNetReturnPct: -2, directionN: 8, directionAccuracy: 0.25, brierN: 8, brierScore: 0.35 }
+  base.history.eligibleCompletedN = 40
+  base.history.pendingN = 12
+  base.history.excludedCompletedN = 3
+  base.status = 'observing'
+  base.strategies[0] = {
+    ...base.strategies[0], status: 'observing', summary: 'Forty independent forecasts have matured.', overall: stats,
+    chronology: { ...base.strategies[0].chronology, summary: 'This chronological split is not held-out validation.', older: { ...stats, independentN: 20, filledN: 18, meanNetReturnPct: 2 }, recent: { ...stats, independentN: 20, filledN: 17, meanNetReturnPct: 0.4 } },
+    conditions: [{
+      key: 'world:risk-off', label: 'International markets: risk-off', status: 'collecting',
+      summary: 'Eight recorded risk-off campaigns; evidence is still collecting.', stats: conditionStats,
+      chronology: base.strategies[0].chronology, comparison: null,
+    }],
+  }
+  return base
+}
+
+describe('Historical learning', () => {
+  it('distinguishes an unavailable snapshot from zero measured outcomes', () => {
+    const { rerender } = render(<LearningPanel />)
+    expect(screen.getByText(/Historical learning is not available/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Learning history coverage')).not.toBeInTheDocument()
+    rerender(<LearningPanel learning={buildResearchLearning([], 1_792_382_400)} />)
+    expect(screen.getByLabelText('Learning history coverage')).toHaveTextContent('0Comparable outcomes')
+    expect(screen.getByLabelText('Selected campaign results')).toHaveTextContent('Mean net return—')
+    expect(screen.getByLabelText('Selected campaign results')).not.toHaveTextContent('+0.0%')
+  })
+
+  it('filters the measured sample by recorded condition and resets it on strategy change', () => {
+    render(<LearningPanel learning={fixture()} />)
+    const results = screen.getByLabelText('Selected campaign results')
+    expect(results).toHaveTextContent('+1.2%')
+    expect(results).toHaveTextContent('40 directional outcomes')
+    fireEvent.change(screen.getByLabelText('Observed condition'), { target: { value: 'world:risk-off' } })
+    expect(results).toHaveTextContent('-2.0%')
+    expect(results).toHaveTextContent('8 directional outcomes')
+    expect(screen.getByText(/Eight recorded risk-off campaigns/)).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '8')
+    fireEvent.change(screen.getByLabelText('Research strategy'), { target: { value: 'quality-dip' } })
+    expect(screen.getByLabelText('Observed condition')).toHaveValue('all')
+    expect(results).toHaveTextContent('Target before stop—')
+    expect(results).not.toHaveTextContent('-2.0%')
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '0')
+  })
+
+  it('keeps failed baseline skill, rolling retention and chronology limits inspectable', () => {
+    render(<LearningPanel learning={fixture()} />)
+    const calibration = screen.getByText('Calibration, dates & measurement limits').closest('details')!
+    fireEvent.click(within(calibration).getByText('Calibration, dates & measurement limits'))
+    expect(calibration).toHaveAttribute('open')
+    expect(calibration).toHaveTextContent('Brier skill -0.100')
+    expect(calibration).toHaveTextContent('recorded baseline 0.200 across 40 paired forecasts')
+    const chronology = screen.getByText('Does the pattern hold in recent campaigns?').closest('details')!
+    fireEvent.click(within(chronology).getByText('Does the pattern hold in recent campaigns?'))
+    expect(chronology).toHaveTextContent('+2.0%')
+    expect(chronology).toHaveTextContent('+0.4%')
+    expect(chronology).toHaveTextContent('not held-out validation')
+    expect(screen.getByText(/Rolling history:/)).toHaveTextContent('up to 500')
+  })
+})

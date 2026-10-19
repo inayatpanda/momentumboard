@@ -153,7 +153,7 @@ describe('the consumers that read a clock through exchangeFor', () => {
     // outside the session the last bar is a COMPLETE day → fraction 1. The crypto
     // branch returned 0.0208→clamped 0.05 at 00:30 UTC, inflating RVOL 20×.
     expect(sessionElapsedFraction(exchangeFor('BT-A.L'), WED_0030)).toBe(1)
-    expect(sessionElapsedFraction(exchangeFor('BT-A.L'), WED_1000)).toBeCloseTo((10 - 8) / (16.5 - 8), 6)
+    expect(sessionElapsedFraction(exchangeFor('BT-A.L'), WED_1000)).toBeCloseTo((10 - 7) / (15.5 - 7), 6)
     expect(sessionElapsedFraction(exchangeFor('ETH-USD'), WED_0030)).toBe(0.05) // a pair really is on a 24h clock
   })
 })

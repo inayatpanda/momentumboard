@@ -53,14 +53,7 @@ export async function fetchRecentFilings(
   userAgent = process.env.SEC_USER_AGENT ?? 'StreetSignal thestreetsignal.rqai.co.uk',
 ): Promise<{ company: string | null; cik: number | null; filings: SecFiling[]; asOf: number }> {
   const headers = { 'User-Agent': userAgent, Accept: 'application/json' }
-  if (!tickerCache || Date.now() - tickerCache.at > 24 * 3600_000) {
-    const tickerRes = await fetchFn('https://www.sec.gov/files/company_tickers.json', { headers })
-    if (!tickerRes.ok) throw new Error(`sec-tickers-${tickerRes.status}`)
-    const json = (await tickerRes.json()) as Record<string, TickerRow>
-    tickerCache = { at: Date.now(), rows: Object.values(json) }
-  }
-  const wanted = symbol.trim().toUpperCase().replace('.', '-').split(':').at(-1)!
-  const company = tickerCache.rows.find(row => row.ticker.toUpperCase() === wanted)
+  const company = await resolveSecCompany(symbol, fetchFn, userAgent)
   if (!company) return { company: null, cik: null, filings: [], asOf: Math.floor(Date.now() / 1000) }
   const cikPadded = String(company.cik_str).padStart(10, '0')
   const submissions = await fetchFn(`https://data.sec.gov/submissions/CIK${cikPadded}.json`, { headers })
@@ -72,4 +65,21 @@ export async function fetchRecentFilings(
     filings: parseRecentFilings(company.cik_str, body.filings?.recent ?? {}),
     asOf: Math.floor(Date.now() / 1000),
   }
+}
+
+/** Shared ticker resolution for submissions and fundamental facts. */
+export async function resolveSecCompany(
+  symbol: string,
+  fetchFn: typeof fetch = fetch,
+  userAgent = process.env.SEC_USER_AGENT ?? 'StreetSignal thestreetsignal.rqai.co.uk',
+): Promise<TickerRow | null> {
+  const headers = { 'User-Agent': userAgent, Accept: 'application/json' }
+  if (!tickerCache || Date.now() - tickerCache.at > 24 * 3600_000) {
+    const tickerRes = await fetchFn('https://www.sec.gov/files/company_tickers.json', { headers })
+    if (!tickerRes.ok) throw new Error(`sec-tickers-${tickerRes.status}`)
+    const json = (await tickerRes.json()) as Record<string, TickerRow>
+    tickerCache = { at: Date.now(), rows: Object.values(json) }
+  }
+  const wanted = symbol.trim().toUpperCase().replace('.', '-').split(':').at(-1)!
+  return tickerCache.rows.find(row => row.ticker.toUpperCase() === wanted) ?? null
 }

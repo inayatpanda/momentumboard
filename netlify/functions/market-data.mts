@@ -501,6 +501,14 @@ export async function routeRequest(
     }
   }
 
+  if (type === 'business-health') {
+    const symbol = (url.searchParams.get('symbol') ?? '').trim().toUpperCase()
+    if (!/^[A-Z][A-Z0-9.-]{0,14}$/.test(symbol)) return json(400, { ok: false, error: 'invalid-symbol' })
+    const { cachedBusinessHealth } = await import('./lib/businessHealth')
+    const data = await cachedBusinessHealth(symbol)
+    return json(200, { ok: true, data })
+  }
+
   if (type === 'filings') {
     const symbol = (url.searchParams.get('symbol') ?? '').trim().toUpperCase()
     if (!symbol) return json(400, { ok: false, error: 'missing-symbol' })
@@ -942,10 +950,13 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
   if (type === 'street') {
     // THE WIRE (owner request). Aggregation only — this endpoint fetches
     // nothing upstream, so a cold engine simply means a short (or empty) wire.
-    const hit = await getCached<unknown>('street-wire:v1')
+    const hit = await getCached<unknown>('street-wire:v3')
     if (hit) return json(200, { ok: true, data: hit })
     try {
       const { computeConsensus } = await import('./lib/videoTrends')
+      const { videoIngestionHealth } = await import('./lib/videoIngestion')
+      const { summarizeSocialOutcomes } = await import('../../shared/engine/socialOutcomes')
+      const { SOCIAL_LEDGER_KEY } = await import('./lib/socialLedger')
       type Extract = Parameters<typeof computeConsensus>[0][number]
       type Analysis = { url: string; title: string; channel: string; analysis: string; at: number; via?: string }
       const [rawExtracts, rawAnalyses] = await Promise.all([
@@ -957,7 +968,10 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
       // no tickers array at all, and one bad row must not take the page down.
       const extracts = ((rawExtracts ?? []) as Extract[]).filter(e => e && typeof e.at === 'number' && Array.isArray(e.tickers) && Array.isArray(e.themes))
       const newestFirst = <T extends { at: number }>(rows: T[]) => [...rows].sort((a, b) => b.at - a.at)
+      const videoIngestion = await videoIngestionHealth(blobAppStore, extracts, Math.floor(Date.now() / 1000), rawAnalyses ?? [])
       const data = {
+        videoIngestion,
+        socialLearning: summarizeSocialOutcomes(await blobAppStore.read<import('../../shared/engine/socialOutcomes').SocialOutcomeRecord[]>(SOCIAL_LEDGER_KEY) ?? []),
         // NEWEST FIRST off the STAMP, not off the blob's own order — the
         // extracts accumulate in write order, and a re-analysed video is
         // appended rather than moved.
@@ -968,10 +982,19 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
             title: e.title,
             channel: e.channel,
             at: e.at,
+            ...(e.provenance ? { provenance: e.provenance } : {}),
+            ...(e.publishedAt ? { publishedAt: e.publishedAt } : {}),
+            ...(e.claims ? { claims: e.claims.slice(0, 40), coverage: e.coverage, evidenceVersion: e.evidenceVersion } : {}),
             // `levels` is dropped: it is the one unbounded field on an extract
             // and the wire prints what a channel SAID about a name, never the
             // prices it drew on a chart
-            tickers: e.tickers.map(t => ({ sym: t.sym, stance: t.stance })),
+            tickers: e.tickers.map(t => ({
+              sym: t.sym, stance: t.stance,
+              ...(typeof t.thesis === 'string' && t.thesis.trim() ? { thesis: t.thesis.slice(0, 240) } : {}),
+              ...(typeof t.evidenceQuote === 'string' && t.evidenceQuote.trim() ? { evidenceQuote: t.evidenceQuote.slice(0, 400) } : {}),
+              ...(typeof t.company === 'string' && t.company.trim() ? { company: t.company.slice(0, 120) } : {}),
+              ...(t.hype === true ? { hype: true } : {}),
+            })),
             themes: e.themes,
             // absent on rows older than the fallback — and absent here too,
             // rather than defaulted into a claim about how the video was read
@@ -983,7 +1006,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
         consensus: computeConsensus(extracts, Math.floor(Date.now() / 1000)).tickers,
         at: Math.floor(Date.now() / 1000),
       }
-      await setCached('street-wire:v1', data, STREET_TTL_SEC)
+      await setCached('street-wire:v3', data, STREET_TTL_SEC)
       return json(200, { ok: true, data })
     } catch (e) {
       return json(502, { ok: false, error: String(e) })

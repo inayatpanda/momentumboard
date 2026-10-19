@@ -1,15 +1,9 @@
 import type { Candle } from '../types'
 import { round1 } from './types'
 
-// Every YouTube stance is a mini-prediction, graded like the engine's own:
-// excess vs SPY at +10 sessions. NOT the engine's calibrated horizon any more —
-// that moved to 21 with CALIB_DEF_VERSION v4 — and this pundit yardstick was
-// deliberately left where it was: it is a separate learning loop over a separate
-// population, and moving it would silently re-score every channel's record
-// mid-flight. A follow-on decision, named here rather than left to be discovered.
-// Channels earn (or bleed) credibility, which is what the channels factor weighs
-// their next call by. Trust, but verify — favourites start at 0.6 instead of 0.5;
-// ~20 graded calls dominate either way.
+// Legacy channel-grade schema, retained for archived reports and migrations.
+// Production learning now uses socialOutcomes.ts and the durable source ledger.
+// Subscription preferences never confer an accuracy prior.
 
 export interface ChannelCredEntry {
   graded: number
@@ -29,8 +23,8 @@ export interface ExtractLike {
 
 const PRIOR_WEIGHT = 8
 
-export function credibilityOf(state: ChannelCredState, channel: string, favourites: string[]): number {
-  const prior = favourites.includes(channel) ? 0.6 : 0.5
+export function credibilityOf(state: ChannelCredState, channel: string, _favourites: string[]): number {
+  const prior = 0.5 // subscriptions are preferences, not evidence of accuracy
   const e = state[channel]
   if (!e) return prior
   return (e.hits + prior * PRIOR_WEIGHT) / (e.graded + PRIOR_WEIGHT)

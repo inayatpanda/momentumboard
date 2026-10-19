@@ -1,4 +1,6 @@
-// The work-queue drain, GitHub Actions edition (cron ~every 15 min). Netlify's
+import { canonicalVideoUrl } from '../../shared/youtubeCaptions.mjs'
+import { enqueueSocialJobs, eligibleSocialJobs, SOCIAL_JOBS_KEY, type SocialJob } from '../../netlify/functions/lib/socialJobs'
+// The work-queue drain, GitHub Actions edition (currently every 3 hours). Netlify's
 // scheduled functions (alert-check, watchdog) enqueue long jobs into the
 // `work-queue` blob — video analysis, event dossiers, a compose retry — and
 // this worker executes them by calling the SAME handler modules the old
@@ -8,13 +10,7 @@
 import { acquireLease, appStore as blobAppStore, releaseLease } from '../../netlify/functions/lib/storeProvider'
 import { configureStoreForScript } from '../lib/configureStore'
 
-interface WorkItem {
-  id: string
-  kind: 'video' | 'dossier' | 'compose'
-  body: unknown
-  at: number
-  attempts: number
-}
+import { applyWorkResults, workResultFromResponse, type WorkItem, type WorkResult } from '../../netlify/functions/lib/videoQueue'
 
 const MAX_ITEMS_PER_RUN = 8
 const MAX_ATTEMPTS = 3
@@ -26,33 +22,33 @@ const adminReq = (body?: unknown) =>
     ...(body != null ? { body: JSON.stringify(body) } : {}),
   })
 
-const runItem = async (item: WorkItem): Promise<boolean> => {
+const runItem = async (item: WorkItem): Promise<WorkResult> => {
   try {
     if (item.kind === 'video') {
       const { default: handler } = await import('../../netlify/functions/video-analyze-background.mts')
       const res = await handler(adminReq(item.body))
-      // the body text ('extracted:gemini-video', 'no-transcript-no-video-read',
-      // 'gemini-extract-capped'…) is the only trace of WHY — always print it
-      console.log(`video ${((item.body as { title?: string })?.title ?? '').slice(0, 60)}: ${res.status} ${await res.text().catch(() => '')}`)
-      return res.status < 400
+      const body = await res.text().catch(() => '')
+      const result = workResultFromResponse(res.status, body, res.headers.get('retry-after'))
+      console.log(`video ${((item.body as { title?: string })?.title ?? '').slice(0, 60)}: ${res.status} ${result.ok ? 'completed' : result.reason}`)
+      return result
     }
     if (item.kind === 'dossier') {
       const { default: handler } = await import('../../netlify/functions/event-dossier-background.mts')
       const res = await handler(adminReq(item.body))
       console.log(`dossier: ${res.status}`)
-      return res.status < 400
+      return { ok: res.status < 400, reason: `http-${res.status}` }
     }
     if (item.kind === 'compose') {
       const { default: handler } = await import('../../netlify/functions/report-compose-background.mts')
       const res = await handler(adminReq())
       console.log(`compose retry: ${res.status}`)
-      return res.status < 400
+      return { ok: res.status < 400, reason: `http-${res.status}` }
     }
     console.log(`unknown work kind ${(item as { kind?: string }).kind} — dropping`)
-    return true
+    return { ok: true }
   } catch (e) {
     console.error(`work item ${item.kind} threw:`, e)
-    return false
+    return { ok: false, reason: 'worker-error' }
   }
 }
 
@@ -69,39 +65,45 @@ const run = async () => {
   const missing = needed.filter(n => !process.env[n])
   if (missing.length) throw new Error(`missing env: ${missing.join(', ')}`)
   const nowSec = Math.floor(Date.now() / 1000)
-  const lease = await acquireLease(blobAppStore, 'lease:queue-worker', nowSec, 12 * 60)
+  const lease = await acquireLease(blobAppStore, 'lease:queue-worker', nowSec, 21 * 60)
   if (!lease) {
     console.log('another worker holds the lease — exiting')
     return
   }
   try {
     const queue = (await blobAppStore.read<WorkItem[]>('work-queue')) ?? []
-    if (!queue.length) {
-      console.log('queue empty')
-      return
-    }
-    const batch = queue.slice(0, MAX_ITEMS_PER_RUN)
+    await blobAppStore.write('social-worker-heartbeat', { at: nowSec, status: 'running' })
+    // Migration is idempotent. Old video jobs only leave the shared queue after
+    // durable admission; paper/dossier work keeps its own eight-item allowance.
+    const legacyVideos = queue.filter(j => j.kind === 'video')
+    await enqueueSocialJobs(blobAppStore, legacyVideos.map(j => j.body as SocialJob), nowSec)
+    const socialQueue = await blobAppStore.read<SocialJob[]>(SOCIAL_JOBS_KEY) ?? []
+    const videoBatch = eligibleSocialJobs(socialQueue, nowSec, 8)
+    const runDeadline = Date.now() + 16 * 60_000
+    const batch = queue.filter(item => item.kind !== 'video' && (item.nextAttemptAt ?? 0) <= nowSec).slice(0, MAX_ITEMS_PER_RUN)
     console.log(`draining ${batch.length} of ${queue.length} item(s)…`)
-    const done = new Set<string>()
-    const failed = new Set<string>()
-    for (const item of batch) {
-      if (await runItem(item)) done.add(item.id)
-      else failed.add(item.id)
+    const results = new Map<string, WorkResult>()
+    for (const item of legacyVideos) {
+      const body = item.body as { url?: string; mode?: string } | null
+      results.set(item.id, body && canonicalVideoUrl(body.url) ? { ok: true } : { ok: false, reason: 'bad-url' })
     }
+    for (const item of batch) {
+      if (Date.now() > runDeadline) break
+      results.set(item.id, await runItem(item))
+    }
+    for (const job of videoBatch) {
+      if (Date.now() > runDeadline) break
+      for (let step = 0; step < 8 && Date.now() < runDeadline; step++) {
+        const result = await runItem({ id: job.id, kind: 'video', body: job, at: job.at, attempts: job.attempts })
+        if (result.reason !== 'extraction-in-progress') break
+        // Continue saved text chunks in this run; do not wait three hours
+        // between sections of the same video. Provider jobs use the collector.
+      }
+    }
+    await blobAppStore.write('social-worker-heartbeat', { at: Math.floor(Date.now() / 1000), status: 'complete' })
     // re-read before writing: alert-check may have enqueued while we worked
     const fresh = (await blobAppStore.read<WorkItem[]>('work-queue')) ?? []
-    const deadlettered: WorkItem[] = []
-    const next = fresh
-      .filter(i => !done.has(i.id))
-      .map(i => (failed.has(i.id) ? { ...i, attempts: (i.attempts ?? 0) + 1 } : i))
-      .filter(i => {
-        if ((i.attempts ?? 0) >= MAX_ATTEMPTS) {
-          console.log(`dropping ${i.kind} ${i.id} after ${i.attempts} attempts`)
-          deadlettered.push(i)
-          return false
-        }
-        return true
-      })
+    const { next, deadlettered } = applyWorkResults(fresh, results, Math.floor(Date.now() / 1000))
     await blobAppStore.write('work-queue', next)
     if (deadlettered.length) {
       // audit M-1: a recoverable job used to vanish silently after 3 attempts.
@@ -116,7 +118,7 @@ const run = async () => {
         await sendTelegram(tok, chat, `⚠️ StreetSignal queue: dropped ${deadlettered.length} item(s) after ${MAX_ATTEMPTS} attempts — ${deadlettered.map(i => i.kind).join(', ')}. Kept in work-queue-deadletter.`).catch(() => {})
       }
     }
-    console.log(`done: ${done.size} ok, ${failed.size} failed, ${next.length} left in queue`)
+    console.log(`done: ${[...results.values()].filter(r => r.ok).length} ok, ${[...results.values()].filter(r => !r.ok).length} deferred/failed, ${next.length} left in queue`)
   } finally {
     await releaseLease(blobAppStore, 'lease:queue-worker', lease)
   }

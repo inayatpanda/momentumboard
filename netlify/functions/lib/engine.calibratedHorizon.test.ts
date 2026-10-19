@@ -340,7 +340,7 @@ const coldRun = async (stored?: { cal?: unknown; weights?: unknown }) => {
   }
 }
 
-describe('the committed seed INSTALLS — the v4 engine is no longer cold', () => {
+describe('the committed historical seed keeps its measured model version', () => {
   const seedCal = seedJson.calibration as unknown as CalibrationState
   const seedW = seedJson.weights as unknown as WeightsState
 
@@ -349,7 +349,8 @@ describe('the committed seed INSTALLS — the v4 engine is no longer cold', () =
     // that would have caught the committed generation-4 artefact standing in the
     // tree unable to load.
     expect(seedCal.defVersion).toBe(CALIB_DEF_VERSION)
-    expect(seedCal.modelVersion).toBe(ENGINE_MODEL_VERSION)
+    expect(seedCal.modelVersion).toBe(4) // historical v4 walk; never relabel it as v5 evidence
+    expect(ENGINE_MODEL_VERSION).toBe(5)
     expect(seedCal.seedGeneration).toBe(5)
     expect(seedW.seedGeneration).toBe(seedCal.seedGeneration) // both halves, one walk
     expect(seedCal.seeded).toBe(true)

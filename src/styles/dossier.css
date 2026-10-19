@@ -1,0 +1,75 @@
+.v2 .company-dossier { max-width: 1120px; margin: 0 auto; }
+.v2 .dossier-kicker, .v2 .dossier-eyebrow { color: var(--text-dim); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.v2 .dossier-kicker { margin: 0 0 16px; }
+.v2 .company-dossier .sp-head { margin-bottom: 6px; }
+.v2 .company-dossier .sp-title h1 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -.05em; }
+.v2 .dossier-nav { display: flex; gap: 6px; overflow-x: auto; padding: 12px 0 18px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
+.v2 .dossier-nav a { white-space: nowrap; text-decoration: none; padding: 8px 12px; border-radius: 9px; color: var(--text-dim); font-size: 12px; border: 1px solid transparent; }
+.v2 .dossier-nav a:hover, .v2 .dossier-nav a:focus-visible { color: var(--text); background: var(--surface-1); border-color: var(--border); }
+.v2 .dossier-section, .v2 .dossier-business, .v2 .dossier-chart { scroll-margin-top: 24px; margin: 22px 0; }
+.v2 .dossier-chart { padding: clamp(16px, 3vw, 26px); background: var(--surface-1); border: 1px solid var(--border); border-radius: 22px; }
+.v2 .dossier-section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 17px; }
+.v2 .dossier-section-head h2, .v2 .dossier-section-head h3 { margin: 6px 0 0; color: var(--text); font-size: clamp(18px, 2.5vw, 24px); line-height: 1.2; letter-spacing: -.025em; }
+.v2 .dossier-caption { color: var(--text-dim); font-size: 12px; line-height: 1.6; }
+.v2 .dossier-business { padding: clamp(18px, 3vw, 28px); background: var(--surface-1); box-shadow: none; }
+.v2 .dossier-business .cc-reason { font-size: 13px; line-height: 1.7; }
+.v2 .business-status-line { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--text-dim); font-size: 12px; }
+.v2 .report-status { display: inline-flex; padding: 6px 9px; border-radius: 7px; background: var(--surface-2); color: var(--text-dim); font-size: 11px; font-weight: 600; text-transform: capitalize; }
+.v2 .report-status.healthy, .v2 .report-status.improving { color: var(--long); background: color-mix(in srgb, var(--long) 9%, transparent); }
+.v2 .report-status.deteriorating { color: var(--short); background: color-mix(in srgb, var(--short) 9%, transparent); }
+.v2 .report-status.unknown, .v2 .report-status.insufficient { color: var(--warn); }
+.v2 .business-key-figures, .v2 .report-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 22px 0; }
+.v2 .business-key-figures > div, .v2 .report-metrics > div { min-width: 0; padding-right: 12px; border-right: 1px solid var(--border); }
+.v2 .business-key-figures > div:last-child, .v2 .report-metrics > div:last-child { border: none; }
+.v2 .business-key-figures dt, .v2 .report-metrics dt { font-size: 11px; color: var(--text-dim); }
+.v2 .business-key-figures dd, .v2 .report-metrics dd { margin: 7px 0 4px; font-size: clamp(16px, 2vw, 24px); font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.v2 .business-key-figures small, .v2 .report-metrics small { font-size: 10px; color: var(--text-dim); line-height: 1.5; }
+.v2 .business-evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+.v2 .business-evidence-grid > div { padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+.v2 .business-evidence-grid h3 { margin: 0 0 10px; font-size: 12px; font-weight: 650; }
+.v2 .business-evidence-grid ul, .v2 .report-gaps ul { padding-left: 17px; margin: 0; color: var(--text-dim); font-size: 12px; line-height: 1.65; }
+.v2 .business-evidence-grid li + li, .v2 .report-gaps li + li { margin-top: 5px; }
+.v2 .business-cautions h3 { color: var(--warn); }
+.v2 .report-history { margin: 24px 0; padding: 24px 0; border-block: 1px solid var(--border); }
+.v2 .report-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; }
+.v2 .report-segments { display: flex; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; }
+.v2 .report-segments button { border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); font: inherit; font-size: 11px; padding: 7px 10px; cursor: pointer; }
+.v2 .report-segments button[aria-pressed=true] { background: var(--surface-1); color: var(--text); box-shadow: 0 1px 5px #0002; }
+.v2 .report-metric-label { font-size: 11px; color: var(--text-dim); }
+.v2 .report-metric-label select { margin-left: 7px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 7px; font: inherit; }
+.v2 .report-chart-frame { position: relative; margin: 14px 0 8px; }
+.v2 .report-trend-chart { display: block; width: 100%; height: 220px; overflow: visible; }
+.v2 .report-chart-axis { position: absolute; left: 0; top: 29px; height: 154px; display: flex; flex-direction: column; justify-content: space-between; color: var(--text-dim); font-size: 11px; line-height: 12px; }
+.v2 .report-chart-dates { display: flex; justify-content: space-between; padding: 0 7.75% 8px; color: var(--text-dim); font-size: 11px; }
+.v2 .report-zero { stroke: var(--border); stroke-dasharray: 4 5; }
+.v2 .report-trend-line { stroke: var(--accent-soft); stroke-width: 2.5; fill: none; vector-effect: non-scaling-stroke; }
+.v2 .report-trend-point { fill: none; stroke: var(--accent-soft); stroke-width: 6; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.v2 .report-trend-point.selected { stroke-width: 10; }
+.v2 .report-chart-empty { display: grid; place-items: center; min-height: 130px; padding: 24px; text-align: center; color: var(--text-dim); font-size: 12px; border: 1px dashed var(--border); border-radius: 12px; margin: 16px 0; }
+.v2 .report-timeline { display: flex; gap: 7px; overflow-x: auto; padding: 4px 0 12px; }
+.v2 .report-timeline button { display: flex; flex: 1 0 78px; flex-direction: column; gap: 5px; text-align: left; background: transparent; color: var(--text-dim); border: 1px solid var(--border); border-radius: 8px; padding: 9px; font: inherit; font-size: 12px; cursor: pointer; }
+.v2 .report-timeline small { font-size: 9px; }
+.v2 .report-timeline button[aria-pressed=true] { border-color: var(--accent-soft); background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--text); }
+.v2 .report-selected { padding: 16px; margin: 4px 0 14px; background: var(--surface-2); border-radius: 12px; }
+.v2 .report-selected-head { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.v2 .report-selected-head > span { color: var(--text-dim); font-size: 10px; }
+.v2 .report-selected a { color: var(--accent-soft); }
+.v2 .report-method { margin: 16px 0 12px; color: var(--text-dim); font-size: 11px; line-height: 1.6; max-width: 85ch; }
+.v2 .report-gaps { margin: 12px 0; color: var(--text-dim); font-size: 12px; }
+.v2 .report-gaps summary { cursor: pointer; padding: 4px 0; color: var(--text); }
+.v2 .report-gaps ul { margin-top: 10px; }
+.v2 .dossier-tools { display: grid; gap: 20px; }
+.v2 .dossier-tools > section { padding: 20px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px; }
+.v2 .report-history button:focus-visible, .v2 .report-history select:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .v2 .dossier-section-head { align-items: start; }
+  .v2 .dossier-section-head > .dossier-caption { display: none; }
+  .v2 .business-key-figures, .v2 .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
+  .v2 .business-key-figures > div:nth-child(2n), .v2 .report-metrics > div:nth-child(2n) { border: 0; }
+  .v2 .business-evidence-grid { grid-template-columns: 1fr; }
+  .v2 .dossier-nav { gap: 0; }
+  .v2 .dossier-nav a { padding: 8px 10px; font-size: 11px; }
+  .v2 .report-selected { padding: 12px; }
+  .v2 .report-trend-chart { height: 170px; }
+  .v2 .report-chart-axis { top: 21px; height: 122px; font-size: 10px; }
+}

@@ -1698,7 +1698,7 @@ describe('--seed-out: the walk serialises what it learned', () => {
 
     // guarantees 1, 2, 6 on the file the next task actually copies over seed.json
     expect(art.calibration.defVersion).toBe(4) // the 21-session hit (CALIB_DEF_VERSION v4)
-    expect(art.calibration.modelVersion).toBe(4) // five-core vector (bandwidth), ENGINE_MODEL_VERSION 4
+    expect(art.calibration.modelVersion).toBe(5) // uniform, deduplicated social context; new walks stamp v5
     expect(art.calibration.seedGeneration).toBe(6) // 6: the committed seed is generation 5 since 2026-09-22, and the floor refuses ≤5
     expect(art.weights.seedGeneration).toBe(art.calibration.seedGeneration)
 

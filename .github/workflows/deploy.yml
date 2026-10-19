@@ -1,0 +1,40 @@
+name: deploy-production
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+concurrency:
+  group: streetsignal-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      # The measured initial closure remains above the existing 120 KB limit.
+      # Keep the warning visible; this release does not change that limit.
+      - run: npm run budget
+      - name: Configure the existing transcript provider
+        env:
+          SUPADATA_API_KEY: ${{ secrets.SUPADATA_API_KEY }}
+        run: |
+          test -n "$SUPADATA_API_KEY"
+          printf '%s' "$SUPADATA_API_KEY" | npx --yes wrangler@4.151.2 pages secret put SUPADATA_API_KEY --project-name streetsignal
+      - name: Deploy application and API
+        run: npx --yes wrangler@4.151.2 pages deploy dist --project-name streetsignal --branch main --commit-hash "$GITHUB_SHA"
+      - name: Deploy scheduled collector
+        run: npx --yes wrangler@4.151.2 deploy --config workers/cron/wrangler.toml

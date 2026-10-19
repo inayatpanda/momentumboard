@@ -46,6 +46,6 @@ describe('fetchVideos', () => {
   it('maps feed entries to videos with channel names, skipping stale ones', async () => {
     const fetchFn = vi.fn(async () => new Response(ytFeed))
     const vids = await fetchVideos([{ id: 'UC1', name: 'Stocks with Josh' }], NOW, fetchFn as unknown as typeof fetch)
-    expect(vids).toEqual([{ title: 'TSLA video', url: 'https://yt/v1', channel: 'Stocks with Josh' }])
+    expect(vids).toEqual([{ title: 'TSLA video', url: 'https://yt/v1', channel: 'Stocks with Josh', channelId: 'UC1', publishedAt: NOW - 7200 }])
   })
 })

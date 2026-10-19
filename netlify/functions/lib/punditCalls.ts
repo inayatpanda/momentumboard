@@ -1,9 +1,6 @@
-// Pundit call bridge — pure helpers that turn a human-forwarded stock call
-// (the Telegram /call command) or an auto-polled pundit post/RSS item into the
-// SAME per-channel stance records the engine already grades. Anything appended
-// to the `video-extracts` blob with a `channel` the engine knows (e.g.
-// 'Grandmaster Obi') is tracked, graded vs SPY at +10 sessions and injected as a
-// `channel:consensus` candidate — so this file only has to shape records.
+// Pundit call bridge: reported social views for the display feed. Third-party
+// coverage and manual forwards carry explicit provenance and do not contribute
+// automated consensus or teach the source-verified outcome study.
 
 import type { ExtractLike } from '../../../shared/engine/channelCred'
 import { parseFeed } from './rss'
@@ -20,6 +17,7 @@ export interface TickerCall {
 // computeConsensus — which iterates `e.themes`. A record missing `themes` would
 // crash that reader, so every record carries the full VideoExtract shape.
 export interface PunditExtract extends ExtractLike {
+  provenance?: 'first-party' | 'third-party' | 'manual'
   title: string
   themes: string[]
   tickers: { sym: string; stance: Stance; levels: number[] }[]
@@ -130,6 +128,7 @@ export function toExtract(
     channel: name,
     at,
     title: `${source} call`,
+    provenance: source === 'feed' ? 'third-party' : source === 'telegram-bridge' ? 'manual' : 'first-party',
     themes: [],
     tickers: tickers.map(t => ({ sym: t.sym, stance: t.stance, levels: [] })),
   }

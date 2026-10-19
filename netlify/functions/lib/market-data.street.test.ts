@@ -126,6 +126,11 @@ describe('/api/market?type=street', () => {
     expect('via' in (await street()).videos[0]).toBe(false)
   })
 
+  it('preserves bounded evidence and promotion flags for a reviewable extraction', async () => {
+    await seed('video-extracts', [{ ...mkVideo({ url: 'evidence' }), tickers: [{ sym: 'CRWV', stance: 'bull', levels: [100], company: 'CoreWeave', thesis: 'Demand grew.', evidenceQuote: 'CoreWeave support is 100.', hype: true }] }])
+    expect((await street()).videos[0].tickers[0]).toEqual({ sym: 'CRWV', stance: 'bull', company: 'CoreWeave', thesis: 'Demand grew.', evidenceQuote: 'CoreWeave support is 100.', hype: true })
+  })
+
   it('drops a malformed row without losing the wire', async () => {
     await seed('video-extracts', [{ url: 'bad', title: 'v', channel: 'Josh', at: hoursAgo(2) }, mkVideo({ url: 'ok' })])
     const { videos, consensus } = await street()

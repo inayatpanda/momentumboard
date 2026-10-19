@@ -173,15 +173,20 @@ const sha = (x: unknown) => createHash('sha256').update(JSON.stringify(x)).diges
 // It is a new key on every ledger row and nothing else: the composite, the
 // grade, the rung, the levels and the readable projection below are all
 // unchanged and were NOT re-stamped. 5b78a4fa… was the pre-campaign value.
-const GOLDEN_SHA = '9b1fdad56dfdb12355a06e3d82b2d34911b1eb99f35747fa6064ffe823cf7fee'
+// v5 removes the favourite-channel accuracy bonus (channel factor -39.6 → -36)
+// and stamps modelVersion 5. The capped composite and readable projection stay
+// unchanged; the new SHA includes those intentional evidence-field changes.
+const GOLDEN_SHA = 'f33d16e3c545f353b1faf602899220c57bb64164af79c75a0c53d1bb1e1b0f09'
 const GOLDEN_ROWS = ['2026-02-17:NVDA:short A c=-63.6 r=1 e=162 s=170.44 t=150.75 ']
-/** Every key the golden day wrote at BASE. The trace may ADD to this list and
- * may touch nothing in it. */
+/** Expected routine outputs, including the dated research memory. The trace
+ * adds only its own keys; published board/ledger bytes stay pinned below. */
 const GOLDEN_KEYS = [
   'engine-board',
   'engine-lab',
   'engine-lab-ledger',
   'engine-lab-social-history',
+  'engine-research-learning',
+  'engine-research-reports:v1',
   'engine-roster',
   'engine-roster-log',
   'event-radar',
@@ -208,6 +213,8 @@ describe('the funnel trace', () => {
     const ledger = (await store.read<Prediction[]>(`predictions:${TODAY}`))!
     // the readable half of the pin — a failure says WHICH row moved…
     expect(projection(board)).toEqual(GOLDEN_ROWS)
+    expect(board[0].factors.channels.score).toBe(-36)
+    expect(board[0].modelVersion).toBe(5)
     expect(projection(ledger)).toEqual(GOLDEN_ROWS)
     // …and the byte-exact half: every field of every row, including the ten
     // weighted factors, the evidence block, the thesis and the falsifier.

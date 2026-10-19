@@ -64,7 +64,7 @@ describe('the job table', () => {
     .sort()
 
   it('carries every scheduled function Netlify runs', () => {
-    expect(scheduledOnDisk).toEqual(['alert-check', 'alert-tail', 'bulletin-evening', 'bulletin-premarket', 'congress-warm', 'ledger-snapshot', 'watchdog'])
+    expect(scheduledOnDisk).toEqual(['alert-check', 'alert-tail', 'bulletin-evening', 'bulletin-premarket', 'congress-warm', 'ledger-snapshot', 'video-capture-poll', 'watchdog'])
     for (const name of scheduledOnDisk) expect(CRON_JOBS.some(j => j.name === name), name).toBe(true)
   })
 
@@ -125,10 +125,10 @@ describe('the job table', () => {
 
 describe('jobsDueFor', () => {
   it('wakes only what is due at that minute', () => {
-    expect(jobsDueFor('*/5 * * * *', at('2026-08-13T09:05:00Z')).map(j => j.name)).toEqual(['alert-check'])
-    expect(jobsDueFor('*/5 * * * *', at('2026-08-13T12:45:00Z')).map(j => j.name)).toEqual(['alert-check', 'bulletin-premarket'])
-    expect(jobsDueFor('*/5 * * * *', at('2026-08-13T18:10:00Z')).map(j => j.name)).toEqual(['alert-check', 'congress-warm'])
-    expect(jobsDueFor('*/5 * * * *', at('2026-08-16T08:00:00Z')).map(j => j.name)).toEqual(['alert-check', 'ledger-snapshot'])
+    expect(jobsDueFor('*/5 * * * *', at('2026-08-13T09:05:00Z')).map(j => j.name)).toEqual(['alert-check', 'video-capture-poll'])
+    expect(jobsDueFor('*/5 * * * *', at('2026-08-13T12:45:00Z')).map(j => j.name)).toEqual(['alert-check', 'bulletin-premarket', 'video-capture-poll'])
+    expect(jobsDueFor('*/5 * * * *', at('2026-08-13T18:10:00Z')).map(j => j.name)).toEqual(['alert-check', 'congress-warm', 'video-capture-poll'])
+    expect(jobsDueFor('*/5 * * * *', at('2026-08-16T08:00:00Z')).map(j => j.name)).toEqual(['alert-check', 'ledger-snapshot', 'video-capture-poll'])
     // the tail rides every quarter hour; the watchdog rides one of them
     expect(jobsDueFor('*/15 * * * *', at('2026-08-13T07:15:00Z')).map(j => j.name)).toEqual(['alert-tail', 'watchdog'])
     expect(jobsDueFor('20 5 * * 1-5', at('2026-08-13T05:20:00Z')).map(j => j.name)).toEqual(['predict-background'])
@@ -162,8 +162,8 @@ describe('jobsDueFor', () => {
 // separately, rather than assuming one line shape.
 const GATE_MARKER = /body\.includes\('([^']+)'\)/
 const GATE_REFUSAL = /if \(!admin && !.+\) return new Response\('forbidden', \{ status: 401 \}\)/
-const GATE_ADMIN = /const admin = req\.headers\.get\('x-app-token'\) === process\.env\.APP_TOKEN/
-const GATE_SLOT = /claimScheduleSlot\('([a-z-]+)', ([\d_]+), admin\)/
+const GATE_ADMIN = /const admin = (?:!!process\.env\.APP_TOKEN && )?req\.headers\.get\('x-app-token'\) === process\.env\.APP_TOKEN/
+const GATE_SLOT = /claimScheduleSlot\('([a-z-]+)', ([\d_]+), (?:admin|false)\)/
 
 const cronBodyJobs = CRON_JOBS.filter(j => j.auth === 'cron-body')
 
@@ -257,7 +257,7 @@ describe('dispatchCron', () => {
         return new Response('ok')
       },
     })
-    expect(seen).toEqual(['alert-check', 'bulletin-premarket'])
+    expect(seen).toEqual(['alert-check', 'bulletin-premarket', 'video-capture-poll'])
     expect(results[0]).toMatchObject({ job: 'alert-check', error: 'boom' })
     expect(results[1]).toMatchObject({ job: 'bulletin-premarket', status: 200, body: 'ok' })
   })
@@ -321,9 +321,9 @@ describe('the dispatcher gives each job its own invocation', () => {
   it('POSTs every due job to its own by-name door on the Pages origin', async () => {
     const { sent, fetch } = capture()
     const results = await dispatchCron('*/5 * * * *', at('2026-08-13T12:45:00Z'), { baseUrl: BASE, fetch })
-    expect(sent.map(s => s.url)).toEqual([`${BASE}${FN_PREFIX}alert-check`, `${BASE}${FN_PREFIX}bulletin-premarket`])
+    expect(sent.map(s => s.url)).toEqual([`${BASE}${FN_PREFIX}alert-check`, `${BASE}${FN_PREFIX}bulletin-premarket`, `${BASE}${FN_PREFIX}video-capture-poll`])
     expect(sent.every(s => s.method === 'POST')).toBe(true)
-    expect(results.map(r => r.job)).toEqual(['alert-check', 'bulletin-premarket'])
+    expect(results.map(r => r.job)).toEqual(['alert-check', 'bulletin-premarket', 'video-capture-poll'])
     expect(results.every(r => r.ran && r.status === 200 && r.body === 'ok')).toBe(true)
   })
 
@@ -396,7 +396,7 @@ describe('the dispatcher gives each job its own invocation', () => {
   it('spends exactly one subrequest per due job', async () => {
     const { sent, fetch } = capture()
     await dispatchCron('*/5 * * * *', at('2026-08-16T08:00:00Z'), { baseUrl: BASE, fetch }) // Sunday: alert-check + ledger-snapshot
-    expect(sent).toHaveLength(2)
+    expect(sent).toHaveLength(3)
   })
 
   // The one job that carries APP_TOKEN never goes over the public door: the
@@ -436,7 +436,7 @@ describe('end to end, on D1', () => {
     const opts = { baseUrl: 'https://streetsignal.pages.dev', fetch }
 
     const first = await dispatchCron('*/5 * * * *', at('2026-08-13T09:05:00Z'), opts)
-    expect(first).toHaveLength(1)
+    expect(first).toHaveLength(2)
     expect(first[0]).toMatchObject({ job: 'alert-check', ran: true, status: 200, body: 'no-config' })
 
     // The slot was claimed in D1 by the run above, so the immediate replay —

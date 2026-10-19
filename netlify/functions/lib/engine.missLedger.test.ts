@@ -103,7 +103,7 @@ const seeded = async (trace: FunnelTrace | null, index: string[] = [TRACE_DATE])
 
 /** Everything the grading pass writes with an empty prediction store — the pin
  * for "the miss ledger adds a key and touches nothing". */
-const GRADING_KEYS = ['predictions-pending', 'engine-scorecard', 'engine-weights', 'engine-calibration', 'channel-credibility', 'risk-state']
+const GRADING_KEYS = ['predictions-pending', 'engine-scorecard', 'engine-weights', 'engine-calibration', 'risk-state']
 
 describe('gradeOutstanding → the miss ledger', () => {
   it('walks the trace day that just matured, charges each row to ITS OWN gate, and adds exactly one key', async () => {

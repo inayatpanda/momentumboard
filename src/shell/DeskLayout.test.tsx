@@ -124,7 +124,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
 
     const pane = screen.getByRole('main')
-    expect(await within(pane).findByRole('heading', { name: /today/i })).toBeInTheDocument()
+    expect(await within(pane).findByRole('heading', { level: 1, name: 'Research desk' })).toBeInTheDocument()
     const grid = document.querySelector('.desk2')
     expect(grid).not.toBeNull()
     expect(grid!.classList.contains('desk2-wide')).toBe(true)
@@ -150,10 +150,10 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     setViewport(390)
     render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
 
-    expect(await screen.findByRole('heading', { name: /today/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your daily brief' })).toBeInTheDocument()
     expect(document.querySelector('.desk2')).toBeNull()
     expect(screen.queryByRole('complementary', { name: /board column/i })).toBeNull()
-    const nav = screen.getByRole('navigation')
+    const nav = screen.getByRole('navigation', { name: 'Primary' })
     // the PHONE bar is the ratified five: owner iteration 2's three promoted
     // entries carry `.rail-only`, which CSS hides below 1024px (jsdom applies
     // no stylesheet, so the predicate the CSS reads is what is asserted)
@@ -203,7 +203,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     const location = memoryLocation({ path: '/app/', record: true })
     render(<AppShell locationHook={location.hook} />)
 
-    await screen.findByRole('heading', { name: /today/i })
+    await screen.findByRole('heading', { level: 1, name: 'Research desk' })
     expect(spies.getSmartMoney).not.toHaveBeenCalled()
     expect(spies.getSeasonality).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
@@ -220,14 +220,14 @@ describe('DeskLayout — the desktop master–detail desk', () => {
   it('is reactive: widening the window past 1200px builds the desk without a reload', async () => {
     setViewport(1024)
     render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
-    await screen.findByRole('heading', { name: /today/i })
+    await screen.findByRole('heading', { level: 1, name: 'Research desk' })
     expect(document.querySelector('.desk2')).toBeNull()
 
     setViewport(1440)
     fireEvent(window, new Event('resize'))
 
     await waitFor(() => expect(document.querySelector('.desk2')).not.toBeNull())
-    expect(within(screen.getByRole('main')).getByRole('heading', { name: /today/i })).toBeInTheDocument()
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'Research desk' })).toBeInTheDocument()
   })
 
   it('at desk width /board is the full-width Board page — no column, no duplicate list', async () => {
@@ -253,7 +253,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     setViewport(1024)
     render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
 
-    await screen.findByRole('heading', { name: /today/i })
+    await screen.findByRole('heading', { level: 1, name: 'Research desk' })
     expect(screen.getByRole('link', { name: /analytics/i })).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
   })

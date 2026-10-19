@@ -16,8 +16,10 @@ describe('usSessionRead', () => {
   it('inside the cash session: says open and when it closes, in the reader’s own clock', () => {
     // BST: the 20:00 UTC close is 21:00 in London
     expect(usSessionRead(at('2026-08-17T15:00:00Z'), LDN)).toEqual({ kind: 'open', text: 'US market open · closes 21:00' })
-    // …and 20:00 in London in January, from the very same UTC session
-    expect(usSessionRead(at('2026-01-05T15:00:00Z'), LDN).text).toBe('US market open · closes 20:00')
+    // New York is on winter time too: its close is 21:00 UTC in January.
+    expect(usSessionRead(at('2026-01-05T15:00:00Z'), LDN).text).toBe('US market open · closes 21:00')
+    // The transition gap lasts until London changes its own clocks.
+    expect(usSessionRead(at('2026-03-09T15:00:00Z'), LDN).text).toBe('US market open · closes 20:00')
   })
 
   it('opens exactly at 13:30 UTC and is shut the instant it closes', () => {
@@ -30,6 +32,12 @@ describe('usSessionRead', () => {
     expect(usSessionRead(at('2026-08-17T10:49:00Z'), LDN)).toEqual({ kind: 'pre-open', text: 'US opens in 2h 41m' })
     expect(usSessionRead(at('2026-08-17T13:00:00Z'), LDN).text).toBe('US opens in 30m')
     expect(usSessionRead(at('2026-08-17T12:30:00Z'), LDN).text).toBe('US opens in 1h')
+  })
+
+  it('computes the next opening using that day’s DST offset', () => {
+    expect(usSessionRead(at('2026-03-06T22:00:00Z'), LDN).text).toBe('US closed — opens Mon 13:30')
+    expect(usSessionRead(at('2026-10-30T22:00:00Z'), LDN).text).toBe('US closed — opens Mon 14:30')
+    expect(usSessionRead(at('2026-01-05T14:00:00Z'), LDN).text).toBe('US opens in 30m')
   })
 
   it('a weekend says weekend — both days, at any hour', () => {

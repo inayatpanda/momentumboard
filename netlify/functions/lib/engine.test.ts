@@ -1280,7 +1280,7 @@ describe('buildBoard', () => {
     expect(board.find(b => b.sym === 'GNOM')).toBeDefined() // gated + priced like any other candidate
   })
 
-  it('a high-credibility off-roster channel stance NOMINATES a symbol as a candidate (source channel:consensus); a lone low-cred stance does not', async () => {
+  it('favourite subscriptions cannot nominate a stock through an unearned accuracy prior', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: { NVDA: { short2x: 'INV' }, GNOM: { short2x: 'INV' }, PUND: { short2x: 'INV' }, DUO: { short2x: 'INV' }, FRESH: { short2x: 'INV' } } })
     await store.write('engine-calibration', calWith('short:amber:25-40'))
@@ -1303,9 +1303,8 @@ describe('buildBoard', () => {
 
     const roster = (await store.read<{ sym: string; source: string }[]>('engine-roster'))!
     const pund = roster.find(r => r.sym === 'PUND')
-    expect(pund).toBeDefined()
-    expect(pund!.source).toBe('channel:consensus') // credible single voice nominated it; attribution rides the entry
-    expect(board.find(b => b.sym === 'PUND')).toBeDefined() // gated + priced like any other candidate
+    expect(pund).toBeUndefined()
+    expect(board.find(b => b.sym === 'PUND')).toBeUndefined()
 
     expect(roster.find(r => r.sym === 'LOWC')).toBeUndefined() // below the credibility gate → never a candidate
     expect(await d.candles('LOWC')).toBe(shorty) // LOWC HAD qualifying candles — excluded by the SOURCE gate, not by data

@@ -37,6 +37,13 @@ describe('videoTranscriptStore', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].text).toContain('first')
   })
+  it('uses video identity across share, live and watch URLs', async () => {
+    const store = memoryStore()
+    await saveTranscript(store, rec('https://youtube.com/watch?v=abcdefghijk'))
+    expect(await saveTranscript(store, rec('https://youtu.be/abcdefghijk?t=90'))).toBe('already')
+    expect((await readStoredTranscript(store, 'https://www.youtube.com/live/abcdefghijk'))?.text).toHaveLength(200)
+    expect(await recordInboxVideos(store, [{ url: 'https://youtu.be/abcdefghijk', title: '', channel: '' }, { url: 'https://youtube.com/watch?v=abcdefghijk', title: '', channel: '' }], 500)).toBe(1)
+  })
 
   it('misses return null', async () => {
     expect(await readStoredTranscript(memoryStore(), 'https://youtube.com/watch?v=nope0000000')).toBeNull()

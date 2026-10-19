@@ -93,21 +93,23 @@ const inflight = new Map<string, Promise<unknown>>()
  * otherwise); rejects when the fetch fails AND there is no cache — a caller
  * with cache in hand treats rejection as "offline", not as "no data". */
 export async function revalidate<T>(key: SliceKey, fetcher: () => Promise<T>, opts?: { force?: boolean }): Promise<T> {
-  const cached = await readSlice<T>(key)
-  if (!opts?.force && isFresh(cached, key)) return cached!.data
   // force REPLACES a stuck in-flight fetch — a hung request must never block
   // an explicit pull-to-refresh.
   const existing = inflight.get(key)
   if (existing && !opts?.force) return existing as Promise<T>
-  const p = (async () => {
-    try {
-      const data = await fetcher()
-      await writeSlice(key, data)
-      return data
-    } finally {
-      inflight.delete(key)
+  // Only the newest request owns this key. A replaced request may settle,
+  // but must neither overwrite fresh bytes nor remove its replacement.
+  const p: Promise<T> = Promise.resolve().then(async () => {
+    if (!opts?.force) {
+      const cached = await readSlice<T>(key)
+      if (isFresh(cached, key)) return cached!.data
     }
-  })()
+    const data = await fetcher()
+    if (inflight.get(key) === p) await writeSlice(key, data)
+    return data
+  }).finally(() => {
+    if (inflight.get(key) === p) inflight.delete(key)
+  })
   inflight.set(key, p)
   return p
 }

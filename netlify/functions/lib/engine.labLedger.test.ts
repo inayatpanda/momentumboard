@@ -118,7 +118,8 @@ describe('the engine lab ledger under a discovery-sized pool', () => {
       candles: mk(j => 100 + Math.sin((j + i) / 7) * 12 - j * 0.08, 200),
     }))
 
-    const short = shortHorizonObservations(tapes, NOW, ['GOOG', 'GOOGL'])
+    const scanAt = tapes[0].candles.at(-1)!.t + 86_400
+    const short = shortHorizonObservations(tapes, scanAt, ['GOOG', 'GOOGL'])
     expect(short.length).toBeGreaterThan(0)
     expect(short.length).toBeLessThanOrEqual(16)
 

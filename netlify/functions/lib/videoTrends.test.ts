@@ -81,4 +81,21 @@ describe('parseExtract', () => {
     expect(parseExtract('{"tickers":[{"sym":"X","stance":"moon"}],"themes":[]}', meta)!.tickers[0].stance).toBe('neutral')
     expect(parseExtract('no json here', meta)).toBeNull()
   })
+  it('rejects missing schema instead of silently storing zero facts', () => {
+    expect(parseExtract('{}', meta)).toBeNull()
+    expect(parseExtract('{"error":"bad video"}', meta)).toBeNull()
+    expect(parseExtract('{"tickers":[],"themes":[]}', meta)?.tickers).toEqual([])
+  })
+  it('corrects grounded company identity without remapping a bare symbol or inventing evidence', () => {
+    const raw = JSON.stringify({ tickers: [
+      { sym: 'CORE', company: 'CoreWeave', stance: 'bull', levels: [100, -2, 0, 'bad'], evidenceQuote: 'CoreWeave support is 100.' },
+      { sym: 'RDW', company: 'Rocket Lab', stance: 'bull', evidenceQuote: 'This invented quote was never said' },
+      { sym: 'RDW', stance: 'neutral' },
+    ], themes: [] })
+    const result = parseExtract(raw, meta, 'CoreWeave support is 100. Rocket Lab looks bullish.')!
+    expect(result.tickers.map(t => t.sym)).toEqual(['CRWV', 'RKLB', 'RDW'])
+    expect(result.tickers[0].levels).toEqual([100])
+    expect(result.tickers[0].evidenceQuote).toBe('CoreWeave support is 100.')
+    expect(result.tickers[1].evidenceQuote).toBeUndefined()
+  })
 })

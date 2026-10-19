@@ -61,6 +61,7 @@ export default defineConfig({
     })
   ],
   test: {
+    include: ['{src,shared,netlify,functions,workers,scripts}/**/*.{test,spec}.{ts,tsx,mts}'],
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test-setup.ts']

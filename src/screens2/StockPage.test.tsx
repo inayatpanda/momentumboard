@@ -27,7 +27,7 @@ vi.mock('../lib/apiViews', async () => {
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
   const notMocked = () => Promise.reject(new Error('not mocked in this test'))
-  return { ...actual, getCandles: vi.fn(notMocked), getNews: vi.fn(notMocked), getFilings: vi.fn(notMocked) }
+  return { ...actual, getCandles: vi.fn(notMocked), getNews: vi.fn(notMocked), getFilings: vi.fn(notMocked), getBusinessHealth: vi.fn(notMocked) }
 })
 vi.mock('../lib/configMirror', () => ({ mirrorConfig: vi.fn() }))
 
@@ -145,6 +145,9 @@ describe('StockPage', () => {
     await writeSlice('journey:NVDA', mkJourney())
     withRouter('NVDA')
     expect(await screen.findByRole('heading', { level: 1, name: /NVDA/ })).toBeInTheDocument()
+    const sectionNav = screen.getByRole('navigation', { name: 'Company research sections' })
+    expect(within(sectionNav).getByRole('link', { name: 'Report history' })).toHaveAttribute('href', '#NVDA-business')
+    expect(document.getElementById('NVDA-business')).toBeInTheDocument()
   })
 
   it('renders the ratified sections in DOM order, with engine research before past calls', async () => {
@@ -161,7 +164,7 @@ describe('StockPage', () => {
     expect(await screen.findByTestId('price-chart')).toBeInTheDocument()
     await screen.findByLabelText('Past calls')
     const labels = [...container.querySelectorAll('section[aria-label]')].map(s => s.getAttribute('aria-label'))
-    expect(labels.slice(0, 6)).toEqual(['Price chart', "The engine's verdict", 'Factor votes', 'The funnel path', 'NVDA research lab', 'Past calls'])
+    expect(labels.slice(0, 7)).toEqual(['Price chart', "The engine's verdict", 'Factor votes', 'The funnel path', 'NVDA research lab', 'Business health', 'Past calls'])
   })
 
   it('a sized board row shows the grade pill and the calibrated probability', async () => {

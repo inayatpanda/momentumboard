@@ -1,3 +1,6 @@
+import { consensusTickers, type VideoExtract } from './videoTrends'
+import { gradeSocialRecord, socialGradingQueue, summarizeSocialOutcomes, type SocialOutcomeRecord } from '../../../shared/engine/socialOutcomes'
+import { SOCIAL_LEDGER_KEY, updateSocialLedger } from './socialLedger'
 import type { Candle, RegimeColor } from '../../../shared/types'
 import type { AppStore } from './store'
 import { validateConfig, type AppConfig } from '../../../shared/config'
@@ -115,7 +118,7 @@ import {
 import { GATE_STATE_KEY, advanceGateState, effectiveGates, gateEligibility, gateFeedbackDisabled, normaliseGateState } from '../../../shared/engine/gateState'
 import { classifyOutcome, postMortemKey } from '../../../shared/engine/postMortem'
 import { horizonOf } from '../../../shared/engine/horizon'
-import { credibilityOf, gradeChannelStances, type ChannelCredState, type ExtractLike } from '../../../shared/engine/channelCred'
+import { type ChannelCredState } from '../../../shared/engine/channelCred'
 import { computeCohortRung, computeRung, cohortRungOf, directionRungOf, initRisk, isRouteEtp, mapInstrument, migrateRisk, spotInstrument, RUNG_RISK_PCT, type CohortRung, type RiskState } from '../../../shared/engine/riskLadder'
 import { capCohortOf, SMALL_CAP_MAX_USD_M, type CapCohortOrUnknown } from '../../../shared/engine/capClass'
 import { avgDollarVol20, ROSTER_MAX, updateRoster, type RosterCandidate, type RosterEntry } from '../../../shared/engine/roster'
@@ -135,7 +138,14 @@ import seed from '../../../shared/engine/seed.json'
 // The daily brain: grade what matured, learn from it, curate the roster,
 // score the board. All maths lives in shared/engine — this file is plumbing.
 
+import type { BusinessHealthSnapshot } from '../../../shared/businessHealth'
+import { withRecoveryContext } from '../../../shared/engine/researchContext'
+import { labEvidenceCount, labGradingQueue, retainLabRecords } from '../../../shared/engine/labLifecycle'
+import { appendResearchReport, buildResearchLearning, type ResearchReportSnapshot } from '../../../shared/engine/researchLearning'
+import { conditionRecoveryForecast } from '../../../shared/engine/researchConditioning'
+
 export interface EngineDeps {
+  businessHealth?: (sym: string) => Promise<BusinessHealthSnapshot>
   candles: (sym: string) => Promise<Candle[] | null>
   candles5y: (sym: string) => Promise<Candle[] | null>
   capUsdM: (sym: string) => Promise<number | null>
@@ -231,34 +241,8 @@ export interface EngineDeps {
 
 const londonDate = (nowSec: number) => new Date(nowSec * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
 
-// headline RSS: titles are real signal even from hard-paywalled outlets
-export const MEDIA_FEEDS: [string, string][] = [
-  ['FT', 'https://www.ft.com/markets?format=rss'],
-  ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'],
-  ['CNBC', 'https://www.cnbc.com/id/100003114/device/rss/rss.html'],
-  ["Barron's", 'https://www.barrons.com/xml/rss/3_7510.xml'],
-  ['Bloomberg', 'https://feeds.bloomberg.com/markets/news.rss'],
-  // India watch — context only (NSE/BSE aren't tradeable in the user's ISA); verified 2026-07-02
-  ['ET India', 'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms'],
-  ['LiveMint', 'https://www.livemint.com/rss/markets'],
-]
-
-export async function fetchMediaTitles(fetchFn: typeof fetch = fetch): Promise<string[]> {
-  const out: string[] = []
-  await Promise.all(
-    MEDIA_FEEDS.map(async ([src, feedUrl]) => {
-      try {
-        const xml = await (await fetchFn(feedUrl, { headers: { 'user-agent': 'StreetSignal research inayatc2002@gmail.com' } })).text()
-        for (const m of [...xml.matchAll(/<title>(?:<!\[CDATA\[)?([^<\]]{15,140})/g)].slice(1, 7)) out.push(`[${src}] ${m[1].trim()}`)
-      } catch {
-        /* one dead feed must not matter */
-      }
-    }),
-  )
-  // 7 feeds × ≤6 titles can exceed 30 — raised modestly so the 2 India feeds
-  // don't crowd out FT/MarketWatch/CNBC/Barron's/Bloomberg on a busy morning.
-  return out.slice(0, 40)
-}
+import { fetchMediaTitles } from './mediaHeadlines'
+export { fetchMediaTitles, MEDIA_FEEDS } from './mediaHeadlines'
 
 export function defaultDeps(
   env: { FINNHUB_API_KEY?: string; T212_API_KEY?: string; T212_SECRET_KEY?: string; T212_HOST?: string; DISCOVERY?: string },
@@ -402,6 +386,10 @@ export function defaultDeps(
       return cachedFundMoves()
     },
     mediaTitles: () => fetchMediaTitles(),
+    businessHealth: async sym => {
+      const { cachedBusinessHealth } = await import('./businessHealth')
+      return cachedBusinessHealth(sym)
+    },
     // non-strict: callLlm/anyProviderAvailable merge the server's own process.env
     // keys (GROQ/GEMINI/…), so this uses whatever provider the deployment has and
     // returns [] when none is set — the board never depends on the LLM being up.
@@ -887,7 +875,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
   const today = londonDate(nowSec)
   const spy = await deps.candles('SPY')
   if (!spy) return { graded: 0 }
-  const { weights, calibration, channelCred } = await loadState(store, today)
+  const { weights, calibration } = await loadState(store, today)
   let w = weights
 
   const fullIndex = (await store.read<string[]>('predictions-index')) ?? []
@@ -1367,17 +1355,23 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
     today,
   )
 
-  // channels: their calls get graded by the same yardstick as ours
-  const extracts = ((await store.read<ExtractLike[]>('video-extracts')) ?? []).slice(-120)
-  const stanceSyms = [...new Set(extracts.flatMap(e => e.tickers.map(t => t.sym)))].slice(0, 25)
-  for (const sym of stanceSyms) await getCandles(sym)
-  const credResult = gradeChannelStances(
-    extracts,
-    new Map([...candleCache.entries()].filter((e): e is [string, Candle[]] => e[1] !== null)),
-    spy,
-    channelCred,
-    nowSec,
-  )
+  // Persisted source claims survive long enough to mature. Only quotes captured
+  // under the current evidence contract enter; legacy summaries are not backfilled
+  // as if their claims were known earlier. This evaluation stays in shadow.
+  const socialRecords = await store.read<SocialOutcomeRecord[]>(SOCIAL_LEDGER_KEY) ?? []
+  const socialDue = socialGradingQueue(socialRecords, nowSec)
+  const socialUpdates = new Map<string, SocialOutcomeRecord>()
+  for (const record of socialDue) {
+    const prices = await getCandles(record.sym)
+    socialUpdates.set(record.id, gradeSocialRecord(record, prices ?? [], spy, nowSec))
+  }
+  if (socialUpdates.size) {
+    const updated = await updateSocialLedger(store, rows => rows.map(row => {
+      const result = socialUpdates.get(row.id)
+      return result ? { ...result, app: row.app ?? result.app, creator: row.creator ?? result.creator } : row
+    }))
+    await store.write('social-learning:v1', summarizeSocialOutcomes(updated))
+  }
 
   // scorecard: the rolled-up honesty pane. Aggregates the CALIBRATED outcome —
   // 21 sessions since v4 (`calibratedOutcomeOf`) — so the pane measures the same
@@ -1496,7 +1490,7 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
 
   await store.write('engine-weights', w)
   await store.write('engine-calibration', calibration)
-  await store.write('channel-credibility', credResult.state)
+  // Legacy channel grades are preserved for audit; the new ledger is shadow-only.
   await store.write('risk-state', nextRisk)
   // …and the crypto partition's two, beside them and never inside them.
   //
@@ -1670,7 +1664,6 @@ export async function buildBoard(
   const today = londonDate(nowSec)
   const cfg = validateConfig(await store.read('config')) ?? { watchlist: [], rules: [], ytChannels: [], capital: 5000 }
   const watchSyms = cfg.watchlist.map(w => w.symbol)
-  const favourites = cfg.favouriteChannels ?? ['Stocks with Josh']
   // THE RUN'S THRESHOLDS. `gatesFor(cfg.riskAppetite)` is still the base
   // ('aggressive' lowers the dead zone / expected-move floor — catalyst.ts); the
   // `gate-state` blob adds whatever the miss ledger's evidence has earned since,
@@ -1736,24 +1729,28 @@ export async function buildBoard(
   const sectorRows = computeSectorRows(new Map(sectorPairs.filter((p): p is [string, Candle[]] => p[1] !== null)), spy)
   const topSectorMembers = sectorRows.slice(0, 2).flatMap(r => SECTOR_MEMBERS[r.sym] ?? [])
 
-  // Pundit stances, read EARLY so a high-credibility off-roster call can NOMINATE
+  // Pundit stances, read EARLY so independent channel agreement can NOMINATE
   // a name into the candidate pool below — not merely re-score one already on the
   // roster. loadState (weights/calibration/channelCred) is hoisted here too so the
-  // per-channel credibility gate is available; the SAME stancesBySym + credOf are
+  // current factor state is available; the SAME stancesBySym + credOf are
   // reused for the channels factor later, so there is one read and no regression.
   // Fail-soft: missing extracts → empty map → no injection.
-  const { weights, calibration, channelCred } = await loadState(store, today)
+  const { weights, calibration } = await loadState(store, today)
   const weekAgo = nowSec - 7 * 86_400
-  const extracts = ((await store.read<ExtractLike[]>('video-extracts')) ?? []).filter(e => e.at > weekAgo)
+  const extracts = ((await store.read<VideoExtract[]>('video-extracts')) ?? []).filter(e => e.at > weekAgo && e.at <= nowSec)
+  const channelVotesSeen = new Set<string>()
   const stancesBySym = new Map<string, { channel: string; stance: 'bull' | 'bear' | 'neutral' }[]>()
-  for (const e of extracts) {
-    for (const t of e.tickers) {
+  for (const e of [...extracts].sort((a, b) => b.at - a.at)) {
+    for (const t of consensusTickers(e)) {
       const arr = stancesBySym.get(t.sym) ?? []
+      const voteKey = `${e.channelId ?? e.channel}:${t.sym}`
+      if (channelVotesSeen.has(voteKey)) continue
+      channelVotesSeen.add(voteKey)
       arr.push({ channel: e.channel, stance: t.stance })
       stancesBySym.set(t.sym, arr)
     }
   }
-  const credOf = (ch: string) => credibilityOf(channelCred, ch, favourites)
+  const credOf = (_ch: string) => 0.5 // source/outcome v1 is collecting forward evidence
 
   const sources = new Map<string, { source: string; capUsdM: number | null }>()
   /** Every distinct name a door OFFERED to the pool. `not-candidate` is a count,
@@ -1854,8 +1851,8 @@ export async function buildBoard(
   }
   // Pundit → candidate: a tracked YouTube channel's non-neutral call can NOMINATE a
   // name into the pool even when it is not already on the roster. It qualifies when
-  // a channel with EARNED credibility (credibilityOf ≥ 0.55) voices a side, OR when
-  // ≥2 channels agree on a side (crowd consensus stands in for single-name trust).
+  // ≥2 distinct channels agree. All channels use a neutral prior while the new
+  // source-verified study collects evidence; no subscription gets an exemption.
   // Like every source this is a GATED candidate — it still faces the full capacity/
   // liquidity/factor/calibration stack, never a call by fiat. Fail-soft: no extracts
   // → stancesBySym empty → nothing injected.
@@ -4218,39 +4215,55 @@ export async function buildBoard(
     if (candles && candles.length >= 90) shortBySym.set(sym, { sym, candles, earningsRisk: earningsSet.has(baseSym(sym)) })
   })
   const shortLabRaw = shortHorizonObservations([...shortBySym.values()], nowSec, shortAlways)
-  const qualityLab = qualityDipObservations(
-    candidateSyms.flatMap(sym => {
-      const candles = candleMap.get(sym)
-      return candles ? [{ sym, candles, qualityProxy: sleeveSet.has(sym) || (sources.get(sym)?.capUsdM ?? 0) > 10_000, capUsdM: sources.get(sym)?.capUsdM ?? null }] : []
-    }),
-    spy,
-    nowSec,
-  )
+  const qualityRows = candidateSyms.flatMap(sym => {
+    const candles = candleMap.get(sym)
+    return candles ? [{ sym, candles, capUsdM: sources.get(sym)?.capUsdM ?? null, earningsRisk: earningsSet.has(baseSym(sym)), businessHealth: null as BusinessHealthSnapshot | null }] : []
+  })
+  // Only price-screened recovery candidates incur a fundamentals lookup. This
+  // bounded pass uses cached filings and never equates market cap with quality.
+  const healthCandidates = qualityRows.flatMap(row => {
+    const preliminary = qualityDipObservations([row], spy, nowSec)[0]
+    return preliminary ? [{ row, score: preliminary.score }] : []
+  }).sort((a, b) => b.score - a.score).slice(0, 16)
+  if (deps.businessHealth) await mapLimit(healthCandidates, 2, async ({ row }) => {
+    row.businessHealth = await deps.businessHealth!(row.sym).catch(() => null)
+  })
+  const qualityRaw = qualityDipObservations(qualityRows, spy, nowSec)
+  const recoveryWorldAvailable = worldReads.some(row => row.sym !== VIX_SYMBOL.sym && Number.isFinite(row.changePct))
+  const qualityLab = await mapLimit(qualityRaw, 4, async observation => {
+    const etf = symToSector.get(baseSym(observation.sym))
+    const news = dipVerdicts.get(observation.sym) ?? await deps.dipNewsCached(observation.sym).catch(() => null)
+    return withRecoveryContext(observation, {
+      sector: sectorRows.find(row => row.sym === etf) ?? null,
+      worldTone: recoveryWorldAvailable ? tone.tone : null,
+      worldDetail: recoveryWorldAvailable ? tone.detail : undefined,
+      news, catalyst: catalystBySym.get(observation.sym) ?? null,
+      earningsRisk: earningsSet.has(baseSym(observation.sym)),
+    })
+  })
   const socialLabRaw = socialIgnitionObservations(socialLabRows, socialHistory, nowSec)
   let labRecords = (await store.read<StrategyLabRecord[]>('engine-lab-ledger')) ?? []
-  // OLDEST open records first, not newest. `labRecords` is append-ordered, so the
-  // tail is the batch pushed last run — precisely the records whose horizon has
-  // NOT elapsed, which `gradeStrategyObservation` answers `null` for every time.
-  // A `slice(-60)` therefore spent the whole grading budget on immature rows and
-  // stranded the mature ones behind it: they never graded, and `slice(-500)`
-  // eventually evicted them ungraded, so the sleeves' evidence counters — the
-  // 40-campaign promotion gate in docs/ENGINE_V2.md — undercounted for ever.
-  // Identical behaviour while fewer than 60 records are open; the budget and its
-  // fetch concurrency are unchanged. [discovery: a 320-name pool rotates the
-  // top-8/top-16 across nearly twice as many symbols, so the open set crosses 60
-  // far sooner than it did at 180.]
-  const openLab = labRecords.filter(r => !r.outcome).slice(0, 60)
+  // Consider each forecast's horizon before grading, then rotate least-recently
+  // attempted records first so unavailable feeds cannot monopolise the budget.
+  // Pending campaigns remain in the ledger until their own outcome resolves.
+  const openLab = labGradingQueue(labRecords, nowSec)
   await mapLimit(openLab, 6, async record => {
+    record.lastGradeAttemptAt = nowSec
     const candles = candleMap.get(record.sym) ?? (await deps.candles(record.sym).catch(() => null))
     if (!candles) return
-    const outcome = gradeStrategyObservation(record, candles)
+    const outcome = gradeStrategyObservation(record, candles, nowSec)
     if (outcome) record.outcome = outcome
   })
-  const labCampaignKey = (record: Pick<StrategyLabRecord, 'sleeve' | 'sym' | 'side'>) => record.sleeve === 'short-horizon'
-    ? `${record.sleeve}:${record.sym}`
-    : `${record.sleeve}:${record.sym}:${record.side}`
+  const labCampaignKey = (record: Pick<StrategyLabRecord, 'sleeve' | 'sym' | 'side' | 'forecast'>) => record.sleeve === 'short-horizon'
+    ? `${record.sleeve}:${record.sym}:${record.forecast.modelVersion ?? 'legacy'}`
+    : `${record.sleeve}:${record.sym}:${record.side}:${record.forecast.modelVersion ?? 'legacy'}`
   const activeLab = new Set(labRecords.filter(r => !r.outcome).map(labCampaignKey))
-  for (const obs of [...shortLabRaw, ...qualityLab, ...socialLabRaw]) {
+  labRecords = retainLabRecords(labRecords)
+  // Freeze the same calibrated forecast readers see, using only earlier
+  // completed campaigns. Later evaluation must never reconstruct its odds.
+  const publishedLab = calibrateLabObservations([...shortLabRaw, ...qualityLab, ...socialLabRaw], labRecords)
+    .map(observation => conditionRecoveryForecast(observation, labRecords))
+  for (const obs of publishedLab) {
     const key = labCampaignKey(obs)
     const recordableShortForecast = obs.sleeve === 'short-horizon' && obs.entry != null
     const recordableSetup = obs.state === 'setup' && obs.side !== 'neutral' && obs.entry != null
@@ -4258,16 +4271,20 @@ export async function buildBoard(
     labRecords.push(obs)
     activeLab.add(key)
   }
-  labRecords = labRecords.slice(-500)
-  const qualityCalibrated = calibrateLabObservations(qualityLab, labRecords)
-  const socialLab = calibrateLabObservations(socialLabRaw, labRecords)
-  const shortLab = calibrateLabObservations(shortLabRaw, labRecords)
-  const qualityEvidenceN = labRecords.filter(r => r.sleeve === 'quality-dip' && r.outcome).length
-  const socialEvidenceN = labRecords.filter(r => r.sleeve === 'social-ignition' && r.outcome).length
-  const shortHorizonEvidenceN = labRecords.filter(r => r.sleeve === 'short-horizon' && r.outcome).length
+  labRecords = retainLabRecords(labRecords)
+  const qualityCalibrated = publishedLab.filter(row => row.sleeve === 'quality-dip')
+  const socialLab = publishedLab.filter(row => row.sleeve === 'social-ignition')
+  const shortLab = publishedLab.filter(row => row.sleeve === 'short-horizon')
+  const qualityEvidenceN = labEvidenceCount(labRecords, 'quality-dip', nowSec)
+  const socialEvidenceN = labEvidenceCount(labRecords, 'social-ignition', nowSec)
+  const shortHorizonEvidenceN = labEvidenceCount(labRecords, 'short-horizon', nowSec)
   const compositeEvidenceN = Object.values(calibration.buckets).reduce((sum, bucket) => sum + (bucket.n ?? 0), 0)
+  const learning = buildResearchLearning(labRecords, nowSec)
   await store.write('engine-lab-ledger', labRecords)
-  await store.write('engine-lab', buildEngineLab({ date: today, nowSec, shortHorizon: shortLab, quality: qualityCalibrated, social: socialLab, compositeEvidenceN, shortHorizonEvidenceN, qualityEvidenceN, socialEvidenceN }))
+  await store.write('engine-research-learning', learning)
+  const researchReports = (await store.read<ResearchReportSnapshot[]>('engine-research-reports:v1')) ?? []
+  await store.write('engine-research-reports:v1', appendResearchReport(researchReports, { date: today, nowSec, observations: publishedLab, records: labRecords, learning }))
+  await store.write('engine-lab', buildEngineLab({ date: today, nowSec, shortHorizon: shortLab, quality: qualityCalibrated, social: socialLab, compositeEvidenceN, shortHorizonEvidenceN, qualityEvidenceN, socialEvidenceN, learning }))
   await store.write('engine-lab-social-history', appendSocialHistory(socialHistory, socialLabRows, nowSec))
 
   // …and the empty-side COPY drops the side an experiment seated on (Stage 3d).

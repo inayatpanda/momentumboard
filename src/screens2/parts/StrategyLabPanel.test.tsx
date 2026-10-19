@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { Router } from 'wouter'
 import { memoryLocation } from 'wouter/memory-location'
@@ -58,14 +58,14 @@ const mount = () => render(
 describe('StrategyLabPanel', () => {
   it('shows an honest first-run placeholder instead of hiding the new engine', () => {
     render(<StrategyLabPanel lab={null} />)
-    expect(screen.getByLabelText('Research lab')).toHaveTextContent('waiting for its first post-upgrade engine run')
+    expect(screen.getByLabelText('Research lab')).toHaveTextContent('No research observations are available from the latest engine run')
     expect(screen.getByLabelText('Forecast sleeves awaiting first run')).toHaveTextContent('Social ignition')
   })
 
   it('surfaces sleeve status and its independently matured evidence', () => {
     mount()
     const statuses = screen.getByLabelText('Strategy sleeve status')
-    expect(within(statuses).getByText('2–3 day direction')).toBeInTheDocument()
+    expect(within(statuses).getByText('3-session read')).toBeInTheDocument()
     expect(within(statuses).getByText('18 matured')).toBeInTheDocument()
     expect(within(statuses).getByText('144 matured')).toBeInTheDocument()
   })
@@ -73,12 +73,121 @@ describe('StrategyLabPanel', () => {
   it('shows the forecast, reasons, risk, missing evidence and stock link', () => {
     mount()
     const panel = screen.getByLabelText('Research lab')
-    expect(panel).toHaveTextContent('Up 64%')
-    expect(panel).toHaveTextContent('Down 29%')
-    expect(panel).toHaveTextContent('Range -1.2% to +4.6%')
+    expect(panel).toHaveTextContent(/Up\s*64%/)
+    expect(panel).toHaveTextContent(/Down\s*29%/)
+    expect(panel).toHaveTextContent(/Range\s*-1.2% to \+4.6%/)
     expect(panel).toHaveTextContent('similar historical states finished higher 7 times')
     expect(panel).toHaveTextContent('earnings are inside the forecast window')
     expect(panel).toHaveTextContent('social breadth not confirmed')
     expect(within(panel).getByRole('link')).toHaveAttribute('href', '/app/stock/GOOGL')
   })
+
+  it('separates historical examples from live evidence and keeps research in shadow', () => {
+    mount()
+    const card = screen.getByRole('article', { name: 'GOOGL 3-session read research' })
+    expect(card).toHaveTextContent('18 historical analogues')
+    expect(card).toHaveTextContent('0 matured live forecasts')
+    expect(card).toHaveTextContent('shadow only')
+    expect(card).toHaveTextContent(/Flat\s*7%/)
+    expect(card).toHaveTextContent('Rank 73/100')
+  })
+
+  it('exposes uncertainty and failed skill against the base rate', () => {
+    render(<StrategyLabPanel symbol="GOOGL" observations={[{ ...short, forecast: {
+      ...short.forecast, probabilityUpInterval: [0.4, 0.8], baselineProbabilityUp: 0.55,
+      liveN: 42, brierScore: 0.3, brierSkillScore: -0.2,
+    } }]} />)
+    expect(screen.getByText(/Up frequency uncertainty/)).toHaveTextContent('40%–80%')
+    expect(screen.getByText(/Live Brier error/)).toHaveTextContent('no improvement against the recorded base-rate forecast')
+    expect(screen.getByText(/42 matured live forecasts/)).toBeInTheDocument()
+  })
+
+  it('lets readers inspect a strategy without implying missing observations are loading', () => {
+    mount()
+    fireEvent.click(screen.getByRole('tab', { name: 'Quality dip' }))
+    expect(screen.getByText('No observations for this strategy in the latest scan.')).toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'All strategies' }))
+    expect(screen.getByRole('link')).toBeInTheDocument()
+  })
+})
+
+
+describe('Research strategy interactions', () => {
+  const recovery: StrategyObservation = {
+    ...short, id: 'recovery:MSFT', sym: 'MSFT', sleeve: 'quality-dip',
+    reasons: ['Cash generation remains strong after the selloff'], risks: ['Recovery is not confirmed'],
+    metrics: { financialHealth: 'healthy', stabilising: false, worldTone: 'risk-off' },
+    forecast: { ...short.forecast, definition: 'target-before-stop-v1', probabilityTarget: null, horizonSessions: 63, calibratedN: 0 },
+  }
+  it('moves focus and filters with arrow keys, Home and End', () => {
+    render(<Router hook={memoryLocation().hook}><StrategyLabPanel lab={{ ...lab, observations: [short, recovery] }} /></Router>)
+    const all = screen.getByRole('tab', { name: 'All strategies' })
+    all.focus()
+    fireEvent.keyDown(all, { key: 'ArrowRight' })
+    const direction = screen.getByRole('tab', { name: '3-session read' })
+    expect(direction).toHaveFocus()
+    expect(direction).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('article', { name: /MSFT/ })).not.toBeInTheDocument()
+    fireEvent.keyDown(direction, { key: 'ArrowRight' })
+    const quality = screen.getByRole('tab', { name: 'Quality dip' })
+    expect(quality).toHaveFocus()
+    expect(screen.getByRole('article', { name: /MSFT/ })).toHaveTextContent('Cash generation remains strong')
+    expect(screen.queryByRole('article', { name: /GOOGL/ })).not.toBeInTheDocument()
+    fireEvent.keyDown(quality, { key: 'End' })
+    const social = screen.getByRole('tab', { name: 'Social ignition' })
+    expect(social).toHaveFocus()
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('No observations for this strategy')
+    fireEvent.keyDown(social, { key: 'Home' })
+    expect(all).toHaveFocus()
+    expect(screen.getAllByRole('article')).toHaveLength(2)
+  })
+
+  it('keeps research rank distinct from probability and shows unknown calibration honestly', () => {
+    render(<Router hook={memoryLocation().hook}><StrategyLabPanel observations={[recovery]} /></Router>)
+    const card = screen.getByRole('article')
+    expect(card).toHaveTextContent('Rank 73/100')
+    expect(card).toHaveTextContent('Target before stopUncalibrated')
+    expect(card).toHaveTextContent('0 matured campaigns')
+    expect(card).toHaveTextContent('Older scan')
+    expect(card).toHaveTextContent('Not confirmed')
+    expect(within(card).getByRole('link', { name: 'Open MSFT stock analysis' })).toHaveAttribute('href', '/stock/MSFT')
+  })
+
+  it('exposes forecast detail without nesting interactive controls in the stock link', () => {
+    mount()
+    const detail = screen.getByText('Forecast & evidence').closest('details')!
+    expect(detail).not.toHaveAttribute('open')
+    expect(detail.closest('a')).toBeNull()
+    fireEvent.click(screen.getByText('Forecast & evidence'))
+    expect(detail).toHaveAttribute('open')
+  })
+})
+
+
+it('explains report-conditioned recovery estimates as retrospective research', () => {
+  render(<StrategyLabPanel symbol="MSFT" observations={[{
+    ...short, id: 'recovery-learned', sym: 'MSFT', sleeve: 'quality-dip',
+    metrics: { reportTrend: 'improving', reportObservations: 5, reportLatestAvailableAt: 1_791_000_000 },
+    forecast: { ...short.forecast, definition: 'target-before-stop-v1', calibrationBasis: 'validated-report-trend', conditioningStatus: 'validated', conditioningReason: 'The historical cohort reduced error against the pooled baseline.', conditioningContext: 'improving', conditioningN: 35, conditioningValidationN: 22 },
+  }]} />)
+  expect(screen.getByLabelText('Recovery evidence')).toHaveTextContent('Report trajectoryimproving · 5 reports')
+  expect(screen.getByText(/Chronologically tested report-trend cohort/)).toHaveTextContent('reduced error against the pooled baseline')
+  expect(screen.getByText(/This is retrospective evidence/)).toBeVisible()
+  expect(screen.getByText(/22 chronological validation forecasts/)).toBeVisible()
+  expect(screen.getByText('shadow only')).toBeInTheDocument()
+})
+
+
+it('keeps a long cadence description out of the header while preserving it in methodology', () => {
+  const cadence = 'Scans run after the daily market close, with observations held until their declared horizon is complete.'
+  render(<Router hook={memoryLocation().hook}><StrategyLabPanel lab={{ ...lab, cadence }} /></Router>)
+  const badge = screen.getByText('Shadow research · daily')
+  expect(badge.closest('.research-section-head')).not.toHaveTextContent(cadence)
+  const methodology = screen.getByText('Strategy status & measurement').closest('details')!
+  expect(methodology).toHaveTextContent(cadence)
+  fireEvent.click(screen.getByText('Strategy status & measurement'))
+  expect(screen.getByText(cadence, { exact: false })).toBeVisible()
+  expect(screen.getByRole('tab', { name: '3-session read' })).toBeInTheDocument()
+  expect(screen.queryByText(/2–3 day/)).not.toBeInTheDocument()
 })

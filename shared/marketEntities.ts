@@ -51,3 +51,12 @@ export const normaliseTradableMention = (raw: string): string | null => {
   const entity = resolveMarketEntity(raw)
   return entity.tradable ? entity.symbol : null
 }
+
+// Explicit company names disambiguate speech-to-text mistakes; never remap a
+// bare CORE or RDW symbol (RDW is a different company). Verified against:
+// investors.coreweave.com/additional-resources/investor-faqs/default.aspx
+// investors.rocketlabcorp.com/resources/investor-faqs
+export function symbolForKnownCompany(name: string): string | null {
+  const key = name.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/(?:incorporated|corporation|inc|corp)$/, '')
+  return ({ coreweave: 'CRWV', rocketlab: 'RKLB', rocketlabs: 'RKLB', rocketlabusa: 'RKLB' } as Record<string, string>)[key] ?? null
+}

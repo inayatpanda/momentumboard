@@ -22,7 +22,7 @@ export function DecisionCockpit({ data }: { data: BoardSlice | null | undefined 
   return (
     <section className="decision-cockpit" aria-label="Decision cockpit">
       <div className="decision-cockpit-head">
-        <span><b>Decision cockpit</b> <span className="pill">2–3 sessions</span></span>
+        <span><b>Decision cockpit</b> <span className="pill">Published calls</span></span>
         <span className={`pill ${status}`}>{FRESHNESS_LABEL[read.freshness]}</span>
       </div>
       <div className="decision-cockpit-grid">

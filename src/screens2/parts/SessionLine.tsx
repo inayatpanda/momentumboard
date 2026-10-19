@@ -24,7 +24,7 @@
 
 import { useEffect, useState } from 'react'
 import { exchangeOpenNow, utcIsoDate } from '../../lib/marketClock'
-import { SESSIONS } from '../../../shared/rvol'
+import { sessionUtcHours } from '../../../shared/rvol'
 import { isUsMarketHoliday } from '../../../shared/usMarketHolidays'
 
 /** Past this gap the countdown stops being useful — nobody reads "opens in
@@ -43,10 +43,8 @@ export interface SessionRead {
 const instantAt = (d: Date, hour: number, dayOffset = 0) =>
   Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + dayOffset, Math.floor(hour), Math.round((hour % 1) * 60))
 
-/** Wall-clock label in the READER's zone (or an explicit one, for tests). The
- * session windows are UTC; a London reader's market closes at 21:00 in summer
- * and 20:00 in winter, and printing 20:00 all year is simply wrong half the
- * time. */
+/** Wall-clock label in the reader's zone. The exchange's DST transition can
+ * differ from the reader's, so display the actual instant for this date. */
 const hhmm = (ms: number, timeZone?: string) =>
   new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone }).format(new Date(ms))
 
@@ -64,10 +62,11 @@ const isTradingDay = (d: Date, dayOffset = 0): boolean => {
 function nextOpen(now: Date, nowMs: number): number {
   for (let i = 0; i < 14; i++) {
     if (!isTradingDay(now, i)) continue
-    const open = instantAt(now, SESSIONS.US.open, i)
+    const day = instantAt(now, 12, i)
+    const open = instantAt(now, sessionUtcHours('US', day / 1000).open, i)
     if (open > nowMs) return open
   }
-  return instantAt(now, SESSIONS.US.open, 14)
+  return instantAt(now, sessionUtcHours('US', instantAt(now, 12, 14) / 1000).open, 14)
 }
 
 const humanGap = (ms: number): string => {
@@ -84,7 +83,7 @@ export function usSessionRead(nowMs: number, timeZone?: string): SessionRead {
   const dow = now.getUTCDay()
   const weekend = dow === 0 || dow === 6
   const holiday = !weekend && isUsMarketHoliday(utcIsoDate(now))
-  const closeAt = instantAt(now, SESSIONS.US.close)
+  const closeAt = instantAt(now, sessionUtcHours('US', nowMs / 1000).close)
   // `exchangeOpenNow` carries the holiday check, which `isMarketOpen` does not:
   // 15:00 UTC on Thanksgiving is mid-session by the clock alone.
   if (exchangeOpenNow('US', nowMs)) {
