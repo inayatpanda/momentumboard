@@ -8,6 +8,10 @@ on:
         description: 'Optional public video ID already discovered by StreetSignal'
         type: string
         required: false
+      cached_only:
+        description: 'Publish saved results only, with no transcription API calls'
+        type: boolean
+        default: true
 permissions:
   contents: read
 concurrency:
@@ -15,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
-    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.YOUTUBE_FREE_TIER_CONFIRMED == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -31,7 +35,10 @@ jobs:
         run: npx tsx scripts/bg/capture-native-videos.mts
         env:
           VIDEO_ID: ${{ inputs.video_id || '' }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NATIVE_CACHED_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.cached_only == true }}
+          NATIVE_FREE_TIER_CONFIRMED: ${{ vars.YOUTUBE_FREE_TIER_CONFIRMED }}
+          # Never fall back to the application's potentially billable key.
+          GEMINI_YOUTUBE_FREE_API_KEY: ${{ vars.YOUTUBE_FREE_TIER_CONFIRMED == 'true' && inputs.cached_only != true && secrets.GEMINI_YOUTUBE_FREE_API_KEY || '' }}
           APP_TOKEN: ${{ secrets.APP_TOKEN }}
           STORE_BACKEND: d1
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

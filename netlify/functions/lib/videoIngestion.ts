@@ -19,7 +19,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; buffered: number }>('video-local-runner'),
     store.read<{ ytChannels?: { id: string; name: string }[] }>('config'),
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; attempted: number; captions: number; speech: number; reused?: number; status: string; reasons: Record<string, number> }>('video-github-runner'),
-    store.read<{ at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; status: string }>('video-native-runner'),
+    store.read<{ at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; scheduled?: boolean; status: string }>('video-native-runner'),
   ])
   const completed = new Set(extracts.map(v => videoKey(v.url)))
   const watched = new Set(analyses.map(v => videoKey(v.url)))
@@ -60,6 +60,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     nativeRunner: nativeRunner ? {
       at: nativeRunner.at, running: nativeRunner.running, published: nativeRunner.published, attempted: nativeRunner.attempted,
       failed: nativeRunner.failed, reused: nativeRunner.reused, capped: nativeRunner.capped, status: nativeRunner.status,
+      scheduled: nativeRunner.scheduled === true,
       stale: nowSec - nativeRunner.at > 18 * 3600,
     } : null,
     githubRunner: githubRunner ? {

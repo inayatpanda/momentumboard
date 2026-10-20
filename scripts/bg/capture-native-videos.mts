@@ -11,10 +11,14 @@ async function main() {
   await configureStoreForScript()
   const target = process.env.VIDEO_ID
   if (target && !/^[A-Za-z0-9_-]{11}$/.test(target)) throw new Error('invalid-target')
+  const cachedOnly = process.env.NATIVE_CACHED_ONLY === 'true'
+  const scheduled = process.env.NATIVE_FREE_TIER_CONFIRMED === 'true'
+  const freeKey = process.env.GEMINI_YOUTUBE_FREE_API_KEY ?? ''
+  if (!cachedOnly && (!scheduled || !freeKey)) throw new Error('free-tier-not-configured')
   const now = Math.floor(Date.now() / 1000)
   const lease = await acquireLease(appStore, 'lease:github-native-videos', now, 12 * 60)
   if (!lease) throw new Error('native-running')
-  const status = { at: now, running: true, published: 0, attempted: 0, failed: 0, reused: 0, capped: false, status: 'running' }
+  const status = { at: now, running: true, published: 0, attempted: 0, failed: 0, reused: 0, capped: false, scheduled, status: 'running' }
   try {
     await appStore.write('video-native-runner', status)
     const inbox = await appStore.read<InboxVideo[]>('video-inbox') ?? []
@@ -31,6 +35,10 @@ async function main() {
       // Caption-backed jobs stay on the normal extraction lane. A saved native
       // draft can be published without another API call, even after a restart.
       if (!draft && hadWords) continue
+      if (cachedOnly && (!draft || !nativeDraftText(draft))) {
+        if (target) throw new Error('no-saved-draft')
+        continue
+      }
       processed++
       if (!draft || !nativeDraftText(draft)) {
         if (new Date().getUTCHours() < 8 || !await reserveSocialBudget(appStore, 'gemini-extract', Math.floor(Date.now() / 1000))) {
@@ -39,7 +47,7 @@ async function main() {
         }
         status.attempted++
         try {
-          draft = await readNativeVideo(video.url, process.env.GEMINI_API_KEY ?? '')
+          draft = await readNativeVideo(video.url, freeKey)
           await appStore.write(`video-native-draft:${id}`, draft)
         } catch (error) {
           status.failed++

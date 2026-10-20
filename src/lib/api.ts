@@ -365,7 +365,7 @@ export interface StreetWire {
     githubRunner?: { at: number; running: boolean; status: string; saved: number; unavailable: number; attempted: number; captions: number; speech: number; reused?: number; blocked: number; stale: boolean } | null
     githubLastSavedAt?: number | null
     githubTranscriptCount?: number
-    nativeRunner?: { at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; status: string; stale: boolean } | null
+    nativeRunner?: { at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; scheduled?: boolean; status: string; stale: boolean } | null
     provider?: { checkedAt: number; status: string; plan?: string; remainingCredits?: number } | null
     localLastSavedAt?: number | null
     localSpeechCount?: number
