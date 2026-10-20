@@ -75,24 +75,25 @@ function VideoHealth({ health, onRefresh }: { health: StreetWire['videoIngestion
     <h2 className="sec-label">YouTube processing</h2>
     <button type="button" className="pill" onClick={onRefresh}>Check for updates</button>
     {health.nativeRunner && <div className="cc-reason">
-      <p><strong>Free cloud video research</strong><br />{health.nativeRunner.running ? 'Reading new videos and saving findings.' : health.nativeRunner.status === 'error' ? 'The last read needs attention; saved progress is retained.' : `${health.nativeRunner.published} findings updates · ${health.nativeRunner.failed} unsuccessful on the last run.`} Last checked {relativeStamp(health.nativeRunner.at)}.</p>
-      <p>{health.nativeRunner.scheduled ? 'Checks your followed channels every hour while your Mac is off. Saved captions are read first. Other videos are processed in consecutive sections through to the ending, with progress saved between runs. Channels take turns.' : 'Automatic reads are paused. Saved results can still be published without another transcription call.'}</p>
-      <p>Free processing budget: up to 7 hours of video sections and 400 requests per day. This leaves some of the shared project’s allowance for your other app. Actual throughput depends on video lengths, access and Google’s available quota. No paid fallback.</p>
-      {health.nativeRunner.dailyRequests != null && <p>{health.nativeRunner.dailyMinutes} of {health.nativeRunner.minuteLimit} video minutes reserved today · {health.nativeRunner.dailyRequests} of {health.nativeRunner.requestLimit} requests. Failed requests also count. Resets at midnight Pacific time.</p>}
-      {health.nativeRunner.pending != null && <p>{health.nativeRunner.pending} waiting or in progress · {health.nativeRunner.partial} partly read · {health.nativeRunner.completed} finished · {health.nativeRunner.endReported} with an ending reported by AI but duration unconfirmed.</p>}
+      <div className="cloud-status-title"><div><strong>Free cloud video research</strong><span>{health.nativeRunner.scheduled ? 'Hourly · Your Mac can stay off' : 'Automatic reads paused'}</span></div><span className="cloud-state">{health.nativeRunner.running ? 'Processing' : health.nativeRunner.capped ? 'Waiting' : health.nativeRunner.status === 'error' ? 'Needs attention' : 'Ready'}</span></div>
+      <p>{health.nativeRunner.running ? 'Reading new videos and saving findings.' : health.nativeRunner.status === 'error' ? 'The last read needs attention; saved progress is retained.' : `${health.nativeRunner.published} findings updates · ${health.nativeRunner.failed} unsuccessful on the last run.`} Checked {relativeStamp(health.nativeRunner.at)}.</p>
+      {health.nativeRunner.dailyRequests != null && <div className="cloud-allowance"><div><span>Video time used</span><strong>{health.nativeRunner.dailyMinutes} <small>/ {health.nativeRunner.minuteLimit} min</small></strong><progress aria-label="Daily video allowance used" value={health.nativeRunner.dailyMinutes} max={health.nativeRunner.minuteLimit} /></div><div><span>Analysis requests</span><strong>{health.nativeRunner.dailyRequests} <small>/ {health.nativeRunner.requestLimit}</small></strong><progress aria-label="Daily analysis allowance used" value={health.nativeRunner.dailyRequests} max={health.nativeRunner.requestLimit} /></div></div>}
+      {health.nativeRunner.pending != null && <p className="cloud-counts"><span><strong>{health.nativeRunner.completed}</strong> finished</span><span><strong>{health.nativeRunner.partial}</strong> partly read</span><span><strong>{health.nativeRunner.pending}</strong> waiting or in progress</span></p>}
       {health.nativeRunner.capped && <p>{health.nativeRunner.pauseReason === 'provider-quota' ? 'Google’s free capacity is temporarily unavailable.' : 'The free processing allowance or service limit has been reached.'} Saved sections are retained; unfinished videos will resume{health.nativeRunner.retryAt ? ` after ${new Date(health.nativeRunner.retryAt * 1000).toLocaleString()}` : ' when capacity returns'}.</p>}
       {health.nativeRunner.stale && <p>No recent check-in; check the cloud run for delays.</p>}
+      <details className="company-detail"><summary>How free processing works</summary><p>Saved captions are read first. Other videos continue in consecutive sections with progress saved between hourly runs. Your followed channels take turns.</p><p>Up to 7 hours of video sections and 400 requests per day. Actual throughput depends on lengths, access and the shared project’s free quota. Failed attempts count. The allowance resets at midnight Pacific time. No paid fallback.</p><p>{health.nativeRunner.endReported ?? 0} videos have an ending reported by AI without independent duration confirmation. Partial reads and unconfirmed endings are labelled in Videos.</p></details>
       <a href="https://github.com/inayatpanda/momentumboard/actions/workflows/youtube-native-capture.yml" target="_blank" rel="noopener noreferrer">View direct video reads ↗</a>
     </div>}
     {!!health.nativeProgress?.length && <details><summary>Full-video queue ({health.nativeProgress.length} shown)</summary><ul>{health.nativeProgress.map(w => <li key={w.url}><a href={w.url} target="_blank" rel="noopener noreferrer">{w.title}</a><p className="cc-reason">{w.mode === 'captions' ? 'Reading saved captions' : `${Math.round(w.processedSeconds / 60)} minutes processed${w.sourceDurationSeconds ? ` of ${Math.ceil(w.sourceDurationSeconds / 60)}` : ' · source duration not confirmed'}`} · {w.stage === 'needs-attention' ? 'Repeated access failures' : w.stage === 'retry' ? 'Waiting to retry' : 'Queued to continue'}</p></li>)}</ul></details>}
-    {health.githubRunner && <div className="cc-reason">
+    {health.githubRunner && <details className="company-detail cc-reason"><summary>Fallback caption & audio capture</summary>
       <p><strong>Cloud collector · GitHub</strong><br />{health.githubRunner.stale ? 'No recent check-in. The schedule may be delayed or stopped.' : health.githubRunner.status === 'error' ? 'The last run stopped early; saved progress is retained.' : health.githubRunner.running ? 'Checking captions and transcribing available audio.' : `${health.githubRunner.saved} saved${health.githubRunner.reused ? ` · ${health.githubRunner.reused} already available` : ''} · ${health.githubRunner.unavailable} unavailable on the last run.`} Last seen {relativeStamp(health.githubRunner.at)}.</p>
       <p>Scheduled every three hours, even when your Mac is off. Up to 12 videos and two audio transcriptions per run. {health.githubLastSavedAt ? `Latest cloud transcript ${relativeStamp(health.githubLastSavedAt)}.` : 'No cloud transcript saved yet.'}</p>
       {health.githubRunner.blocked > 0 && <p>YouTube blocked access to {health.githubRunner.blocked} videos on the last run. They remain pending for later retries.</p>}
       <a href="https://github.com/inayatpanda/momentumboard/actions/workflows/youtube-capture.yml" target="_blank" rel="noopener noreferrer">View cloud runs ↗</a>
-    </div>}
+    </details>}
     {health.localRunner && <details><summary>Optional Mac backup</summary><p className="cc-reason">{health.localRunner.stale ? 'Not seen recently; resumes when the Mac is awake and connected' : health.localRunner.running ? 'Capturing videos' : `${health.localRunner.saved} saved on its last run`}. Last seen {relativeStamp(health.localRunner.at)}{health.localRunner.buffered ? ` · ${health.localRunner.buffered} captured transcripts waiting to upload` : ''}. This can fill gaps when YouTube blocks cloud access.</p></details>}
     {health.provider && <details><summary>Transcript provider</summary><p className="cc-reason">Supadata: {health.provider.status === 'exhausted' ? 'no credits remaining' : health.provider.status}{health.provider.plan ? ` · ${health.provider.plan}` : ''} · checked {relativeStamp(health.provider.checkedAt)}. GitHub and Mac capture work independently of this subscription.</p></details>}
+    <details className="company-detail"><summary>Other processing queues & retries</summary>
     <p className="cc-reason">{health.pendingTranscripts} awaiting captions · {health.queued} queued analyses · {health.deferred} deferred · {health.failed} failed</p>
     <p className="cc-reason">{health.lastExtractAt ? `Latest completed analysis ${relativeStamp(health.lastExtractAt)}.` : 'No completed video analysis yet.'} {health.nextRetryAt ? `Next retry eligible ${new Date(health.nextRetryAt * 1000).toLocaleString()}; completion depends on the next worker run.` : ''}</p>
     {(health.pendingTranscripts > 0 || health.deferred > 0) && <p className="cc-reason">Caption access and daily analysis limits can delay videos. Refresh checks progress; it does not start a new analysis.</p>}
@@ -101,6 +102,7 @@ function VideoHealth({ health, onRefresh }: { health: StreetWire['videoIngestion
       <summary>Recent processing problems</summary>
       <ul>{health.recentFailures.map((failure, i) => <li key={`${failure.at}-${i}`}>{failure.title || 'Video'}: {failure.reason}</li>)}</ul>
     </details>}
+    </details>
   </section>
 }
 
@@ -146,7 +148,7 @@ function PicksSection({ consensus, board, openCalls }: { consensus: ChannelPick[
  * video input… a section of their own": one card a video, newest first. */
 function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; channel: string; onChannel: (name: string) => void }) {
   const [visible, setVisible] = useState(WIRE_PAGE)
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('stock')?.slice(0, 15) ?? '')
   const [sourcedOnly, setSourcedOnly] = useState(false)
   const filtered = filterStreetVideos(videos, channel, query, sourcedOnly)
   return (
@@ -268,7 +270,7 @@ export default function Street2() {
   const { refresh, refreshing } = useSlicesRefresh(REFRESH_ENTRIES)
   const { pull } = usePullRefresh(refresh)
 
-  const [view, setView] = useState<'insights' | 'videos' | 'tracking'>('insights')
+  const [view, setView] = useState<'insights' | 'videos' | 'tracking'>(() => new URLSearchParams(window.location.search).has('stock') ? 'videos' : 'insights')
   const [channel, setChannel] = useState('')
   const videos = useMemo(() => latestStreetVideos(wire?.videos ?? []), [wire?.videos])
   const openChannel = (name: string) => { setChannel(name); setView('videos') }

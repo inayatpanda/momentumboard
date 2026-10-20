@@ -24,6 +24,7 @@ export function PriceChart({
   height = 300,
   interactive = false,
   intraday = false,
+  initialDisplay = 'candles',
 }: {
   candles: Candle[]
   priceLines?: PriceLineSpec[]
@@ -38,12 +39,13 @@ export function PriceChart({
   // show clock times — and in the reader's own timezone, which lightweight-
   // charts cannot do, so the bars are shifted onto it (toLocalBars).
   intraday?: boolean
+  initialDisplay?: ChartDisplay
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi>()
-  const [display, setDisplay] = useState<ChartDisplay>('candles')
-  const [showMAs, setShowMAs] = useState(true)
-  const [showVolume, setShowVolume] = useState(true)
+  const [display, setDisplay] = useState<ChartDisplay>(initialDisplay)
+  const [showMAs, setShowMAs] = useState(initialDisplay === 'candles')
+  const [showVolume, setShowVolume] = useState(initialDisplay === 'candles')
   const [inspected, setInspected] = useState<Candle | null>(() => candles.at(-1) ?? null)
 
   useEffect(() => setInspected(candles.at(-1) ?? null), [candles])

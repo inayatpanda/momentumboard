@@ -249,6 +249,25 @@ describe('Stocks', () => {
   })
 
   describe('watchlist rows', () => {
+    it('shows a labelled chart quote when the live batch is unavailable', async () => {
+      await db.watchlist.put({ symbol: 'NVDA', addedAt: 1, riskClass: 'normal' })
+      await writeSlice('quotes:NVDA', [null])
+      await writeSlice('candles:NVDA:3mo', { candles: mkCandles(), quote: mkQuote('NVDA') })
+      withRouter()
+      expect(await screen.findByText('$128.40')).toHaveClass('stale')
+      expect(screen.getByText('Chart quote')).toBeInTheDocument()
+    })
+    it('filters the watchlist by sector without confusing it with invested allocation', async () => {
+      await db.watchlist.bulkPut(['AAPL', 'JPM'].map(symbol => ({ symbol, addedAt: 1, riskClass: 'normal' as const })))
+      withRouter()
+      const filter = await screen.findByRole('group', { name: 'Filter watchlist by sector' })
+      fireEvent.click(await within(filter).findByRole('button', { name: 'Technology 1' }))
+      expect(await screen.findByText('AAPL')).toBeInTheDocument()
+      expect(screen.queryByText('JPM')).not.toBeInTheDocument()
+      expect(screen.getByText(/not money invested/)).toBeInTheDocument()
+      fireEvent.click(within(filter).getByRole('button', { name: 'All 2' }))
+      expect(await screen.findByText('JPM')).toBeInTheDocument()
+    })
     // owner 2026-08-17: "are the prices of stocks being gathered live now?" —
     // the market-hours ticker (useLiveQuotes) now runs on the WATCHLIST too,
     // not just Today's call cards, and its fresher row beats the slice's.
@@ -456,11 +475,15 @@ describe('Stocks', () => {
       await db.watchlist.put({ symbol: 'NVDA', addedAt: 1, riskClass: 'normal' })
       await writeSlice('quotes:NVDA', [mkQuote('NVDA')])
       withRouter()
+      expect(screen.queryByRole('button', { name: /remove nvda/i })).not.toBeInTheDocument()
+      fireEvent.click(await screen.findByRole('button', { name: 'Edit watchlist' }))
       const removeBtn = await screen.findByRole('button', { name: /remove nvda/i })
       fireEvent.click(removeBtn)
       await waitFor(() => expect(screen.queryByText('NVDA')).not.toBeInTheDocument())
       expect(mirrorConfig).toHaveBeenCalled()
       expect(await db.watchlist.get('NVDA')).toBeUndefined()
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+      await waitFor(async () => expect(await db.watchlist.get('NVDA')).toBeTruthy())
     })
 
     it('adding a mover from the rail writes it to Dexie and calls mirrorConfig', async () => {

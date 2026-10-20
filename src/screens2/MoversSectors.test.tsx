@@ -161,7 +161,7 @@ describe('Movers', () => {
     expect(climbed.style.transform).toBe('translate(0px, 100px)') // it came from two rows down
   })
 
-  it('null price renders dash, not fabricated $0.00 or pill', async () => {
+  it('null price is explicitly unavailable, not fabricated $0.00 or pill', async () => {
     await writeSlice('movers', {
       gainers: [mkMover('NULLPX', 0, { price: null, changePct: null })],
       losers: [],
@@ -171,8 +171,8 @@ describe('Movers', () => {
     withRouter('/app/stocks/movers', 'movers')
 
     await screen.findByText('NULLPX')
-    // Should show dash, not $0.00
-    expect(screen.getByText('—')).toBeInTheDocument()
+    // Missing provider data is labelled instead of appearing as a zero price.
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
     expect(document.body.textContent).not.toContain('$0.00')
     // Should not render a pill with false +0.00%
     expect(document.body.textContent).not.toContain('+0.00%')

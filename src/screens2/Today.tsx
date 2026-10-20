@@ -126,6 +126,7 @@ export default function Today() {
           : blob === null ? <div aria-label="Loading board"><div className="skeleton" style={{ height: 118, marginBottom: 10 }} /><div className="skeleton" style={{ height: 118 }} /></div>
           : sized.length === 0 ? <p className="research-empty">{clearedButUnsized ? NO_SIZED_NO_ROUTE : NO_SIZED_TODAY}</p>
           : <div className={`today-cards${mobile ? ' brief-call-list' : ''}`}>{sized.map(row => <CallCard key={row.id} row={row} quote={liveQuotes[row.sym]} compact={mobile} />)}</div>}
+        {mobile && blob && sized.length === 0 && <button type="button" className="brief-research-link" onClick={() => setView('research')}>Explore research ideas <span aria-hidden="true">→</span><small>Quality dips, shorter-term setups and their evidence</small></button>}
         <IntradayFlagsStrip blob={data?.intradayFlags ?? null} />
         <OpenCallsStrip entries={data?.openTrace?.entries} closed={data?.openTrace?.closed} />
         <CountsRail board={rows} />

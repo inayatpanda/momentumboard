@@ -14,6 +14,7 @@ import { SessionLine } from './parts/SessionLine'
 import { useLiveQuotes } from '../lib/useLiveQuotes'
 import { searchStocks, useStockDirectory } from '../lib/stockDirectory'
 import { StockDiscovery } from './parts/StockDiscovery'
+import { WatchlistSectors, watchSector } from './parts/WatchlistSectors'
 
 const StockMarkets = lazy(() => import('./parts/StockMarkets'))
 
@@ -31,9 +32,9 @@ const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
  * and orphans the old key's continuations (and, since the final wave, pins each
  * load's fetcher to the key it was made for). A fresh instance per watchlist is
  * still the clearer thing to reason about, so it stays. */
-function WatchlistRows({ items, onRemove, names }: { items: WatchItem[]; names: Map<string, string>; onRemove: (sym: string) => void }) {
+function WatchlistRows({ items, onRemove, names }: { items: WatchItem[]; names: Map<string, string>; onRemove?: (sym: string) => void }) {
   const symbols = items.map(i => i.symbol)
-  const { data: quotes } = useSlice(`quotes:${symbols.join(',')}`, () => getQuotes(symbols))
+  const { data: quotes, error, refresh, refreshing } = useSlice(`quotes:${symbols.join(',')}`, () => getQuotes(symbols))
   // the market-hours ticker (owner 2026-08-17: "are the prices of stocks being
   // gathered live now?"): 45s revalidation while visible and the market is
   // open, same gates as Today's call cards. Its row is fresher than the
@@ -42,15 +43,14 @@ function WatchlistRows({ items, onRemove, names }: { items: WatchItem[]; names: 
   const quoteFor = (sym: string): Quote | null => {
     const fresh = live[sym.toUpperCase()]
     if (fresh) return fresh
-    const i = symbols.indexOf(sym)
-    return i === -1 ? null : (quotes?.[i] ?? null)
+    return quotes?.find(q => q?.symbol === sym) ?? null
   }
   return (
-    <div className="stx-watchlist">
+    <>{error && <p className="watch-price-status" role="status">Live prices could not refresh. Available chart quotes are labelled. <button onClick={refresh} disabled={refreshing}>Retry prices</button></p>}<div className="stx-watchlist">
       {items.map(i => (
-        <StockRow key={i.symbol} symbol={i.symbol} name={quoteFor(i.symbol)?.name ?? names.get(i.symbol)} quote={quoteFor(i.symbol)} onRemove={() => onRemove(i.symbol)} />
+        <StockRow key={i.symbol} symbol={i.symbol} name={quoteFor(i.symbol)?.name ?? names.get(i.symbol)} quote={quoteFor(i.symbol)} onRemove={onRemove ? () => onRemove(i.symbol) : undefined} />
       ))}
-    </div>
+    </div></>
   )
 }
 
@@ -63,6 +63,9 @@ export default function Stocks() {
   const [section, setSection] = useState<'watchlist' | 'discover' | 'markets'>('watchlist')
   const [sector, setSector] = useState('')
   const [showAll, setShowAll] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [watchFilter, setWatchFilter] = useState('')
+  const [removed, setRemoved] = useState<WatchItem | null>(null)
   const { data: directory, error: directoryError } = useStockDirectory()
   const names = useMemo(() => new Map(directory?.rows.map(r => [r.sym, r.name])), [directory])
 
@@ -102,7 +105,9 @@ export default function Stocks() {
     { key: 'movers', fetcher: getMovers },
     { key: 'sectors', fetcher: getSectors },
   ]
-  const visibleSymbols = showAll ? symbols : symbols.slice(0, 6)
+  const filteredItems = watchFilter ? items.filter(i => watchSector(i.symbol, directory?.rows ?? []) === watchFilter) : items
+  const visibleItems = showAll ? filteredItems : filteredItems.slice(0, 6)
+  const visibleSymbols = visibleItems.map(i => i.symbol)
   if (visibleSymbols.length) refreshEntries.push({ key: `quotes:${visibleSymbols.join(',')}`, fetcher: () => getQuotes(visibleSymbols) })
   const { refresh, refreshing } = useSlicesRefresh(refreshEntries)
   const { pull } = usePullRefresh(refresh)
@@ -117,9 +122,17 @@ export default function Stocks() {
   }
 
   const remove = async (symbol: string) => {
+    const item = items.find(i => i.symbol === symbol)
     await db.watchlist.delete(symbol)
     setItems(s => s.filter(i => i.symbol !== symbol))
+    setRemoved(item ?? null)
     mirrorConfig()
+  }
+  const undoRemove = async () => {
+    if (!removed) return
+    await db.watchlist.put(removed)
+    setItems(s => s.some(i => i.symbol === removed.symbol) ? s : [...s, removed].sort((a, b) => a.symbol.localeCompare(b.symbol)))
+    setRemoved(null); mirrorConfig()
   }
 
   const handleSearch = (e: FormEvent<HTMLFormElement>) => {
@@ -140,7 +153,7 @@ export default function Stocks() {
   return (
     <div className="stx">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
-      <div className="stocks-title"><div><p className="stocks-eyebrow">YOUR MARKET, IN FOCUS</p><h1>Stocks</h1></div><Link href="/more/street" className="stocks-channel-link">Channel insights ↗</Link></div>
+      <div className="stocks-title"><div><p className="stocks-eyebrow">YOUR MARKET, IN FOCUS</p><h1>Stocks</h1></div><button type="button" className="stocks-refresh" aria-label="Refresh stocks" disabled={refreshing} onClick={refresh}>↻</button></div>
       {/* the session's own state (dynamism wave) — a watchlist of flat prices
           reads as broken until the line above it says the market is shut */}
       <SessionLine />
@@ -164,17 +177,25 @@ export default function Stocks() {
       {searchError && <p className="stx-search-error">Enter a valid ticker — letters, numbers, &quot;.&quot; or &quot;-&quot;, up to 12 characters.</p>}
 
       <div className="stocks-tabs" role="tablist" aria-label="Stock views">
-        {(['watchlist', 'discover', 'markets'] as const).map(key => <button key={key} role="tab" id={`stock-tab-${key}`} aria-controls="stock-view" aria-selected={(query.trim() ? 'discover' : section) === key} onClick={() => { setQuery(''); setSearchError(false); setSection(key) }}>{key === 'watchlist' ? 'Watchlist' : key === 'discover' ? 'Discover' : 'Markets'}</button>)}
+        {(['watchlist', 'discover', 'markets'] as const).map((key, index, tabs) => <button key={key} role="tab" id={`stock-tab-${key}`} aria-controls="stock-view" tabIndex={(query.trim() ? 'discover' : section) === key ? 0 : -1} aria-selected={(query.trim() ? 'discover' : section) === key}
+          onClick={() => { setQuery(''); setSearchError(false); setSection(key) }} onKeyDown={event => {
+            const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
+            if (next >= 0) { event.preventDefault(); setQuery(''); setSearchError(false); setSection(tabs[next]); document.getElementById(`stock-tab-${tabs[next]}`)?.focus() }
+          }}>{key === 'watchlist' ? 'Watchlist' : key === 'discover' ? 'Discover' : 'Markets'}</button>)}
       </div>
       <div id="stock-view" role="tabpanel" aria-labelledby={`stock-tab-${query.trim() ? 'discover' : section}`}>
       {query.trim() || section === 'discover' ? <StockDiscovery directory={directory} error={directoryError} query={query} sector={sector} onSector={setSector} watchSymbols={new Set(symbols)} onAdd={add} /> : section === 'watchlist' ? <>
-        <div className="discovery-heading"><h2>Your watchlist <span className="stocks-count">{items.length}</span></h2><span className="cc-reason">Price · day change</span></div>
-        {!watchLoaded ? <div className="skeleton" style={{ height: 280 }} /> : !items.length ? <div className="stocks-empty"><p>Your watchlist is empty.</p><p>Find a company you want to follow, then tap +.</p><button onClick={() => setSection('discover')}>Discover stocks</button></div> : <WatchlistRows key={symbols.slice(0, showAll ? undefined : 6).join(',')} items={showAll ? items : items.slice(0, 6)} onRemove={remove} names={names} />}
-        {items.length > 6 && <button className="discovery-more" onClick={() => setShowAll(v => !v)}>{showAll ? 'Show fewer' : `View all ${items.length} stocks`}</button>}
+        <div className="discovery-heading"><div><h2>{watchFilter || 'Your watchlist'} <span className="stocks-count">{filteredItems.length}</span></h2><span className="cc-reason">Price · day change · 3-month trend</span></div>{items.length > 0 && <button className="stocks-text-link" aria-pressed={editing} onClick={() => setEditing(v => !v)}>{editing ? 'Done' : 'Edit watchlist'}</button>}</div>
+        {watchFilter && <button className="discovery-back" onClick={() => setWatchFilter('')}>← All watched stocks</button>}
+        {removed && <div className="watch-undo" role="status">{removed.symbol} removed <button onClick={undoRemove}>Undo</button></div>}
+        {!watchLoaded ? <div className="skeleton" style={{ height: 280 }} /> : !items.length ? <div className="stocks-empty"><p>Your watchlist is empty.</p><p>Find a company you want to follow, then tap +.</p><button onClick={() => setSection('discover')}>Discover stocks</button></div> : !visibleItems.length ? <p className="cc-reason">No watched stocks remain in this sector.</p> : <WatchlistRows key={visibleSymbols.join(',')} items={visibleItems} onRemove={editing ? remove : undefined} names={names} />}
+        {filteredItems.length > 6 && <button className="discovery-more" onClick={() => setShowAll(v => !v)}>{showAll ? 'Show fewer' : `View all ${filteredItems.length} stocks`}</button>}
+        {!!directory && <WatchlistSectors symbols={symbols} directory={directory.rows} selected={watchFilter} onSelect={value => { setWatchFilter(value); setShowAll(false) }} />}
         <section className="stocks-sector-preview" aria-label="Browse by sector"><div className="discovery-heading"><h2>Explore sectors</h2><button className="stocks-text-link" onClick={() => { setSector(''); setSection('discover') }}>View all →</button></div>
           <div className="sector-preview-grid">{[['Technology', '◈'], ['Healthcare', '✚'], ['Financials', '▥'], ['Energy', '◉']].map(([name, icon]) => <button key={name} onClick={() => { setSector(name); setSection('discover') }}><span aria-hidden="true">{icon}</span><strong>{name}</strong><span aria-hidden="true">↗</span></button>)}</div>
         </section>
         <Link href="/today" className="stocks-today-link"><span><strong>Today’s research</strong><small>Market context, stock setups and what changed</small></span><span aria-hidden="true">→</span></Link>
+        <Link href="/more/street" className="stocks-today-link"><span><strong>From your channels</strong><small>Latest video findings and supporting evidence</small></span><span aria-hidden="true">→</span></Link>
       </> : <Suspense fallback={<p role="status">Loading markets…</p>}><StockMarkets watchSymbols={new Set(symbols)} onAdd={add} /></Suspense>}
       </div>
     </div>

@@ -27,7 +27,7 @@ vi.mock('../lib/apiViews', async () => {
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api')
   const notMocked = () => Promise.reject(new Error('not mocked in this test'))
-  return { ...actual, getCandles: vi.fn(notMocked), getNews: vi.fn(notMocked), getFilings: vi.fn(notMocked), getBusinessHealth: vi.fn(notMocked) }
+  return { ...actual, getCandles: vi.fn(notMocked), getNews: vi.fn(notMocked), getFilings: vi.fn(notMocked), getBusinessHealth: vi.fn(notMocked), getStreetWire: vi.fn(notMocked) }
 })
 vi.mock('../lib/configMirror', () => ({ mirrorConfig: vi.fn() }))
 
@@ -141,16 +141,40 @@ beforeEach(async () => {
 })
 
 describe('StockPage', () => {
+  it('shows only this company’s recent channel evidence with an honest partial-video label', async () => {
+    await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
+    await writeSlice('street:wire', { at: 1, consensus: [], reads: [], videos: [
+      { url: 'https://youtu.be/abcdefghijk', channel: 'Selected channel', title: 'NVIDIA demand', at: 1, tickers: [{ sym: 'NVDA', stance: 'bull', thesis: 'Demand discussion' }], themes: [], via: 'gemini-video', nativeTranscript: { model: 'video', characters: 120, limitSeconds: 600, reportedDurationSeconds: null, reportedComplete: false, excerpt: 'AI words', progress: { completion: 'partial', processedSeconds: 600, sections: 1, sourceDurationSeconds: null } } },
+      { url: 'https://youtu.be/abcdefghijl', channel: 'Other channel', title: 'Apple story', at: 1, tickers: [{ sym: 'AAPL', stance: 'bull' }], themes: [] },
+    ] })
+    withRouter('NVDA')
+    fireEvent.click(screen.getByRole('tab', { name: 'Research' }))
+    expect(await screen.findByText('NVIDIA demand ↗')).toBeVisible()
+    expect(screen.queryByText('Apple story ↗')).not.toBeInTheDocument()
+    expect(screen.getByText(/full coverage unconfirmed/)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'View feed ↗' })).toHaveAttribute('href', '/app/more/street?stock=NVDA')
+  })
+  it('lets a scanned company be followed and unfollowed from the header', async () => {
+    await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
+    withRouter('NVDA')
+    const follow = await screen.findByRole('button', { name: 'Follow NVDA' })
+    await waitFor(() => expect(follow).toBeEnabled())
+    fireEvent.click(follow)
+    await waitFor(async () => expect(await db.watchlist.get('NVDA')).toBeTruthy())
+    fireEvent.click(await screen.findByRole('button', { name: 'Unfollow NVDA' }))
+    await waitFor(async () => expect(await db.watchlist.get('NVDA')).toBeUndefined())
+  })
   it('names the symbol in an h1', async () => {
     await writeSlice('journey:NVDA', mkJourney())
     withRouter('NVDA')
     expect(await screen.findByRole('heading', { level: 1, name: /NVDA/ })).toBeInTheDocument()
-    const sectionNav = screen.getByRole('navigation', { name: 'Company research sections' })
-    expect(within(sectionNav).getByRole('link', { name: 'Report history' })).toHaveAttribute('href', '#NVDA-business')
-    expect(document.getElementById('NVDA-business')).toBeInTheDocument()
+    const sectionNav = screen.getByRole('tablist', { name: 'Company research sections' })
+    fireEvent.click(within(sectionNav).getByRole('tab', { name: 'Business' }))
+    expect(screen.getByRole('tabpanel', { name: 'Business' })).toBeVisible()
+    expect(document.getElementById('NVDA-business')).toBeVisible()
   })
 
-  it('renders the ratified sections in DOM order, with engine research before past calls', async () => {
+  it('keeps the overview focused and reveals history and tools through their tabs', async () => {
     await seedCandles('NVDA')
     await writeSlice(
       'journey:NVDA',
@@ -163,8 +187,14 @@ describe('StockPage', () => {
     const { container } = withRouter('NVDA')
     expect(await screen.findByTestId('price-chart')).toBeInTheDocument()
     await screen.findByLabelText('Past calls')
-    const labels = [...container.querySelectorAll('section[aria-label]')].map(s => s.getAttribute('aria-label'))
-    expect(labels.slice(0, 7)).toEqual(['Price chart', "The engine's verdict", 'Factor votes', 'The funnel path', 'NVDA research lab', 'Business health', 'Past calls'])
+    expect(screen.getByRole('tabpanel', { name: 'Overview' })).toBeVisible()
+    expect(screen.getByLabelText('Past calls')).not.toBeVisible()
+    fireEvent.click(screen.getByRole('tab', { name: 'Research' }))
+    expect(screen.getByLabelText('Past calls')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Recent channel evidence' })).toBeVisible()
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }))
+    expect(screen.getByRole('region', { name: 'Alerts' })).toBeVisible()
+    expect(container.querySelector('#company-panel-overview')).not.toBeVisible()
   })
 
   it('a sized board row shows the grade pill and the calibrated probability', async () => {
@@ -609,6 +639,7 @@ describe('StockPage', () => {
     it('says which window is empty, and still offers the longer one', async () => {
       await writeSlice('journey:NVDA', mkJourney({ calls: [] }))
       withRouter('NVDA')
+      fireEvent.click(screen.getByRole('tab', { name: 'Research' }))
       const past = await screen.findByLabelText('Past calls')
       expect(within(past).getByText(/no calls on this name in the last 30 days/i)).toBeInTheDocument()
       expect(within(past).getByRole('button', { name: /load older calls/i })).toBeInTheDocument()
@@ -618,6 +649,7 @@ describe('StockPage', () => {
       await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall()] }))
       await writeSlice('journey:NVDA:deep', mkJourney({ calls: [mkCall(), mkCall({ id: 'c9', date: '2025-11-02', grade: 'B' })] }))
       withRouter('NVDA')
+      fireEvent.click(screen.getByRole('tab', { name: 'Research' }))
       fireEvent.click(await screen.findByRole('button', { name: /load older calls/i }))
       expect(await screen.findByText(/2025-11-02/)).toBeInTheDocument()
     })
@@ -672,7 +704,9 @@ describe('StockPage', () => {
       ])
       await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
       withRouter('NVDA')
-      expect(await screen.findByLabelText(/NVDA alert above/i)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('tab', { name: 'Tools' }))
+      expect(await screen.findByLabelText(/NVDA alert above/i)).toBeVisible()
+      fireEvent.click(screen.getByRole('tab', { name: 'Research' }))
       const strip = await screen.findByLabelText('Catalysts')
       await waitFor(() => expect(within(strip).getAllByRole('link')).toHaveLength(3))
       expect(within(strip).getByText('a.example.com')).toBeInTheDocument()
@@ -687,6 +721,7 @@ describe('StockPage', () => {
       })
       await writeSlice('journey:NVDA', mkJourney({ boardRow: mkRow() }))
       withRouter('NVDA')
+      fireEvent.click(screen.getByRole('tab', { name: 'Business' }))
       const section = await screen.findByLabelText('Company filings')
       expect(within(section).getByText(/NVIDIA Corp/)).toBeInTheDocument()
       expect(within(section).getByRole('link')).toHaveAttribute('href', 'https://www.sec.gov/a1')

@@ -43,6 +43,8 @@ import { AskSheet } from './parts/AskSheet'
 import type { OpenTraceEntry } from '../lib/api'
 import { StrategyLabPanel } from './parts/StrategyLabPanel'
 import { BusinessHealthPanel } from './parts/BusinessHealthPanel'
+import { CompanySources } from './parts/CompanySources'
+import { WatchStockButton } from './parts/WatchStockButton'
 import '../styles/dossier.css'
 
 const PriceChart = lazy(() => import('../components/PriceChart').then(m => ({ default: m.PriceChart })))
@@ -68,6 +70,7 @@ function OnDemandRead({ sym, openTrace }: { sym: string; openTrace?: OpenTraceEn
   const addToWatchlist = async () => {
     await db.watchlist.put({ symbol: sym, addedAt: Date.now(), riskClass: 'normal' })
     setAdded(true)
+    window.dispatchEvent(new Event('mb-watchlist-changed'))
     mirrorConfig() // CX-22: server-side alerts and cross-device sync depend on it
   }
   if (!data && error) return <p role="alert">The stock analysis could not be loaded. <button onClick={refresh} disabled={refreshing}>Retry stock analysis</button></p>
@@ -79,11 +82,12 @@ function OnDemandRead({ sym, openTrace }: { sym: string; openTrace?: OpenTraceEn
         Ask the desk
       </button>
       <AskSheet open={askOpen} onClose={() => setAskOpen(false)} sym={sym} verdict={data} openTrace={openTrace} />
-      <FactorVotes computed={data.computed} nulls={data.nulls} />
+      <details className="company-detail"><summary>How this view was formed</summary><FactorVotes computed={data.computed} nulls={data.nulls} />
       <section aria-label="The funnel path">
         <p className="sec-label">The funnel path</p>
         <p className="cc-reason">Not in today's scan universe — the engine never put this name through its gates, so there is no path to show.</p>
       </section>
+      </details>
     </>
   )
 }
@@ -134,6 +138,8 @@ function Filings({ sym }: { sym: string }) {
 }
 
 export default function StockPage({ sym }: { sym: string }) {
+  const [view, setView] = useState<'overview' | 'business' | 'research' | 'tools'>('overview')
+  useEffect(() => setView('overview'), [sym])
   // The reader's own last choice, or the month (chartRange.ts owns both). Read
   // lazily — localStorage is touched once per mount, not once per render.
   const [range, setRange] = useState<ChartRangeId>(readChartRange)
@@ -205,7 +211,7 @@ export default function StockPage({ sym }: { sym: string }) {
 
   return (
     <div className="stockpage company-dossier">
-      <p className="dossier-kicker">StreetSignal / Company dossier</p>
+      <p className="dossier-kicker">Company research</p>
       <div className="sp-head">
         <div className="sp-title">
           <button
@@ -214,7 +220,7 @@ export default function StockPage({ sym }: { sym: string }) {
             aria-label="Back"
             onClick={() => {
               if (window.history.length > 1) window.history.back()
-              else window.location.assign('/app/intel')
+              else window.location.assign('/app/')
             }}
           >
             ←
@@ -224,6 +230,7 @@ export default function StockPage({ sym }: { sym: string }) {
             {(row?.name ?? quote?.name) && <span className="sp-name">{row?.name ?? quote?.name}</span>}
           </h1>
         </div>
+        <WatchStockButton symbol={sym} />
         {quote && (
           <span
             className={`sp-px num${quote.stale ? ' stale' : ''}`}
@@ -233,20 +240,21 @@ export default function StockPage({ sym }: { sym: string }) {
             {quote.changePct != null && <span className={quote.changePct >= 0 ? 'sp-side long' : 'sp-side short'}> {fmtPct(quote.changePct)}</span>}
           </span>
         )}
+        {!quote && <p className="cc-reason" role="status">{chartError ? 'Price temporarily unavailable' : 'Loading price…'}</p>}
       </div>
       <SessionLine />
-      <nav className="dossier-nav" aria-label="Company research sections">
-        <a href={`#${sym}-price`}>Price & trend</a>
-        <a href={`#${sym}-thesis`}>Investment case</a>
-        <a href={`#${sym}-business`}>Report history</a>
-        <a href={`#${sym}-history`}>Track record</a>
-        <a href={`#${sym}-tools`}>Risk & tools</a>
+      <nav className="dossier-nav stocks-tabs" role="tablist" aria-label="Company research sections">
+        {(['overview', 'business', 'research', 'tools'] as const).map((tab, index, tabs) => <button type="button" key={tab} id={`company-tab-${tab}`} role="tab" aria-selected={view === tab} aria-controls={`company-panel-${tab}`} tabIndex={view === tab ? 0 : -1}
+          onClick={() => setView(tab)} onKeyDown={event => {
+            const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
+            if (next >= 0) { event.preventDefault(); setView(tabs[next]); document.getElementById(`company-tab-${tabs[next]}`)?.focus() }
+          }}>{tab === 'overview' ? 'Overview' : tab === 'business' ? 'Business' : tab === 'research' ? 'Research' : 'Tools'}</button>)}
       </nav>
-
+      <div id="company-panel-overview" role="tabpanel" aria-labelledby="company-tab-overview" hidden={view !== 'overview'}>
 
       {/* 1 — the chart, pinned at the top */}
       <section id={`${sym}-price`} className="sp-chart dossier-chart" aria-label="Price chart">
-        <div className="dossier-section-head"><div><span className="dossier-eyebrow">01 / Market behaviour</span><h2>Price & trend</h2></div><span className="dossier-caption">Select a range. Inspect the evidence.</span></div>
+        <div className="dossier-section-head"><h2>Price & trend</h2><span className="dossier-caption">Explore the chart</span></div>
         <div className="seg" role="group" aria-label="Chart range">
           {CHART_RANGES.map(r => (
             <button key={r.id} aria-pressed={r.id === range} onClick={() => pickRange(r.id)}>
@@ -265,8 +273,8 @@ export default function StockPage({ sym }: { sym: string }) {
         )}
         {candles.length > 1 ? (
           <Suspense fallback={<div className="skeleton sp-chart-skel" />}>
-            <PriceChart candles={candles} priceLines={priceLines} height={260} interactive intraday={intradayRange} />
-            <RsiChart candles={candles} intraday={intradayRange} />
+            <PriceChart candles={candles} priceLines={priceLines} height={260} interactive intraday={intradayRange} initialDisplay="line" />
+            <details className="company-detail"><summary>Momentum indicator · RSI</summary><RsiChart candles={candles} intraday={intradayRange} /></details>
           </Suspense>
         ) : chartError ? (
           <p role="alert">The price chart could not be loaded. <button onClick={retryChart}>Retry chart</button></p>
@@ -306,28 +314,32 @@ export default function StockPage({ sym }: { sym: string }) {
             openTrace={journey?.openTrace}
           />
           {/* 3 — the factor votes */}
-          <FactorVotes factors={row?.factors} />
-          {/* 4 — the funnel path */}
-          <FunnelPath days={journey.funnel} />
+          <details className="company-detail"><summary>How this view was formed</summary><FactorVotes factors={row?.factors} /></details>
         </>
       )}
 
-      {/* The separate 2–3 day, quality-dip and social-ignition contracts for
-          this symbol. Shadow research is visible here but never masquerades as
-          the published board verdict above. */}
-      <StrategyLabPanel symbol={sym} observations={journey?.lab} />
       </div>
+      <div className="company-next"><button onClick={() => setView('business')}><strong>Business & reports</strong><span>Cash flow, financial health and trends →</span></button><button onClick={() => setView('research')}><strong>Research & sources</strong><span>Setups, channel views and past outcomes →</span></button></div>
+      </div>
+      <div id="company-panel-business" role="tabpanel" aria-labelledby="company-tab-business" hidden={view !== 'business'}>
       <BusinessHealthPanel sym={sym} />
-
+      <Filings sym={sym} />
+      </div>
+      <div id="company-panel-research" role="tabpanel" aria-labelledby="company-tab-research" hidden={view !== 'research'}>
+      <StrategyLabPanel symbol={sym} observations={journey?.lab} />
+      {view === 'research' && <CompanySources symbol={sym} />}
+      <Catalysts sym={sym} />
       {/* 5 — every past call, and what price then did */}
       <div id={`${sym}-history`} className="dossier-section">
       <PastCalls sym={sym} calls={journey?.calls ?? []} />
 
       {/* 6 — only while a published call is still open */}
       {journey?.openTrace && <OpenTraceCard trace={journey.openTrace} />}
+      {journey && !unscanned && <details className="company-detail"><summary>Daily decision history</summary><FunnelPath days={journey.funnel} /></details>}
       </div>
-
+      </div>
       {/* 7 — the utilities */}
+      <div id="company-panel-tools" role="tabpanel" aria-labelledby="company-tab-tools" hidden={view !== 'tools'}>
       <div id={`${sym}-tools`} className="dossier-section dossier-tools">
       <section aria-label="Alerts">
         <p className="sec-label">Price alerts</p>
@@ -345,8 +357,7 @@ export default function StockPage({ sym }: { sym: string }) {
           capital={capital}
         />
       </section>
-      <Catalysts sym={sym} />
-      <Filings sym={sym} />
+      </div>
       </div>
     </div>
   )

@@ -16,7 +16,7 @@
 // the shape everywhere now (here, StockPage, and Stocks' rail sparklines);
 // every reader takes `.candles` off it.
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../../lib/useSlice'
 import { readSlice } from '../../lib/store'
@@ -39,6 +39,7 @@ import type { Candle, Quote } from '../../../shared/types'
 /** What `getCandles` returns and what every `candles:*` slice therefore holds. */
 export interface CandleSlice {
   candles: Candle[]
+  quote?: Quote
 }
 
 /** The last 30 closes, or undefined when there is not enough tape to draw. */
@@ -69,10 +70,13 @@ export function useCachedSparkline(symbol: string): number[] | undefined {
 /** The row's own slice: one `candles:SYM:3mo` per row, fetched if stale. Safe
  * N times over because React fires the mounts in parallel and the store dedupes
  * a shared key — but only at watchlist LENGTHS. See `sparkCachedOnly`. */
-function SparkLive({ symbol }: { symbol: string }) {
-  const { data } = useSlice<CandleSlice>(`candles:${symbol}:3mo`, () => getCandles(symbol, '3mo'))
+function LiveStockRow(props: StockRowProps) {
+  const { data, error } = useSlice<CandleSlice>(`candles:${props.symbol}:3mo`, () => getCandles(props.symbol, '3mo'))
   const closes = sparkCloses(data)
-  return closes ? <Sparkline closes={closes} /> : null
+  const fallback = data?.quote?.symbol === props.symbol && Number.isFinite(data.quote.price) && data.quote.price > 0 ? data.quote : null
+  return <StockRowContent {...props} quote={props.quote ?? (fallback ? { ...fallback, stale: true } : null)}
+    priceNote={!props.quote && fallback ? 'Chart quote' : undefined}
+    missingLabel={error || data ? 'Unavailable' : 'Loading…'} spark={closes ? <Sparkline closes={closes} /> : null} />
 }
 
 /** Dexie only. The rail cards' bargain, offered to any list long enough to need
@@ -104,14 +108,7 @@ function usePriceFlash(price: number | null | undefined): 'up' | 'down' | null {
   return flash
 }
 
-export function StockRow({
-  symbol,
-  name,
-  quote,
-  onRemove,
-  sparkCachedOnly,
-  flipKey,
-}: {
+interface StockRowProps {
   symbol: string
   name?: string | null
   quote?: Quote | null
@@ -127,7 +124,13 @@ export function StockRow({
    * is a burst of traffic nobody asked for. The rail cards in Stocks.tsx have
    * always taken this deal; this is the same deal, offered as a prop. */
   sparkCachedOnly?: boolean
-}) {
+}
+
+export function StockRow(props: StockRowProps) {
+  return props.sparkCachedOnly ? <StockRowContent {...props} spark={<SparkCached symbol={props.symbol} />} missingLabel="Unavailable" /> : <LiveStockRow {...props} />
+}
+
+function StockRowContent({ symbol, name, quote, onRemove, flipKey, spark, priceNote, missingLabel }: StockRowProps & { spark: ReactNode; priceNote?: string; missingLabel: string }) {
   const up = quote && quote.changePct != null ? quote.changePct >= 0 : false
   // a stale (last-known-good) price is a RECORD, not a tick — it never flashes
   const flash = usePriceFlash(quote?.stale ? undefined : quote?.price)
@@ -141,15 +144,16 @@ export function StockRow({
           <span className="stx-sym">{symbol}</span>
           {name && <span className="stx-name">{name}</span>}
         </span>
-        {sparkCachedOnly ? <SparkCached symbol={symbol} /> : <SparkLive symbol={symbol} />}
+        {spark}
         <span className="stx-row-prices">
           <span
             className={`num${flash ? ` flash-${flash}` : ''}${quote?.stale ? ' stale' : ''}`}
             title={quote?.stale ? 'last known price — the live quote is not answering' : undefined}
           >
-            {quote ? fmtPrice(quote.price, quote.currency) : '—'}
+            {quote ? fmtPrice(quote.price, quote.currency) : <small className="stock-price-note">{missingLabel}</small>}
           </span>
           {quote && quote.changePct != null && <span className={`pill ${up ? 'long' : 'short'}`}><span className="num">{fmtPct(quote.changePct)}</span></span>}
+          {(priceNote || quote?.stale) && <small className="stock-price-note">{priceNote ?? 'Saved price'}</small>}
         </span>
       </Link>
       {onRemove && (
