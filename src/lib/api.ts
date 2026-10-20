@@ -319,6 +319,7 @@ export const getSocialMemory = (symbol: string) =>
 
 /** One analysed video, as the wire renders it. */
 export interface StreetVideo {
+  nativeTranscript?: { model: string; characters: number; limitSeconds: number; reportedDurationSeconds: number | null; reportedComplete: boolean; excerpt: string }
   transcriptMethod?: 'captions' | 'speech'
   provenance?: 'first-party' | 'third-party' | 'manual'
   publishedAt?: number
@@ -364,6 +365,7 @@ export interface StreetWire {
     githubRunner?: { at: number; running: boolean; status: string; saved: number; unavailable: number; attempted: number; captions: number; speech: number; reused?: number; blocked: number; stale: boolean } | null
     githubLastSavedAt?: number | null
     githubTranscriptCount?: number
+    nativeRunner?: { at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; status: string; stale: boolean } | null
     provider?: { checkedAt: number; status: string; plan?: string; remainingCredits?: number } | null
     localLastSavedAt?: number | null
     localSpeechCount?: number

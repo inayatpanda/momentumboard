@@ -3,6 +3,13 @@ import { memoryStore } from './store'
 import { videoIngestionHealth } from './videoIngestion'
 
 describe('video ingestion health', () => {
+  it('separates native model reads from downloaded transcripts and hides extra status fields', async () => {
+    const store = memoryStore()
+    await store.write('video-native-runner', { at: 100, running: false, published: 1, attempted: 1, failed: 0, reused: 0, capped: false, status: 'complete', secret: 'never-show' })
+    const health = await videoIngestionHealth(store, [], 200)
+    expect(health).toMatchObject({ nativeRunner: { published: 1, stale: false }, githubTranscriptCount: 0, githubLastSavedAt: null })
+    expect(JSON.stringify(health)).not.toContain('never-show')
+  })
   it('reports cloud gaps, saved words and stale runs without exposing internal diagnostics', async () => {
     const store = memoryStore()
     await store.write('video-github-runner', { at: 100, status: 'complete', running: false, saved: 1, unavailable: 2, attempted: 3, captions: 1, speech: 0, reasons: { 'youtube-blocked': 2, private: 99 }, internal: 'must-not-leak' })

@@ -16,7 +16,7 @@ export function ClaimEvidence({ video }: { video: StreetVideo }) {
   return <div className="social-evidence">
     <div className="social-evidence__coverage">
       <span>{qualified.length} sourced {qualified.length === 1 ? 'claim' : 'claims'}</span>
-      {coverage && <span>{coverage.chunks > 0 ? `${coverage.analysedChunks}/${coverage.chunks} transcript sections read${coverage.complete ? '' : ' · partial'}` : 'Transcript unavailable'}</span>}
+      {coverage && <span>{video.nativeTranscript ? 'AI transcription · source check pending' : coverage.chunks > 0 ? `${coverage.analysedChunks}/${coverage.chunks} transcript sections read${coverage.complete ? '' : ' · partial'}` : 'Transcript unavailable'}</span>}
       {coverage && <span>{coverage.timedSegments > 0 ? `${coverage.timedSegments}/${coverage.totalSegments} caption segments timed` : 'No source timestamps'}</span>}
     </div>
     <p className="social-evidence__note">{coverage?.visual === 'model-reviewed-unverified' ? 'Video model output. Visual details remain unverified.' : 'Spoken words analysed. Charts have not been checked.'}</p>

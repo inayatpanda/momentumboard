@@ -8,7 +8,7 @@ import { withDefaults } from '../../../shared/channels'
 import type { InboxVideo } from './videoTranscriptStore'
 
 export async function videoIngestionHealth(store: AppStore, extracts: { url: string; at: number }[], nowSec: number, analyses: { url: string }[] = []) {
-  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner, config, githubRunner] = await Promise.all([
+  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner, config, githubRunner, nativeRunner] = await Promise.all([
     store.read<InboxVideo[]>('video-inbox'),
     readTranscriptIndex(store),
     store.read<WorkItem[]>('work-queue'),
@@ -19,6 +19,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; buffered: number }>('video-local-runner'),
     store.read<{ ytChannels?: { id: string; name: string }[] }>('config'),
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; attempted: number; captions: number; speech: number; reused?: number; status: string; reasons: Record<string, number> }>('video-github-runner'),
+    store.read<{ at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; status: string }>('video-native-runner'),
   ])
   const completed = new Set(extracts.map(v => videoKey(v.url)))
   const watched = new Set(analyses.map(v => videoKey(v.url)))
@@ -56,6 +57,11 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     channels,
     discoveryWindow: { videos: recent.length, since: discoveryTimes.length ? Math.min(...discoveryTimes) : null },
     provider: provider ?? null,
+    nativeRunner: nativeRunner ? {
+      at: nativeRunner.at, running: nativeRunner.running, published: nativeRunner.published, attempted: nativeRunner.attempted,
+      failed: nativeRunner.failed, reused: nativeRunner.reused, capped: nativeRunner.capped, status: nativeRunner.status,
+      stale: nowSec - nativeRunner.at > 18 * 3600,
+    } : null,
     githubRunner: githubRunner ? {
       at: githubRunner.at, running: githubRunner.running, status: githubRunner.status,
       saved: githubRunner.saved, unavailable: githubRunner.unavailable, attempted: githubRunner.attempted,

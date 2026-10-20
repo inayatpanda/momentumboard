@@ -118,6 +118,14 @@ beforeEach(async () => {
 })
 
 describe('Street2', () => {
+  it('labels direct AI transcription and exposes its excerpt without claiming source verification', async () => {
+    await seedWire({ videos: [mkVideo({ nativeTranscript: { model: 'gemini-3.5-flash-lite', characters: 123, limitSeconds: 5400, reportedDurationSeconds: 52, reportedComplete: true, excerpt: 'A newly captured speech passage.' }, via: 'gemini-video' })] })
+    withRouter()
+    fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
+    expect(await screen.findByText('AI transcript excerpt')).toBeInTheDocument()
+    expect(screen.getByText('A newly captured speech passage.')).toBeInTheDocument()
+    expect(screen.getByText(/Words, numbers and completeness have not been independently verified/)).toBeInTheDocument()
+  })
   it('makes cloud capture gaps explicit and keeps the Mac backup optional', async () => {
     await seedWire({ videoIngestion: {
       githubRunner: { at: hoursAgo(1), running: false, status: 'complete', saved: 0, unavailable: 12, attempted: 12, captions: 0, speech: 0, blocked: 12, stale: false },

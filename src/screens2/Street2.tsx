@@ -73,6 +73,13 @@ function VideoHealth({ health, onRefresh }: { health: StreetWire['videoIngestion
   if (!health) return null
   return <section className="card itl-section" aria-label="YouTube processing status">
     <h2 className="sec-label">YouTube processing</h2>
+    {health.nativeRunner && <div className="cc-reason">
+      <p><strong>Direct cloud video reads</strong><br />{health.nativeRunner.running ? 'Reading new videos and saving findings.' : health.nativeRunner.status === 'error' ? 'The last read needs attention; saved progress is retained.' : `${health.nativeRunner.published} published · ${health.nativeRunner.failed} unsuccessful on the last run.`} Last checked {relativeStamp(health.nativeRunner.at)}.</p>
+      <p>Google reads the public video directly while your Mac is off. Up to two new reads a day, covering up to 90 minutes per video. AI transcription is labelled separately from independently captured captions.</p>
+      {health.nativeRunner.capped && <p>Today’s video-reading allowance is used. New videos remain queued.</p>}
+      {health.nativeRunner.stale && <p>No recent check-in; check the cloud run for delays.</p>}
+      <a href="https://github.com/inayatpanda/momentumboard/actions/workflows/youtube-native-capture.yml" target="_blank" rel="noopener noreferrer">View direct video reads ↗</a>
+    </div>}
     {health.githubRunner && <div className="cc-reason">
       <p><strong>Cloud collector · GitHub</strong><br />{health.githubRunner.stale ? 'No recent check-in. The schedule may be delayed or stopped.' : health.githubRunner.status === 'error' ? 'The last run stopped early; saved progress is retained.' : health.githubRunner.running ? 'Checking captions and transcribing available audio.' : `${health.githubRunner.saved} saved${health.githubRunner.reused ? ` · ${health.githubRunner.reused} already available` : ''} · ${health.githubRunner.unavailable} unavailable on the last run.`} Last seen {relativeStamp(health.githubRunner.at)}.</p>
       <p>Scheduled every three hours, even when your Mac is off. Up to 12 videos and two audio transcriptions per run. {health.githubLastSavedAt ? `Latest cloud transcript ${relativeStamp(health.githubLastSavedAt)}.` : 'No cloud transcript saved yet.'}</p>
@@ -166,7 +173,12 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
             <a className="stt-video-title" href={v.url} target="_blank" rel="noreferrer">
               {decodeEntities(v.title)}
             </a>
-            {v.transcriptMethod === 'speech' && <p className="social-evidence__note">Transcribed locally from audio. Machine transcription can mishear names and numbers; check the linked source.</p>}
+            {v.transcriptMethod === 'speech' && <p className="social-evidence__note">Transcribed from audio{v.via === 'github' ? ' on GitHub' : ' on the Mac'}. Machine transcription can mishear names and numbers; check the linked source.</p>}
+            {v.nativeTranscript && <details className="street-video-evidence">
+              <summary>AI transcript{v.nativeTranscript.characters > v.nativeTranscript.excerpt.length ? ' excerpt' : ''}</summary>
+              <p className="social-evidence__note">Read directly in the cloud. {v.nativeTranscript.reportedComplete ? 'The model reports reaching the end of the video.' : `Partial read: at most the first ${Math.round(v.nativeTranscript.limitSeconds / 60)} minutes.`} Words, numbers and completeness have not been independently verified. These findings do not enter verified consensus or outcome tracking.</p>
+              <p className="cc-reason">{v.nativeTranscript.excerpt}</p>
+            </details>}
             {(v.tickers.length > 0 || v.themes.length > 0) && (
               <div className="stt-video-meta">
                 {v.tickers.map((t, j) => (

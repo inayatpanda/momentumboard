@@ -1,0 +1,38 @@
+name: youtube-native-capture
+on:
+  schedule:
+    - cron: '17 8-23/3 * * *'
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: 'Optional public video ID already discovered by StreetSignal'
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: youtube-native-capture
+  cancel-in-progress: false
+jobs:
+  read:
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Transcribe public video input and publish labelled findings
+        run: npx tsx scripts/bg/capture-native-videos.mts
+        env:
+          VIDEO_ID: ${{ inputs.video_id || '' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
+          STORE_BACKEND: d1
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

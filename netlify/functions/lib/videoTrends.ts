@@ -6,6 +6,7 @@ import { normaliseTradableMention, symbolForKnownCompany } from '../../../shared
 // consensus maths. The AI only extracts; the TREND layer is pure code.
 
 export interface VideoExtract {
+  nativeTranscript?: import('./nativeVideo').NativeTranscriptNote
   transcriptMethod?: 'captions' | 'speech'
   url: string
   title: string
