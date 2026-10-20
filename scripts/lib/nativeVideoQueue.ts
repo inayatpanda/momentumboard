@@ -102,7 +102,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
     rows = await store.read<NativeVideoWork[]>(NATIVE_PROGRESS_KEY) ?? []
     const lastFailure = rows.filter(w => w.lastError?.startsWith('native-http-')).sort((a,b) => b.updatedAt-a.updatedAt)[0]
     if (lastFailure?.lastError === 'native-http-400' && initialBudget.pauseReason === 'provider-configuration'
-      && initialBudget.pauseUntil === lastFailure.updatedAt + 3600) {
+      && initialBudget.pauseUntil >= lastFailure.updatedAt + 3600 && initialBudget.pauseUntil <= lastFailure.updatedAt + 3602) {
       await repairVideoSpecificPause(store, now(), initialBudget.pauseUntil)
     }
     const config = await store.read<{ ytChannels?: { id: string; name: string }[] }>('config'), followed = withDefaults(config?.ytChannels)

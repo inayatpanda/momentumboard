@@ -87,7 +87,7 @@ describe('expanded free video queue', () => {
   it('repairs only a demonstrably video-specific legacy pause without refunding usage', async () => {
     const {store,deps}=await setup(600)
     const failedAt=deps.now()-60
-    await store.write(nativeBudgetKey(deps.now()),{day:nativeQuotaDay(deps.now()),requests:10,seconds:6000,nextRequestAt:0,pauseUntil:failedAt+3600,pauseReason:'provider-configuration'})
+    await store.write(nativeBudgetKey(deps.now()),{day:nativeQuotaDay(deps.now()),requests:10,seconds:6000,nextRequestAt:0,pauseUntil:failedAt+3601,pauseReason:'provider-configuration'})
     await store.write(NATIVE_PROGRESS_KEY,[{video:video('abcdefghijl'),nextOffset:0,parts:[],stage:'retry',attempts:1,failures:1,nextAttemptAt:deps.now()+1800,lastAttemptAt:failedAt,updatedAt:failedAt,lastError:'native-http-400'}])
     const result=await collectNativeVideos(store,{...deps,maxCalls:1})
     expect(result).toMatchObject({attempted:1,completed:1,dailyRequests:11,dailyMinutes:110})

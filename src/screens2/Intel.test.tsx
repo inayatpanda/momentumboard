@@ -132,13 +132,13 @@ describe('Intel', () => {
     expect(screen.getByRole('tab', { name: /social radar/i })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('one section erroring never blanks the others — seeded news paints while insiders and congress stay pending', async () => {
+  it('one section erroring never blanks the others — seeded news paints while insiders and congress offer retry', async () => {
     await writeSlice('intel:news', [mkNews(0), mkNews(1)])
     withRouter()
     expect(await screen.findByText('Headline 0')).toBeInTheDocument()
     expect(screen.getByText('Headline 1')).toBeInTheDocument()
     // the page is not blank — the other feeds retain their loading state
-    expect(screen.getAllByText(/^Loading (news|insider buying|congressional disclosures)…$/).length).toBeGreaterThan(0)
+    expect(await screen.findAllByText(/could not be loaded\. Try again/)).toHaveLength(2)
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
@@ -333,11 +333,11 @@ describe('Intel', () => {
   })
 
   // FAILURE ISOLATION, across all three sections.
-  it('a seeded insiders slice paints while the other two sections stay pending', async () => {
+  it('a seeded insiders slice paints while the other two sections offer retry', async () => {
     await writeSlice('intel:insiders', { clusters: [mkCluster({ symbol: 'AMD' })], asOf: 1 })
     withRouter()
     expect(await screen.findByText('4 buyers')).toBeInTheDocument()
-    expect(screen.getAllByText(/^Loading (news|insider buying|congressional disclosures)…$/).length).toBeGreaterThan(0)
+    expect(await screen.findAllByText(/could not be loaded\. Try again/)).toHaveLength(2)
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
