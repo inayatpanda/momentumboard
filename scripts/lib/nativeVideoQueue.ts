@@ -91,9 +91,13 @@ export async function collectNativeVideos(store: AppStore, deps: {
     rows = await store.read<NativeVideoWork[]>(NATIVE_PROGRESS_KEY) ?? []
     const config = await store.read<{ ytChannels?: { id: string; name: string }[] }>('config'), followed = withDefaults(config?.ytChannels)
     const inbox = await store.read<InboxVideo[]>('video-inbox') ?? []
+    // Older caption analyses predate per-video completion keys. Check the
+    // saved display index too, so missing markers never spend another call.
+    const previous = await store.read<{ url: string; via?: string; tickers?: unknown[] }[]>('video-extracts') ?? []
+    const alreadyRead = new Set(previous.filter(e => e && typeof e.url === 'string' && Array.isArray(e.tickers) && e.via !== 'gemini-video').map(e => videoKey(e.url)))
     const known = new Set(rows.map(w => videoKey(w.video.url)))
     for (const video of inbox.filter(v => isFollowedChannel(v, followed))) {
-      if (known.has(videoKey(video.url))) continue
+      if (known.has(videoKey(video.url)) || alreadyRead.has(videoKey(video.url))) continue
       const extract = await store.read<{ via?: string }>(`video-extract:v1:${videoKey(video.url)}`)
       if (extract && extract.via !== 'gemini-video') continue
       rows.push({ video, nextOffset: 0, parts: [], stage: 'pending', attempts: 0, failures: 0, nextAttemptAt: 0, lastAttemptAt: 0, updatedAt: now() })
@@ -102,9 +106,13 @@ export async function collectNativeVideos(store: AppStore, deps: {
     await save()
     const selected = rows.filter(w => isFollowedChannel(w.video, followed) && (!deps.target || videoKey(w.video.url) === deps.target))
     if (deps.target && !selected.length) throw new Error('target-not-eligible')
+    for (const work of selected) if (alreadyRead.has(videoKey(work.video.url))) {
+      work.stage = 'complete'; work.nextAttemptAt = 0; work.failures = 0; delete work.lastError
+    }
+    await save()
     // Repair a process ending between the section checkpoint and publication.
     // Already completed reads need no model access to become visible again.
-    for (const work of selected.filter(w => w.parts.length > 0)) {
+    for (const work of selected.filter(w => w.parts.length > 0 && !alreadyRead.has(videoKey(w.video.url)))) {
       if (work.sourceDurationSeconds && work.nextOffset >= work.sourceDurationSeconds) work.stage = 'complete'
       const saved = await assembledNativeDraft(store, work, now())
       if (!saved) continue

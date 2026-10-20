@@ -16,6 +16,9 @@ async function main() {
       key: process.env.GEMINI_YOUTUBE_FREE_API_KEY ?? '',
       log: data => console.log(JSON.stringify(data)),
       onPublish: async (video, kind, publication) => {
+        // An existing older result may legitimately be outside the latest 30.
+        // Only a new publication must appear immediately in the live feed.
+        if (publication !== 'published') return
         await setCached('street-wire:v3', null, 0)
         const response = await fetch('https://thestreetsignal.rqai.co.uk/api/market?type=street', {
           headers: { 'x-app-token': process.env.APP_TOKEN ?? '' }, redirect: 'error', signal: AbortSignal.timeout(30_000),

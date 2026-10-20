@@ -90,6 +90,17 @@ describe('expanded free video queue', () => {
     expect(await collectNativeVideos(store, { ...deps, target: 'abcdefghijk', forceVideo: true })).toMatchObject({ attempted: 1, completed: 1 })
     expect(deps.readSection).toHaveBeenCalledTimes(1)
   })
+  it('reconciles older published caption analyses without spending free calls or requiring latest-feed visibility', async () => {
+    const { store, deps } = await setup()
+    await store.write('video-extracts', [{ ...video(), via: 'transcript', tickers: [] }, { ...video('abcdefghijl'), via: 'local', tickers: [] }])
+    await store.write('video-inbox', [video(), video('abcdefghijl')])
+    await store.write(NATIVE_PROGRESS_KEY, [{ video: video(), nextOffset: 0, parts: [], stage: 'retry', attempts: 1, failures: 1, nextAttemptAt: deps.now() + 1800, lastAttemptAt: deps.now(), updatedAt: deps.now(), lastError: 'native-publication-not-visible' }])
+    const onPublish = vi.fn()
+    expect(await collectNativeVideos(store, { ...deps, onPublish })).toMatchObject({ attempted: 0, failed: 0, completed: 1, pending: 0 })
+    expect(deps.readSection).not.toHaveBeenCalled()
+    expect(onPublish).not.toHaveBeenCalled()
+    expect(await store.read<NativeVideoWork[]>(NATIVE_PROGRESS_KEY)).toHaveLength(1)
+  })
 })
 
 describe('free video allowance', () => {
