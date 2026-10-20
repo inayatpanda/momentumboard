@@ -174,6 +174,7 @@ export const FUNCTION_ENV_VARS = [
   'OPENAI_MODEL',
   'OPENAI_BASE_URL',
   'LLM_PROVIDER',
+  'GITHUB_VIDEO_ANALYSIS', // non-secret, enabled only in the bounded GitHub transcript job
   'SUPADATA_API_KEY',
   'YOUTUBE_API_KEY', // optional comment sampling for creator/audience separation
   'SEC_USER_AGENT', // optional contact-identifying User-Agent for SEC EDGAR

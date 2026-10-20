@@ -429,3 +429,63 @@ GitHub's public standard-runner minutes are free. Larger runners and excess
 storage can still be billable, and external API services have separate limits.
 The repository had no Actions artifacts and approximately 41 MB of cache when
 checked. Account spending settings are managed separately from this source tree.
+
+## GitHub capture rollout — 2026-10-20
+
+The owner's subsequent instruction explicitly requests unattended GitHub
+downloading/transcription. This supersedes the earlier recommendation to avoid
+additional GitHub capture jobs. `youtube-capture.yml` is now on `main`, scheduled
+at `7 */3 * * *` UTC, with manual dispatch available. It uses a standard Ubuntu
+runner by default and offers a standard hosted Mac for manual tests. Neither
+requires the owner's computer to stay on.
+
+The collector tries shared free captions, youtube-transcript-api, then yt-dlp
+audio plus pinned whisper.cpp v1.9.5/base.en CPU transcription. It permits up to
+12 new capture attempts and two audio attempts per run, with a 30-minute
+processing deadline, 12-minute audio deadlines, 90-minute video limit and 120 MB
+audio limit. Full words/timestamps go directly to D1 with `source: github`.
+Failures remain pending with 3–24-hour backoff. A separate ready ledger remembers
+durable transcripts outside the recent 200-row index, preventing archived words
+from repeatedly taking new capture slots. Existing Mac provenance is preserved.
+No audio/transcript artifacts or cookies are uploaded to GitHub; only the public
+speech engine and model are cached.
+
+The following job analyses stored words only. DeepSeek uses its current documented
+Flash model with thinking disabled for bounded structured extraction. Its standalone
+requests still failed in live tests, so the new lane has a capped fallback through
+the existing Groq/Gemini text integrations: two section requests per UTC day,
+after 08:00 UTC. This preserves the morning paper's first claim on shared quotas.
+Budget deferrals retain chunk checkpoints and do not exhaust error retries.
+Publication invalidates the app's street-feed cache. The pre-existing queue
+worker and its limits remain in place.
+
+Live verification:
+
+- Initial Ubuntu setup found missing ffmpeg; installation is now explicit.
+- Ubuntu run `39464542969` completed: no new cloud transcript, six unavailable
+  captures (four explicitly blocked), and previously stored words repaired.
+- Hosted Mac run `39465824645` also hit a YouTube block; it did not establish
+  successful cloud capture.
+- Final recovery run
+  [39467800547](https://github.com/inayatpanda/momentumboard/actions/runs/39467800547)
+  completed. It reused 11 existing transcripts, downloaded no new transcript,
+  and published two new analyses from locally captured words: “What the Fed
+  *JUST* Warned” and “How Video Games Helped This Trader Read Charts”. Remaining
+  new-lane text work deferred at the two-section fallback cap.
+- The production feed returned HTTP 200. Both completed reads and real cloud
+  status were verified in the signed-in app UI. Stocks remains the first
+  navigation item; Today is second.
+
+This verifies unattended execution, recovery, analysis and publication. It does
+**not** verify a successful GitHub YouTube download/transcription. Linux and
+hosted Mac tests encountered access blocks. The free schedule remains a
+best-effort collector; reliable coverage of every new video is unresolved.
+The Mac remains an optional way to fill gaps while awake, not a requirement for
+running cloud jobs.
+
+Validation covered capture idempotence, archive recovery, failure backoff,
+provenance, fresh-word upgrades, fallback budget isolation, publication and UI
+states. The 3,666-test run found one missing environment-list entry; that entry
+was added and its 13-test suite passed. All other tests passed. Build/type checks
+and the enforced initial bundle budget passed (119.3 KB gzip; 120 KB limit).
+Final functional Pages release: `d5d845af` (application commit `02ee33c`).
