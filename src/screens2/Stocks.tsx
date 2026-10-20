@@ -15,6 +15,7 @@ import { useLiveQuotes } from '../lib/useLiveQuotes'
 import { searchStocks, useStockDirectory } from '../lib/stockDirectory'
 import { StockDiscovery } from './parts/StockDiscovery'
 import { WatchlistSectors, watchSector } from './parts/WatchlistSectors'
+import { BrandMark } from '../components/BrandMark'
 
 const StockMarkets = lazy(() => import('./parts/StockMarkets'))
 
@@ -153,7 +154,7 @@ export default function Stocks() {
   return (
     <div className="stx">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
-      <div className="stocks-title"><div><p className="stocks-eyebrow">YOUR MARKET, IN FOCUS</p><h1>Stocks</h1></div><button type="button" className="stocks-refresh" aria-label="Refresh stocks" disabled={refreshing} onClick={refresh}>↻</button></div>
+      <div className="stocks-title"><div><p className="stocks-brandline"><BrandMark size={24} />StreetSignal</p><h1>Stocks</h1></div><button type="button" className="stocks-refresh" aria-label="Refresh stocks" disabled={refreshing} onClick={refresh}>↻</button></div>
       {/* the session's own state (dynamism wave) — a watchlist of flat prices
           reads as broken until the line above it says the market is shut */}
       <SessionLine />

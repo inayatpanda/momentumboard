@@ -109,7 +109,7 @@
 .v2 .research-learning-empty h3 { font-weight: 500; margin: 0 0 8px; font-size: 17px; }
 .v2 .research-learning-empty p { margin: 0 0 13px; font-size: 12px; color: var(--text-dim); line-height: 1.7; max-width: 650px; }
 .v2 .research-learning-empty span { color: var(--warn); font-size: 10px; }
-.v2 .research-learning-census { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); margin: 24px 0; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-1); }
+.v2 .research-learning-census { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin: 24px 0 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-1); }
 .v2 .research-learning-census > div { padding: 20px 24px; min-width: 0; }
 .v2 .research-learning-census > div + div { border-left: 1px solid var(--border); }
 .v2 .research-learning-census strong { display: block; font-size: 28px; font-weight: 500; letter-spacing: -.04em; margin-bottom: 5px; }
@@ -134,6 +134,21 @@
 .v2 .research-learning-stats small { display: block; color: var(--text-dim); font-size: 10px; line-height: 1.6; }
 .v2 .research-learning-comparison { font-size: 11px; line-height: 1.7; color: var(--text-dim); margin: 18px 0; }
 .v2 .research-learning-comparison b { font-weight: 500; color: var(--text); }
+.v2 .learning-history-note { color: var(--text-dim); font-size: 12px; line-height: 1.7; margin: 0 0 22px; }
+.v2 .learning-history-note a, .v2 .research-history-method a { color: var(--accent); text-underline-offset: 3px; }
+.v2 .research-learning-controls:has(label:only-child) { grid-template-columns: 1fr; }
+.v2 .learning-pending h3 { margin: 8px 0 14px; font-size: 24px; letter-spacing: -.03em; line-height: 1.2; }
+.v2 .learning-pending p { color: var(--text-dim); font-size: 13px; line-height: 1.75; margin: 0 0 14px; }
+.v2 .learning-pending p strong { color: var(--text); font-weight: 600; }
+.v2 .learning-pending .research-muted { font-size: 11px; }
+.v2 .learning-tracked-symbols { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.v2 .learning-tracked-symbols a { color: var(--accent); padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; font-size: 12px; text-decoration: none; }
+.v2 .learning-next-step { padding: 16px; border-radius: 12px; background: var(--surface-2); margin: 20px 0; }
+.v2 .learning-next-step > strong { font-size: 12px; }
+.v2 .learning-next-step p { margin: 7px 0 0; font-size: 12px; }
+.v2 .learning-actions { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.v2 .learning-actions .research-text-link { padding: 8px 0; border: 0; background: transparent; text-align: left; cursor: pointer; font: inherit; font-size: 12px; color: var(--accent); }
+.v2 .research-history-method { scroll-margin-top: 24px; }
 .v2 .research-chronology { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 12px 0; }
 .v2 .research-chronology > div { display: flex; flex-direction: column; gap: 8px; padding: 14px; background: var(--surface-2); border-radius: 8px; }
 .v2 .research-chronology strong { color: var(--text); font-size: 20px; font-weight: 500; }

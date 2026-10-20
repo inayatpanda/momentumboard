@@ -22,6 +22,17 @@ function record(i: number, quality = false): StrategyLabRecord {
 }
 
 describe('research learning memory', () => {
+  it('separates pending current forecasts from older models and incompatible horizons', () => {
+    const current = { ...record(0), outcome: undefined }
+    const legacy = { ...record(1), forecast: { ...record(1).forecast, modelVersion: undefined }, outcome: undefined }
+    const wrongHorizon = { ...record(2), forecast: { ...record(2).forecast, horizonSessions: 99 }, outcome: undefined }
+    const future = { ...record(3), availableAt: NOW + 1, outcome: undefined }
+    const snapshot = buildResearchLearning([current, legacy, wrongHorizon, future], NOW)
+    expect(snapshot.history).toMatchObject({ pendingN: 4, currentPendingN: 1, earlierPendingN: 3, eligibleCompletedN: 0 })
+    expect(snapshot.strategies[0].tracking).toEqual({ pendingN: 1, firstPublicationAt: current.availableAt, latestPublicationAt: current.availableAt, symbols: ['SYM0'] })
+    expect(snapshot.strategies[1].tracking).toMatchObject({ pendingN: 0, firstPublicationAt: null, symbols: [] })
+  })
+
   it('excludes future, incompatible and overlapping receipts with explicit counts', () => {
     const base = record(0)
     const overlap = { ...record(1), sym: base.sym }

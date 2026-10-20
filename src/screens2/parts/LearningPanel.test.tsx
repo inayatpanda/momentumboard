@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildResearchLearning, type ResearchLearningSnapshot, type ResearchLearningStats } from '../../../shared/engine/researchLearning'
 import { LearningPanel } from './LearningPanel'
 
@@ -35,8 +35,9 @@ describe('Historical learning', () => {
     expect(screen.queryByLabelText('Learning history coverage')).not.toBeInTheDocument()
     rerender(<LearningPanel learning={buildResearchLearning([], 1_792_382_400)} />)
     expect(screen.getByLabelText('Learning history coverage')).toHaveTextContent('0Comparable outcomes')
-    expect(screen.getByLabelText('Selected campaign results')).toHaveTextContent('Mean net return—')
-    expect(screen.getByLabelText('Selected campaign results')).not.toHaveTextContent('+0.0%')
+    expect(screen.queryByLabelText('Selected campaign results')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Research awaiting outcomes')).toHaveTextContent('What appears next')
+    expect(screen.queryByText('+0.0%')).not.toBeInTheDocument()
   })
 
   it('filters the measured sample by recorded condition and resets it on strategy change', () => {
@@ -50,10 +51,24 @@ describe('Historical learning', () => {
     expect(screen.getByText(/Eight recorded risk-off campaigns/)).toBeInTheDocument()
     expect(screen.getByRole('progressbar')).toHaveAttribute('value', '8')
     fireEvent.change(screen.getByLabelText('Research strategy'), { target: { value: 'quality-dip' } })
-    expect(screen.getByLabelText('Observed condition')).toHaveValue('all')
-    expect(results).toHaveTextContent('Target before stop—')
-    expect(results).not.toHaveTextContent('-2.0%')
-    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '0')
+    expect(screen.queryByLabelText('Observed condition')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Selected campaign results')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Research awaiting outcomes')).toHaveTextContent('a low price alone does not qualify')
+  })
+
+  it('shows actual pending stocks without counting older campaigns as current forecasts', () => {
+    const snapshot = buildResearchLearning([], 1_792_382_400)
+    snapshot.history = { ...snapshot.history, pendingN: 87, currentPendingN: 14, earlierPendingN: 73, excludedCompletedN: 148, excludedLegacyN: 148 }
+    snapshot.strategies[0].tracking = { pendingN: 14, firstPublicationAt: 1_792_382_400, latestPublicationAt: 1_792_382_400, symbols: ['AAPL', 'MSFT'] }
+    const onResearch = vi.fn()
+    render(<LearningPanel learning={snapshot} onResearch={onResearch} />)
+    expect(screen.getByLabelText('Learning history coverage')).toHaveTextContent('14Current forecasts being tracked')
+    expect(screen.getByLabelText('Research awaiting outcomes')).toHaveTextContent('14 saved forecasts')
+    expect(screen.getByRole('link', { name: 'AAPL ↗' })).toHaveAttribute('href', '/stock/AAPL')
+    expect(screen.getByText(/73 additional unscored records/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Selected campaign results')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Explore current research →' }))
+    expect(onResearch).toHaveBeenCalledOnce()
   })
 
   it('keeps failed baseline skill, rolling retention and chronology limits inspectable', () => {

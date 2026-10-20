@@ -65,6 +65,8 @@ export interface ResearchLearningStrategy {
   overall: ResearchLearningStats
   chronology: ResearchChronology
   conditions: ResearchLearningCondition[]
+  /** Pending records for this exact model and horizon, never legacy campaigns. */
+  tracking?: { pendingN: number; firstPublicationAt: number | null; latestPublicationAt: number | null; symbols: string[] }
 }
 
 export interface ResearchLearningSnapshot {
@@ -77,6 +79,8 @@ export interface ResearchLearningSnapshot {
     retainedRecordsN: number
     retainedCompletedN: number
     pendingN: number
+    currentPendingN?: number
+    earlierPendingN?: number
     eligibleCompletedN: number
     excludedCompletedN: number
     excludedLegacyN: number
@@ -177,6 +181,10 @@ const CONDITIONS: { key: string; label: string; matches: (r: StrategyLabRecord) 
  * contracts and symbol horizons are never pooled. Missing context is not backfilled. */
 export function buildResearchLearning(records: StrategyLabRecord[], nowSec: number): ResearchLearningSnapshot {
   const completed = records.filter(r => r.outcome)
+  const pending = records.filter(r => !r.outcome)
+  const matchesContract = (r: StrategyLabRecord, contract: typeof CONTRACTS[number]) => r.sleeve === contract.key &&
+    r.forecast.modelVersion === contract.version && r.forecast.horizonSessions === contract.horizon && r.forecast.definition === contract.definition
+  const currentPending = pending.filter(r => finite(r.availableAt) && r.availableAt <= nowSec && CONTRACTS.some(c => matchesContract(r, c)))
   let excludedLegacyN = 0
   let excludedUnavailableN = 0
   let eligibleCompletedN = 0
@@ -196,6 +204,7 @@ export function buildResearchLearning(records: StrategyLabRecord[], nowSec: numb
   })
   const eligible: StrategyLabRecord[] = []
   const strategies = CONTRACTS.map(contract => {
+    const tracking = currentPending.filter(r => matchesContract(r, contract))
     const candidates = supported.filter(r => r.sleeve === contract.key)
     const rows = candidates.length ? compatibleLabRecords({ ...candidates[0], availableAt: nowSec + 1 }, candidates) : []
     eligibleCompletedN += rows.length
@@ -205,6 +214,8 @@ export function buildResearchLearning(records: StrategyLabRecord[], nowSec: numb
     return {
       key: contract.key, label: contract.label, modelVersion: contract.version, horizonSessions: contract.horizon,
       status: status(rows.length), overall, chronology: chronology(rows, short),
+      tracking: { pendingN: tracking.length, firstPublicationAt: first(tracking.map(r => r.availableAt)),
+        latestPublicationAt: last(tracking.map(r => r.availableAt)), symbols: [...new Set(tracking.map(r => r.sym))].sort().slice(0, 8) },
       summary: rows.length < MIN_PATTERN_N ? `${rows.length}/${MIN_PATTERN_N} independent completed campaigns; collecting evidence.`
         : `${rows.length} independent completed campaigns; observed outcomes are descriptive, not proof of a predictive edge.`,
       conditions: CONDITIONS.flatMap(condition => {
@@ -231,6 +242,7 @@ export function buildResearchLearning(records: StrategyLabRecord[], nowSec: numb
     history: {
       completedLimit: RESEARCH_COMPLETED_LIMIT, retainedRecordsN: records.length, retainedCompletedN: completed.length,
       pendingN: records.length - completed.length, eligibleCompletedN, excludedCompletedN: completed.length - eligibleCompletedN,
+      currentPendingN: currentPending.length, earlierPendingN: pending.length - currentPending.length,
       excludedLegacyN, excludedUnavailableN, excludedOverlappingN: supported.length - eligibleCompletedN,
       oldestPublicationAt: first(completed.map(r => r.availableAt).filter(finite)),
       latestOutcomeAt: last(eligible.map(r => r.outcome!.horizonEndAt!)), atCapacity: completed.length >= RESEARCH_COMPLETED_LIMIT,

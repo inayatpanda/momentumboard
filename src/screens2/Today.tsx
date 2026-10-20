@@ -22,6 +22,7 @@ import { YesterdayStrip } from './parts/YesterdayStrip'
 import { StrategyLabPanel } from './parts/StrategyLabPanel'
 import { LearningPanel } from './parts/LearningPanel'
 import { DecisionCockpit } from './parts/DecisionCockpit'
+import { BrandMark } from '../components/BrandMark'
 import '../styles/research.css'
 
 const DESK_VIEWS = ['today', 'research', 'learning'] as const
@@ -77,7 +78,7 @@ export default function Today() {
   return (
     <div className="today research-desk">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
-      {mobile && <div className="brief-appbar"><span className="brief-wordmark"><span aria-hidden="true">↗</span> StreetSignal</span><div>
+      {mobile && <div className="brief-appbar"><span className="brief-wordmark"><BrandMark /> StreetSignal</span><div>
         <Link href="/stocks" className="brief-icon-button" aria-label="Search stocks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></Link>
         <button type="button" className="brief-icon-button" aria-label="Refresh daily brief" disabled={refreshing} onClick={refresh}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7"/></svg></button>
       </div></div>}
@@ -141,7 +142,7 @@ export default function Today() {
       </div>
       <div id="brief-panel-learning" role={mobile ? 'tabpanel' : undefined} aria-labelledby={mobile ? 'brief-tab-learning' : undefined} hidden={mobile && view !== 'learning'}>
       <div id="historical-learning" className="research-section">
-        <LearningPanel learning={data?.engineLab?.learning} />
+        <LearningPanel learning={data?.engineLab?.learning} onResearch={mobile ? () => setView('research') : undefined} />
         <YesterdayStrip yesterday={data?.yesterday ?? null} />
       </div>
       </div>

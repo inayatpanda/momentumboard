@@ -1261,6 +1261,8 @@ p {
 
 /* Shared research screens: compact summaries, clear navigation, evidence on demand. */
 .v2 .stx > .rf-btn { display: none; }
+.brand-mark { display: block; flex: 0 0 auto; }
+.v2 .stocks-brandline { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 12px; font-weight: 650; color: var(--text); letter-spacing: -.02em; }
 .v2 .stocks-refresh { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface-1); color: var(--text); font-size: 24px; cursor: pointer; }
 .v2 .stock-price-note { color: var(--text-dim); font-size: 10px; font-weight: 400; }
 .v2 .watch-price-status { font-size: 12px; color: var(--text-dim); line-height: 1.6; }

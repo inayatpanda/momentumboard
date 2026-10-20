@@ -12,6 +12,7 @@
 
 import { Link, useLocation } from 'wouter'
 import { NAV_ROUTES, ROUTES } from './routes'
+import { BrandMark } from '../components/BrandMark'
 
 const ICONS: Record<string, string> = {
   today: 'M3 10.5 12 3l9 7.5M5 9v11h5v-6h4v6h5V9',
@@ -56,7 +57,7 @@ export function Nav() {
   const promoted = NAV_ROUTES.some(r => r.railOnly && path === r.path)
   return (
     <nav className={promoted ? 'v2-nav on-promoted' : 'v2-nav'} aria-label="Primary">
-      <div className="nav-wordmark" aria-hidden="true"><span>↗</span> StreetSignal</div>
+      <div className="nav-wordmark" aria-hidden="true"><BrandMark /> StreetSignal</div>
       {NAV_ROUTES.map(r => {
         const on = r.railOnly ? path === r.path : active === r.key
         const cls = ['v2-tab', r.railOnly ? 'rail-only' : '', on ? 'on' : ''].filter(Boolean).join(' ')
