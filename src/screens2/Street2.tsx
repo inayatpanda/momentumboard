@@ -25,7 +25,9 @@ import { ClaimEvidence, ProcessingJobs, SocialLearning } from './parts/SocialEvi
 // exception is the page as a whole: a screen that renders nothing at all reads
 // as broken, so an empty wire says so in a line.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { filterStreetVideos, latestStreetVideos } from '../lib/socialFeed'
+import { ChannelCoverage } from './parts/ChannelCoverage'
 import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
 import { usePullRefresh, useSlicesRefresh, type SliceRefreshEntry } from '../lib/usePullRefresh'
@@ -102,42 +104,50 @@ function PicksSection({ consensus, board, openCalls }: { consensus: ChannelPick[
   // A NEUTRAL MENTION IS NOT A PICK — the same filter the board slice's own
   // channelPicks applies (engine.mts), applied here because this page reads the
   // raw consensus rather than that projection.
+  const [expanded, setExpanded] = useState(false)
   const picks = consensus.filter(p => p.bulls + p.bears > 0)
   if (picks.length === 0) return null
   const rows = indexBoard(board)
   const open = indexBySym(openCalls ?? [])
   return (
     <section id="picks" className="card itl-section stt-picks" aria-label="The channels’ picks">
-      <h2 className="sec-label">The channels’ picks — and what the engine thinks</h2>
+      <h2 className="sec-label">The channels’ picks</h2>
       <p className="cc-reason itl-feed-intro">
-        Every name the tracked channels took a side on this week, most-mentioned first, each beside the engine’s own stance on it.
+        This week’s most-discussed stocks, with the engine’s view alongside.
       </p>
       <div className="cp-list stt-picks-list">
-        {picks.map(p => (
+        {(expanded ? picks : picks.slice(0, 6)).map(p => (
           <ChannelPickRow key={p.sym} pick={p} row={rows.get(p.sym)} open={open.get(p.sym)} detailed />
         ))}
       </div>
+      {picks.length > 6 && <button className="discovery-more" onClick={() => setExpanded(v => !v)}>{expanded ? 'Show fewer stocks' : `View all ${picks.length} stocks`}</button>}
     </section>
   )
 }
 
 /** (b) THE WIRE — WHAT THE CHANNELS SAID. The owner's "summary of youtube
  * video input… a section of their own": one card a video, newest first. */
-function WireSection({ videos }: { videos: StreetVideo[] }) {
+function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; channel: string; onChannel: (name: string) => void }) {
   const [visible, setVisible] = useState(WIRE_PAGE)
-  const [channel, setChannel] = useState('')
-  const filtered = channel ? videos.filter(v => v.channel === channel) : videos
-  if (videos.length === 0) return null
+  const [query, setQuery] = useState('')
+  const [sourcedOnly, setSourcedOnly] = useState(false)
+  const filtered = filterStreetVideos(videos, channel, query, sourcedOnly)
   return (
     <section id="wire" className="card itl-section stt-wire">
       <h2 className="sec-label">The wire — what the channels said</h2>
-      <p className="cc-reason itl-feed-intro">Every video the desk has analysed, newest first. The chips are the names each one took a side on.</p>
+      <p className="cc-reason itl-feed-intro">Completed analyses, newest first. Open the evidence to check the creator’s words and timestamps.</p>
+      <div className="street-filters">
+      <label className="street-search">Find a video<input type="search" placeholder="Company, ticker or topic" value={query} onChange={e => { setQuery(e.target.value); setVisible(WIRE_PAGE) }} /></label>
       <label className="discovery-market">YouTube channel
-        <select aria-label="YouTube channel" value={channel} onChange={e => { setChannel(e.target.value); setVisible(WIRE_PAGE) }}>
+        <select aria-label="YouTube channel" value={channel} onChange={e => { onChannel(e.target.value); setVisible(WIRE_PAGE) }}>
           <option value="">All channels ({videos.length} videos)</option>
-          {[...new Set(videos.map(v => v.channel))].sort().map(name => <option key={name} value={name}>{name} ({videos.filter(v => v.channel === name).length})</option>)}
+          {[...new Set([...videos.map(v => v.channel), ...(channel ? [channel] : [])])].sort().map(name => <option key={name} value={name}>{name} ({videos.filter(v => v.channel === name).length})</option>)}
         </select>
       </label>
+      <label className="street-sourced"><input type="checkbox" checked={sourcedOnly} onChange={e => { setSourcedOnly(e.target.checked); setVisible(WIRE_PAGE) }} /> With matched quotes</label>
+      </div>
+      <p className="social-evidence__note" role="status">{filtered.length} {filtered.length === 1 ? 'video' : 'videos'}{sourcedOnly ? ' with a quote matched to the source. This does not verify the claim itself.' : ''}</p>
+      {!filtered.length && <div className="street-empty"><h3>{videos.length ? 'No videos match these filters' : 'No completed videos yet'}</h3><p>{channel ? `No completed analysis is available for ${channel} with these filters. Check Tracking for capture progress.` : 'Try another search, or check Tracking to see what is being processed.'}</p>{(query || channel || sourcedOnly) && <button onClick={() => { setQuery(''); onChannel(''); setSourcedOnly(false) }}>Clear filters</button>}</div>}
       <div className="stt-video-list">
         {/* url+index: the extracts blob has no URL-level dedup, so a
             re-analysed video can appear twice (the news desk's own key rule) */}
@@ -168,7 +178,7 @@ function WireSection({ videos }: { videos: StreetVideo[] }) {
             )}
             {v.provenance === 'third-party' && <p className="social-evidence__note">Third-party coverage. The creator’s original statement has not been checked; excluded from consensus and learning.</p>}
             {v.provenance === 'manual' && <p className="social-evidence__note">Manually forwarded view. Excluded from automated consensus and learning.</p>}
-            <ClaimEvidence video={v} />
+            {v.claims && <details className="street-video-evidence"><summary>Claims and source excerpts <span>{v.claims.length}</span></summary><ClaimEvidence video={v} /></details>}
             {!v.claims && v.tickers.some(t => t.thesis || t.evidenceQuote) && <details className="cc-reason">
               <summary>What was said and supporting words</summary>
               {v.tickers.filter(t => t.thesis || t.evidenceQuote).map((ticker, j) => <div key={`${ticker.sym}-evidence-${j}`}>
@@ -200,7 +210,7 @@ function ReadsSection({ reads }: { reads: StreetRead[] }) {
       <div className="stt-read-list">
         {reads.map((r, i) => (
           <figure className="stt-read" key={`${r.url}-${i}`}>
-            <blockquote className="stt-read-body"><NarrativeText text={r.analysis} /></blockquote>
+            <details className="street-read-detail"><summary>Read analysis</summary><blockquote className="stt-read-body"><NarrativeText text={r.analysis} /></blockquote></details>
             <figcaption className="stt-read-cap">
               <b className="stt-chan">{r.channel}</b>
               <a className="stt-read-title" href={r.url} target="_blank" rel="noreferrer">
@@ -229,7 +239,10 @@ export default function Street2() {
   const { refresh, refreshing } = useSlicesRefresh(REFRESH_ENTRIES)
   const { pull } = usePullRefresh(refresh)
 
-  const videos = wire?.videos ?? []
+  const [view, setView] = useState<'insights' | 'videos' | 'tracking'>('insights')
+  const [channel, setChannel] = useState('')
+  const videos = useMemo(() => latestStreetVideos(wire?.videos ?? []), [wire?.videos])
+  const openChannel = (name: string) => { setChannel(name); setView('videos') }
   const reads = wire?.reads ?? []
   const consensus = wire?.consensus ?? []
   // RESOLVED AND EMPTY is a different statement from NOT YET LOADED, and only
@@ -239,32 +252,34 @@ export default function Street2() {
   return (
     <div className="stt">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
-      <h1>The street</h1>
-      <p className="cc-reason stt-intro">Follow a view from its source to its evidence, then see how it performs.</p>
-      {wireError && <section role="alert" className="card itl-section">
+      <div className="street-heading"><div><p className="stocks-eyebrow">VOICES. EVIDENCE. OUTCOMES.</p><h1>The street</h1></div><Link href="/">Stocks ↗</Link></div>
+      <p className="cc-reason stt-intro">What creators are saying, what supports it and what happened next.</p>
+      {wire && <button className="street-status" onClick={() => setView('tracking')}><span className="street-status__dot" aria-hidden="true" /><span>{wire.videoIngestion?.lastExtractAt ? `Latest analysis ${relativeStamp(wire.videoIngestion.lastExtractAt)}` : videos.length ? `${videos.length} completed videos in the feed` : 'Waiting for the first completed analysis'}<small>{wire.videoIngestion ? `${wire.videoIngestion.queued} analyses waiting${wire.videoIngestion.failed ? ` · ${wire.videoIngestion.failed} need attention` : ''}` : 'See channel coverage and capture progress'}</small></span><span aria-hidden="true">→</span></button>}
+      <div className="stocks-tabs street-tabs" role="tablist" aria-label="Channel research views">
+        {(['insights', 'videos', 'tracking'] as const).map((key, index, keys) => <button key={key} role="tab" id={`street-tab-${key}`} aria-controls="street-view" aria-selected={view === key} tabIndex={view === key ? 0 : -1} onClick={() => setView(key)} onKeyDown={e => {
+          const next = e.key === 'ArrowRight' ? (index + 1) % keys.length : e.key === 'ArrowLeft' ? (index + keys.length - 1) % keys.length : e.key === 'Home' ? 0 : e.key === 'End' ? keys.length - 1 : -1
+          if (next < 0) return
+          e.preventDefault(); setView(keys[next]); document.getElementById(`street-tab-${keys[next]}`)?.focus()
+        }}>{key === 'insights' ? 'Insights' : key === 'videos' ? 'Videos' : 'Tracking'}</button>)}
+      </div>
+      {wireError && <section role="alert" aria-label="Video feed error" className="card itl-section">
         <p>{wire ? 'The latest video update failed. Showing saved results.' : 'Video analysis could not be loaded.'}</p>
         <p className="cc-reason">{wireError}</p>
         <button type="button" onClick={retryWire} disabled={wireLoading}>Retry video feed</button>
       </section>}
       {!wire && !wireError && <p className="cc-reason" role="status">Loading video evidence…</p>}
-      <VideoHealth health={wire?.videoIngestion} onRefresh={refresh} />
-      {nothingYet && <p className="cc-reason">The channels haven’t said anything the engine has read yet — the wire fills as videos land.</p>}
-      <div className="stt-grid">
-        {/* the wrappers are LAYOUT ONLY: `display: contents` on the phone, so
-            the sections stay one column in the order the owner asked for, and
-            real columns at desk width, where each side flows independently
-            instead of leaving a hole under whichever section is shorter */}
-        <div className="stt-col">
-          <SocialLearning learning={wire?.socialLearning} />
+      <div id="street-view" role="tabpanel" aria-labelledby={`street-tab-${view}`}>
+      {view === 'insights' ? <>
+        {nothingYet && <p className="cc-reason">The channels haven’t said anything the engine has read yet — the wire fills as videos land.</p>}
+        <div className="street-insights-grid"><div>
           <PicksSection consensus={consensus} board={boardSlice?.board?.board ?? []} openCalls={boardSlice?.openTrace?.entries} />
-          <div className="stt-social">
-            <SocialPulse />
-          </div>
-        </div>
-        <div className="stt-col">
-          <WireSection videos={videos} />
-          <ReadsSection reads={reads} />
-        </div>
+          {wire && !nothingYet && !consensus.some(p => p.bulls + p.bears > 0) && <section className="card itl-section"><h2 className="sec-label">No directional consensus yet</h2><p className="cc-reason">Completed videos are available below. A company mention alone does not count as a bullish or bearish call.</p></section>}
+          {videos.length > 0 && <section className="card itl-section street-recent" aria-label="Recently analysed videos"><div className="discovery-heading"><h2>Recently analysed</h2><button className="stocks-text-link" onClick={() => openChannel('')}>View all →</button></div>{videos.slice(0, 3).map(v => <button className="street-recent__row" key={v.url} onClick={() => openChannel(v.channel)}><span className="street-recent__play" aria-hidden="true">▷</span><span><small>{v.channel} · {relativeStamp(v.at)}</small><strong>{decodeEntities(v.title)}</strong><small>{v.tickers.map(t => t.sym).slice(0, 4).join(' · ') || 'Market context'}</small></span><span aria-hidden="true">→</span></button>)}</section>}
+        </div><div><SocialLearning learning={wire?.socialLearning} /><SocialPulse /></div></div>
+      </> : view === 'videos' ? <><WireSection videos={videos} channel={channel} onChannel={setChannel} /><ReadsSection reads={channel ? reads.filter(r => r.channel === channel) : reads} /></> : <>
+        <ChannelCoverage health={wire?.videoIngestion} onChannel={openChannel} />
+        <VideoHealth health={wire?.videoIngestion} onRefresh={refresh} />
+      </>}
       </div>
     </div>
   )

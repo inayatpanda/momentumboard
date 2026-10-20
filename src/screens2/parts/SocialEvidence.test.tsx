@@ -22,6 +22,11 @@ describe('visible social evidence', () => {
     expect(screen.queryByRole('link', { name: /Play source/ })).not.toBeInTheDocument()
     expect(screen.getByText('Needs source check')).toBeInTheDocument()
   })
+  it('distinguishes a partially read transcript from an unavailable transcript', () => {
+    render(<ClaimEvidence video={{ ...video, coverage: { ...video.coverage!, complete: false, chunks: 3, analysedChunks: 2 } }} />)
+    expect(screen.getByText('2/3 transcript sections read · partial')).toBeInTheDocument()
+    expect(screen.queryByText('Transcript unavailable')).not.toBeInTheDocument()
+  })
   it('does not present cold or repeated observations as an accuracy percentage', () => {
     render(<SocialLearning learning={{ version: 'v1', mode: 'shadow', pending: 8, completed: 0, independent: 0, repeats: 3, channels: [], recent: [] }} />)
     expect(screen.getByText('8')).toBeInTheDocument()

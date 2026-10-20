@@ -4,10 +4,12 @@ import { videoKey } from '../../../shared/youtubeCaptions.mjs'
 import { videoFailureReason, type WorkItem } from './videoQueue'
 import { readTranscriptIndex } from './videoTranscriptStore'
 import { PROVIDER_HEALTH_KEY, type TranscriptProviderHealth } from './transcriptProviderHealth'
+import { withDefaults } from '../../../shared/channels'
+import type { InboxVideo } from './videoTranscriptStore'
 
 export async function videoIngestionHealth(store: AppStore, extracts: { url: string; at: number }[], nowSec: number, analyses: { url: string }[] = []) {
-  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner] = await Promise.all([
-    store.read<{ url: string }[]>('video-inbox'),
+  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner, config] = await Promise.all([
+    store.read<InboxVideo[]>('video-inbox'),
     readTranscriptIndex(store),
     store.read<WorkItem[]>('work-queue'),
     store.read<WorkItem[]>('work-queue-deadletter'),
@@ -15,6 +17,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     store.read<{ at: number; status: string }>('social-worker-heartbeat'),
     store.read<TranscriptProviderHealth>(PROVIDER_HEALTH_KEY),
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; buffered: number }>('video-local-runner'),
+    store.read<{ ytChannels?: { id: string; name: string }[] }>('config'),
   ])
   const completed = new Set(extracts.map(v => videoKey(v.url)))
   const watched = new Set(analyses.map(v => videoKey(v.url)))
@@ -32,7 +35,25 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
   const legacyFailed = failed.filter(j => !durableIds.has(jobKey(j)))
   const retries = queued.map(j => j.nextAttemptAt ?? 0).filter(at => at > nowSec)
   retries.push(...activeSocial.map(j => j.nextAttemptAt).filter(at => at > nowSec))
+  // Capture candidates outlive the recent inbox. A completed extract also
+  // proves that words are no longer needed, even if its index entry aged out.
+  const captureCandidates = new Map([...inbox ?? [], ...activeSocial.filter(j => j.mode === 'extract')].map(v => [videoKey(v.url), v]))
+  const recent = [...new Map((inbox ?? []).map(v => [videoKey(v.url), v])).values()]
+  const discoveryTimes = recent.map(v => v.at).filter(Number.isFinite)
+  const channels = withDefaults(config?.ytChannels).map(channel => {
+    const videos = recent.filter(v => v.channelId ? v.channelId === channel.id : v.channel === channel.name)
+    return {
+      id: channel.id, name: channel.name,
+      discovered: videos.length,
+      captured: videos.filter(v => words.has(videoKey(v.url))).length,
+      analysed: videos.filter(v => completed.has(videoKey(v.url))).length,
+      awaitingCapture: videos.filter(v => !words.has(videoKey(v.url)) && !completed.has(videoKey(v.url))).length,
+      latestPublishedAt: latest(videos.map(v => ({ at: v.publishedAt ?? 0 }))),
+    }
+  })
   return {
+    channels,
+    discoveryWindow: { videos: recent.length, since: discoveryTimes.length ? Math.min(...discoveryTimes) : null },
     provider: provider ?? null,
     localRunner: localRunner ? { ...localRunner, stale: nowSec - localRunner.at > 2 * 3600 } : null,
     localLastSavedAt: latest(transcripts.filter(t => t.source === 'local')),
@@ -41,7 +62,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     workerStale: !!activeSocial.length && (!heartbeat || nowSec - heartbeat.at > 6 * 3600),
     oldestPendingAt: activeSocial.length ? Math.min(...activeSocial.map(j => j.at)) : null,
     jobs: [...activeSocial].sort((a, b) => a.at - b.at).slice(0, 12).map(j => ({ id: j.id, title: j.title, url: j.url, mode: j.mode, stage: j.stage, at: j.at, attempts: j.attempts, nextAttemptAt: j.nextAttemptAt, ...(j.lastError ? { reason: videoFailureReason(503, j.lastError) } : {}) })),
-    pendingTranscripts: new Set((inbox ?? []).filter(v => !words.has(videoKey(v.url))).map(v => videoKey(v.url))).size,
+    pendingTranscripts: [...captureCandidates.keys()].filter(id => !words.has(id) && !completed.has(id)).length,
     queued: legacyQueued.length + activeSocial.filter(j => j.stage !== 'needs-attention').length,
     deferred: legacyQueued.filter(j => (j.nextAttemptAt ?? 0) > nowSec).length + activeSocial.filter(j => j.stage !== 'needs-attention' && j.nextAttemptAt > nowSec).length,
     failed: legacyFailed.length + activeSocial.filter(j => j.stage === 'needs-attention').length,

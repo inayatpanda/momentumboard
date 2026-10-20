@@ -3,6 +3,29 @@ import { memoryStore } from './store'
 import { videoIngestionHealth } from './videoIngestion'
 
 describe('video ingestion health', () => {
+  it('counts unique recent videos per channel and retains capture backlog beyond the inbox window', async () => {
+    const store = memoryStore()
+    await store.write('config', { ytChannels: [{ id: 'UCtest', name: 'A creator' }], secret: 'must-not-leak' })
+    await store.write('video-inbox', [
+      { url: 'https://youtu.be/abcdefghijk', channelId: 'UCtest', channel: 'Old name', at: 20, publishedAt: 10 },
+      { url: 'https://www.youtube.com/watch?v=abcdefghijk', channelId: 'UCtest', channel: 'A creator', at: 20, publishedAt: 10 },
+      { url: 'https://youtu.be/abcdefghijl', channel: 'A creator', at: 30, publishedAt: 25 },
+    ])
+    await store.write('video-transcript-index:v2', [{ url: 'https://youtu.be/abcdefghijk', at: 40, characters: 1000 }])
+    await store.write('social-jobs:v1', [{ url: 'https://youtu.be/abcdefghijm', mode: 'extract', stage: 'queued', at: 5, nextAttemptAt: 0 }])
+    const health = await videoIngestionHealth(store, [{ url: 'https://youtu.be/abcdefghijk', at: 50 }], 100)
+    expect(health.channels.find(c => c.id === 'UCtest')).toEqual({ id: 'UCtest', name: 'A creator', discovered: 2, captured: 1, analysed: 1, awaitingCapture: 1, latestPublishedAt: 25 })
+    expect(health.pendingTranscripts).toBe(2)
+    expect(health.discoveryWindow).toEqual({ videos: 2, since: 20 })
+    expect(health.channels.some(c => c.discovered === 0)).toBe(true)
+    expect(JSON.stringify(health)).not.toContain('must-not-leak')
+  })
+
+  it('does not report an already analysed video as a missing transcript after indexes roll over', async () => {
+    const store = memoryStore()
+    await store.write('video-inbox', [{ url: 'https://youtu.be/abcdefghijk', at: 20 }])
+    expect((await videoIngestionHealth(store, [{ url: 'https://youtu.be/abcdefghijk', at: 30 }], 100)).pendingTranscripts).toBe(0)
+  })
   it('distinguishes awaiting words, deferred jobs and failures without exposing provider data', async () => {
     const store = memoryStore()
     await store.write('video-inbox', [{ url: 'https://youtu.be/abcdefghijk' }, { url: 'https://youtu.be/abcdefghijl' }])

@@ -118,12 +118,43 @@ beforeEach(async () => {
 })
 
 describe('Street2', () => {
+  it('opens a channel from Tracking and keeps unrelated video summaries out of that view', async () => {
+    await seedWire({
+      videos: [mkVideo(), mkVideo({ url: 'https://youtu.be/other', channel: 'Nash', title: 'Another view' })],
+      reads: [{ url: 'https://youtu.be/deep', channel: 'Nash', title: 'Nash deep read', analysis: 'Not the selected channel', at: hoursAgo(1) }],
+      videoIngestion: { channels: [{ id: 'UCjosh', name: 'Josh', discovered: 3, captured: 2, analysed: 1, awaitingCapture: 1, latestPublishedAt: hoursAgo(2) }], pendingTranscripts: 1, queued: 1, deferred: 0, failed: 0, lastExtractAt: hoursAgo(1), lastTranscriptAt: hoursAgo(1), nextRetryAt: null, recentFailures: [] },
+    })
+    withRouter()
+    expect(screen.queryByLabelText('YouTube processing status')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Tracking' }))
+    const channel = await screen.findByRole('heading', { name: 'Josh' })
+    fireEvent.click(within(channel.closest('article')!).getByRole('button', { name: 'View videos →' }))
+    expect(screen.getByRole('tab', { name: 'Videos' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('combobox', { name: 'YouTube channel' })).toHaveValue('Josh')
+    expect(screen.getByRole('link', { name: 'Why NVDA still runs' })).toBeInTheDocument()
+    expect(screen.queryByText('Another view')).not.toBeInTheDocument()
+    expect(screen.queryByText('Nash deep read')).not.toBeInTheDocument()
+  })
+
+  it('supports ticker search, empty results and clearing the video filters', async () => {
+    await seedWire({ videos: [mkVideo(), mkVideo({ url: 'https://youtu.be/other', title: 'Apple earnings', tickers: [{ sym: 'AAPL', company: 'Apple', stance: 'bull' }] })] })
+    withRouter()
+    fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
+    await screen.findByRole('link', { name: 'Apple earnings' })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find a video' }), { target: { value: 'Apple' } })
+    expect(screen.queryByRole('link', { name: 'Why NVDA still runs' })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find a video' }), { target: { value: 'unmatched' } })
+    expect(screen.getByRole('heading', { name: 'No videos match these filters' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(screen.getByRole('link', { name: 'Why NVDA still runs' })).toBeInTheDocument()
+  })
   it('shows processing failures and deferred work separately from completed videos', async () => {
     await seedWire({ videoIngestion: { pendingTranscripts: 8, queued: 3, deferred: 2, failed: 1,
       lastTranscriptAt: hoursAgo(1), lastExtractAt: hoursAgo(2), nextRetryAt: null,
       recentFailures: [{ title: 'A video', reason: 'transcript-unavailable', at: hoursAgo(1) }],
     } })
     withRouter()
+    fireEvent.click(screen.getByRole('tab', { name: 'Tracking' }))
     const status = await screen.findByLabelText('YouTube processing status')
     expect(status).toHaveTextContent('8 awaiting captions · 3 queued analyses · 2 deferred · 1 failed')
     expect(status).toHaveTextContent('transcript-unavailable')
@@ -132,7 +163,7 @@ describe('Street2', () => {
   it('offers a retry when the video feed fails on first load', async () => {
     vi.mocked(getStreetWire).mockRejectedValueOnce(new Error('http-503'))
     withRouter()
-    expect(await screen.findByRole('alert')).toHaveTextContent('Video analysis could not be loaded')
+    expect(await screen.findByRole('alert', { name: 'Video feed error' })).toHaveTextContent('Video analysis could not be loaded')
     expect(screen.getByRole('button', { name: 'Retry video feed' })).toBeInTheDocument()
     expect(screen.queryByText('Loading video evidence…')).not.toBeInTheDocument()
   })
@@ -173,6 +204,8 @@ describe('Street2', () => {
       await seedWire({ consensus: Array.from({ length: 12 }, (_, i) => mkPick({ sym: `S${i}` })) })
       withRouter()
       const picks = (await screen.findByRole('region', { name: /channels’ picks/i })) as HTMLElement
+      expect(picks.querySelectorAll('.cp-row')).toHaveLength(6)
+      fireEvent.click(screen.getByRole('button', { name: 'View all 12 stocks' }))
       expect(picks.querySelectorAll('.cp-row')).toHaveLength(12)
     })
 
@@ -216,7 +249,7 @@ describe('Street2', () => {
     it('renders nothing at all when the wire carries no picks but does carry videos', async () => {
       await seedWire({ videos: [mkVideo()] })
       withRouter()
-      await screen.findByRole('heading', { name: /the wire/i })
+      await screen.findByRole('heading', { name: /recently analysed/i })
       expect(screen.queryByRole('region', { name: /channels’ picks/i })).not.toBeInTheDocument()
     })
   })
@@ -225,6 +258,7 @@ describe('Street2', () => {
     it('renders one card a video: channel, stamp, and the title as an external link', async () => {
       await seedWire({ videos: [mkVideo({ at: hoursAgo(2) })] })
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
       const card = (await screen.findByText('Why NVDA still runs')).closest('.stt-video') as HTMLElement
       expect(within(card).getByText('Josh')).toBeInTheDocument()
       expect(within(card).getByText('2h ago')).toBeInTheDocument()
@@ -239,6 +273,7 @@ describe('Street2', () => {
         videos: [mkVideo({ tickers: [{ sym: 'NVDA', stance: 'bull' }, { sym: 'COIN', stance: 'bear' }, { sym: 'SPY', stance: 'neutral' }] })],
       })
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
       const bull = await screen.findByRole('link', { name: 'NVDA' })
       expect(bull).toHaveClass('pill', 'long')
       expect(bull).toHaveAttribute('href', '/app/stock/NVDA')
@@ -253,6 +288,7 @@ describe('Street2', () => {
     it('prints the themes the video was about', async () => {
       await seedWire({ videos: [mkVideo({ themes: ['ai-capex', 'rate-cuts'] })] })
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
       expect(await screen.findByText('ai-capex')).toBeInTheDocument()
       expect(screen.getByText('rate-cuts')).toBeInTheDocument()
     })
@@ -269,6 +305,7 @@ describe('Street2', () => {
         ],
       })
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
       await screen.findByText('Watched one')
       expect(screen.getByText('watched')).toBeInTheDocument()
       expect(screen.getByText('read')).toBeInTheDocument()
@@ -279,6 +316,7 @@ describe('Street2', () => {
     it('shows twelve cards, then the rest behind Show more', async () => {
       await seedWire({ videos: Array.from({ length: 20 }, (_, i) => mkVideo({ url: `https://youtu.be/v${i}`, title: `Video ${i}` })) })
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
       await screen.findByText('Video 0')
       expect(screen.getAllByText(/^Video \d+$/)).toHaveLength(12)
       fireEvent.click(screen.getByRole('button', { name: /show more \(8\)/i }))
@@ -292,6 +330,7 @@ describe('Street2', () => {
         reads: [{ url: 'https://youtu.be/deep', title: 'The whole macro picture', channel: 'Nash', analysis: 'Rates are the only story that matters.', at: hoursAgo(5) }],
       })
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
       const read = (await screen.findByText('Rates are the only story that matters.')).closest('.stt-read') as HTMLElement
       expect(within(read).getByText('Nash')).toBeInTheDocument()
       expect(within(read).getByRole('link', { name: 'The whole macro picture' })).toHaveAttribute('href', 'https://youtu.be/deep')
@@ -301,6 +340,7 @@ describe('Street2', () => {
     it('renders nothing at all when no deep read exists', async () => {
       await seedWire({ videos: [mkVideo()] })
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
       await screen.findByRole('heading', { name: /the wire/i })
       expect(screen.queryByRole('heading', { name: /deep reads/i })).not.toBeInTheDocument()
     })

@@ -43,6 +43,14 @@ describe('cleanInstrumentName', () => {
 })
 
 describe('fetchVideos', () => {
+  it('keeps all recent uploads in a busy channel feed instead of dropping everything after five', async () => {
+    const entries = Array.from({ length: 15 }, (_, i) => `<entry><title>Video ${i}</title><link rel="alternate" href="https://www.youtube.com/watch?v=${String(i).padStart(11, '0')}"/><published>${new Date((NOW - i * 3600) * 1000).toISOString()}</published></entry>`).join('')
+    const fetchFn = vi.fn(async () => new Response(`<feed>${entries}<entry><title>Old</title><link href="https://yt/old"/><published>${new Date((NOW - 8 * 86400) * 1000).toISOString()}</published></entry></feed>`))
+    const videos = await fetchVideos([{ id: 'UC1', name: 'Busy channel' }], NOW, fetchFn as unknown as typeof fetch)
+    expect(videos).toHaveLength(15)
+    expect(videos.at(-1)?.title).toBe('Video 14')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
   it('maps feed entries to videos with channel names, skipping stale ones', async () => {
     const fetchFn = vi.fn(async () => new Response(ytFeed))
     const vids = await fetchVideos([{ id: 'UC1', name: 'Stocks with Josh' }], NOW, fetchFn as unknown as typeof fetch)

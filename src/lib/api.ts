@@ -358,6 +358,8 @@ export interface StreetWire {
   consensus: ChannelPick[]
   at: number
   videoIngestion?: {
+    channels?: { id: string; name: string; discovered: number; captured: number; analysed: number; awaitingCapture: number; latestPublishedAt: number | null }[]
+    discoveryWindow?: { videos: number; since: number | null }
     localRunner?: { at: number; running: boolean; saved: number; unavailable: number; buffered: number; stale: boolean } | null
     provider?: { checkedAt: number; status: string; plan?: string; remainingCredits?: number } | null
     localLastSavedAt?: number | null

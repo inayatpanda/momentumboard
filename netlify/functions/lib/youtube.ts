@@ -15,7 +15,9 @@ export async function fetchVideos(
           headers: { 'User-Agent': 'Mozilla/5.0 (MomentumBoard)' }, signal: AbortSignal.timeout(12_000),
         })
         if (!res.ok) return
-        for (const item of parseFeed(await res.text()).slice(0, 5)) {
+        // Read the full recent feed. Limiting this to five silently missed
+        // uploads from busy channels between polling runs.
+        for (const item of parseFeed(await res.text())) {
           if (item.publishedSec > 0 && item.publishedSec <= nowSec && nowSec - item.publishedSec < 7 * DAY) out.push({ title: item.title, url: item.url, channel: ch.name, channelId: ch.id, publishedAt: item.publishedSec })
         }
       } catch {

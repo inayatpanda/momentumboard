@@ -14,21 +14,23 @@ import { useState } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../../lib/useSlice'
 import { getSocialPulse } from '../../lib/api'
-import { decodeEntities } from '../../lib/format'
+import { decodeEntities, relativeStamp } from '../../lib/format'
 
-const PAGE = 30
+const PAGE = 6
 
 export function SocialPulse() {
-  const { data } = useSlice('intel:social', getSocialPulse)
+  const { data, error, refresh, refreshing } = useSlice('intel:social', getSocialPulse)
   const [visible, setVisible] = useState(PAGE)
   const rows = data?.pulse ?? []
 
   return (
     <section id="social" className="card itl-section">
       <h2 className="sec-label">Social pulse</h2>
-      {!data ? (
+      <p className="social-evidence__note">Attention across tracked sources. More mentions measure interest, not business quality or expected returns.{data?.at ? ` Updated ${relativeStamp(data.at)}.` : ''}</p>
+      {error && <div role="alert"><p className="cc-reason">{data ? 'The latest update failed. Showing the last saved pulse.' : 'Social activity could not be loaded.'}</p><button className="stocks-text-link" onClick={refresh} disabled={refreshing}>Retry social activity</button></div>}
+      {!data && !error ? (
         <div className="skeleton" style={{ height: 160 }} />
-      ) : rows.length === 0 && data.alsoLoud.length === 0 && data.discoveries.length === 0 ? (
+      ) : !data ? null : rows.length === 0 && data.alsoLoud.length === 0 && data.discoveries.length === 0 ? (
         <p className="cc-reason">Nothing loud enough to show right now.</p>
       ) : (
         <>
@@ -62,7 +64,8 @@ export function SocialPulse() {
                 <span className="itl-pulse-sym">{r.sym}</span>
                 {r.name && <span className="itl-pulse-name">{decodeEntities(r.name)}</span>}
                 <span className="itl-pulse-meta">
-                  {r.redditMentions != null && <span className="num">{r.redditMentions} mentions</span>}
+                  {r.redditMentions != null && <span className="num">{r.redditMentions} Reddit mentions</span>}
+                  {r.stocktwits && <span>Stocktwits trending</span>}
                   {r.surging && <span className="pill accent">surging{r.surgeMultiple != null ? ` ${r.surgeMultiple.toFixed(1)}x` : ''}</span>}
                 </span>
               </Link>

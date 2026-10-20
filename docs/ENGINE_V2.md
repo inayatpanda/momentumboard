@@ -322,3 +322,71 @@ allocation. Quotes are fetched in groups of twelve; large lists do not fetch
 candles per row. Movers, sector performance and crypto live under Markets.
 Channel insights links directly to The street, whose video feed can be filtered
 by channel and distinguishes machine speech transcription from captions.
+
+## Channel coverage and a quieter research UI — 2026-10-20
+
+The preceding release (`ae7d39b`) is live. A subsequent Mac run saved eight
+transcripts. The focused cloud analysis run
+[39427365680](https://github.com/inayatpanda/momentumboard/actions/runs/39427365680)
+completed successfully, using stored local words, and reported completion for
+TGuw8RA1KLY. This proves that capture and cloud analysis can connect; it does not
+prove coverage of every channel or every video.
+
+The street now has three views: Insights, Videos, and Tracking. Insights starts
+with six channel picks and three recent analyses. Videos supports channel,
+company/ticker/topic search, and a matched-quote filter. Duplicate URL forms use
+the most recent analysis. Source excerpts and longer narratives expand on demand.
+Tracking shows each configured channel's discovered, captured and analysed counts,
+including channels with no recent uploads. Counts explicitly cover the saved
+recent discovery window, rather than claiming a complete channel history.
+Pending capture includes unfinished durable jobs beyond that recent window.
+Discovery no longer silently drops feed entries after the first five per channel;
+it reads every returned RSS entry within the existing seven-day eligibility window.
+
+Social pulse distinguishes Reddit mention counts from Stocktwits trending and
+shows its last update, failure and retry state. Partial transcript processing is
+labelled partial. Attention alone is not presented as a return forecast. Stocks
+remains first, Today second. Markets now loads only when selected, reducing the
+initial gzip dependency closure from 123.4 KB to 119.3 KB (120 KB hard limit;
+100 KB target is still exceeded).
+
+Validation: all 252 test files / 3,647 tests passed before final layout corrections.
+After those corrections and a new partial-coverage regression test, the affected
+two files / 27 tests passed. The production TypeScript/Vite build passed.
+Browser checks used explicitly labelled illustrative data at 320 and 390 pixels
+and a 1280-pixel dark desktop. Channel navigation, filtering, source expansion,
+overflow, refresh-button clearance and card heights were checked. The temporary
+fixture entry points were removed before the final build. Screenshots are saved
+outside the repository in the parent Projects folder. No authenticated production
+screen is claimed as visually verified.
+
+### Laptop-independent capture recommendation
+
+The owner does not want the Mac to remain on. The local collector is therefore a
+fallback, not the recommended permanent dependency. Existing cloud discovery,
+storage and analysis already run without the laptop. Hosted transcript access is
+the missing dependable input. Moving yt-dlp or youtube-transcript-api to a generic
+VPS or Container does not itself solve YouTube blocking cloud-provider IPs.
+
+Verified public prices on 2026-10-20:
+
+- [TranscriptAPI](https://transcriptapi.com/): $5/month, 1,000 credits, one credit
+  per successful request; new accounts advertise 100 trial credits. Its caption
+  endpoint is an alternative to trial against the actual tracked channels.
+  It is not configured or live-tested in this app.
+- [Supadata](https://supadata.ai/pricing): Pro $17/month, 3,000 credits. Existing
+  captions cost one credit; generated transcripts cost two credits per video
+  minute. The app already integrates Supadata but its account currently has no
+  remaining credits. The existing `mode=native` request deliberately avoids
+  automatic per-minute transcription charges.
+
+Recommended rollout: trial hosted caption capture, measure successful coverage
+and cost on the tracked channels, then select a monthly plan. Keep discovery
+independent of the paid service, cache each successful transcript, and retain
+the same durable retry/analysis pipeline. Add an explicitly budgeted audio
+fallback for videos without captions; do not assume a caption subscription covers
+them. Before activating paid capacity, adjust the current native-capture budget
+(8 attempts/day, 90/month) to the chosen plan and make provider credentials
+available in the selected cloud execution environment. GitHub currently has
+the Supadata key; Pages does not. No new subscription, provider account,
+credential transfer, or server purchase was made.
