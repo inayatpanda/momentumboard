@@ -1,3 +1,4 @@
+import { IconClose } from '../../components/ControlIcon'
 // SettingsAdmin (plan Task 21) — licence status, the admin-unlock escape
 // hatch, and the admin-only licence manager. Ported faithfully from the
 // legacy src/screens/SettingsScreen.tsx (useIsAdmin:34-51, AdminUnlock:191-
@@ -187,7 +188,7 @@ export function LicenceManager({ licences, reload }: { licences: Licence[]; relo
                 Copy link
               </button>
               <button type="button" className="remove" onClick={() => void revokeLicence(l.key).then(reload)} aria-label={`Revoke ${l.label}`}>
-                ✕
+                <IconClose />
               </button>
             </span>
           </div>

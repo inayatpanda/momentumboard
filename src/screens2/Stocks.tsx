@@ -1,3 +1,4 @@
+import { SectorIcon } from '../components/SectorIcon'
 // Stocks opens with the watchlist; market research loads when selected.
 
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from 'react'
@@ -193,7 +194,7 @@ export default function Stocks() {
         {filteredItems.length > 6 && <button className="discovery-more" onClick={() => setShowAll(v => !v)}>{showAll ? 'Show fewer' : `View all ${filteredItems.length} stocks`}</button>}
         {!!directory && <WatchlistSectors symbols={symbols} directory={directory.rows} selected={watchFilter} onSelect={value => { setWatchFilter(value); setShowAll(false) }} />}
         <section className="stocks-sector-preview" aria-label="Browse by sector"><div className="discovery-heading"><h2>Explore sectors</h2><button className="stocks-text-link" onClick={() => { setSector(''); setSection('discover') }}>View all →</button></div>
-          <div className="sector-preview-grid">{[['Technology', '◈'], ['Healthcare', '✚'], ['Financials', '▥'], ['Energy', '◉']].map(([name, icon]) => <button key={name} onClick={() => { setSector(name); setSection('discover') }}><span aria-hidden="true">{icon}</span><strong>{name}</strong><span aria-hidden="true">↗</span></button>)}</div>
+          <div className="sector-preview-grid">{['Technology', 'Healthcare', 'Financials', 'Energy'].map(name => <button key={name} onClick={() => { setSector(name); setSection('discover') }}><span aria-hidden="true"><SectorIcon sector={name} /></span><strong>{name}</strong><span aria-hidden="true">↗</span></button>)}</div>
         </section>
         <Link href="/today" className="stocks-today-link"><span><strong>Today’s research</strong><small>Market context, stock setups and what changed</small></span><span aria-hidden="true">→</span></Link>
         <Link href="/more/street" className="stocks-today-link"><span><strong>From your channels</strong><small>Latest video findings and supporting evidence</small></span><span aria-hidden="true">→</span></Link>

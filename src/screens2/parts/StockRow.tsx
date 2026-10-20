@@ -1,3 +1,4 @@
+import { IconClose } from '../../components/ControlIcon'
 // StockRow (plan Task 15) — one watchlist row: avatar, symbol + name, price,
 // change pill, sparkline. The sparkline is THIS row's own `candles:SYM:3mo`
 // slice — mounting N rows fires N independent `useSlice` calls, which React
@@ -158,7 +159,7 @@ function StockRowContent({ symbol, name, quote, onRemove, flipKey, spark, priceN
       </Link>
       {onRemove && (
         <button className="stx-remove" onClick={onRemove} aria-label={`Remove ${symbol}`}>
-          ✕
+          <IconClose />
         </button>
       )}
     </div>

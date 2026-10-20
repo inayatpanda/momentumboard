@@ -45,3 +45,17 @@ export async function pauseNativeReads(store: AppStore, now: number, until: numb
     await store.write(nativeBudgetKey(now), budget)
   } finally { await releaseLease(store, lock, lease) }
 }
+
+/** One-time repair of the old global pause caused by a video-specific 400.
+ * Compare the exact recorded pause under a lease; never reset usage or quota. */
+export async function repairVideoSpecificPause(store: AppStore, now: number, expectedUntil: number): Promise<void> {
+  const lock = 'lease:native-video-budget', lease = await acquireLease(store, lock, now, 60)
+  if (!lease) return
+  try {
+    const budget = await readNativeBudget(store, now)
+    if (budget.pauseReason === 'provider-configuration' && budget.pauseUntil === expectedUntil) {
+      budget.pauseUntil = 0; delete budget.pauseReason
+      await store.write(nativeBudgetKey(now), budget)
+    }
+  } finally { await releaseLease(store, lock, lease) }
+}

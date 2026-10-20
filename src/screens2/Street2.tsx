@@ -1,3 +1,4 @@
+import { IconPlay, stripEmoji } from '../components/icons'
 import '../styles/street.css'
 import { ClaimEvidence, ProcessingJobs, SocialLearning } from './parts/SocialEvidence'
 // THE STREET (owner request, 2026-08-17):
@@ -76,16 +77,17 @@ function VideoHealth({ health, onRefresh }: { health: StreetWire['videoIngestion
     <h2 className="sec-label">YouTube processing</h2>
     <button type="button" className="pill" onClick={onRefresh}>Check for updates</button>
     {health.nativeRunner && <div className="cc-reason">
-      <div className="cloud-status-title"><div><strong>Free cloud video research</strong><span>{health.nativeRunner.scheduled ? 'Hourly · Your Mac can stay off' : 'Automatic reads paused'}</span></div><span className="cloud-state">{health.nativeRunner.running ? 'Processing' : health.nativeRunner.capped ? 'Waiting' : health.nativeRunner.status === 'error' ? 'Needs attention' : 'Ready'}</span></div>
+      <div className="cloud-status-title"><div><strong>{health.nativeRunner.latestOnly ? "Your daily video selection" : "Free cloud video research"}</strong><span>{health.nativeRunner.scheduled ? 'Hourly · Your Mac can stay off' : 'Automatic reads paused'}</span></div><span className="cloud-state">{health.nativeRunner.running ? 'Processing' : health.nativeRunner.capped ? 'Waiting' : health.nativeRunner.status === 'error' ? 'Needs attention' : 'Ready'}</span></div>
       <p>{health.nativeRunner.running ? 'Reading new videos and saving findings.' : health.nativeRunner.status === 'error' ? 'The last read needs attention; saved progress is retained.' : `${health.nativeRunner.published} video updates · ${health.nativeRunner.failed} unsuccessful on the last run.`} Checked {relativeStamp(health.nativeRunner.at)}.</p>
+      {health.nativeRunner.latestOnly && <p className="daily-video-plan"><strong>{health.nativeRunner.selectedToday ?? 0} / {health.nativeRunner.dailyVideoLimit ?? 5} selected today</strong><span>One recent upload per channel. Your channels rotate; videos already started finish before new ones are added. Older uploads are kept in history, outside this reading plan.</span></p>}
       {health.nativeRunner.dailyRequests != null && <div className="cloud-allowance"><div><span>Video time used</span><strong>{health.nativeRunner.dailyMinutes} <small>/ {health.nativeRunner.minuteLimit} min</small></strong><progress aria-label="Daily video allowance used" value={health.nativeRunner.dailyMinutes} max={health.nativeRunner.minuteLimit} /></div><div><span>Analysis requests</span><strong>{health.nativeRunner.dailyRequests} <small>/ {health.nativeRunner.requestLimit}</small></strong><progress aria-label="Daily analysis allowance used" value={health.nativeRunner.dailyRequests} max={health.nativeRunner.requestLimit} /></div></div>}
       {health.nativeRunner.pending != null && <p className="cloud-counts"><span><strong>{health.nativeRunner.completed}</strong> finished</span><span><strong>{health.nativeRunner.partial}</strong> partly read</span><span><strong>{health.nativeRunner.pending}</strong> waiting or in progress</span></p>}
       {health.nativeRunner.capped && <p>{health.nativeRunner.pauseReason === 'provider-quota' ? 'Google’s free capacity is temporarily unavailable.' : 'The free processing allowance or service limit has been reached.'} Saved sections are retained; unfinished videos will resume{health.nativeRunner.retryAt ? ` after ${new Date(health.nativeRunner.retryAt * 1000).toLocaleString()}` : ' when capacity returns'}.</p>}
       {health.nativeRunner.stale && <p>No recent check-in; check the cloud run for delays.</p>}
-      <details className="company-detail"><summary>How free processing works</summary><p>Saved captions are read first. Other videos continue in consecutive sections with progress saved between hourly runs. Your followed channels take turns.</p><p>Up to 7 hours of video sections and 400 requests per day. Actual throughput depends on lengths, access and the shared project’s free quota. Failed attempts count. The allowance resets at midnight Pacific time. No paid fallback.</p><p>{health.nativeRunner.endReported ?? 0} videos have an ending reported by AI without independent duration confirmation. Partial reads and unconfirmed endings are labelled in Videos.</p></details>
+      <details className="company-detail"><summary>How free processing works</summary><p>Up to five uploads from the last 24 hours, from different followed channels each day. Fewer are selected when channels have not posted or unfinished reads occupy the five available slots. Saved captions are read first; other videos continue through consecutive sections across hourly runs. The old archive is not queued.</p><p>Up to 7 hours of video sections and 400 requests per day. Actual throughput depends on lengths, access and the shared project’s free quota. Failed attempts count. The allowance resets at midnight Pacific time. No paid fallback.</p><p>{health.nativeRunner.endReported ?? 0} videos have an ending reported by AI without independent duration confirmation. Partial reads and unconfirmed endings are labelled in Videos.</p></details>
       <a href="https://github.com/inayatpanda/momentumboard/actions/workflows/youtube-native-capture.yml" target="_blank" rel="noopener noreferrer">View direct video reads ↗</a>
     </div>}
-    {!!health.nativeProgress?.length && <details><summary>Full-video queue ({health.nativeProgress.length} shown)</summary><ul>{health.nativeProgress.map(w => <li key={w.url}><a href={w.url} target="_blank" rel="noopener noreferrer">{w.title}</a><p className="cc-reason">{w.mode === 'captions' ? 'Reading saved captions' : `${Math.round(w.processedSeconds / 60)} minutes processed${w.sourceDurationSeconds ? ` of ${Math.ceil(w.sourceDurationSeconds / 60)}` : ' · source duration not confirmed'}`} · {w.stage === 'needs-attention' ? 'Repeated access failures' : w.stage === 'retry' ? 'Waiting to retry' : 'Queued to continue'}</p></li>)}</ul></details>}
+    {!!health.nativeProgress?.length && <details><summary>Full-video queue ({health.nativeProgress.length} shown)</summary><ul>{health.nativeProgress.map(w => <li key={w.url}><a href={w.url} target="_blank" rel="noopener noreferrer">{stripEmoji(w.title)}</a><p className="cc-reason">{w.mode === 'captions' ? 'Reading saved captions' : `${Math.round(w.processedSeconds / 60)} minutes processed${w.sourceDurationSeconds ? ` of ${Math.ceil(w.sourceDurationSeconds / 60)}` : ' · source duration not confirmed'}`} · {w.stage === 'needs-attention' ? 'Repeated access failures' : w.stage === 'retry' ? 'Waiting to retry' : 'Queued to continue'}</p></li>)}</ul></details>}
     {health.githubRunner && <details className="company-detail cc-reason"><summary>Fallback caption & audio capture</summary>
       <p><strong>Cloud collector · GitHub</strong><br />{health.githubRunner.stale ? 'No recent check-in. The schedule may be delayed or stopped.' : health.githubRunner.status === 'error' ? 'The last run stopped early; saved progress is retained.' : health.githubRunner.running ? 'Checking captions and transcribing available audio.' : `${health.githubRunner.saved} saved${health.githubRunner.reused ? ` · ${health.githubRunner.reused} already available` : ''} · ${health.githubRunner.unavailable} unavailable on the last run.`} Last seen {relativeStamp(health.githubRunner.at)}.</p>
       <p>Scheduled every three hours, even when your Mac is off. Up to 12 videos and two audio transcriptions per run. {health.githubLastSavedAt ? `Latest cloud transcript ${relativeStamp(health.githubLastSavedAt)}.` : 'No cloud transcript saved yet.'}</p>
@@ -179,7 +181,7 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
               <ViaMark via={v.via} />
             </div>
             <a className="stt-video-title" href={v.url} target="_blank" rel="noreferrer">
-              {decodeEntities(v.title)}
+              {stripEmoji(decodeEntities(v.title))}
             </a>
             {v.nativeTranscript && <p className="social-evidence__note">{v.nativeTranscript.progress?.completion === 'complete' ? 'All video sections processed · AI transcription'
               : v.nativeTranscript.progress?.completion === 'end-reported' ? 'Ending reported by AI · full coverage unconfirmed'
@@ -246,7 +248,7 @@ function ReadsSection({ reads }: { reads: StreetRead[] }) {
             <figcaption className="stt-read-cap">
               <b className="stt-chan">{r.channel}</b>
               <a className="stt-read-title" href={r.url} target="_blank" rel="noreferrer">
-                {decodeEntities(r.title)}
+                {stripEmoji(decodeEntities(r.title))}
               </a>
               <span className="stt-at">{relativeStamp(r.at)}</span>
             </figcaption>
@@ -280,7 +282,7 @@ export default function Street2() {
   // RESOLVED AND EMPTY is a different statement from NOT YET LOADED, and only
   // the first one earns the sentence.
   const native = wire?.videoIngestion?.nativeRunner
-  const queueSummary = native?.pending != null ? `${native.pending} videos waiting or in progress${native.partial ? ` · ${native.partial} partly read` : ''}`
+  const queueSummary = native?.pending != null ? `${native.pending} selected videos waiting or in progress${native.partial ? ` · ${native.partial} partly read` : ''}`
     : wire?.videoIngestion ? `${wire.videoIngestion.queued} analyses waiting${wire.videoIngestion.failed ? ` · ${wire.videoIngestion.failed} need attention` : ''}` : 'See channel coverage and capture progress'
   const nothingYet = wire != null && videos.length === 0 && reads.length === 0 && consensus.length === 0
 
@@ -309,7 +311,7 @@ export default function Street2() {
         <div className="street-insights-grid"><div>
           <PicksSection consensus={consensus} board={boardSlice?.board?.board ?? []} openCalls={boardSlice?.openTrace?.entries} />
           {wire && !nothingYet && !consensus.some(p => p.bulls + p.bears > 0) && <section className="card itl-section"><h2 className="sec-label">No directional consensus yet</h2><p className="cc-reason">Completed videos are available below. A company mention alone does not count as a bullish or bearish call.</p></section>}
-          {videos.length > 0 && <section className="card itl-section street-recent" aria-label="Recently analysed videos"><div className="discovery-heading"><h2>Recently analysed</h2><button className="stocks-text-link" onClick={() => openChannel('')}>View all →</button></div>{videos.slice(0, 3).map(v => <button className="street-recent__row" key={v.url} onClick={() => openChannel(v.channel)}><span className="street-recent__play" aria-hidden="true">▷</span><span><small>{v.channel} · {relativeStamp(v.at)}</small><strong>{decodeEntities(v.title)}</strong><small>{v.tickers.map(t => t.sym).slice(0, 4).join(' · ') || 'Market context'}</small></span><span aria-hidden="true">→</span></button>)}</section>}
+          {videos.length > 0 && <section className="card itl-section street-recent" aria-label="Recently analysed videos"><div className="discovery-heading"><h2>Recently analysed</h2><button className="stocks-text-link" onClick={() => openChannel('')}>View all →</button></div>{videos.slice(0, 3).map(v => <button className="street-recent__row" key={v.url} onClick={() => openChannel(v.channel)}><span className="street-recent__play" aria-hidden="true"><IconPlay size={18} /></span><span><small>{v.channel} · {relativeStamp(v.at)}</small><strong>{stripEmoji(decodeEntities(v.title))}</strong><small>{v.tickers.map(t => t.sym).slice(0, 4).join(' · ') || 'Market context'}</small></span><span aria-hidden="true">→</span></button>)}</section>}
         </div><div><SocialLearning learning={wire?.socialLearning} /><SocialPulse /></div></div>
       </> : view === 'videos' ? <><WireSection videos={videos} channel={channel} onChannel={setChannel} /><ReadsSection reads={channel ? reads.filter(r => r.channel === channel) : reads} /></> : <>
         <VideoHealth health={wire?.videoIngestion} onRefresh={refresh} />

@@ -176,9 +176,10 @@ export default async (req: Request) => {
   // cap is picked up on the next run instead of being dropped for good.
   try {
     const inbox = (await store.read<InboxVideo[]>('video-inbox')) ?? []
+    const readingPlan = await store.read<{ freeOnly?: boolean }>('video-reading-plan:v1')
     // The durable queue is dispatch memory. No rolling array or paid tier can
     // mark an unqueued extraction as complete. Discovery metadata travels with it.
-    const eligible = inbox.filter(v => v && typeof v.url === 'string')
+    const eligible = readingPlan?.freeOnly ? [] : inbox.filter(v => v && typeof v.url === 'string')
     const worthWatching = eligible.filter(v => v.channel === 'Stocks with Josh' || symbols.some(s => (v.title ?? '').toUpperCase().includes(s.split('.')[0].split('-')[0]))).slice(-2)
     await enqueueSocialJobs(store, [...eligible.map(v => ({ ...v, mode: 'extract' as const })), ...worthWatching.map(v => ({ ...v, mode: 'watch' as const }))], nowSec)
   } catch (e) {

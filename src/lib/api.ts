@@ -367,7 +367,7 @@ export interface StreetWire {
     githubLastSavedAt?: number | null
     githubTranscriptCount?: number
     nativeRunner?: { at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; scheduled?: boolean; status: string; stale: boolean;
-      dailyRequests?: number; dailyMinutes?: number; requestLimit?: number; minuteLimit?: number; pending?: number; partial?: number; completed?: number; endReported?: number; pauseReason?: string; retryAt?: number } | null
+      latestOnly?: boolean; selectedToday?: number; dailyVideoLimit?: number; dailyRequests?: number; dailyMinutes?: number; requestLimit?: number; minuteLimit?: number; pending?: number; partial?: number; completed?: number; endReported?: number; pauseReason?: string; retryAt?: number } | null
     nativeProgress?: { url: string; title: string; stage: string; mode?: string; processedSeconds: number; sourceDurationSeconds: number | null; nextAttemptAt: number }[]
     provider?: { checkedAt: number; status: string; plan?: string; remainingCredits?: number } | null
     localLastSavedAt?: number | null

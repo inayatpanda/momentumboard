@@ -1,3 +1,5 @@
+import { SectorIcon } from '../../components/SectorIcon'
+import { IconCheck, IconPlus } from '../../components/ControlIcon'
 import { useEffect, useState } from 'react'
 import { Link } from 'wouter'
 import { directorySector, searchStocks, type StockDirectory, type DirectoryStock } from '../../lib/stockDirectory'
@@ -10,7 +12,7 @@ function DiscoveryRows({ rows, watchSymbols, onAdd }: { rows: DirectoryStock[]; 
   const { data } = useSlice(`quotes:${symbols.join(',')}`, () => getQuotes(symbols))
   return <div className="discovery-results">{rows.map(r => <div className="discovery-result" key={r.sym}>
     <StockRow symbol={r.sym} name={r.name} quote={data?.find(q => q?.symbol === r.sym)} sparkCachedOnly />
-    <button type="button" className="discovery-add" disabled={watchSymbols.has(r.sym)} aria-label={`${watchSymbols.has(r.sym) ? 'Watching' : 'Add'} ${r.sym}${watchSymbols.has(r.sym) ? '' : ' to watchlist'}`} onClick={() => onAdd(r.sym)}>{watchSymbols.has(r.sym) ? '✓' : '+'}</button>
+    <button type="button" className="discovery-add" disabled={watchSymbols.has(r.sym)} aria-label={`${watchSymbols.has(r.sym) ? 'Watching' : 'Add'} ${r.sym}${watchSymbols.has(r.sym) ? '' : ' to watchlist'}`} onClick={() => onAdd(r.sym)}>{watchSymbols.has(r.sym) ? <IconCheck /> : <IconPlus />}</button>
   </div>)}</div>
 }
 
@@ -31,9 +33,9 @@ export function StockDiscovery({ directory, query, sector, onSector, watchSymbol
       <label className="discovery-market">Market<select aria-label="Market" value={market} onChange={e => setMarket(e.target.value)}><option value="">US & UK</option><option value="US">US</option><option value="LSE">UK</option></select></label>
     </div>
     {sector && <button className="discovery-back" onClick={() => onSector('')}>← All sectors</button>}
-    {!browsing ? <div className="sector-directory">{[...counts].sort((a, b) => b[1] - a[1]).map(([name, count], i) =>
+    {!browsing ? <div className="sector-directory">{[...counts].sort((a, b) => b[1] - a[1]).map(([name, count]) =>
       <button key={name} onClick={() => onSector(name)} className="sector-directory-card">
-        <span className="sector-directory-icon" aria-hidden="true">{['◈', '▥', '◇', '✚', '◉', '▦'][i % 6]}</span>
+        <span className="sector-directory-icon" aria-hidden="true"><SectorIcon sector={name} /></span>
         <strong>{name}</strong><span>{count} listings <span aria-hidden="true">↗</span></span>
       </button>)}</div> : <>
       {matches.length ? Array.from({ length: Math.ceil(Math.min(matches.length, limit) / 12) }, (_, page) => { const rows = matches.slice(page * 12, page * 12 + 12); return <DiscoveryRows key={rows.map(r => r.sym).join(',')} rows={rows} watchSymbols={watchSymbols} onAdd={onAdd} /> }) : <p>No companies match these filters.</p>}

@@ -1,3 +1,4 @@
+import { stripEmoji } from '../../components/icons'
 import { Link } from 'wouter'
 import { useSlice } from '../../lib/useSlice'
 import { getStreetWire } from '../../lib/api'
@@ -17,7 +18,7 @@ export function CompanySources({ symbol }: { symbol: string }) {
       const mentions = video.tickers.filter(t => t.sym === symbol)
       return <article key={video.url} className="company-source">
         <div className="company-source-meta"><strong>{video.channel}</strong><span>{relativeStamp(video.at)}</span></div>
-        <a href={video.url} target="_blank" rel="noreferrer">{video.title} ↗</a>
+        <a href={video.url} target="_blank" rel="noreferrer">{stripEmoji(video.title)} ↗</a>
         {video.nativeTranscript && <p className="social-evidence__note">AI video interpretation · {video.nativeTranscript.progress?.completion === 'complete' ? 'all sections processed' : 'full coverage unconfirmed'} · source check pending</p>}
         {mentions.map(t => <p key={t.sym} className="cc-reason"><span className={`pill ${t.stance === 'bull' ? 'long' : t.stance === 'bear' ? 'short' : ''}`}>{t.stance === 'bull' ? 'Bullish' : t.stance === 'bear' ? 'Bearish' : 'Neutral'}</span> {t.thesis || 'Mentioned in this video; a specific investment case was not captured.'}</p>)}
         <details className="company-detail"><summary>View supporting evidence</summary><ClaimEvidence video={{ ...video, claims: video.claims?.filter(c => c.sym === symbol) }} />{!video.claims && <p className="cc-reason">This older analysis has no saved source quotations.</p>}</details>

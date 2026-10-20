@@ -93,9 +93,12 @@ const run = async () => {
       await enqueueSocialJobs(blobAppStore, [{ ...source, mode: 'extract' }], nowSec, true)
     }
     const socialQueue = await blobAppStore.read<SocialJob[]>(SOCIAL_JOBS_KEY) ?? []
+    const readingPlan = await blobAppStore.read<{ freeOnly?: boolean }>('video-reading-plan:v1')
     const words = storedOnly ? new Set((await readTranscriptIndex(blobAppStore)).map(t => videoKey(t.url))) : null
     const readyQueue = words ? socialQueue.filter(j => j.mode === 'extract' && words.has(videoKey(j.url))) : socialQueue
-    const videoBatch = selectedVideo ? socialQueue.filter(j => j.mode === 'extract' && j.url === selectedVideo) : eligibleSocialJobs(readyQueue, nowSec, 8)
+    // The daily free plan is owned by the free-key collector. Never silently
+    // send its selected videos or the parked archive to this paid-capable lane.
+    const videoBatch = readingPlan?.freeOnly ? [] : selectedVideo ? socialQueue.filter(j => j.mode === 'extract' && j.url === selectedVideo) : eligibleSocialJobs(readyQueue, nowSec, 8)
     const runDeadline = Date.now() + 16 * 60_000
     const batch = videosOnly ? [] : queue.filter(item => item.kind !== 'video' && (item.nextAttemptAt ?? 0) <= nowSec).slice(0, MAX_ITEMS_PER_RUN)
     console.log(`draining ${batch.length} of ${queue.length} item(s)…`)

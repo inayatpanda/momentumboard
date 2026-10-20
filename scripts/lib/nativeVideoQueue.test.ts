@@ -20,6 +20,17 @@ async function setup(duration = 1860) {
 }
 
 describe('expanded free video queue', () => {
+  it('processes only the recent daily list and preserves old work outside that list', async () => {
+    const {store,deps}=await setup(600)
+    await store.write('video-inbox',[video(),{...video('abcdefghijl','UCother'),publishedAt:deps.now()-100}])
+    const status=await collectNativeVideos(store,{...deps,latestOnly:true})
+    expect(status).toMatchObject({latestOnly:true,selectedToday:1,dailyVideoLimit:5,attempted:1,completed:1,pending:0})
+    expect(await store.read(NATIVE_PROGRESS_KEY)).toEqual(expect.arrayContaining([
+      expect.objectContaining({parked:true,stage:'pending'}),
+      expect.objectContaining({parked:false,stage:'complete',sourceDurationSeconds:600}),
+    ]))
+    expect(deps.readSection.mock.calls[0][0]).toContain('abcdefghijl')
+  })
   it('resumes consecutive sections past twenty minutes and publishes full coverage only at the known ending', async () => {
     const { store, deps, advance } = await setup()
     expect(await collectNativeVideos(store, deps)).toMatchObject({ attempted: 2, partial: 1, completed: 0 })
@@ -72,6 +83,14 @@ describe('expanded free video queue', () => {
     await store.write('video-inbox', [video(), video('abcdefghijl', 'UCother')])
     expect(await collectNativeVideos(store, deps)).toMatchObject({ attempted: 0, capped: true })
     expect(deps.readSection).toHaveBeenCalledTimes(1)
+  })
+  it('repairs only a demonstrably video-specific legacy pause without refunding usage', async () => {
+    const {store,deps}=await setup(600)
+    const failedAt=deps.now()-60
+    await store.write(nativeBudgetKey(deps.now()),{day:nativeQuotaDay(deps.now()),requests:10,seconds:6000,nextRequestAt:0,pauseUntil:failedAt+3600,pauseReason:'provider-configuration'})
+    await store.write(NATIVE_PROGRESS_KEY,[{video:video('abcdefghijl'),nextOffset:0,parts:[],stage:'retry',attempts:1,failures:1,nextAttemptAt:deps.now()+1800,lastAttemptAt:failedAt,updatedAt:failedAt,lastError:'native-http-400'}])
+    const result=await collectNativeVideos(store,{...deps,maxCalls:1})
+    expect(result).toMatchObject({attempted:1,completed:1,dailyRequests:11,dailyMinutes:110})
   })
   it('continues another channel after a video-specific bad request', async () => {
     const { store, deps } = await setup(600)

@@ -1,3 +1,4 @@
+import { IconMoon, IconSun } from '../components/icons'
 // More (plan Task 21) — the T212-style grouped menu behind the More tab: the
 // engine's own accountability page, the two thin reading adapters, and the
 // app group (Settings, theme, install). Three groups, same .menu-group/
@@ -64,7 +65,7 @@ function ThemeRow() {
   return (
     <button type="button" className="menu-row" onClick={cycle}>
       <span className="icon-tile amber" aria-hidden="true">
-        {resolvedDark(pref) ? '☾' : '☀'}
+        {resolvedDark(pref) ? <IconMoon size={18} /> : <IconSun size={18} />}
       </span>
       <span className="set-main">
         <span>Theme</span>

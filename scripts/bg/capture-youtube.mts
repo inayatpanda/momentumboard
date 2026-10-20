@@ -16,9 +16,11 @@ async function main() {
   await configureStoreForScript()
   console.log(JSON.stringify({ discovery: await discoverFollowedVideos(appStore, Math.floor(Date.now() / 1000)) }))
   const config = await appStore.read<{ ytChannels?: { id: string; name: string }[] }>('config')
+  const plan = await appStore.read<{ latestOnly?: boolean; ids: string[] }>('video-reading-plan:v1')
   const deadlineMs = Date.now() + 30 * 60_000
   const result = await collectGithubVideos(appStore, {
     followedChannels: withDefaults(config?.ytChannels),
+    allowedVideoIds: plan?.latestOnly ? new Set(plan.ids) : undefined,
     captions: fetchCaptionTranscript, library: fetchLibraryCaptions,
     audio: url => fetchAudioTranscript(url, { deadlineMs: Math.min(deadlineMs, Date.now() + 12 * 60_000), maxDurationSec: 5400 }),
     deadline: Math.floor(deadlineMs / 1000),

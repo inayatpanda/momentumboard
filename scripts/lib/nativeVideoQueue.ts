@@ -1,14 +1,15 @@
 import { acquireLease, releaseLease, type AppStore } from '../../netlify/functions/lib/storeProvider'
 import { nativeDraftText, publishNativeDraft, publishFreeVideoExtract, readNativeVideo, type NativeVideoDraft } from '../../netlify/functions/lib/nativeVideo'
 import { readFreeVideoText } from '../../netlify/functions/lib/freeVideoText'
-import { readNativeBudget, reserveNativeRead, pauseNativeReads } from '../../netlify/functions/lib/nativeVideoBudget'
+import { readNativeBudget, reserveNativeRead, pauseNativeReads, repairVideoSpecificPause } from '../../netlify/functions/lib/nativeVideoBudget'
 import { readStoredTranscript, type InboxVideo } from '../../netlify/functions/lib/videoTranscriptStore'
 import { extractTranscriptFacts, ExtractionPending } from '../../netlify/functions/lib/videoTranscriptAnalysis'
-import { youtubeAvailability } from '../../netlify/functions/lib/youtubeAvailability'
+import { youtubeAvailability, type YouTubeAvailability } from '../../netlify/functions/lib/youtubeAvailability'
 import { enqueueSocialJobs, finishSocialAttempt, socialJobId } from '../../netlify/functions/lib/socialJobs'
 import { videoKey } from '../../shared/youtubeCaptions.mjs'
 import { isFollowedChannel, withDefaults } from '../../shared/channels'
 import { NATIVE_CHUNK_SECONDS, NATIVE_DAILY_REQUESTS, NATIVE_DAILY_SECONDS, NATIVE_MAX_CALLS_PER_RUN } from '../../shared/nativeVideoPolicy'
+import { selectDailyVideos } from './dailyVideoSelection'
 
 export const NATIVE_PROGRESS_KEY = 'video-native-progress:v2'
 export interface NativeVideoWork {
@@ -17,12 +18,14 @@ export interface NativeVideoWork {
   stage: 'pending' | 'partial' | 'complete' | 'end-reported' | 'retry' | 'needs-attention'
   mode?: 'captions' | 'video'; attempts: number; failures: number; nextAttemptAt: number; lastAttemptAt: number
   updatedAt: number; lastError?: string
+  selectedAt?: number; parked?: boolean
 }
 export interface NativeRunStatus {
   at: number; running: boolean; published: number; attempted: number; failed: number; reused: number
   capped: boolean; scheduled: boolean; status: string; pauseReason?: string; retryAt?: number
   dailyRequests: number; dailyMinutes: number; requestLimit: number; minuteLimit: number
   pending: number; partial: number; completed: number; endReported: number
+  latestOnly?: boolean; selectedToday?: number; dailyVideoLimit?: number
 }
 const finished = (w: NativeVideoWork) => w.stage === 'complete' || w.stage === 'end-reported'
 // A clipped input often makes the model repeat the requested end time as the
@@ -36,9 +39,9 @@ const channel = (w: NativeVideoWork) => w.video.channelId || w.video.channel
 export function nextNativeWork(rows: NativeVideoWork[], now: number, excluded = new Set<string>()): NativeVideoWork | undefined {
   const served = new Map<string, number>()
   for (const w of rows) served.set(channel(w), Math.max(served.get(channel(w)) ?? 0, w.lastAttemptAt))
-  return rows.filter(w => !finished(w) && w.stage !== 'needs-attention' && w.nextAttemptAt <= now && !excluded.has(videoKey(w.video.url)))
-    .sort((a, b) => (served.get(channel(a)) ?? 0) - (served.get(channel(b)) ?? 0)
-      || Number(b.stage === 'partial') - Number(a.stage === 'partial')
+  return rows.filter(w => !w.parked && !finished(w) && w.stage !== 'needs-attention' && w.nextAttemptAt <= now && !excluded.has(videoKey(w.video.url)))
+    .sort((a, b) => Number(b.parts.length > 0) - Number(a.parts.length > 0)
+      || (served.get(channel(a)) ?? 0) - (served.get(channel(b)) ?? 0)
       || (b.video.publishedAt ?? b.video.at) - (a.video.publishedAt ?? a.video.at))[0]
 }
 
@@ -66,6 +69,8 @@ export async function assembledNativeDraft(store: AppStore, work: NativeVideoWor
 
 export async function collectNativeVideos(store: AppStore, deps: {
   key: string; freeTierConfirmed: boolean; scheduled: boolean; cachedOnly?: boolean; target?: string; forceVideo?: boolean
+  latestOnly?: boolean
+  metadata?: Record<string, YouTubeAvailability>
   now?: () => number; wait?: (seconds: number) => Promise<void>; deadline?: number; maxCalls?: number
   availability?: typeof youtubeAvailability; readSection?: typeof readNativeVideo; readText?: typeof readFreeVideoText
   onPublish?: (video: InboxVideo, kind: 'captions' | 'video', publication: string) => Promise<void>
@@ -82,8 +87,9 @@ export async function collectNativeVideos(store: AppStore, deps: {
     minuteLimit: NATIVE_DAILY_SECONDS / 60, pending: 0, partial: 0, completed: 0, endReported: 0 }
   let rows: NativeVideoWork[] = []
   const updateCounts = () => {
-    status.pending = rows.filter(w => !finished(w)).length; status.partial = rows.filter(w => w.stage === 'partial' || w.parts.length > 0 && !finished(w)).length
-    status.completed = rows.filter(w => w.stage === 'complete').length; status.endReported = rows.filter(w => w.stage === 'end-reported').length
+    const active = rows.filter(w => !w.parked)
+    status.pending = active.filter(w => !finished(w)).length; status.partial = active.filter(w => w.stage === 'partial' || w.parts.length > 0 && !finished(w)).length
+    status.completed = active.filter(w => w.stage === 'complete').length; status.endReported = active.filter(w => w.stage === 'end-reported').length
   }
   const save = async () => {
     await store.write(NATIVE_PROGRESS_KEY, rows)
@@ -94,6 +100,11 @@ export async function collectNativeVideos(store: AppStore, deps: {
     status.dailyRequests = initialBudget.requests; status.dailyMinutes = Math.ceil(initialBudget.seconds / 60)
     await store.write('video-native-runner', status)
     rows = await store.read<NativeVideoWork[]>(NATIVE_PROGRESS_KEY) ?? []
+    const lastFailure = rows.filter(w => w.lastError?.startsWith('native-http-')).sort((a,b) => b.updatedAt-a.updatedAt)[0]
+    if (lastFailure?.lastError === 'native-http-400' && initialBudget.pauseReason === 'provider-configuration'
+      && initialBudget.pauseUntil === lastFailure.updatedAt + 3600) {
+      await repairVideoSpecificPause(store, now(), initialBudget.pauseUntil)
+    }
     const config = await store.read<{ ytChannels?: { id: string; name: string }[] }>('config'), followed = withDefaults(config?.ytChannels)
     const inbox = await store.read<InboxVideo[]>('video-inbox') ?? []
     // Older caption analyses predate per-video completion keys. Check the
@@ -108,8 +119,19 @@ export async function collectNativeVideos(store: AppStore, deps: {
       rows.push({ video, nextOffset: 0, parts: [], stage: 'pending', attempts: 0, failures: 0, nextAttemptAt: 0, lastAttemptAt: 0, updatedAt: now() })
       known.add(videoKey(video.url))
     }
+    for (const work of rows) {
+      const meta = deps.metadata?.[videoKey(work.video.url)]
+      if (meta?.state === 'ready' && meta.durationSeconds) {
+        work.sourceDurationSeconds = meta.durationSeconds
+        if (work.stage === 'end-reported') work.stage = work.nextOffset >= meta.durationSeconds ? 'complete' : 'partial'
+      }
+    }
+    if (deps.latestOnly) {
+      for (const work of rows) if (!isFollowedChannel(work.video, followed)) work.parked = true
+      Object.assign(status, await selectDailyVideos(store, rows.filter(w => isFollowedChannel(w.video, followed)), now()))
+    }
     await save()
-    const selected = rows.filter(w => isFollowedChannel(w.video, followed) && (!deps.target || videoKey(w.video.url) === deps.target))
+    const selected = rows.filter(w => !w.parked && isFollowedChannel(w.video, followed) && (!deps.target || videoKey(w.video.url) === deps.target))
     if (deps.target && !selected.length) throw new Error('target-not-eligible')
     // An explicit owner retry may retry a transport timeout immediately; the
     // persistent provider quota/cooldown is still enforced by reserveNativeRead.
@@ -163,7 +185,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
       if (!useText && !part && !checked.has(id)) {
         if (checked.size >= 16) break
         checked.add(id)
-        const availability = await (deps.availability ?? youtubeAvailability)(work.video.url)
+        const availability = deps.metadata?.[id] ?? await (deps.availability ?? youtubeAvailability)(work.video.url)
         if (['upcoming', 'live', 'unavailable'].includes(availability.state)) {
           work.nextAttemptAt = now() + 3 * 3600; work.lastError = availability.state; work.updatedAt = now(); await save()
           deps.log?.({ videoId: id, deferred: availability.state }); continue

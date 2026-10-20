@@ -4,13 +4,21 @@ import { appStore } from '../../netlify/functions/lib/storeProvider'
 import { collectNativeVideos } from '../lib/nativeVideoQueue'
 import { setCached } from '../../netlify/functions/lib/cache'
 import { videoKey } from '../../shared/youtubeCaptions.mjs'
+import { publicVideoMetadata } from '../../netlify/functions/lib/youtubeMetadata'
 
 async function main() {
   await configureStoreForScript()
   console.log(JSON.stringify({ discovery: await discoverFollowedVideos(appStore, Math.floor(Date.now() / 1000)) }))
   const freeTierConfirmed = process.env.NATIVE_FREE_TIER_CONFIRMED === 'true'
+  const inbox = await appStore.read<{ url: string }[]>('video-inbox') ?? []
+  const progress = await appStore.read<{ video: { url: string }; selectedAt?: number }[]>('video-native-progress:v2') ?? []
+  const metadata = process.env.YOUTUBE_METADATA_ENABLED === 'true'
+    ? await publicVideoMetadata(appStore, [...inbox.map(v => v.url), ...progress.filter(w => w.selectedAt).map(w => w.video.url)], process.env.GEMINI_YOUTUBE_FREE_API_KEY ?? '', Math.floor(Date.now() / 1000)) : undefined
+  if (metadata) console.log(JSON.stringify({ publicMetadata: { confirmed: Object.values(metadata.metadata).filter(m => m.durationSeconds).length, unavailable: metadata.unavailable } }))
   try {
     const status = await collectNativeVideos(appStore, {
+      latestOnly: true,
+      metadata: metadata?.metadata,
       target: process.env.VIDEO_ID || undefined,
       cachedOnly: process.env.NATIVE_CACHED_ONLY === 'true',
       forceVideo: !!process.env.VIDEO_ID && process.env.NATIVE_FORCE_VIDEO === 'true',

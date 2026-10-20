@@ -1,3 +1,4 @@
+import { IconClose } from '../../components/ControlIcon'
 // SettingsExtras (plan Task 21) — ported faithfully from the legacy
 // src/screens/SettingsScreen.tsx: BYOK AI key (ByoAiKey:53-94, inverse-gated
 // — non-admin only), admin-managed briefing recipients
@@ -107,7 +108,7 @@ export function ByoAiKey({ isAdmin }: { isAdmin: boolean | null }) {
         </span>
         {hasKey && !onServer && (
           <button className="remove" aria-label="Disconnect Groq" onClick={disconnect}>
-            ✕
+            <IconClose />
           </button>
         )}
       </div>
@@ -195,7 +196,7 @@ export function ReportRecipients() {
             <span>{r.email}</span>
           </span>
           <button type="button" className="remove" onClick={() => void removeRecipient(r.email)} disabled={busy} aria-label={`Remove ${r.email}`}>
-            ✕
+            <IconClose />
           </button>
           <span style={{ flexBasis: '100%', display: 'flex', gap: 6, paddingLeft: 44 }}>
             {(Object.keys(EDITION_LABEL) as ReportEdition[]).map(ed => (

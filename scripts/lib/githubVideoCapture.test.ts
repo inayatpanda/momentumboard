@@ -11,6 +11,13 @@ const unavailable = () => Promise.resolve({ fail: 'IpBlocked' })
 const deps = () => ({ captions: vi.fn(captions), library: vi.fn(unavailable), audio: vi.fn(unavailable), now: () => 1000 })
 
 describe('GitHub video capture', () => {
+  it('limits free caption capture to the daily selection without reviving the archive', async () => {
+    const store=memoryStore(), readers=deps()
+    await store.write('video-inbox',[video(),video('abcdefghijl')])
+    await enqueueSocialJobs(store,[video('abcdefghijm')],100)
+    expect(await collectGithubVideos(store,{...readers,allowedVideoIds:new Set(['abcdefghijl'])})).toMatchObject({attempted:1,saved:1})
+    expect(readers.captions).toHaveBeenCalledWith(video('abcdefghijl').url)
+  })
   it('captures only followed channels and rejects a different channel using the same display name', async () => {
     const store = memoryStore(), readers = deps()
     await store.write('video-inbox', [video(), { ...video('abcdefghijl'), channelId: 'UCother' }])
