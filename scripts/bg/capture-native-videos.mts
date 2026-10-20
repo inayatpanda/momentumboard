@@ -6,6 +6,7 @@ import { readStoredTranscript, type InboxVideo } from '../../netlify/functions/l
 import { enqueueSocialJobs, finishSocialAttempt, socialJobId } from '../../netlify/functions/lib/socialJobs'
 import { setCached } from '../../netlify/functions/lib/cache'
 import { videoKey } from '../../shared/youtubeCaptions.mjs'
+import { youtubeAvailability } from '../../netlify/functions/lib/youtubeAvailability'
 
 async function main() {
   await configureStoreForScript()
@@ -42,6 +43,12 @@ async function main() {
       }
       processed++
       if (!draft || !nativeDraftText(draft)) {
+        const availability = await youtubeAvailability(video.url)
+        if (availability.state === 'upcoming' || availability.state === 'live') {
+          processed--
+          console.log(JSON.stringify({ videoId: id, deferred: availability.state }))
+          continue
+        }
         // Separate credential and allowance: failed legacy Gemini jobs cannot
         // consume the dedicated free video's two attempts.
         if (new Date().getUTCHours() < 8 || !await reserveSocialBudget(appStore, 'github-native-free', Math.floor(Date.now() / 1000))) {
@@ -50,7 +57,7 @@ async function main() {
         }
         status.attempted++
         try {
-          draft = await readNativeVideo(video.url, freeKey)
+          draft = await readNativeVideo(video.url, freeKey, fetch, availability.durationSeconds)
           await appStore.write(`video-native-draft:${id}`, draft)
         } catch (error) {
           status.failed++

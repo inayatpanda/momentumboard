@@ -30,6 +30,12 @@ describe('direct cloud video reads', () => {
     expect(nativeDraftText({ ...draft(), result: { ...draft().result, transcript: 'A summary' } })).toBeNull()
     expect(nativeDraftExtract(draft(), { ...video, url: 'https://youtu.be/zzzzzzzzzzz' }, 300)).toBeNull()
   })
+  it('uses the whole source when public metadata confirms a short completed video', async () => {
+    const fetcher = vi.fn(async () => Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(draft().result) }] } }] }))
+    await readNativeVideo(video.url, 'key', fetcher as typeof fetch, 117)
+    const opts = (fetcher.mock.calls[0] as unknown as [string, RequestInit])[1]
+    expect(JSON.parse(String(opts.body)).contents[0].parts[0]).toEqual({ fileData: { fileUri: video.url, mimeType: 'video/*' } })
+  })
   it('never treats a model transcript as independent quote verification or a consensus vote', () => {
     const extract = nativeDraftExtract(draft(), video, 300)!
     expect(extract.claims?.[0]).toMatchObject({ sym: 'NVDA', sourceMatch: 'visual-unchecked', identityMatched: false, unconditional: false })
