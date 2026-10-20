@@ -1260,6 +1260,7 @@ p {
 }
 
 /* Shared research screens: compact summaries, clear navigation, evidence on demand. */
+.v2 .stx > .rf-btn { display: none; }
 .v2 .stocks-refresh { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface-1); color: var(--text); font-size: 24px; cursor: pointer; }
 .v2 .stock-price-note { color: var(--text-dim); font-size: 10px; font-weight: 400; }
 .v2 .watch-price-status { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
@@ -1318,6 +1319,7 @@ p {
 .v2 .cloud-allowance progress::-webkit-progress-value { background: var(--accent); }
 .v2 .cloud-counts { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; }
 .v2 .cloud-counts strong { color: var(--text); }
+.v2 .cloud-processing a { color: var(--accent); font-size: 12px; line-height: 1.6; text-underline-offset: 3px; }
 .v2 .brief-research-link { display: block; width: 100%; margin: 14px 0; padding: 16px; text-align: left; border: 1px solid var(--border); border-radius: 13px; background: var(--surface-1); color: var(--accent); font-size: 14px; font-weight: 600; cursor: pointer; }
 .v2 .brief-research-link > span { float: right; }
 .v2 .brief-research-link small { display: block; margin-top: 7px; color: var(--text-dim); font-size: 11px; font-weight: 400; }
@@ -4348,10 +4350,15 @@ p {
     border-radius: 14px;
   }
   .v2 .desk2-board .today-cards {
+    grid-template-columns: minmax(0, 1fr);
     gap: 9px;
     margin: 12px 0;
   }
+  .v2 .desk2-board .cc { min-width: 0; }
+  .v2 .desk2-board .cc-top { flex-wrap: wrap; }
   .v2 .desk2-board .cc-sym {
+    min-width: 0;
+    flex-wrap: wrap;
     font-size: 14.5px;
   }
   .v2 .desk2-board .cc-name {
@@ -4359,8 +4366,11 @@ p {
   }
   .v2 .desk2-board .cc-levels,
   .v2 .desk2-board .cc-meta {
+    flex-wrap: wrap;
     font-size: 12px;
   }
+  .v2 .desk2-board .cc-contract { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .v2 .desk2-board .cc-contract > span:nth-child(2) { text-align: left; }
   .v2 .desk2-board .sec-label {
     margin: 14px 0 4px;
   }
