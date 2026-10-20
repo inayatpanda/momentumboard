@@ -15,6 +15,12 @@ describe('YouTube availability before spending a read', () => {
     expect(parseYouTubeAvailability(page, 'zzzzzzzzzzz')).toEqual({ state: 'unknown' })
     expect(parseYouTubeAvailability('Sign in to continue', 'abcdefghijk')).toEqual({ state: 'unknown' })
   })
+  it('reads public duration metadata only when it belongs to the canonical video', () => {
+    const page = '<link rel="canonical" href="https://www.youtube.com/watch?v=abcdefghijk"><meta itemprop="duration" content="PT17M42S">'
+    expect(parseYouTubeAvailability(page,'abcdefghijk')).toEqual({state:'ready',durationSeconds:1062})
+    expect(parseYouTubeAvailability(page,'zzzzzzzzzzz')).toEqual({state:'unknown'})
+    expect(parseYouTubeAvailability('<meta itemprop="duration" content="PT17M42S">','abcdefghijk')).toEqual({state:'unknown'})
+  })
   it('treats blocked metadata as unknown without fabricating readiness', async () => {
     const fetcher = vi.fn(async () => new Response('', { status: 403 }))
     expect(await youtubeAvailability('https://youtu.be/abcdefghijk', fetcher as typeof fetch)).toEqual({ state: 'unknown' })

@@ -76,9 +76,21 @@ describe('expanded free video queue', () => {
   it('does not treat a model claiming the ending as independently confirmed duration', async () => {
     const { store, deps } = await setup()
     deps.availability.mockResolvedValue({ state: 'unknown' as 'ready', durationSeconds: undefined as unknown as number })
-    deps.readSection.mockImplementation(async (url, _key, _fetch, _duration, section) => ({ url, at: deps.now(), model: NATIVE_VIDEO_MODEL, finishReason: 'STOP', section, result: { ...result, complete: true } }))
+    deps.readSection.mockImplementation(async (url, _key, _fetch, _duration, section) => ({ url, at: deps.now(), model: NATIVE_VIDEO_MODEL, finishReason: 'STOP', section, result: { ...result, complete: true, durationSeconds: 250 } }))
     expect(await collectNativeVideos(store, deps)).toMatchObject({ completed: 0, endReported: 1 })
     expect(await store.read('video-extract:v1:abcdefghijk')).toMatchObject({ nativeTranscript: { progress: { completion: 'end-reported', sourceDurationSeconds: null } }, coverage: { complete: false } })
+  })
+  it('continues after a model mistakes a clip boundary for the video ending', async () => {
+    const { store, deps, advance } = await setup()
+    deps.availability.mockResolvedValue({ state: 'unknown' as 'ready', durationSeconds: undefined as unknown as number })
+    deps.readSection.mockImplementation(async (url, _key, _fetch, _duration, section) => ({url,at:deps.now(),model:NATIVE_VIDEO_MODEL,finishReason:'STOP',section,result:{...result,complete:true,durationSeconds:section.endSeconds}}))
+    expect(await collectNativeVideos(store, deps)).toMatchObject({partial:1,endReported:0})
+    const rows = await store.read<NativeVideoWork[]>(NATIVE_PROGRESS_KEY)
+    rows![0].stage = 'end-reported'
+    await store.write(NATIVE_PROGRESS_KEY, rows)
+    advance(3600)
+    expect(await collectNativeVideos(store, {...deps,maxCalls:1})).toMatchObject({attempted:1,partial:1,endReported:0})
+    expect(deps.readSection.mock.calls.at(-1)![4]).toEqual({startSeconds:1200,endSeconds:1800})
   })
   it('repairs publication of saved completed sections without a Google call', async () => {
     const { store, deps } = await setup(600)

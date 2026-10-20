@@ -25,6 +25,11 @@ export interface NativeRunStatus {
   pending: number; partial: number; completed: number; endReported: number
 }
 const finished = (w: NativeVideoWork) => w.stage === 'complete' || w.stage === 'end-reported'
+// A clipped input often makes the model repeat the requested end time as the
+// video duration. That is not evidence of the original video's ending.
+const reportsEnding = (part: NativeVideoDraft) => part.result.complete === true && !!part.section
+  && typeof part.result.durationSeconds === 'number' && part.result.durationSeconds > part.section.startSeconds
+  && part.result.durationSeconds < part.section.endSeconds
 const channel = (w: NativeVideoWork) => w.video.channelId || w.video.channel
 
 /** Rotate channels, resume their unfinished sections, then prefer recent uploads. */
@@ -115,6 +120,11 @@ export async function collectNativeVideos(store: AppStore, deps: {
     for (const work of selected) if (alreadyRead.has(videoKey(work.video.url))) {
       work.stage = 'complete'; work.nextAttemptAt = 0; work.failures = 0; delete work.lastError
     }
+    for (const work of selected.filter(w => w.stage === 'end-reported' && !w.sourceDurationSeconds)) {
+      const last = work.parts.at(-1)
+      const part = last ? await store.read<NativeVideoDraft>(last.key) : null
+      if (part && !reportsEnding(part)) { work.stage = 'partial'; work.nextAttemptAt = 0 }
+    }
     await save()
     // Repair a process ending between the section checkpoint and publication.
     // Already completed reads need no model access to become visible again.
@@ -198,7 +208,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
           } else status.reused++
           work.parts.push({ startSeconds, endSeconds, key: partKey }); work.nextOffset = endSeconds
           work.stage = work.sourceDurationSeconds && endSeconds >= work.sourceDurationSeconds ? 'complete'
-            : !work.sourceDurationSeconds && part.result.complete === true ? 'end-reported' : 'partial'
+            : !work.sourceDurationSeconds && reportsEnding(part) ? 'end-reported' : 'partial'
           // Save sections before publication. Recovery never spends another call
           // merely to repair a failed publication.
           await save()

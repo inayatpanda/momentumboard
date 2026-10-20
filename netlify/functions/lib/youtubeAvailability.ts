@@ -2,10 +2,23 @@ import { canonicalVideoUrl, videoKey } from '../../../shared/youtubeCaptions.mjs
 
 export type YouTubeAvailability = { state: 'unknown' | 'upcoming' | 'live' | 'ready' | 'unavailable'; durationSeconds?: number }
 
+/** Structured page metadata can remain available when player details are absent.
+ * Bind it to the page's canonical video, never a recommendation's duration. */
+function pageDuration(html: string, id: string): YouTubeAvailability {
+  const tags = html.match(/<(?:link|meta)\b[^>]*>/gi) ?? []
+  const attrs = tags.map(tag => Object.fromEntries([...tag.matchAll(/([\w-]+)=["']([^"']*)["']/g)].map(m => [m[1].toLowerCase(), m[2]])))
+  const canonical = attrs.find(a => a.rel === 'canonical')?.href
+  if (!canonical || videoKey(canonical) !== id) return { state: 'unknown' }
+  const duration = attrs.find(a => a.itemprop === 'duration')?.content
+  const match = duration?.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/)
+  const seconds = match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : 0
+  return Number.isFinite(seconds) && seconds > 0 ? { state: 'ready', durationSeconds: seconds } : { state: 'unknown' }
+}
+
 /** Parse only the main player's JSON, never recommendation cards or script code. */
 export function parseYouTubeAvailability(html: string, id: string): YouTubeAvailability {
   const match = /(?:var\s+)?ytInitialPlayerResponse\s*=\s*(\{)/.exec(html)
-  if (!match) return { state: 'unknown' }
+  if (!match) return pageDuration(html, id)
   const start = match.index + match[0].length - 1
   let depth = 0, quoted = false, escaped = false
   for (let i = start; i < Math.min(html.length, start + 2_000_000); i++) {
@@ -26,7 +39,7 @@ export function parseYouTubeAvailability(html: string, id: string): YouTubeAvail
         if (details.isLive || live?.isLiveNow === true) return { state: 'live' }
         const seconds = Number(details.lengthSeconds)
         return Number.isFinite(seconds) && seconds > 0
-          ? { state: 'ready', durationSeconds: seconds } : { state: 'unknown' }
+          ? { state: 'ready', durationSeconds: seconds } : pageDuration(html, id)
       } catch { return { state: 'unknown' } }
     }
   }
