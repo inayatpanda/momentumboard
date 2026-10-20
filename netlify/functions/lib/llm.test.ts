@@ -5,6 +5,21 @@ const groqOk = JSON.stringify({ choices: [{ message: { content: 'groq says hi' }
 const geminiOk = JSON.stringify({ candidates: [{ content: { parts: [{ text: 'gemini says hi' }] } }] })
 
 describe('llm router', () => {
+  it('uses the current DeepSeek model and reserves the bounded output for the answer', async () => {
+    const fetchFn = vi.fn(async (_url: string, _init: RequestInit) => new Response(groqOk))
+    await callLlm('Extract the spoken claims', { strict: true, OPENAI_API_KEY: 'test', OPENAI_BASE_URL: 'https://api.deepseek.com', OPENAI_MODEL: 'deepseek-chat', maxTokens: 4000 }, fetchFn as never)
+    expect(fetchFn.mock.calls[0][0]).toBe('https://api.deepseek.com/chat/completions')
+    expect(JSON.parse(fetchFn.mock.calls[0][1].body as string)).toMatchObject({ model: 'deepseek-flash', max_tokens: 4000, thinking: { type: 'disabled' } })
+  })
+
+  it('does not send DeepSeek-only parameters or rename models on other compatible services', async () => {
+    const fetchFn = vi.fn(async (_url: string, _init: RequestInit) => new Response(groqOk))
+    await callLlm('hi', { strict: true, OPENAI_API_KEY: 'test', OPENAI_BASE_URL: 'https://example.com/v1', OPENAI_MODEL: 'deepseek-chat' }, fetchFn as never)
+    const sent = JSON.parse(fetchFn.mock.calls[0][1].body as string)
+    expect(sent.model).toBe('deepseek-chat')
+    expect(sent.thinking).toBeUndefined()
+  })
+
   it('prefers groq when its key exists', async () => {
     const fetchFn = vi.fn(async (url: string) => new Response(url.includes('groq') ? groqOk : geminiOk))
     const r = await callLlm('hi', { GROQ_API_KEY: 'g', GEMINI_API_KEY: 'x', LLM_PROVIDER: undefined }, fetchFn as never)

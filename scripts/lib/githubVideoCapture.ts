@@ -55,7 +55,9 @@ export async function collectGithubVideos(store: AppStore, deps: {
     // Recover a crash after storing words but before admitting the analysis.
     for (const row of index.filter(t => t.source === 'github')) {
       const job = jobs?.find(j => j.mode === 'extract' && videoKey(j.url) === videoKey(row.url))
-      if (!job || (job.stage !== 'complete' && /no-transcript|caption-job/.test(job.lastError ?? ''))) {
+      const newWordsAfterAnalysis = job?.stage === 'complete' && row.at >= job.updatedAt
+        && (await store.read<{ via?: string }>(`video-extract:v1:${videoKey(row.url)}`))?.via !== 'github'
+      if (!job || newWordsAfterAnalysis || (job.stage !== 'complete' && /no-transcript|caption-job/.test(job.lastError ?? ''))) {
         await enqueueSocialJobs(store, [{ ...row, mode: 'extract' }], now(), !!job)
       }
     }
@@ -82,7 +84,9 @@ export async function collectGithubVideos(store: AppStore, deps: {
           automatic: got.automatic, method: got.method ?? 'captions', source: 'github', at: now(), version: 2,
         })
         const job = (await store.read<SocialJob[]>(SOCIAL_JOBS_KEY))?.find(j => j.mode === 'extract' && videoKey(j.url) === id)
-        if (job?.stage !== 'complete') await enqueueSocialJobs(store, [{ ...video, mode: 'extract' }], now(), true)
+        // Fresh words can improve an earlier video-only model read, even when
+        // that older job is complete. The analyser decides if it is an upgrade.
+        if (result === 'stored' || job?.stage !== 'complete') await enqueueSocialJobs(store, [{ ...video, mode: 'extract' }], now(), true)
         if (result === 'stored') { report.saved++; report[got.method === 'speech' ? 'speech' : 'captions']++ }
         if (old) attempts.splice(attempts.indexOf(old), 1)
       } else {

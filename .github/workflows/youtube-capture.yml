@@ -3,7 +3,15 @@ on:
   schedule:
     # Standard public-repository runners are free. Avoid the top of the hour.
     - cron: '7 */3 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      capture_runner:
+        description: 'Standard GitHub-hosted runner for caption/audio capture'
+        type: choice
+        options:
+          - ubuntu-24.04
+          - macos-15
+        default: ubuntu-24.04
 permissions:
   contents: read
 concurrency:
@@ -12,7 +20,7 @@ concurrency:
 jobs:
   capture:
     if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.capture_runner || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -32,21 +40,25 @@ jobs:
       - name: Install audio conversion tools
         run: |
           if ! command -v ffmpeg >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends ffmpeg
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              brew install ffmpeg
+            else
+              sudo apt-get update -qq
+              sudo apt-get install -y --no-install-recommends ffmpeg
+            fi
           fi
       - name: Cache CPU speech engine and model
         uses: actions/cache@v4
         id: speech
         with:
           path: ~/.cache/streetsignal-speech
-          key: speech-ubuntu24-x64-whisper-d2a764c-base-en-v1
+          key: speech-${{ runner.os }}-${{ runner.arch }}-whisper-d2a764c-base-en-v2
       - name: Build pinned whisper.cpp and download base English model
         if: steps.speech.outputs.cache-hit != 'true'
         run: |
           git clone --filter=blob:none https://github.com/ggml-org/whisper.cpp.git "$RUNNER_TEMP/whisper"
           git -C "$RUNNER_TEMP/whisper" checkout d2a764c648779feb36d44363f212a29b00aad1af
-          cmake -S "$RUNNER_TEMP/whisper" -B "$RUNNER_TEMP/whisper/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_CUDA=OFF -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF
+          cmake -S "$RUNNER_TEMP/whisper" -B "$RUNNER_TEMP/whisper/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_CUDA=OFF -DGGML_METAL=OFF -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF
           cmake --build "$RUNNER_TEMP/whisper/build" --target whisper-cli -j 2
           mkdir -p "$HOME/.cache/streetsignal-speech"
           cp "$RUNNER_TEMP/whisper/build/bin/whisper-cli" "$HOME/.cache/streetsignal-speech/whisper-cli"
@@ -95,7 +107,7 @@ jobs:
           APP_TOKEN: ${{ secrets.APP_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENAI_BASE_URL: https://api.deepseek.com
-          OPENAI_MODEL: deepseek-chat
+          OPENAI_MODEL: deepseek-flash
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
       - name: Confirm app publication without exposing source text

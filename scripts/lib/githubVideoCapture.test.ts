@@ -67,6 +67,18 @@ describe('GitHub video capture', () => {
     expect(readers.captions).not.toHaveBeenCalled()
   })
 
+  it('wakes a completed video-only read when real words become available', async () => {
+    const store = memoryStore(), readers = deps()
+    await store.write('video-inbox', [video()])
+    await enqueueSocialJobs(store, [video()], 100)
+    const jobs = (await store.read<SocialJob[]>(SOCIAL_JOBS_KEY))!
+    jobs[0].stage = 'complete'; jobs[0].updatedAt = 100
+    await store.write(SOCIAL_JOBS_KEY, jobs)
+    await store.write('video-extract:v1:abcdefghijk', { via: 'gemini-video' })
+    await collectGithubVideos(store, readers)
+    expect(await store.read(SOCIAL_JOBS_KEY)).toMatchObject([{ stage: 'queued' }])
+  })
+
   it('reports a failed save as an error, never as a successful capture, and releases its lease', async () => {
     const backing = memoryStore(), readers = deps()
     await backing.write('video-inbox', [video()])

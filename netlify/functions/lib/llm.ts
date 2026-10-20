@@ -47,7 +47,15 @@ export const DEFAULT_MODELS = {
  * → the default pin. */
 export function modelFor(provider: keyof typeof DEFAULT_MODELS, e: LlmEnv): string {
   const key = `${provider.toUpperCase()}_MODEL` as const
-  return (e as Record<string, string | undefined>)[key] || process.env[key] || DEFAULT_MODELS[provider]
+  const model = (e as Record<string, string | undefined>)[key] || process.env[key] || DEFAULT_MODELS[provider]
+  // DeepSeek's current documented Flash endpoint replaces the legacy Chat
+  // name. Existing deployments may still carry the older environment value.
+  if (provider === 'openai' && model === 'deepseek-chat' && isDeepSeek(e.OPENAI_BASE_URL ?? process.env.OPENAI_BASE_URL)) return 'deepseek-flash'
+  return model
+}
+
+function isDeepSeek(base?: string): boolean {
+  try { return !!base && new URL(base).hostname === 'api.deepseek.com' } catch { return false }
 }
 
 type Provider = { name: string; available: (e: LlmEnv) => boolean; call: (prompt: string, e: LlmEnv, fetchFn: typeof fetch) => Promise<string> }
@@ -121,7 +129,12 @@ const PROVIDERS: Provider[] = [
       const res = await fetchFn(`${base.replace(/\/$/, '')}/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${e.OPENAI_API_KEY}` },
-        body: JSON.stringify({ model: modelFor('openai', e), messages: [{ role: 'user', content: prompt }], max_tokens: e.maxTokens ?? 700 }),
+        body: JSON.stringify({
+          model: modelFor('openai', e), messages: [{ role: 'user', content: prompt }], max_tokens: e.maxTokens ?? 700,
+          // These bounded extraction/summarisation calls need their response
+          // budget for the answer, not hidden reasoning.
+          ...(isDeepSeek(base) ? { thinking: { type: 'disabled' } } : {}),
+        }),
       })
       const httpErr = await httpErrorFor('openai', res)
       if (httpErr) throw httpErr
