@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -25,9 +25,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      # The measured initial closure remains above the existing 120 KB limit.
-      # Keep the warning visible; this release does not change that limit.
-      - run: npm run budget
+      - run: node scripts/check-budgets.mjs --enforce
       - name: Configure the existing transcript provider
         env:
           SUPADATA_API_KEY: ${{ secrets.SUPADATA_API_KEY }}

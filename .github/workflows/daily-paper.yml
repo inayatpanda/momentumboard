@@ -11,11 +11,14 @@ on:
     - cron: '35 6 * * *' # 06:35 GMT (winter) — composes; already done in summer
     - cron: '35 7 * * *' # late-drift fallback
   workflow_dispatch: {}
+permissions:
+  contents: read
 concurrency:
   group: daily-paper
   cancel-in-progress: false
 jobs:
   run:
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

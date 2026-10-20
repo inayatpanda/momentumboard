@@ -407,3 +407,25 @@ The scheduled worker deployed as version
 `700e0416-e377-4d59-afc3-8c0666cae2f0`. No extra queue run or paid capture was
 triggered for this release. The local design-review server was stopped and the
 browser viewport override reset after visual checks.
+
+## Public-repository operations — 2026-10-20
+
+The owner requested public visibility so StreetSignal's daily paper and
+background processing can use GitHub's free standard runners. All five workflows
+use `ubuntu-latest`, explicitly request only `contents: read`, and restrict their
+production jobs to this repository's `main` branch. No pull-request trigger is
+being given production credentials. Runner schedules remain unchanged because
+market-data and model-provider limits still apply.
+
+Local brainstorm preview credentials, process state and session logs are no
+longer tracked and are ignored. A redacted Gitleaks scan covered all 576 existing
+commits. The flagged preview server was stopped, with no listener on its saved
+port; the other findings were test fixtures and environment-variable references.
+This scan is a point-in-time check, not a guarantee against every disclosure.
+Existing history is preserved; removing files from the latest tree does not
+erase earlier revisions. Production credentials remain GitHub Actions secrets.
+
+GitHub's public standard-runner minutes are free. Larger runners and excess
+storage can still be billable, and external API services have separate limits.
+The repository had no Actions artifacts and approximately 41 MB of cache when
+checked. Account spending settings are managed separately from this source tree.

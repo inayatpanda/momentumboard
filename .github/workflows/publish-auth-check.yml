@@ -13,8 +13,11 @@
 name: publish-auth-check
 on:
   workflow_dispatch: {}
+permissions:
+  contents: read
 jobs:
   check:
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

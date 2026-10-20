@@ -1,14 +1,14 @@
 # Drains the `work-queue` blob that Netlify's (still-free) scheduled functions
-# fill: video analysis, event dossiers, compose retries. Every 15 minutes;
+# fill: video analysis, event dossiers, compose retries. Three-hourly;
 # leased inside the script so overlap is safe. Runs the same handler modules
 # the old background-function HTTP kicks used to reach.
 name: queue-worker
 on:
   schedule:
-    # Actions minutes are BILLED on this private repo, and polling every 15
+    # When this repository was private, polling every 15
     # minutes spent 117 of the last 143 billed minutes — five times what the
     # morning paper costs — usually to find an empty queue. Exhausting the
-    # budget blocks EVERY workflow, which is what stopped the paper on 27/28
+    # budget blocked EVERY workflow, which is what stopped the paper on 27/28
     # July and mailed "all jobs have failed" all day. Three-hourly is plenty for
     # background enrichment (video reads, dossiers); the paper has its own crons.
     # Once the Netlify dispatcher lands this schedule can go entirely: the queue
@@ -17,7 +17,8 @@ on:
     # share Groq's 100k tokens-per-day budget with the composer, and the
     # 00:20/03:20/06:20 slots were spending the freshly reset budget before the
     # paper's first claim on it — on a Gemini-depleted day that alone can kill
-    # the edition (2026-08-04). Nothing queues overnight anyway.
+    # the edition (2026-08-04). Keep the cadence after public release because
+    # provider budgets still apply even though standard runner minutes are free.
     - cron: '20 8-23/3 * * *'
   workflow_dispatch:
     inputs:
@@ -29,11 +30,14 @@ on:
         description: 'Optional: retry one video already in the discovered inbox'
         type: string
         required: false
+permissions:
+  contents: read
 concurrency:
   group: queue-worker
   cancel-in-progress: false
 jobs:
   drain:
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

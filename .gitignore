@@ -20,6 +20,8 @@ docs/AUDIT-*.md
 
 # walkthrough screenshots (scripts/walkthrough.mjs) — evidence, not source
 .superpowers/walkthrough/
+# Local preview credentials, process state and design-session logs.
+.superpowers/brainstorm/
 # miniflare's local state, written by `wrangler pages dev` (the walkthrough)
 .wrangler/
 .env.dmg
