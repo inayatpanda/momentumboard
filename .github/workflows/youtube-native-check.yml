@@ -1,0 +1,35 @@
+name: youtube-native-check
+on:
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: 'Public YouTube video ID to read (11 characters)'
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: youtube-native-check
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Test Google's supported public-video input
+        run: npx tsx scripts/bg/check-youtube-native.mts
+        env:
+          VIDEO_ID: ${{ inputs.video_id }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          STORE_BACKEND: d1
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
