@@ -5,7 +5,7 @@ import { acquireLease, releaseLease, type AppStore } from './storeProvider'
 import type { InboxVideo } from './videoTranscriptStore'
 
 export const NATIVE_VIDEO_MODEL = 'gemini-3.5-flash-lite'
-export const NATIVE_VIDEO_LIMIT_SEC = 600
+export const NATIVE_VIDEO_LIMIT_SEC = 1200
 export interface NativeVideoDraft {
   url: string; at: number; model: string; finishReason?: string
   limitSeconds?: number

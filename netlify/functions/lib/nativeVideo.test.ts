@@ -19,7 +19,7 @@ describe('direct cloud video reads', () => {
     const [url, opts] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toContain(`/models/${NATIVE_VIDEO_MODEL}:generateContent`)
     const request = JSON.parse(String(opts.body))
-    expect(request.contents[0].parts[0]).toEqual({ fileData: { fileUri: video.url, mimeType: 'video/*' }, videoMetadata: { startOffset: '0s', endOffset: '600s' } })
+    expect(request.contents[0].parts[0]).toEqual({ fileData: { fileUri: video.url, mimeType: 'video/*' }, videoMetadata: { startOffset: '0s', endOffset: '1200s' } })
     expect(request.generationConfig.maxOutputTokens).toBe(16000)
     expect(nativeDraftText(result)).toContain(quote)
     expect(JSON.stringify(result)).not.toContain('test-key')

@@ -89,7 +89,7 @@ free access with gaps and slower processing accepted.
 `youtube-native-capture` uses Google's supported YouTube URL input, avoiding the
 blocked download from a GitHub IP. It produces AI transcription and creator
 claims in one request. It is configured for 08:17–23:17 UTC every three hours,
-with at most two new attempts per day, a 10-minute input limit and no automatic
+with at most two new attempts per day, a 20-minute input limit and no automatic
 API retries. Quota errors leave work pending. This is a separate path from
 independently downloaded captions and Whisper speech recognition.
 Both cloud collectors restrict candidates to the followed-channel list. Stable
@@ -138,10 +138,13 @@ Validation on 20 October 2026:
   [Publication](https://github.com/inayatpanda/momentumboard/actions/runs/39479849835)
   then added a new DAL finding and confirmed it through the live app API and UI.
 - The first free automatic run encountered an upcoming broadcast (403) and a
-  long recording (503). Input length was reduced from 90 to 10 minutes and
+  long recording (503). Input length was reduced from 90 to 20 minutes and
   availability checks were added. Successful examples do not establish that
   every channel or video will work. The initial proof on the app's original
   key did not establish that original key's free-tier status.
+- A source review of the 13-minute Verified Investing example showed its trade
+  conclusion after minute 10. The bounded limit therefore covers 20 minutes;
+  longer recordings remain partial reads and can omit later conclusions.
 
 See [engine and processing notes](docs/ENGINE_V2.md) for implementation details,
 validation history and current limitations.
