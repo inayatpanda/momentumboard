@@ -98,4 +98,16 @@ describe('GitHub video capture', () => {
     const candidates = captureCandidates([video(), { ...video(), url: 'https://youtu.be/abcdefghijk' }, video('abcdefghijl')], (await store.read<SocialJob[]>(SOCIAL_JOBS_KEY))!, new Set(['abcdefghijl']), attempts, 1000)
     expect(candidates.map(v => v.url.slice(-11))).toEqual(['abcdefghijm', 'abcdefghijk'])
   })
+
+  it('does not spend the capture allowance repeatedly on archived words outside the recent index', async () => {
+    const store = memoryStore(), readers = deps()
+    await store.write('video-inbox', [video('abcdefghijk', 200), video('abcdefghijl', 100)])
+    await store.write('video-transcript:abcdefghijk', { ...video(), text: words, source: 'local', at: 1 })
+    await store.write('video-transcript-index:v2', Array.from({ length: 200 }, (_, i) => ({ ...video(`k${String(i).padStart(10, '0')}`), at: 10 + i, source: 'local', characters: 200 })))
+    const report = await collectGithubVideos(store, { ...readers, maxVideos: 1 })
+    expect(report).toMatchObject({ reused: 1, saved: 1 })
+    expect(readers.captions).toHaveBeenCalledWith(video('abcdefghijl').url)
+    const next = await collectGithubVideos(store, readers)
+    expect(next).toMatchObject({ attempted: 0, reused: 0, saved: 0 })
+  })
 })

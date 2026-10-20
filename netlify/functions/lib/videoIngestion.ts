@@ -18,7 +18,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     store.read<TranscriptProviderHealth>(PROVIDER_HEALTH_KEY),
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; buffered: number }>('video-local-runner'),
     store.read<{ ytChannels?: { id: string; name: string }[] }>('config'),
-    store.read<{ at: number; running: boolean; saved: number; unavailable: number; attempted: number; captions: number; speech: number; status: string; reasons: Record<string, number> }>('video-github-runner'),
+    store.read<{ at: number; running: boolean; saved: number; unavailable: number; attempted: number; captions: number; speech: number; reused?: number; status: string; reasons: Record<string, number> }>('video-github-runner'),
   ])
   const completed = new Set(extracts.map(v => videoKey(v.url)))
   const watched = new Set(analyses.map(v => videoKey(v.url)))
@@ -60,6 +60,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
       at: githubRunner.at, running: githubRunner.running, status: githubRunner.status,
       saved: githubRunner.saved, unavailable: githubRunner.unavailable, attempted: githubRunner.attempted,
       captions: githubRunner.captions, speech: githubRunner.speech,
+      reused: githubRunner.reused ?? 0,
       blocked: githubRunner.reasons?.['youtube-blocked'] ?? 0,
       stale: nowSec - githubRunner.at > 6 * 3600,
     } : null,

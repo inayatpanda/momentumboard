@@ -50,7 +50,7 @@ export function modelFor(provider: keyof typeof DEFAULT_MODELS, e: LlmEnv): stri
   const model = (e as Record<string, string | undefined>)[key] || process.env[key] || DEFAULT_MODELS[provider]
   // DeepSeek's current documented Flash endpoint replaces the legacy Chat
   // name. Existing deployments may still carry the older environment value.
-  if (provider === 'openai' && model === 'deepseek-chat' && isDeepSeek(e.OPENAI_BASE_URL ?? process.env.OPENAI_BASE_URL)) return 'deepseek-flash'
+  if (provider === 'openai' && model === 'deepseek-chat' && isDeepSeek(e.OPENAI_BASE_URL ?? (e.strict ? undefined : process.env.OPENAI_BASE_URL))) return 'deepseek-flash'
   return model
 }
 

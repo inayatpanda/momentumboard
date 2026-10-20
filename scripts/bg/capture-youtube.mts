@@ -21,7 +21,7 @@ async function main() {
   console.log(JSON.stringify(result ?? { status: 'another-collector-running' }))
   if (process.env.GITHUB_STEP_SUMMARY && result) {
     await appendFile(process.env.GITHUB_STEP_SUMMARY,
-      `### YouTube capture\n\nChecked ${result.attempted}; saved ${result.saved} (${result.captions} captions, ${result.speech} speech transcripts); unavailable ${result.unavailable}.\n\nUnavailable videos stay queued for a later attempt. No video, audio or transcript artifacts are uploaded to GitHub.\n`)
+      `### YouTube capture\n\nChecked ${result.attempted}; saved ${result.saved} (${result.captions} captions, ${result.speech} speech transcripts); already available ${result.reused}; unavailable ${result.unavailable}.\n\nUnavailable videos stay queued for a later attempt. No video, audio or transcript artifacts are uploaded to GitHub.\n`)
   }
 }
 main().catch(() => { console.error('Cloud capture failed; inspect Tracking for the last confirmed progress.'); process.exitCode = 1 })

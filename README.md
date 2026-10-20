@@ -44,7 +44,7 @@ The React/Vite client and API run on Cloudflare Pages, with D1 storage and a
 separate scheduled Worker. Shared backend handlers also run in GitHub Actions
 for the daily paper and longer background jobs.
 
-All workflows use standard Ubuntu runners. These runner minutes are
+Scheduled jobs use standard GitHub-hosted runners. These runner minutes are
 free for this public repository under GitHub's current billing rules. Workflow
 jobs are restricted to the original repository's `main` branch; forks must
 configure their own services and adjust those guards. Production credentials
@@ -64,6 +64,10 @@ job analyses saved transcripts through the existing DeepSeek integration and
 publishes source-linked findings in **The street → Videos**, channel picks and
 stock research. **The street → Tracking** shows cloud progress, blocked access
 and discovery/transcript/analysis coverage. Existing analysis limits still apply.
+If the primary text service fails, the new cloud lane can use the existing
+Groq/Gemini text integrations for at most two transcript sections per day,
+after 08:00 UTC so it cannot take the morning paper's first claim on free quotas.
+Long videos can therefore take several runs or days to finish.
 No Supadata subscription, cookies or paid proxy is used by this workflow. Audio
 is temporary; transcripts and audio are never uploaded as public Actions
 artifacts. Only the speech engine and model are cached.
@@ -73,6 +77,8 @@ best-effort capture, not a guarantee of every video. The workflow records blocke
 access honestly and retains unfinished work. Captured transcripts are reused.
 GitHub can disable public-repository schedules after 60 days without repository
 activity; a stale check-in in Tracking exposes a stopped or delayed schedule.
+Manual runs also offer a standard GitHub-hosted Mac runner for testing capture;
+this is a remote machine and has no dependency on the owner's Mac.
 
 Public runner minutes do not include external API costs, paid transcript
 services, larger runners or excess storage. The current capture preference is

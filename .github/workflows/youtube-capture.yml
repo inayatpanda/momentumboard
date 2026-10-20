@@ -100,6 +100,7 @@ jobs:
         env:
           VIDEOS_ONLY: 'true'
           STORED_TRANSCRIPTS_ONLY: 'true'
+          GITHUB_VIDEO_ANALYSIS: 'true'
           URL: https://thestreetsignal.rqai.co.uk
           STORE_BACKEND: d1
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -108,6 +109,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENAI_BASE_URL: https://api.deepseek.com
           OPENAI_MODEL: deepseek-flash
+          # Extra shared text requests are capped at two/day, after 08:00 UTC.
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
       - name: Confirm app publication without exposing source text

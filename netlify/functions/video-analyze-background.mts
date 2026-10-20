@@ -7,6 +7,7 @@ import type { InboxVideo } from './lib/videoTranscriptStore'
 import { acquireLease, releaseLease, appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import type { VideoExtract } from './lib/videoTrends'
 import type { LlmEnv } from './lib/llm'
+import { githubTextAnalysis, GithubTextBudgetWait } from './lib/githubTextAnalysis'
 import { canonicalVideoUrl, videoKey } from '../../shared/youtubeCaptions.mjs'
 
 // Netlify background function (-background suffix): returns 202 immediately,
@@ -153,10 +154,15 @@ async function runVideoAnalyze(
         // DeepSeek-forced: video condensation must not spend the Groq
         // tokens-per-day budget the morning paper composes against
         await setSocialStage(store, jobId, 'extracting', nowSec)
-        transcriptExtract = await extractTranscriptFacts(got.text, { url: body.url, title: body.title, channel: body.channel, at: nowSec }, audienceText, async prompt => (await callLlm(prompt, { ...env, LLM_PROVIDER: 'openai', maxTokens: 4000 } as LlmEnv)).text, { segments: got.segments, language: got.language, store, checkpointKey: `video-chunks:${videoKey(body.url)}`, maxNewChunks: 2 })
+        transcriptExtract = await extractTranscriptFacts(got.text, { url: body.url, title: body.title, channel: body.channel, at: nowSec }, audienceText, async prompt => (
+          process.env.GITHUB_VIDEO_ANALYSIS === 'true'
+            ? await githubTextAnalysis(prompt, store, { ...process.env, ...env } as LlmEnv, callLlm)
+            : await callLlm(prompt, { ...env, LLM_PROVIDER: 'openai', maxTokens: 4000 } as LlmEnv)
+        ).text, { segments: got.segments, language: got.language, store, checkpointKey: `video-chunks:${videoKey(body.url)}`, maxNewChunks: 2 })
         if (!transcriptExtract) return new Response('unparseable-extract', { status: 502 })
       } catch (e) {
         if (e instanceof ExtractionPending) return new Response('extraction-in-progress', { status: 429, headers: { 'retry-after': '60' } })
+        if (e instanceof GithubTextBudgetWait) return new Response(e.message, { status: 429, headers: { 'retry-after': String(e.retryAfterSec) } })
         return new Response('extraction-provider-failed', { status: 502 }) // LLM down — retryable
       }
     } else if (env.GEMINI_API_KEY) {
@@ -209,6 +215,10 @@ async function runVideoAnalyze(
     // First-app tracking starts only after confirmed publication; interrupted
     // publication cannot acquire a fictitious earlier executable entry.
     await registerExtractOutcomes(store, extract)
+    // The next app refresh should include newly published findings instead of
+    // waiting for the five-minute feed cache. Failure falls back to normal TTL.
+    const { setCached } = await import('./lib/cache')
+    await setCached('street-wire:v3', null, 0).catch(() => {})
     // Health line: which rung is actually carrying the load over the last 24h.
     // If free+supadata stay 0 and gemini climbs, the cheap tiers are dead and
     // the day's videos beyond the Gemini cap are being dropped — the one signal

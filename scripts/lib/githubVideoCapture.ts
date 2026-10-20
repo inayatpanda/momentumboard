@@ -5,10 +5,10 @@ import { readStoredTranscript, readTranscriptIndex, saveTranscript, validatedSeg
 
 export const GITHUB_CAPTURE_KEY = 'video-github-runner'
 export const GITHUB_ATTEMPTS_KEY = 'video-github-capture-attempts'
-export interface CaptureAttempt { id: string; at: number; attempts: number; nextAt: number }
+export interface CaptureAttempt { id: string; at: number; attempts: number; nextAt: number; ready?: boolean }
 export interface GithubCaptureStatus {
   at: number; running: boolean; saved: number; unavailable: number; attempted: number
-  captions: number; speech: number; status: 'running' | 'complete' | 'error'
+  captions: number; speech: number; reused: number; status: 'running' | 'complete' | 'error'
   reasons: Record<string, number>
 }
 export type CaptureResult = { text: string; segments?: CaptionSegment[]; language?: string; automatic?: boolean; method?: 'captions' | 'speech'; fail?: never } | { fail: string; text?: never }
@@ -22,7 +22,7 @@ export function captureCandidates(inbox: InboxVideo[], jobs: SocialJob[], known:
     if (url) rows.set(videoKey(url), { ...v, url })
   }
   const tried = new Map(attempts.map(a => [a.id, a]))
-  return [...rows.values()].filter(v => !known.has(videoKey(v.url)) && (tried.get(videoKey(v.url))?.nextAt ?? 0) <= now)
+  return [...rows.values()].filter(v => !known.has(videoKey(v.url)) && !tried.get(videoKey(v.url))?.ready && (tried.get(videoKey(v.url))?.nextAt ?? 0) <= now)
     .sort((a, b) => (tried.get(videoKey(a.url))?.at ?? 0) - (tried.get(videoKey(b.url))?.at ?? 0) || (b.publishedAt ?? b.at) - (a.publishedAt ?? a.at))
 }
 
@@ -44,7 +44,7 @@ export async function collectGithubVideos(store: AppStore, deps: {
   const now = deps.now ?? (() => Math.floor(Date.now() / 1000))
   const token = await acquireLease(store, 'lease:github-video-capture', now(), 40 * 60)
   if (!token) return null
-  const report: GithubCaptureStatus = { at: now(), running: true, status: 'running', saved: 0, unavailable: 0, attempted: 0, captions: 0, speech: 0, reasons: {} }
+  const report: GithubCaptureStatus = { at: now(), running: true, status: 'running', saved: 0, unavailable: 0, attempted: 0, captions: 0, speech: 0, reused: 0, reasons: {} }
   const heartbeat = () => store.write(GITHUB_CAPTURE_KEY, { ...report, at: now() })
   try {
     await heartbeat()
@@ -64,10 +64,14 @@ export async function collectGithubVideos(store: AppStore, deps: {
     const attempts = previous ?? []
     const pending = captureCandidates(inbox ?? [], jobs ?? [], new Set(index.map(t => videoKey(t.url))), attempts, now())
     let audioRemaining = Math.max(0, Math.min(2, deps.maxAudio ?? 2))
-    for (const video of pending.slice(0, Math.max(1, Math.min(20, deps.maxVideos ?? 12)))) {
+    let fetched = 0
+    const limit = Math.max(1, Math.min(20, deps.maxVideos ?? 12))
+    for (const video of pending.slice(0, 50)) {
       if (deps.deadline && now() >= deps.deadline) break
       // A partial save may have durable words but no recent index yet.
       const existing = await readStoredTranscript(store, video.url)
+      if (!existing && fetched >= limit) break
+      if (!existing) fetched++
       let got: CaptureResult = existing ?? await deps.captions(video.url)
       let captionFailure: string | undefined
       if (!got.text) { got = await deps.library(video.url); captionFailure = got.fail }
@@ -86,9 +90,15 @@ export async function collectGithubVideos(store: AppStore, deps: {
         const job = (await store.read<SocialJob[]>(SOCIAL_JOBS_KEY))?.find(j => j.mode === 'extract' && videoKey(j.url) === id)
         // Fresh words can improve an earlier video-only model read, even when
         // that older job is complete. The analyser decides if it is an upgrade.
-        if (result === 'stored' || job?.stage !== 'complete') await enqueueSocialJobs(store, [{ ...video, mode: 'extract' }], now(), true)
+        if (result === 'stored' || !job || (job.stage !== 'complete' && /no-transcript|caption-job/.test(job.lastError ?? ''))) {
+          await enqueueSocialJobs(store, [{ ...video, mode: 'extract' }], now(), true)
+        }
         if (result === 'stored') { report.saved++; report[got.method === 'speech' ? 'speech' : 'captions']++ }
+        else report.reused++
         if (old) attempts.splice(attempts.indexOf(old), 1)
+        // Full words never expire. Remember them beyond the rolling recent
+        // index so old, already-captured jobs cannot take every future slot.
+        attempts.push({ id, at: now(), attempts: 0, nextAt: 0, ready: true })
       } else {
         report.unavailable++
         const reason = captureFailure(captionFailure === 'RequestBlocked' || captionFailure === 'IpBlocked' ? captionFailure : got.fail)

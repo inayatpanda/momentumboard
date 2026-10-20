@@ -14,7 +14,7 @@ export interface WorkResult { ok: boolean; reason?: string; retryAfterSec?: numb
 /** Never persist provider bodies: they can contain credentials or untrusted
  * messages. Public diagnostics use only an allowlisted reason or HTTP class. */
 export function videoFailureReason(status: number, body: string): string {
-  const reasons = ['caption-job-pending', 'extraction-in-progress', 'video-processing', 'provider-job-expired', 'provider-job-failed', 'publication-busy', 'extraction-provider-failed', 'extract-daily-cap', 'gemini-extract-capped', 'daily-cap', 'no-transcript-gemini-watch-capped', 'no-transcript-no-video-read', 'unparseable-extract', 'bad-url', 'bad-json', 'bad-mode', 'unauthorized']
+  const reasons = ['caption-job-pending', 'extraction-in-progress', 'video-processing', 'provider-job-expired', 'provider-job-failed', 'publication-busy', 'extraction-provider-failed', 'video-text-fallback-capped', 'extract-daily-cap', 'gemini-extract-capped', 'daily-cap', 'no-transcript-gemini-watch-capped', 'no-transcript-no-video-read', 'unparseable-extract', 'bad-url', 'bad-json', 'bad-mode', 'unauthorized']
   return reasons.includes(body) ? body : status === 401 || status === 403 ? 'provider-auth-error' : status === 429 ? 'provider-rate-limit' : status >= 500 ? 'provider-unavailable' : 'analysis-request-failed'
 }
 
