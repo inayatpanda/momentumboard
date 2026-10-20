@@ -7,6 +7,7 @@ import { enqueueSocialJobs, finishSocialAttempt, socialJobId } from '../../netli
 import { setCached } from '../../netlify/functions/lib/cache'
 import { videoKey } from '../../shared/youtubeCaptions.mjs'
 import { youtubeAvailability } from '../../netlify/functions/lib/youtubeAvailability'
+import { isFollowedChannel, withDefaults } from '../../shared/channels'
 
 async function main() {
   await configureStoreForScript()
@@ -24,9 +25,11 @@ async function main() {
   try {
     await appStore.write('video-native-runner', status)
     const inbox = await appStore.read<InboxVideo[]>('video-inbox') ?? []
-    const candidates = inbox.filter(v => !target || videoKey(v.url) === target).sort((a, b) => (b.publishedAt ?? b.at) - (a.publishedAt ?? a.at))
+    const config = await appStore.read<{ ytChannels?: { id: string; name: string }[] }>('config')
+    const followed = withDefaults(config?.ytChannels)
+    const candidates = inbox.filter(v => isFollowedChannel(v, followed) && (!target || videoKey(v.url) === target)).sort((a, b) => (b.publishedAt ?? b.at) - (a.publishedAt ?? a.at))
     if (target && !candidates.length) throw new Error('target-not-discovered')
-    let processed = 0
+    let processed = 0, metadataChecks = 0
     for (const video of candidates) {
       if (processed >= 2) break
       const id = videoKey(video.url)
@@ -43,8 +46,9 @@ async function main() {
       }
       processed++
       if (!draft || !nativeDraftText(draft)) {
+        if (metadataChecks++ >= 8) break
         const availability = await youtubeAvailability(video.url)
-        if (availability.state === 'upcoming' || availability.state === 'live') {
+        if (availability.state === 'upcoming' || availability.state === 'live' || availability.state === 'unavailable') {
           processed--
           console.log(JSON.stringify({ videoId: id, deferred: availability.state }))
           continue

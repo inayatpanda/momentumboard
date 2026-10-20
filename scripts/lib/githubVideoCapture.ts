@@ -2,6 +2,7 @@ import { canonicalVideoUrl, videoKey, type CaptionSegment } from '../../shared/y
 import { acquireLease, releaseLease, type AppStore } from '../../netlify/functions/lib/storeProvider'
 import { enqueueSocialJobs, SOCIAL_JOBS_KEY, type SocialJob } from '../../netlify/functions/lib/socialJobs'
 import { readStoredTranscript, readTranscriptIndex, saveTranscript, validatedSegments, type InboxVideo } from '../../netlify/functions/lib/videoTranscriptStore'
+import { isFollowedChannel } from '../../shared/channels'
 
 export const GITHUB_CAPTURE_KEY = 'video-github-runner'
 export const GITHUB_ATTEMPTS_KEY = 'video-github-capture-attempts'
@@ -40,6 +41,7 @@ export function captureFailure(reason?: string): string {
 export async function collectGithubVideos(store: AppStore, deps: {
   captions: CaptureFn; library: CaptureFn; audio: CaptureFn
   now?: () => number; maxVideos?: number; maxAudio?: number; deadline?: number
+  followedChannels?: { id: string; name: string }[]
 }): Promise<GithubCaptureStatus | null> {
   const now = deps.now ?? (() => Math.floor(Date.now() / 1000))
   const token = await acquireLease(store, 'lease:github-video-capture', now(), 40 * 60)
@@ -53,7 +55,7 @@ export async function collectGithubVideos(store: AppStore, deps: {
       store.read<SocialJob[]>(SOCIAL_JOBS_KEY), store.read<CaptureAttempt[]>(GITHUB_ATTEMPTS_KEY),
     ])
     // Recover a crash after storing words but before admitting the analysis.
-    for (const row of index.filter(t => t.source === 'github')) {
+    for (const row of index.filter(t => t.source === 'github' && (!deps.followedChannels || isFollowedChannel(t, deps.followedChannels)))) {
       const job = jobs?.find(j => j.mode === 'extract' && videoKey(j.url) === videoKey(row.url))
       const newWordsAfterAnalysis = job?.stage === 'complete' && row.at >= job.updatedAt
         && (await store.read<{ via?: string }>(`video-extract:v1:${videoKey(row.url)}`))?.via !== 'github'
@@ -63,6 +65,7 @@ export async function collectGithubVideos(store: AppStore, deps: {
     }
     const attempts = previous ?? []
     const pending = captureCandidates(inbox ?? [], jobs ?? [], new Set(index.map(t => videoKey(t.url))), attempts, now())
+      .filter(v => !deps.followedChannels || isFollowedChannel(v, deps.followedChannels))
     let audioRemaining = Math.max(0, Math.min(2, deps.maxAudio ?? 2))
     let fetched = 0
     const limit = Math.max(1, Math.min(20, deps.maxVideos ?? 12))

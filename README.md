@@ -89,9 +89,14 @@ free access with gaps and slower processing accepted.
 `youtube-native-capture` uses Google's supported YouTube URL input, avoiding the
 blocked download from a GitHub IP. It produces AI transcription and creator
 claims in one request. It is configured for 08:17–23:17 UTC every three hours,
-with at most two new attempts per day, a 90-minute input limit and no automatic
+with at most two new attempts per day, a 10-minute input limit and no automatic
 API retries. Quota errors leave work pending. This is a separate path from
 independently downloaded captions and Whisper speech recognition.
+Both cloud collectors restrict candidates to the followed-channel list. Stable
+channel IDs take precedence over names. Before spending a native read, public
+metadata is checked for live/upcoming broadcasts or incomplete source metadata.
+Those checks are best effort when YouTube blocks metadata access. Longer videos
+receive a limited read, not a claimed full transcription.
 
 New reads **fail closed** unless `YOUTUBE_FREE_TIER_CONFIRMED=true` is configured
 as a repository variable and `GEMINI_YOUTUBE_FREE_API_KEY` is present as a
@@ -104,6 +109,8 @@ the Google key or calling the transcription API.
 After a successful free-key test, set `YOUTUBE_NATIVE_SCHEDULE_ENABLED=true`
 to enable unattended runs. Its two daily attempts are independent from legacy
 Gemini analysis budgets, so failures in that older path cannot starve this one.
+The manual `youtube-native-check` diagnostic allows one additional bounded
+verification per day on the free key.
 
 Findings appear in **The street → Videos**, with an expandable AI transcript,
 source link and explicit verification status. Model-transcribed quotes are not
@@ -124,10 +131,17 @@ Validation on 20 October 2026:
   reused that saved draft with zero transcription calls. It confirmed the exact
   video, seven findings and transcript metadata through the live app API.
   The video card and expanded transcript were also checked in the live UI.
-- The initial native proof used the existing Google key; its free-tier status
-  was not established. Scheduled native reads remain gated pending a dedicated
-  billing-disabled project/key. One short-video success is not evidence that
-  every channel or long video will work.
+- A separate key in a billing-disabled project was subsequently configured.
+  [The free-key read](https://github.com/inayatpanda/momentumboard/actions/runs/39479384400)
+  processed `fFViVGv5VQ4` directly as video input and saved 8,747 characters.
+  A caption transcript already existed, but was not passed to the model.
+  [Publication](https://github.com/inayatpanda/momentumboard/actions/runs/39479849835)
+  then added a new DAL finding and confirmed it through the live app API and UI.
+- The first free automatic run encountered an upcoming broadcast (403) and a
+  long recording (503). Input length was reduced from 90 to 10 minutes and
+  availability checks were added. Successful examples do not establish that
+  every channel or video will work. The initial proof on the app's original
+  key did not establish that original key's free-tier status.
 
 See [engine and processing notes](docs/ENGINE_V2.md) for implementation details,
 validation history and current limitations.

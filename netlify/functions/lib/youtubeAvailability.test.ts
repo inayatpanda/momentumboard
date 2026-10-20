@@ -19,4 +19,9 @@ describe('YouTube availability before spending a read', () => {
     const fetcher = vi.fn(async () => new Response('', { status: 403 }))
     expect(await youtubeAvailability('https://youtu.be/abcdefghijk', fetcher as typeof fetch)).toEqual({ state: 'unknown' })
   })
+  it('defers incomplete public embed metadata when a watch page cannot identify the source', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response('consent page'))
+      .mockResolvedValueOnce(Response.json({ type: 'video', html: '<iframe title="Tomorrow’s stream"></iframe>' }))
+    expect(await youtubeAvailability('https://youtu.be/abcdefghijk', fetcher)).toEqual({ state: 'unavailable' })
+  })
 })

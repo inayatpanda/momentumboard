@@ -34,3 +34,10 @@ export function withDefaults(channels: { id: string; name: string }[] | undefine
   }
   return out
 }
+
+/** Stable IDs take precedence. Exact names support older saved inbox entries. */
+export function isFollowedChannel(video: { channelId?: string; channel?: string }, channels: { id: string; name: string }[]): boolean {
+  if (video.channelId) return channels.some(c => c.id === video.channelId)
+  const name = video.channel?.trim().toLowerCase()
+  return !!name && channels.some(c => c.name.trim().toLowerCase() === name)
+}

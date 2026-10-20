@@ -1,6 +1,6 @@
 import { canonicalVideoUrl, videoKey } from '../../../shared/youtubeCaptions.mjs'
 
-export type YouTubeAvailability = { state: 'unknown' | 'upcoming' | 'live' | 'ready'; durationSeconds?: number }
+export type YouTubeAvailability = { state: 'unknown' | 'upcoming' | 'live' | 'ready' | 'unavailable'; durationSeconds?: number }
 
 /** Parse only the main player's JSON, never recommendation cards or script code. */
 export function parseYouTubeAvailability(html: string, id: string): YouTubeAvailability {
@@ -41,7 +41,20 @@ export async function youtubeAvailability(url: string, fetchFn = fetch): Promise
       headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'en-US,en;q=0.9' },
       signal: AbortSignal.timeout(15_000),
     })
+    if (response.ok) {
+      const state = parseYouTubeAvailability(await response.text(), videoKey(url))
+      if (state.state !== 'unknown') return state
+    }
+  } catch { /* The metadata endpoint may still work when watch pages are blocked. */ }
+  try {
+    const response = await fetchFn(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(canonical)}`, { signal: AbortSignal.timeout(15_000) })
+    if (response.status === 404) return { state: 'unavailable' }
     if (!response.ok) return { state: 'unknown' }
-    return parseYouTubeAvailability(await response.text(), videoKey(url))
-  } catch { return { state: 'unknown' } }
+    const data = await response.json()
+    // Scheduled broadcasts can expose only an iframe, without the ordinary
+    // title/author metadata. Defer these incomplete sources, without asserting
+    // that every such response is an upcoming broadcast.
+    if (data.type === 'video' && (!data.title || !data.author_name)) return { state: 'unavailable' }
+  } catch { /* Unknown is not proof of unavailable content. */ }
+  return { state: 'unknown' }
 }

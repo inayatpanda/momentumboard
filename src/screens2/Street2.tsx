@@ -75,7 +75,7 @@ function VideoHealth({ health, onRefresh }: { health: StreetWire['videoIngestion
     <h2 className="sec-label">YouTube processing</h2>
     {health.nativeRunner && <div className="cc-reason">
       <p><strong>Direct cloud video reads</strong><br />{health.nativeRunner.running ? 'Reading new videos and saving findings.' : health.nativeRunner.status === 'error' ? 'The last read needs attention; saved progress is retained.' : `${health.nativeRunner.published} published · ${health.nativeRunner.failed} unsuccessful on the last run.`} Last checked {relativeStamp(health.nativeRunner.at)}.</p>
-      <p>{health.nativeRunner.scheduled ? 'Scheduled with a dedicated free-tier Google key, even while your Mac is off. Up to two new reads a day, covering up to 90 minutes per video; quota limits leave videos queued.' : 'Automatic reads are paused pending free-tier setup and a successful test. Saved results can still be published without another transcription call.'} AI transcription is labelled separately from independently captured captions.</p>
+      <p>{health.nativeRunner.scheduled ? 'Scheduled for your followed channels with a dedicated free-tier Google key, even while your Mac is off. Up to two new reads a day, covering the first 10 minutes per video; quota limits leave videos queued.' : 'Automatic reads are paused pending free-tier setup and a successful test. Saved results can still be published without another transcription call.'} AI transcription is labelled separately from independently captured captions.</p>
       {health.nativeRunner.capped && <p>Today’s video-reading allowance is used. New videos remain queued.</p>}
       {health.nativeRunner.stale && <p>No recent check-in; check the cloud run for delays.</p>}
       <a href="https://github.com/inayatpanda/momentumboard/actions/workflows/youtube-native-capture.yml" target="_blank" rel="noopener noreferrer">View direct video reads ↗</a>
@@ -176,7 +176,7 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
             {v.transcriptMethod === 'speech' && <p className="social-evidence__note">Transcribed from audio{v.via === 'github' ? ' on GitHub' : ' on the Mac'}. Machine transcription can mishear names and numbers; check the linked source.</p>}
             {v.nativeTranscript && <details className="street-video-evidence">
               <summary>AI transcript{v.nativeTranscript.characters > v.nativeTranscript.excerpt.length ? ' excerpt' : ''}</summary>
-              <p className="social-evidence__note">Read directly in the cloud. {v.nativeTranscript.reportedComplete ? 'The model reports reaching the end of the video.' : `Partial read: at most the first ${Math.round(v.nativeTranscript.limitSeconds / 60)} minutes.`} Words, numbers and completeness have not been independently verified. These findings do not enter verified consensus or outcome tracking.</p>
+              <p className="social-evidence__note">Read directly in the cloud, limited to the first {Math.round(v.nativeTranscript.limitSeconds / 60)} minutes. Words, numbers and completeness have not been independently verified. These findings do not enter verified consensus or outcome tracking.</p>
               <p className="cc-reason">{v.nativeTranscript.excerpt}</p>
             </details>}
             {(v.tickers.length > 0 || v.themes.length > 0) && (

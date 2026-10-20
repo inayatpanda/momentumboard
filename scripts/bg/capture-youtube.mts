@@ -8,12 +8,15 @@ import { fetchLibraryCaptions } from '../local/captions-library.mjs'
 // @ts-expect-error plain Node module
 import { fetchAudioTranscript } from '../local/audio-transcript.mjs'
 import { collectGithubVideos } from '../lib/githubVideoCapture'
+import { withDefaults } from '../../shared/channels'
 
 async function main() {
   if (process.env.STORE_BACKEND !== 'd1') throw new Error('d1-required')
   await configureStoreForScript()
+  const config = await appStore.read<{ ytChannels?: { id: string; name: string }[] }>('config')
   const deadlineMs = Date.now() + 30 * 60_000
   const result = await collectGithubVideos(appStore, {
+    followedChannels: withDefaults(config?.ytChannels),
     captions: fetchCaptionTranscript, library: fetchLibraryCaptions,
     audio: url => fetchAudioTranscript(url, { deadlineMs: Math.min(deadlineMs, Date.now() + 12 * 60_000), maxDurationSec: 5400 }),
     deadline: Math.floor(deadlineMs / 1000),
