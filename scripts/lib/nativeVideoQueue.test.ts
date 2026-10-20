@@ -73,6 +73,18 @@ describe('expanded free video queue', () => {
     expect(await collectNativeVideos(store, deps)).toMatchObject({ attempted: 0, capped: true })
     expect(deps.readSection).toHaveBeenCalledTimes(1)
   })
+  it('continues another channel after a video-specific bad request', async () => {
+    const { store, deps } = await setup(600)
+    await store.write('video-inbox', [video(), video('abcdefghijl', 'UCother')])
+    deps.readSection.mockRejectedValueOnce(new Error('native-http-400'))
+    const status = await collectNativeVideos(store, deps)
+    expect(status).toMatchObject({ attempted: 2, failed: 1, published: 1, completed: 1 })
+    expect(status.pauseReason).toBeUndefined()
+    expect(await store.read('video-extract:v1:abcdefghijl')).toMatchObject({ via: 'gemini-video' })
+    expect(await store.read(NATIVE_PROGRESS_KEY)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ lastError: 'native-http-400', stage: 'retry' }),
+    ]))
+  })
   it('does not treat a model claiming the ending as independently confirmed duration', async () => {
     const { store, deps } = await setup()
     deps.availability.mockResolvedValue({ state: 'unknown' as 'ready', durationSeconds: undefined as unknown as number })

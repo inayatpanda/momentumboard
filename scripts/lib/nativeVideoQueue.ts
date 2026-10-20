@@ -239,7 +239,10 @@ export async function collectNativeVideos(store: AppStore, deps: {
         work.nextAttemptAt = now() + (message === 'native-http-403' ? 86400 : Math.min(86400, 1800 * 2 ** (work.failures - 1)))
         excluded.add(id); await save()
         deps.log?.({ videoId: id, reason: work.lastError, nextAttemptAt: work.nextAttemptAt })
-        if (message === 'native-http-429' || /native-http-(400|401|404)/.test(message)) {
+        // A 400 can reject one video's media/interval. Back off that video,
+        // without starving the other channels. Authentication/model failures
+        // and quota refusals still pause the shared provider.
+        if (message === 'native-http-429' || /native-http-(401|404)/.test(message)) {
           status.pauseReason = message === 'native-http-429' ? 'provider-quota' : 'provider-configuration'; status.retryAt = now() + 3600; status.capped = true
           await pauseNativeReads(store, now(), status.retryAt, status.pauseReason); break
         }
