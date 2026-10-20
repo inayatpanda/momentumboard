@@ -18,14 +18,14 @@ describe('token system + fonts', () => {
     expect(html).toContain('/fonts/inter')
   })
 
-  it('tokens.css defines the indigo accent and surfaces for BOTH themes, and no cream anywhere', () => {
+  it('tokens.css defines the blue accent and neutral surfaces for BOTH themes, and no cream anywhere', () => {
     const css = read('src/styles/tokens.css')
     expect(css).toContain(":root[data-theme='dark']")
     expect(css).toContain(":root[data-theme='light']")
     // one definition per theme block
     expect(css.match(/--accent:/g)?.length).toBe(2)
-    expect(css).toContain('#5b6cf5') // dark accent (ratified v2 mockup B)
-    expect(css).toContain('#4a5ae8') // light accent
+    expect(css).toContain('#71b8ff') // dark accent
+    expect(css).toContain('#006bd6') // light accent
     expect(css.toLowerCase()).not.toContain('#f6f4ef') // the old cream is gone
     for (const token of ['--bg', '--surface-1', '--surface-2', '--border', '--text', '--text-dim', '--long', '--short', '--warn', '--radius-card']) {
       expect(css.match(new RegExp(`${token}:`, 'g'))?.length, token).toBeGreaterThanOrEqual(2)
