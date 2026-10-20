@@ -390,3 +390,20 @@ them. Before activating paid capacity, adjust the current native-capture budget
 available in the selected cloud execution environment. GitHub currently has
 the Supadata key; Pages does not. No new subscription, provider account,
 credential transfer, or server purchase was made.
+
+**Owner decision:** keep capture free, accepting gaps and slower capture.
+No hosted subscription is being activated. Existing cloud jobs continue
+discovery, best-effort caption retrieval and analysis of stored material;
+the Mac only fills capture gaps while awake. Do not require laptop uptime,
+increase paid provider limits, or add extra GitHub polling to disguise the
+remaining limitation. Videos that cannot be read remain visibly incomplete.
+The paid options above are research notes, not the selected rollout.
+
+**Release verification:** application commit `acb16bc` was pushed to `main`;
+Cloudflare Pages deployment `41fb800e` completed successfully at
+https://41fb800e.streetsignal.pages.dev. The production `/app/` HTML and its
+entry JavaScript/CSS returned HTTP 200 and matched the tested build byte-for-byte.
+The scheduled worker deployed as version
+`700e0416-e377-4d59-afc3-8c0666cae2f0`. No extra queue run or paid capture was
+triggered for this release. The local design-review server was stopped and the
+browser viewport override reset after visual checks.
