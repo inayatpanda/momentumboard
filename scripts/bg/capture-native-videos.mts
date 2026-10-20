@@ -28,7 +28,7 @@ async function main() {
       },
     })
     console.log(JSON.stringify(status))
-    if (status.failed && !status.published && !status.reused) process.exitCode = 1
+    if (status.failed && !status.published && !status.reused && !status.capped) process.exitCode = 1
   } finally { await setCached('street-wire:v3', null, 0) }
 }
 main().catch(() => { console.error('Free video run incomplete; saved sections remain available. Inspect app Tracking.'); process.exitCode = 1 })

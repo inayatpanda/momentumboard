@@ -76,8 +76,17 @@ export async function collectNativeVideos(store: AppStore, deps: {
     scheduled: deps.scheduled, status: 'running', dailyRequests: 0, dailyMinutes: 0, requestLimit: NATIVE_DAILY_REQUESTS,
     minuteLimit: NATIVE_DAILY_SECONDS / 60, pending: 0, partial: 0, completed: 0, endReported: 0 }
   let rows: NativeVideoWork[] = []
-  const save = () => store.write(NATIVE_PROGRESS_KEY, rows)
+  const updateCounts = () => {
+    status.pending = rows.filter(w => !finished(w)).length; status.partial = rows.filter(w => w.stage === 'partial' || w.parts.length > 0 && !finished(w)).length
+    status.completed = rows.filter(w => w.stage === 'complete').length; status.endReported = rows.filter(w => w.stage === 'end-reported').length
+  }
+  const save = async () => {
+    await store.write(NATIVE_PROGRESS_KEY, rows)
+    updateCounts(); await store.write('video-native-runner', status)
+  }
   try {
+    const initialBudget = await readNativeBudget(store, started)
+    status.dailyRequests = initialBudget.requests; status.dailyMinutes = Math.ceil(initialBudget.seconds / 60)
     await store.write('video-native-runner', status)
     rows = await store.read<NativeVideoWork[]>(NATIVE_PROGRESS_KEY) ?? []
     const config = await store.read<{ ytChannels?: { id: string; name: string }[] }>('config'), followed = withDefaults(config?.ytChannels)
@@ -153,6 +162,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
           throw new Error('native-waiting-budget')
         }
         reserved = true; status.attempted++; work.attempts++; work.lastAttemptAt = now(); work.updatedAt = now()
+        status.dailyRequests = reservation.budget.requests; status.dailyMinutes = Math.ceil(reservation.budget.seconds / 60)
         // A killed process leaves a retry delay; the media reservation remains.
         work.nextAttemptAt = now() + 900; await save()
       }
@@ -179,7 +189,8 @@ export async function collectNativeVideos(store: AppStore, deps: {
           // merely to repair a failed publication.
           await save()
           const assembled = await assembledNativeDraft(store, work, now())
-          if (assembled) { await store.write(`video-native-draft:${id}`, assembled); publication = await publishNativeDraft(store, assembled, work.video, now()) }
+          if (!assembled) throw new Error('native-assembly-incomplete')
+          await store.write(`video-native-draft:${id}`, assembled); publication = await publishNativeDraft(store, assembled, work.video, now())
         }
         work.failures = 0; work.nextAttemptAt = 0; work.updatedAt = now(); delete work.lastError
         await save()
@@ -215,8 +226,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
   finally {
     const budget = await readNativeBudget(store, now())
     status.running = false; status.at = now(); status.dailyRequests = budget.requests; status.dailyMinutes = Math.ceil(budget.seconds / 60)
-    status.pending = rows.filter(w => !finished(w)).length; status.partial = rows.filter(w => w.stage === 'partial' || w.parts.length > 0 && !finished(w)).length
-    status.completed = rows.filter(w => w.stage === 'complete').length; status.endReported = rows.filter(w => w.stage === 'end-reported').length
+    updateCounts()
     try { await store.write('video-native-runner', status) } finally { await releaseLease(store, lock, lease) }
   }
 }

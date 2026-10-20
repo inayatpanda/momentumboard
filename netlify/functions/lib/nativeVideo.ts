@@ -48,15 +48,26 @@ export async function readNativeVideo(url: string, apiKey: string, fetchFn = fet
 Return JSON with canAccessAudio (boolean), durationSeconds (number or null), complete (boolean), language, transcript, tickers and themes. Each ticker has sym, company, stance (bull/bear/neutral), thesis, evidenceQuote, condition, horizon and levels. Use null for unknown duration/condition/horizon; ticker and theme arrays may be empty.
 ${section ? `This is only the section from ${section.startSeconds} to ${section.endSeconds} seconds in the original video. Transcribe ALL speech in this interval; do not repeat earlier sections or invent later speech.` : `Only transcribe the supplied first ${NATIVE_VIDEO_LIMIT_SEC} seconds.`} complete=true ONLY if the source video's actual ending is included, NOT just the end of this requested section. If longer, partial or uncertain, complete=false. noSpeech=true only for accessible silence, never inaccessible audio. If inaccessible, canAccessAudio=false, complete=false, transcript="", tickers=[], themes=[]. Never infer claims from the title. Never invent words, tickers, timestamps or price levels. Preserve conditions and contradictory views; no prediction from a passing mention. Omit unclear identities. Themes at most three. Transcription and claims are machine interpretations to check against the source.` },
       ] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0, maxOutputTokens: 16000, thinkingConfig: { thinkingLevel: 'MINIMAL' }, ...(section ? { mediaResolution: 'MEDIA_RESOLUTION_LOW' } : {}) },
+      generationConfig: { responseMimeType: 'application/json', temperature: 0, maxOutputTokens: 16000, thinkingConfig: { thinkingLevel: 'MINIMAL' }, ...(section ? { mediaResolution: 'MEDIA_RESOLUTION_LOW' } : {}),
+        responseSchema: { type: 'OBJECT', required: ['canAccessAudio', 'complete', 'transcript', 'tickers', 'themes'], properties: {
+          canAccessAudio: { type: 'BOOLEAN' }, complete: { type: 'BOOLEAN' }, noSpeech: { type: 'BOOLEAN' },
+          durationSeconds: { type: 'NUMBER', nullable: true }, language: { type: 'STRING' }, transcript: { type: 'STRING' },
+          tickers: { type: 'ARRAY', items: { type: 'OBJECT', required: ['sym', 'stance', 'thesis', 'evidenceQuote'], properties: {
+            sym: { type: 'STRING' }, company: { type: 'STRING', nullable: true }, stance: { type: 'STRING', enum: ['bull', 'bear', 'neutral'] },
+            thesis: { type: 'STRING' }, evidenceQuote: { type: 'STRING' }, condition: { type: 'STRING', nullable: true }, horizon: { type: 'STRING', nullable: true }, levels: { type: 'ARRAY', items: { type: 'NUMBER' } },
+          } } }, themes: { type: 'ARRAY', items: { type: 'STRING' } },
+        } },
+      },
     }),
   })
   if (!response.ok) throw new Error(`native-http-${response.status}`)
   const data = await response.json() as { candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[] }
   const candidate = data.candidates?.[0]
+  if (candidate?.finishReason !== 'STOP') throw new Error('native-incomplete-output')
   const raw = candidate?.content?.parts?.filter(p => !p.thought).map(p => p.text ?? '').join('') ?? ''
   let result: NativeVideoDraft['result']
   try { result = JSON.parse(raw) } catch { throw new Error('native-invalid-response') }
+  if (result.canAccessAudio !== true) throw new Error('native-audio-unavailable')
   const draft = { url: canonical, at: Math.floor(Date.now() / 1000), model: NATIVE_VIDEO_MODEL, finishReason: candidate?.finishReason, limitSeconds: section?.endSeconds ?? NATIVE_VIDEO_LIMIT_SEC, ...(section ? { section } : {}), result }
   if (nativeDraftText(draft) === null) throw new Error('native-no-usable-speech')
   return draft
