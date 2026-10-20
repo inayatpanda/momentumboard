@@ -1004,6 +1004,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
               model: e.nativeTranscript.model, characters: e.nativeTranscript.characters,
               limitSeconds: e.nativeTranscript.limitSeconds, reportedDurationSeconds: e.nativeTranscript.reportedDurationSeconds,
               reportedComplete: e.nativeTranscript.reportedComplete, excerpt: e.nativeTranscript.excerpt.slice(0, 2000),
+              ...(e.nativeTranscript.progress ? { progress: e.nativeTranscript.progress } : {}),
             } } : {}),
           })),
         reads: newestFirst((rawAnalyses ?? []).filter(a => a && typeof a.at === 'number' && typeof a.analysis === 'string')).slice(0, STREET_READS),

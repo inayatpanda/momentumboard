@@ -13,6 +13,15 @@ const draft = (): NativeVideoDraft => ({
 })
 
 describe('direct cloud video reads', () => {
+  it('keeps claims from later sections beyond the per-request ticker limit', () => {
+    const data = draft()
+    data.progress = { sections: 4, processedSeconds: 2400, sourceDurationSeconds: 2400, completion: 'complete' }
+    data.result.transcript += ' Apple faces a decline in demand for its products.'
+    data.result.tickers = [...Array(11).fill(data.result.tickers![0]), { sym: 'AAPL', company: 'Apple', stance: 'bear', evidenceQuote: 'Apple faces a decline in demand' }]
+    const extract = nativeDraftExtract(data, video, 300)!
+    expect(extract.tickers.map(t => t.sym)).toEqual(['NVDA', 'AAPL'])
+    expect(extract.coverage).toMatchObject({ chunks: 4, complete: false })
+  })
   it('uses a bounded native video input and stores no provider credentials in the result', async () => {
     const fetcher = vi.fn(async () => Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(draft().result) }] } }] }))
     const result = await readNativeVideo(video.url, 'test-key', fetcher as typeof fetch)

@@ -319,7 +319,8 @@ export const getSocialMemory = (symbol: string) =>
 
 /** One analysed video, as the wire renders it. */
 export interface StreetVideo {
-  nativeTranscript?: { model: string; characters: number; limitSeconds: number; reportedDurationSeconds: number | null; reportedComplete: boolean; excerpt: string }
+  nativeTranscript?: { model: string; characters: number; limitSeconds: number; reportedDurationSeconds: number | null; reportedComplete: boolean; excerpt: string;
+    progress?: { sections: number; processedSeconds: number; sourceDurationSeconds: number | null; completion: 'partial' | 'complete' | 'end-reported' } }
   transcriptMethod?: 'captions' | 'speech'
   provenance?: 'first-party' | 'third-party' | 'manual'
   publishedAt?: number
@@ -365,7 +366,9 @@ export interface StreetWire {
     githubRunner?: { at: number; running: boolean; status: string; saved: number; unavailable: number; attempted: number; captions: number; speech: number; reused?: number; blocked: number; stale: boolean } | null
     githubLastSavedAt?: number | null
     githubTranscriptCount?: number
-    nativeRunner?: { at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; scheduled?: boolean; status: string; stale: boolean } | null
+    nativeRunner?: { at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; scheduled?: boolean; status: string; stale: boolean;
+      dailyRequests?: number; dailyMinutes?: number; requestLimit?: number; minuteLimit?: number; pending?: number; partial?: number; completed?: number; endReported?: number; pauseReason?: string; retryAt?: number } | null
+    nativeProgress?: { url: string; title: string; stage: string; mode?: string; processedSeconds: number; sourceDurationSeconds: number | null; nextAttemptAt: number }[]
     provider?: { checkedAt: number; status: string; plan?: string; remainingCredits?: number } | null
     localLastSavedAt?: number | null
     localSpeechCount?: number

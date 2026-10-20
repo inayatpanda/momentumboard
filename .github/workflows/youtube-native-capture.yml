@@ -1,7 +1,7 @@
 name: youtube-native-capture
 on:
   schedule:
-    - cron: '17 8-23/3 * * *'
+    - cron: '37 * * * *'
   workflow_dispatch:
     inputs:
       video_id:
@@ -12,6 +12,10 @@ on:
         description: 'Publish saved results only, with no transcription API calls'
         type: boolean
         default: true
+      force_video:
+        description: 'For a targeted verification, read the video even if saved captions exist'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -31,10 +35,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Transcribe public video input and publish labelled findings
+      - name: Resume full video coverage and publish findings within free allowance
         run: npx tsx scripts/bg/capture-native-videos.mts
         env:
           VIDEO_ID: ${{ inputs.video_id || '' }}
+          NATIVE_FORCE_VIDEO: ${{ inputs.video_id != '' && inputs.force_video == true }}
           NATIVE_CACHED_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.cached_only == true }}
           NATIVE_FREE_TIER_CONFIRMED: ${{ vars.YOUTUBE_FREE_TIER_CONFIRMED }}
           NATIVE_SCHEDULE_ENABLED: ${{ vars.YOUTUBE_NATIVE_SCHEDULE_ENABLED }}

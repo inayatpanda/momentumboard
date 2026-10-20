@@ -8,7 +8,7 @@ import { withDefaults } from '../../../shared/channels'
 import type { InboxVideo } from './videoTranscriptStore'
 
 export async function videoIngestionHealth(store: AppStore, extracts: { url: string; at: number }[], nowSec: number, analyses: { url: string }[] = []) {
-  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner, config, githubRunner, nativeRunner] = await Promise.all([
+  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner, config, githubRunner, nativeRunner, nativeProgress] = await Promise.all([
     store.read<InboxVideo[]>('video-inbox'),
     readTranscriptIndex(store),
     store.read<WorkItem[]>('work-queue'),
@@ -19,7 +19,9 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; buffered: number }>('video-local-runner'),
     store.read<{ ytChannels?: { id: string; name: string }[] }>('config'),
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; attempted: number; captions: number; speech: number; reused?: number; status: string; reasons: Record<string, number> }>('video-github-runner'),
-    store.read<{ at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; scheduled?: boolean; status: string }>('video-native-runner'),
+    store.read<{ at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; scheduled?: boolean; status: string;
+      dailyRequests?: number; dailyMinutes?: number; requestLimit?: number; minuteLimit?: number; pending?: number; partial?: number; completed?: number; endReported?: number; pauseReason?: string; retryAt?: number }>('video-native-runner'),
+    store.read<{ video: InboxVideo; nextOffset: number; sourceDurationSeconds?: number; stage: string; mode?: string; nextAttemptAt: number; updatedAt: number }[]>('video-native-progress:v2'),
   ])
   const completed = new Set(extracts.map(v => videoKey(v.url)))
   const watched = new Set(analyses.map(v => videoKey(v.url)))
@@ -61,8 +63,14 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
       at: nativeRunner.at, running: nativeRunner.running, published: nativeRunner.published, attempted: nativeRunner.attempted,
       failed: nativeRunner.failed, reused: nativeRunner.reused, capped: nativeRunner.capped, status: nativeRunner.status,
       scheduled: nativeRunner.scheduled === true,
+      dailyRequests: nativeRunner.dailyRequests, dailyMinutes: nativeRunner.dailyMinutes, requestLimit: nativeRunner.requestLimit, minuteLimit: nativeRunner.minuteLimit,
+      pending: nativeRunner.pending, partial: nativeRunner.partial, completed: nativeRunner.completed, endReported: nativeRunner.endReported,
+      pauseReason: nativeRunner.pauseReason, retryAt: nativeRunner.retryAt,
       stale: nowSec - nativeRunner.at > 18 * 3600,
     } : null,
+    nativeProgress: (nativeProgress ?? []).filter(w => !['complete', 'end-reported'].includes(w.stage))
+      .sort((a, b) => Number(b.nextOffset > 0) - Number(a.nextOffset > 0) || b.updatedAt - a.updatedAt).slice(0, 12)
+      .map(w => ({ url: w.video.url, title: w.video.title, stage: w.stage, mode: w.mode, processedSeconds: w.nextOffset, sourceDurationSeconds: w.sourceDurationSeconds ?? null, nextAttemptAt: w.nextAttemptAt })),
     githubRunner: githubRunner ? {
       at: githubRunner.at, running: githubRunner.running, status: githubRunner.status,
       saved: githubRunner.saved, unavailable: githubRunner.unavailable, attempted: githubRunner.attempted,

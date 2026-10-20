@@ -86,31 +86,38 @@ free access with gaps and slower processing accepted.
 
 ### Direct cloud video reads
 
-`youtube-native-capture` uses Google's supported YouTube URL input, avoiding the
-blocked download from a GitHub IP. It produces AI transcription and creator
-claims in one request. It is configured for 08:17–23:17 UTC every three hours,
-with at most two new attempts per day, a 20-minute input limit and no automatic
-API retries. Quota errors leave work pending. This is a separate path from
-independently downloaded captions and Whisper speech recognition.
-Both cloud collectors restrict candidates to the followed-channel list. Stable
-channel IDs take precedence over names. Before spending a native read, public
-metadata is checked for live/upcoming broadcasts or incomplete source metadata.
-Those checks are best effort when YouTube blocks metadata access. Longer videos
-receive a limited read, not a claimed full transcription.
+`youtube-native-capture` checks the followed channels every hour at :37 UTC.
+It uses independently saved captions first, with checkpointed analysis of every
+text section. When captions are absent, Google's supported YouTube URL input
+reads consecutive ten-minute sections. Each section is saved before publishing;
+later runs continue from the saved offset, including beyond the previous
+20-minute cutoff. Channels take turns, with unfinished sections preferred within
+a channel. Known live/upcoming/incomplete sources wait for a later run.
+
+The observed free project allows 500 requests/day, 15 requests/minute and
+250,000 input tokens/minute. Google documents eight hours of YouTube input/day.
+StreetSignal reserves no more than **seven hours of requested video sections and
+400 requests per Pacific calendar day**, leaving some capacity for the other app
+sharing the project. Calls are spaced by at least 65 seconds, and a run makes at
+most six new calls. Text-only caption analysis uses requests but no video minutes.
+These are conservative application budgets, not a guaranteed throughput. Failed
+attempts count; provider quota errors pause calls for an hour. Unfinished work and
+retry delays persist. Repeated source failures are surfaced for attention.
 
 New reads **fail closed** unless `YOUTUBE_FREE_TIER_CONFIRMED=true` is configured
 as a repository variable and `GEMINI_YOUTUBE_FREE_API_KEY` is present as a
-repository secret. Use a Google project with **billing disabled** and a separate
-key for StreetSignal. A shared project also shares its free allowance;
-a model advertising a free tier does not make requests on a paid project free.
-The workflow never substitutes the app's ordinary Gemini key. Manual runs
-default to `cached_only=true`, which publishes saved drafts without receiving
-the Google key or calling the transcription API.
-After a successful free-key test, set `YOUTUBE_NATIVE_SCHEDULE_ENABLED=true`
-to enable unattended runs. Its two daily attempts are independent from legacy
-Gemini analysis budgets, so failures in that older path cannot starve this one.
-The manual `youtube-native-check` diagnostic allows one additional bounded
-verification per day on the free key.
+repository secret. There is no fallback to the app's ordinary Google key or any
+paid service. `YOUTUBE_NATIVE_SCHEDULE_ENABLED=true` enables the hourly schedule.
+The approved project's billing remains disabled. Manual verification uses the
+same production queue, concurrency group and daily budget, not an extra quota.
+Manual dispatch defaults to `cached_only=true` to republish saved results without
+new API calls.
+
+The app distinguishes all sections processed across a known source duration,
+an AI-reported ending with unconfirmed duration, and a partial read with further
+sections queued. All model-transcribed words remain unverified even when every
+section has been processed. Source metadata and quota availability can prevent
+full coverage; no successful read promises that every future upload will work.
 
 Findings appear in **The street → Videos**, with an expandable AI transcript,
 source link and explicit verification status. Model-transcribed quotes are not
@@ -143,8 +150,8 @@ Validation on 20 October 2026:
   every channel or video will work. The initial proof on the app's original
   key did not establish that original key's free-tier status.
 - A source review of the 13-minute Verified Investing example showed its trade
-  conclusion after minute 10. The bounded limit therefore covers 20 minutes;
-  longer recordings remain partial reads and can omit later conclusions.
+  conclusion after minute 10. The initial limit was raised to 20 minutes. The subsequent resumable
+  implementation removes that cutoff and continues through later sections.
 
 See [engine and processing notes](docs/ENGINE_V2.md) for implementation details,
 validation history and current limitations.

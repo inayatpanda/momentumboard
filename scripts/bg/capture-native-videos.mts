@@ -1,108 +1,34 @@
 import { configureStoreForScript } from '../lib/configureStore'
-import { acquireLease, appStore, releaseLease } from '../../netlify/functions/lib/storeProvider'
-import { nativeDraftText, publishNativeDraft, readNativeVideo, type NativeVideoDraft } from '../../netlify/functions/lib/nativeVideo'
-import { reserveSocialBudget } from '../../netlify/functions/lib/socialBudget'
-import { readStoredTranscript, type InboxVideo } from '../../netlify/functions/lib/videoTranscriptStore'
-import { enqueueSocialJobs, finishSocialAttempt, socialJobId } from '../../netlify/functions/lib/socialJobs'
+import { appStore } from '../../netlify/functions/lib/storeProvider'
+import { collectNativeVideos } from '../lib/nativeVideoQueue'
 import { setCached } from '../../netlify/functions/lib/cache'
 import { videoKey } from '../../shared/youtubeCaptions.mjs'
-import { youtubeAvailability } from '../../netlify/functions/lib/youtubeAvailability'
-import { isFollowedChannel, withDefaults } from '../../shared/channels'
 
 async function main() {
   await configureStoreForScript()
-  const target = process.env.VIDEO_ID
-  if (target && !/^[A-Za-z0-9_-]{11}$/.test(target)) throw new Error('invalid-target')
-  const cachedOnly = process.env.NATIVE_CACHED_ONLY === 'true'
   const freeTierConfirmed = process.env.NATIVE_FREE_TIER_CONFIRMED === 'true'
-  const scheduled = freeTierConfirmed && process.env.NATIVE_SCHEDULE_ENABLED === 'true'
-  const freeKey = process.env.GEMINI_YOUTUBE_FREE_API_KEY ?? ''
-  if (!cachedOnly && (!freeTierConfirmed || !freeKey)) throw new Error('free-tier-not-configured')
-  const now = Math.floor(Date.now() / 1000)
-  const lease = await acquireLease(appStore, 'lease:github-native-videos', now, 12 * 60)
-  if (!lease) throw new Error('native-running')
-  const status = { at: now, running: true, published: 0, attempted: 0, failed: 0, reused: 0, capped: false, scheduled, status: 'running' }
   try {
-    await appStore.write('video-native-runner', status)
-    const inbox = await appStore.read<InboxVideo[]>('video-inbox') ?? []
-    const config = await appStore.read<{ ytChannels?: { id: string; name: string }[] }>('config')
-    const followed = withDefaults(config?.ytChannels)
-    const candidates = inbox.filter(v => isFollowedChannel(v, followed) && (!target || videoKey(v.url) === target)).sort((a, b) => (b.publishedAt ?? b.at) - (a.publishedAt ?? a.at))
-    if (target && !candidates.length) throw new Error('target-not-discovered')
-    let processed = 0, metadataChecks = 0
-    for (const video of candidates) {
-      if (processed >= 2) break
-      const id = videoKey(video.url)
-      const existingExtract = await appStore.read<{ nativeTranscript?: unknown }>(`video-extract:v1:${id}`)
-      if (existingExtract && (!target || !existingExtract.nativeTranscript)) continue
-      let draft = await appStore.read<NativeVideoDraft>(`video-native-draft:${id}`)
-      const hadWords = !!await readStoredTranscript(appStore, video.url)
-      // Caption-backed jobs stay on the normal extraction lane. A saved native
-      // draft can be published without another API call, even after a restart.
-      if (!draft && hadWords) continue
-      if (cachedOnly && (!draft || !nativeDraftText(draft))) {
-        if (target) throw new Error('no-saved-draft')
-        continue
-      }
-      processed++
-      if (!draft || !nativeDraftText(draft)) {
-        if (metadataChecks++ >= 8) break
-        const availability = await youtubeAvailability(video.url)
-        if (availability.state === 'upcoming' || availability.state === 'live' || availability.state === 'unavailable') {
-          processed--
-          console.log(JSON.stringify({ videoId: id, deferred: availability.state }))
-          continue
-        }
-        // Separate credential and allowance: failed legacy Gemini jobs cannot
-        // consume the dedicated free video's two attempts.
-        if (new Date().getUTCHours() < 8 || !await reserveSocialBudget(appStore, 'github-native-free', Math.floor(Date.now() / 1000))) {
-          status.capped = true
-          break
-        }
-        status.attempted++
-        try {
-          draft = await readNativeVideo(video.url, freeKey, fetch, availability.durationSeconds)
-          await appStore.write(`video-native-draft:${id}`, draft)
-        } catch (error) {
-          status.failed++
-          const reason = /^native-[a-z0-9-]+$/.test((error as Error).message) ? (error as Error).message : 'native-read-failed'
-          console.log(JSON.stringify({ videoId: id, ok: false, reason }))
-          continue
-        }
-      } else status.reused++
-      const publication = await publishNativeDraft(appStore, draft, video, Math.floor(Date.now() / 1000))
-      if (publication === 'published') status.published++
-      await enqueueSocialJobs(appStore, [{ ...video, mode: 'extract' }], now)
-      await finishSocialAttempt(appStore, socialJobId(video.url), { ok: true }, Math.floor(Date.now() / 1000))
-      await setCached('street-wire:v3', null, 0)
-      // Verify this exact URL through the application's authenticated feed.
-      // Credentials/source text never leave this job or enter public logs.
-      const response = await fetch('https://thestreetsignal.rqai.co.uk/api/market?type=street', {
-        headers: { 'x-app-token': process.env.APP_TOKEN ?? '' }, redirect: 'error', signal: AbortSignal.timeout(30_000),
-      })
-      const body = await response.json() as { ok?: boolean; data?: { videos?: { url: string; via?: string; tickers?: unknown[]; nativeTranscript?: { characters: number } }[] } }
-      const visible = body.data?.videos?.find(v => videoKey(v.url) === id && v.via === 'gemini-video')
-      console.log(JSON.stringify({
-        videoId: id, transcriptExistedBeforePublication: hadWords, publication, appHttpStatus: response.status,
-        appVisible: !!visible, characters: nativeDraftText(draft)?.length,
-        findings: visible?.tickers?.length ?? 0, nativeTranscriptVisible: !!visible?.nativeTranscript,
-      }))
-      if (!response.ok || !body.ok || !visible || !visible.nativeTranscript) throw new Error('publication-not-visible')
-    }
-    if (target && !processed) throw new Error('target-not-eligible')
-    if (status.failed && !status.published && !status.reused) throw new Error('no-successful-native-read')
-    status.status = 'complete'
-  } catch {
-    status.status = 'error'
-    throw new Error('native-run-incomplete')
-  } finally {
-    status.running = false
-    status.at = Math.floor(Date.now() / 1000)
-    try {
-      await appStore.write('video-native-runner', status)
-      await setCached('street-wire:v3', null, 0)
-    } finally { await releaseLease(appStore, 'lease:github-native-videos', lease) }
+    const status = await collectNativeVideos(appStore, {
+      target: process.env.VIDEO_ID || undefined,
+      cachedOnly: process.env.NATIVE_CACHED_ONLY === 'true',
+      forceVideo: !!process.env.VIDEO_ID && process.env.NATIVE_FORCE_VIDEO === 'true',
+      freeTierConfirmed, scheduled: freeTierConfirmed && process.env.NATIVE_SCHEDULE_ENABLED === 'true',
+      key: process.env.GEMINI_YOUTUBE_FREE_API_KEY ?? '',
+      log: data => console.log(JSON.stringify(data)),
+      onPublish: async (video, kind, publication) => {
+        await setCached('street-wire:v3', null, 0)
+        const response = await fetch('https://thestreetsignal.rqai.co.uk/api/market?type=street', {
+          headers: { 'x-app-token': process.env.APP_TOKEN ?? '' }, redirect: 'error', signal: AbortSignal.timeout(30_000),
+        })
+        const body = await response.json() as { ok?: boolean; data?: { videos?: { url: string; tickers?: unknown[]; nativeTranscript?: { progress?: unknown } }[] } }
+        const visible = body.data?.videos?.find(v => videoKey(v.url) === videoKey(video.url))
+        console.log(JSON.stringify({ videoId: videoKey(video.url), publication, method: kind, appHttpStatus: response.status,
+          appVisible: !!visible, findings: visible?.tickers?.length ?? 0, progress: visible?.nativeTranscript?.progress }))
+        if (!response.ok || !body.ok || !visible) throw new Error('native-publication-not-visible')
+      },
+    })
     console.log(JSON.stringify(status))
-  }
+    if (status.failed && !status.published && !status.reused) process.exitCode = 1
+  } finally { await setCached('street-wire:v3', null, 0) }
 }
-main().catch(() => { console.error('Native video run incomplete; inspect app Tracking.'); process.exitCode = 1 })
+main().catch(() => { console.error('Free video run incomplete; saved sections remain available. Inspect app Tracking.'); process.exitCode = 1 })

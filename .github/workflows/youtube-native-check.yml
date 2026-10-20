@@ -9,13 +9,13 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: youtube-native-check
+  group: youtube-native-capture
   cancel-in-progress: false
 jobs:
   check:
     if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main' && vars.YOUTUBE_FREE_TIER_CONFIRMED == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,11 +25,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Test Google's supported public-video input
-        run: npx tsx scripts/bg/check-youtube-native.mts
+      - name: Test the production queue using the same free allowance
+        run: npx tsx scripts/bg/capture-native-videos.mts
         env:
           VIDEO_ID: ${{ inputs.video_id }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_YOUTUBE_FREE_API_KEY }}
+          GEMINI_YOUTUBE_FREE_API_KEY: ${{ secrets.GEMINI_YOUTUBE_FREE_API_KEY }}
+          NATIVE_FREE_TIER_CONFIRMED: ${{ vars.YOUTUBE_FREE_TIER_CONFIRMED }}
+          NATIVE_SCHEDULE_ENABLED: ${{ vars.YOUTUBE_NATIVE_SCHEDULE_ENABLED }}
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
           STORE_BACKEND: d1
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
