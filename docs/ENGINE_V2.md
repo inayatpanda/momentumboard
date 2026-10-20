@@ -98,7 +98,7 @@ The existing discovery walk-forward reports do **not** establish a robust tradab
 
 The 2026-10-19 revision passes all 3,596 tests across 244 files, the TypeScript/production build and an API adapter bundle check. Live SEC history checks succeeded for AAPL and MSFT; each returned 11 dated reporting periods. Desktop and phone browser checks covered research filters, forecast disclosures, original filing links and report selection. The local design preview used labelled synthetic research ideas and real public AAPL filing data; its temporary fixtures were removed from the app.
 
-Public-site code and styles now load separately from product startup. The measured initial closure fell from 139.2 KB after the redesign to 129.8 KB gzip, but remains 9.8 KB above the unchanged 120 KB budget. Broader route-specific stylesheet work remains. Current filings coverage is US-GAAP/USD; valuation and forward estimates remain gaps. YouTube parser, analysis and retry fixes do not remove upstream caption restrictions or provider configuration requirements. This revision is local and has not been deployed.
+Public-site code and styles now load separately from product startup. The measured initial closure fell from 139.2 KB after the redesign to 129.8 KB gzip, but remained 9.8 KB above the unchanged 120 KB budget at this checkpoint. Broader route-specific stylesheet work remains. Current filings coverage is US-GAAP/USD; valuation and forward estimates remain gaps. YouTube parser, analysis and retry fixes do not remove upstream caption restrictions or provider configuration requirements. These were pre-release checks; see the 20 October deployment record below.
 
 ## Social evidence pipeline — 19 October 2026
 
@@ -191,7 +191,7 @@ Owner retries preserve evidence and restart only recoverable work.
 Deploy the Pages application, the cron worker (new handler in its existing
 five-minute schedule), and the queue worker code together. Update the local Mac
 runner script so new submissions include caption segments. Existing secrets are
-reused; no new account connection is needed. This branch has not been deployed.
+reused; no new account connection is needed. See the deployment record below.
 Tests exercise provider responses with controlled fixtures; they do not establish
 production transcript availability or extraction accuracy on a human-labelled
 video corpus. Selective chart-frame verification, WebSub delivery and additional
@@ -227,5 +227,35 @@ Focused verification passes 174 tests across seven files. Browser checks covered
 390 px and 320 px phone layouts, tab switching, light/dark themes and a 1280 px
 desktop view, using clearly labelled illustrative data. No horizontal overflow
 or browser errors were observed. The production build passes; the initial bundle
-is 132.0 KB gzip, above the unchanged 120 KB budget. Production deployment is
-tracked separately below once verified.
+is approximately 132 KB gzip, above the unchanged 120 KB budget.
+
+### Production deployment — 20 October 2026
+
+Application revision `dfebd3a` is deployed to
+<https://thestreetsignal.rqai.co.uk/app/>. Pages deployment:
+`d8e0adce-7c88-4091-ac57-6a159ec1e39c`. The matching cron worker version is
+`6b411d31-4a9a-4af8-89c0-e8017529d292`, with the existing three schedules.
+The queue worker uses this revision from `main` at its next scheduled run.
+
+The full GitHub check passed **249 test files, 3,629 tests, one skipped**, and
+the production build. The measured initial bundle is 132.1 KB gzip. GitHub's
+existing Cloudflare token could not update Pages, so deployment used the Mac's
+existing Wrangler OAuth session; no token permissions were expanded. The manual
+GitHub deployment workflow still requires a Pages/Workers-capable token.
+
+Public HTTP checks confirm the new home-screen code, new stylesheet palette,
+service worker and `/app/` manifest scope on the main domain. Browser layout
+checks used illustrative data. Signed-in production UI validation remains
+unverified because extracting an owner licence for that purpose was rejected
+by automatic approval review. Unauthenticated command-line API checks were
+blocked at Cloudflare (1010), so they do not establish handler behaviour.
+
+**Remaining configuration:** Pages does not yet have `SUPADATA_API_KEY`.
+GitHub has the existing key and continues to use it for scheduled extraction.
+The new five-minute collector is deployed, but cannot retrieve provider jobs
+until the key is installed on Pages. Automatic approval review rejected an
+encrypted one-time transfer through a GitHub artifact without explicit consent;
+user permission has been requested. No secret was transferred or printed, and
+the temporary transfer workflow was not committed or executed. Provider parsing
+and retry tests pass, but production end-to-end transcript availability is not
+claimed complete.
