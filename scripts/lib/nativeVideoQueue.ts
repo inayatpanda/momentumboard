@@ -12,7 +12,7 @@ import { NATIVE_CHUNK_SECONDS, NATIVE_DAILY_REQUESTS, NATIVE_DAILY_SECONDS, NATI
 
 export const NATIVE_PROGRESS_KEY = 'video-native-progress:v2'
 export interface NativeVideoWork {
-  video: InboxVideo; nextOffset: number; sourceDurationSeconds?: number
+  video: InboxVideo; nextOffset: number; sourceDurationSeconds?: number; chunkSeconds?: number
   parts: { startSeconds: number; endSeconds: number; key: string }[]
   stage: 'pending' | 'partial' | 'complete' | 'end-reported' | 'retry' | 'needs-attention'
   mode?: 'captions' | 'video'; attempts: number; failures: number; nextAttemptAt: number; lastAttemptAt: number
@@ -106,6 +106,12 @@ export async function collectNativeVideos(store: AppStore, deps: {
     await save()
     const selected = rows.filter(w => isFollowedChannel(w.video, followed) && (!deps.target || videoKey(w.video.url) === deps.target))
     if (deps.target && !selected.length) throw new Error('target-not-eligible')
+    // An explicit owner retry may retry a transport timeout immediately; the
+    // persistent provider quota/cooldown is still enforced by reserveNativeRead.
+    for (const work of selected) if (deps.target && deps.forceVideo && ['native-timeout', 'native-read-failed'].includes(work.lastError ?? '')) {
+      work.chunkSeconds = Math.min(work.chunkSeconds ?? NATIVE_CHUNK_SECONDS, 300)
+      work.nextAttemptAt = 0
+    }
     for (const work of selected) if (alreadyRead.has(videoKey(work.video.url))) {
       work.stage = 'complete'; work.nextAttemptAt = 0; work.failures = 0; delete work.lastError
     }
@@ -154,7 +160,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
         }
         if (availability.durationSeconds) work.sourceDurationSeconds = availability.durationSeconds
       }
-      const startSeconds = work.nextOffset, endSeconds = Math.min(startSeconds + NATIVE_CHUNK_SECONDS, work.sourceDurationSeconds ?? Infinity)
+      const startSeconds = work.nextOffset, endSeconds = part?.section?.endSeconds ?? Math.min(startSeconds + (work.chunkSeconds ?? NATIVE_CHUNK_SECONDS), work.sourceDurationSeconds ?? Infinity)
       if (!useText && endSeconds <= startSeconds) { work.stage = 'complete'; await save(); continue }
       let reserved = false
       const reserve = async () => {
@@ -211,7 +217,8 @@ export async function collectNativeVideos(store: AppStore, deps: {
         deps.log?.({ videoId: id, mode: work.mode, sections: work.parts.length, processedSeconds: work.nextOffset, completion: work.stage, publication })
       } catch (error) {
         if (error instanceof ExtractionPending) { work.stage = 'partial'; work.nextAttemptAt = 0; work.updatedAt = now(); await save(); continue }
-        const message = (error as Error).message
+        const message = ['TimeoutError', 'AbortError'].includes((error as Error).name) ? 'native-timeout' : (error as Error).message
+        if (message === 'native-timeout') work.chunkSeconds = Math.max(120, Math.floor((work.chunkSeconds ?? NATIVE_CHUNK_SECONDS) / 2))
         if (message === 'native-waiting-budget') {
           // Exhausting media minutes must not strand available text captions.
           if (status.pauseReason === 'video-allowance') { excluded.add(id); continue }

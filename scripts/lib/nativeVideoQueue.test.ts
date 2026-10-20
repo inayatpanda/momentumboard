@@ -34,6 +34,16 @@ describe('expanded free video queue', () => {
     expect(await collectNativeVideos(store, deps)).toMatchObject({ attempted: 0 })
     expect(deps.readSection).toHaveBeenCalledTimes(4)
   })
+  it('retries a timed-out section in smaller pieces without losing or overlapping its start', async () => {
+    const { store, deps, advance } = await setup(480)
+    deps.readSection.mockRejectedValueOnce(new DOMException('Timed out', 'TimeoutError'))
+    expect(await collectNativeVideos(store, deps)).toMatchObject({ failed: 1, published: 0 })
+    expect(await store.read(NATIVE_PROGRESS_KEY)).toMatchObject([{ nextOffset: 0, chunkSeconds: 300, lastError: 'native-timeout' }])
+    advance(3600)
+    expect(await collectNativeVideos(store, deps)).toMatchObject({ completed: 1 })
+    expect(deps.readSection.mock.calls.slice(1).map(c => c[4])).toEqual([{startSeconds:0,endSeconds:300},{startSeconds:300,endSeconds:480}])
+    expect(await store.read('video-extract:v1:abcdefghijk')).toMatchObject({nativeTranscript:{progress:{processedSeconds:480,completion:'complete'}}})
+  })
   it('uses all saved caption chunks without reserving any YouTube minutes', async () => {
     const { store, deps, advance } = await setup()
     await store.write('video-transcript:abcdefghijk', { ...video(), text: speech.repeat(350), source: 'github', method: 'captions' })
