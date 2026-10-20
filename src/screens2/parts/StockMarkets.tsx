@@ -129,7 +129,7 @@ function SectorsRail() {
 
 export default function StockMarkets({ watchSymbols, onAdd }: { watchSymbols: Set<string>; onAdd: (sym: string) => void }) {
   return <div className="stx-desk-grid">
-    <div><MoversRails watchSymbols={watchSymbols} onAdd={onAdd} /></div>
+    <MoversRails watchSymbols={watchSymbols} onAdd={onAdd} />
     <div className="stx-sectors-block"><SectorsRail /></div>
     <div className="stx-crypto-block"><CryptoWire /></div>
   </div>
