@@ -23,3 +23,6 @@ docs/AUDIT-*.md
 # miniflare's local state, written by `wrangler pages dev` (the walkthrough)
 .wrangler/
 .env.dmg
+
+# Local transcript retry spool (never commit captured words)
+.local/

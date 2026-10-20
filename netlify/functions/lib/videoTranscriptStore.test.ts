@@ -18,6 +18,25 @@ const rec = (url: string, over: Partial<VideoTranscript> = {}): VideoTranscript 
 })
 
 describe('videoTranscriptStore', () => {
+  it('preserves large legacy archives and repairs an index after a partial save', async () => {
+    const backing = memoryStore()
+    const legacy = [rec('https://youtube.com/watch?v=legacy00000', { text: 'x'.repeat(3_000_000) })]
+    await backing.write('video-transcripts', legacy)
+    let fail = true
+    const store = { ...backing, write: async (key: string, value: unknown) => {
+      if (key === 'video-transcript-index:v2' && fail) { fail = false; throw new Error('temporary write failure') }
+      if (JSON.stringify(value).length > 500_000) throw new Error('oversized aggregate')
+      return backing.write(key, value)
+    } }
+    const incoming = rec('https://youtube.com/watch?v=abcdefghijk')
+    await expect(saveTranscript(store, incoming)).rejects.toThrow('temporary write failure')
+    expect(await saveTranscript(store, incoming)).toBe('already')
+    expect(await backing.read('video-transcripts')).toEqual(legacy)
+    const index = await backing.read<{ url: string; characters: number; text?: string }[]>('video-transcript-index:v2')
+    expect(index).toHaveLength(2)
+    expect(index?.every(r => r.text === undefined)).toBe(true)
+    expect((await readStoredTranscript(store, incoming.url))?.text).toBe(incoming.text)
+  })
   it('saves, reads back by url, and archives by month', async () => {
     const store = memoryStore()
     await saveTranscript(store, rec('https://youtube.com/watch?v=abcdefghijk'))
@@ -25,7 +44,7 @@ describe('videoTranscriptStore', () => {
     expect(got?.text).toHaveLength(200)
     expect(got?.source).toBe('local')
     const month = new Date(1_760_000_000 * 1000).toISOString().slice(0, 7)
-    const archive = (await store.read<VideoTranscript[]>(`video-transcripts:${month}`))!
+    const archive = (await store.read<VideoTranscript[]>(`video-transcript-index:v2:${month}`))!
     expect(archive).toHaveLength(1)
   })
 
@@ -33,9 +52,9 @@ describe('videoTranscriptStore', () => {
     const store = memoryStore()
     await saveTranscript(store, rec('https://youtube.com/watch?v=abcdefghijk', { text: 'first '.repeat(40) }))
     await saveTranscript(store, rec('https://youtube.com/watch?v=abcdefghijk', { text: 'second '.repeat(40) }))
-    const rows = (await store.read<VideoTranscript[]>('video-transcripts'))!
+    const rows = (await store.read<VideoTranscript[]>('video-transcript-index:v2'))!
     expect(rows).toHaveLength(1)
-    expect(rows[0].text).toContain('first')
+    expect((await readStoredTranscript(store, rows[0].url))?.text).toContain('first')
   })
   it('uses video identity across share, live and watch URLs', async () => {
     const store = memoryStore()
@@ -52,7 +71,7 @@ describe('videoTranscriptStore', () => {
   it('the rolling list is capped at 200, oldest dropped first', async () => {
     const store = memoryStore()
     for (let i = 0; i < 203; i++) await saveTranscript(store, rec(`https://youtube.com/watch?v=v${String(i).padStart(10, '0')}`, { at: 1_760_000_000 + i }))
-    const rows = (await store.read<VideoTranscript[]>('video-transcripts'))!
+    const rows = (await store.read<VideoTranscript[]>('video-transcript-index:v2'))!
     expect(rows).toHaveLength(200)
     expect(rows[0].url).toContain('v0000000003')
   })

@@ -261,3 +261,64 @@ user permission has been requested. No secret was transferred or printed, and
 the temporary transfer workflow was not committed or executed. Provider parsing
 and retry tests pass, but production end-to-end transcript availability is not
 claimed complete.
+
+## Stocks home and subscription-independent capture — 2026-10-20
+
+Supadata's authenticated account endpoint reported `Free (100/mo)`, 100 maximum
+credits, 334 used and zero remaining (12:38 UTC). This confirms exhausted
+credits, not a subscription cancellation date. The read-only status workflow
+keeps the key inside GitHub and outputs only whitelisted plan/usage fields.
+The video worker now refreshes that status, exposes it in The street, and avoids
+new Supadata requests while a recent check says exhausted or unauthorized.
+
+The live upload failure was independently reproduced: Cloudflare logged
+`D1_ERROR: string or blob too big: SQLITE_TOOBIG`. The monthly transcript array
+had reached 8,233,901 characters. Full transcripts now live under individual
+`video-transcript:<id>` keys, with compact recent/monthly `video-transcript-index:v2`
+indexes. Existing aggregates are preserved read-only. Duplicate uploads repair
+partial index writes instead of returning early. The Mac retains failed uploads
+atomically in an ignored `.local/transcript-outbox` and retries them before
+fetching new videos. Pending discovery also includes unfinished durable jobs
+outside the 200-video display window.
+
+Capture on the Mac tries the existing timed-caption reader, then the maintained
+[youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api), then
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) audio and
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp) local speech recognition.
+The library path was verified on TGuw8RA1KLY: 194 segments / 5,929 text characters.
+The full audio path on that public video produced 95 timed segments / 5,961 text
+characters. No Supadata credit was used. An unavailable video remains pending;
+there is no promise to retrieve private, deleted, restricted or every live video.
+Caption/audio processing does not establish what a chart visually shows.
+
+Local dependencies are isolated in `~/Projects/streetsignal-tools/venv` using
+`scripts/local/transcript-requirements.txt`; the base.en model is in that tools
+folder. Existing Homebrew `whisper-cli` and `ffmpeg` are used. The runner supports
+STREETSIGNAL_PYTHON, STREETSIGNAL_YTDLP, STREETSIGNAL_WHISPER_MODEL,
+STREETSIGNAL_WHISPER and STREETSIGNAL_FFMPEG overrides. Audio work is limited to
+two attempts per run, non-live videos up to 90 minutes, 120 MB downloads, and
+bounded subprocess timeouts; temporary audio is removed. `--no-audio` and
+`--limit N` allow smaller runs. The supplied launchd definition checks at login
+and hourly while awake; it does not wake the laptop or prevent sleep. Runner
+heartbeat, last saved time and buffered uploads are visible in The street.
+
+Cloudflare retains discovery, durable jobs, transcript storage and app delivery;
+the existing GitHub worker handles analysis. Plain Workers are not the place to
+run native ffmpeg/Whisper. Cloudflare Containers or a VPS could host those
+processes, but cloud hosting does not itself solve YouTube IP restrictions.
+An always-on home machine is the natural extension if laptop uptime becomes
+insufficient. No new paid server was provisioned. Analysis remains subject to
+its existing daily budgets; captured work waits durably instead of disappearing.
+The manual queue workflow defaults to videos-only mode, with an optional
+already-discovered URL for a focused retry; that mode cannot send queue alerts
+or run the paper/dossier handlers.
+
+Stocks is now `/app/`, Today `/app/today`, with `/app/stocks` retained as an alias.
+The opening watchlist shows six rows and an explicit expand control. Discover
+supports company-name/ticker search, US/UK filters and sector browsing over the
+committed 1,866-listing directory (snapshot date shown). Funds/trusts are separate;
+unknown sectors stay Other. These counts describe the directory, not holdings
+allocation. Quotes are fetched in groups of twelve; large lists do not fetch
+candles per row. Movers, sector performance and crypto live under Markets.
+Channel insights links directly to The street, whose video feed can be filtered
+by channel and distinguishes machine speech transcription from captions.

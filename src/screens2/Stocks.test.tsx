@@ -160,6 +160,28 @@ afterEach(() => {
 })
 
 describe('Stocks', () => {
+  it('keeps the opening view focused and reveals sectors on Discover', async () => {
+    withRouter()
+    expect(screen.getByRole('tab', { name: 'Watchlist' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('region', { name: 'Crypto wire' })).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'Discover' }))
+    expect(await screen.findByRole('button', { name: /Technology.*listings/ })).toBeInTheDocument()
+    expect(screen.getByText(/Counts are listings/)).toBeInTheDocument()
+  })
+  it('searches by company name and offers a real stock link', async () => {
+    withRouter()
+    fireEvent.change(screen.getByLabelText(/search ticker or company/i), { target: { value: 'Apple' } })
+    expect(await screen.findByRole('link', { name: /AAPL.*Apple/ })).toHaveAttribute('href', '/app/stock/AAPL')
+    expect(screen.getByRole('tab', { name: 'Discover' })).toHaveAttribute('aria-selected', 'true')
+  })
+  it('shows six watchlist rows first, with an explicit way to expand', async () => {
+    await db.watchlist.bulkPut(Array.from({ length: 8 }, (_, i) => ({ symbol: `TEST${i}`, addedAt: i, riskClass: 'normal' as const })))
+    withRouter()
+    expect(await screen.findByRole('button', { name: 'View all 8 stocks' })).toBeInTheDocument()
+    expect(screen.queryByText('TEST6')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'View all 8 stocks' }))
+    expect(await screen.findByText('TEST6')).toBeInTheDocument()
+  })
   it('has a heading containing "Stocks"', () => {
     withRouter()
     expect(screen.getByRole('heading', { name: /stocks/i })).toBeInTheDocument()
@@ -287,6 +309,7 @@ describe('Stocks', () => {
   describe('rail lazy loading', () => {
     it('does not call the movers fetcher until a movers/losers rail is observed as visible', async () => {
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       expect(getMovers).not.toHaveBeenCalled()
       const region = screen.getByRole('region', { name: 'Top movers' })
       intersect(region)
@@ -296,6 +319,7 @@ describe('Stocks', () => {
     it('the sectors rail does not fetch until IT is observed as visible, independent of movers', async () => {
       const { getSectors } = await import('../lib/api')
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       expect(getSectors).not.toHaveBeenCalled()
       intersect(screen.getByRole('region', { name: 'Top movers' }))
       await waitFor(() => expect(getMovers).toHaveBeenCalledTimes(1))
@@ -306,6 +330,7 @@ describe('Stocks', () => {
 
     it('Top movers and Top losers share ONE movers fetch — whichever is observed first is the only call', async () => {
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       intersect(screen.getByRole('region', { name: 'Top losers' }))
       await waitFor(() => expect(getMovers).toHaveBeenCalledTimes(1))
       intersect(screen.getByRole('region', { name: 'Top movers' }))
@@ -323,6 +348,7 @@ describe('Stocks', () => {
 
     it('renders with no data at all — heading, both pairs named, and the standing basis line', async () => {
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       const w = wire()
       expect(within(w).getByText('BTC-USD')).toBeInTheDocument()
       expect(within(w).getByText('ETH-USD')).toBeInTheDocument()
@@ -336,6 +362,7 @@ describe('Stocks', () => {
         mkQuote('ETH-USD', { name: 'Ethereum USD', price: 2_980, changePct: -1.1 }),
       ])
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       const w = wire()
       expect(await within(w).findByText('$61,240')).toHaveClass('num')
       expect(await within(w).findByText('$2,980')).toHaveClass('num')
@@ -347,6 +374,7 @@ describe('Stocks', () => {
     it('never fetches candles for the two pairs — the sparkline is cache-only here', async () => {
       await writeSlice('quotes:BTC-USD,ETH-USD', [mkQuote('BTC-USD'), mkQuote('ETH-USD', { price: 2_980 })])
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       expect(await within(wire()).findByText('$128.40')).toBeInTheDocument()
       expect(getCandles).not.toHaveBeenCalledWith('BTC-USD', '3mo')
       expect(getCandles).not.toHaveBeenCalledWith('ETH-USD', '3mo')
@@ -355,12 +383,14 @@ describe('Stocks', () => {
     it('says the lane is quiet when the day HAS a board and no crypto row on it', async () => {
       await writeSlice('board', mkBoardSlice([mkRow({ sym: 'NVDA', cohort: undefined, note: 'trend intact' })]))
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       expect(await within(wire()).findByText(/only speaks when a coin sets up/i)).toBeInTheDocument()
     })
 
     it('says there is no board yet when the slice resolved without one — not "the lane is quiet"', async () => {
       await writeSlice('board', { ...mkBoardSlice([]), board: null })
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       expect(await within(wire()).findByText(/no board yet/i)).toBeInTheDocument()
       expect(within(wire()).queryByText(/only speaks when a coin sets up/i)).not.toBeInTheDocument()
     })
@@ -370,6 +400,7 @@ describe('Stocks', () => {
     it('a crypto nearest miss shows its own reason and NO grade, probability or size', async () => {
       await writeSlice('board', mkBoardSlice([mkRow({ sym: 'BTC-USD', cohort: 'crypto', watchOnly: true, nearMiss: true })]))
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       const w = wire()
       expect(await within(w).findByText(/nearest miss/i)).toBeInTheDocument()
       expect(within(w).getByText(/no grade, no probability and no size/i)).toBeInTheDocument()
@@ -382,6 +413,7 @@ describe('Stocks', () => {
     it('a watch-only crypto row says watch — still no grade, no probability, no size', async () => {
       await writeSlice('board', mkBoardSlice([mkRow({ sym: 'ETH-USD', cohort: 'crypto', watchOnly: true })]))
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       const w = wire()
       expect(await within(w).findByText(/watch — no size yet/i)).toBeInTheDocument()
       expect(within(w).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
@@ -390,6 +422,7 @@ describe('Stocks', () => {
     it('a SIZED crypto row carries its grade and its probability, and its own note behind the disclosure', async () => {
       await writeSlice('board', mkBoardSlice([mkRow({ sym: 'BTC-USD', cohort: 'crypto', grade: 'C', probability: 0.61 })]))
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       const w = wire()
       expect(await within(w).findByLabelText('Grade C')).toBeInTheDocument()
       expect(within(w).getByText(/61% · ~5\.4%/)).toBeInTheDocument()
@@ -401,6 +434,7 @@ describe('Stocks', () => {
     it('recognises a crypto pair by its SYMBOL even when the row carries no cohort stamp', async () => {
       await writeSlice('board', mkBoardSlice([mkRow({ sym: 'BTC-USD', watchOnly: true, nearMiss: true })]))
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       expect(await within(wire()).findByText(/nearest miss/i)).toBeInTheDocument()
     })
   })
@@ -425,6 +459,7 @@ describe('Stocks', () => {
         at: Date.now(),
       })
       withRouter()
+      fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       intersect(screen.getByRole('region', { name: 'Top movers' }))
       const addBtn = await screen.findByRole('button', { name: /add pltr to watchlist/i })
       fireEvent.click(addBtn)

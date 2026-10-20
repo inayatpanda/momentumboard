@@ -121,7 +121,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
   // cards twice. The column now earns its place ONLY beside a journey pane.
   it('at 1440px on Today: rail + FULL-WIDTH pane, no board column', async () => {
     setViewport(1440)
-    render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
+    render(<AppShell locationHook={memoryLocation({ path: '/app/today' }).hook} />)
 
     const pane = screen.getByRole('main')
     expect(await within(pane).findByRole('heading', { level: 1, name: 'Research desk' })).toBeInTheDocument()
@@ -148,7 +148,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
 
   it('at 390px there is no desk grid and the nav stays the bottom tab bar', async () => {
     setViewport(390)
-    render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
+    render(<AppShell locationHook={memoryLocation({ path: '/app/today' }).hook} />)
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Your daily brief' })).toBeInTheDocument()
     expect(document.querySelector('.desk2')).toBeNull()
@@ -158,8 +158,8 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     // entries carry `.rail-only`, which CSS hides below 1024px (jsdom applies
     // no stylesheet, so the predicate the CSS reads is what is asserted)
     expect([...nav.querySelectorAll('.v2-tab:not(.rail-only) .v2-tab-label')].map(el => el.textContent?.trim())).toEqual([
-      'Today',
       'Stocks',
+      'Today',
       'Intel',
       'Track record',
       'More',
@@ -200,7 +200,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
 
   it('keeps analytics lazy until its routed nav destination is opened', async () => {
     setViewport(1440)
-    const location = memoryLocation({ path: '/app/', record: true })
+    const location = memoryLocation({ path: '/app/today', record: true })
     render(<AppShell locationHook={location.hook} />)
 
     await screen.findByRole('heading', { level: 1, name: 'Research desk' })
@@ -219,7 +219,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
 
   it('is reactive: widening the window past 1200px builds the desk without a reload', async () => {
     setViewport(1024)
-    render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
+    render(<AppShell locationHook={memoryLocation({ path: '/app/today' }).hook} />)
     await screen.findByRole('heading', { level: 1, name: 'Research desk' })
     expect(document.querySelector('.desk2')).toBeNull()
 
@@ -251,7 +251,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
 
   it('below 1200px Analytics remains a normal nav link, never a drawer', async () => {
     setViewport(1024)
-    render(<AppShell locationHook={memoryLocation({ path: '/app/' }).hook} />)
+    render(<AppShell locationHook={memoryLocation({ path: '/app/today' }).hook} />)
 
     await screen.findByRole('heading', { level: 1, name: 'Research desk' })
     expect(screen.getByRole('link', { name: /analytics/i })).toBeInTheDocument()

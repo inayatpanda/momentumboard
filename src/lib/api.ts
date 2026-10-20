@@ -319,6 +319,7 @@ export const getSocialMemory = (symbol: string) =>
 
 /** One analysed video, as the wire renders it. */
 export interface StreetVideo {
+  transcriptMethod?: 'captions' | 'speech'
   provenance?: 'first-party' | 'third-party' | 'manual'
   publishedAt?: number
   claims?: SocialClaim[]
@@ -357,6 +358,10 @@ export interface StreetWire {
   consensus: ChannelPick[]
   at: number
   videoIngestion?: {
+    localRunner?: { at: number; running: boolean; saved: number; unavailable: number; buffered: number; stale: boolean } | null
+    provider?: { checkedAt: number; status: string; plan?: string; remainingCredits?: number } | null
+    localLastSavedAt?: number | null
+    localSpeechCount?: number
     workerLastSeenAt?: number | null
     workerStale?: boolean
     oldestPendingAt?: number | null

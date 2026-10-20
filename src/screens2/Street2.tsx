@@ -71,6 +71,9 @@ function VideoHealth({ health, onRefresh }: { health: StreetWire['videoIngestion
   if (!health) return null
   return <section className="card itl-section" aria-label="YouTube processing status">
     <h2 className="sec-label">YouTube processing</h2>
+    {health.localRunner && <p className="cc-reason">Mac collector: {health.localRunner.stale ? 'not seen recently — resumes when the Mac is awake and connected' : health.localRunner.running ? 'capturing videos' : `${health.localRunner.saved} saved on its last run`}. Last seen {relativeStamp(health.localRunner.at)}{health.localRunner.buffered ? ` · ${health.localRunner.buffered} captured transcripts waiting to upload` : ''}.</p>}
+    {health.localLastSavedAt && <p className="cc-reason">Local capture last saved {relativeStamp(health.localLastSavedAt)}. Captions are tried first; local speech recognition can fill gaps while your Mac is awake.</p>}
+    {health.provider && <p className="cc-reason">Supadata: {health.provider.status === 'exhausted' ? 'no credits remaining' : health.provider.status}{health.provider.plan ? ` · ${health.provider.plan}` : ''} · checked {relativeStamp(health.provider.checkedAt)}. Local capture works independently.</p>}
     <p className="cc-reason">{health.pendingTranscripts} awaiting captions · {health.queued} queued analyses · {health.deferred} deferred · {health.failed} failed</p>
     <p className="cc-reason">{health.lastExtractAt ? `Latest completed analysis ${relativeStamp(health.lastExtractAt)}.` : 'No completed video analysis yet.'} {health.nextRetryAt ? `Next retry eligible ${new Date(health.nextRetryAt * 1000).toLocaleString()}; completion depends on the next worker run.` : ''}</p>
     {(health.pendingTranscripts > 0 || health.deferred > 0) && <p className="cc-reason">Caption access and daily analysis limits can delay videos. Refresh checks progress; it does not start a new analysis.</p>}
@@ -122,15 +125,23 @@ function PicksSection({ consensus, board, openCalls }: { consensus: ChannelPick[
  * video input… a section of their own": one card a video, newest first. */
 function WireSection({ videos }: { videos: StreetVideo[] }) {
   const [visible, setVisible] = useState(WIRE_PAGE)
+  const [channel, setChannel] = useState('')
+  const filtered = channel ? videos.filter(v => v.channel === channel) : videos
   if (videos.length === 0) return null
   return (
     <section id="wire" className="card itl-section stt-wire">
       <h2 className="sec-label">The wire — what the channels said</h2>
       <p className="cc-reason itl-feed-intro">Every video the desk has analysed, newest first. The chips are the names each one took a side on.</p>
+      <label className="discovery-market">YouTube channel
+        <select aria-label="YouTube channel" value={channel} onChange={e => { setChannel(e.target.value); setVisible(WIRE_PAGE) }}>
+          <option value="">All channels ({videos.length} videos)</option>
+          {[...new Set(videos.map(v => v.channel))].sort().map(name => <option key={name} value={name}>{name} ({videos.filter(v => v.channel === name).length})</option>)}
+        </select>
+      </label>
       <div className="stt-video-list">
         {/* url+index: the extracts blob has no URL-level dedup, so a
             re-analysed video can appear twice (the news desk's own key rule) */}
-        {videos.slice(0, visible).map((v, i) => (
+        {filtered.slice(0, visible).map((v, i) => (
           <div className="stt-video" key={`${v.url}-${i}`}>
             <div className="stt-video-head">
               <b className="stt-chan">{v.channel}</b>
@@ -140,6 +151,7 @@ function WireSection({ videos }: { videos: StreetVideo[] }) {
             <a className="stt-video-title" href={v.url} target="_blank" rel="noreferrer">
               {decodeEntities(v.title)}
             </a>
+            {v.transcriptMethod === 'speech' && <p className="social-evidence__note">Transcribed locally from audio. Machine transcription can mishear names and numbers; check the linked source.</p>}
             {(v.tickers.length > 0 || v.themes.length > 0) && (
               <div className="stt-video-meta">
                 {v.tickers.map((t, j) => (
@@ -167,9 +179,9 @@ function WireSection({ videos }: { videos: StreetVideo[] }) {
           </div>
         ))}
       </div>
-      {visible < videos.length && (
-        <button type="button" className="stx-showmore" onClick={() => setVisible(videos.length)}>
-          Show more ({videos.length - visible})
+      {visible < filtered.length && (
+        <button type="button" className="stx-showmore" onClick={() => setVisible(filtered.length)}>
+          Show more ({filtered.length - visible})
         </button>
       )}
     </section>

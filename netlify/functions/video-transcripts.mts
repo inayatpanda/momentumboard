@@ -12,7 +12,7 @@ import { enqueueSocialJobs } from './lib/socialJobs'
 // publish token — a leaked runner token can, at worst, feed us captions.
 
 import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
-import { saveTranscript, validatedSegments, type VideoTranscript } from './lib/videoTranscriptStore'
+import { readTranscriptIndex, saveTranscript, validatedSegments } from './lib/videoTranscriptStore'
 import { canonicalVideoUrl, videoKey } from '../../shared/youtubeCaptions.mjs'
 
 export interface InboxVideo {
@@ -46,19 +46,35 @@ export async function routeVideoTranscripts(
 
   if (method === 'GET' && query.get('pending') === '1') {
     const inbox = (await store.read<InboxVideo[]>('video-inbox')) ?? []
-    const done = new Set(((await store.read<VideoTranscript[]>('video-transcripts')) ?? []).map(t => videoKey(t.url)))
+    // The inbox is a recent display window; unfinished durable jobs must remain
+    // capture candidates even after 200 newer videos have arrived.
+    const jobs = await store.read<import('./lib/socialJobs').SocialJob[]>('social-jobs:v1') ?? []
+    const candidates = [...new Map([...inbox, ...jobs.filter(j => j.mode === 'extract' && j.stage !== 'complete')].map(v => [videoKey(v.url), v])).values()]
+    const done = new Set((await readTranscriptIndex(store)).map(t => videoKey(t.url)))
     const attempts = new Map((await store.read<LocalAttempt[]>(LOCAL_ATTEMPTS) ?? []).map(a => [a.id, a]))
     const now = Math.floor(Date.now() / 1000)
-    const pending = inbox
+    const candidatesDue = candidates
       .filter(v => canonicalVideoUrl(v.url) && !done.has(videoKey(v.url)) && (attempts.get(videoKey(v.url))?.nextAt ?? 0) <= now)
       .sort((a, b) => (attempts.get(videoKey(a.url))?.at ?? 0) - (attempts.get(videoKey(b.url))?.at ?? 0) || b.at - a.at)
-      .slice(0, PENDING_CAP)
+      .slice(0, 35)
+    const pending: InboxVideo[] = []
+    for (const video of candidatesDue) {
+      // Old words may have rolled out of the lightweight index. Do not
+      // download them again; the analysis worker can read the durable key.
+      if (!await store.read(`video-transcript:${videoKey(video.url)}`)) pending.push(video)
+      if (pending.length === PENDING_CAP) break
+    }
     return Response.json({ ok: true, data: pending })
   }
 
   if (method === 'POST') {
-    let body: { url?: string; title?: string; channel?: string; text?: string; status?: string; segments?: unknown; language?: string; automatic?: boolean } | null
+    let body: { url?: string; title?: string; channel?: string; text?: string; status?: string; segments?: unknown; language?: string; automatic?: boolean; method?: string; saved?: number; unavailable?: number; buffered?: number; running?: boolean } | null
     try { body = bodyText ? JSON.parse(bodyText) : null } catch { return new Response('bad-json', { status: 400 }) }
+    if (body?.status === 'runner-status') {
+      const count = (n: unknown) => typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(10000, Math.floor(n))) : 0
+      await store.write('video-local-runner', { at: Math.floor(Date.now() / 1000), running: body.running === true, saved: count(body.saved), unavailable: count(body.unavailable), buffered: count(body.buffered) })
+      return new Response('runner-status-recorded')
+    }
     const url = canonicalVideoUrl(body?.url)
     if (!body || !url) return new Response('bad-url', { status: 400 })
     if (body.status === 'unavailable') {
@@ -78,6 +94,7 @@ export async function routeVideoTranscripts(
       segments: validatedSegments(body.segments, body.text),
       language: typeof body.language === 'string' ? body.language.slice(0, 20) : 'und',
       automatic: body.automatic === true,
+      method: body.method === 'speech' ? 'speech' : 'captions',
       // this door only ever admits the Mac runner — a client-claimed source
       // would let a POST fake the health line's rung attribution
       source: 'local',

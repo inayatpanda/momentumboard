@@ -180,6 +180,7 @@ async function runVideoAnalyze(
     const extract = transcriptExtract ?? parseExtract(raw!, { url: body.url, title: body.title ?? '', channel: body.channel ?? '', at: nowSec }, got?.text)
     if (!extract) return new Response('unparseable-extract', { status: 502 })
     extract.via = via
+    if (local?.method) extract.transcriptMethod = local.method
     extract.provenance = 'first-party'
     extract.evidenceVersion = SOCIAL_EVIDENCE_VERSION
     extract.at = Math.floor(Date.now() / 1000) // first app availability, never the source publication clock

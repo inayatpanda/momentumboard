@@ -2,15 +2,19 @@ import { SOCIAL_JOBS_KEY, type SocialJob } from './socialJobs'
 import type { AppStore } from './storeProvider'
 import { videoKey } from '../../../shared/youtubeCaptions.mjs'
 import { videoFailureReason, type WorkItem } from './videoQueue'
+import { readTranscriptIndex } from './videoTranscriptStore'
+import { PROVIDER_HEALTH_KEY, type TranscriptProviderHealth } from './transcriptProviderHealth'
 
 export async function videoIngestionHealth(store: AppStore, extracts: { url: string; at: number }[], nowSec: number, analyses: { url: string }[] = []) {
-  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat] = await Promise.all([
+  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner] = await Promise.all([
     store.read<{ url: string }[]>('video-inbox'),
-    store.read<{ url: string; at: number }[]>('video-transcripts'),
+    readTranscriptIndex(store),
     store.read<WorkItem[]>('work-queue'),
     store.read<WorkItem[]>('work-queue-deadletter'),
     store.read<SocialJob[]>(SOCIAL_JOBS_KEY),
     store.read<{ at: number; status: string }>('social-worker-heartbeat'),
+    store.read<TranscriptProviderHealth>(PROVIDER_HEALTH_KEY),
+    store.read<{ at: number; running: boolean; saved: number; unavailable: number; buffered: number }>('video-local-runner'),
   ])
   const completed = new Set(extracts.map(v => videoKey(v.url)))
   const watched = new Set(analyses.map(v => videoKey(v.url)))
@@ -29,6 +33,10 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
   const retries = queued.map(j => j.nextAttemptAt ?? 0).filter(at => at > nowSec)
   retries.push(...activeSocial.map(j => j.nextAttemptAt).filter(at => at > nowSec))
   return {
+    provider: provider ?? null,
+    localRunner: localRunner ? { ...localRunner, stale: nowSec - localRunner.at > 2 * 3600 } : null,
+    localLastSavedAt: latest(transcripts.filter(t => t.source === 'local')),
+    localSpeechCount: transcripts.filter(t => t.method === 'speech').length,
     workerLastSeenAt: heartbeat?.at ?? null,
     workerStale: !!activeSocial.length && (!heartbeat || nowSec - heartbeat.at > 6 * 3600),
     oldestPendingAt: activeSocial.length ? Math.min(...activeSocial.map(j => j.at)) : null,

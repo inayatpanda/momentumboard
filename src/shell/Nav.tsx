@@ -42,7 +42,7 @@ export function activeKeyFor(path: string): string {
     }
     return path === r.path || (r.path !== '/' && path.startsWith(r.path + '/'))
   })
-  return hit?.key ?? 'today'
+  return hit?.key ?? 'stocks'
 }
 
 export function Nav() {

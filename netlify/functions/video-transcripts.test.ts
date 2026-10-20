@@ -34,6 +34,15 @@ describe('auth', () => {
 })
 
 describe('GET ?pending=1', () => {
+  it('recovers unfinished jobs outside the rolling inbox, without redownloading durable words', async () => {
+    await enqueueSocialJobs(store, [
+      { url: Y('abcdefghijk'), title: 'Old pending', channel: 'C' },
+      { url: Y('abcdefghijl'), title: 'Already captured', channel: 'C' },
+    ], 100)
+    await store.write('video-transcript:abcdefghijl', { text: 'saved words' })
+    const result = await (await get('pending=1')).json()
+    expect(result.data.map((v: { title: string }) => v.title)).toEqual(['Old pending'])
+  })
   it('lists inbox videos missing a transcript, newest first, capped at 20', async () => {
     const inbox = Array.from({ length: 25 }, (_, i) => ({ url: Y(`v${String(i).padStart(10, '0')}`), title: `t${i}`, channel: 'c', at: 1000 + i }))
     await store.write('video-inbox', inbox)
@@ -60,7 +69,7 @@ describe('POST', () => {
     const res = await post(sub)
     expect(res.status).toBe(200)
     expect(await res.text()).toBe('stored')
-    const rows = (await store.read<VideoTranscript[]>('video-transcripts'))!
+    const rows = (await store.read<VideoTranscript[]>('video-transcript-index:v2'))!
     expect(rows[0].url).toBe(sub.url)
     expect(rows[0].source).toBe('local')
     expect(rows[0].at).toBeGreaterThan(1_700_000_000)
@@ -70,7 +79,7 @@ describe('POST', () => {
     await post(sub)
     const res = await post(sub)
     expect(await res.text()).toBe('already')
-    expect((await store.read<VideoTranscript[]>('video-transcripts'))!).toHaveLength(1)
+    expect((await store.read<VideoTranscript[]>('video-transcript-index:v2'))!).toHaveLength(1)
   })
 
   it('rejects a non-YouTube url and a transcript too short to be one', async () => {
@@ -103,7 +112,7 @@ describe('POST', () => {
     // 'free'/'supadata' are written by the worker directly — a POST claiming
     // them would fake the health line's rung attribution
     const res = await post({ ...sub, source: 'supadata' })
-    const rows = (await store.read<VideoTranscript[]>('video-transcripts'))!
+    const rows = (await store.read<VideoTranscript[]>('video-transcript-index:v2'))!
     expect(res.status).toBe(200)
     expect(rows[0].source).toBe('local')
   })

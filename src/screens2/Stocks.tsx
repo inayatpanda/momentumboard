@@ -20,7 +20,7 @@
 // different: StockRow owns its own `candles:SYM:3mo` slice per row — see that
 // file for why that is safe to do N times in parallel.
 
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'wouter'
 import { db, type WatchItem } from '../lib/db'
 import { useSlice } from '../lib/useSlice'
@@ -39,6 +39,8 @@ import { isDeskWidth } from '../shell/DeskLayout'
 import { sectorSign, SectorTileBody } from './parts/SectorTile'
 import { CryptoWire } from './parts/CryptoWire'
 import { useLiveQuotes } from '../lib/useLiveQuotes'
+import { searchStocks, useStockDirectory } from '../lib/stockDirectory'
+import { StockDiscovery } from './parts/StockDiscovery'
 
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
 
@@ -170,7 +172,7 @@ function SectorsRail() {
  * and orphans the old key's continuations (and, since the final wave, pins each
  * load's fetcher to the key it was made for). A fresh instance per watchlist is
  * still the clearer thing to reason about, so it stays. */
-function WatchlistRows({ items, onRemove }: { items: WatchItem[]; onRemove: (sym: string) => void }) {
+function WatchlistRows({ items, onRemove, names }: { items: WatchItem[]; names: Map<string, string>; onRemove: (sym: string) => void }) {
   const symbols = items.map(i => i.symbol)
   const { data: quotes } = useSlice(`quotes:${symbols.join(',')}`, () => getQuotes(symbols))
   // the market-hours ticker (owner 2026-08-17: "are the prices of stocks being
@@ -187,7 +189,7 @@ function WatchlistRows({ items, onRemove }: { items: WatchItem[]; onRemove: (sym
   return (
     <div className="stx-watchlist">
       {items.map(i => (
-        <StockRow key={i.symbol} symbol={i.symbol} name={quoteFor(i.symbol)?.name} quote={quoteFor(i.symbol)} onRemove={() => onRemove(i.symbol)} />
+        <StockRow key={i.symbol} symbol={i.symbol} name={quoteFor(i.symbol)?.name ?? names.get(i.symbol)} quote={quoteFor(i.symbol)} onRemove={() => onRemove(i.symbol)} />
       ))}
     </div>
   )
@@ -199,6 +201,11 @@ export default function Stocks() {
   const [searchError, setSearchError] = useState(false)
   const [items, setItems] = useState<WatchItem[]>([])
   const [watchLoaded, setWatchLoaded] = useState(false)
+  const [section, setSection] = useState<'watchlist' | 'discover' | 'markets'>('watchlist')
+  const [sector, setSector] = useState('')
+  const [showAll, setShowAll] = useState(false)
+  const { data: directory, error: directoryError } = useStockDirectory()
+  const names = useMemo(() => new Map(directory?.rows.map(r => [r.sym, r.name])), [directory])
 
   useEffect(() => {
     const read = () =>
@@ -236,7 +243,8 @@ export default function Stocks() {
     { key: 'movers', fetcher: getMovers },
     { key: 'sectors', fetcher: getSectors },
   ]
-  if (symbols.length) refreshEntries.push({ key: `quotes:${symbols.join(',')}`, fetcher: () => getQuotes(symbols) })
+  const visibleSymbols = showAll ? symbols : symbols.slice(0, 6)
+  if (visibleSymbols.length) refreshEntries.push({ key: `quotes:${visibleSymbols.join(',')}`, fetcher: () => getQuotes(visibleSymbols) })
   const { refresh, refreshing } = useSlicesRefresh(refreshEntries)
   const { pull } = usePullRefresh(refresh)
 
@@ -258,6 +266,10 @@ export default function Stocks() {
   const handleSearch = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const trimmed = query.trim()
+    const matches = directory ? searchStocks(directory.rows, trimmed) : []
+    const exact = matches.find(r => r.sym.toLowerCase() === trimmed.toLowerCase() || r.name.toLowerCase() === trimmed.toLowerCase())
+    if (exact) { navigate(`/stock/${exact.sym}`); return }
+    if (matches.length) { setSection('discover'); return }
     if (!SYMBOL_RE.test(trimmed)) {
       setSearchError(true)
       return
@@ -269,7 +281,7 @@ export default function Stocks() {
   return (
     <div className="stx">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
-      <h1>Stocks</h1>
+      <div className="stocks-title"><div><p className="stocks-eyebrow">YOUR MARKET, IN FOCUS</p><h1>Stocks</h1></div><Link href="/more/street" className="stocks-channel-link">Channel insights ↗</Link></div>
       {/* the session's own state (dynamism wave) — a watchlist of flat prices
           reads as broken until the line above it says the market is shut */}
       <SessionLine />
@@ -279,11 +291,12 @@ export default function Stocks() {
             truncated one; two teach the whole shape — a plain ticker and a
             suffixed one — and the ellipsis says there are more. */}
         <input
-          aria-label="Search ticker"
-          placeholder="Search a ticker — AAPL, VOD.L…"
+          aria-label="Search ticker or company"
+          placeholder="Search companies or tickers"
           value={query}
           onChange={e => {
             setQuery(e.target.value)
+            setSector('')
             setSearchError(false)
           }}
         />
@@ -291,35 +304,23 @@ export default function Stocks() {
       </form>
       {searchError && <p className="stx-search-error">Enter a valid ticker — letters, numbers, &quot;.&quot; or &quot;-&quot;, up to 12 characters.</p>}
 
-      {/* One structure, two densities: on phones these blocks simply stack
-          (the grid classes have no rules there); at desk width the .desk2
-          rules lay them out two-column with sectors full-width below —
-          the owner's first-DMG review: use the space. */}
-      <div className="stx-desk-grid">
-        {/* THE CRYPTO WIRE (owner: "i dont see any crpto information
-            anywhere") — first on the page and full-width at desk, ALWAYS
-            rendered. It leads rather than follows because the starter
-            watchlist alone is seventeen rows: a section that sits under it is
-            a section he has to go looking for, which is the complaint. */}
-        <div className="stx-crypto-block">
-          <CryptoWire />
-        </div>
-        <div>
-          <p className="sec-label">Your watchlist</p>
-          {!watchLoaded ? (
-            <div className="skeleton" style={{ height: 64, marginBottom: 8 }} />
-          ) : items.length === 0 ? (
-            <p className="cc-reason">Your watchlist is empty. Search a ticker above, or add one from the rails below.</p>
-          ) : (
-            <WatchlistRows key={symbols.join(',')} items={items} onRemove={remove} />
-          )}
-        </div>
-        <div>
-          <MoversRails watchSymbols={new Set(symbols)} onAdd={add} />
-        </div>
-        <div className="stx-sectors-block">
-          <SectorsRail />
-        </div>
+      <div className="stocks-tabs" role="tablist" aria-label="Stock views">
+        {(['watchlist', 'discover', 'markets'] as const).map(key => <button key={key} role="tab" id={`stock-tab-${key}`} aria-controls="stock-view" aria-selected={(query.trim() ? 'discover' : section) === key} onClick={() => { setQuery(''); setSearchError(false); setSection(key) }}>{key === 'watchlist' ? 'Watchlist' : key === 'discover' ? 'Discover' : 'Markets'}</button>)}
+      </div>
+      <div id="stock-view" role="tabpanel" aria-labelledby={`stock-tab-${query.trim() ? 'discover' : section}`}>
+      {query.trim() || section === 'discover' ? <StockDiscovery directory={directory} error={directoryError} query={query} sector={sector} onSector={setSector} watchSymbols={new Set(symbols)} onAdd={add} /> : section === 'watchlist' ? <>
+        <div className="discovery-heading"><h2>Your watchlist <span className="stocks-count">{items.length}</span></h2><span className="cc-reason">Price · day change</span></div>
+        {!watchLoaded ? <div className="skeleton" style={{ height: 280 }} /> : !items.length ? <div className="stocks-empty"><p>Your watchlist is empty.</p><p>Find a company you want to follow, then tap +.</p><button onClick={() => setSection('discover')}>Discover stocks</button></div> : <WatchlistRows key={symbols.slice(0, showAll ? undefined : 6).join(',')} items={showAll ? items : items.slice(0, 6)} onRemove={remove} names={names} />}
+        {items.length > 6 && <button className="discovery-more" onClick={() => setShowAll(v => !v)}>{showAll ? 'Show fewer' : `View all ${items.length} stocks`}</button>}
+        <section className="stocks-sector-preview" aria-label="Browse by sector"><div className="discovery-heading"><h2>Explore sectors</h2><button className="stocks-text-link" onClick={() => { setSector(''); setSection('discover') }}>View all →</button></div>
+          <div className="sector-preview-grid">{[['Technology', '◈'], ['Healthcare', '✚'], ['Financials', '▥'], ['Energy', '◉']].map(([name, icon]) => <button key={name} onClick={() => { setSector(name); setSection('discover') }}><span aria-hidden="true">{icon}</span><strong>{name}</strong><span aria-hidden="true">↗</span></button>)}</div>
+        </section>
+        <Link href="/today" className="stocks-today-link"><span><strong>Today’s research</strong><small>Market context, stock setups and what changed</small></span><span aria-hidden="true">→</span></Link>
+      </> : <div className="stx-desk-grid">
+        <div><MoversRails watchSymbols={new Set(symbols)} onAdd={add} /></div>
+        <div className="stx-sectors-block"><SectorsRail /></div>
+        <div className="stx-crypto-block"><CryptoWire /></div>
+      </div>}
       </div>
     </div>
   )

@@ -19,7 +19,16 @@ on:
     # paper's first claim on it — on a Gemini-depleted day that alone can kill
     # the edition (2026-08-04). Nothing queues overnight anyway.
     - cron: '20 8-23/3 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      videos_only:
+        description: 'Process YouTube jobs only (no paper, dossiers or notifications)'
+        type: boolean
+        default: true
+      video_url:
+        description: 'Optional: retry one video already in the discovered inbox'
+        type: string
+        required: false
 concurrency:
   group: queue-worker
   cancel-in-progress: false
@@ -43,6 +52,8 @@ jobs:
         if: steps.modules.outputs.cache-hit != 'true'
       - run: npx tsx scripts/bg/drain-queue.mts
         env:
+          VIDEOS_ONLY: ${{ github.event.inputs.videos_only || 'false' }}
+          VIDEO_URL: ${{ github.event.inputs.video_url || '' }}
           URL: https://thestreetsignal.rqai.co.uk
           # Cloudflare cutover 2026-08-13: the store is D1 over its HTTP API.
           STORE_BACKEND: d1

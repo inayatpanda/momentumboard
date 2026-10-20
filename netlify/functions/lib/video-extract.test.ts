@@ -154,7 +154,7 @@ describe('the local transcript store is the first rung', () => {
     transcriptMock.fetchTranscriptAny.mockResolvedValue({ text: 'a scraped transcript about NVDA '.repeat(10), source: 'free' })
     llmMock.callLlm.mockResolvedValue({ text: EXTRACT_JSON })
     await routeVideoAnalyze(auth, body('https://youtube.com/watch?v=scr10000000'), { APP_TOKEN: 'app' }, store)
-    const kept = (await store.read<{ url: string; source: string }[]>('video-transcripts'))!
+    const kept = (await store.read<{ url: string; source: string }[]>('video-transcript-index:v2'))!
     expect(kept[0].url).toBe('https://www.youtube.com/watch?v=scr10000000')
     expect(kept[0].source).toBe('free')
   })

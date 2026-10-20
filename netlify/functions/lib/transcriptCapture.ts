@@ -1,6 +1,7 @@
 import { reserveSocialBudget } from './socialBudget'
 import { fetchCaptionTranscript, type CaptionSegment } from '../../../shared/youtubeCaptions.mjs'
 import type { AppStore } from './storeProvider'
+import { PROVIDER_HEALTH_KEY, type TranscriptProviderHealth } from './transcriptProviderHealth'
 
 export interface CapturedTranscript { text: string; segments: CaptionSegment[]; language: string; source: 'free' | 'supadata'; automatic?: boolean }
 export type CaptureResult = { status: 'ready'; transcript: CapturedTranscript } | { status: 'waiting' } | { status: 'unavailable' }
@@ -28,6 +29,8 @@ export async function captureTranscript(store: AppStore, checkpointKey: string, 
     if (free.text) return { status: 'ready', transcript: { ...free, source: 'free' } }
   }
   if (!key) return { status: 'unavailable' }
+  const health = await store.read<TranscriptProviderHealth>(PROVIDER_HEALTH_KEY)
+  if (!state.providerJobId && health && nowSec - health.checkedAt < 6 * 3600 && ['exhausted', 'unauthorized'].includes(health.status)) return { status: 'unavailable' }
   // Do not silently resubmit a lost/failed job. Retain its identity for diagnosis.
   if (state.lastError) return { status: 'unavailable' }
   if (state.requestedAt != null && nowSec - state.requestedAt > 7 * 86_400) {

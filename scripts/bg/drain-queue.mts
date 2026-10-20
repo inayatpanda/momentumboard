@@ -1,5 +1,6 @@
 import { canonicalVideoUrl } from '../../shared/youtubeCaptions.mjs'
 import { enqueueSocialJobs, eligibleSocialJobs, SOCIAL_JOBS_KEY, type SocialJob } from '../../netlify/functions/lib/socialJobs'
+import { refreshTranscriptProviderHealth } from '../../netlify/functions/lib/transcriptProviderHealth'
 // The work-queue drain, GitHub Actions edition (currently every 3 hours). Netlify's
 // scheduled functions (alert-check, watchdog) enqueue long jobs into the
 // `work-queue` blob — video analysis, event dossiers, a compose retry — and
@@ -14,6 +15,8 @@ import { applyWorkResults, workResultFromResponse, type WorkItem, type WorkResul
 
 const MAX_ITEMS_PER_RUN = 8
 const MAX_ATTEMPTS = 3
+const videosOnly = process.env.VIDEOS_ONLY === 'true'
+const selectedVideo = process.env.VIDEO_URL ? canonicalVideoUrl(process.env.VIDEO_URL) : null
 
 const adminReq = (body?: unknown) =>
   new Request('https://actions.local/', {
@@ -72,15 +75,23 @@ const run = async () => {
   }
   try {
     const queue = (await blobAppStore.read<WorkItem[]>('work-queue')) ?? []
+    if (process.env.SUPADATA_API_KEY) await refreshTranscriptProviderHealth(blobAppStore, process.env.SUPADATA_API_KEY).catch(() => console.log('transcript provider status unavailable'))
     await blobAppStore.write('social-worker-heartbeat', { at: nowSec, status: 'running' })
     // Migration is idempotent. Old video jobs only leave the shared queue after
     // durable admission; paper/dossier work keeps its own eight-item allowance.
     const legacyVideos = queue.filter(j => j.kind === 'video')
     await enqueueSocialJobs(blobAppStore, legacyVideos.map(j => j.body as SocialJob), nowSec)
+    if (process.env.VIDEO_URL && (!videosOnly || !selectedVideo)) throw new Error('A selected video requires videos-only mode and a valid YouTube URL')
+    if (selectedVideo) {
+      const inbox = await blobAppStore.read<SocialJob[]>('video-inbox') ?? []
+      const source = inbox.find(v => canonicalVideoUrl(v.url) === selectedVideo)
+      if (!source) throw new Error('Selected video is not in the discovered inbox')
+      await enqueueSocialJobs(blobAppStore, [{ ...source, mode: 'extract' }], nowSec, true)
+    }
     const socialQueue = await blobAppStore.read<SocialJob[]>(SOCIAL_JOBS_KEY) ?? []
-    const videoBatch = eligibleSocialJobs(socialQueue, nowSec, 8)
+    const videoBatch = selectedVideo ? socialQueue.filter(j => j.mode === 'extract' && j.url === selectedVideo) : eligibleSocialJobs(socialQueue, nowSec, 8)
     const runDeadline = Date.now() + 16 * 60_000
-    const batch = queue.filter(item => item.kind !== 'video' && (item.nextAttemptAt ?? 0) <= nowSec).slice(0, MAX_ITEMS_PER_RUN)
+    const batch = videosOnly ? [] : queue.filter(item => item.kind !== 'video' && (item.nextAttemptAt ?? 0) <= nowSec).slice(0, MAX_ITEMS_PER_RUN)
     console.log(`draining ${batch.length} of ${queue.length} item(s)…`)
     const results = new Map<string, WorkResult>()
     for (const item of legacyVideos) {
@@ -113,7 +124,7 @@ const run = async () => {
       await blobAppStore.write('work-queue-deadletter', [...dl, ...deadlettered].slice(-50))
       const tok = process.env.TELEGRAM_BOT_TOKEN
       const chat = process.env.TELEGRAM_CHAT_ID
-      if (tok && chat) {
+      if (!videosOnly && tok && chat) {
         const { sendTelegram } = await import('../../netlify/functions/lib/telegram')
         await sendTelegram(tok, chat, `⚠️ StreetSignal queue: dropped ${deadlettered.length} item(s) after ${MAX_ATTEMPTS} attempts — ${deadlettered.map(i => i.kind).join(', ')}. Kept in work-queue-deadletter.`).catch(() => {})
       }

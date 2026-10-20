@@ -1,10 +1,10 @@
-// The v2 route table (plan Task 10 + CX-3/10). Today is EAGER — it is the
-// home screen and must paint with the entry chunk; everything else is lazy.
+// Stocks opens with the entry chunk. Today is the second navigation tab;
+// /stocks remains an alias so existing saved links keep working.
 // `label` present ⇒ a nav tab; Board is deliberately unlabelled (reached from
 // Today's counts rail and the desktop board column).
 
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
-import Today from '../screens2/Today'
+import Stocks from '../screens2/Stocks'
 
 export interface RouteDef {
   path: string
@@ -23,9 +23,10 @@ export interface RouteDef {
 }
 
 export const ROUTES: readonly RouteDef[] = [
-  { path: '/', key: 'today', label: 'Today', component: Today },
+  { path: '/', key: 'stocks', label: 'Stocks', component: Stocks },
+  { path: '/today', key: 'today', label: 'Today', component: lazy(() => import('../screens2/Today')) },
   { path: '/board', key: 'today', component: lazy(() => import('../screens2/Board')) },
-  { path: '/stocks', key: 'stocks', label: 'Stocks', component: lazy(() => import('../screens2/Stocks')) },
+  { path: '/stocks', key: 'stocks', component: Stocks },
   { path: '/stocks/movers', key: 'stocks', component: lazy(() => import('../screens2/Movers')) },
   { path: '/stocks/sectors', key: 'stocks', component: lazy(() => import('../screens2/Sectors')) },
   { path: '/stock/:sym', key: 'stocks', component: lazy(() => import('../screens2/StockPage')) as RouteDef['component'] },

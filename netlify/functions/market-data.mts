@@ -999,6 +999,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
             // absent on rows older than the fallback — and absent here too,
             // rather than defaulted into a claim about how the video was read
             ...(e.via ? { via: e.via } : {}),
+            ...(e.transcriptMethod ? { transcriptMethod: e.transcriptMethod } : {}),
           })),
         reads: newestFirst((rawAnalyses ?? []).filter(a => a && typeof a.at === 'number' && typeof a.analysis === 'string')).slice(0, STREET_READS),
         // the WHOLE consensus, uncapped: the board slice's channelPicks caps at
