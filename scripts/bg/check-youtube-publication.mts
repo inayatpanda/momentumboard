@@ -19,6 +19,18 @@ async function main() {
     latestVideos: published.slice(-3).map(e => ({ url: e.url, tickers: e.tickers.length, claims: e.claims?.length ?? 0 })),
   }
   console.log(JSON.stringify(report))
+  if (process.env.APP_TOKEN) {
+    const response = await fetch('https://thestreetsignal.rqai.co.uk/api/market?type=street', {
+      headers: { 'x-app-token': process.env.APP_TOKEN }, redirect: 'error', signal: AbortSignal.timeout(30_000),
+    })
+    const body = await response.json().catch(() => null) as { ok?: boolean; data?: { videos?: { via?: string }[]; videoIngestion?: { githubRunner?: { status: string; saved: number; unavailable: number } } } } | null
+    if (!response.ok || !body?.ok || !Array.isArray(body.data?.videos)) throw new Error('app-feed-unavailable')
+    console.log(JSON.stringify({
+      appHttpStatus: response.status,
+      cloudVideosInFeed: body.data.videos.filter(v => v.via === 'github').length,
+      cloudStatusInApp: body.data.videoIngestion?.githubRunner?.status ?? null,
+    }))
+  }
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
     `### App publication\n\n${report.cloudTranscripts} recent cloud transcripts; ${report.cloudAnalysesInApp} cloud analyses available in The street → Videos; ${report.awaitingAnalysis} awaiting analysis.\n`)
 }

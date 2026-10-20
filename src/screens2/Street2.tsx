@@ -282,8 +282,8 @@ export default function Street2() {
           {videos.length > 0 && <section className="card itl-section street-recent" aria-label="Recently analysed videos"><div className="discovery-heading"><h2>Recently analysed</h2><button className="stocks-text-link" onClick={() => openChannel('')}>View all →</button></div>{videos.slice(0, 3).map(v => <button className="street-recent__row" key={v.url} onClick={() => openChannel(v.channel)}><span className="street-recent__play" aria-hidden="true">▷</span><span><small>{v.channel} · {relativeStamp(v.at)}</small><strong>{decodeEntities(v.title)}</strong><small>{v.tickers.map(t => t.sym).slice(0, 4).join(' · ') || 'Market context'}</small></span><span aria-hidden="true">→</span></button>)}</section>}
         </div><div><SocialLearning learning={wire?.socialLearning} /><SocialPulse /></div></div>
       </> : view === 'videos' ? <><WireSection videos={videos} channel={channel} onChannel={setChannel} /><ReadsSection reads={channel ? reads.filter(r => r.channel === channel) : reads} /></> : <>
-        <ChannelCoverage health={wire?.videoIngestion} onChannel={openChannel} />
         <VideoHealth health={wire?.videoIngestion} onRefresh={refresh} />
+        <ChannelCoverage health={wire?.videoIngestion} onChannel={openChannel} />
       </>}
       </div>
     </div>

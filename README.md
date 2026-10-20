@@ -71,6 +71,8 @@ artifacts. Only the speech engine and model are cached.
 YouTube can block datacentre IP addresses, including GitHub runners. This is
 best-effort capture, not a guarantee of every video. The workflow records blocked
 access honestly and retains unfinished work. Captured transcripts are reused.
+GitHub can disable public-repository schedules after 60 days without repository
+activity; a stale check-in in Tracking exposes a stopped or delayed schedule.
 
 Public runner minutes do not include external API costs, paid transcript
 services, larger runners or excess storage. The current capture preference is
