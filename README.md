@@ -152,6 +152,22 @@ Validation on 20 October 2026:
 - A source review of the 13-minute Verified Investing example showed its trade
   conclusion after minute 10. The initial limit was raised to 20 minutes. The subsequent resumable
   implementation removes that cutoff and continues through later sections.
+- [The resumable free-key test](https://github.com/inayatpanda/momentumboard/actions/runs/39485304728)
+  published the first two consecutive ten-minute sections of Meet Kevin's
+  `kV3MsBAh79Y` into the production API. The third section returned 503; the
+  saved offset remains 1,200 seconds with a retry delay. This is a verified
+  partial read, not proof that the whole recording was transcribed.
+- [The multi-channel run](https://github.com/inayatpanda/momentumboard/actions/runs/39485323603)
+  also published caption-based results for Stocks with Josh's `yu_qOM9D9l0`
+  and Meet Kevin's `60x34IYK2XM`. Both appeared in the production Videos view;
+  the Josh video showed all its transcript sections processed with timed source
+  segments. Only claims that actually match source evidence are labelled matched.
+- A deterministic 31-minute recording test processes all four sections across
+  two runs and verifies that later claims survive without repeating completed
+  calls. Live full-length coverage of the long Meet Kevin recording remains
+  pending after the provider error. The UI exposes partial coverage directly
+  on video cards and provides a mobile refresh control; its research cache now
+  expires after one minute rather than fifteen.
 
 See [engine and processing notes](docs/ENGINE_V2.md) for implementation details,
 validation history and current limitations.

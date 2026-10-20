@@ -152,7 +152,7 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
   return (
     <section id="wire" className="card itl-section stt-wire">
       <h2 className="sec-label">The wire — what the channels said</h2>
-      <p className="cc-reason itl-feed-intro">Completed analyses, newest first. Open the evidence to check the creator’s words and timestamps.</p>
+      <p className="cc-reason itl-feed-intro">Latest findings, newest first. Coverage can be partial; open the evidence to check the creator’s words and timestamps.</p>
       <div className="street-filters">
       <label className="street-search">Find a video<input type="search" placeholder="Company, ticker or topic" value={query} onChange={e => { setQuery(e.target.value); setVisible(WIRE_PAGE) }} /></label>
       <label className="discovery-market">YouTube channel
@@ -178,6 +178,9 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
             <a className="stt-video-title" href={v.url} target="_blank" rel="noreferrer">
               {decodeEntities(v.title)}
             </a>
+            {v.nativeTranscript && <p className="social-evidence__note">{v.nativeTranscript.progress?.completion === 'complete' ? 'All video sections processed · AI transcription'
+              : v.nativeTranscript.progress?.completion === 'end-reported' ? 'Ending reported by AI · full coverage unconfirmed'
+                : `Partial video coverage${v.nativeTranscript.progress ? ` · ${Math.round(v.nativeTranscript.progress.processedSeconds / 60)} minutes processed` : ''}`}</p>}
             {v.transcriptMethod === 'speech' && <p className="social-evidence__note">Transcribed from audio{v.via === 'github' ? ' on GitHub' : ' on the Mac'}. Machine transcription can mishear names and numbers; check the linked source.</p>}
             {v.nativeTranscript && <details className="street-video-evidence">
               <summary>AI transcript{v.nativeTranscript.characters > v.nativeTranscript.excerpt.length ? ' excerpt' : ''}</summary>
