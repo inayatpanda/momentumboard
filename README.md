@@ -84,5 +84,46 @@ Public runner minutes do not include external API costs, paid transcript
 services, larger runners or excess storage. The current capture preference is
 free access with gaps and slower processing accepted.
 
+### Direct cloud video reads
+
+`youtube-native-capture` uses Google's supported YouTube URL input, avoiding the
+blocked download from a GitHub IP. It produces AI transcription and creator
+claims in one request. It is configured for 08:17–23:17 UTC every three hours,
+with at most two new attempts per day, a 90-minute input limit and no automatic
+API retries. Quota errors leave work pending. This is a separate path from
+independently downloaded captions and Whisper speech recognition.
+
+New reads **fail closed** unless `YOUTUBE_FREE_TIER_CONFIRMED=true` is configured
+as a repository variable and `GEMINI_YOUTUBE_FREE_API_KEY` is present as a
+repository secret. Use a dedicated Google project with **billing disabled**;
+a model advertising a free tier does not make requests on a paid project free.
+The workflow never substitutes the app's ordinary Gemini key. Manual runs
+default to `cached_only=true`, which publishes saved drafts without receiving
+the Google key or calling the transcription API.
+
+Findings appear in **The street → Videos**, with an expandable AI transcript,
+source link and explicit verification status. Model-transcribed quotes are not
+independently matched captions, so they do not enter verified consensus or
+forward outcome tracking. Tracking shows whether new free-tier reads are
+configured, the last publication result and quota limits.
+
+Validation on 20 October 2026:
+
+- Current yt-dlp plus its recommended PO-token provider was blocked by YouTube
+  login checks on both standard Ubuntu and hosted macOS runners. No new audio
+  was downloaded in those tests.
+- Google's current native video model returned 892 characters and seven stock
+  findings for a newly published 52-second video, `yu_qOM9D9l0`, which had no
+  saved transcript. The source page confirmed the duration, but the words have
+  not been independently checked.
+- [The publication run](https://github.com/inayatpanda/momentumboard/actions/runs/39472682865)
+  reused that saved draft with zero transcription calls. It confirmed the exact
+  video, seven findings and transcript metadata through the live app API.
+  The video card and expanded transcript were also checked in the live UI.
+- The initial native proof used the existing Google key; its free-tier status
+  was not established. Scheduled native reads remain gated pending a dedicated
+  billing-disabled project/key. One short-video success is not evidence that
+  every channel or long video will work.
+
 See [engine and processing notes](docs/ENGINE_V2.md) for implementation details,
 validation history and current limitations.
