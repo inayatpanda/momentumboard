@@ -138,7 +138,7 @@ describe('Intel', () => {
     expect(await screen.findByText('Headline 0')).toBeInTheDocument()
     expect(screen.getByText('Headline 1')).toBeInTheDocument()
     // the page is not blank — the other feeds retain their loading state
-    expect(await screen.findAllByText(/could not be loaded\. Try again/)).toHaveLength(2)
+    await waitFor(() => expect(screen.getAllByText(/could not be loaded\. Try again/)).toHaveLength(2))
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
@@ -337,7 +337,7 @@ describe('Intel', () => {
     await writeSlice('intel:insiders', { clusters: [mkCluster({ symbol: 'AMD' })], asOf: 1 })
     withRouter()
     expect(await screen.findByText('4 buyers')).toBeInTheDocument()
-    expect(await screen.findAllByText(/could not be loaded\. Try again/)).toHaveLength(2)
+    await waitFor(() => expect(screen.getAllByText(/could not be loaded\. Try again/)).toHaveLength(2))
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 

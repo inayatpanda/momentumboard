@@ -1,3 +1,4 @@
+import { stripEmoji } from '../../components/icons'
 import { useSlice } from '../../lib/useSlice'
 import { getSocialMemory } from '../../lib/api'
 
@@ -21,7 +22,7 @@ export function SocialStockMemory({ symbol }: { symbol: string }) {
               {day.youtube.map(video => (
                 <a href={video.url} target="_blank" rel="noreferrer" key={`${video.url}:${video.at}`}>
                   <span className={`pill ${video.stance === 'bull' ? 'long' : video.stance === 'bear' ? 'short' : ''}`}>{video.stance}</span>
-                  {video.channel}: {video.title}{video.levels.length ? ` · levels ${video.levels.join(', ')}` : ''}{video.hype ? ' · hype flagged' : ''}
+                  {video.channel}: {stripEmoji(video.title)}{video.levels.length ? ` · levels ${video.levels.join(', ')}` : ''}{video.hype ? ' · hype flagged' : ''}
                 </a>
               ))}
             </div>

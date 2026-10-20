@@ -24,6 +24,7 @@ async function main() {
       forceVideo: !!process.env.VIDEO_ID && process.env.NATIVE_FORCE_VIDEO === 'true',
       freeTierConfirmed, scheduled: freeTierConfirmed && process.env.NATIVE_SCHEDULE_ENABLED === 'true',
       key: process.env.GEMINI_YOUTUBE_FREE_API_KEY ?? '',
+      onProgress: () => setCached('street-wire:v3', null, 0),
       log: data => console.log(JSON.stringify(data)),
       onPublish: async (video, kind, publication) => {
         // An existing older result may legitimately be outside the latest 30.

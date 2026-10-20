@@ -74,6 +74,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
   now?: () => number; wait?: (seconds: number) => Promise<void>; deadline?: number; maxCalls?: number
   availability?: typeof youtubeAvailability; readSection?: typeof readNativeVideo; readText?: typeof readFreeVideoText
   onPublish?: (video: InboxVideo, kind: 'captions' | 'video', publication: string) => Promise<void>
+  onProgress?: () => Promise<void>
   log?: (data: Record<string, unknown>) => void
 }): Promise<NativeRunStatus> {
   if (!deps.cachedOnly && (!deps.freeTierConfirmed || !deps.key)) throw new Error('free-tier-not-configured')
@@ -94,6 +95,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
   const save = async () => {
     await store.write(NATIVE_PROGRESS_KEY, rows)
     updateCounts(); await store.write('video-native-runner', status)
+    await deps.onProgress?.().catch(() => {})
   }
   try {
     const initialBudget = await readNativeBudget(store, started)

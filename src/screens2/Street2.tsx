@@ -192,7 +192,7 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
               <p className="social-evidence__note">{v.nativeTranscript.progress
                 ? v.nativeTranscript.progress.completion === 'complete' ? `All ${v.nativeTranscript.progress.sections} sections processed across the known video duration.`
                   : v.nativeTranscript.progress.completion === 'end-reported' ? 'The AI reports reaching the ending; the source duration has not been independently confirmed.'
-                    : `Processed through minute ${Math.round(v.nativeTranscript.progress.processedSeconds / 60)}${v.nativeTranscript.progress.sourceDurationSeconds ? ` of ${Math.ceil(v.nativeTranscript.progress.sourceDurationSeconds / 60)}` : ''}. Remaining sections are queued.`
+                    : `Processed through minute ${Math.round(v.nativeTranscript.progress.processedSeconds / 60)}${v.nativeTranscript.progress.sourceDurationSeconds ? ` of ${Math.ceil(v.nativeTranscript.progress.sourceDurationSeconds / 60)}` : ''}. See Tracking for the current reading list.`
                 : `Earlier partial read, limited to the first ${Math.round(v.nativeTranscript.limitSeconds / 60)} minutes.`} Words, numbers and completeness have not been independently verified. These findings do not enter verified consensus or outcome tracking.</p>
               <p className="cc-reason">{v.nativeTranscript.excerpt}</p>
             </details>}
