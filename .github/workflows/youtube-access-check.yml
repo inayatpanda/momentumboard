@@ -1,0 +1,43 @@
+name: youtube-access-check
+on:
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: 'Public YouTube video ID to test (11 characters)'
+        required: true
+        type: string
+      capture_runner:
+        description: 'Standard hosted runner'
+        type: choice
+        options:
+          - ubuntu-24.04
+          - macos-15
+        default: ubuntu-24.04
+permissions:
+  contents: read
+jobs:
+  check:
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
+    runs-on: ${{ inputs.capture_runner }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the pinned downloader and provider
+        run: |
+          python -m pip install 'yt-dlp[default]==2026.8.19' 'bgutil-ytdlp-pot-provider==2.0.2'
+          git clone --depth 1 --branch 2.0.2 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git "$RUNNER_TEMP/pot"
+          cd "$RUNNER_TEMP/pot/server"
+          npm ci
+          npx tsc
+      - name: Test public audio access without account cookies or app credentials
+        env:
+          VIDEO_ID: ${{ inputs.video_id }}
+        run: python scripts/bg/check-youtube-access.py
