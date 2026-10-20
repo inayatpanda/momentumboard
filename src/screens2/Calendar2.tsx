@@ -1,3 +1,4 @@
+import '../styles/calendar.css'
 // Calendar2 (plan Task 21; CX-23) — a thin v2 adapter. The legacy
 // src/screens/CalendarScreen.tsx's own imports are already cutover-safe: the
 // shared Dexie `db` (never dies), `getMonthMap`/`getDayLedger` from lib/api

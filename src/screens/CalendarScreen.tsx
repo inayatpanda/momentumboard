@@ -27,6 +27,8 @@ const DOT_LEGEND: { cls: string; label: string }[] = [
 export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [month, setMonth] = useState(todayISO().slice(0, 7))
   const [map, setMap] = useState<Awaited<ReturnType<typeof getMonthMap>>>({})
+  const [monthFailed, setMonthFailed] = useState(false)
+  const [monthAttempt, setMonthAttempt] = useState(0)
   const [selected, setSelected] = useState<string>(todayISO())
   const [ledger, setLedger] = useState<Awaited<ReturnType<typeof getDayLedger>> | null>(null)
   const [failed, setFailed] = useState(false)
@@ -35,8 +37,11 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
   const [trades, setTrades] = useState<Trade[]>([])
 
   useEffect(() => {
-    getMonthMap(month).then(setMap).catch(() => setMap({}))
-  }, [month])
+    let active = true
+    setMap({}); setMonthFailed(false)
+    getMonthMap(month).then(value => { if (active) setMap(value) }).catch(() => { if (active) setMonthFailed(true) })
+    return () => { active = false }
+  }, [month, monthAttempt])
 
   useEffect(() => {
     if (!selected) return
@@ -88,6 +93,7 @@ export function CalendarScreen({ onOpenSettings }: { onOpenSettings: () => void 
           <strong>{monthLabel(month)}</strong>
           <button className="mini-btn ghost" onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
         </div>
+        {monthFailed && <div role="alert" className="data-status"><p className="empty-line">Calendar activity could not be loaded. Dates are still available to open individually.</p><button onClick={() => setMonthAttempt(n => n + 1)}>Retry calendar activity</button></div>}
         <div className="cal-grid">
           {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
             <span key={i} className="cal-dow">{d}</span>

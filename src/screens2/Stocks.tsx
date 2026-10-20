@@ -13,10 +13,10 @@ import { RefreshStrip } from './parts/RefreshStrip'
 import { SessionLine } from './parts/SessionLine'
 import { useLiveQuotes } from '../lib/useLiveQuotes'
 import { searchStocks, useStockDirectory } from '../lib/stockDirectory'
-import { StockDiscovery } from './parts/StockDiscovery'
 import { WatchlistSectors, watchSector } from './parts/WatchlistSectors'
 import { BrandMark } from '../components/BrandMark'
 
+const StockDiscovery = lazy(() => import('./parts/StockDiscovery').then(module => ({ default: module.StockDiscovery })))
 const StockMarkets = lazy(() => import('./parts/StockMarkets'))
 
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
@@ -185,7 +185,7 @@ export default function Stocks() {
           }}>{key === 'watchlist' ? 'Watchlist' : key === 'discover' ? 'Discover' : 'Markets'}</button>)}
       </div>
       <div id="stock-view" role="tabpanel" aria-labelledby={`stock-tab-${query.trim() ? 'discover' : section}`}>
-      {query.trim() || section === 'discover' ? <StockDiscovery directory={directory} error={directoryError} query={query} sector={sector} onSector={setSector} watchSymbols={new Set(symbols)} onAdd={add} /> : section === 'watchlist' ? <>
+      {query.trim() || section === 'discover' ? <Suspense fallback={<p role="status">Loading stock discovery…</p>}><StockDiscovery directory={directory} error={directoryError} query={query} sector={sector} onSector={setSector} watchSymbols={new Set(symbols)} onAdd={add} /></Suspense> : section === 'watchlist' ? <>
         <div className="discovery-heading"><div><h2>{watchFilter || 'Your watchlist'} <span className="stocks-count">{filteredItems.length}</span></h2><span className="cc-reason">Price · day change · 3-month trend</span></div>{items.length > 0 && <button className="stocks-text-link" aria-pressed={editing} onClick={() => setEditing(v => !v)}>{editing ? 'Done' : 'Edit watchlist'}</button>}</div>
         {watchFilter && <button className="discovery-back" onClick={() => setWatchFilter('')}>← All watched stocks</button>}
         {removed && <div className="watch-undo" role="status">{removed.symbol} removed <button onClick={undoRemove}>Undo</button></div>}

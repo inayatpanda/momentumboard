@@ -137,8 +137,8 @@ describe('Intel', () => {
     withRouter()
     expect(await screen.findByText('Headline 0')).toBeInTheDocument()
     expect(screen.getByText('Headline 1')).toBeInTheDocument()
-    // the page is not blank — the other two sections show skeleton placeholders, not an error
-    expect(document.querySelectorAll('.skeleton').length).toBeGreaterThan(0)
+    // the page is not blank — the other feeds retain their loading state
+    expect(screen.getAllByText(/^Loading (news|insider buying|congressional disclosures)…$/).length).toBeGreaterThan(0)
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 
@@ -337,7 +337,7 @@ describe('Intel', () => {
     await writeSlice('intel:insiders', { clusters: [mkCluster({ symbol: 'AMD' })], asOf: 1 })
     withRouter()
     expect(await screen.findByText('4 buyers')).toBeInTheDocument()
-    expect(document.querySelectorAll('.skeleton').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/^Loading (news|insider buying|congressional disclosures)…$/).length).toBeGreaterThan(0)
     expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
   })
 

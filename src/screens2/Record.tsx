@@ -1,3 +1,4 @@
+import { DataStatus } from './parts/DataStatus'
 // Record (plan Task 20) — Track record: the engine's accountability as a
 // first-class tab. Scorecard tiles → calibration → the ledger as cards
 // (legacy 11-column sideways table dies here) → the regret surface with
@@ -289,7 +290,7 @@ function LedgerSection({ days }: { days: LedgerDay[] }) {
 }
 
 export default function Record() {
-  const { data: learning } = useSlice('learning', getLearning)
+  const { data: learning, error: learningError, refresh: learningRefresh, refreshing: learningRefreshing } = useSlice('learning', getLearning)
   // ONE WINDOW, THIRTY DAYS, FROM THE FIRST PAINT (owner iteration 2). It was
   // seven with a "Load 30 days" button, which meant the screen quoted the
   // narrow window until the reader happened to press something — and the
@@ -297,8 +298,8 @@ export default function Record() {
   // have a shape. One slice for the whole page keeps the crypto panel, the
   // chart, the extremes and the cards all rolling the SAME rows (codex #11's
   // rule, now enforced by there being nothing to widen).
-  const { data: ledger } = useSlice<{ days: LedgerDay[] }>(`ledger:${LEDGER_DAYS}`, () => getLedgerDays(LEDGER_DAYS))
-  const { data: paperBook } = useSlice('paper-book', getPaperBook)
+  const { data: ledger, error: ledgerError, refresh: ledgerRefresh, refreshing: ledgerRefreshing } = useSlice<{ days: LedgerDay[] }>(`ledger:${LEDGER_DAYS}`, () => getLedgerDays(LEDGER_DAYS))
+  const { data: paperBook, error: paperBookError, refresh: paperBookRefresh, refreshing: paperBookRefreshing } = useSlice('paper-book', getPaperBook)
   const days = ledger?.days ?? []
   const series = cumulativeExcessSeries(days)
   const { best, worst } = bestAndWorst(days)
@@ -306,11 +307,7 @@ export default function Record() {
     <div className="rec2">
       <h1>Track record</h1>
       {learning == null ? (
-        <>
-          <div className="skeleton" style={{ height: 96, marginBottom: 12 }} />
-          <div className="skeleton" style={{ height: 220, marginBottom: 12 }} />
-          <div className="skeleton" style={{ height: 118 }} />
-        </>
+        <DataStatus label="Track record" error={learningError} refresh={learningRefresh} refreshing={learningRefreshing} />
       ) : (
         <>
           <ScorecardTiles scorecard={learning.scorecard as unknown as Scorecard | null} />
@@ -323,11 +320,11 @@ export default function Record() {
       {/* the line and the two ends sit BETWEEN the tiles and the calibration:
           the tiles say what each tier did, this says what the whole book did,
           and the plot says whether the probabilities behind it were honest */}
-      <CumulativeLine points={series} days={LEDGER_DAYS} />
-      <PaperBookPanel data={paperBook ?? undefined} />
+      {ledger ? <CumulativeLine points={series} days={LEDGER_DAYS} /> : <DataStatus label="Published calls" error={ledgerError} refresh={ledgerRefresh} refreshing={ledgerRefreshing} />}
+      {paperBook ? <PaperBookPanel data={paperBook} /> : <DataStatus label="Paper book" error={paperBookError} refresh={paperBookRefresh} refreshing={paperBookRefreshing} />}
       <ExtremesSection best={best} worst={worst} />
       {learning != null && <CalibrationSection calibration={learning.calibration} />}
-      <LedgerSection days={days} />
+      {ledger && <LedgerSection days={days} />}
       <Regrets regrets={learning?.regrets ?? null} />
     </div>
   )

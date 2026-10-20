@@ -1,3 +1,4 @@
+import { DataStatus } from './parts/DataStatus'
 // Research2 (plan Task 21; CX-23) — a thin v2 adapter for the desk's
 // research artifacts. Reads through `useSlice`, one card per dataset the
 // legacy src/screens/Research.tsx fetched — EXCEPT its <EnginePanel/> mount,
@@ -24,7 +25,7 @@ const SERVER_UNCONFIGURED = 'AI gateway not configured on this site.'
  * page below is still whole: the desk's numbers are computed server-side and
  * owe the LLM nothing, so a missing read is a missing garnish, not a missing
  * page. */
-export const AI_READ_UNAVAILABLE = "The desk's AI read isn't available on this account — the day's data below is complete without it."
+export const AI_READ_UNAVAILABLE = "The AI read is not available yet. Explore the research data below or open Today for the latest stock setups."
 
 /** One place that decides what the AI-read card says, so the "absent read"
  * cases cannot each invent their own wording. `isRead` is the difference
@@ -38,7 +39,7 @@ export function aiReadCopy(d: { text?: string; unconfigured?: boolean; empty?: b
 }
 
 function AiReadCard() {
-  const { data } = useSlice('research:aiRead', getAiRead)
+  const { data, error, refresh, refreshing } = useSlice('research:aiRead', getAiRead)
   const copy = data ? aiReadCopy(data) : null
   // WHEN the desk read it (visibility wave). The payload has always carried
   // `at`; nothing rendered it, so a read cached three days ago looked like
@@ -48,10 +49,11 @@ function AiReadCard() {
     <section className="card rs2-section" aria-label="AI read">
       <p className="sec-label">AI read{copy?.isRead && stamp ? ` · ${stamp}` : ''}</p>
       {!data || !copy ? (
-        <div className="skeleton" style={{ height: 60 }} />
+        <DataStatus label="AI read" error={error} refresh={refresh} refreshing={refreshing} />
       ) : (
         <>
           <p className="cc-reason">{copy.body}</p>
+          {!copy.isRead && <Link className="research-text-link" href={data.empty ? "/" : "/today"}>{data.empty ? 'Open watchlist' : 'Explore today’s research'} →</Link>}
           {copy.isRead && <p className="cc-reason rs2-fine">AI interpretation ({data.provider}). Not a prediction, not advice.</p>}
         </>
       )}
@@ -60,14 +62,14 @@ function AiReadCard() {
 }
 
 function EventsSection() {
-  const { data } = useSlice('research:events', getEventDossiers)
+  const { data, error, refresh, refreshing } = useSlice('research:events', getEventDossiers)
   const events = data ?? []
-  if (data && events.length === 0) return null
+  if (data && events.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Event assessments</h2><p className="cc-reason">No event assessments have been published yet. News and market context remain available in Intel.</p><Link className="research-text-link" href="/intel">Explore Intel →</Link></section>
   return (
     <section aria-label="Event assessments">
       <p className="sec-label">Event assessments</p>
       {!data ? (
-        <div className="skeleton" style={{ height: 100 }} />
+        <DataStatus label="Event assessments" error={error} refresh={refresh} refreshing={refreshing} />
       ) : (
         events.map(e => (
           <div className="card rs2-section" key={e.sym + e.at}>
@@ -97,15 +99,15 @@ function EventsSection() {
 const PICK_PAGE = 10
 
 function PicksSection() {
-  const { data } = useSlice('research:picks', getPicks)
+  const { data, error, refresh, refreshing } = useSlice('research:picks', getPicks)
   const [visible, setVisible] = useState(PICK_PAGE)
   const rows = data?.persistence ?? []
-  if (data && rows.length === 0) return null
+  if (data && rows.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Pick persistence</h2><p className="cc-reason">No repeated picks are available in this snapshot. Current stock setups are available in Today.</p><Link className="research-text-link" href="/today">View current research →</Link></section>
   return (
     <section aria-label="Pick persistence">
       <p className="sec-label">Pick persistence{data ? ` (${data.reports} reports)` : ''}</p>
       {!data ? (
-        <div className="skeleton" style={{ height: 100 }} />
+        <DataStatus label="Pick history" error={error} refresh={refresh} refreshing={refreshing} />
       ) : (
         <div className="card rs2-section">
           {rows.slice(0, visible).map(p => (
@@ -133,14 +135,14 @@ function PicksSection() {
 }
 
 function ScorecardSection() {
-  const { data } = useSlice('research:pickStats', getPickStats)
+  const { data, error, refresh, refreshing } = useSlice('research:pickStats', getPickStats)
   const rows = data?.scores ?? []
-  if (data && rows.length === 0) return null
+  if (data && rows.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Research scorecard</h2><p className="cc-reason">No scored research picks are available yet. Published calls have a separate record.</p><Link className="research-text-link" href="/record">View Track record →</Link></section>
   return (
     <section aria-label="Scorecard">
       <p className="sec-label">Scorecard — is the research earning?</p>
       {!data ? (
-        <div className="skeleton" style={{ height: 100 }} />
+        <DataStatus label="Research scorecard" error={error} refresh={refresh} refreshing={refreshing} />
       ) : (
         <div className="card rs2-section">
           {rows.slice(0, 8).map(s => (
@@ -165,14 +167,14 @@ function ScorecardSection() {
 }
 
 function OutcomesSection() {
-  const { data } = useSlice('research:outcomes', getOutcomes)
+  const { data, error, refresh, refreshing } = useSlice('research:outcomes', getOutcomes)
   const days = data ?? []
-  if (data && days.length === 0) return null
+  if (data && days.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Daily outcomes</h2><p className="cc-reason">No daily research outcomes are available in this snapshot. Browse the calendar for saved editions and calls.</p><Link className="research-text-link" href="/more/calendar">Open calendar →</Link></section>
   return (
     <section aria-label="Track record, day by day">
       <p className="sec-label">The track record, day by day</p>
       {!data ? (
-        <div className="skeleton" style={{ height: 100 }} />
+        <DataStatus label="Daily outcomes" error={error} refresh={refresh} refreshing={refreshing} />
       ) : (
         <div className="card rs2-section">
           {days.slice(0, 10).map(d => (

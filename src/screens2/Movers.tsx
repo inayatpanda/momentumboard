@@ -1,3 +1,4 @@
+import { DataStatus } from './parts/DataStatus'
 // Movers (plan Task 16) — the "See all" landing for the Stocks rails' Top
 // movers / Top losers cards. Same 'movers' slice the rail already fetches, so
 // arriving here from a rail's "See all" link paints instantly from Dexie —
@@ -44,7 +45,7 @@ function moverQuote(r: MoverRow): Quote | null {
 }
 
 export default function Movers() {
-  const { data } = useSlice('movers', getMovers)
+  const { data, error, refresh, refreshing } = useSlice('movers', getMovers)
   const [view, setView] = useState<'gainers' | 'losers'>('gainers')
   const [visible, setVisible] = useState(PAGE)
 
@@ -74,7 +75,7 @@ export default function Movers() {
       </div>
 
       {!data ? (
-        <div className="skeleton" style={{ height: 64, marginTop: 12 }} />
+        <DataStatus label="Market movers" error={error} refresh={refresh} refreshing={refreshing} />
       ) : rows.length === 0 ? (
         <p className="cc-reason">Nothing to show right now.</p>
       ) : (

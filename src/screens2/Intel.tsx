@@ -1,3 +1,4 @@
+import { DataStatus } from './parts/DataStatus'
 // Intel (plan Task 19; CX-19 — restructured by owner iteration 2) — the news
 // desk, the insider clusters and the congressional filings. This is news's
 // ONLY home in the app (spec §3.5): a side dish, never the meal.
@@ -110,7 +111,7 @@ function JumpChips() {
 }
 
 function NewsSection() {
-  const { data } = useSlice('intel:news', getNewsDesk)
+  const { data, error, refresh, refreshing } = useSlice('intel:news', getNewsDesk)
   const [visible, setVisible] = useState(PAGE)
   // NEWEST FIRST, asserted here rather than assumed of the server (owner
   // iteration 2). The desk documents itself as newest-first; a feed that has
@@ -122,7 +123,7 @@ function NewsSection() {
     <section id="news" className="card itl-section">
       <h2 className="sec-label">News desk</h2>
       {!data ? (
-        <div className="skeleton" style={{ height: 160 }} />
+        <DataStatus label="News" error={error} refresh={refresh} refreshing={refreshing} />
       ) : rows.length === 0 ? (
         <p className="cc-reason">Nothing fresh right now.</p>
       ) : (
@@ -183,7 +184,7 @@ export function orderClusters(rows: InsiderCluster[]): InsiderCluster[] {
 }
 
 function InsidersSection() {
-  const { data } = useSlice('intel:insiders', getInsiderClusters)
+  const { data, error, refresh, refreshing } = useSlice('intel:insiders', getInsiderClusters)
   const [visible, setVisible] = useState(FEED_PAGE)
   const clusters = orderClusters(data?.clusters ?? [])
 
@@ -191,7 +192,7 @@ function InsidersSection() {
     <section id="insiders" className="card itl-section">
       <h2 className="sec-label">Insider buying</h2>
       {!data ? (
-        <div className="skeleton" style={{ height: 120 }} />
+        <DataStatus label="Insider buying" error={error} refresh={refresh} refreshing={refreshing} />
       ) : clusters.length === 0 ? (
         <p className="cc-reason">No insider-buying clusters in the engine's coverage yet.</p>
       ) : (
@@ -288,7 +289,7 @@ const congressFetcher = async () => {
  * buys-vs-SPY scorecard are null until enough sweeps have accumulated, and a
  * dead source ladder says so rather than showing an empty list. */
 function CongressSection() {
-  const { data } = useSlice('intel:congress', congressFetcher)
+  const { data, error, refresh, refreshing } = useSlice('intel:congress', congressFetcher)
   const [visible, setVisible] = useState(FEED_PAGE)
   const trades = data?.trades ?? []
   const hits = data?.watchlistHits ?? []
@@ -303,7 +304,7 @@ function CongressSection() {
     <section id="congress" className="card itl-section">
       <h2 className="sec-label">Congressional trades</h2>
       {!data ? (
-        <div className="skeleton" style={{ height: 120 }} />
+        <DataStatus label="Congressional disclosures" error={error} refresh={refresh} refreshing={refreshing} />
       ) : data.source === 'none' && trades.length === 0 ? (
         <p className="cc-reason">
           No congressional disclosures reachable right now — every upstream source is dead or unkeyed. The filings themselves are public; this section

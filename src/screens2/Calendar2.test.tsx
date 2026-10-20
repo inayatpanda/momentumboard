@@ -69,3 +69,12 @@ describe('Calendar2 — the dots carry a key', () => {
     for (const cls of ['report', 'picks', 'alerts', 'events']) expect(legend.querySelector(`.dot.${cls}`)).not.toBeNull()
   })
 })
+
+it('makes a failed month map visible and allows retry without blocking dates', async () => {
+  api.getMonthMap.mockRejectedValueOnce(new Error('unavailable'))
+  withRouter()
+  const retry = await screen.findByRole('button', {name:'Retry calendar activity'})
+  fireEvent.click(retry)
+  expect(await screen.findByRole('button', {name:'Next month'})).toBeEnabled()
+  expect(api.getMonthMap).toHaveBeenCalledTimes(2)
+})

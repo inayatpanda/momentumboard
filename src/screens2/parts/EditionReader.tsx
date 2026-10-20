@@ -1,3 +1,4 @@
+import { DataStatus } from './DataStatus'
 // The edition reader, shared by The paper (its home since owner 2026-08-17:
 // "a new fresh tab, move… just the Today paper") and anything else that ever
 // needs to paint an edition. Moved verbatim out of Intel.tsx — the paper's
@@ -24,8 +25,8 @@ const editionTime = (at: number) =>
  * `reports:${date}` for an archive pick — so a cached past edition still
  * paints instantly and never blocks on the network. */
 export function EditionFrame({ date }: { date?: string }) {
-  const { data } = useSlice(date ? `reports:${date}` : 'reports', () => getReportJson(date))
-  if (!data) return <div className="skeleton" style={{ height: '70vh' }} />
+  const { data, error, refresh, refreshing } = useSlice(date ? `reports:${date}` : 'reports', () => getReportJson(date))
+  if (!data) return <DataStatus label="Edition" error={error} refresh={refresh} refreshing={refreshing} />
   return (
     <>
       <div className="itl-edition-pill-row">
@@ -41,9 +42,9 @@ export function EditionFrame({ date }: { date?: string }) {
 }
 
 function BulletinFrame({ date, kind }: { date: string; kind: BulletinKind }) {
-  const { data } = useSlice(`reports:${kind}:${date}`, () => getBulletinJson(date, kind))
+  const { data, error, refresh, refreshing } = useSlice(`reports:${kind}:${date}`, () => getBulletinJson(date, kind))
   const label = kind === 'premarket' ? 'Pre-market' : 'Evening'
-  if (!data) return <div className="skeleton" style={{ height: '70vh' }} />
+  if (!data) return <DataStatus label="Edition" error={error} refresh={refresh} refreshing={refreshing} />
   return (
     <>
       <div className="itl-edition-pill-row">
@@ -60,9 +61,9 @@ function BulletinFrame({ date, kind }: { date: string; kind: BulletinKind }) {
  * painting their own archive. The selected edition is therefore never mixed
  * with the other bulletin type even when both published on the same date. */
 export function BulletinReader({ kind }: { kind: BulletinKind }) {
-  const { data: entries } = useSlice('bulletins:list', getBulletins)
+  const { data: entries, error, refresh, refreshing } = useSlice('bulletins:list', getBulletins)
   const [picked, setPicked] = useState<string | null>(null)
-  if (!entries) return <div className="skeleton" style={{ height: '70vh' }} />
+  if (!entries) return <DataStatus label="Edition" error={error} refresh={refresh} refreshing={refreshing} />
   const dates = [...new Set(entries.filter(entry => entry.kind === kind).map(entry => entry.date))]
   const activeDate = picked && dates.includes(picked) ? picked : dates[0]
   const label = kind === 'premarket' ? 'pre-market brief' : 'evening report'
@@ -89,8 +90,8 @@ export function BulletinReader({ kind }: { kind: BulletinKind }) {
 /** The archive: mounted only when its <details> opens — a reader who never
  * taps it never pays for the report-list fetch either. */
 export function ArchiveList({ activeDate, onPick }: { activeDate: string | null; onPick: (date: string) => void }) {
-  const { data: dates } = useSlice('reports:list', getReportList)
-  if (!dates) return <div className="skeleton" style={{ height: 32, marginTop: 8 }} />
+  const { data: dates, error, refresh, refreshing } = useSlice('reports:list', getReportList)
+  if (!dates) return <DataStatus label="Edition" error={error} refresh={refresh} refreshing={refreshing} />
   if (dates.length === 0) return <p className="cc-reason">No past editions yet.</p>
   return (
     <div className="itl-archive-list">

@@ -1,0 +1,250 @@
+/* --- calendar adapter --------------------------------------------------------
+   Plan Task 21 (CX-23): the legacy CalendarScreen mounted as-is and skinned —
+   its own imports are cutover-safe, so this restyles its classnames onto v2
+   tokens rather than re-deriving the month grid / day ledger. The legacy
+   `.topbar` is hidden: the v2 page already carries its own <h1>. */
+.v2 .cal2 .topbar {
+  display: none;
+}
+.v2 .cal2 .content {
+  padding: 0;
+}
+.v2 .cal2 .cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.v2 .cal2 .cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.v2 .cal2 .cal-dow {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding-bottom: 4px;
+}
+.v2 .cal2 .cal-day {
+  position: relative;
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+/* THE GRID IS NOT THE PAGE (visibility wave, 2026-08-17). `aspect-ratio: 1`
+   is right on a phone, where a column is ~50px wide; at desk width a column is
+   ~165px, so six square rows ate the entire first screen and the day ledger —
+   the thing the reader came for — began below the fold. A fixed height here
+   halves the cell and puts the ledger back on the first screen. */
+@media (min-width: 1024px) {
+  .v2 .cal2 .cal-day {
+    aspect-ratio: auto;
+    height: 76px;
+  }
+}
+.v2 .cal2 .cal-day.today {
+  border-color: var(--accent);
+}
+.v2 .cal2 .cal-day.sel {
+  background: var(--accent);
+  color: var(--surface-1);
+  border-color: var(--accent);
+}
+.v2 .cal2 .cal-dots {
+  display: flex;
+  gap: 2px;
+}
+.v2 .cal2 .dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--text-dim);
+}
+.v2 .cal2 .cal-day.sel .dot {
+  background: var(--surface-1);
+}
+.v2 .cal2 .dot.report {
+  background: var(--accent-soft);
+}
+.v2 .cal2 .dot.alerts {
+  background: var(--warn);
+}
+.v2 .cal2 .dot.events {
+  background: var(--short);
+}
+.v2 .cal2 .dot.picks {
+  background: var(--accent);
+}
+/* WHAT THE DOTS MEAN (visibility wave, 2026-08-17) — one dim line, the same
+   four classnames the cells paint, so the key can never name a colour the
+   grid stopped using. */
+.v2 .cal2 .cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: -8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.v2 .cal2 .cal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.v2 .cal2 .cal-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.v2 .cal2 .section-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 18px 0 8px;
+}
+.v2 .cal2 .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.v2 .cal2 .badge.good {
+  color: var(--long);
+}
+.v2 .cal2 .badge.bad {
+  color: var(--short);
+}
+.v2 .cal2 .badge.warn {
+  color: var(--warn);
+}
+.v2 .cal2 .badge.info {
+  color: var(--accent);
+}
+.v2 .cal2 .empty-line {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.v2 .cal2 .perf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+  border-top: 1px solid var(--border);
+}
+.v2 .cal2 .digest-section {
+  margin-bottom: 14px;
+}
+.v2 .cal2 .cal-meta,
+.v2 .cal2 .cal-when {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.v2 .cal2 .link-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-card);
+  background: var(--surface-glass);
+  border: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--text);
+  font-weight: 700;
+}
+.v2 .cal2 .link-card span {
+  font-weight: 400;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 .cal2 .cal-note-card,
+.v2 .cal2 .cal-event-card {
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .cal2 .cal-note-ai,
+.v2 .cal2 .cal-event-assess {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 .cal2 .cal-event-name {
+  font-size: 13.5px;
+}
+.v2 .cal2 .cal-alert {
+  font-size: 13px;
+}
+.v2 .cal2 .cal-ellip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .cal2 .news-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.v2 .cal2 .news-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  text-decoration: none;
+  color: inherit;
+  border-top: 1px solid var(--border);
+}
+.v2 .cal2 .news-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.v2 .cal2 .news-row-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .cal2 .news-row-meta {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.v2 .cal2 .news-row-go {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+.v2 .cal2 .foot {
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+

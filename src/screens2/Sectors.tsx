@@ -1,3 +1,4 @@
+import { DataStatus } from './parts/DataStatus'
 // Sectors (plan Task 16; CX-24) — the "See all" landing for the Stocks
 // rail's Sector-rotation tile. The server's relative strength is measured in
 // SESSION counts (rs5/rs21/rs63 — lib/sectors.ts), never calendar days or
@@ -39,7 +40,7 @@ export function rsLegend(period: Period): string {
 }
 
 export default function Sectors() {
-  const { data } = useSlice('sectors', getSectors)
+  const { data, error, refresh, refreshing } = useSlice('sectors', getSectors)
   const [period, setPeriod] = useState<Period>('1m')
   const [selected, setSelected] = useState<string | null>(null)
 
@@ -61,7 +62,7 @@ export default function Sectors() {
       <p className="cc-reason stx-sector-legend">{rsLegend(period)}</p>
 
       {!data ? (
-        <div className="skeleton" style={{ height: 64, marginTop: 12 }} />
+        <DataStatus label="Sector rotation" error={error} refresh={refresh} refreshing={refreshing} />
       ) : rows.length === 0 ? (
         <p className="cc-reason">No sector data right now.</p>
       ) : (

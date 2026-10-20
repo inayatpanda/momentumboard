@@ -1,3 +1,5 @@
+import '../styles/gates.css'
+import { DataStatus } from './parts/DataStatus'
 // Gates & learning (plan Task 21) — the engine's self-tuning made visible:
 // the three tunable gates (shared/engine/gateState.ts), the paper's own
 // sentences about them, the factor weights the IC loop has nudged, the
@@ -337,7 +339,7 @@ function ChannelCredSection({ channelCred }: { channelCred: LearningSlice['chann
 }
 
 export default function GatesLearning() {
-  const { data } = useSlice('learning', getLearning)
+  const { data, error, refresh, refreshing } = useSlice('learning', getLearning)
 
   return (
     <div className="gl2">
@@ -350,10 +352,7 @@ export default function GatesLearning() {
         time when the priced record says so.
       </p>
       {data == null ? (
-        <>
-          <div className="skeleton" style={{ height: 220, marginBottom: 12 }} />
-          <div className="skeleton" style={{ height: 120 }} />
-        </>
+        <DataStatus label="Engine learning" error={error} refresh={refresh} refreshing={refreshing} />
       ) : (
         <>
           <GatesSection gates={data.gateState.gates} />

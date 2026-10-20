@@ -1,3 +1,4 @@
+import '../styles/street.css'
 import { ClaimEvidence, ProcessingJobs, SocialLearning } from './parts/SocialEvidence'
 // THE STREET (owner request, 2026-08-17):
 //   "i think the summary of youtube video input deserve a section of their own,
@@ -278,6 +279,9 @@ export default function Street2() {
   const consensus = wire?.consensus ?? []
   // RESOLVED AND EMPTY is a different statement from NOT YET LOADED, and only
   // the first one earns the sentence.
+  const native = wire?.videoIngestion?.nativeRunner
+  const queueSummary = native?.pending != null ? `${native.pending} videos waiting or in progress${native.partial ? ` · ${native.partial} partly read` : ''}`
+    : wire?.videoIngestion ? `${wire.videoIngestion.queued} analyses waiting${wire.videoIngestion.failed ? ` · ${wire.videoIngestion.failed} need attention` : ''}` : 'See channel coverage and capture progress'
   const nothingYet = wire != null && videos.length === 0 && reads.length === 0 && consensus.length === 0
 
   return (
@@ -285,7 +289,7 @@ export default function Street2() {
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
       <div className="street-heading"><div><p className="stocks-eyebrow">VOICES. EVIDENCE. OUTCOMES.</p><h1>The street</h1></div><Link href="/">Stocks ↗</Link></div>
       <p className="cc-reason stt-intro">What creators are saying, what supports it and what happened next.</p>
-      {wire && <button className="street-status" onClick={() => setView('tracking')}><span className="street-status__dot" aria-hidden="true" /><span>{wire.videoIngestion?.lastExtractAt ? `Latest analysis ${relativeStamp(wire.videoIngestion.lastExtractAt)}` : videos.length ? `${videos.length} completed videos in the feed` : 'Waiting for the first completed analysis'}<small>{wire.videoIngestion ? `${wire.videoIngestion.queued} analyses waiting${wire.videoIngestion.failed ? ` · ${wire.videoIngestion.failed} need attention` : ''}` : 'See channel coverage and capture progress'}</small></span><span aria-hidden="true">→</span></button>}
+      {wire && <button className="street-status" onClick={() => setView('tracking')}><span className="street-status__dot" aria-hidden="true" /><span>{wire.videoIngestion?.lastExtractAt ? `Latest analysis ${relativeStamp(wire.videoIngestion.lastExtractAt)}` : videos.length ? `${videos.length} completed videos in the feed` : 'Waiting for the first completed analysis'}<small>{queueSummary}</small></span><span aria-hidden="true">→</span></button>}
       <div className="stocks-tabs street-tabs" role="tablist" aria-label="Channel research views">
         {(['insights', 'videos', 'tracking'] as const).map((key, index, keys) => <button key={key} role="tab" id={`street-tab-${key}`} aria-controls="street-view" aria-selected={view === key} tabIndex={view === key ? 0 : -1} onClick={() => setView(key)} onKeyDown={e => {
           const next = e.key === 'ArrowRight' ? (index + 1) % keys.length : e.key === 'ArrowLeft' ? (index + keys.length - 1) % keys.length : e.key === 'Home' ? 0 : e.key === 'End' ? keys.length - 1 : -1

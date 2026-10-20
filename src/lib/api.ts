@@ -360,7 +360,7 @@ export interface StreetWire {
   consensus: ChannelPick[]
   at: number
   videoIngestion?: {
-    channels?: { id: string; name: string; discovered: number; captured: number; analysed: number; awaitingCapture: number; latestPublishedAt: number | null }[]
+    channels?: { id: string; name: string; discovered: number; captured: number; analysed: number; awaitingCapture: number; awaitingAnalysis?: number; latestPublishedAt: number | null; feed?: { status: 'ok' | 'unavailable'; checkedAt: number; latestPublishedAt: number | null } }[]
     discoveryWindow?: { videos: number; since: number | null }
     localRunner?: { at: number; running: boolean; saved: number; unavailable: number; buffered: number; stale: boolean } | null
     githubRunner?: { at: number; running: boolean; status: string; saved: number; unavailable: number; attempted: number; captions: number; speech: number; reused?: number; blocked: number; stale: boolean } | null

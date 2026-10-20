@@ -1,0 +1,281 @@
+/* --- gates & learning -------------------------------------------------------
+   Plan Task 21. The three tunable gates (shared/engine/gateState.ts) as
+   cards, the paper's own sentences as a quote block, factor weights as
+   base-vs-current bar pairs, the roster, and channel credibility as a
+   table. Tokens only, on top of .card/.pill/.sec-label/.cc-reason/.num/
+   .convbar/.sp-path/.sp-step/.stx-showmore already declared above. */
+.v2 .gl-gates {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+  /* the same readable measure the rest of this page now keeps: a gate card
+     stretched to a 1200px pane puts its label and its value at opposite ends
+     of the window */
+  max-width: 760px;
+}
+.v2 .gl-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 .gl-gate-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.v2 .gl-gate-label {
+  font-size: 14px;
+  font-weight: 700;
+}
+.v2 .gl-gate-current {
+  font-size: 18px;
+  font-weight: 800;
+}
+.v2 .gl-gate-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* same measure rule: a gate's two bounds a metre apart on a desk pane are
+     no longer reading as the two ends of ONE scale */
+  max-width: 560px;
+}
+/* the bar's ends are LABELLED now (owner iteration 2): the bound number above,
+   the word for which way that end is below it — derived from GATE_BOUNDS'
+   `loosen` sign in the component, never written into this file */
+.v2 .gl-gate-bound {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  font-size: 12px;
+  color: var(--text-dim);
+  flex: 0 0 auto;
+  line-height: 1.2;
+}
+.v2 .gl-gate-bound-max {
+  align-items: flex-end;
+}
+.v2 .gl-gate-end {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+/* A THRESHOLD IS A POSITION, NOT A QUANTITY (visibility wave, 2026-08-17).
+   This was a .convbar — a FILL — and a gate sitting at its own minimum drew a
+   perfectly correct empty bar that read as a broken widget. The rail is the
+   ratified range, the marker is where the gate stands in it; `overflow` stays
+   visible so a gate pinned at either bound still shows its marker whole. */
+.v2 .gl-gate-track {
+  flex: 1;
+  height: 8px;
+  position: relative;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.v2 .gl-gate-marker {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--surface-1);
+}
+.v2 .gl-gate-what {
+  margin: -2px 0 2px;
+  color: var(--text);
+  font-size: 13px;
+}
+.v2 .gl-gate-base {
+  margin: 0;
+}
+/* one sentence a move, not three stacked fragments */
+.v2 .gl-history-line {
+  display: block;
+}
+.v2 .gl-history-prose {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 .gl-history-prose .sp-step-gate {
+  color: var(--text);
+  font-weight: 700;
+}
+/* the section intros that make the page legible at all */
+.v2 .gl-page-intro {
+  margin: -6px 0 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.v2 .gl-intro {
+  margin: -2px 0 10px;
+}
+.v2 .gl-pin {
+  align-self: flex-start;
+}
+.v2 .gl-blocked {
+  margin: 0;
+  color: var(--warn);
+}
+.v2 .gl-history {
+  margin-top: 4px;
+}
+
+.v2 .gl-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.v2 .gl-line {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-glass);
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  font-size: 13.5px;
+  font-style: italic;
+  color: var(--text);
+}
+.v2 .gl-line-note {
+  border-left-color: var(--warn);
+  color: var(--text-dim);
+}
+
+/* THE READABLE MEASURE (owner iteration 2). These three are short-column
+   surfaces — a name, a phrase, two small bars, a number — and at the desk's
+   1200px pane they stretched until each row's own parts were half a screen
+   apart, which is its own kind of illegible. */
+.v2 .gl-weights,
+.v2 .gl-cred-wrap,
+.v2 .gl-roster,
+.v2 .gl-roster-changes {
+  max-width: 640px;
+}
+.v2 .gl-weights {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+/* THREE LINES, not three columns (owner iteration 2): the factor's name and
+   its raw pair on top, the plain-English delta under it, the bars last. The
+   old 84px name column truncated half the factor names to an ellipsis. */
+.v2 .gl-weight-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name vals'
+    'phrase phrase'
+    'bars bars';
+  align-items: center;
+  gap: 3px 8px;
+  font-size: 12px;
+}
+.v2 .gl-weight-name {
+  grid-area: name;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+.v2 .gl-weight-phrase {
+  grid-area: phrase;
+  color: var(--text-dim);
+}
+.v2 .gl-weight-bars {
+  grid-area: bars;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.v2 .gl-weight-bar {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.v2 .gl-weight-bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+}
+.v2 .gl-weight-bar > i.base {
+  background: var(--accent-soft);
+  opacity: 0.6;
+}
+.v2 .gl-weight-bar > i.current {
+  background: var(--accent-bar);
+}
+.v2 .gl-weight-vals {
+  grid-area: vals;
+  text-align: right;
+  color: var(--text-dim);
+}
+
+.v2 .gl-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v2 .gl-roster-row {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  text-decoration: none;
+  color: inherit;
+  font-size: 12.5px;
+}
+.v2 .gl-roster-sym {
+  font-weight: 700;
+  font-size: 13px;
+}
+.v2 .gl-roster-cap {
+  color: var(--text-dim);
+}
+.v2 .gl-roster-changes {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v2 .gl-cred-wrap {
+  overflow-x: visible;
+}
+.v2 .gl-cred-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.v2 .gl-cred-table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 0 8px 6px 0;
+  font-weight: 700;
+}
+.v2 .gl-cred-table td {
+  padding: 6px 8px 6px 0;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.v2 .gl-cred-table th:not(:first-child),
+.v2 .gl-cred-table td:not(:first-child) {
+  text-align: right;
+}
+

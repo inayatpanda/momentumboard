@@ -1,3 +1,4 @@
+import { DataStatus } from './DataStatus'
 import { useMemo, useState } from 'react'
 import { Link } from 'wouter'
 import { getSocialPulse, type PulseRow } from '../../lib/api'
@@ -93,7 +94,7 @@ function RadarCard({ row, board }: { row: RadarRow; board: Awaited<ReturnType<ty
 }
 
 export function SocialRadar() {
-  const { data } = useSlice('intel:social', getSocialPulse)
+  const { data, error, refresh, refreshing } = useSlice('intel:social', getSocialPulse)
   const { data: board } = useSlice('board', getBoardSlice)
   const [filter, setFilter] = useState<Filter>('all')
   const rows = useMemo(() => {
@@ -120,7 +121,7 @@ export function SocialRadar() {
           <button type="button" className={`pill${filter === key ? ' active' : ''}`} aria-pressed={filter === key} onClick={() => setFilter(key)} key={key}>{label}</button>
         ))}
       </div>
-      {!data ? <div className="skeleton" style={{ height: 220 }} /> : filtered.length === 0 ? <p className="cc-reason">No names match this filter right now.</p> : <div className="sr-list">{filtered.map(row => <RadarCard row={row} board={board} key={row.sym} />)}</div>}
+      {!data ? <DataStatus label="Social Radar" error={error} refresh={refresh} refreshing={refreshing} /> : filtered.length === 0 ? <div className="data-status"><p className="cc-reason">{rows.length ? 'No names match this filter right now.' : 'No social observations are available in this update. Channel findings are available in The street.'}</p>{filter !== 'all' ? <button className="stocks-text-link" onClick={() => setFilter('all')}>Show all names</button> : <Link className="research-text-link" href="/more/street">View channel findings →</Link>}</div> : <div className="sr-list">{filtered.map(row => <RadarCard row={row} board={board} key={row.sym} />)}</div>}
       <p className="sr-footnote">Attention evidence is not a probability of price appreciation. “Independent” excludes the Social Ignition sleeve to avoid circular confirmation.</p>
     </section>
   )

@@ -1,0 +1,174 @@
+/* --- the street ------------------------------------------------------------
+   THE STREET (owner request, 2026-08-17): the channels' picks against the
+   engine's stance, the wire of analysed videos, the deep reads, and the social
+   pulse that left Intel with them. Tokens only — no colour literal enters this
+   file — on top of .card/.pill/.sec-label/.cc-reason/.num/.stx-showmore and
+   the .cp-* row the home screen's strip already declares above. */
+.v2 .stt h1 {
+  font-size: 22px;
+  margin: 0 0 6px;
+}
+.v2 .stt-intro {
+  margin: 0 0 14px;
+}
+
+/* PHONE-FIRST, AND THE ORDER IS THE OWNER'S: picks, then the wire, then the
+   deep reads, then the pulse. The two column wrappers exist only for the desk
+   layout below, so here they vanish (`display: contents`) and the sections
+   themselves are the flow — `order` then sequences them across both wrappers,
+   which is the whole reason the wrappers can be laid out as columns later
+   without the phone paying for it. */
+.v2 .stt-grid {
+  display: flex;
+  flex-direction: column;
+}
+.v2 .stt-col {
+  display: contents;
+}
+.v2 .stt-picks {
+  order: 1;
+}
+.v2 .stt-wire {
+  order: 2;
+}
+.v2 .stt-reads {
+  order: 3;
+}
+.v2 .stt-social {
+  order: 4;
+}
+
+/* the picks board: the strip's row, in a card that already has padding */
+.v2 .stt-picks-list {
+  padding: 0;
+  gap: 12px;
+}
+
+/* the wire: one card a video — channel and stamp above the title, the names
+   it took a side on below */
+.v2 .stt-video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.v2 .stt-video {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.v2 .stt-video:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.v2 .stt-video-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.v2 .stt-chan {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.v2 .stt-at {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+/* HOW THE FACTS WERE OBTAINED, as quietly as that fact deserves: it qualifies
+   everything else on the card, and it is not itself news */
+.v2 .stt-via {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+.v2 a.stt-video-title {
+  display: block;
+  margin-top: 3px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  text-decoration: none;
+}
+.v2 .stt-video-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+/* a chip already has a border — an underline on top of it reads as damage */
+.v2 .stt-video-meta a.pill {
+  text-decoration: none;
+}
+/* a neutral mention took no side, so it takes no direction colour */
+.v2 .pill.stt-flat {
+  color: var(--text-dim);
+}
+.v2 .stt-theme {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+/* the deep reads: the desk's own prose, quoted rather than summarised */
+.v2 .stt-read-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.v2 .stt-read {
+  margin: 0;
+}
+.v2 .stt-read-body {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.v2 .stt-read-cap {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 8px;
+  padding-left: 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.v2 a.stt-read-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+/* AT DESK, TWO COLUMNS THAT FLOW INDEPENDENTLY. The wire is the tall side (a
+   dozen video cards), the picks and the pulse the short one — placed as grid
+   ROWS they would leave a hole under whichever finished first, so the wrappers
+   become real flex columns here and each side runs its own length. */
+@media (min-width: 1200px) {
+  .v2 .desk2 .stt-grid {
+    display: grid;
+    grid-template-columns: minmax(340px, 1fr) minmax(400px, 1.1fr);
+    gap: 0 28px;
+    align-items: start;
+  }
+  .v2 .desk2 .stt-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  /* the picks stay ONE row per line whatever the desk does to .cp-list
+     elsewhere: the point of the section is reading the engine's column
+     straight down against the street's */
+  .v2 .desk2 .stt-picks-list {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
