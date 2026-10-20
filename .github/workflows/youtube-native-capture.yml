@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read:
-    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.YOUTUBE_FREE_TIER_CONFIRMED == 'true')
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (vars.YOUTUBE_FREE_TIER_CONFIRMED == 'true' && vars.YOUTUBE_NATIVE_SCHEDULE_ENABLED == 'true'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -37,6 +37,7 @@ jobs:
           VIDEO_ID: ${{ inputs.video_id || '' }}
           NATIVE_CACHED_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.cached_only == true }}
           NATIVE_FREE_TIER_CONFIRMED: ${{ vars.YOUTUBE_FREE_TIER_CONFIRMED }}
+          NATIVE_SCHEDULE_ENABLED: ${{ vars.YOUTUBE_NATIVE_SCHEDULE_ENABLED }}
           # Never fall back to the application's potentially billable key.
           GEMINI_YOUTUBE_FREE_API_KEY: ${{ vars.YOUTUBE_FREE_TIER_CONFIRMED == 'true' && inputs.cached_only != true && secrets.GEMINI_YOUTUBE_FREE_API_KEY || '' }}
           APP_TOKEN: ${{ secrets.APP_TOKEN }}

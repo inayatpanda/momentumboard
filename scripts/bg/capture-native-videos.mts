@@ -12,9 +12,10 @@ async function main() {
   const target = process.env.VIDEO_ID
   if (target && !/^[A-Za-z0-9_-]{11}$/.test(target)) throw new Error('invalid-target')
   const cachedOnly = process.env.NATIVE_CACHED_ONLY === 'true'
-  const scheduled = process.env.NATIVE_FREE_TIER_CONFIRMED === 'true'
+  const freeTierConfirmed = process.env.NATIVE_FREE_TIER_CONFIRMED === 'true'
+  const scheduled = freeTierConfirmed && process.env.NATIVE_SCHEDULE_ENABLED === 'true'
   const freeKey = process.env.GEMINI_YOUTUBE_FREE_API_KEY ?? ''
-  if (!cachedOnly && (!scheduled || !freeKey)) throw new Error('free-tier-not-configured')
+  if (!cachedOnly && (!freeTierConfirmed || !freeKey)) throw new Error('free-tier-not-configured')
   const now = Math.floor(Date.now() / 1000)
   const lease = await acquireLease(appStore, 'lease:github-native-videos', now, 12 * 60)
   if (!lease) throw new Error('native-running')
@@ -41,7 +42,9 @@ async function main() {
       }
       processed++
       if (!draft || !nativeDraftText(draft)) {
-        if (new Date().getUTCHours() < 8 || !await reserveSocialBudget(appStore, 'gemini-extract', Math.floor(Date.now() / 1000))) {
+        // Separate credential and allowance: failed legacy Gemini jobs cannot
+        // consume the dedicated free video's two attempts.
+        if (new Date().getUTCHours() < 8 || !await reserveSocialBudget(appStore, 'github-native-free', Math.floor(Date.now() / 1000))) {
           status.capped = true
           break
         }
@@ -75,6 +78,8 @@ async function main() {
       }))
       if (!response.ok || !body.ok || !visible || !visible.nativeTranscript) throw new Error('publication-not-visible')
     }
+    if (target && !processed) throw new Error('target-not-eligible')
+    if (status.failed && !status.published && !status.reused) throw new Error('no-successful-native-read')
     status.status = 'complete'
   } catch {
     status.status = 'error'

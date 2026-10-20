@@ -95,11 +95,15 @@ independently downloaded captions and Whisper speech recognition.
 
 New reads **fail closed** unless `YOUTUBE_FREE_TIER_CONFIRMED=true` is configured
 as a repository variable and `GEMINI_YOUTUBE_FREE_API_KEY` is present as a
-repository secret. Use a dedicated Google project with **billing disabled**;
+repository secret. Use a Google project with **billing disabled** and a separate
+key for StreetSignal. A shared project also shares its free allowance;
 a model advertising a free tier does not make requests on a paid project free.
 The workflow never substitutes the app's ordinary Gemini key. Manual runs
 default to `cached_only=true`, which publishes saved drafts without receiving
 the Google key or calling the transcription API.
+After a successful free-key test, set `YOUTUBE_NATIVE_SCHEDULE_ENABLED=true`
+to enable unattended runs. Its two daily attempts are independent from legacy
+Gemini analysis budgets, so failures in that older path cannot starve this one.
 
 Findings appear in **The street → Videos**, with an expandable AI transcript,
 source link and explicit verification status. Model-transcribed quotes are not
