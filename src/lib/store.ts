@@ -38,6 +38,7 @@ export const SLICE_TTL: Record<string, number> = {
   learning: 900_000,
   candles: 900_000,
   intel: 300_000,
+  'street:wire': 60_000, // cloud sections can publish while this screen is open
   default: 900_000,
 }
 

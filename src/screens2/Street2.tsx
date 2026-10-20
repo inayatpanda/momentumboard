@@ -73,6 +73,7 @@ function VideoHealth({ health, onRefresh }: { health: StreetWire['videoIngestion
   if (!health) return null
   return <section className="card itl-section" aria-label="YouTube processing status">
     <h2 className="sec-label">YouTube processing</h2>
+    <button type="button" className="pill" onClick={onRefresh}>Check for updates</button>
     {health.nativeRunner && <div className="cc-reason">
       <p><strong>Free cloud video research</strong><br />{health.nativeRunner.running ? 'Reading new videos and saving findings.' : health.nativeRunner.status === 'error' ? 'The last read needs attention; saved progress is retained.' : `${health.nativeRunner.published} findings updates · ${health.nativeRunner.failed} unsuccessful on the last run.`} Last checked {relativeStamp(health.nativeRunner.at)}.</p>
       <p>{health.nativeRunner.scheduled ? 'Checks your followed channels every hour while your Mac is off. Saved captions are read first. Other videos are processed in consecutive sections through to the ending, with progress saved between runs. Channels take turns.' : 'Automatic reads are paused. Saved results can still be published without another transcription call.'}</p>

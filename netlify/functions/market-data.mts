@@ -206,7 +206,7 @@ export const STREET_READS = 5
 /** Five minutes. The upstream blobs turn over when a video lands, which is a
  * handful of times a day — this cache exists to stop a page open on two
  * devices re-reading four hundred extracts a refresh, not to hide staleness. */
-export const STREET_TTL_SEC = 300
+export const STREET_TTL_SEC = 60
 
 /** The last-known-good row for a symbol. A SEPARATE key from `quote:{sym}` on
  * purpose: the 60s row means "this is the market now", and a stale price must

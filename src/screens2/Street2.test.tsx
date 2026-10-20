@@ -222,6 +222,18 @@ describe('Street2', () => {
     expect(getSocialPulse).toHaveBeenCalledTimes(2)
   })
 
+  it('refreshes cached channel findings from the mobile Tracking control', async () => {
+    const health: NonNullable<StreetWire['videoIngestion']> = { pendingTranscripts: 0, queued: 1, deferred: 0, failed: 0, lastExtractAt: null, lastTranscriptAt: null, nextRetryAt: null, recentFailures: [] }
+    await seedWire({ videoIngestion: health })
+    vi.mocked(getStreetWire).mockResolvedValueOnce({ videos: [mkVideo({ title: 'New cloud finding' })], reads: [], consensus: [], at: hoursAgo(0), videoIngestion: { ...health, queued: 0, lastExtractAt: hoursAgo(0) } })
+    withRouter()
+    fireEvent.click(screen.getByRole('tab', { name: 'Tracking' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
+    await screen.findByText(/Latest completed analysis just now/)
+    fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
+    expect(await screen.findByText('New cloud finding')).toBeInTheDocument()
+  })
+
   describe('the picks board', () => {
     it('renders EVERY consensus name — the home screen’s eight-name cap is not this page’s', async () => {
       await seedWire({ consensus: Array.from({ length: 12 }, (_, i) => mkPick({ sym: `S${i}` })) })
