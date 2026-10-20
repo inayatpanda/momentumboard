@@ -29,6 +29,12 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/local/transcript-requirements.txt
       - run: python -m pip install -r scripts/local/transcript-requirements.txt
+      - name: Install audio conversion tools
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
       - name: Cache CPU speech engine and model
         uses: actions/cache@v4
         id: speech
