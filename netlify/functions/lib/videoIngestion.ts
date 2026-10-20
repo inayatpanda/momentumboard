@@ -4,11 +4,12 @@ import { videoKey } from '../../../shared/youtubeCaptions.mjs'
 import { videoFailureReason, type WorkItem } from './videoQueue'
 import { readTranscriptIndex } from './videoTranscriptStore'
 import { PROVIDER_HEALTH_KEY, type TranscriptProviderHealth } from './transcriptProviderHealth'
+import type { ChannelDiscovery } from './youtube'
 import { withDefaults } from '../../../shared/channels'
 import type { InboxVideo } from './videoTranscriptStore'
 
 export async function videoIngestionHealth(store: AppStore, extracts: { url: string; at: number }[], nowSec: number, analyses: { url: string }[] = []) {
-  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner, config, githubRunner, nativeRunner, nativeProgress] = await Promise.all([
+  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner, config, githubRunner, nativeRunner, nativeProgress, discovery] = await Promise.all([
     store.read<InboxVideo[]>('video-inbox'),
     readTranscriptIndex(store),
     store.read<WorkItem[]>('work-queue'),
@@ -22,6 +23,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     store.read<{ at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; scheduled?: boolean; status: string;
       dailyRequests?: number; dailyMinutes?: number; requestLimit?: number; minuteLimit?: number; pending?: number; partial?: number; completed?: number; endReported?: number; pauseReason?: string; retryAt?: number }>('video-native-runner'),
     store.read<{ video: InboxVideo; nextOffset: number; sourceDurationSeconds?: number; stage: string; mode?: string; nextAttemptAt: number; updatedAt: number }[]>('video-native-progress:v2'),
+    store.read<{ channels: ChannelDiscovery[] }>('video-channel-discovery:v1'),
   ])
   const completed = new Set(extracts.map(v => videoKey(v.url)))
   const watched = new Set(analyses.map(v => videoKey(v.url)))
@@ -46,7 +48,10 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
   const discoveryTimes = recent.map(v => v.at).filter(Number.isFinite)
   const channels = withDefaults(config?.ytChannels).map(channel => {
     const videos = recent.filter(v => v.channelId ? v.channelId === channel.id : v.channel === channel.name)
+    const feed = discovery?.channels.find(c => c.id === channel.id)
     return {
+      feed: feed ? { status: feed.status, checkedAt: feed.checkedAt, latestPublishedAt: feed.latestPublishedAt } : undefined,
+      awaitingAnalysis: videos.filter(v => words.has(videoKey(v.url)) && !completed.has(videoKey(v.url))).length,
       id: channel.id, name: channel.name,
       discovered: videos.length,
       captured: videos.filter(v => words.has(videoKey(v.url))).length,

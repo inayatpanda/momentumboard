@@ -31,7 +31,7 @@ describe('video ingestion health', () => {
     await store.write('video-transcript-index:v2', [{ url: 'https://youtu.be/abcdefghijk', at: 40, characters: 1000 }])
     await store.write('social-jobs:v1', [{ url: 'https://youtu.be/abcdefghijm', mode: 'extract', stage: 'queued', at: 5, nextAttemptAt: 0 }])
     const health = await videoIngestionHealth(store, [{ url: 'https://youtu.be/abcdefghijk', at: 50 }], 100)
-    expect(health.channels.find(c => c.id === 'UCtest')).toEqual({ id: 'UCtest', name: 'A creator', discovered: 2, captured: 1, analysed: 1, awaitingCapture: 1, latestPublishedAt: 25 })
+    expect(health.channels.find(c => c.id === 'UCtest')).toEqual({ id: 'UCtest', name: 'A creator', discovered: 2, captured: 1, analysed: 1, awaitingCapture: 1, awaitingAnalysis: 0, latestPublishedAt: 25 })
     expect(health.pendingTranscripts).toBe(2)
     expect(health.discoveryWindow).toEqual({ videos: 2, since: 20 })
     expect(health.channels.some(c => c.discovered === 0)).toBe(true)

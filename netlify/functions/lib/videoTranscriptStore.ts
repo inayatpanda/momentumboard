@@ -67,7 +67,17 @@ export async function recordInboxVideos(store: AppStore, videos: Omit<InboxVideo
     known.add(key)
     return true
   })
-  if (!fresh.length) return 0
+  // Repair missing publication dates/IDs on older discoveries without changing
+  // their original discovery time or duplicating a saved video.
+  let repaired = false
+  const metadata = new Map(eligible.map(v => [videoKey(v.url), v]))
+  for (const old of inbox) {
+    const source = metadata.get(videoKey(old.url))
+    if (!source) continue
+    if (!old.publishedAt && source.publishedAt) { old.publishedAt = source.publishedAt; repaired = true }
+    if (!old.channelId && source.channelId) { old.channelId = source.channelId; repaired = true }
+  }
+  if (!fresh.length && !repaired) return 0
   for (const v of fresh) inbox.push({ ...v, url: canonicalVideoUrl(v.url)!, at: nowSec })
   await store.write(INBOX_KEY, inbox.slice(-RECENT_CAP))
   return fresh.length

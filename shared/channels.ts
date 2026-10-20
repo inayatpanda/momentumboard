@@ -5,8 +5,8 @@ export const DEFAULT_CHANNELS: { id: string; name: string }[] = [
   { id: 'UCUvvj5lwue7PspotMDjk5UA', name: 'Meet Kevin' },
   { id: 'UCnMn36GT_H0X-w5_ckLtlgQ', name: 'Financial Education' },
   { id: 'UChBVf9YnourrEDTsbbwJPRA', name: 'Everything Money' },
-  { id: 'UCORi3Jj7kSHcdHdckrjhOsg', name: 'Tom Nash' },
-  { id: 'UCwMoQEGc4IqkuGLhJUkLwYQ', name: 'Humbled Trader' },
+  { id: 'UCJwKCyEIFHwUOPQQ-4kC1Zw', name: 'Tom Nash' },
+  { id: 'UCcIvNGMBSQWwo1v3n-ZRBCw', name: 'Humbled Trader' },
   // "Gareth Holloway" resolved to a dead ghost channel (RSS 404) — the intended
   // channel is Gareth SOLOWAY (Verified Investing). Both his channels upload
   // daily; each is credibility-scored separately. Resolved 2026-07-10 from
@@ -24,7 +24,14 @@ export const DEFAULT_CHANNELS: { id: string; name: string }[] = [
  * exactly this reason). User-added channels always survive; new defaults always
  * join. Apply at every point of consumption, never persist the union back. */
 export function withDefaults(channels: { id: string; name: string }[] | undefined | null): { id: string; name: string }[] {
-  const out = [...(channels ?? [])]
+  // Correct two historical default IDs verified against the creators' canonical
+  // YouTube pages. Match both ID and name so unrelated user choices survive.
+  const repairs: Record<string, { name: string; id: string }> = {
+    UCORi3Jj7kSHcdHdckrjhOsg: { name: 'Tom Nash', id: 'UCJwKCyEIFHwUOPQQ-4kC1Zw' },
+    UCwMoQEGc4IqkuGLhJUkLwYQ: { name: 'Humbled Trader', id: 'UCcIvNGMBSQWwo1v3n-ZRBCw' },
+  }
+  const out = (channels ?? []).map(c => repairs[c.id]?.name === c.name ? { ...c, id: repairs[c.id].id } : c)
+    .filter((c, i, all) => all.findIndex(other => other.id === c.id) === i)
   const seen = new Set(out.map(c => c.id))
   for (const d of DEFAULT_CHANNELS) {
     if (!seen.has(d.id)) {

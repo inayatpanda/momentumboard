@@ -1,3 +1,4 @@
+import { discoverFollowedVideos } from '../lib/discoverFollowedVideos'
 import { appendFile } from 'node:fs/promises'
 import { configureStoreForScript } from '../lib/configureStore'
 import { appStore } from '../../netlify/functions/lib/storeProvider'
@@ -13,6 +14,7 @@ import { withDefaults } from '../../shared/channels'
 async function main() {
   if (process.env.STORE_BACKEND !== 'd1') throw new Error('d1-required')
   await configureStoreForScript()
+  console.log(JSON.stringify({ discovery: await discoverFollowedVideos(appStore, Math.floor(Date.now() / 1000)) }))
   const config = await appStore.read<{ ytChannels?: { id: string; name: string }[] }>('config')
   const deadlineMs = Date.now() + 30 * 60_000
   const result = await collectGithubVideos(appStore, {

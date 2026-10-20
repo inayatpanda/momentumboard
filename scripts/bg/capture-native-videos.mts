@@ -1,3 +1,4 @@
+import { discoverFollowedVideos } from '../lib/discoverFollowedVideos'
 import { configureStoreForScript } from '../lib/configureStore'
 import { appStore } from '../../netlify/functions/lib/storeProvider'
 import { collectNativeVideos } from '../lib/nativeVideoQueue'
@@ -6,6 +7,7 @@ import { videoKey } from '../../shared/youtubeCaptions.mjs'
 
 async function main() {
   await configureStoreForScript()
+  console.log(JSON.stringify({ discovery: await discoverFollowedVideos(appStore, Math.floor(Date.now() / 1000)) }))
   const freeTierConfirmed = process.env.NATIVE_FREE_TIER_CONFIRMED === 'true'
   try {
     const status = await collectNativeVideos(appStore, {
