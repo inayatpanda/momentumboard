@@ -19,6 +19,7 @@ export interface NativeVideoWork {
   mode?: 'captions' | 'video'; attempts: number; failures: number; nextAttemptAt: number; lastAttemptAt: number
   updatedAt: number; lastError?: string
   selectedAt?: number; parked?: boolean
+  textSchemaVersion?: number
 }
 export interface NativeRunStatus {
   at: number; running: boolean; published: number; attempted: number; failed: number; reused: number
@@ -134,6 +135,9 @@ export async function collectNativeVideos(store: AppStore, deps: {
     }
     await save()
     const selected = rows.filter(w => !w.parked && isFollowedChannel(w.video, followed) && (!deps.target || videoKey(w.video.url) === deps.target))
+    for (const work of selected) if (work.lastError === 'native-invalid-text' && !work.textSchemaVersion) {
+      work.textSchemaVersion = 1; work.nextAttemptAt = 0
+    }
     if (deps.target && !selected.length) throw new Error('target-not-eligible')
     // An explicit owner retry may retry a transport timeout immediately; the
     // persistent provider quota/cooldown is still enforced by reserveNativeRead.
