@@ -1,0 +1,48 @@
+name: transcript-provider-status
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read Supadata plan and credit usage
+        env:
+          SUPADATA_API_KEY: ${{ secrets.SUPADATA_API_KEY }}
+        run: |
+          node --input-type=module <<'JS'
+          const key = process.env.SUPADATA_API_KEY;
+          if (!key) {
+            console.log(JSON.stringify({status: 'not-configured'}));
+            process.exit(0);
+          }
+          try {
+            const response = await fetch('https://api.supadata.ai/v1/me', {
+              headers: {'x-api-key': key},
+              redirect: 'error',
+              signal: AbortSignal.timeout(20000)
+            });
+            if (!response.ok) {
+              console.log(JSON.stringify({status: 'unavailable', httpStatus: response.status}));
+              process.exit(0);
+            }
+            const account = await response.json();
+            const max = Number.isFinite(account.maxCredits) ? account.maxCredits : null;
+            const used = Number.isFinite(account.usedCredits) ? account.usedCredits : null;
+            console.log(JSON.stringify({
+              checkedAt: new Date().toISOString(),
+              status: 'ok',
+              plan: typeof account.plan === 'string' ? account.plan.slice(0, 80) : null,
+              maxCredits: max,
+              usedCredits: used,
+              remainingCredits: max !== null && used !== null ? Math.max(0, max-used) : null
+            }));
+          } catch {
+            console.log(JSON.stringify({status: 'request-failed'}));
+          }
+          JS
