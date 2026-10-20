@@ -21,7 +21,7 @@ export interface VideoExtract {
   tickers: { sym: string; stance: 'bull' | 'bear' | 'neutral'; levels: number[]; thesis?: string; hype?: boolean; company?: string; evidenceQuote?: string }[]
   themes: string[]
   audience?: { sampled: number; bull: number; bear: number; neutral: number; hype: number; questions: number }
-  via?: 'local' | 'free' | 'supadata' | 'gemini-video' | 'transcript' // how the facts were read ('local' = the Mac runner's stored captions; 'transcript' = legacy rows before the rung was split); absent on rows older than the fallback
+  via?: 'local' | 'github' | 'free' | 'supadata' | 'gemini-video' | 'transcript' // how the facts were read ('local' = the Mac runner's stored captions; 'transcript' = legacy rows before the rung was split); absent on rows older than the fallback
 }
 
 export interface TickerConsensus {

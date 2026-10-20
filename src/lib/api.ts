@@ -336,7 +336,7 @@ export interface StreetVideo {
   /** HOW THE FACTS WERE OBTAINED: 'gemini-video' means the model watched the
    * video, anything else means it read words. Absent on rows older than the
    * fallback, and the page then says nothing rather than guessing. */
-  via?: 'local' | 'free' | 'supadata' | 'gemini-video' | 'transcript'
+  via?: 'local' | 'github' | 'free' | 'supadata' | 'gemini-video' | 'transcript'
 }
 
 /** One watch-tier narrative read — plain prose, already short by construction. */
@@ -361,6 +361,9 @@ export interface StreetWire {
     channels?: { id: string; name: string; discovered: number; captured: number; analysed: number; awaitingCapture: number; latestPublishedAt: number | null }[]
     discoveryWindow?: { videos: number; since: number | null }
     localRunner?: { at: number; running: boolean; saved: number; unavailable: number; buffered: number; stale: boolean } | null
+    githubRunner?: { at: number; running: boolean; status: string; saved: number; unavailable: number; attempted: number; captions: number; speech: number; blocked: number; stale: boolean } | null
+    githubLastSavedAt?: number | null
+    githubTranscriptCount?: number
     provider?: { checkedAt: number; status: string; plan?: string; remainingCredits?: number } | null
     localLastSavedAt?: number | null
     localSpeechCount?: number

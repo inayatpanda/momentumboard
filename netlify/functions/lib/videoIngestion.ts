@@ -8,7 +8,7 @@ import { withDefaults } from '../../../shared/channels'
 import type { InboxVideo } from './videoTranscriptStore'
 
 export async function videoIngestionHealth(store: AppStore, extracts: { url: string; at: number }[], nowSec: number, analyses: { url: string }[] = []) {
-  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner, config] = await Promise.all([
+  const [inbox, transcripts, queue, deadletters, socialJobs, heartbeat, provider, localRunner, config, githubRunner] = await Promise.all([
     store.read<InboxVideo[]>('video-inbox'),
     readTranscriptIndex(store),
     store.read<WorkItem[]>('work-queue'),
@@ -18,6 +18,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     store.read<TranscriptProviderHealth>(PROVIDER_HEALTH_KEY),
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; buffered: number }>('video-local-runner'),
     store.read<{ ytChannels?: { id: string; name: string }[] }>('config'),
+    store.read<{ at: number; running: boolean; saved: number; unavailable: number; attempted: number; captions: number; speech: number; status: string; reasons: Record<string, number> }>('video-github-runner'),
   ])
   const completed = new Set(extracts.map(v => videoKey(v.url)))
   const watched = new Set(analyses.map(v => videoKey(v.url)))
@@ -55,9 +56,18 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     channels,
     discoveryWindow: { videos: recent.length, since: discoveryTimes.length ? Math.min(...discoveryTimes) : null },
     provider: provider ?? null,
+    githubRunner: githubRunner ? {
+      at: githubRunner.at, running: githubRunner.running, status: githubRunner.status,
+      saved: githubRunner.saved, unavailable: githubRunner.unavailable, attempted: githubRunner.attempted,
+      captions: githubRunner.captions, speech: githubRunner.speech,
+      blocked: githubRunner.reasons?.['youtube-blocked'] ?? 0,
+      stale: nowSec - githubRunner.at > 6 * 3600,
+    } : null,
+    githubLastSavedAt: latest(transcripts.filter(t => t.source === 'github')),
+    githubTranscriptCount: transcripts.filter(t => t.source === 'github').length,
     localRunner: localRunner ? { ...localRunner, stale: nowSec - localRunner.at > 2 * 3600 } : null,
     localLastSavedAt: latest(transcripts.filter(t => t.source === 'local')),
-    localSpeechCount: transcripts.filter(t => t.method === 'speech').length,
+    localSpeechCount: transcripts.filter(t => t.source === 'local' && t.method === 'speech').length,
     workerLastSeenAt: heartbeat?.at ?? null,
     workerStale: !!activeSocial.length && (!heartbeat || nowSec - heartbeat.at > 6 * 3600),
     oldestPendingAt: activeSocial.length ? Math.min(...activeSocial.map(j => j.at)) : null,

@@ -63,7 +63,7 @@ function ViaMark({ via }: { via: StreetVideo['via'] }) {
   if (!via) return null
   const watched = via === 'gemini-video'
   return (
-    <span className="stt-via" title={watched ? 'A model reviewed the video; visual details require verification.' : 'A model read the words: the transcript, not the charts.'}>
+    <span className="stt-via" title={watched ? 'A model reviewed the video; visual details require verification.' : `${via === 'github' ? 'Captured on GitHub. ' : ''}A model read the words: the transcript, not the charts.`}>
       {watched ? 'watched' : 'read'}
     </span>
   )
@@ -73,9 +73,14 @@ function VideoHealth({ health, onRefresh }: { health: StreetWire['videoIngestion
   if (!health) return null
   return <section className="card itl-section" aria-label="YouTube processing status">
     <h2 className="sec-label">YouTube processing</h2>
-    {health.localRunner && <p className="cc-reason">Mac collector: {health.localRunner.stale ? 'not seen recently — resumes when the Mac is awake and connected' : health.localRunner.running ? 'capturing videos' : `${health.localRunner.saved} saved on its last run`}. Last seen {relativeStamp(health.localRunner.at)}{health.localRunner.buffered ? ` · ${health.localRunner.buffered} captured transcripts waiting to upload` : ''}.</p>}
-    {health.localLastSavedAt && <p className="cc-reason">Local capture last saved {relativeStamp(health.localLastSavedAt)}. Captions are tried first; local speech recognition can fill gaps while your Mac is awake.</p>}
-    {health.provider && <p className="cc-reason">Supadata: {health.provider.status === 'exhausted' ? 'no credits remaining' : health.provider.status}{health.provider.plan ? ` · ${health.provider.plan}` : ''} · checked {relativeStamp(health.provider.checkedAt)}. Local capture works independently.</p>}
+    {health.githubRunner && <div className="cc-reason">
+      <p><strong>Cloud collector · GitHub</strong><br />{health.githubRunner.stale ? 'No recent check-in. The schedule may be delayed or stopped.' : health.githubRunner.status === 'error' ? 'The last run stopped early; saved progress is retained.' : health.githubRunner.running ? 'Checking captions and transcribing available audio.' : `${health.githubRunner.saved} saved · ${health.githubRunner.unavailable} unavailable on the last run.`} Last seen {relativeStamp(health.githubRunner.at)}.</p>
+      <p>Scheduled every three hours, even when your Mac is off. Up to 12 videos and two audio transcriptions per run. {health.githubLastSavedAt ? `Latest cloud transcript ${relativeStamp(health.githubLastSavedAt)}.` : 'No cloud transcript saved yet.'}</p>
+      {health.githubRunner.blocked > 0 && <p>YouTube blocked access to {health.githubRunner.blocked} videos on the last run. They remain pending for later retries.</p>}
+      <a href="https://github.com/inayatpanda/momentumboard/actions/workflows/youtube-capture.yml" target="_blank" rel="noopener noreferrer">View cloud runs ↗</a>
+    </div>}
+    {health.localRunner && <details><summary>Optional Mac backup</summary><p className="cc-reason">{health.localRunner.stale ? 'Not seen recently; resumes when the Mac is awake and connected' : health.localRunner.running ? 'Capturing videos' : `${health.localRunner.saved} saved on its last run`}. Last seen {relativeStamp(health.localRunner.at)}{health.localRunner.buffered ? ` · ${health.localRunner.buffered} captured transcripts waiting to upload` : ''}. This can fill gaps when YouTube blocks cloud access.</p></details>}
+    {health.provider && <details><summary>Transcript provider</summary><p className="cc-reason">Supadata: {health.provider.status === 'exhausted' ? 'no credits remaining' : health.provider.status}{health.provider.plan ? ` · ${health.provider.plan}` : ''} · checked {relativeStamp(health.provider.checkedAt)}. GitHub and Mac capture work independently of this subscription.</p></details>}
     <p className="cc-reason">{health.pendingTranscripts} awaiting captions · {health.queued} queued analyses · {health.deferred} deferred · {health.failed} failed</p>
     <p className="cc-reason">{health.lastExtractAt ? `Latest completed analysis ${relativeStamp(health.lastExtractAt)}.` : 'No completed video analysis yet.'} {health.nextRetryAt ? `Next retry eligible ${new Date(health.nextRetryAt * 1000).toLocaleString()}; completion depends on the next worker run.` : ''}</p>
     {(health.pendingTranscripts > 0 || health.deferred > 0) && <p className="cc-reason">Caption access and daily analysis limits can delay videos. Refresh checks progress; it does not start a new analysis.</p>}

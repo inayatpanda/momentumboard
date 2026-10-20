@@ -1,0 +1,101 @@
+name: youtube-capture
+on:
+  schedule:
+    # Standard public-repository runners are free. Avoid the top of the hour.
+    - cron: '7 */3 * * *'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: youtube-capture
+  cancel-in-progress: false
+jobs:
+  capture:
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/local/transcript-requirements.txt
+      - run: python -m pip install -r scripts/local/transcript-requirements.txt
+      - name: Cache CPU speech engine and model
+        uses: actions/cache@v4
+        id: speech
+        with:
+          path: ~/.cache/streetsignal-speech
+          key: speech-ubuntu24-x64-whisper-d2a764c-base-en-v1
+      - name: Build pinned whisper.cpp and download base English model
+        if: steps.speech.outputs.cache-hit != 'true'
+        run: |
+          git clone --filter=blob:none https://github.com/ggml-org/whisper.cpp.git "$RUNNER_TEMP/whisper"
+          git -C "$RUNNER_TEMP/whisper" checkout d2a764c648779feb36d44363f212a29b00aad1af
+          cmake -S "$RUNNER_TEMP/whisper" -B "$RUNNER_TEMP/whisper/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_CUDA=OFF -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/whisper/build" --target whisper-cli -j 2
+          mkdir -p "$HOME/.cache/streetsignal-speech"
+          cp "$RUNNER_TEMP/whisper/build/bin/whisper-cli" "$HOME/.cache/streetsignal-speech/whisper-cli"
+          bash "$RUNNER_TEMP/whisper/models/download-ggml-model.sh" base.en "$HOME/.cache/streetsignal-speech"
+      - name: Check tools
+        run: |
+          command -v ffmpeg
+          command -v yt-dlp
+          "$HOME/.cache/streetsignal-speech/whisper-cli" --help
+      - name: Capture captions, download audio and transcribe
+        env:
+          STORE_BACKEND: d1
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          export STREETSIGNAL_PYTHON="$(command -v python)"
+          export STREETSIGNAL_YTDLP="$(command -v yt-dlp)"
+          export STREETSIGNAL_FFMPEG="$(command -v ffmpeg)"
+          export STREETSIGNAL_WHISPER="$HOME/.cache/streetsignal-speech/whisper-cli"
+          export STREETSIGNAL_WHISPER_MODEL="$HOME/.cache/streetsignal-speech/ggml-base.en.bin"
+          npx tsx scripts/bg/capture-youtube.mts
+  analyse:
+    needs: capture
+    # A partial capture can still leave saved transcripts ready to analyse.
+    if: ${{ !cancelled() && github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Analyse saved words and publish findings to the app
+        run: npx tsx scripts/bg/drain-queue.mts
+        env:
+          VIDEOS_ONLY: 'true'
+          STORED_TRANSCRIPTS_ONLY: 'true'
+          URL: https://thestreetsignal.rqai.co.uk
+          STORE_BACKEND: d1
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_BASE_URL: https://api.deepseek.com
+          OPENAI_MODEL: deepseek-chat
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+      - name: Confirm app publication without exposing source text
+        if: ${{ !cancelled() }}
+        run: npx tsx scripts/bg/check-youtube-publication.mts
+        env:
+          STORE_BACKEND: d1
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

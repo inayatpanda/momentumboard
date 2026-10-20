@@ -13,7 +13,7 @@ export interface VideoTranscript {
   title: string
   channel: string
   text: string
-  source: 'local' | 'free' | 'supadata'
+  source: 'local' | 'github' | 'free' | 'supadata'
   at: number
   publishedAt?: number
   channelId?: string

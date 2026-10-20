@@ -1,6 +1,8 @@
 import { canonicalVideoUrl } from '../../shared/youtubeCaptions.mjs'
 import { enqueueSocialJobs, eligibleSocialJobs, SOCIAL_JOBS_KEY, type SocialJob } from '../../netlify/functions/lib/socialJobs'
 import { refreshTranscriptProviderHealth } from '../../netlify/functions/lib/transcriptProviderHealth'
+import { readTranscriptIndex } from '../../netlify/functions/lib/videoTranscriptStore'
+import { videoKey } from '../../shared/youtubeCaptions.mjs'
 // The work-queue drain, GitHub Actions edition (currently every 3 hours). Netlify's
 // scheduled functions (alert-check, watchdog) enqueue long jobs into the
 // `work-queue` blob — video analysis, event dossiers, a compose retry — and
@@ -16,6 +18,7 @@ import { applyWorkResults, workResultFromResponse, type WorkItem, type WorkResul
 const MAX_ITEMS_PER_RUN = 8
 const MAX_ATTEMPTS = 3
 const videosOnly = process.env.VIDEOS_ONLY === 'true'
+const storedOnly = process.env.STORED_TRANSCRIPTS_ONLY === 'true'
 const selectedVideo = process.env.VIDEO_URL ? canonicalVideoUrl(process.env.VIDEO_URL) : null
 
 const adminReq = (body?: unknown) =>
@@ -61,6 +64,7 @@ const run = async () => {
   // this stayed on Blobs, both halves would report success over an empty list
   // and nothing would ever drain. Explicit selection, or a throw.
   const backend = await configureStoreForScript()
+  if (storedOnly && (!videosOnly || process.env.VIDEO_URL)) throw new Error('Stored-only analysis requires videos-only mode without a selected URL')
   console.log(`store backend: ${backend}`)
   // fail loudly without creds — otherwise the mem-fallback store reads an
   // empty queue and the run reports success while doing nothing at all
@@ -89,7 +93,9 @@ const run = async () => {
       await enqueueSocialJobs(blobAppStore, [{ ...source, mode: 'extract' }], nowSec, true)
     }
     const socialQueue = await blobAppStore.read<SocialJob[]>(SOCIAL_JOBS_KEY) ?? []
-    const videoBatch = selectedVideo ? socialQueue.filter(j => j.mode === 'extract' && j.url === selectedVideo) : eligibleSocialJobs(socialQueue, nowSec, 8)
+    const words = storedOnly ? new Set((await readTranscriptIndex(blobAppStore)).map(t => videoKey(t.url))) : null
+    const readyQueue = words ? socialQueue.filter(j => j.mode === 'extract' && words.has(videoKey(j.url))) : socialQueue
+    const videoBatch = selectedVideo ? socialQueue.filter(j => j.mode === 'extract' && j.url === selectedVideo) : eligibleSocialJobs(readyQueue, nowSec, 8)
     const runDeadline = Date.now() + 16 * 60_000
     const batch = videosOnly ? [] : queue.filter(item => item.kind !== 'video' && (item.nextAttemptAt ?? 0) <= nowSec).slice(0, MAX_ITEMS_PER_RUN)
     console.log(`draining ${batch.length} of ${queue.length} item(s)…`)
@@ -111,6 +117,7 @@ const run = async () => {
         // between sections of the same video. Provider jobs use the collector.
       }
     }
+    console.log(`video analysis batch: ${videoBatch.length}; stored transcripts only: ${storedOnly}`)
     await blobAppStore.write('social-worker-heartbeat', { at: Math.floor(Date.now() / 1000), status: 'complete' })
     // re-read before writing: alert-check may have enqueued while we worked
     const fresh = (await blobAppStore.read<WorkItem[]>('work-queue')) ?? []

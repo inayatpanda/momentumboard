@@ -22,26 +22,30 @@ export function parseWhisperTranscript(data) {
   return text.length >= 100 && text.length <= 300_000 ? { text, segments, language: 'en', automatic: true, method: 'speech' } : { fail: 'audio-text-unavailable' }
 }
 
-export async function fetchAudioTranscript(url) {
+export async function fetchAudioTranscript(url, { deadlineMs = Date.now() + 30 * 60_000, maxDurationSec = 5400 } = {}) {
   const canonical = canonicalVideoUrl(url)
   if (!canonical) return { fail: 'invalid-video' }
   try { await Promise.all([downloader, model, whisper, ffmpeg].map(p => access(p))) } catch { return { fail: 'local-audio-not-configured' } }
   const dir = await mkdtemp(join(tmpdir(), 'streetsignal-audio-'))
-  const options = { timeout: 12 * 60_000, maxBuffer: 1024 * 1024 }
+  const options = () => {
+    const remaining = deadlineMs - Date.now()
+    if (remaining <= 0) throw new Error('audio-deadline')
+    return { timeout: Math.min(12 * 60_000, remaining), maxBuffer: 1024 * 1024 }
+  }
   let stage = 'metadata'
   try {
     // Metadata first: skip live broadcasts, unknown lengths and >90 minutes.
-    const { stdout } = await run(downloader, ['--no-playlist', '--js-runtimes', 'node', '--print', '{"duration":%(duration)j,"is_live":%(is_live)j}', '--skip-download', '--', canonical], options)
+    const { stdout } = await run(downloader, ['--no-playlist', '--socket-timeout', '20', '--retries', '1', '--js-runtimes', 'node', '--print', '{"duration":%(duration)j,"is_live":%(is_live)j}', '--skip-download', '--', canonical], options())
     const info = JSON.parse(stdout)
-    if (info.is_live || !Number.isFinite(info.duration) || info.duration > 5400) return { fail: 'audio-duration-limit' }
+    if (info.is_live || !Number.isFinite(info.duration) || info.duration > maxDurationSec) return { fail: 'audio-duration-limit' }
     stage = 'download'
-    await run(downloader, ['--no-playlist', '--js-runtimes', 'node', '--max-filesize', '120M', '-f', 'bestaudio[abr<=160]/bestaudio', '-o', join(dir, 'audio.%(ext)s'), '--', canonical], options)
+    await run(downloader, ['--no-playlist', '--socket-timeout', '20', '--retries', '1', '--fragment-retries', '1', '--js-runtimes', 'node', '--max-filesize', '120M', '-f', 'bestaudio[abr<=160]/bestaudio', '-o', join(dir, 'audio.%(ext)s'), '--', canonical], options())
     const file = (await readdir(dir)).find(f => /^audio\.(webm|m4a|mp3|ogg|opus|mp4)$/.test(f))
     if (!file) return { fail: 'audio-download-unavailable' }
     stage = 'convert'
-    await run(ffmpeg, ['-nostdin', '-y', '-i', join(dir, file), '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', join(dir, 'speech.wav')], options)
+    await run(ffmpeg, ['-nostdin', '-y', '-i', join(dir, file), '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', join(dir, 'speech.wav')], options())
     stage = 'transcribe'
-    await run(whisper, ['-m', model, '-f', join(dir, 'speech.wav'), '-l', 'en', '-oj', '-of', join(dir, 'result'), '-np', '-ng'], options)
+    await run(whisper, ['-m', model, '-f', join(dir, 'speech.wav'), '-l', 'en', '-oj', '-of', join(dir, 'result'), '-np', '-ng'], options())
     return parseWhisperTranscript(JSON.parse(await readFile(join(dir, 'result.json'), 'utf8')))
   } catch {
     // Errors from external programs can contain tokens/URLs/large HTML. Keep

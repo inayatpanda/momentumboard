@@ -3,6 +3,16 @@ import { memoryStore } from './store'
 import { videoIngestionHealth } from './videoIngestion'
 
 describe('video ingestion health', () => {
+  it('reports cloud gaps, saved words and stale runs without exposing internal diagnostics', async () => {
+    const store = memoryStore()
+    await store.write('video-github-runner', { at: 100, status: 'complete', running: false, saved: 1, unavailable: 2, attempted: 3, captions: 1, speech: 0, reasons: { 'youtube-blocked': 2, private: 99 }, internal: 'must-not-leak' })
+    await store.write('video-transcript-index:v2', [{ url: 'https://youtu.be/abcdefghijk', at: 101, source: 'github', method: 'speech' }])
+    const health = await videoIngestionHealth(store, [], 200)
+    expect(health).toMatchObject({ githubRunner: { stale: false, blocked: 2, saved: 1 }, githubLastSavedAt: 101, githubTranscriptCount: 1, localSpeechCount: 0 })
+    expect(JSON.stringify(health)).not.toContain('must-not-leak')
+    expect(JSON.stringify(health.githubRunner)).not.toContain('private')
+    expect((await videoIngestionHealth(store, [], 22000)).githubRunner?.stale).toBe(true)
+  })
   it('counts unique recent videos per channel and retains capture backlog beyond the inbox window', async () => {
     const store = memoryStore()
     await store.write('config', { ytChannels: [{ id: 'UCtest', name: 'A creator' }], secret: 'must-not-leak' })

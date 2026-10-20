@@ -118,6 +118,21 @@ beforeEach(async () => {
 })
 
 describe('Street2', () => {
+  it('makes cloud capture gaps explicit and keeps the Mac backup optional', async () => {
+    await seedWire({ videoIngestion: {
+      githubRunner: { at: hoursAgo(1), running: false, status: 'complete', saved: 0, unavailable: 12, attempted: 12, captions: 0, speech: 0, blocked: 12, stale: false },
+      localRunner: { at: hoursAgo(10), running: false, saved: 3, unavailable: 0, buffered: 0, stale: true },
+      pendingTranscripts: 12, queued: 0, deferred: 0, failed: 0, lastTranscriptAt: null, lastExtractAt: null, nextRetryAt: null, recentFailures: [],
+    } })
+    withRouter()
+    fireEvent.click(screen.getByRole('tab', { name: 'Tracking' }))
+    const status = await screen.findByLabelText('YouTube processing status')
+    expect(status).toHaveTextContent('Scheduled every three hours, even when your Mac is off')
+    expect(status).toHaveTextContent('No cloud transcript saved yet')
+    expect(status).toHaveTextContent('YouTube blocked access to 12 videos')
+    expect(status).toHaveTextContent('Optional Mac backup')
+    expect(within(status).getByRole('link', { name: 'View cloud runs ↗' })).toHaveAttribute('href', 'https://github.com/inayatpanda/momentumboard/actions/workflows/youtube-capture.yml')
+  })
   it('opens a channel from Tracking and keeps unrelated video summaries out of that view', async () => {
     await seedWire({
       videos: [mkVideo(), mkVideo({ url: 'https://youtu.be/other', channel: 'Nash', title: 'Another view' })],

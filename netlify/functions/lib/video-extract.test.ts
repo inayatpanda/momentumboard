@@ -127,6 +127,20 @@ describe('extract tier rung ladder', () => {
 describe('the local transcript store is the first rung', () => {
   const stored = (url: string) => ({ url, title: 'NVDA breakout', channel: 'Test Channel', text: 'a stored transcript about NVDA '.repeat(10), source: 'local', at: 1 })
 
+  it('publishes a GitHub speech transcript into the app feed with its original provenance', async () => {
+    const store = memoryStore()
+    const url = 'https://www.youtube.com/watch?v=cloud000001'
+    await store.write('video-transcript:cloud000001', { ...stored(url), source: 'github', method: 'speech' })
+    llmMock.callLlm.mockResolvedValue({ text: EXTRACT_JSON })
+    const watch = vi.fn()
+    const res = await routeVideoAnalyze(auth, body(url), { APP_TOKEN: 'app' }, store, watch as never)
+    expect(await res.text()).toBe('extracted:github')
+    expect(transcriptMock.fetchTranscriptAny).not.toHaveBeenCalled()
+    expect(watch).not.toHaveBeenCalled()
+    expect(await store.read('video-extracts')).toMatchObject([{ via: 'github', transcriptMethod: 'speech', tickers: [{ sym: 'NVDA' }] }])
+    expect(await store.read('video-extract:v1:cloud000001')).toMatchObject({ via: 'github' })
+  })
+
   it('extract: a stored transcript short-circuits every network rung and tags via=local', async () => {
     const store = memoryStore()
     await store.write('video-transcripts', [stored('https://youtube.com/watch?v=loc10000000')])

@@ -44,16 +44,33 @@ The React/Vite client and API run on Cloudflare Pages, with D1 storage and a
 separate scheduled Worker. Shared backend handlers also run in GitHub Actions
 for the daily paper and longer background jobs.
 
-All workflows use standard `ubuntu-latest` runners. These runner minutes are
+All workflows use standard Ubuntu runners. These runner minutes are
 free for this public repository under GitHub's current billing rules. Workflow
 jobs are restricted to the original repository's `main` branch; forks must
 configure their own services and adjust those guards. Production credentials
 are stored as repository secrets, never in the source.
 
-YouTube discovery and best-effort caption retrieval run in the cloud. A local
-collector can fill capture gaps when its host is awake. Video access is not
-guaranteed: unavailable captions, restricted videos and provider limits remain
-visible as incomplete work. Captured transcripts are retained and reused.
+The `youtube-capture` workflow runs every three hours (at seven minutes past,
+UTC; GitHub may delay scheduled runs). It checks up to 12 pending videos, tries
+captions through two free paths, then downloads audio with yt-dlp and transcribes
+up to two videos with whisper.cpp on the CPU. Live broadcasts, videos over 90
+minutes and audio over 120 MB are skipped. Each audio attempt has a 12-minute
+deadline; capture has a 30-minute processing budget. Failures retry after 3–24
+hours rather than disappearing. The optional Mac collector can fill gaps when
+its host is awake; the cloud workflow does not require it.
+
+Words and timestamps go directly to the existing D1 transcript store. A following
+job analyses saved transcripts through the existing DeepSeek integration and
+publishes source-linked findings in **The street → Videos**, channel picks and
+stock research. **The street → Tracking** shows cloud progress, blocked access
+and discovery/transcript/analysis coverage. Existing analysis limits still apply.
+No Supadata subscription, cookies or paid proxy is used by this workflow. Audio
+is temporary; transcripts and audio are never uploaded as public Actions
+artifacts. Only the speech engine and model are cached.
+
+YouTube can block datacentre IP addresses, including GitHub runners. This is
+best-effort capture, not a guarantee of every video. The workflow records blocked
+access honestly and retains unfinished work. Captured transcripts are reused.
 
 Public runner minutes do not include external API costs, paid transcript
 services, larger runners or excess storage. The current capture preference is

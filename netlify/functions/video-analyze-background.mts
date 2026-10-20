@@ -109,13 +109,9 @@ async function runVideoAnalyze(
 
   // mode=extract — tier-1 breadth: transcript + cheap text extraction → trend store
   if (body.mode === 'extract') {
-    // Rungs: the LOCAL transcript store (the Mac runner's residential IP is
-    // the one place the caption endpoint reliably answers) → free caption
-    // scrape → Supadata (if keyed) → Gemini WATCHES the video (fileData URI —
-    // works even when auto-captions don't exist yet on a fresh upload). The
-    // worker runs on datacenter IPs, so the scrape failing is the norm, not
-    // the exception — the local rung is what makes this tier cheap AND the
-    // Gemini valve is what keeps it alive when the Mac is asleep.
+    // Stored captions/speech from GitHub or the optional Mac come first.
+    // Cloud IP blocks can leave gaps; existing provider fallbacks retain their
+    // own daily limits. The GitHub capture workflow analyses stored words only.
     const { captureTranscript } = await import('./lib/transcriptCapture')
     const { readStoredTranscript, saveTranscript } = await import('./lib/videoTranscriptStore')
     const { fetchYouTubeCommentSample, audiencePrompt } = await import('./lib/youtubeComments')
@@ -145,7 +141,7 @@ async function runVideoAnalyze(
     const audienceText = audiencePrompt(await fetchYouTubeCommentSample(body.url, env.YOUTUBE_API_KEY))
     let raw: string | null = null
     let transcriptExtract: VideoExtract | null = null
-    let via: 'local' | 'free' | 'supadata' | 'gemini-video' = 'gemini-video'
+    let via: 'local' | 'github' | 'free' | 'supadata' | 'gemini-video' = 'gemini-video'
     if (got) {
       via = got.source // kept distinct so the health line shows which cheap rung actually fired
       if (!local) {
@@ -220,7 +216,7 @@ async function runVideoAnalyze(
     const last24 = [...extracts.filter(e => videoKey(e.url) !== videoKey(extract.url)), extract].filter(e => nowSec - e.at < 86_400)
     const n = (v: string) => last24.filter(e => e.via === v).length
     console.log(
-      `EXTRACT-HEALTH: read via ${via} | 24h rungs local=${n('local')} free=${n('free')} supadata=${n('supadata')} gemini=${n('gemini-video')}${last24.some(e => e.via === 'transcript') ? ` transcript(legacy)=${n('transcript')}` : ''} | caps: gemini ${GEMINI_EXTRACT_DAILY_CAP}/day, extract 25/day`,
+      `EXTRACT-HEALTH: read via ${via} | 24h rungs github=${n('github')} local=${n('local')} free=${n('free')} supadata=${n('supadata')} gemini=${n('gemini-video')}${last24.some(e => e.via === 'transcript') ? ` transcript(legacy)=${n('transcript')}` : ''} | caps: gemini ${GEMINI_EXTRACT_DAILY_CAP}/day, extract 25/day`,
     )
     return new Response(`extracted:${via}`, { status: 200 })
   }
