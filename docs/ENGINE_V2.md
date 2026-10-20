@@ -211,3 +211,21 @@ Cloudflare Pages secret store, and deploys Pages followed by the cron dispatcher
 The dispatcher invokes the collector on Pages, so no provider key is needed on
 the dispatcher itself. The existing queue schedule reads the released code from
 `main`; the Mac caption runner already points to this checkout.
+
+### Interface refinement — 20 October 2026
+
+The phone brief now uses compact stock rows with clear price labels and a link
+to the complete setup. Planned entries and stale quotes remain explicitly
+labelled; provisional, paper-only, instrument and wildcard context survives the
+compact view. Search and refresh sit in a small app bar. News and social evidence
+have two direct entry cards. Navigation uses consistent line icons, watchlists
+use grouped rows, and stock pages give prices and chart controls more room.
+Neutral solid surfaces and blue controls replace the previous indigo gradients
+in both themes.
+
+Focused verification passes 174 tests across seven files. Browser checks covered
+390 px and 320 px phone layouts, tab switching, light/dark themes and a 1280 px
+desktop view, using clearly labelled illustrative data. No horizontal overflow
+or browser errors were observed. The production build passes; the initial bundle
+is 132.0 KB gzip, above the unchanged 120 KB budget. Production deployment is
+tracked separately below once verified.

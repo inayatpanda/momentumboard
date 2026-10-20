@@ -97,6 +97,23 @@ beforeEach(async () => {
 })
 
 describe('CallCard', () => {
+  it('keeps mobile summaries honest about planned entries and provisional paper calls', () => {
+    withRouter(<CallCard row={mkRow({ provisional: true, paperOnly: true })} compact />)
+    expect(screen.getByText('Planned entry')).toBeVisible()
+    expect(screen.getByText('128.4')).toBeVisible()
+    expect(screen.getByText('Provisional')).toBeVisible()
+    expect(screen.getByText('Paper only')).toBeVisible()
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/app/stock/NVDA')
+    expect(screen.queryByLabelText(/^Probability/)).toBeNull()
+  })
+
+  it('labels stale prices in a mobile summary instead of calling them live', () => {
+    const quote = { symbol: 'NVDA', price: 131.2, currency: 'USD', stale: true, asOf: 1_792_382_400 } as Quote
+    withRouter(<CallCard row={mkRow()} compact quote={quote} />)
+    expect(screen.getByText('Last known price')).toBeVisible()
+    expect(screen.queryByText('Planned entry')).toBeNull()
+  })
+
   it('renders a sized row: symbol, side word, grade pill, entry/stop/target as .num', () => {
     withRouter(<CallCard row={mkRow()} />)
     expect(screen.getByText('NVDA')).toBeInTheDocument()

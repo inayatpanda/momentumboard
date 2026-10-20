@@ -14,24 +14,23 @@ import { Link, useLocation } from 'wouter'
 import { NAV_ROUTES, ROUTES } from './routes'
 
 const ICONS: Record<string, string> = {
-  today: '◆',
-  stocks: '≋',
-  intel: '¶',
-  record: '✓',
-  more: '⋯',
+  today: 'M3 10.5 12 3l9 7.5M5 9v11h5v-6h4v6h5V9',
+  stocks: 'M4 19V5m0 14h16M7 14l4-4 4 2 5-7',
+  intel: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
+  record: 'M4 19h16M7 15V9m5 6V5m5 10v-3',
+  more: 'M4 6h16M4 12h16M4 18h16',
 }
 
 /** The promoted rail entries all share `key: 'more'` — which is exactly what
  * keeps the phone's More tab lit inside their pages — so their glyphs are keyed
  * on PATH instead, and they'd otherwise all wear More's ellipsis. */
 const RAIL_ICONS: Record<string, string> = {
-  '/analytics': '⌁',
-  // ❝ — the page is what OTHER PEOPLE said, and every glyph already in use
-  // (◆ ≋ ¶ ✓ ⌕ ▦ ≣ ⋯) means something else
-  '/more/street': '❝',
-  '/more/research': '⌕',
-  '/more/calendar': '▦',
-  '/more/paper': '≣',
+  '/analytics': 'M4 19h16M6 16V9m6 7V4m6 12v-5',
+  // A speech bubble distinguishes source commentary from the news page.
+  '/more/street': 'M4 4h16v12H9l-5 4V4zM8 8h8M8 12h5',
+  '/more/research': 'M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',
+  '/more/calendar': 'M4 5h16v15H4zM8 3v4m8-4v4M4 10h16',
+  '/more/paper': 'M5 3h14v18H5zM8 7h8M8 11h8M8 15h5',
 }
 
 /** Which nav key lights up for the current path. */
@@ -57,13 +56,14 @@ export function Nav() {
   const promoted = NAV_ROUTES.some(r => r.railOnly && path === r.path)
   return (
     <nav className={promoted ? 'v2-nav on-promoted' : 'v2-nav'} aria-label="Primary">
+      <div className="nav-wordmark" aria-hidden="true"><span>↗</span> StreetSignal</div>
       {NAV_ROUTES.map(r => {
         const on = r.railOnly ? path === r.path : active === r.key
         const cls = ['v2-tab', r.railOnly ? 'rail-only' : '', on ? 'on' : ''].filter(Boolean).join(' ')
         return (
           <Link key={r.path} href={r.path} className={cls} aria-current={on ? 'page' : undefined}>
             <span className="v2-tab-icon" aria-hidden>
-              {RAIL_ICONS[r.path] ?? ICONS[r.key]}
+              <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={RAIL_ICONS[r.path] ?? ICONS[r.key]} /></svg>
             </span>
             <span className="v2-tab-label">{r.label}</span>
           </Link>

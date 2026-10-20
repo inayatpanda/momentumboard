@@ -573,6 +573,7 @@ describe('StockPage', () => {
       await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall({ shadow: true })] }))
       withRouter('NVDA')
       const past = await screen.findByLabelText('Past calls')
+      await within(past).findByText('2026-07-28')
       expect(within(past).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
     })
 
@@ -582,7 +583,7 @@ describe('StockPage', () => {
       await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall({ watchOnly: true })] }))
       withRouter('NVDA')
       const past = await screen.findByLabelText('Past calls')
-      expect(within(past).getByText('2026-07-28')).toBeInTheDocument()
+      expect(await within(past).findByText('2026-07-28')).toBeInTheDocument()
       expect(within(past).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
     })
 
@@ -590,6 +591,7 @@ describe('StockPage', () => {
       await writeSlice('journey:NVDA', mkJourney({ calls: [mkCall({ belowBase: true })] }))
       withRouter('NVDA')
       const past = await screen.findByLabelText('Past calls')
+      await within(past).findByText('2026-07-28')
       expect(within(past).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
     })
 

@@ -1,10 +1,10 @@
 /* ============================================================================
-   STREETSIGNAL v2 TOKENS — the ratified "soft glass + indigo" system
-   (brainstorm mockup style-direction-v2.html, option B; spec §5).
+   STREETSIGNAL v2 TOKENS — neutral surfaces, blue controls, readable data.
+   Refined for the mobile investment-app interface (owner, 2026-10-20).
 
    Two themes, stamped as data-theme on <html> by the index.html boot script.
-   GREEN/RED ARE RESERVED for long/short & P&L — decoration is indigo, always.
-   The light theme is bluish-white: the old cream palette is retired everywhere.
+   GREEN/RED ARE RESERVED for long/short & P&L; blue marks controls.
+   Both themes use solid surfaces; colour carries meaning rather than decoration.
    ========================================================================== */
 
 @font-face {
@@ -23,39 +23,39 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #0f1219;
-  --surface-1: #151827;
-  --surface-2: #10131f;
-  --surface-glass: linear-gradient(160deg, #151827, #10131f);
-  --border: rgba(150, 160, 255, 0.1);
-  --text: #eef0f8;
-  --text-dim: #a8aec6;
-  --accent: #5b6cf5;
-  --accent-soft: #a6b0ff;
-  --accent-bar: linear-gradient(90deg, #a6b0ff, #5b6cf5);
+  --bg: #101216;
+  --surface-1: #191c21;
+  --surface-2: #22262d;
+  --surface-glass: #191c21;
+  --border: #2d323b;
+  --text: #f3f5f7;
+  --text-dim: #a3acb9;
+  --accent: #71b8ff;
+  --accent-soft: #8fc7ff;
+  --accent-bar: #71b8ff;
   --long: #34c57f;
   --short: #f87171;
   --warn: #f0a35e;
-  --radius-card: 20px;
-  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --nav-blur: rgba(15, 18, 25, 0.82);
+  --radius-card: 16px;
+  --shadow-card: none;
+  --nav-blur: rgba(16, 18, 22, 0.96);
 }
 
 :root[data-theme='light'] {
-  --bg: #f6f7fc;
+  --bg: #f7f8fa;
   --surface-1: #ffffff;
-  --surface-2: #f0f1fb;
-  --surface-glass: linear-gradient(160deg, #ffffff, #f0f1fb);
-  --border: #dfe1f2;
-  --text: #1d2030;
-  --text-dim: #666c85;
-  --accent: #4a5ae8;
-  --accent-soft: #8894fa;
-  --accent-bar: linear-gradient(90deg, #8894fa, #4a5ae8);
+  --surface-2: #eef1f5;
+  --surface-glass: #ffffff;
+  --border: #e4e8ed;
+  --text: #171d25;
+  --text-dim: #626d7b;
+  --accent: #006bd6;
+  --accent-soft: #1976d2;
+  --accent-bar: #006bd6;
   --long: #128a54;
   --short: #c23a3a;
   --warn: #b06a1f;
-  --radius-card: 20px;
-  --shadow-card: 0 8px 20px rgba(80, 90, 200, 0.1);
-  --nav-blur: rgba(246, 247, 252, 0.85);
+  --radius-card: 16px;
+  --shadow-card: none;
+  --nav-blur: rgba(255, 255, 255, 0.96);
 }

@@ -11,7 +11,7 @@
 import { Link } from 'wouter'
 import type { EnginePrediction } from '../../lib/api'
 import { rowKind, unsizedReason } from '../../lib/boardTaxonomy'
-import { fmtRiskPct, sizeLabel } from '../../lib/format'
+import { fmtPrice, fmtRiskPct, sizeLabel } from '../../lib/format'
 import { Sparkline } from '../../components/Sparkline'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
 import { exchangeFor } from '../../../shared/symbols'
@@ -94,6 +94,7 @@ export function CallCard({
   spark,
   quote,
   now,
+  compact = false,
 }: {
   row: EnginePrediction
   spark?: number[]
@@ -102,6 +103,8 @@ export function CallCard({
   quote?: Quote | null
   /** Frozen clock, for tests. */
   now?: number
+  /** Phone home: a scannable summary leading to the full stock analysis. */
+  compact?: boolean
 }) {
   const kind = rowKind(row)
   const sized = kind === 'sized-live'
@@ -117,6 +120,17 @@ export function CallCard({
   // the link in the card instead of BEING the card, and the disclosure sits
   // beside it. An equity row's markup is byte-identical to what it always was.
   const cohortNote = row.cohort === 'crypto' && row.note ? <WhySized cohort={row.cohort} note={row.note} /> : null
+  if (compact) {
+    const usableQuote = quote && Number.isFinite(quote.price) && quote.price > 0 ? quote : null
+    return <Link href={`/stock/${row.sym}`} className="brief-call">
+      <span className="brief-call-avatar" aria-hidden="true">{row.sym.split(/[-.]/)[0].slice(0, 2)}</span>
+      <span className="brief-call-identity"><strong>{row.sym}</strong><span>{row.name || 'Stock research'}</span></span>
+      <span className="brief-call-price"><small>{usableQuote ? usableQuote.stale ? 'Last known price' : priceLabel(usableQuote, row.sym, now ?? Date.now()) : 'Planned entry'}</small><strong className="num">{usableQuote ? fmtPrice(usableQuote.price, usableQuote.currency) : row.entry}</strong></span>
+      <span className="brief-call-context"><span className={`brief-direction ${row.side}`}>{row.side === 'long' ? 'Long' : 'Short'}</span>{sized && <span aria-label={`Grade ${row.grade}`}>Grade {row.grade}</span>}{row.provisional && <span>Provisional</span>}{row.paperOnly && <span>Paper only</span>}{row.instrument && <span>{row.instrument.ticker} · {row.instrument.leverage}×</span>}{row.wildcard && <span>{WILDCARD_LABEL}</span>}</span>
+      {row.wildcard && <span className="brief-call-warning">{WILDCARD_WARNING}</span>}
+      <span className="brief-call-open">View setup <span aria-hidden="true">↗</span></span>
+    </Link>
+  }
   const card = (
     <Link href={`/stock/${row.sym}`} className={cohortNote ? 'pressable cc' : 'card pressable cc'}>
       <div className="cc-top">

@@ -60,7 +60,8 @@ describe('AppShell', () => {
     expect(street).toHaveClass('on')
     expect(street).toHaveAttribute('aria-current', 'page')
     // every rail glyph is distinct — a shared one makes two rows look like one
-    const glyphs = [...nav.querySelectorAll('.v2-tab-icon')].map(el => el.textContent?.trim())
+    const glyphs = [...nav.querySelectorAll('.v2-tab-icon')].map(el => el.querySelector('path')?.getAttribute('d'))
+    expect(glyphs.every(Boolean)).toBe(true)
     expect(new Set(glyphs).size).toBe(glyphs.length)
   })
 

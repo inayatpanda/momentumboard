@@ -62,6 +62,12 @@
 .v2 .dossier-tools > section { padding: 20px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px; }
 .v2 .report-history button:focus-visible, .v2 .report-history select:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 3px; }
 @media (max-width: 600px) {
+  .v2 .company-dossier .sp-head { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .v2 .company-dossier .sp-px { padding-left: 0; font-size: 32px; line-height: 1.25; letter-spacing: -.04em; }
+  .v2 .company-dossier .sp-side { display: block; margin-top: 5px; font-size: 13px; letter-spacing: 0; }
+  .v2 .dossier-chart { padding: 18px 10px; border-radius: 16px; }
+  .v2 .dossier-chart .seg { display: flex; justify-content: space-between; }
+  .v2 .dossier-chart .seg button { min-height: 40px; flex: 1; padding-inline: 4px; }
   .v2 .dossier-section-head { align-items: start; }
   .v2 .dossier-section-head > .dossier-caption { display: none; }
   .v2 .business-key-figures, .v2 .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }

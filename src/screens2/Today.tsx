@@ -77,9 +77,13 @@ export default function Today() {
   return (
     <div className="today research-desk">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
+      {mobile && <div className="brief-appbar"><span className="brief-wordmark"><span aria-hidden="true">↗</span> StreetSignal</span><div>
+        <Link href="/stocks" className="brief-icon-button" aria-label="Search stocks"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></Link>
+        <button type="button" className="brief-icon-button" aria-label="Refresh daily brief" disabled={refreshing} onClick={refresh}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7"/></svg></button>
+      </div></div>}
       <header className="research-hero">
         <div>
-          <p className="research-eyebrow">StreetSignal / today</p>
+          <p className="research-eyebrow">{mobile ? new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' }).format(new Date()) : 'StreetSignal / today'}</p>
           <div className="research-heading"><h1>{mobile ? 'Your daily brief' : 'Research desk'}</h1>{boardIsNew && <span className="new-dot" aria-label="New board since your last visit" />}</div>
           {!mobile && <p className="research-deck">Understand the setup. Test the thesis. Learn from the outcome.</p>}
           <SessionLine generatedAt={blob?.generatedAt} />
@@ -121,14 +125,14 @@ export default function Today() {
         {error && blob === null ? null : data && blob === null ? <p className="research-empty">{NO_BOARD_YET}</p>
           : blob === null ? <div aria-label="Loading board"><div className="skeleton" style={{ height: 118, marginBottom: 10 }} /><div className="skeleton" style={{ height: 118 }} /></div>
           : sized.length === 0 ? <p className="research-empty">{clearedButUnsized ? NO_SIZED_NO_ROUTE : NO_SIZED_TODAY}</p>
-          : <div className="today-cards">{sized.map(row => <CallCard key={row.id} row={row} quote={liveQuotes[row.sym]} />)}</div>}
+          : <div className={`today-cards${mobile ? ' brief-call-list' : ''}`}>{sized.map(row => <CallCard key={row.id} row={row} quote={liveQuotes[row.sym]} compact={mobile} />)}</div>}
         <IntradayFlagsStrip blob={data?.intradayFlags ?? null} />
         <OpenCallsStrip entries={data?.openTrace?.entries} closed={data?.openTrace?.closed} />
         <CountsRail board={rows} />
       </section>
       {mobile && <nav className="mobile-brief-links" aria-label="Explore intelligence">
-        <Link href="/intel#news"><span>News & events<small>Headlines and upcoming catalysts</small></span><span aria-hidden="true">↗</span></Link>
-        <Link href="/more/street"><span>YouTube & social<small>Claims, sources and outcomes</small></span><span aria-hidden="true">↗</span></Link>
+        <Link href="/intel#news"><span className="brief-explore-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg></span><span>News & events<small>What’s moving markets</small></span><span aria-hidden="true">↗</span></Link>
+        <Link href="/more/street"><span className="brief-explore-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="4"/><path d="m10 9 5 3-5 3z"/></svg></span><span>YouTube & social<small>Follow the evidence</small></span><span aria-hidden="true">↗</span></Link>
       </nav>}
       </div>
       <div id="brief-panel-research" role={mobile ? 'tabpanel' : undefined} aria-labelledby={mobile ? 'brief-tab-research' : undefined} hidden={mobile && view !== 'research'}>
