@@ -236,6 +236,8 @@ Application revision `dfebd3a` is deployed to
 `d8e0adce-7c88-4091-ac57-6a159ec1e39c`. The matching cron worker version is
 `6b411d31-4a9a-4af8-89c0-e8017529d292`, with the existing three schedules.
 The queue worker uses this revision from `main` at its next scheduled run.
+The collector's scheduled invocation was confirmed by its non-sensitive D1
+update timestamp at **12:25:22 UTC**, without reading the stored payload.
 
 The full GitHub check passed **249 test files, 3,629 tests, one skipped**, and
 the production build. The measured initial bundle is 132.1 KB gzip. GitHub's
