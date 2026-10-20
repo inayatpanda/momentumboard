@@ -44,6 +44,7 @@ def invoke(args, timeout=180):
 
 
 with tempfile.TemporaryDirectory(prefix="streetsignal-cloud-access-") as folder:
+    success = False
     result, flags = invoke(["--skip-download", "--print", '{"duration":%(duration)j,"is_live":%(is_live)j,"title":%(title)j}'])
     metadata = None
     if result and result.returncode == 0:
@@ -57,6 +58,9 @@ with tempfile.TemporaryDirectory(prefix="streetsignal-cloud-access-") as folder:
                                 "-o", str(Path(folder) / "audio.%(ext)s")], timeout=300)
         files = [p for p in Path(folder).glob("audio.*") if p.suffix != ".part"]
         saved = sum(p.stat().st_size for p in files)
+        success = bool(result and result.returncode == 0 and saved > 0)
         print(json.dumps({"stage": "download", "videoId": video_id,
-                          "ok": bool(result and result.returncode == 0 and saved > 0),
+                          "ok": success,
                           "bytes": saved, **flags}), flush=True)
+if not success:
+    raise SystemExit("cloud-audio-not-accessible")
