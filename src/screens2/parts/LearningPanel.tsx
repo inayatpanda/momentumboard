@@ -34,9 +34,10 @@ export function LearningPanel({ learning, onResearch }: { learning?: ResearchLea
     {!learning ? <div className="research-learning-empty"><BrandMark size={44} /><div><h3>The learning snapshot is not available.</h3><p>Historical learning is not available in this board snapshot. Refresh Today to check for an update; existing published-call results are available in Track record.</p><Link href="/record" className="research-text-link">View published-call results →</Link></div></div> : <>
       <MarketComparison snapshot={learning.marketComparison} />
       <div className="research-learning-census" aria-label="Learning history coverage">
-        <div><strong className="num">{learning.history.eligibleCompletedN}</strong><span>Comparable outcomes</span></div>
+        <div><strong className="num">{learning.history.eligibleCompletedN}</strong><span>Outcomes for current models</span></div>
         <div><strong className="num">{learning.history.currentPendingN ?? learning.history.pendingN}</strong><span>{learning.history.currentPendingN != null ? 'Current forecasts being tracked' : 'Unscored records · all versions'}</span></div>
       </div>
+      {learning.marketComparison && <p className="learning-history-note">Forecast tracking includes watch-only direction estimates; the market test uses actionable setups.</p>}
       {learning.history.excludedCompletedN > 0 && <p className="learning-history-note">{learning.history.excludedCompletedN} completed records are kept separately because they are not comparable with this model. <a href="#learning-history-details" onClick={() => { const detail = document.getElementById('learning-history-details'); if (detail instanceof HTMLDetailsElement) detail.open = true }}>Why these are separate ↓</a></p>}
       {strategy && stats && <div className="research-learning-workbench">
         <div className="research-learning-controls">

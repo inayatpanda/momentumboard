@@ -34,7 +34,7 @@ describe('Historical learning', () => {
     expect(screen.getByText(/Historical learning is not available/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Learning history coverage')).not.toBeInTheDocument()
     rerender(<LearningPanel learning={buildResearchLearning([], 1_792_382_400)} />)
-    expect(screen.getByLabelText('Learning history coverage')).toHaveTextContent('0Comparable outcomes')
+    expect(screen.getByLabelText('Learning history coverage')).toHaveTextContent('0Outcomes for current models')
     expect(screen.queryByLabelText('Selected campaign results')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Research awaiting outcomes')).toHaveTextContent('What appears next')
     expect(screen.queryByText('+0.0%')).not.toBeInTheDocument()
