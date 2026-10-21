@@ -1,3 +1,4 @@
+import '../styles/record.css'
 interface Bucket {
   n: number
   hits: number

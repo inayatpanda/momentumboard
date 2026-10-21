@@ -1,3 +1,4 @@
+import '../styles/record.css'
 import { DataStatus } from './parts/DataStatus'
 // Record (plan Task 20) — Track record: the engine's accountability as a
 // first-class tab. Scorecard tiles → calibration → the ledger as cards

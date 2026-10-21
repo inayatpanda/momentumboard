@@ -1,0 +1,603 @@
+/* --- record --------------------------------------------------------------
+   Track record (plan Task 20): scorecard tiles → calibration → the ledger as
+   cards (the legacy 11-column sideways table dies here) → regrets. Tokens
+   only, on top of .card/.pill/.sec-label/.cc-reason/.cc-wildcard/.num/
+   .pressable/.skeleton/.stx-showmore already declared above. */
+.v2 .rec2 h1 {
+  font-size: 22px;
+  margin: 0 0 14px;
+}
+
+/* Paper-book execution stats: seven compact tiles that reflow instead of a
+   wide performance table. */
+.v2 .paper-book-panel { margin: 20px 0; }
+.v2 .paper-book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.v2 .paper-book-stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .paper-book-stat > span,
+.v2 .paper-book-stat small { color: var(--text-dim); font-size: 11px; }
+.v2 .paper-book-stat strong { font-size: 20px; }
+.v2 .paper-book-list { margin-top: 14px; }
+.v2 .paper-book-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  min-width: 0;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  text-decoration: none;
+}
+.v2 .paper-book-row .long { color: var(--long); }
+.v2 .paper-book-row .short { color: var(--short); }
+.v2 .paper-book-history,
+.v2 .paper-book-note { overflow-wrap: anywhere; }
+.v2 .paper-book-history { margin: 12px 0 0; color: var(--text-dim); font-size: 11px; }
+
+/* the scorecard: one tile per byGrade key, shadow/wildcard included — never
+   styled differently from an ordinary letter, only LABELLED differently
+   (Record.tsx's tileLabel) */
+.v2 .rec-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.v2 .rec-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .rec-tile-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.v2 .rec-tile-n {
+  font-size: 20px;
+  font-weight: 800;
+}
+.v2 .rec-tile-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.v2 .rec-tile-warn {
+  font-size: 11px;
+  color: var(--warn);
+}
+
+/* do the letters separate? the same byGrade numbers, side by side, so the
+   claim a grade makes can be checked in one glance (owner iteration 2) */
+.v2 .rec-grade-wrap {
+  overflow-x: visible;
+  margin: -8px 0 18px;
+  /* four short columns stretched across a 1200px desk pane puts the tier name
+     and its numbers half a screen apart — cap it to a readable measure */
+  max-width: 560px;
+}
+.v2 .rec-grade-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.v2 .rec-grade-table th {
+  text-align: right;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-dim);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: normal;
+}
+.v2 .rec-grade-table th:first-child,
+.v2 .rec-grade-table td:first-child {
+  text-align: left;
+}
+.v2 .rec-grade-table td {
+  text-align: right;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: normal;
+}
+.v2 .rec-grade-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* the cumulative line (owner iteration 2): "the graph doesnt mean anything" —
+   this one answers what following every sized call would have done. Labels are
+   HTML, never SVG text: the plot stretches with preserveAspectRatio="none" and
+   that scale would distort any glyph inside it. */
+.v2 .rec-chart {
+  margin-bottom: 18px;
+}
+.v2 .rec-chart .sec-label {
+  margin-top: 0;
+}
+.v2 .rec-chart-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 10px;
+}
+.v2 .rec-chart-total {
+  font-size: 24px;
+  font-weight: 800;
+}
+.v2 .rec-chart-total.up {
+  color: var(--long);
+}
+.v2 .rec-chart-total.down {
+  color: var(--short);
+}
+.v2 .rec-chart-plot {
+  position: relative;
+  /* room on the right for the y labels, which sit outside the plotted area */
+  padding-right: 52px;
+}
+.v2 .rec-chart-svg {
+  display: block;
+  width: 100%;
+  height: 180px;
+  overflow: visible;
+}
+.v2 .rec-chart-area {
+  fill: var(--accent);
+  opacity: 0.14;
+  stroke: none;
+}
+.v2 .rec-chart-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.v2 .rec-chart-zero {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+.v2 .rec-chart-ymax,
+.v2 .rec-chart-ymin,
+.v2 .rec-chart-yzero {
+  position: absolute;
+  right: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1;
+}
+.v2 .rec-chart-ymax {
+  top: 0;
+}
+.v2 .rec-chart-ymin {
+  bottom: 0;
+}
+.v2 .rec-chart-yzero {
+  transform: translateY(-50%);
+}
+.v2 .rec-chart-xaxis {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding-right: 52px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* the window's two ends, named (owner iteration 2) */
+.v2 .rec-extremes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.v2 .rec-extreme {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .rec-extreme-sym {
+  font-size: 17px;
+  font-weight: 800;
+}
+.v2 .rec-extreme-pp {
+  font-size: 15px;
+  font-weight: 700;
+}
+.v2 .rec-extreme-pp.up {
+  color: var(--long);
+}
+.v2 .rec-extreme-pp.down {
+  color: var(--short);
+}
+
+/* Calibration evidence: the old claimed-v-realized scatter derived both axes
+   from the same outcomes. This scorecard instead shows the decision-useful
+   evidence: observed rate, honest benchmark, uncertainty and sample size. */
+.cal-evidence {
+  min-width: 0;
+}
+.cal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.cal-title-row .section-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cal-method {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.cal-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  margin: 8px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.cal-summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+.cal-summary-stat + .cal-summary-stat {
+  border-left: 1px solid var(--border);
+}
+.cal-summary-stat strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.cal-summary-stat > span:last-child {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.cal-summary-label {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.cal-row-head,
+.cal-row {
+  display: grid;
+  grid-template-columns: minmax(145px, .72fr) minmax(220px, 1.55fr) minmax(92px, .5fr);
+  gap: 18px;
+  align-items: center;
+}
+.cal-row-head {
+  padding: 0 12px 7px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.cal-rows {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.cal-row {
+  min-width: 0;
+  padding: 11px 12px;
+  background: var(--surface-1);
+}
+.cal-row + .cal-row {
+  border-top: 1px solid var(--border);
+}
+.cal-setup {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.cal-setup > div,
+.cal-result,
+.cal-sample {
+  min-width: 0;
+}
+.cal-setup strong,
+.cal-setup div > span,
+.cal-sample strong,
+.cal-sample span {
+  display: block;
+}
+.cal-setup strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.cal-setup div > span,
+.cal-sample span,
+.cal-range-copy {
+  color: var(--text-dim);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+.cal-side {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 49px;
+  padding: 5px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.cal-side.long { color: var(--long); }
+.cal-side.short { color: var(--short); }
+.cal-result-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+.cal-result-top strong {
+  font-size: 13px;
+}
+.cal-lift {
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.cal-lift.good { color: var(--long); }
+.cal-lift.bad { color: var(--short); }
+.cal-lift.watch,
+.cal-lift.early { color: var(--warn); }
+.cal-lift.neutral { color: var(--text-dim); }
+.cal-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.cal-range {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.cal-rate,
+.cal-base {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-1px);
+  border-radius: 2px;
+}
+.cal-rate { background: var(--accent); }
+.cal-base {
+  z-index: 1;
+  width: 1px;
+  background: var(--text-dim);
+}
+.cal-range-copy {
+  display: block;
+  margin-top: 3px;
+}
+.cal-sample {
+  text-align: right;
+}
+.cal-sample strong {
+  font-size: 12px;
+}
+.cal-footnote {
+  margin: 9px 2px 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.v2 .rec-calibration {
+  margin: 4px 0 18px;
+}
+.v2 .rec-calibration .digest-section {
+  margin-bottom: 0;
+}
+.v2 .rec-calibration .section-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.v2 .rec-calibration .section-title::after {
+  background: var(--border);
+}
+.v2 .rec-calibration .empty-line {
+  color: var(--text-dim);
+}
+.v2 .rec-calibration-context {
+  margin-top: 8px;
+}
+.v2 .rec-calibration-explainer {
+  margin: 0 0 8px;
+}
+
+@media (max-width: 700px) {
+  .cal-title-row {
+    align-items: flex-start;
+  }
+  .cal-method {
+    padding-top: 10px;
+  }
+  .cal-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .cal-summary-best {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border);
+    border-left: 0 !important;
+  }
+  .cal-summary-stat {
+    padding: 10px 11px;
+  }
+  .cal-summary-stat strong {
+    font-size: 15px;
+  }
+  .cal-row-head {
+    display: none;
+  }
+  .cal-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 9px 12px;
+    padding: 12px;
+  }
+  .cal-result {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .cal-sample {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+/* the ledger, grouped by day */
+.v2 .rec-ledger-day {
+  margin-bottom: 4px;
+}
+/* the day's still-open calls, stacked behind one line (visibility wave,
+   2026-08-17) — they arrive newest-first and outnumber the graded rows, so
+   unfolded they buried the receipts the page exists to show */
+.v2 .rec-ledger-awaiting {
+  margin-bottom: 10px;
+}
+.v2 .rec-ledger-awaiting > summary {
+  cursor: pointer;
+  padding: 6px 0;
+  list-style: none;
+}
+.v2 .rec-ledger-awaiting > summary::-webkit-details-marker {
+  display: none;
+}
+.v2 .rec-ledger-awaiting > summary::before {
+  content: '›';
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--text-dim);
+  transition: transform 0.15s ease;
+}
+.v2 .rec-ledger-awaiting[open] > summary::before {
+  transform: rotate(90deg);
+}
+.v2 .rec-ledger-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.v2 .rec-ledger-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.v2 a.rec-ledger-sym {
+  font-weight: 800;
+  font-size: 15px;
+  color: inherit;
+  text-decoration: none;
+}
+.v2 .rec-ledger-thesis {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.v2 .rec-ledger-out {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v2 .rec-ledger-pm {
+  margin: 0;
+  font-style: italic;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* the regret surface */
+.v2 .rec-regret-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.v2 .rec-regret-label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.v2 .rec-regret-stat {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.v2 .rec-regret-causal {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.v2 .rec-regret-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.v2 a.rec-regret-example {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+.v2 a.rec-regret-example b {
+  color: var(--text);
+}
+.v2 .rec-regret-caveat {
+  margin-top: 10px;
+  font-style: italic;
+}
+
