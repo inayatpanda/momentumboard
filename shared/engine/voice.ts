@@ -433,18 +433,11 @@ export function dipThesis(input: { sym: string; dropPct: number; stop: number; n
  * that losing it still leaves a true sentence. */
 export const WILDCARD_MARK = '🃏'
 
-/** THE EXPERIMENT'S LABEL, one exported constant because four surfaces print it
- * — the row's thesis and note here, the board card's badge, the panel line and
- * the paper's brief — and a reader who learns to recognise one glyph must find
- * the same glyph everywhere. Spec §4.1: "distinctly labelled". */
-export const WILDCARD_LABEL = `${WILDCARD_MARK} Wildcard`
+/** A plain text label across app surfaces; no decorative emoji in the UI. */
+export const WILDCARD_LABEL = 'Wildcard'
 
-/** …and the STANDING WARNING, printed on every wildcard row without exception
- * and never softened by how good the particular row looks. The slot exists to
- * take trades the engine's own gates refused, so it will lose more often than the
- * board does — and the one thing that must never happen is a reader meeting one
- * of these rows without being told that in the row's own words. */
-export const WILDCARD_WARNING = 'Experiments lose more often than the board does.'
+/** Identify the experiment without claiming an unmeasured loss rate. */
+export const WILDCARD_WARNING = 'Experimental idea: limited evidence; this is not a validated strategy.'
 
 /** The wildcard's two sentences.
  *

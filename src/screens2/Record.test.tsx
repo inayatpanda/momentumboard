@@ -160,7 +160,7 @@ describe('Record', () => {
       const table = within(sc).getByLabelText('Per-grade record')
       expect(within(table).getByText('Grade A')).toBeInTheDocument()
       expect(within(table).getByText('Shadow book')).toBeInTheDocument()
-      expect(within(table).getByText(/🃏 Wildcard/)).toBeInTheDocument()
+      expect(within(table).getByText(/Wildcard/)).toBeInTheDocument()
       // never invents a tier neither key has
       expect(within(sc).queryByText('Grade shadow')).not.toBeInTheDocument()
       expect(within(sc).queryByText('Grade wildcard')).not.toBeInTheDocument()
@@ -623,7 +623,7 @@ describe('Record — the page a reader can actually reach the end of', () => {
       withRouter()
       const table = await screen.findByLabelText('Per-grade record')
       const tiers = [...table.querySelectorAll('tbody tr td:first-child')].map(td => td.textContent)
-      expect(tiers).toEqual(['Grade A', 'Grade B', 'Grade C', 'Shadow book', '🃏 Wildcard'])
+      expect(tiers).toEqual(['Grade A', 'Grade B', 'Grade C', 'Shadow book', 'Wildcard'])
     })
   })
 
