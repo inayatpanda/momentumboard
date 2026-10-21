@@ -33,6 +33,7 @@ function ObservationCard({ row, linked = true }: { row: StrategyObservation; lin
     </div>
     <div className="research-evidence-line"><span className="research-status-dot" aria-hidden="true" /><span>{directional ? `${row.forecast.calibratedN} historical analogues · ${row.forecast.liveN ?? 0} matured live forecasts` : `${row.forecast.calibratedN} matured campaigns`}</span></div>
     {directional && row.side === 'neutral' && <p className="research-muted"><b>No supported directional edge.</b></p>}
+    {directional && row.metrics.historyGate && row.metrics.historyGate !== 'passed' && <p className="research-muted"><b>Historical safety check:</b> {row.metrics.historyGate === 'not-supported' ? 'Earlier results did not support this strategy. This remains a watch idea.' : 'This stock is not yet covered by a current, comparable long-history test.'}</p>}
     <div className="research-risk"><span>What could break it</span><p>{row.risks[0] || 'No specific risk was recorded in this observation.'}</p></div>
     {row.dataGaps.length > 0 && <p className="research-missing"><b>Still missing</b> {row.dataGaps.slice(0, linked ? 2 : undefined).join(' · ')}</p>}
     {row.sleeve === 'quality-dip' && <div className="research-recovery" aria-label="Recovery evidence">

@@ -1,4 +1,5 @@
 import type { MarketComparisonSnapshot } from './marketComparison'
+import type { HistoricalStudy } from './historyEvidence'
 import {
   compatibleLabRecords, LAB_EXECUTION_VERSION, QUALITY_DIP_MODEL_VERSION, SHORT_HORIZON_MODEL_VERSION,
   SOCIAL_IGNITION_MODEL_VERSION, type StrategyLabRecord, type StrategyObservation, type StrategySleeve,
@@ -71,6 +72,7 @@ export interface ResearchLearningStrategy {
 }
 
 export interface ResearchLearningSnapshot {
+  historicalStudy?: HistoricalStudy | null
   marketComparison?: MarketComparisonSnapshot
   version: 1
   generatedAt: number

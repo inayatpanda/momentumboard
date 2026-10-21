@@ -1,4 +1,5 @@
 import { buildMarketComparison } from '../../../shared/engine/marketComparison'
+import { applyHistoryGate, type HistoricalStudy } from '../../../shared/engine/historyEvidence'
 import type { ValuationCapitalization } from '../../../shared/sectorFinancials'
 import { consensusTickers, type VideoExtract } from './videoTrends'
 import { gradeSocialRecord, socialGradingQueue, summarizeSocialOutcomes, type SocialOutcomeRecord } from '../../../shared/engine/socialOutcomes'
@@ -4237,7 +4238,9 @@ export async function buildBoard(
     const candles = await deps.candles(sym).catch(() => null)
     if (candles && candles.length >= 90) shortBySym.set(sym, { sym, candles, earningsRisk: earningsSet.has(baseSym(sym)) })
   })
+  const historicalStudy = await store.read<HistoricalStudy>('engine-historical-study')
   const shortLabRaw = shortHorizonObservations([...shortBySym.values()], nowSec, shortAlways)
+    .map(observation => applyHistoryGate(observation, historicalStudy, nowSec))
   const qualityRows = candidateSyms.flatMap(sym => {
     const candles = candleMap.get(sym)
     return candles ? [{ sym, candles, sector: symToSector.get(baseSym(sym)) ?? null, valuationCapitalization: null as ValuationCapitalization | null, capUsdM: sources.get(sym)?.capUsdM ?? null, earningsRisk: earningsSet.has(baseSym(sym)), businessHealth: null as BusinessHealthSnapshot | null }] : []
@@ -4317,6 +4320,7 @@ export async function buildBoard(
   const shortHorizonEvidenceN = labEvidenceCount(labRecords, 'short-horizon', nowSec)
   const compositeEvidenceN = Object.values(calibration.buckets).reduce((sum, bucket) => sum + (bucket.n ?? 0), 0)
   const learning = buildResearchLearning(labRecords, qualityPublicationAt)
+  learning.historicalStudy = historicalStudy
   const publishedAudit = await store.read<{ records: StrategyLabRecord[]; coverage?: import('../../../shared/engine/marketComparison').MarketComparisonSnapshot['auditCoverage'] }>('engine-published-market-audit')
   learning.marketComparison = buildMarketComparison([...labRecords, ...(publishedAudit?.records ?? [])], spy, qualityPublicationAt)
   learning.marketComparison.auditCoverage = publishedAudit?.coverage

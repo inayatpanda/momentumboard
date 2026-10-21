@@ -7,6 +7,7 @@ import { exchangeFor } from '../symbols'
 import { sessionUtcHours } from '../rvol'
 import type { ResearchLearningSnapshot } from './researchLearning'
 import { summarizeReportTrends } from '../reportTrends'
+import { HISTORY_CORE_MODEL, HISTORY_GATED_MODEL } from './historyEvidence'
 
 /** The visible research layer. A sleeve may inspect a setup before it has earned
  * the right to place it; `mode` is therefore part of the data rather than UI
@@ -158,7 +159,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100
 const r4 = (n: number) => Math.round(n * 10_000) / 10_000
 const DAY_SEC = 86_400
 const SHORT_HORIZON = 3
-export const SHORT_HORIZON_MODEL_VERSION = 'baseline-lift-analogues-v3'
+export const SHORT_HORIZON_MODEL_VERSION = HISTORY_GATED_MODEL
 export const LAB_EXECUTION_VERSION = 'next-open-costs-v2'
 export const QUALITY_DIP_MODEL_VERSION = 'quality-dip-sector-value-v5'
 export const SOCIAL_IGNITION_MODEL_VERSION = 'social-ignition-next-open-v2'
@@ -271,7 +272,9 @@ export function shortHorizonObservations(
   const observations: StrategyObservation[] = []
   const required = new Set(alwaysInclude.map(s => s.toUpperCase()))
   for (const row of rows) {
-    const candles = completedLabCandles(row.candles, nowSec, row.sym)
+    // A fixed maximum makes live one-year feeds and long-history replays use
+    // the same model context. Extra history is for testing, not silent retuning.
+    const candles = completedLabCandles(row.candles, nowSec, row.sym).slice(-250)
     const lastBar = candles.at(-1)
     const problem = candles.length < 90
       ? 'At least 90 valid completed daily sessions are needed; history is missing, short or contains invalid OHLC.'
@@ -284,7 +287,7 @@ export function shortHorizonObservations(
         side: 'neutral', state: 'collecting', score: 0, entry: null, stop: null, target: null,
         detectedAt: nowSec, availableAt: nowSec, reasons: [problem], risks: [], dataGaps: [problem],
         metrics: { signalSessionAt: lastBar?.t ?? null },
-        forecast: { definition: 'three-session-direction-v1', modelVersion: SHORT_HORIZON_MODEL_VERSION,
+        forecast: { definition: 'three-session-direction-v1', modelVersion: HISTORY_CORE_MODEL,
           probabilityBasis: 'historical-analogues', label: 'Close after 3 sessions versus the latest completed close',
           horizonSessions: SHORT_HORIZON, calibratedN: 0, liveN: 0, provisional: true },
       })
@@ -378,6 +381,7 @@ export function shortHorizonObservations(
         baselineLiftUpPp: r1(longLift * 100), baselineLiftDownPp: r1(shortLift * 100),
         signalSessionAt: candles.at(-1)!.t,
         analogueCandidates: history.length,
+        historySessionN: candles.length,
         analogueEffectiveN: nearest.length,
         rangeCoverage: 0.6,
         rangeLowQuantile: 0.2,
@@ -392,7 +396,7 @@ export function shortHorizonObservations(
       },
       forecast: {
         definition: 'three-session-direction-v1',
-        modelVersion: SHORT_HORIZON_MODEL_VERSION,
+        modelVersion: HISTORY_CORE_MODEL,
         probabilityBasis: 'historical-analogues',
         probabilityUpInterval,
         probabilityDownInterval,

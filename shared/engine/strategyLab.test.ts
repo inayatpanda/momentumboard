@@ -10,6 +10,11 @@ const after = (cs: Candle[]) => cs.at(-1)!.t + DAY
 const candles = (closes: number[]): Candle[] => closes.map((c, i) => ({ t: T0 + i * DAY, o: c, h: c * 1.01, l: c * 0.99, c, v: 1_000_000 }))
 
 describe('visible strategy lab', () => {
+  it('uses the same fixed context in live feeds and longer historical tapes', () => {
+    const cs = candles(Array.from({ length: 600 }, (_, i) => 100 + i * .03 + Math.sin(i / 7) * 5))
+    expect(shortHorizonObservations([{ sym: 'AAPL', candles: cs }], after(cs)))
+      .toEqual(shortHorizonObservations([{ sym: 'AAPL', candles: cs.slice(-250) }], after(cs)))
+  })
   it('builds a three-session analogue forecast with explicit up/down odds and range', () => {
     const trend = candles(Array.from({ length: 180 }, (_, i) => 100 * Math.pow(1.003, i)))
     const [goog] = shortHorizonObservations([{ sym: 'GOOG', candles: trend }], after(trend), ['GOOG'])

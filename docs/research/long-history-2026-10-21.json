@@ -1,0 +1,532 @@
+{
+  "version": "long-history-walk-forward-v1",
+  "coreModel": "baseline-lift-250-session-v4",
+  "generatedAt": 1792580474,
+  "dataFrom": 1451917800,
+  "dataThrough": 1792503000,
+  "evaluationFrom": 1577836800,
+  "symbols": [
+    "AAPL",
+    "MSFT",
+    "JPM",
+    "BAC",
+    "JNJ",
+    "PFE",
+    "XOM",
+    "CVX",
+    "CAT",
+    "HON",
+    "PG",
+    "KO",
+    "HD",
+    "MCD",
+    "DIS",
+    "VZ",
+    "DUK",
+    "SO",
+    "NEM",
+    "FCX",
+    "AMT",
+    "SPG"
+  ],
+  "missingSymbols": [],
+  "strategies": [
+    {
+      "key": "direction-core",
+      "label": "Three-session direction",
+      "horizon": 3,
+      "description": "Existing analogue model, tested on price data. Historical earnings exclusions and daily board ranking cannot be reconstructed.",
+      "stats": {
+        "n": 1900,
+        "quarters": 28,
+        "meanReturnPct": -0.24358407463076767,
+        "meanMarketPct": -0.012016748106013239,
+        "excessPp": -0.23156732652475442,
+        "beatRate": 0.44263157894736843,
+        "brier": 0.2635489282736834,
+        "baselineBrier": 0.25133797477894826,
+        "uncertaintyPp": [
+          -0.376292664006533,
+          -0.11024705332485416
+        ]
+      },
+      "years": [
+        {
+          "year": 2020,
+          "stats": {
+            "n": 289,
+            "quarters": 4,
+            "meanReturnPct": -0.11237616201648686,
+            "meanMarketPct": -0.021669361773430904,
+            "excessPp": -0.09070680024305593,
+            "beatRate": 0.4740484429065744,
+            "brier": 0.23450112567474032,
+            "baselineBrier": 0.23827811387543257,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2021,
+          "stats": {
+            "n": 328,
+            "quarters": 4,
+            "meanReturnPct": -0.14643904395344864,
+            "meanMarketPct": 0.09929145060227172,
+            "excessPp": -0.24573049455572038,
+            "beatRate": 0.40853658536585363,
+            "brier": 0.26413393707317057,
+            "baselineBrier": 0.25146474399390245,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2022,
+          "stats": {
+            "n": 261,
+            "quarters": 4,
+            "meanReturnPct": -0.43960392175453655,
+            "meanMarketPct": -0.3472750243934721,
+            "excessPp": -0.09232889736106427,
+            "beatRate": 0.47509578544061304,
+            "brier": 0.28934701816091957,
+            "baselineBrier": 0.25970452900383123,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 246,
+            "quarters": 4,
+            "meanReturnPct": -0.45811700035629827,
+            "meanMarketPct": 0.07298026408123177,
+            "excessPp": -0.5310972644375299,
+            "beatRate": 0.3861788617886179,
+            "brier": 0.28489339109756084,
+            "baselineBrier": 0.26080705065040644,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2024,
+          "stats": {
+            "n": 270,
+            "quarters": 4,
+            "meanReturnPct": -0.22442998388679616,
+            "meanMarketPct": 0.06925438635086859,
+            "excessPp": -0.29368437023766514,
+            "beatRate": 0.42962962962962964,
+            "brier": 0.25857367885185173,
+            "baselineBrier": 0.25057423144444435,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2025,
+          "stats": {
+            "n": 235,
+            "quarters": 4,
+            "meanReturnPct": -0.109437957674888,
+            "meanMarketPct": 0.14072896302665297,
+            "excessPp": -0.2501669207015409,
+            "beatRate": 0.4553191489361702,
+            "brier": 0.248333227148936,
+            "baselineBrier": 0.2450840545531912,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 271,
+            "quarters": 4,
+            "meanReturnPct": -0.2529653254256301,
+            "meanMarketPct": -0.1041377338366549,
+            "excessPp": -0.14882759158897516,
+            "beatRate": 0.47232472324723246,
+            "brier": 0.2677478207380073,
+            "baselineBrier": 0.2546425435424352,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "cancelledN": 272,
+      "missingN": 0,
+      "status": "behind"
+    },
+    {
+      "key": "direction-gated",
+      "label": "Direction with an evidence filter",
+      "horizon": 3,
+      "description": "Same signals; each year is allowed only if the prior two years beat SPY and improved probability error over the stock’s normal drift.",
+      "stats": {
+        "n": 0,
+        "quarters": 0,
+        "meanReturnPct": null,
+        "meanMarketPct": null,
+        "excessPp": null,
+        "beatRate": null,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": null
+      },
+      "years": [],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "no-trades"
+    },
+    {
+      "key": "pullback-price",
+      "label": "Stabilising pullback",
+      "horizon": 63,
+      "description": "Price-only control: 8–35% below the 63-session high, above a rising 20-session average. This does not test business health or valuation.",
+      "stats": {
+        "n": 226,
+        "quarters": 27,
+        "meanReturnPct": 6.193212248258534,
+        "meanMarketPct": 4.873972538698147,
+        "excessPp": 1.3192397095603892,
+        "beatRate": 0.46017699115044247,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": [
+          -1.4674972143552825,
+          4.76394184823629
+        ]
+      },
+      "years": [
+        {
+          "year": 2020,
+          "stats": {
+            "n": 39,
+            "quarters": 4,
+            "meanReturnPct": 10.2400111367526,
+            "meanMarketPct": 11.12694606222578,
+            "excessPp": -0.8869349254731822,
+            "beatRate": 0.358974358974359,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2021,
+          "stats": {
+            "n": 26,
+            "quarters": 4,
+            "meanReturnPct": 7.638049597385487,
+            "meanMarketPct": 4.804582115250724,
+            "excessPp": 2.833467482134764,
+            "beatRate": 0.6153846153846154,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2022,
+          "stats": {
+            "n": 43,
+            "quarters": 4,
+            "meanReturnPct": 1.257284885222982,
+            "meanMarketPct": -1.648520821601343,
+            "excessPp": 2.905805706824325,
+            "beatRate": 0.5581395348837209,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 40,
+            "quarters": 4,
+            "meanReturnPct": 3.2131581496526196,
+            "meanMarketPct": 7.378269197340901,
+            "excessPp": -4.165111047688284,
+            "beatRate": 0.225,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2024,
+          "stats": {
+            "n": 19,
+            "quarters": 4,
+            "meanReturnPct": 5.7797117101746345,
+            "meanMarketPct": 4.126470910072535,
+            "excessPp": 1.6532408001021,
+            "beatRate": 0.5789473684210527,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2025,
+          "stats": {
+            "n": 34,
+            "quarters": 4,
+            "meanReturnPct": 11.570361462090776,
+            "meanMarketPct": 3.582943944116724,
+            "excessPp": 7.987417517974055,
+            "beatRate": 0.5294117647058824,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 25,
+            "quarters": 3,
+            "meanReturnPct": 4.636794239438291,
+            "meanMarketPct": 4.727213934653255,
+            "excessPp": -0.09041969521496519,
+            "beatRate": 0.48,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "uncertain"
+    },
+    {
+      "key": "trend-price",
+      "label": "Trend and relative strength",
+      "horizon": 20,
+      "description": "Price-only control: above the 200-session average, 50-session average above 200, and a stronger 20-session return than SPY.",
+      "stats": {
+        "n": 813,
+        "quarters": 27,
+        "meanReturnPct": 0.3925829261777395,
+        "meanMarketPct": 0.6664175879371523,
+        "excessPp": -0.2738346617594126,
+        "beatRate": 0.4784747847478475,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": [
+          -1.3436869469725223,
+          0.6205160536836523
+        ]
+      },
+      "years": [
+        {
+          "year": 2020,
+          "stats": {
+            "n": 108,
+            "quarters": 4,
+            "meanReturnPct": 0.2584249057601829,
+            "meanMarketPct": -1.0059581101872561,
+            "excessPp": 1.2643830159474385,
+            "beatRate": 0.5277777777777778,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2021,
+          "stats": {
+            "n": 162,
+            "quarters": 4,
+            "meanReturnPct": 1.8250044839722501,
+            "meanMarketPct": 1.6043589199628796,
+            "excessPp": 0.22064556400937055,
+            "beatRate": 0.5,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2022,
+          "stats": {
+            "n": 99,
+            "quarters": 4,
+            "meanReturnPct": -0.6887997377819339,
+            "meanMarketPct": -1.5253918188571753,
+            "excessPp": 0.8365920810752419,
+            "beatRate": 0.5757575757575758,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 81,
+            "quarters": 4,
+            "meanReturnPct": -1.1481986972153366,
+            "meanMarketPct": 1.4693134845920102,
+            "excessPp": -2.617512181807348,
+            "beatRate": 0.30864197530864196,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2024,
+          "stats": {
+            "n": 147,
+            "quarters": 4,
+            "meanReturnPct": 0.11464126845814847,
+            "meanMarketPct": 1.2111773395601464,
+            "excessPp": -1.096536071101997,
+            "beatRate": 0.4421768707482993,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2025,
+          "stats": {
+            "n": 121,
+            "quarters": 4,
+            "meanReturnPct": 0.7328314552290182,
+            "meanMarketPct": 1.2428931139896267,
+            "excessPp": -0.5100616587606078,
+            "beatRate": 0.4628099173553719,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 95,
+            "quarters": 3,
+            "meanReturnPct": 0.5397863023757146,
+            "meanMarketPct": 0.9905378101680354,
+            "excessPp": -0.4507515077923209,
+            "beatRate": 0.5052631578947369,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "behind"
+    }
+  ],
+  "gates": [
+    {
+      "year": 2020,
+      "trainingFrom": 1514764800,
+      "trainingThrough": 1577836799,
+      "n": 535,
+      "months": 24,
+      "excessPp": -0.040793310455513564,
+      "brierSkill": -0.04423357046988308,
+      "allow": false
+    },
+    {
+      "year": 2021,
+      "trainingFrom": 1546300800,
+      "trainingThrough": 1609459199,
+      "n": 564,
+      "months": 24,
+      "excessPp": -0.23705415004358604,
+      "brierSkill": 0.008588625061907496,
+      "allow": false
+    },
+    {
+      "year": 2022,
+      "trainingFrom": 1577836800,
+      "trainingThrough": 1640995199,
+      "n": 617,
+      "months": 24,
+      "excessPp": -0.1731180996507606,
+      "brierSkill": -0.02024506959378969,
+      "allow": false
+    },
+    {
+      "year": 2023,
+      "trainingFrom": 1609459200,
+      "trainingThrough": 1672531199,
+      "n": 589,
+      "months": 24,
+      "excessPp": -0.17775457457642452,
+      "brierSkill": -0.07914230266155542,
+      "allow": false
+    },
+    {
+      "year": 2024,
+      "trainingFrom": 1640995200,
+      "trainingThrough": 1704067199,
+      "n": 504,
+      "months": 24,
+      "excessPp": -0.30327617737649354,
+      "brierSkill": -0.10237789500397487,
+      "allow": false
+    },
+    {
+      "year": 2025,
+      "trainingFrom": 1672531200,
+      "trainingThrough": 1735689599,
+      "n": 515,
+      "months": 24,
+      "excessPp": -0.4121744806979263,
+      "brierSkill": -0.061902967904331696,
+      "allow": false
+    },
+    {
+      "year": 2026,
+      "trainingFrom": 1704067200,
+      "trainingThrough": 1767225599,
+      "n": 502,
+      "months": 24,
+      "excessPp": -0.2703720471259423,
+      "brierSkill": -0.025029731320668658,
+      "allow": false
+    }
+  ],
+  "liveGate": {
+    "year": 2026,
+    "trainingFrom": 1704067200,
+    "trainingThrough": 1767225599,
+    "n": 502,
+    "months": 24,
+    "excessPp": -0.2703720471259423,
+    "brierSkill": -0.025029731320668658,
+    "allow": false
+  },
+  "costBpsPerSide": 10,
+  "dataDigest": "87b0cd3c9dfd65774b03b78301591ebbecfc9fe07c7d247d9a436ad5b4d98bd7",
+  "caveats": [
+    "Historical reconstruction, not forecasts published at the time. These rules were designed after the historical period; chronological testing cannot remove that research bias.",
+    "Fixed panel of 22 surviving US stocks, two per sector. Missing delisted firms and historical constituents create survivorship bias. These results do not represent the whole market or live board selections.",
+    "2016–2017 warms the features; 2018–2019 supplies initial learning. Evaluation begins in 2020. Each yearly evidence filter uses only fully completed outcomes from the preceding two years; boundary-crossing outcomes are purged.",
+    "Next-session open, 10 basis points per side for both strategy and SPY. Dividend-adjusted return estimates use the free feed’s adjusted-close ratios. Early exits stay in cash at zero until the same benchmark horizon ends. Borrow costs, taxes and financing are excluded.",
+    "Returns are means per completed setup, not compounded portfolio returns or annual returns. Same-stock trades cannot overlap. Stocks moving together are clustered by calendar quarter with moving one-year bootstrap blocks.",
+    "The uncertainty range is a 98.75% block-bootstrap interval, adjusted for four comparisons. A positive average alone is not evidence of a durable edge. Free prices and corporate-action adjustments may be revised.",
+    "The three-session core is simulated without dated earnings exclusions; it is not a full replay of the production board. Price-only controls cannot validate the financial or social strategies. No simulation is added to the live forecast ledger."
+  ],
+  "unavailable": [
+    {
+      "label": "Quality recovery with sector valuation",
+      "reason": "Needs point-in-time financial reports, share counts, valuation and catalyst evidence. A price pullback alone cannot validate this strategy."
+    },
+    {
+      "label": "YouTube / social ignition",
+      "reason": "Needs dated transcripts, channel coverage and attention history. Today’s content cannot stand in for historical evidence."
+    },
+    {
+      "label": "Complete board engine",
+      "reason": "Historical news, earnings gates and candidate rankings are incomplete. Only actually saved board forecasts are audited separately."
+    }
+  ]
+}
