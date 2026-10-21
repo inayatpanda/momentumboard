@@ -9,13 +9,13 @@ export function HistoricalStudy({ study }: { study?: Study | null }) {
   const ahead = study.strategies.filter(s => s.status === 'ahead')
   const stale = Date.now() / 1000 - study.generatedAt > 45 * 86400
   return <section className="history-study" aria-label="Longer historical test">
-    <div className="research-section-head"><div><p className="research-eyebrow">Longer history</p><h3>Which strategies beat the market?</h3></div><span className="research-mode">Historical simulation</span></div>
+    <div className="research-section-head"><div><p className="research-eyebrow">Longer history</p><h2>Which strategies beat the market?</h2></div><span className="research-mode">Historical simulation</span></div>
     <p>Free daily prices from {date(study.dataFrom)} to {date(study.dataThrough)}. Results below cover {date(study.evaluationFrom)} onward, after the initial learning period.</p>
-    <div className="history-verdict"><strong>{ahead.length ? `${ahead.length} ${ahead.length === 1 ? 'strategy is' : 'strategies are'} ahead with historical support.` : 'No strategy has established a reliable advantage in this test.'}</strong><p>{ahead.length ? `${ahead.map(s => s.label).join(', ')} cleared the historical uncertainty and consistency checks. This still needs validation on forecasts saved in advance.` : 'A positive average alone is not enough. The results must also survive uncertainty checks and hold across different years.'}</p></div>
+    <div className="history-verdict"><strong>{ahead.length ? `${ahead.length} ${ahead.length === 1 ? 'strategy is' : 'strategies are'} ahead with historical support.` : 'No strategy has established a reliable advantage in this test.'}</strong><p>{ahead.length ? `${ahead.map(s => s.label).join(', ')} cleared the historical uncertainty and consistency checks. This still needs validation on forecasts saved in advance.` : 'Positive averages must also hold across years and uncertainty checks.'}</p></div>
     <p className="research-muted">{study.symbols.length - study.missingSymbols.length} US stocks · 4 comparisons · SPY including dividend adjustments · {study.costBpsPerSide}bp estimated cost per side</p>
     {stale && <p role="status">This study is over 45 days old. The engine will not use it to support new setups until refreshed.</p>}
     <p className="research-muted">These are price-based tests. Financial recovery and social strategies still need dated evidence and are listed separately below.</p>
-    <div className="history-strategies">{study.strategies.map(s => <article key={s.key} className={`history-strategy history-${s.status}`}>
+    <div className="history-strategies">{[...study.strategies].sort((a, b) => Number(a.key === 'direction-gated') - Number(b.key === 'direction-gated')).map(s => <article key={s.key} className={`history-strategy history-${s.status}`}>
       <div className="history-card-heading"><h4>{s.label}</h4><span>{s.horizon} sessions</span></div>
       <p className="history-status">{labels[s.status]}</p>
       {s.stats.n > 0 ? <><dl className="history-results"><div><dt>Strategy return</dt><dd>{signed(s.stats.meanReturnPct)}</dd></div><div><dt>SPY, same dates</dt><dd>{signed(s.stats.meanMarketPct)}</dd></div><div><dt>Excess per setup</dt><dd>{signed(s.stats.excessPp, 'pp')}</dd></div></dl>
