@@ -70,6 +70,8 @@ jobs:
           "$HOME/.cache/streetsignal-speech/whisper-cli" --help
       - name: Capture captions, download audio and transcribe
         env:
+          YOUTUBE_METADATA_ENABLED: ${{ vars.YOUTUBE_METADATA_ENABLED }}
+          YOUTUBE_METADATA_API_KEY: ${{ secrets.YOUTUBE_METADATA_API_KEY }}
           STORE_BACKEND: d1
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
