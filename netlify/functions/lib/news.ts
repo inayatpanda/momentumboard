@@ -1,6 +1,7 @@
 import type { NewsItem } from '../../../shared/alerts'
 import { exchangeFor } from '../../../shared/symbols'
 import { parseFeed } from './rss'
+import { attributedHeadline } from './newsAttribution'
 
 const DAY = 24 * 3600
 
@@ -51,9 +52,9 @@ export async function fetchSymbolNews(
     const j = (await safeJson(
       `https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${iso(nowSec - 3 * DAY)}&to=${iso(nowSec)}&token=${finnhubKey}`,
       fetchFn,
-    )) as { headline?: string; url?: string; datetime?: number }[] | null
+    )) as { headline?: string; url?: string; datetime?: number; related?: string }[] | null
     return (j ?? [])
-      .filter(n => n.headline && n.url)
+      .filter(n => n.headline && n.url && attributedHeadline(n.headline, symbol, instrumentName, n.related))
       .slice(0, 10)
       .map(n => ({ title: n.headline!, url: n.url!, publishedSec: n.datetime ?? 0 }))
   }
@@ -103,11 +104,11 @@ export async function fetchNews(
       const j = (await safeJson(
         `https://finnhub.io/api/v1/company-news?symbol=${sym}&from=${iso(nowSec - DAY)}&to=${iso(nowSec)}&token=${finnhubKey}`,
         fetchFn,
-      )) as { headline?: string; url?: string; datetime?: number; source?: string }[] | null
+      )) as { headline?: string; url?: string; datetime?: number; source?: string; related?: string }[] | null
       for (const n of (j ?? []).slice(0, 5)) {
         // finnhub's `source` names the real outlet — the url is often a
         // finnhub.io redirect, so without it the desk reads as one wire
-        if (n.headline && n.url) out.push({ title: n.headline, url: n.url, symbols: [sym], ...(n.source ? { source: n.source } : {}) })
+        if (n.headline && n.url) out.push({ title: n.headline, url: n.url, symbols: attributedHeadline(n.headline, sym, undefined, n.related) ? [sym] : [], ...(n.source ? { source: n.source } : {}) })
       }
     }),
     ...OUTLET_FEEDS.map(async feed => {

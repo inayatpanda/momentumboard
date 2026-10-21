@@ -643,7 +643,8 @@ export async function routeRequest(
     // the writes; newest first, importance carried per item for the UI.
     try {
       const desk = ((await blobAppStore.read<import('./lib/newsTriage').TriagedNews[]>('news-desk')) ?? []).slice(-120).reverse()
-      return json(200, { ok: true, data: { items: desk } })
+      const { attributedHeadline } = await import('./lib/newsAttribution')
+      return json(200, { ok: true, data: { items: desk.map(item => ({ ...item, syms: item.syms.filter(sym => attributedHeadline(item.title, sym)) })) } })
     } catch {
       return json(200, { ok: true, data: { items: [] } })
     }

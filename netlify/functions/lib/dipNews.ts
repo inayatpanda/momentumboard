@@ -1,4 +1,5 @@
 import { callLlm, type LlmEnv } from './llm'
+import { attributedHeadline } from './newsAttribution'
 
 // Dip-news corroboration. The dip lane (shared/engine/dipLane.ts) reads a price
 // signature: a quality name hit hard but being BOUGHT. That read is blind to
@@ -239,14 +240,7 @@ export async function fetchCompanyNews(
       // A company-news response can contain unrelated syndicated stories.
       // Require a company name or ticker in the headline, and reject conflicting
       // provider tags. The requested endpoint alone is not source attribution.
-      const related = typeof item.related === 'string' ? item.related.split(/[,;\s]+/).map(s => s.toUpperCase()) : []
-      const ticker = sym.toUpperCase()
-      const mentionsTicker = h.split(/[^A-Za-z0-9.-]+/).some(word => word.toUpperCase() === ticker && (ticker.length > 2 || word === ticker))
-      const nameWords = companyName.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
-        .filter(word => word.length > 2 && !['inc','corp','corporation','company','group','holdings','limited','ltd','plc','class','ordinary','shares','the'].includes(word))
-      const normalHeadline = ` ${h.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ')} `
-      const mentionsName = nameWords.length > 0 && nameWords.slice(0,2).every(word => normalHeadline.includes(` ${word} `))
-      if ((!mentionsTicker && !mentionsName) || related.length > 0 && !related.includes(ticker)) continue
+      if (!attributedHeadline(h, sym, companyName, item.related)) continue
       seen.add(h)
       out.push(h)
       if (out.length >= MAX_HEADLINES) break
