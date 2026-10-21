@@ -11,6 +11,7 @@ const LABELS: Record<StrategyObservation['sleeve'], string> = {
 const FILTERS = ['all', 'short-horizon', 'quality-dip', 'social-ignition'] as const
 const pct = (n: number | null | undefined) => n == null || !Number.isFinite(n) ? '—' : `${Math.round(n * 100)}%`
 const signed = (n: number | null | undefined) => n == null || !Number.isFinite(n) ? '—' : `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`
+const price = (n: number | null) => n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 4 : 2 })
 const STATE_LABEL: Record<StrategyObservation['state'], string> = { setup: 'Setup forming', watch: 'Watching', avoid: 'Avoid for now', collecting: 'Collecting evidence' }
 
 function stamp(at: number) {
@@ -52,7 +53,7 @@ function ObservationCard({ row, linked = true }: { row: StrategyObservation; lin
           <dl className="research-forecast-grid"><div><dt>Up</dt><dd>{pct(row.forecast.probabilityUp)}</dd></div><div><dt>Down</dt><dd>{pct(row.forecast.probabilityDown)}</dd></div><div><dt>Flat</dt><dd>{pct(row.forecast.probabilityFlat)}</dd></div><div><dt>Median</dt><dd>{signed(row.forecast.expectedMovePct)}</dd></div><div className="research-range"><dt>Range</dt><dd>{signed(row.forecast.expectedLowPct)} to {signed(row.forecast.expectedHighPct)}</dd><small>Middle 60% of examples</small></div></dl>
           {row.forecast.probabilityUpInterval && <p>Up frequency uncertainty: {pct(row.forecast.probabilityUpInterval[0])}–{pct(row.forecast.probabilityUpInterval[1])} (95% interval; future outcomes can differ).</p>}
           {row.forecast.baselineProbabilityUp != null && <p>Historical base rate: {pct(row.forecast.baselineProbabilityUp)} up.</p>}
-        </> : <dl className="research-forecast-grid"><div><dt>Entry</dt><dd>{row.entry ?? '—'}</dd></div><div><dt>Stop</dt><dd>{row.stop ?? '—'}</dd></div><div><dt>Target</dt><dd>{row.target ?? '—'}</dd></div></dl>}
+        </> : <dl className="research-forecast-grid"><div><dt>Entry</dt><dd>{price(row.entry)}</dd></div><div><dt>Stop</dt><dd>{price(row.stop)}</dd></div><div><dt>Target</dt><dd>{price(row.target)}</dd></div></dl>}
         {row.reasons.slice(1).map((reason, i) => <p key={`reason-${i}`}><b>Supporting evidence</b> {reason}</p>)}
         {row.risks.slice(1).map((risk, i) => <p key={`risk-${i}`}><b>Additional risk</b> {risk}</p>)}
         {row.sleeve === 'quality-dip' && <>
