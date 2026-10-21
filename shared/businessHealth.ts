@@ -1,3 +1,4 @@
+import { sectorFinancialPolicy } from './sectorFinancials'
 import type { FinancialReportPoint, ReportTrendSummary } from './reportTrends'
 
 /** Reported fundamentals, separate from price behaviour and market size.
@@ -65,10 +66,15 @@ export interface BusinessHealthAssessment {
 /** A deliberately conservative screen, not a claim about intrinsic value.
  * Banks, high-reinvestment companies and firms with buyback-driven negative
  * equity can require sector-specific review even when perfectly viable. */
-export function assessBusinessHealth(snapshot: BusinessHealthSnapshot | null | undefined, nowSec: number): BusinessHealthAssessment {
+export function assessBusinessHealth(snapshot: BusinessHealthSnapshot | null | undefined, nowSec: number, sector?: string | null): BusinessHealthAssessment {
+  const policy = sectorFinancialPolicy(sector)
   const result: BusinessHealthAssessment = { status: 'unknown', reasons: [], risks: [], gaps: [] }
   if (!snapshot || snapshot.status === 'unavailable') {
     result.gaps.push('Reported business fundamentals are unavailable; a large price fall does not establish quality.')
+    return result
+  }
+  if (policy?.specialist) {
+    result.gaps.push(policy.specialist)
     return result
   }
   const s = snapshot
@@ -81,7 +87,7 @@ export function assessBusinessHealth(snapshot: BusinessHealthSnapshot | null | u
   if (!s.annualPeriodEnd || ageDays(s.annualPeriodEnd) > 550 || ageDays(s.annualPeriodEnd) < 0) result.gaps.push('Annual operating results are missing or older than 550 days.')
   if (!s.balancePeriodEnd || ageDays(s.balancePeriodEnd) > 180 || ageDays(s.balancePeriodEnd) < 0) result.gaps.push('Balance-sheet evidence is missing or older than 180 days.')
   if (result.gaps.length) return result
-  for (const key of ['netIncome', 'operatingCashFlow', 'freeCashFlow', 'currentRatio', 'revenueGrowthPct', 'shareCountChangePct'] as const) {
+  for (const key of ['netIncome', 'operatingCashFlow', 'freeCashFlow', ...(!policy ? ['currentRatio'] as const : []), 'revenueGrowthPct', 'shareCountChangePct'] as const) {
     if (m[key] == null || !Number.isFinite(m[key])) result.gaps.push(`${key}: no comparable reported value.`)
     const evidence = s.evidence[key]
     if (m[key] != null && (!evidence || evidence.availableAt > nowSec)) result.gaps.push(`${key}: filing availability is unverified.`)
@@ -122,15 +128,41 @@ export function assessBusinessHealth(snapshot: BusinessHealthSnapshot | null | u
     if (m.recentShareCountChangePct > 10) result.risks.push('Comparable recent interim diluted share count grew more than 10%; recent dilution overrides the older annual comparison.')
     else result.reasons.push('Comparable recent interim diluted share-count growth is at most 10%.')
   }
-  if (m.totalEquity == null || !Number.isFinite(m.totalEquity) || m.totalEquity <= 0) result.gaps.push('Positive book equity is unverified; sector or buyback review is required.')
-  const leverage = m.debtToEquity ?? m.liabilitiesToEquity
-  const leverageKey = m.debtToEquity != null ? 'debtToEquity' : 'liabilitiesToEquity'
-  if (leverage == null || !Number.isFinite(leverage) || !s.evidence[leverageKey] || s.evidence[leverageKey]!.availableAt > nowSec) result.gaps.push('Leverage cannot be established from comparable reported balances.')
-  else if (leverage > 1.5 || leverage < 0) result.gaps.push('Leverage needs sector-specific review; the conservative 1.5× ceiling is not met.')
-  else result.reasons.push(m.debtToEquity != null ? 'Reported debt is at most 1.5× equity.' : 'Total liabilities are at most 1.5× equity; this conservatively bounds debt.')
-  if (m.currentRatio != null && Number.isFinite(m.currentRatio) && s.evidence.currentRatio && s.evidence.currentRatio.availableAt <= nowSec) {
-    if (m.currentRatio < 1) result.gaps.push('Current assets do not cover current liabilities; liquidity needs sector-specific review.')
-    else result.reasons.push('Current assets cover current liabilities.')
+  if (policy) {
+    const known = (key: BusinessHealthMetric, period: string | null) => {
+      const e = s.evidence[key]
+      return m[key] != null && Number.isFinite(m[key]) && !!e && e.availableAt <= nowSec && e.periodEnd === period
+    }
+    const cashKnown = known('cash', s.balancePeriodEnd) && m.cash! >= 0
+    const ocfKnown = known('operatingCashFlow', s.annualPeriodEnd) && m.operatingCashFlow! > 0
+    const debtKey = known('totalDebt', s.balancePeriodEnd) ? 'totalDebt' : 'totalLiabilities'
+    if (!cashKnown || !ocfKnown || !known(debtKey, s.balancePeriodEnd) || m[debtKey]! < 0) {
+      result.gaps.push('Sector leverage needs dated cash, debt (or an explicit total-liabilities upper bound) and positive annual operating cash flow.')
+    } else {
+      const leverage = Math.max(0, m[debtKey]! - m.cash!) / m.operatingCashFlow!
+      const label = debtKey === 'totalDebt' ? 'net debt' : 'net total-liabilities upper bound'
+      if (leverage > policy.maxNetDebtToCashFlow) result.gaps.push(`${policy.label}: ${label} / annual operating cash flow ${leverage.toFixed(1)}× exceeds the ${policy.maxNetDebtToCashFlow}× research ceiling.`)
+      else result.reasons.push(`${policy.label}: ${label} / annual operating cash flow ${leverage.toFixed(1)}×, within the ${policy.maxNetDebtToCashFlow}× research ceiling.`)
+    }
+    // Buyback-driven low/negative equity does not substitute for debt capacity.
+    // This is historical flow coverage, not a claim that future cash is certain.
+    if (known('currentRatio', s.balancePeriodEnd) && m.currentRatio! >= 1) result.reasons.push('Current assets cover current liabilities.')
+    else if (cashKnown && ocfKnown && known('currentLiabilities', s.balancePeriodEnd) && m.currentLiabilities! > 0) {
+      const coverage = (m.cash! + m.operatingCashFlow!) / m.currentLiabilities!
+      if (coverage >= policy.minCashFlowLiquidity) result.reasons.push(`Cash plus last annual operating cash flow covers current liabilities ${coverage.toFixed(1)}×; sector floor ${policy.minCashFlowLiquidity}×.`)
+      else result.gaps.push(`${policy.label}: cash-flow liquidity ${coverage.toFixed(1)}× is below the ${policy.minCashFlowLiquidity}× research floor.`)
+    } else result.gaps.push('Sector liquidity needs dated current liabilities and cash-flow evidence.')
+  } else {
+    if (m.totalEquity == null || !Number.isFinite(m.totalEquity) || m.totalEquity <= 0) result.gaps.push('Positive book equity is unverified; sector or buyback review is required.')
+    const leverage = m.debtToEquity ?? m.liabilitiesToEquity
+    const leverageKey = m.debtToEquity != null ? 'debtToEquity' : 'liabilitiesToEquity'
+    if (leverage == null || !Number.isFinite(leverage) || !s.evidence[leverageKey] || s.evidence[leverageKey]!.availableAt > nowSec) result.gaps.push('Leverage cannot be established from comparable reported balances.')
+    else if (leverage > 1.5 || leverage < 0) result.gaps.push('Leverage needs sector-specific review; the conservative 1.5× ceiling is not met.')
+    else result.reasons.push(m.debtToEquity != null ? 'Reported debt is at most 1.5× equity.' : 'Total liabilities are at most 1.5× equity; this conservatively bounds debt.')
+    if (m.currentRatio != null && Number.isFinite(m.currentRatio) && s.evidence.currentRatio && s.evidence.currentRatio.availableAt <= nowSec) {
+      if (m.currentRatio < 1) result.gaps.push('Current assets do not cover current liabilities; liquidity needs sector-specific review.')
+      else result.reasons.push('Current assets cover current liabilities.')
+    }
   }
   if (result.risks.length) {
     result.status = 'deteriorating'

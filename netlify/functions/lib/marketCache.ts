@@ -3,6 +3,25 @@ import { fetchFinnhubQuote } from './finnhub'
 import { getCached, getCachedMany, setCached } from './cache'
 import { isYahooSymbol } from '../../../shared/symbols'
 import type { Candle, Quote } from '../../../shared/types'
+import type { ValuationCapitalization } from '../../../shared/sectorFinancials'
+
+/** Separate dated valuation cache: old, undated screener caps are insufficient.
+ * Reuses the existing free profile endpoint; never starts a paid data request. */
+export async function cachedValuationCapitalization(sym: string, key: string): Promise<ValuationCapitalization | null> {
+  if (!key || isYahooSymbol(sym)) return null
+  const cacheKey = `valuation-cap:v1:${sym}`
+  const hit = await getCached<ValuationCapitalization>(cacheKey)
+  if (hit) return hit
+  try {
+    const response = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(sym)}&token=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(8000) })
+    if (!response.ok) return null
+    const profile = await response.json() as { ticker?: string; currency?: string; marketCapitalization?: number }
+    if (profile.ticker?.toUpperCase() !== sym.toUpperCase() || profile.currency !== 'USD' || !Number.isFinite(profile.marketCapitalization) || profile.marketCapitalization! <= 0) return null
+    const value: ValuationCapitalization = { sym, marketCapUsdM: profile.marketCapitalization!, currency: 'USD', source: 'finnhub-profile', observedAt: Math.floor(Date.now() / 1000) }
+    await setCached(cacheKey, value, 6 * 3600)
+    return value
+  } catch { return null }
+}
 
 /** Every quote and candle series a symbol loop is about to ask for, in ONE
  * batched cache read (lib/cache.ts's `getCachedMany`).

@@ -1,3 +1,4 @@
+import { assessBusinessValuation } from '../../../shared/businessValuation'
 import { describe, expect, it, vi } from 'vitest'
 import { assessBusinessHealth } from '../../../shared/businessHealth'
 import { fetchBusinessHealth, parseBusinessHealthFacts } from './businessHealth'
@@ -366,5 +367,60 @@ describe('company report history known at publication', () => {
     expect(value.reportHistory?.every(p => p.periodEnd >= '2023-10-17')).toBe(true)
     expect(value.reportHistory?.some(p => 'reportHistory' in p)).toBe(false)
     expect(JSON.parse(JSON.stringify(value)).reportHistory).toHaveLength(12)
+  })
+})
+
+describe('sector financial checks and valuation', () => {
+  it('assesses buyback-heavy consumer businesses by dated cash capacity, not a universal equity ratio', () => {
+    const body = fixture(), f = body.facts['us-gaap']
+    f.StockholdersEquity.units.USD[0].val = -20
+    f.AssetsCurrent.units.USD[0].val = 100
+    const snapshot = parseBusinessHealthFacts(body, 'TEST', NOW)
+    expect(assessBusinessHealth(snapshot, NOW).status).toBe('unknown')
+    expect(assessBusinessHealth(snapshot, NOW, 'XLY').status).toBe('healthy')
+    const result = assessBusinessHealth(snapshot, NOW, 'XLY')
+    expect(result.reasons.join(' ')).toContain('annual operating cash flow')
+    expect(result.reasons.join(' ')).toContain('current liabilities 1.2×')
+  })
+  it('uses stricter leverage limits for cyclical businesses and refuses unknown or future debt evidence', () => {
+    const snapshot = parseBusinessHealthFacts(fixture(), 'TEST', NOW)
+    snapshot.metrics.totalDebt = 450
+    snapshot.evidence.totalDebt!.value = 450
+    expect(assessBusinessHealth(snapshot, NOW, 'XLI').status).toBe('healthy')
+    expect(assessBusinessHealth(snapshot, NOW, 'XLE').status).toBe('unknown')
+    snapshot.evidence.totalDebt!.availableAt = NOW + 1
+    snapshot.metrics.totalLiabilities = null
+    expect(assessBusinessHealth(snapshot, NOW, 'XLI').status).toBe('unknown')
+    snapshot.metrics.recentNetIncome = -20
+    expect(assessBusinessHealth(snapshot, NOW, 'XLI').status).toBe('deteriorating')
+  })
+  it('does not certify banks, insurers, REITs or utilities with industrial metrics', () => {
+    const snapshot = parseBusinessHealthFacts(fixture(), 'TEST', NOW)
+    for (const sector of ['XLF', 'XLRE', 'XLU']) {
+      const result = assessBusinessHealth(snapshot, NOW, sector)
+      expect(result.status).toBe('unknown')
+      expect(result.gaps.join(' ')).toMatch(/review/)
+    }
+  })
+})
+
+describe('dated valuation inputs', () => {
+  const cap = { sym: 'TEST', marketCapUsdM: .002, observedAt: NOW - 60, currency: 'USD' as const, source: 'finnhub-profile' as const }
+  it('calculates annual multiples and applies sector research limits', () => {
+    const snapshot = parseBusinessHealthFacts(fixture(), 'TEST', NOW)
+    expect(assessBusinessValuation(snapshot, cap, 'XLK', NOW)).toMatchObject({ status: 'supported', pe: 20, fcfYieldPct: 4.5 })
+    expect(assessBusinessValuation(snapshot, cap, 'XLE', NOW).status).toBe('demanding')
+    expect(assessBusinessValuation(snapshot, { ...cap, marketCapUsdM: .02 }, 'XLK', NOW).status).toBe('demanding')
+  })
+  it('rejects stale, future and mismatched capitalizations and missing or negative earnings', () => {
+    const snapshot = parseBusinessHealthFacts(fixture(), 'TEST', NOW)
+    for (const bad of [{ ...cap, observedAt: NOW + 1 }, { ...cap, observedAt: NOW - 90000 }, { ...cap, sym: 'OTHER' }]) {
+      expect(assessBusinessValuation(snapshot, bad, 'XLK', NOW)).toMatchObject({ status: 'unknown', pe: null })
+    }
+    snapshot.metrics.netIncome = -100
+    expect(assessBusinessValuation(snapshot, cap, 'XLK', NOW)).toMatchObject({ status: 'unknown', pe: null })
+    snapshot.metrics.netIncome = 100
+    snapshot.evidence.netIncome!.availableAt = NOW + 1
+    expect(assessBusinessValuation(snapshot, cap, 'XLK', NOW)).toMatchObject({ status: 'unknown', pe: null })
   })
 })

@@ -22,7 +22,7 @@ describe('recovery shortlist', () => {
     expect(screen.getByRole('link')).toHaveAttribute('href', '/app/stock/REVIEW')
     expect(screen.getByText('Financial evidence needs review')).toBeInTheDocument()
     expect(screen.queryByText('REFUSED')).not.toBeInTheDocument()
-    expect(screen.getByText(/1\/5 checks met/)).toBeInTheDocument()
+    expect(screen.getByText(/1\/6 checks met/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /View research/ }))
     expect(onResearch).toHaveBeenCalledOnce()
   })

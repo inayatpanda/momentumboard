@@ -269,3 +269,12 @@
 .v2 .recovery-checklist li > span.met { color:var(--accent); }
 .v2 .recovery-checklist p { color:var(--text-dim); margin:3px 0 0; }
 @media (max-width:760px) { .v2 .recovery-shortlist { padding:18px; } .v2 .recovery-shortlist-rows { grid-template-columns:1fr; } }
+
+.market-comparison { margin: 1.5rem 0 2rem; padding: clamp(1rem, 3vw, 1.75rem); border: 1px solid var(--line, #e1e5ec); border-radius: 20px; background: var(--surface, #fff); }
+.market-comparison h3 { margin: .25rem 0; font-size: 1.45rem; }
+.market-comparison h4 { margin: .6rem 0; font-size: 1.1rem; }
+.market-comparison-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 1rem; }
+.market-comparison-grid article { padding: 1rem 0; min-width: 0; border-top: 1px solid var(--line, #e1e5ec); }
+.market-comparison details { overflow-wrap: anywhere; }
+.market-comparison summary { cursor: pointer; font-weight: 600; }
+.market-comparison p { line-height: 1.6; }

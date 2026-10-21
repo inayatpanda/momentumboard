@@ -1,3 +1,5 @@
+import { buildMarketComparison } from '../../../shared/engine/marketComparison'
+import type { ValuationCapitalization } from '../../../shared/sectorFinancials'
 import { consensusTickers, type VideoExtract } from './videoTrends'
 import { gradeSocialRecord, socialGradingQueue, summarizeSocialOutcomes, type SocialOutcomeRecord } from '../../../shared/engine/socialOutcomes'
 import { SOCIAL_LEDGER_KEY, updateSocialLedger } from './socialLedger'
@@ -146,6 +148,7 @@ import { appendResearchReport, buildResearchLearning, type ResearchReportSnapsho
 import { conditionRecoveryForecast } from '../../../shared/engine/researchConditioning'
 
 export interface EngineDeps {
+  valuationCapitalization?: (sym: string) => Promise<ValuationCapitalization | null>
   businessHealth?: (sym: string) => Promise<BusinessHealthSnapshot>
   candles: (sym: string) => Promise<Candle[] | null>
   candles5y: (sym: string) => Promise<Candle[] | null>
@@ -334,6 +337,10 @@ export function defaultDeps(
     return earningsOnce
   }
   return {
+    valuationCapitalization: async sym => {
+      const { cachedValuationCapitalization } = await import('./marketCache')
+      return cachedValuationCapitalization(sym, env.FINNHUB_API_KEY ?? '')
+    },
     candles: async sym => {
       const { cachedCandles } = await import('./marketCache')
       return cachedCandles(sym)
@@ -4233,7 +4240,7 @@ export async function buildBoard(
   const shortLabRaw = shortHorizonObservations([...shortBySym.values()], nowSec, shortAlways)
   const qualityRows = candidateSyms.flatMap(sym => {
     const candles = candleMap.get(sym)
-    return candles ? [{ sym, candles, capUsdM: sources.get(sym)?.capUsdM ?? null, earningsRisk: earningsSet.has(baseSym(sym)), businessHealth: null as BusinessHealthSnapshot | null }] : []
+    return candles ? [{ sym, candles, sector: symToSector.get(baseSym(sym)) ?? null, valuationCapitalization: null as ValuationCapitalization | null, capUsdM: sources.get(sym)?.capUsdM ?? null, earningsRisk: earningsSet.has(baseSym(sym)), businessHealth: null as BusinessHealthSnapshot | null }] : []
   })
   // Only price-screened recovery candidates incur a fundamentals lookup. This
   // bounded pass uses cached filings and never equates market cap with quality.
@@ -4244,7 +4251,13 @@ export async function buildBoard(
   if (deps.businessHealth) await mapLimit(healthCandidates, 2, async ({ row }) => {
     row.businessHealth = healthReads.has(row.sym) ? healthReads.get(row.sym)! : await deps.businessHealth!(row.sym).catch(() => null)
   })
-  const qualityRaw = qualityDipObservations(qualityRows, spy, nowSec)
+  if (deps.valuationCapitalization) await mapLimit(healthCandidates, 2, async ({ row }) => {
+    row.valuationCapitalization = await deps.valuationCapitalization!(row.sym).catch(() => null)
+  })
+  // Publish only after the newly fetched valuation inputs existed. Never move
+  // old forecasts or reuse this current valuation in historical simulations.
+  const qualityPublicationAt = Math.max(nowSec, ...qualityRows.map(r => r.valuationCapitalization?.observedAt ?? nowSec))
+  const qualityRaw = qualityDipObservations(qualityRows, spy, qualityPublicationAt)
   // Recovery candidates may never enter the fast dip lane. Give their best
   // five candidates an independent, bounded news read instead of leaving the
   // cause-of-selloff gate permanently empty unless another lane warmed it.
@@ -4303,7 +4316,10 @@ export async function buildBoard(
   const socialEvidenceN = labEvidenceCount(labRecords, 'social-ignition', nowSec)
   const shortHorizonEvidenceN = labEvidenceCount(labRecords, 'short-horizon', nowSec)
   const compositeEvidenceN = Object.values(calibration.buckets).reduce((sum, bucket) => sum + (bucket.n ?? 0), 0)
-  const learning = buildResearchLearning(labRecords, nowSec)
+  const learning = buildResearchLearning(labRecords, qualityPublicationAt)
+  const publishedAudit = await store.read<{ records: StrategyLabRecord[]; coverage?: import('../../../shared/engine/marketComparison').MarketComparisonSnapshot['auditCoverage'] }>('engine-published-market-audit')
+  learning.marketComparison = buildMarketComparison([...labRecords, ...(publishedAudit?.records ?? [])], spy, qualityPublicationAt)
+  learning.marketComparison.auditCoverage = publishedAudit?.coverage
   await store.write('engine-lab-ledger', labRecords)
   await store.write('engine-research-learning', learning)
   const researchReports = (await store.read<ResearchReportSnapshot[]>('engine-research-reports:v1')) ?? []

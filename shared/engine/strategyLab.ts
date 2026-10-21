@@ -1,3 +1,5 @@
+import { assessBusinessValuation } from '../businessValuation'
+import { SECTOR_FINANCIAL_VERSION, sectorFinancialPolicy, type ValuationCapitalization } from '../sectorFinancials'
 import { atr, rsi } from '../indicators'
 import { assessBusinessHealth, type BusinessHealthSnapshot } from '../businessHealth'
 import type { Candle } from '../types'
@@ -158,7 +160,7 @@ const DAY_SEC = 86_400
 const SHORT_HORIZON = 3
 export const SHORT_HORIZON_MODEL_VERSION = 'baseline-lift-analogues-v3'
 export const LAB_EXECUTION_VERSION = 'next-open-costs-v2'
-export const QUALITY_DIP_MODEL_VERSION = 'quality-dip-report-trends-v4'
+export const QUALITY_DIP_MODEL_VERSION = 'quality-dip-sector-value-v5'
 export const SOCIAL_IGNITION_MODEL_VERSION = 'social-ignition-next-open-v2'
 const SLIPPAGE = 0.001
 
@@ -425,6 +427,8 @@ export interface QualityDipRow {
   /** Retained for callers; market size or index membership does not prove health. */
   qualityProxy?: boolean
   capUsdM: number | null
+  sector?: string | null
+  valuationCapitalization?: ValuationCapitalization | null
   businessHealth?: BusinessHealthSnapshot | null
   earningsRisk?: boolean
 }
@@ -464,14 +468,15 @@ export function qualityDipObservations(rows: QualityDipRow[], spy: Candle[], now
     const riskPct = stop > 0 ? (last - stop) / last * 100 : 100
     const rewardRisk = stop > 0 && last > stop ? (target - last) / (last - stop) : 0
     const business = row.businessHealth?.sym.toUpperCase() === row.sym.toUpperCase() ? row.businessHealth : null
-    const health = assessBusinessHealth(business, nowSec)
+    const health = assessBusinessHealth(business, nowSec, row.sector)
+    const valuation = assessBusinessValuation(business, row.valuationCapitalization, row.sector, nowSec)
     const trajectory = summarizeReportTrends(business?.reportHistory ?? [], nowSec)
     if (row.businessHealth && !business) health.gaps.push('The supplied financial statements belong to a different symbol.')
     const geometry = stop > 0 && riskPct <= 18 && rewardRisk >= 1.5
     const state: LabState = knife || health.status === 'deteriorating' || trajectory.status === 'deteriorating' ? 'avoid'
-      : health.status === 'healthy' && trajectory.status !== 'insufficient' && stabilising && geometry && !row.earningsRisk ? 'setup' : 'watch'
+      : health.status === 'healthy' && valuation.status === 'supported' && trajectory.status !== 'insufficient' && stabilising && geometry && !row.earningsRisk ? 'setup' : 'watch'
     const score = clamp(15 + (health.status === 'healthy' ? 30 : health.status === 'unknown' ? 0 : -20) +
-      Math.min(20, Math.abs(drawdownPct) * 0.6) + (stabilising ? 20 : 0) +
+      Math.min(20, Math.abs(drawdownPct) * 0.6) + (valuation.status === 'supported' ? 10 : valuation.status === 'demanding' ? -10 : -5) + (stabilising ? 20 : 0) +
       (last > sma50 ? 8 : 0) + (relative20 != null && relative20 > -8 ? 5 : 0) +
       (rewardRisk >= 1.5 ? 5 : 0) - (knife ? 30 : 0) +
       (trajectory.status === 'improving' ? 8 : trajectory.status === 'stable' ? 3 : trajectory.status === 'deteriorating' ? -18 : 0))
@@ -483,6 +488,7 @@ export function qualityDipObservations(rows: QualityDipRow[], spy: Candle[], now
       reasons: [
         `${r1(Math.abs(drawdownPct))}% below the highest close in ${Math.min(252, tape.length)} completed sessions; the price drop alone does not establish value`,
         ...health.reasons.slice(0, 2),
+        valuation.summary,
         `Business trajectory: ${trajectory.status} across ${trajectory.observations} dated reports`,
         stabilising ? 'price reclaimed its 10-session average with a higher five-session low and a rising latest close' : 'a higher low and recovery above the 10-session average are not both confirmed',
         `63-session research scenario: recover half the drawdown to ${target}; ${r1(rewardRisk)}× reward/risk before execution costs`,
@@ -500,12 +506,19 @@ export function qualityDipObservations(rows: QualityDipRow[], spy: Candle[], now
       ],
       dataGaps: [
         ...health.gaps,
+        ...valuation.gaps,
+        ...(valuation.status === 'demanding' ? ['Valuation does not meet the sector research limits; a drawdown alone does not make the shares inexpensive.'] : []),
         ...(trajectory.status === 'insufficient' ? ['a sustained business trajectory is not established from comparable historical reports'] : []),
         ...(sma200 == null ? ['fewer than 200 completed sessions: long-term moving-average trend unavailable'] : []),
         ...(relative20 == null ? ['date-aligned SPY comparison unavailable'] : []),
-        'valuation, forward estimate revisions and the cause of the drawdown require independent review',
+        'forward estimate revisions and the cause of the drawdown require independent review; valuation uses last annual results, not forward earnings',
       ],
       metrics: {
+        financialPolicyVersion: SECTOR_FINANCIAL_VERSION, financialSector: sectorFinancialPolicy(row.sector)?.label ?? null,
+        financialSectorCode: row.sector ?? null, valuationStatus: valuation.status, annualPE: valuation.pe,
+        annualFcfYieldPct: valuation.fcfYieldPct, priceToBook: valuation.priceToBook, valuationSummary: valuation.summary,
+        valuationObservedAt: row.valuationCapitalization?.observedAt ?? null, valuationSource: row.valuationCapitalization?.source ?? null,
+        financialChecks: [...health.reasons, ...health.gaps, ...health.risks].join(' '),
         financialHealth: health.status, drawdownPct: r1(drawdownPct), return5Pct: r1(return5), return20Pct: r1(return20),
         reportTrend: trajectory.status, reportObservations: trajectory.observations, reportComparisonN: trajectory.comparisonN,
         reportLatestAvailableAt: trajectory.latestAvailableAt, reportRevenueGrowthChangePp: trajectory.metrics.revenueGrowthChangePp,

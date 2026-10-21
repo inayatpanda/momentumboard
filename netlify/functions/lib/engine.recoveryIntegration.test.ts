@@ -27,12 +27,12 @@ function health(sym: string): BusinessHealthSnapshot {
     annualPeriodEnd: '2025-12-31', balancePeriodEnd: '2026-06-30', periodEnd: '2026-06-30', currency: 'USD', gaps: [],
   }
   Object.assign(value.metrics, { revenue: 1000, netIncome: 100, operatingCashFlow: 140, capitalExpenditure: 50, freeCashFlow: 90,
-    currentRatio: 2, totalEquity: 600, debtToEquity: 0.3, revenueGrowthPct: 10, shareCountChangePct: 0,
+    currentRatio: 2, cash: 100, totalDebt: 180, currentLiabilities: 200, totalEquity: 600, debtToEquity: 0.3, revenueGrowthPct: 10, shareCountChangePct: 0,
     recentNetIncome: 20, recentOperatingCashFlow: 40, recentRevenueGrowthPct: 5, recentShareCountChangePct: 0 })
   for (const [name, n] of Object.entries(value.metrics)) {
     if (n == null) continue
     value.evidence[name as keyof typeof value.metrics] = { value: n, periodStart: name.startsWith('recent') ? '2026-04-01' : '2025-01-01',
-      periodEnd: name.startsWith('recent') ? '2026-06-30' : '2025-12-31', filed: '2026-08-01', availableAt: NOW - 30 * DAY, unit: 'USD', tags: [], accessions: [] }
+      periodEnd: (name.startsWith('recent') || ['cash','totalDebt','currentLiabilities','totalEquity','currentRatio','debtToEquity'].includes(name)) ? '2026-06-30' : '2025-12-31', filed: '2026-08-01', availableAt: NOW - 30 * DAY, unit: 'USD', tags: [], accessions: [] }
   }
   value.reportHistory = ['2025-12-31', '2026-03-31', '2026-06-30'].map((periodEnd, i): FinancialReportPoint => ({
     periodStart: null, periodEnd, periodKind: 'quarter', durationDays: 90, cashFlowPeriodStart: null,
@@ -46,6 +46,7 @@ function health(sym: string): BusinessHealthSnapshot {
 }
 
 const dependencies = (symbols: string[], over: Partial<EngineDeps> = {}): EngineDeps => ({
+  valuationCapitalization: async sym => ({ sym, marketCapUsdM: .002, currency: 'USD', observedAt: NOW - 60, source: 'finnhub-profile' }),
   candles: async sym => symbols.includes(sym) ? recovery : ['SPY', 'QQQ'].includes(sym) ? flat : null,
   candles5y: async () => null, capUsdM: async () => null, companyName: async () => null,
   screens: async () => [], social: async () => [], sparkCloses: async () => new Map(), insiderCoverage: async () => new Map(),
@@ -70,17 +71,17 @@ function recoveryRecord(sym: string, availableAt: number): StrategyLabRecord {
 
 describe('recovery research through the production engine', () => {
   it('checks a recovery selloff cause even when no fast dip ever warmed the news cache', async () => {
-    const store = await storeFor(['GOOD'])
+    const store = await storeFor(['MSFT'])
     const news = vi.fn(async () => ({ verdict: 'transient' as const, reason: 'Company-specific one-off delay' }))
-    await buildBoard(store, dependencies(['GOOD'], { dipNewsCached: async () => null, dipNews: news }), NOW)
-    expect(news).toHaveBeenCalledWith('GOOD')
+    await buildBoard(store, dependencies(['MSFT'], { dipNewsCached: async () => null, dipNews: news }), NOW)
+    expect(news).toHaveBeenCalledWith('MSFT')
     const lab = (await store.read<EngineLabSnapshot>('engine-lab'))!
-    expect(lab.observations.find(row => row.sym === 'GOOD' && row.sleeve === 'quality-dip')).toMatchObject({ state: 'setup', metrics: { newsAssessment: 'transient' } })
+    expect(lab.observations.find(row => row.sym === 'MSFT' && row.sleeve === 'quality-dip')).toMatchObject({ state: 'setup', metrics: { newsAssessment: 'transient' } })
   })
 
   it('keeps the original daily forecast ledger when a refreshed board changes selection', async () => {
-    const store = await storeFor(['GOOD'])
-    const deps = dependencies(['GOOD'], { capUsdM: async () => 20_000, candles: async sym => sym === 'GOOD' ? dip : flat })
+    const store = await storeFor(['MSFT'])
+    const deps = dependencies(['MSFT'], { capUsdM: async () => 20_000, candles: async sym => sym === 'MSFT' ? dip : flat })
     await buildBoard(store, deps, NOW)
     const key = 'predictions:2026-10-19'
     const first = (await store.read<Prediction[]>(key))!
@@ -94,11 +95,12 @@ describe('recovery research through the production engine', () => {
   })
 
   it('does not size legacy dip calls without matching healthy business evidence', async () => {
-    const symbols = ['GOOD', 'BURN', 'MISSING', 'WRONG']
+    const symbols = ['MSFT', 'BURN', 'MISSING', 'WRONG']
     const store = await storeFor(symbols)
     await buildBoard(store, dependencies(symbols, {
       capUsdM: async () => 20_000,
-      candles: async sym => symbols.includes(sym) ? dip : flat,
+      valuationCapitalization: async sym => ({ sym, marketCapUsdM: .002, currency: 'USD', observedAt: NOW - 60, source: 'finnhub-profile' }),
+  candles: async sym => symbols.includes(sym) ? dip : flat,
       businessHealth: async sym => {
         if (sym === 'MISSING') throw new Error('no fundamentals')
         const value = health(sym === 'WRONG' ? 'OTHER' : sym)
@@ -114,7 +116,7 @@ describe('recovery research through the production engine', () => {
   })
 
   it('hydrates real business evidence, applies cause-of-selloff context and records only qualified shadow setups', async () => {
-    const symbols = ['GOOD', 'BURN', 'BROKEN', 'MISSING', 'UNCLEAR']
+    const symbols = ['MSFT', 'BURN', 'BROKEN', 'MISSING', 'UNCLEAR']
     const store = await storeFor(symbols)
     await buildBoard(store, dependencies(symbols, {
       businessHealth: async sym => {
@@ -131,14 +133,14 @@ describe('recovery research through the production engine', () => {
     const snapshot = (await store.read<EngineLabSnapshot>('engine-lab'))!
     const quality = snapshot.observations.filter(row => row.sleeve === 'quality-dip')
     const bySym = new Map(quality.map(row => [row.sym, row]))
-    expect(bySym.get('GOOD')).toMatchObject({ state: 'setup', metrics: { financialHealth: 'healthy', newsAssessment: 'transient' }, forecast: { horizonSessions: 63 } })
+    expect(bySym.get('MSFT')).toMatchObject({ state: 'setup', metrics: { financialHealth: 'healthy', newsAssessment: 'transient' }, forecast: { horizonSessions: 63 } })
     expect(bySym.get('BURN')).toMatchObject({ state: 'avoid', metrics: { financialHealth: 'deteriorating' } })
     expect(bySym.get('BROKEN')).toMatchObject({ state: 'avoid', metrics: { newsAssessment: 'structural' } })
     expect(bySym.get('MISSING')).toMatchObject({ state: 'watch', metrics: { financialHealth: 'unknown' } })
     expect(bySym.get('UNCLEAR')).toMatchObject({ state: 'watch', metrics: { financialHealth: 'healthy', newsAssessment: 'unclear' } })
     expect(snapshot.mode).toBe('shadow')
     const ledger = (await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!
-    expect(ledger.filter(row => row.sleeve === 'quality-dip').map(row => row.sym)).toEqual(['GOOD'])
+    expect(ledger.filter(row => row.sleeve === 'quality-dip').map(row => row.sym)).toEqual(['MSFT'])
   })
 
   it('carries sector rotation, international selling and adverse news into recovery stand-down decisions', async () => {
@@ -182,8 +184,8 @@ describe('recovery research through the production engine', () => {
   })
 
   it('reports international coverage as missing when only the VIX feed succeeded', async () => {
-    const store = await storeFor(['GOOD'])
-    await buildBoard(store, dependencies(['GOOD'], {
+    const store = await storeFor(['MSFT'])
+    await buildBoard(store, dependencies(['MSFT'], {
       worldReads: async () => [{ sym: '^VIX', name: 'VIX', changePct: 2 }, { sym: '^N225', name: 'Nikkei', changePct: null }],
     }), NOW)
     const snapshot = (await store.read<EngineLabSnapshot>('engine-lab'))!
@@ -220,7 +222,7 @@ describe('recovery research through the production engine', () => {
   })
 
   it('remembers the published calibrated odds, learns only completed campaigns and preserves each scan report', async () => {
-    const store = await storeFor(['GOOD'])
+    const store = await storeFor(['MSFT'])
     const completed: StrategyLabRecord[] = Array.from({ length: 20 }, (_, i) => ({
       ...recoveryRecord(`PAST${i}`, NOW - (150 + i) * DAY),
       metrics: { reportTrend: 'improving', stabilising: true, worldTone: 'mixed' },
@@ -230,10 +232,10 @@ describe('recovery research through the production engine', () => {
         executionStatus: 'filled', executionVersion: LAB_EXECUTION_VERSION, horizonEndAt: NOW - (40 + i) * DAY },
     }))
     await store.write('engine-lab-ledger', completed)
-    await buildBoard(store, dependencies(['GOOD']), NOW)
+    await buildBoard(store, dependencies(['MSFT']), NOW)
     const lab = (await store.read<EngineLabSnapshot>('engine-lab'))!
-    const shown = lab.observations.find(row => row.sleeve === 'quality-dip' && row.sym === 'GOOD')!
-    const saved = (await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.find(row => row.sleeve === 'quality-dip' && row.sym === 'GOOD')!
+    const shown = lab.observations.find(row => row.sleeve === 'quality-dip' && row.sym === 'MSFT')!
+    const saved = (await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.find(row => row.sleeve === 'quality-dip' && row.sym === 'MSFT')!
     expect(shown.forecast.probabilityTarget).toBeCloseTo(11 / 23, 4)
     expect(saved.forecast).toEqual(shown.forecast)
     const learning = (await store.read<ResearchLearningSnapshot>('engine-research-learning'))!
@@ -241,11 +243,11 @@ describe('recovery research through the production engine', () => {
     expect(learning.strategies.find(s => s.key === 'quality-dip')).toMatchObject({ status: 'observing', overall: { independentN: 20, filledN: 20, meanNetReturnPct: 1, brierN: 20 } })
     const reports = (await store.read<ResearchReportSnapshot[]>('engine-research-reports:v1'))!
     const originalReport = JSON.stringify(reports[0])
-    expect(reports[0].decisions.find(row => row.sym === 'GOOD' && row.sleeve === 'quality-dip')?.campaignId).toBe(saved.id)
-    await buildBoard(store, dependencies(['GOOD']), NOW + 60)
+    expect(reports[0].decisions.find(row => row.sym === 'MSFT' && row.sleeve === 'quality-dip')?.campaignId).toBe(saved.id)
+    await buildBoard(store, dependencies(['MSFT']), NOW + 60)
     const updatedReports = (await store.read<ResearchReportSnapshot[]>('engine-research-reports:v1'))!
     expect(updatedReports).toHaveLength(2)
     expect(JSON.stringify(updatedReports[0])).toBe(originalReport)
-    expect((await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.filter(row => row.sleeve === 'quality-dip' && row.sym === 'GOOD')).toHaveLength(1)
+    expect((await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.filter(row => row.sleeve === 'quality-dip' && row.sym === 'MSFT')).toHaveLength(1)
   })
 })

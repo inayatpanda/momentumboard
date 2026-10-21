@@ -290,7 +290,7 @@ const healthyBusiness = (now: number): BusinessHealthSnapshot => {
     currentRatio: 2, debtToEquity: 0.2, revenueGrowthPct: 10, shareCountChangePct: 0.5, netMarginPct: 20, recentNetIncome: 50, recentOperatingCashFlow: 60, recentRevenueGrowthPct: 5, recentShareCountChangePct: 0 },
   }
   for (const [key, value] of Object.entries(snapshot.metrics)) {
-    if (value != null) snapshot.evidence[key as keyof typeof snapshot.metrics] = { value, periodStart: key.startsWith('recent') ? '2026-04-01' : '2025-01-01', periodEnd: key.startsWith('recent') ? '2026-06-30' : '2025-12-31', filed: '2026-07-15', availableAt: now - 20 * DAY, unit: 'USD', tags: [], accessions: [] }
+    if (value != null) snapshot.evidence[key as keyof typeof snapshot.metrics] = { value, periodStart: key.startsWith('recent') ? '2026-04-01' : '2025-01-01', periodEnd: (key.startsWith('recent') || ['totalDebt','cash','currentAssets','currentLiabilities','totalEquity','currentRatio','debtToEquity'].includes(key)) ? '2026-06-30' : '2025-12-31', filed: '2026-07-15', availableAt: now - 20 * DAY, unit: 'USD', tags: [], accessions: [] }
   }
   snapshot.reportHistory = [
     ['2025-01-01', '2025-12-31', '2026-02-15'],
@@ -314,7 +314,7 @@ describe('fundamentals-backed recovery research', () => {
   it('requires business health, a higher low and average reclaim before a 63-session setup', () => {
     const cs = recoveryTape()
     const now = after(cs)
-    const [row] = qualityDipObservations([{ sym: 'GOOD', candles: cs, capUsdM: 10_000, businessHealth: healthyBusiness(now) }], candles(Array(cs.length).fill(100)), now)
+    const [row] = qualityDipObservations([{ sym: 'GOOD', candles: cs, capUsdM: 10_000, sector: 'XLK', valuationCapitalization: { sym: 'GOOD', marketCapUsdM: .003, currency: 'USD' as const, observedAt: now - 60, source: 'finnhub-profile' as const }, businessHealth: healthyBusiness(now) }], candles(Array(cs.length).fill(100)), now)
     expect(row.state).toBe('setup')
     expect(row.metrics.financialHealth).toBe('healthy')
     expect(row.metrics.stabilising).toBe(true)
@@ -347,7 +347,7 @@ describe('fundamentals-backed recovery research', () => {
     const cs = recoveryTape()
     const now = after(cs)
     const businessHealth = healthyBusiness(now)
-    const base = { sym: 'GOOD', candles: cs, capUsdM: 10_000, businessHealth }
+    const base = { sym: 'GOOD', candles: cs, capUsdM: 10_000, sector: 'XLK', valuationCapitalization: { sym: 'GOOD', marketCapUsdM: .003, currency: 'USD' as const, observedAt: now - 60, source: 'finnhub-profile' as const }, businessHealth }
     const [established] = qualityDipObservations([base], cs, now)
     expect(established.state).toBe('setup')
 
@@ -367,7 +367,7 @@ describe('fundamentals-backed recovery research', () => {
     const cs = recoveryTape()
     const now = after(cs)
     const businessHealth = healthyBusiness(now)
-    const base = { sym: 'GOOD', candles: cs, capUsdM: 10_000, businessHealth }
+    const base = { sym: 'GOOD', candles: cs, capUsdM: 10_000, sector: 'XLK', valuationCapitalization: { sym: 'GOOD', marketCapUsdM: .003, currency: 'USD' as const, observedAt: now - 60, source: 'finnhub-profile' as const }, businessHealth }
     const [established] = qualityDipObservations([base], cs, now)
     const reportHistory = businessHealth.reportHistory!.map(point => ({ ...point,
       metrics: { ...point.metrics, revenueGrowthPct: -10, netMarginChangePp: -3 } }))
@@ -387,7 +387,7 @@ describe('fundamentals-backed recovery research', () => {
     const cs = recoveryTape()
     const now = after(cs)
     const businessHealth = healthyBusiness(now)
-    const base = { sym: 'GOOD', candles: cs, capUsdM: 10_000, businessHealth }
+    const base = { sym: 'GOOD', candles: cs, capUsdM: 10_000, sector: 'XLK', valuationCapitalization: { sym: 'GOOD', marketCapUsdM: .003, currency: 'USD' as const, observedAt: now - 60, source: 'finnhub-profile' as const }, businessHealth }
     const [established] = qualityDipObservations([base], cs, now)
     // The reporting period has already ended, but its filing is not available
     // yet. Positive future comparisons must not complete the history gate.
@@ -411,11 +411,11 @@ describe('fundamentals-backed recovery research', () => {
   it('keeps a healthy business on watch around earnings or without a chart recovery', () => {
     const cs = recoveryTape()
     const now = after(cs)
-    const [event] = qualityDipObservations([{ sym: 'GOOD', candles: cs, capUsdM: 10_000, businessHealth: healthyBusiness(now), earningsRisk: true }], cs, now)
+    const [event] = qualityDipObservations([{ sym: 'GOOD', candles: cs, capUsdM: 10_000, sector: 'XLK', valuationCapitalization: { sym: 'GOOD', marketCapUsdM: .003, currency: 'USD' as const, observedAt: now - 60, source: 'finnhub-profile' as const }, businessHealth: healthyBusiness(now), earningsRisk: true }], cs, now)
     expect(event.state).toBe('watch')
     expect(event.risks.join(' ')).toContain('earnings')
     const declining = candles([...Array(200).fill(160), ...Array.from({ length: 20 }, (_, i) => 130 - i)])
-    const [noReversal] = qualityDipObservations([{ sym: 'GOOD', candles: declining, capUsdM: 10_000, businessHealth: healthyBusiness(now) }], declining, now)
+    const [noReversal] = qualityDipObservations([{ sym: 'GOOD', candles: declining, capUsdM: 10_000, sector: 'XLK', valuationCapitalization: { sym: 'GOOD', marketCapUsdM: .003, currency: 'USD' as const, observedAt: now - 60, source: 'finnhub-profile' as const }, businessHealth: healthyBusiness(now) }], declining, now)
     expect(noReversal.metrics.financialHealth).toBe('healthy')
     expect(noReversal.metrics.stabilising).toBe(false)
     expect(noReversal.state).toBe('watch')

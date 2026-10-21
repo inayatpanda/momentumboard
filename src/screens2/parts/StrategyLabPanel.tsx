@@ -36,6 +36,8 @@ function ObservationCard({ row, linked = true }: { row: StrategyObservation; lin
     {row.dataGaps.length > 0 && <p className="research-missing"><b>Still missing</b> {row.dataGaps.slice(0, linked ? 2 : undefined).join(' · ')}</p>}
     {row.sleeve === 'quality-dip' && <div className="research-recovery" aria-label="Recovery evidence">
       <div><span>Business</span><strong>{String(row.metrics.financialHealth ?? 'unknown')}</strong></div>
+      <div><span>Sector financial checks</span><strong>{String(row.metrics.financialSector ?? 'Needs classification')}</strong></div>
+      <div><span>Valuation</span><strong>{row.metrics.valuationStatus === 'supported' ? 'Within research limits' : row.metrics.valuationStatus === 'demanding' ? 'Above research limits' : 'Needs evidence'}</strong></div>
       <div><span>Report trajectory</span><strong>{String(row.metrics.reportTrend ?? 'insufficient')}{typeof row.metrics.reportObservations === 'number' ? ` · ${row.metrics.reportObservations} reports` : ''}</strong></div>
       <div><span>Chart recovery</span><strong>{row.metrics.stabilising === true ? 'Confirmed' : 'Not confirmed'}</strong></div>
       <div><span>Sector</span><strong>{row.metrics.sectorName ? `${row.metrics.sectorName}: ${row.metrics.sectorRotation === 'in' ? 'improving' : row.metrics.sectorRotation === 'out' ? 'weakening' : 'mixed'}` : 'Not mapped'}</strong></div>
@@ -54,6 +56,8 @@ function ObservationCard({ row, linked = true }: { row: StrategyObservation; lin
         {row.reasons.slice(1).map((reason, i) => <p key={`reason-${i}`}><b>Supporting evidence</b> {reason}</p>)}
         {row.risks.slice(1).map((risk, i) => <p key={`risk-${i}`}><b>Additional risk</b> {risk}</p>)}
         {row.sleeve === 'quality-dip' && <>
+          <p><b>Financial checks</b> {String(row.metrics.financialChecks ?? 'Sector checks are awaiting the next scan.')}</p>
+          <p><b>Valuation evidence</b> {String(row.metrics.valuationSummary ?? 'Not available')}{typeof row.metrics.valuationObservedAt === 'number' ? ` Market capitalization observed ${stamp(row.metrics.valuationObservedAt)}.` : ''} Research limits are fixed hypotheses, not peer medians or fair-value estimates.</p>
           <p><b>Report availability</b> {typeof row.metrics.reportLatestAvailableAt === 'number' ? stamp(row.metrics.reportLatestAvailableAt) : 'Date unavailable'}. Business evidence is backward-looking.</p>
           <p><b>Probability basis</b> {row.forecast.calibrationBasis === 'validated-report-trend' ? 'Chronologically tested report-trend cohort' : 'Pooled forward campaigns'}.{row.forecast.conditioningReason ? ` ${row.forecast.conditioningReason}` : ' Condition-specific evidence is still collecting.'}</p>
           {row.forecast.calibrationBasis === 'validated-report-trend' && <p>The report cohort passed a chronological test on previously recorded outcomes. This is retrospective evidence; forward predictive skill is still being measured.</p>}

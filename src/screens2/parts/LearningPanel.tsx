@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import { Link } from 'wouter'
 import type { ResearchLearningSnapshot } from '../../../shared/engine/researchLearning'
 import { BrandMark } from '../../components/BrandMark'
+import { MarketComparison } from './MarketComparison'
 
 const percent = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? '—' : `${Math.round(value * 100)}%`
 const change = (value: number | null | undefined, suffix = '%') => value == null || !Number.isFinite(value) ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}${suffix}`
@@ -31,6 +32,7 @@ export function LearningPanel({ learning, onResearch }: { learning?: ResearchLea
     <div className="research-section-head"><div><p className="research-eyebrow">The feedback loop</p><h2>{learning?.history.eligibleCompletedN ? 'What the evidence is teaching us' : 'Following ideas through to results'}</h2></div><span className="research-mode">{learning?.status === 'observing' ? 'Descriptive patterns' : 'Building the record'}</span></div>
     <p className="research-section-intro">{learning?.history.eligibleCompletedN ? 'Compare recorded conditions and outcomes, with uncertainty kept in view.' : 'Each forecast is saved first, then checked after its observation period. Performance appears here when comparable results are ready.'}</p>
     {!learning ? <div className="research-learning-empty"><BrandMark size={44} /><div><h3>The learning snapshot is not available.</h3><p>Historical learning is not available in this board snapshot. Refresh Today to check for an update; existing published-call results are available in Track record.</p><Link href="/record" className="research-text-link">View published-call results →</Link></div></div> : <>
+      <MarketComparison snapshot={learning.marketComparison} />
       <div className="research-learning-census" aria-label="Learning history coverage">
         <div><strong className="num">{learning.history.eligibleCompletedN}</strong><span>Comparable outcomes</span></div>
         <div><strong className="num">{learning.history.currentPendingN ?? learning.history.pendingN}</strong><span>{learning.history.currentPendingN != null ? 'Current forecasts being tracked' : 'Unscored records · all versions'}</span></div>
