@@ -1,5 +1,5 @@
 import { buildMarketComparison } from '../../../shared/engine/marketComparison'
-import { applyHistoryGate, type HistoricalStudy } from '../../../shared/engine/historyEvidence'
+import { applyHistoryGate, withFinancialHistory, type HistoricalStudy } from '../../../shared/engine/historyEvidence'
 import type { ValuationCapitalization } from '../../../shared/sectorFinancials'
 import { consensusTickers, type VideoExtract } from './videoTrends'
 import { gradeSocialRecord, socialGradingQueue, summarizeSocialOutcomes, type SocialOutcomeRecord } from '../../../shared/engine/socialOutcomes'
@@ -4261,6 +4261,7 @@ export async function buildBoard(
   // old forecasts or reuse this current valuation in historical simulations.
   const qualityPublicationAt = Math.max(nowSec, ...qualityRows.map(r => r.valuationCapitalization?.observedAt ?? nowSec))
   const qualityRaw = qualityDipObservations(qualityRows, spy, qualityPublicationAt)
+    .map(observation => withFinancialHistory(observation, historicalStudy, qualityPublicationAt))
   // Recovery candidates may never enter the fast dip lane. Give their best
   // five candidates an independent, bounded news read instead of leaving the
   // cause-of-selloff gate permanently empty unless another lane warmed it.

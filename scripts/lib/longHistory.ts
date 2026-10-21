@@ -1,3 +1,4 @@
+import { historicalFinancialState, FINANCIAL_HISTORY_VERSION, type FinancialPanel } from './historicalFundamentals'
 import type { Candle } from '../../shared/types'
 import { gradeStrategyObservation, shortHorizonObservations } from '../../shared/engine/strategyLab'
 import { historyGate, HISTORY_CORE_MODEL, HISTORY_VERSION, type HistoryGate, type HistoricalStats, type HistoricalStrategy, type HistoricalStudy, type HistoricalTrade } from '../../shared/engine/historyEvidence'
@@ -7,7 +8,7 @@ import { historyGate, HISTORY_CORE_MODEL, HISTORY_VERSION, type HistoryGate, typ
 export const HISTORY_SYMBOLS = ['AAPL', 'MSFT', 'JPM', 'BAC', 'JNJ', 'PFE', 'XOM', 'CVX', 'CAT', 'HON', 'PG', 'KO', 'HD', 'MCD', 'DIS', 'VZ', 'DUK', 'SO', 'NEM', 'FCX', 'AMT', 'SPG']
 export const HISTORY_START = Date.UTC(2016, 0, 1) / 1000
 export const EVALUATION_START = Date.UTC(2020, 0, 1) / 1000
-export interface HistoryTape { sym: string; fetchedAt: number; candles: Candle[]; adjustment: number[] }
+export interface HistoryTape { sym: string; fetchedAt: number; candles: Candle[]; adjustment: number[]; splits?: { at: number; ratio: number }[] }
 const day = (t: number) => Math.floor(t / 86400)
 const yearOf = (t: number) => new Date(t * 1000).getUTCFullYear()
 const quarterOf = (t: number) => { const d = new Date(t * 1000); return d.getUTCFullYear() * 4 + Math.floor(d.getUTCMonth() / 3) }
@@ -29,7 +30,11 @@ export function parseHistoryTape(json: any, sym: string, now: number): HistoryTa
     seen.add(day(t)); candles.push({ t, o: q.open[i], h: q.high[i], l: q.low[i], c: q.close[i], v: q.volume[i] }); adjustment.push(adj[i] / q.close[i])
   }
   if (candles.some((c, i) => i > 0 && c.t <= candles[i - 1].t)) throw new Error(`${sym}: unordered history`)
-  return { sym, fetchedAt: now, candles, adjustment }
+  const splits = Object.values(r.events?.splits ?? {}).map((split: any) => {
+    if (!Number.isFinite(split.date) || !Number.isFinite(split.numerator) || !Number.isFinite(split.denominator) || split.numerator <= 0 || split.denominator <= 0) throw new Error(`${sym}: invalid split metadata`)
+    return { at: split.date, ratio: split.numerator / split.denominator }
+  }).sort((a, b) => a.at - b.at)
+  return { sym, fetchedAt: now, candles, adjustment, splits }
 }
 
 export function adjustedReturn(entry: number, exit: number, entryAdjustment: number, exitAdjustment: number, short = false): number {
@@ -39,9 +44,9 @@ export function adjustedReturn(entry: number, exit: number, entryAdjustment: num
 
 /** Calendar clusters keep contemporaneous stocks together. Moving four-quarter
  * blocks also retain serial dependence across overlapping holding windows.
- * The 98.75% interval accounts for four displayed comparisons (Bonferroni);
+ * The interval accounts for all displayed comparisons (Bonferroni);
  * it does NOT repair survivorship bias or establish prospective skill. */
-export function historicalStats(rows: HistoricalTrade[], interval = true): HistoricalStats {
+export function historicalStats(rows: HistoricalTrade[], interval = true, comparisons = 9): HistoricalStats {
   const groups = new Map<number, HistoricalTrade[]>()
   for (const t of rows) { const q = quarterOf(t.signalAt); groups.set(q, [...(groups.get(q) ?? []), t]) }
   const paired = rows.filter(r => r.brier != null && r.baselineBrier != null)
@@ -64,24 +69,30 @@ export function historicalStats(rows: HistoricalTrade[], interval = true): Histo
       if (n) samples.push(total / n)
     }
     samples.sort((a, b) => a - b)
-    if (samples.length) uncertaintyPp = [samples[Math.floor(samples.length * .00625)], samples[Math.min(samples.length - 1, Math.floor(samples.length * .99375))]]
+    if (samples.length) uncertaintyPp = [samples[Math.floor(samples.length * (.05 / (2 * comparisons)))], samples[Math.min(samples.length - 1, Math.floor(samples.length * (1 - .05 / (2 * comparisons))))]]
   }
   return { n: rows.length, quarters: groups.size, meanReturnPct: mean(rows.map(r => r.returnPct)), meanMarketPct: mean(rows.map(r => r.marketPct)),
     excessPp: mean(rows.map(r => r.returnPct - r.marketPct)), beatRate: mean(rows.map(r => Number(r.returnPct > r.marketPct))),
     brier: mean(paired.map(r => r.brier!)), baselineBrier: mean(paired.map(r => r.baselineBrier!)), uncertaintyPp }
 }
 
-export function buildHistoricalStudy(tapes: HistoryTape[], spy: HistoryTape, now: number, digest: string, log: (s: string) => void = () => {}): HistoricalStudy {
-  const definitions = [
+export function buildHistoricalStudy(tapes: HistoryTape[], spy: HistoryTape, now: number, digest: string, log: (s: string) => void = () => {}, financialPanels: FinancialPanel[] = []): HistoricalStudy {
+  const definitions: { key: string; label: string; horizon: number; description: string; financial?: boolean }[] = [
     { key: 'direction-core', label: 'Three-session direction', horizon: 3, description: 'Existing analogue model, tested on price data. Historical earnings exclusions and daily board ranking cannot be reconstructed.' },
     { key: 'direction-gated', label: 'Direction with an evidence filter', horizon: 3, description: 'Same signals; each year is allowed only if the prior two years beat SPY and improved probability error over the stock’s normal drift.' },
     { key: 'pullback-price', label: 'Stabilising pullback', horizon: 63, description: 'Price-only control: 8–35% below the 63-session high, above a rising 20-session average. This does not test business health or valuation.' },
     { key: 'trend-price', label: 'Trend and relative strength', horizon: 20, description: 'Price-only control: above the 200-session average, 50-session average above 200, and a stronger 20-session return than SPY.' },
+    { key: 'big-drop-price', label: 'Big drop · price only', horizon: 63, description: 'Control for the financial recovery tests: 20–60% below the 252-session highest close, above a rising 20-session average. Hold 63 sessions.' },
+    { key: 'healthy-drop', label: 'Healthy business after a big drop', horizon: 63, financial: true, description: 'Same 20–60% drawdown and stabilisation as the big-drop control, plus the dated sector health screen: profit, cash flow, growth, dilution, leverage and liquidity. Hold 63 sessions.' },
+    { key: 'healthy-value-drop', label: 'Healthy, good-value recovery', horizon: 63, financial: true, description: 'Healthy big-drop screen plus sector-specific ceilings on annual P/E and floors on annual free-cash-flow yield. Historical market cap uses dated shares and split-consistent prices. Hold 63 sessions; no historical news or catalyst filter.' },
+    { key: 'quality-trend', label: 'Healthy business with momentum', horizon: 20, financial: true, description: 'Same trend and relative-strength rules as the price control, plus the dated sector health screen. Hold 20 sessions.' },
+    { key: 'quality-value', label: 'Healthy business at a fair valuation', horizon: 63, financial: true, description: 'Dated sector health and annual valuation screens, with no drawdown or momentum requirement. Hold 63 sessions.' },
   ]
   const trades: Record<string, HistoricalTrade[]> = Object.fromEntries(definitions.map(d => [d.key, []]))
-  const cancelled: Record<string, number> = {}, missing: Record<string, number> = {}
+  const cancelled: Record<string, number> = {}, missing: Record<string, number> = {}, unknown: Record<string, number> = {}, candidates: Record<string, number> = {}
   const spyIndex = new Map(spy.candles.map((c, i) => [day(c.t), i]))
   for (const tape of tapes) {
+    const panel = financialPanels.find(p => p.sym === tape.sym)
     const bars = tape.candles, occupied: Record<string, number> = {}
     for (let i = 520; i + 3 < bars.length; i++) {
       const signalAt = day(bars[i].t) * 86400 + 22 * 3600
@@ -96,11 +107,27 @@ export function buildHistoricalStudy(tapes: HistoryTape[], spy: HistoryTape, now
       const drop = (1 - bars[i].c / Math.max(...bars.slice(i - 62, i + 1).map(c => c.h))) * 100
       const pullback = drop >= 8 && drop <= 35 && bars[i].c > avg(20) && avg(20) > avg(20, i - 5)
       const trend = bars[i].c > avg(200) && avg(50) > avg(200) && bars[i].c / bars[i - 20].c > spy.candles[si].c / spy.candles[si - 20].c
+      const bigDrop = (1 - bars[i].c / Math.max(...prefix.map(c => c.c), ...bars.slice(i - 251, i - 249).map(c => c.c))) * 100
+      const recovering = bigDrop >= 20 && bigDrop <= 60 && bars[i].c > avg(20) && avg(20) > avg(20, i - 5)
+      const financial = historicalFinancialState(panel, tape.sym, signalAt, bars[i].c, tape.splits)
+      const healthOK = financial.health.status === 'healthy', valueOK = financial.valuation.status === 'supported'
       for (const d of definitions.filter(d => d.key !== 'direction-gated')) {
         const core = d.key === 'direction-core'
         // The horizon's close can produce the next signal: its entry is on the
         // following open, after the previous campaign has fully ended.
-        if (i < (occupied[d.key] ?? -1) || (core ? !obs || obs.state !== 'setup' : d.key === 'pullback-price' ? !pullback : !trend)) continue
+        if (i < (occupied[d.key] ?? -1)) continue
+        const priceEligible = core ? !!obs && obs.state === 'setup' : d.key === 'pullback-price' ? pullback
+          : ['trend-price', 'quality-trend'].includes(d.key) ? trend : d.key === 'quality-value' ? true : recovering
+        if (!priceEligible) continue
+        if (d.financial) {
+          if (signalAt >= EVALUATION_START) candidates[d.key] = (candidates[d.key] ?? 0) + 1
+          const needsValue = ['healthy-value-drop', 'quality-value'].includes(d.key)
+          if (financial.health.status === 'unknown' || (needsValue && financial.valuation.status === 'unknown')) {
+            if (signalAt >= EVALUATION_START) unknown[d.key] = (unknown[d.key] ?? 0) + 1
+            continue
+          }
+          if (!healthOK || (needsValue && !valueOK)) continue
+        }
         const end = i + d.horizon
         if (end >= bars.length) continue
         const complete = Array.from({ length: d.horizon + 1 }, (_, j) => spy.candles[si + j] && day(bars[i + j].t) === day(spy.candles[si + j].t)).every(Boolean)
@@ -116,6 +143,7 @@ export function buildHistoricalStudy(tapes: HistoryTape[], spy: HistoryTape, now
         const marketPct = adjustedReturn(spy.candles[si + 1].o * 1.001, spy.candles[si + d.horizon].c * .999, spy.adjustment[si + 1], spy.adjustment[si + d.horizon])
         const up = Number(bars[i + 3].c > bars[i].c)
         trades[d.key].push({ sym: tape.sym, signalAt, endAt: day(bars[end].t) * 86400 + 22 * 3600, returnPct: ret, marketPct,
+          ...(d.financial ? { sector: financial.sector, filingAt: financial.snapshot?.availableAt ?? undefined, annualPeriodEnd: financial.snapshot?.annualPeriodEnd ?? undefined, annualPE: financial.valuation.pe, fcfYieldPct: financial.valuation.fcfYieldPct } : {}),
           ...(core ? { brier: (obs!.forecast.probabilityUp! - up) ** 2, baselineBrier: (obs!.forecast.baselineProbabilityUp! - up) ** 2 } : {}) })
       }
     }
@@ -126,15 +154,23 @@ export function buildHistoricalStudy(tapes: HistoryTape[], spy: HistoryTape, now
   trades['direction-gated'] = trades['direction-core'].filter(t => gates.find(g => g.year === yearOf(t.signalAt))?.allow)
   const strategies: HistoricalStrategy[] = definitions.map(d => {
     const rows = trades[d.key].filter(t => t.signalAt >= EVALUATION_START && t.endAt < now)
-    const stats = historicalStats(rows)
+    const stats = historicalStats(rows, true, definitions.length)
     const years = [...new Set(rows.map(t => yearOf(t.signalAt)))].sort().map(year => ({ year, stats: historicalStats(rows.filter(t => yearOf(t.signalAt) === year), false) }))
     const stable = stats.n >= 60 && stats.quarters >= 12 && years.length >= 3 && years.filter(y => (y.stats.excessPp ?? 0) > 0).length / years.length >= .6
-    return { ...d, stats, years, cancelledN: cancelled[d.key] ?? 0, missingN: missing[d.key] ?? 0,
+    return { ...d, stats, years,
+      ...(d.financial ? { candidateN: candidates[d.key] ?? 0, unknownFinancialN: unknown[d.key] ?? 0,
+        sectors: [...new Set(rows.map(t => t.sector!))].sort().map(sector => ({ sector, stats: historicalStats(rows.filter(t => t.sector === sector), false) })),
+        examples: [...rows].sort((a, b) => b.signalAt - a.signalAt).slice(0, 3) } : {}),
+      cancelledN: cancelled[d.key] ?? 0, missingN: missing[d.key] ?? 0,
       status: !stats.n ? 'no-trades' : (stats.excessPp ?? 0) < 0 ? 'behind' : stable && stats.uncertaintyPp && stats.uncertaintyPp[0] > 0 ? 'ahead' : 'uncertain' }
   })
   const dataThrough = Math.min(spy.candles.at(-1)!.t, ...tapes.map(t => t.candles.at(-1)!.t))
   return { version: HISTORY_VERSION, coreModel: HISTORY_CORE_MODEL, generatedAt: now, dataFrom: spy.candles[0].t, dataThrough,
     evaluationFrom: EVALUATION_START, symbols: HISTORY_SYMBOLS, missingSymbols: HISTORY_SYMBOLS.filter(s => !tapes.some(t => t.sym === s)),
+    financialCoverage: { version: FINANCIAL_HISTORY_VERSION, symbols: financialPanels.filter(p => p.points.length).map(p => p.sym),
+      unavailableSymbols: HISTORY_SYMBOLS.filter(sym => !financialPanels.some(p => p.sym === sym && p.points.length)), snapshots: financialPanels.reduce((n, p) => n + p.points.length, 0),
+      companies: financialPanels.map(p => ({ sym: p.sym, snapshots: p.points.length, firstAvailableAt: p.points[0]?.availableAt ?? null, latestAvailableAt: p.points.at(-1)?.availableAt ?? null })) },
+    comparisons: definitions.length, confidencePct: (1 - .05 / definitions.length) * 100,
     strategies, gates, liveGate: gates.at(-1)!, costBpsPerSide: 10, dataDigest: digest,
     caveats: [
       'Historical reconstruction, not forecasts published at the time. These rules were designed after the historical period; chronological testing cannot remove that research bias.',
@@ -142,10 +178,13 @@ export function buildHistoricalStudy(tapes: HistoryTape[], spy: HistoryTape, now
       '2016–2017 warms the features; 2018–2019 supplies initial learning. Evaluation begins in 2020. Each yearly evidence filter uses only fully completed outcomes from the preceding two years; boundary-crossing outcomes are purged.',
       'Next-session open, 10 basis points per side for both strategy and SPY. Dividend-adjusted return estimates use the free feed’s adjusted-close ratios. Early exits stay in cash at zero until the same benchmark horizon ends. Borrow costs, taxes and financing are excluded.',
       'Returns are means per completed setup, not compounded portfolio returns or annual returns. Same-stock trades cannot overlap. Stocks moving together are clustered by calendar quarter with moving one-year bootstrap blocks.',
-      'The uncertainty range is a 98.75% block-bootstrap interval, adjusted for four comparisons. A positive average alone is not evidence of a durable edge. Free prices and corporate-action adjustments may be revised.',
-      'The three-session core is simulated without dated earnings exclusions; it is not a full replay of the production board. Price-only controls cannot validate the financial or social strategies. No simulation is added to the live forecast ledger.',
+      `The uncertainty range is a ${((1 - .05 / definitions.length) * 100).toFixed(2)}% block-bootstrap interval, adjusted for all ${definitions.length} comparisons. A positive average alone is not evidence of a durable edge. Free prices and corporate-action adjustments may be revised.`,
+      'Financial screens use only reports filed by next-day noon UTC at the signal date. Annual flows are not TTM. Missing values never become healthy; financials, utilities and REITs remain specialist-review exclusions. Sector classifications are a fixed present-day mapping, not historical classifications.',
+      'Historical valuation reconstructs market cap from dated common shares and split-consistent prices. Share observations expire after 180 days; ambiguous share counts and missing split metadata exclude valuation. This is an estimate, not historical vendor market cap.',
+      'Financial rules and thresholds were fixed before this run. All nine comparisons are reported, including failures. This is retrospective research, not untouched prospective validation. Sector breakdowns are descriptive and not independently validated strategies.',
+      'The three-session core is simulated without dated earnings exclusions; it is not a full replay of the production board. Price-only controls cannot validate the financial or social strategies; comparisons across differently selected trades do not isolate a causal effect of the filters. No simulation is added to the live forecast ledger.',
     ], unavailable: [
-      { label: 'Quality recovery with sector valuation', reason: 'Needs point-in-time financial reports, share counts, valuation and catalyst evidence. A price pullback alone cannot validate this strategy.' },
+      { label: 'Complete live recovery strategy', reason: 'Historical financial screens are now tested, but dated catalyst/news, report-trajectory gates and the live stop/target rules differ. Fixed-horizon financial tests do not validate the complete live recovery strategy.' },
       { label: 'YouTube / social ignition', reason: 'Needs dated transcripts, channel coverage and attention history. Today’s content cannot stand in for historical evidence.' },
       { label: 'Complete board engine', reason: 'Historical news, earnings gates and candidate rankings are incomplete. Only actually saved board forecasts are audited separately.' },
     ] }

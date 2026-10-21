@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyHistoryGate, historyGate, HISTORY_CORE_MODEL, HISTORY_GATED_MODEL, HISTORY_VERSION, type HistoricalStudy, type HistoricalTrade } from './historyEvidence'
+import { applyHistoryGate, withFinancialHistory, historyGate, HISTORY_CORE_MODEL, HISTORY_GATED_MODEL, HISTORY_VERSION, type HistoricalStudy, type HistoricalTrade } from './historyEvidence'
 import type { StrategyObservation } from './strategyLab'
 
 const now = Date.UTC(2026, 9, 21) / 1000
@@ -8,6 +8,19 @@ const obs: StrategyObservation = { id: 'x', sym: 'AAPL', sleeve: 'short-horizon'
 const study = (): HistoricalStudy => ({ version: HISTORY_VERSION, coreModel: HISTORY_CORE_MODEL, generatedAt: now - 60, dataThrough: now - 86400, dataFrom: 1, evaluationFrom: 1, symbols: ['AAPL'], missingSymbols: [], strategies: [], gates: [], liveGate: historyGate(prior, 2026), costBpsPerSide: 10, dataDigest: 'test', caveats: [], unavailable: [] })
 
 describe('historical learning without future leakage', () => {
+  it('adds comparable financial context without inventing probabilities or promoting setups', () => {
+    const s = study(), recovery = { ...obs, sleeve: 'quality-dip' as const, state: 'watch' as const }
+    s.financialCoverage = { version: 'sec-asof-annual-v1', symbols: ['AAPL'], unavailableSymbols: [], snapshots: 100 }
+    s.strategies = [{ key: 'healthy-value-drop', label: 'test', horizon: 63, description: 'test', status: 'uncertain', stats: { n: 3, quarters: 2, meanReturnPct: 2, meanMarketPct: 1, excessPp: 1, beatRate: .5, brier: null, baselineBrier: null, uncertaintyPp: null }, years: [], cancelledN: 0, missingN: 0 }]
+    const context = withFinancialHistory(recovery, s, now)
+    expect(context.state).toBe('watch')
+    expect(context.forecast).toEqual(recovery.forecast)
+    expect(context.score).toBe(recovery.score)
+    expect(context.metrics.historicalFinancialStatus).toBe('uncertain')
+    expect(context.risks.at(-1)).toContain('does not validate')
+    s.generatedAt = now - 46 * 86400
+    expect(withFinancialHistory(recovery, s, now).metrics.historicalFinancialStatus).toBe('unavailable')
+  })
   it('purges outcomes that cross the training boundary and ignores later winners', () => {
     const future = { ...prior[0], signalAt: Date.UTC(2026, 0, 2) / 1000, endAt: Date.UTC(2026, 0, 6) / 1000, returnPct: 10000 }
     const crossing = { ...future, signalAt: Date.UTC(2025, 11, 30) / 1000 }

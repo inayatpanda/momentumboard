@@ -1,0 +1,1548 @@
+{
+  "version": "long-history-financial-v2",
+  "coreModel": "baseline-lift-250-session-v4",
+  "generatedAt": 1792614225,
+  "dataFrom": 1451917800,
+  "dataThrough": 1792503000,
+  "evaluationFrom": 1577836800,
+  "symbols": [
+    "AAPL",
+    "MSFT",
+    "JPM",
+    "BAC",
+    "JNJ",
+    "PFE",
+    "XOM",
+    "CVX",
+    "CAT",
+    "HON",
+    "PG",
+    "KO",
+    "HD",
+    "MCD",
+    "DIS",
+    "VZ",
+    "DUK",
+    "SO",
+    "NEM",
+    "FCX",
+    "AMT",
+    "SPG"
+  ],
+  "missingSymbols": [],
+  "financialCoverage": {
+    "version": "sec-asof-annual-v1",
+    "symbols": [
+      "AAPL",
+      "MSFT",
+      "JPM",
+      "BAC",
+      "JNJ",
+      "PFE",
+      "XOM",
+      "CVX",
+      "CAT",
+      "HON",
+      "PG",
+      "KO",
+      "HD",
+      "MCD",
+      "DIS",
+      "VZ",
+      "DUK",
+      "SO",
+      "NEM",
+      "FCX",
+      "AMT",
+      "SPG"
+    ],
+    "unavailableSymbols": [],
+    "snapshots": 1238,
+    "companies": [
+      {
+        "sym": "AAPL",
+        "snapshots": 47,
+        "firstAvailableAt": 1422532800,
+        "latestAvailableAt": 1785585600
+      },
+      {
+        "sym": "MSFT",
+        "snapshots": 49,
+        "firstAvailableAt": 1422360000,
+        "latestAvailableAt": 1785412800
+      },
+      {
+        "sym": "JPM",
+        "snapshots": 181,
+        "firstAvailableAt": 1424865600,
+        "latestAvailableAt": 1792584000
+      },
+      {
+        "sym": "BAC",
+        "snapshots": 143,
+        "firstAvailableAt": 1424952000,
+        "latestAvailableAt": 1792584000
+      },
+      {
+        "sym": "JNJ",
+        "snapshots": 47,
+        "firstAvailableAt": 1424865600,
+        "latestAvailableAt": 1784894400
+      },
+      {
+        "sym": "PFE",
+        "snapshots": 47,
+        "firstAvailableAt": 1425124800,
+        "latestAvailableAt": 1785931200
+      },
+      {
+        "sym": "XOM",
+        "snapshots": 3,
+        "firstAvailableAt": 1782993600,
+        "latestAvailableAt": 1790424000
+      },
+      {
+        "sym": "CVX",
+        "snapshots": 48,
+        "firstAvailableAt": 1424520000,
+        "latestAvailableAt": 1786104000
+      },
+      {
+        "sym": "CAT",
+        "snapshots": 50,
+        "firstAvailableAt": 1424260800,
+        "latestAvailableAt": 1786017600
+      },
+      {
+        "sym": "HON",
+        "snapshots": 49,
+        "firstAvailableAt": 1423915200,
+        "latestAvailableAt": 1784980800
+      },
+      {
+        "sym": "PG",
+        "snapshots": 52,
+        "firstAvailableAt": 1422446400,
+        "latestAvailableAt": 1792152000
+      },
+      {
+        "sym": "KO",
+        "snapshots": 49,
+        "firstAvailableAt": 1424952000,
+        "latestAvailableAt": 1777636800
+      },
+      {
+        "sym": "HD",
+        "snapshots": 49,
+        "firstAvailableAt": 1427457600,
+        "latestAvailableAt": 1788609600
+      },
+      {
+        "sym": "MCD",
+        "snapshots": 48,
+        "firstAvailableAt": 1424865600,
+        "latestAvailableAt": 1786190400
+      },
+      {
+        "sym": "DIS",
+        "snapshots": 34,
+        "firstAvailableAt": 1557403200,
+        "latestAvailableAt": 1786017600
+      },
+      {
+        "sym": "VZ",
+        "snapshots": 51,
+        "firstAvailableAt": 1424779200,
+        "latestAvailableAt": 1792584000
+      },
+      {
+        "sym": "DUK",
+        "snapshots": 50,
+        "firstAvailableAt": 1425384000,
+        "latestAvailableAt": 1786622400
+      },
+      {
+        "sym": "SO",
+        "snapshots": 47,
+        "firstAvailableAt": 1425384000,
+        "latestAvailableAt": 1781006400
+      },
+      {
+        "sym": "NEM",
+        "snapshots": 48,
+        "firstAvailableAt": 1424520000,
+        "latestAvailableAt": 1784894400
+      },
+      {
+        "sym": "FCX",
+        "snapshots": 49,
+        "firstAvailableAt": 1425124800,
+        "latestAvailableAt": 1786104000
+      },
+      {
+        "sym": "AMT",
+        "snapshots": 49,
+        "firstAvailableAt": 1424865600,
+        "latestAvailableAt": 1789128000
+      },
+      {
+        "sym": "SPG",
+        "snapshots": 48,
+        "firstAvailableAt": 1425124800,
+        "latestAvailableAt": 1786449600
+      }
+    ]
+  },
+  "comparisons": 9,
+  "confidencePct": 99.44444444444444,
+  "strategies": [
+    {
+      "key": "direction-core",
+      "label": "Three-session direction",
+      "horizon": 3,
+      "description": "Existing analogue model, tested on price data. Historical earnings exclusions and daily board ranking cannot be reconstructed.",
+      "stats": {
+        "n": 1900,
+        "quarters": 28,
+        "meanReturnPct": -0.24358435018694177,
+        "meanMarketPct": -0.012016872516734226,
+        "excessPp": -0.23156747767020727,
+        "beatRate": 0.44263157894736843,
+        "brier": 0.2635489282736834,
+        "baselineBrier": 0.25133797477894826,
+        "uncertaintyPp": [
+          -0.3926262817571919,
+          -0.096828653540893
+        ]
+      },
+      "years": [
+        {
+          "year": 2020,
+          "stats": {
+            "n": 289,
+            "quarters": 4,
+            "meanReturnPct": -0.1123765053434228,
+            "meanMarketPct": -0.021670867859113242,
+            "excessPp": -0.09070563748430942,
+            "beatRate": 0.4740484429065744,
+            "brier": 0.23450112567474032,
+            "baselineBrier": 0.23827811387543257,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2021,
+          "stats": {
+            "n": 328,
+            "quarters": 4,
+            "meanReturnPct": -0.14644102409372753,
+            "meanMarketPct": 0.09928959996465639,
+            "excessPp": -0.2457306240583841,
+            "beatRate": 0.40853658536585363,
+            "brier": 0.26413393707317057,
+            "baselineBrier": 0.25146474399390245,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2022,
+          "stats": {
+            "n": 261,
+            "quarters": 4,
+            "meanReturnPct": -0.43960421777739667,
+            "meanMarketPct": -0.3472722706853219,
+            "excessPp": -0.09233194709207472,
+            "beatRate": 0.47509578544061304,
+            "brier": 0.28934701816091957,
+            "baselineBrier": 0.25970452900383123,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 246,
+            "quarters": 4,
+            "meanReturnPct": -0.45811671215576166,
+            "meanMarketPct": 0.07298059919563267,
+            "excessPp": -0.5310973113513942,
+            "beatRate": 0.3861788617886179,
+            "brier": 0.28489339109756084,
+            "baselineBrier": 0.26080705065040644,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2024,
+          "stats": {
+            "n": 270,
+            "quarters": 4,
+            "meanReturnPct": -0.22442906082240502,
+            "meanMarketPct": 0.06925309629595357,
+            "excessPp": -0.2936821571183589,
+            "beatRate": 0.42962962962962964,
+            "brier": 0.25857367885185173,
+            "baselineBrier": 0.25057423144444435,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2025,
+          "stats": {
+            "n": 235,
+            "quarters": 4,
+            "meanReturnPct": -0.10943787781158318,
+            "meanMarketPct": 0.14073031054306218,
+            "excessPp": -0.2501681883546453,
+            "beatRate": 0.4553191489361702,
+            "brier": 0.248333227148936,
+            "baselineBrier": 0.2450840545531912,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 271,
+            "quarters": 4,
+            "meanReturnPct": -0.25296546003766873,
+            "meanMarketPct": -0.1041375995929977,
+            "excessPp": -0.1488278604446708,
+            "beatRate": 0.47232472324723246,
+            "brier": 0.2677478207380073,
+            "baselineBrier": 0.2546425435424352,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "cancelledN": 272,
+      "missingN": 0,
+      "status": "behind"
+    },
+    {
+      "key": "direction-gated",
+      "label": "Direction with an evidence filter",
+      "horizon": 3,
+      "description": "Same signals; each year is allowed only if the prior two years beat SPY and improved probability error over the stock’s normal drift.",
+      "stats": {
+        "n": 0,
+        "quarters": 0,
+        "meanReturnPct": null,
+        "meanMarketPct": null,
+        "excessPp": null,
+        "beatRate": null,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": null
+      },
+      "years": [],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "no-trades"
+    },
+    {
+      "key": "pullback-price",
+      "label": "Stabilising pullback",
+      "horizon": 63,
+      "description": "Price-only control: 8–35% below the 63-session high, above a rising 20-session average. This does not test business health or valuation.",
+      "stats": {
+        "n": 226,
+        "quarters": 27,
+        "meanReturnPct": 6.1932135786458895,
+        "meanMarketPct": 4.873972628905146,
+        "excessPp": 1.3192409497407465,
+        "beatRate": 0.46017699115044247,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": [
+          -1.7045847844318098,
+          5.041990905309339
+        ]
+      },
+      "years": [
+        {
+          "year": 2020,
+          "stats": {
+            "n": 39,
+            "quarters": 4,
+            "meanReturnPct": 10.240019804878637,
+            "meanMarketPct": 11.126948179950071,
+            "excessPp": -0.8869283750714336,
+            "beatRate": 0.358974358974359,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2021,
+          "stats": {
+            "n": 26,
+            "quarters": 4,
+            "meanReturnPct": 7.638050337334566,
+            "meanMarketPct": 4.804582053041054,
+            "excessPp": 2.8334682842935113,
+            "beatRate": 0.6153846153846154,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2022,
+          "stats": {
+            "n": 43,
+            "quarters": 4,
+            "meanReturnPct": 1.2572838011202503,
+            "meanMarketPct": -1.64852396385203,
+            "excessPp": 2.90580776497228,
+            "beatRate": 0.5581395348837209,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 40,
+            "quarters": 4,
+            "meanReturnPct": 3.2131576369447776,
+            "meanMarketPct": 7.378269964661913,
+            "excessPp": -4.165112327717135,
+            "beatRate": 0.225,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2024,
+          "stats": {
+            "n": 19,
+            "quarters": 4,
+            "meanReturnPct": 5.779709601120494,
+            "meanMarketPct": 4.12647633180311,
+            "excessPp": 1.653233269317384,
+            "beatRate": 0.5789473684210527,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2025,
+          "stats": {
+            "n": 34,
+            "quarters": 4,
+            "meanReturnPct": 11.570362780991523,
+            "meanMarketPct": 3.58294229275615,
+            "excessPp": 7.987420488235371,
+            "beatRate": 0.5294117647058824,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 25,
+            "quarters": 3,
+            "meanReturnPct": 4.636794468481737,
+            "meanMarketPct": 4.727213813465417,
+            "excessPp": -0.09041934498368079,
+            "beatRate": 0.48,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "uncertain"
+    },
+    {
+      "key": "trend-price",
+      "label": "Trend and relative strength",
+      "horizon": 20,
+      "description": "Price-only control: above the 200-session average, 50-session average above 200, and a stronger 20-session return than SPY.",
+      "stats": {
+        "n": 813,
+        "quarters": 27,
+        "meanReturnPct": 0.3925819392125648,
+        "meanMarketPct": 0.6664179055163072,
+        "excessPp": -0.2738359663037422,
+        "beatRate": 0.4784747847478475,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": [
+          -1.5178023848030024,
+          0.6705966762335483
+        ]
+      },
+      "years": [
+        {
+          "year": 2020,
+          "stats": {
+            "n": 108,
+            "quarters": 4,
+            "meanReturnPct": 0.2584246066518941,
+            "meanMarketPct": -1.0059582906770417,
+            "excessPp": 1.2643828973289357,
+            "beatRate": 0.5277777777777778,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2021,
+          "stats": {
+            "n": 162,
+            "quarters": 4,
+            "meanReturnPct": 1.8250034282363172,
+            "meanMarketPct": 1.6043582826156892,
+            "excessPp": 0.2206451456206272,
+            "beatRate": 0.5,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2022,
+          "stats": {
+            "n": 99,
+            "quarters": 4,
+            "meanReturnPct": -0.6888013660433976,
+            "meanMarketPct": -1.5253897199694906,
+            "excessPp": 0.8365883539260931,
+            "beatRate": 0.5757575757575758,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 81,
+            "quarters": 4,
+            "meanReturnPct": -1.148198821143485,
+            "meanMarketPct": 1.4693138554702627,
+            "excessPp": -2.617512676613748,
+            "beatRate": 0.30864197530864196,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2024,
+          "stats": {
+            "n": 147,
+            "quarters": 4,
+            "meanReturnPct": 0.11464024308667053,
+            "meanMarketPct": 1.2111786896475374,
+            "excessPp": -1.0965384465608656,
+            "beatRate": 0.4421768707482993,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2025,
+          "stats": {
+            "n": 121,
+            "quarters": 4,
+            "meanReturnPct": 0.7328300266044525,
+            "meanMarketPct": 1.242891933062882,
+            "excessPp": -0.5100619064584292,
+            "beatRate": 0.4628099173553719,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 95,
+            "quarters": 3,
+            "meanReturnPct": 0.5397852051070134,
+            "meanMarketPct": 0.9905387315708198,
+            "excessPp": -0.4507535264638063,
+            "beatRate": 0.5052631578947369,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "behind"
+    },
+    {
+      "key": "big-drop-price",
+      "label": "Big drop · price only",
+      "horizon": 63,
+      "description": "Control for the financial recovery tests: 20–60% below the 252-session highest close, above a rising 20-session average. Hold 63 sessions.",
+      "stats": {
+        "n": 94,
+        "quarters": 22,
+        "meanReturnPct": 5.911717085097103,
+        "meanMarketPct": 5.682272557119401,
+        "excessPp": 0.22944452797770487,
+        "beatRate": 0.44680851063829785,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": [
+          -4.829868302999248,
+          8.902970320439216
+        ]
+      },
+      "years": [
+        {
+          "year": 2020,
+          "stats": {
+            "n": 25,
+            "quarters": 3,
+            "meanReturnPct": 9.563629387040992,
+            "meanMarketPct": 10.513154602230111,
+            "excessPp": -0.9495252151891174,
+            "beatRate": 0.36,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2021,
+          "stats": {
+            "n": 3,
+            "quarters": 2,
+            "meanReturnPct": 2.882393872655689,
+            "meanMarketPct": 1.254009062259326,
+            "excessPp": 1.6283848103963632,
+            "beatRate": 0.6666666666666666,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2022,
+          "stats": {
+            "n": 24,
+            "quarters": 4,
+            "meanReturnPct": 3.512056509115371,
+            "meanMarketPct": 0.38793838904945604,
+            "excessPp": 3.124118120065915,
+            "beatRate": 0.5833333333333334,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 24,
+            "quarters": 4,
+            "meanReturnPct": 0.20318135426147332,
+            "meanMarketPct": 7.221238053310383,
+            "excessPp": -7.018056699048909,
+            "beatRate": 0.25,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2024,
+          "stats": {
+            "n": 5,
+            "quarters": 3,
+            "meanReturnPct": 8.891415400718454,
+            "meanMarketPct": 5.952119824433511,
+            "excessPp": 2.939295576284941,
+            "beatRate": 0.6,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2025,
+          "stats": {
+            "n": 9,
+            "quarters": 3,
+            "meanReturnPct": 16.026304830661388,
+            "meanMarketPct": 3.7247547627981064,
+            "excessPp": 12.301550067863277,
+            "beatRate": 0.7777777777777778,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 4,
+            "quarters": 3,
+            "meanReturnPct": 7.525990126136678,
+            "meanMarketPct": 5.409775380676496,
+            "excessPp": 2.1162147454601827,
+            "beatRate": 0.25,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "uncertain"
+    },
+    {
+      "key": "healthy-drop",
+      "label": "Healthy business after a big drop",
+      "horizon": 63,
+      "financial": true,
+      "description": "Same 20–60% drawdown and stabilisation as the big-drop control, plus the dated sector health screen: profit, cash flow, growth, dilution, leverage and liquidity. Hold 63 sessions.",
+      "stats": {
+        "n": 7,
+        "quarters": 5,
+        "meanReturnPct": 10.696358746099646,
+        "meanMarketPct": 6.587781887810382,
+        "excessPp": 4.108576858289263,
+        "beatRate": 0.5714285714285714,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": null
+      },
+      "years": [
+        {
+          "year": 2022,
+          "stats": {
+            "n": 3,
+            "quarters": 1,
+            "meanReturnPct": 7.804497184798336,
+            "meanMarketPct": 6.1593729769270125,
+            "excessPp": 1.6451242078713253,
+            "beatRate": 0.6666666666666666,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": -12.94845222320201,
+            "meanMarketPct": 7.967792578745896,
+            "excessPp": -20.916244801947904,
+            "beatRate": 0,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2025,
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": 27.122544052906832,
+            "meanMarketPct": 7.452676842960888,
+            "excessPp": 19.669867209945945,
+            "beatRate": 1,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 2,
+            "quarters": 2,
+            "meanReturnPct": 18.643463919298846,
+            "meanMarketPct": 6.107942431092434,
+            "excessPp": 12.535521488206413,
+            "beatRate": 0.5,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "candidateN": 1600,
+      "unknownFinancialN": 1042,
+      "sectors": [
+        {
+          "sector": "XLI",
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": 12.964843414581795,
+            "meanMarketPct": 7.8453834441170915,
+            "excessPp": 5.119459970464703,
+            "beatRate": 1,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLK",
+          "stats": {
+            "n": 4,
+            "quarters": 4,
+            "meanReturnPct": 19.2431761118391,
+            "meanMarketPct": 5.991529919468439,
+            "excessPp": 13.251646192370663,
+            "beatRate": 0.75,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLV",
+          "stats": {
+            "n": 2,
+            "quarters": 2,
+            "meanReturnPct": -7.531518319620339,
+            "meanMarketPct": 7.151485046340917,
+            "excessPp": -14.683003365961255,
+            "beatRate": 0,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "examples": [
+        {
+          "sym": "MSFT",
+          "signalAt": 1784325600,
+          "endAt": 1792101600,
+          "returnPct": 37.80324074517241,
+          "marketPct": 3.35992087260251,
+          "sector": "XLK",
+          "filingAt": 1777550400,
+          "annualPeriodEnd": "2025-06-30",
+          "annualPE": 28.7283585664306,
+          "fcfYieldPct": 2.4478491587615845
+        },
+        {
+          "sym": "MSFT",
+          "signalAt": 1773180000,
+          "endAt": 1781042400,
+          "returnPct": -0.516312906574718,
+          "marketPct": 8.855963989582358,
+          "sector": "XLK",
+          "filingAt": 1769688000,
+          "annualPeriodEnd": "2025-06-30",
+          "annualPE": 29.588177845801603,
+          "fcfYieldPct": 2.3767157516736597
+        },
+        {
+          "sym": "AAPL",
+          "signalAt": 1750975200,
+          "endAt": 1758837600,
+          "returnPct": 27.122544052906832,
+          "marketPct": 7.452676842960888,
+          "sector": "XLK",
+          "filingAt": 1746273600,
+          "annualPeriodEnd": "2024-09-28",
+          "annualPE": 32.02719367158829,
+          "fcfYieldPct": 3.624361707273205
+        }
+      ],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "uncertain"
+    },
+    {
+      "key": "healthy-value-drop",
+      "label": "Healthy, good-value recovery",
+      "horizon": 63,
+      "financial": true,
+      "description": "Healthy big-drop screen plus sector-specific ceilings on annual P/E and floors on annual free-cash-flow yield. Historical market cap uses dated shares and split-consistent prices. Hold 63 sessions; no historical news or catalyst filter.",
+      "stats": {
+        "n": 3,
+        "quarters": 2,
+        "meanReturnPct": -0.8332680277962646,
+        "meanMarketPct": 6.20017602180328,
+        "excessPp": -7.033444049599544,
+        "beatRate": 0.3333333333333333,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": null
+      },
+      "years": [
+        {
+          "year": 2022,
+          "stats": {
+            "n": 2,
+            "quarters": 1,
+            "meanReturnPct": 5.224324069906608,
+            "meanMarketPct": 5.316367743331972,
+            "excessPp": -0.09204367342536379,
+            "beatRate": 0.5,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": -12.94845222320201,
+            "meanMarketPct": 7.967792578745896,
+            "excessPp": -20.916244801947904,
+            "beatRate": 0,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "candidateN": 1630,
+      "unknownFinancialN": 1291,
+      "sectors": [
+        {
+          "sector": "XLK",
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": 12.563232555851883,
+            "meanMarketPct": 4.297557972728004,
+            "excessPp": 8.265674583123879,
+            "beatRate": 1,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLV",
+          "stats": {
+            "n": 2,
+            "quarters": 2,
+            "meanReturnPct": -7.531518319620339,
+            "meanMarketPct": 7.151485046340917,
+            "excessPp": -14.683003365961255,
+            "beatRate": 0,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "examples": [
+        {
+          "sym": "PFE",
+          "signalAt": 1680645600,
+          "endAt": 1688680800,
+          "returnPct": -12.94845222320201,
+          "marketPct": 7.967792578745896,
+          "sector": "XLV",
+          "filingAt": 1677240000,
+          "annualPeriodEnd": "2022-12-31",
+          "annualPE": 7.325645817063861,
+          "fcfYieldPct": 11.3266825395589
+        },
+        {
+          "sym": "MSFT",
+          "signalAt": 1668204000,
+          "endAt": 1676412000,
+          "returnPct": 12.563232555851883,
+          "marketPct": 4.297557972728004,
+          "sector": "XLK",
+          "filingAt": 1666785600,
+          "annualPeriodEnd": "2022-06-30",
+          "annualPE": 25.324793961391425,
+          "fcfYieldPct": 3.5367183659468218
+        },
+        {
+          "sym": "PFE",
+          "signalAt": 1666735200,
+          "endAt": 1674770400,
+          "returnPct": -2.114584416038668,
+          "marketPct": 6.335177513935938,
+          "sector": "XLV",
+          "filingAt": 1660219200,
+          "annualPeriodEnd": "2021-12-31",
+          "annualPE": 11.641435908307335,
+          "fcfYieldPct": 11.673637480266501
+        }
+      ],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "behind"
+    },
+    {
+      "key": "quality-trend",
+      "label": "Healthy business with momentum",
+      "horizon": 20,
+      "financial": true,
+      "description": "Same trend and relative-strength rules as the price control, plus the dated sector health screen. Hold 20 sessions.",
+      "stats": {
+        "n": 56,
+        "quarters": 22,
+        "meanReturnPct": -0.7188821109503675,
+        "meanMarketPct": 0.7360683087396467,
+        "excessPp": -1.4549504196900143,
+        "beatRate": 0.5,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": [
+          -3.611478563691755,
+          0.8871534414197465
+        ]
+      },
+      "years": [
+        {
+          "year": 2020,
+          "stats": {
+            "n": 2,
+            "quarters": 2,
+            "meanReturnPct": -5.824151491201046,
+            "meanMarketPct": -12.380182334582797,
+            "excessPp": 6.556030843381751,
+            "beatRate": 1,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2021,
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": 1.4836049791137265,
+            "meanMarketPct": 6.597792776010319,
+            "excessPp": -5.1141877968965925,
+            "beatRate": 0,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2022,
+          "stats": {
+            "n": 12,
+            "quarters": 4,
+            "meanReturnPct": -0.006392836869966316,
+            "meanMarketPct": -0.338904866531794,
+            "excessPp": 0.3325120296618275,
+            "beatRate": 0.6666666666666666,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 11,
+            "quarters": 4,
+            "meanReturnPct": 1.5485352509063348,
+            "meanMarketPct": 1.6740575014534747,
+            "excessPp": -0.12552225054714003,
+            "beatRate": 0.5454545454545454,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2024,
+          "stats": {
+            "n": 11,
+            "quarters": 4,
+            "meanReturnPct": -1.5491471802477947,
+            "meanMarketPct": 1.8083748496871435,
+            "excessPp": -3.3575220299349384,
+            "beatRate": 0.2727272727272727,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2025,
+          "stats": {
+            "n": 10,
+            "quarters": 4,
+            "meanReturnPct": -0.5458496628031863,
+            "meanMarketPct": 1.6443063262555264,
+            "excessPp": -2.1901559890587126,
+            "beatRate": 0.5,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 9,
+            "quarters": 3,
+            "meanReturnPct": -2.72786203518941,
+            "meanMarketPct": 0.9666040506505507,
+            "excessPp": -3.694466085839961,
+            "beatRate": 0.4444444444444444,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "candidateN": 9945,
+      "unknownFinancialN": 6753,
+      "sectors": [
+        {
+          "sector": "XLB",
+          "stats": {
+            "n": 3,
+            "quarters": 3,
+            "meanReturnPct": -10.550236290216588,
+            "meanMarketPct": 2.215849568080825,
+            "excessPp": -12.766085858297414,
+            "beatRate": 0,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLE",
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": -6.672792481979618,
+            "meanMarketPct": -0.388899742090792,
+            "excessPp": -6.2838927398888265,
+            "beatRate": 0,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLI",
+          "stats": {
+            "n": 8,
+            "quarters": 4,
+            "meanReturnPct": -1.8385612489591785,
+            "meanMarketPct": 1.2238361219795282,
+            "excessPp": -3.062397370938707,
+            "beatRate": 0.375,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLK",
+          "stats": {
+            "n": 25,
+            "quarters": 13,
+            "meanReturnPct": 1.6704918374409201,
+            "meanMarketPct": 1.5462411330213777,
+            "excessPp": 0.1242507044195424,
+            "beatRate": 0.56,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLP",
+          "stats": {
+            "n": 3,
+            "quarters": 3,
+            "meanReturnPct": -0.3652366761233736,
+            "meanMarketPct": 0.5265858316112174,
+            "excessPp": -0.8918225077345907,
+            "beatRate": 0.3333333333333333,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLV",
+          "stats": {
+            "n": 16,
+            "quarters": 10,
+            "meanReturnPct": -1.7432495485356658,
+            "meanMarketPct": -0.9415811543084868,
+            "excessPp": -0.801668394227179,
+            "beatRate": 0.625,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "examples": [
+        {
+          "sym": "NEM",
+          "signalAt": 1789164000,
+          "endAt": 1791583200,
+          "returnPct": -4.719637447143813,
+          "marketPct": 2.627659345969274,
+          "sector": "XLB",
+          "filingAt": 1784894400,
+          "annualPeriodEnd": "2025-12-31",
+          "annualPE": 18.85938098984038,
+          "fcfYieldPct": 5.462558173476471
+        },
+        {
+          "sym": "MSFT",
+          "signalAt": 1788213600,
+          "endAt": 1790719200,
+          "returnPct": 2.0950111737700614,
+          "marketPct": 0.33555932485593004,
+          "sector": "XLK",
+          "filingAt": 1785412800,
+          "annualPeriodEnd": "2026-06-30",
+          "annualPE": 28.163986538815962,
+          "fcfYieldPct": 1.7783033914388056
+        },
+        {
+          "sym": "AAPL",
+          "signalAt": 1783029600,
+          "endAt": 1785535200,
+          "returnPct": 0.30349399855128173,
+          "marketPct": -0.42771814738036135,
+          "sector": "XLK",
+          "filingAt": 1777723200,
+          "annualPeriodEnd": "2025-09-27",
+          "annualPE": 40.469232693470275,
+          "fcfYieldPct": 2.1788638582458133
+        }
+      ],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "behind"
+    },
+    {
+      "key": "quality-value",
+      "label": "Healthy business at a fair valuation",
+      "horizon": 63,
+      "financial": true,
+      "description": "Dated sector health and annual valuation screens, with no drawdown or momentum requirement. Hold 63 sessions.",
+      "stats": {
+        "n": 12,
+        "quarters": 9,
+        "meanReturnPct": 5.34442317674878,
+        "meanMarketPct": 2.438147335411999,
+        "excessPp": 2.906275841336782,
+        "beatRate": 0.5833333333333334,
+        "brier": null,
+        "baselineBrier": null,
+        "uncertaintyPp": null
+      },
+      "years": [
+        {
+          "year": 2020,
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": 9.111372582445838,
+            "meanMarketPct": 5.349054157137824,
+            "excessPp": 3.762318425308014,
+            "beatRate": 1,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2022,
+          "stats": {
+            "n": 5,
+            "quarters": 4,
+            "meanReturnPct": 5.126064964625066,
+            "meanMarketPct": -1.9511569987823514,
+            "excessPp": 7.077221963407416,
+            "beatRate": 0.8,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2023,
+          "stats": {
+            "n": 3,
+            "quarters": 1,
+            "meanReturnPct": 4.457385627044067,
+            "meanMarketPct": 3.7382167927073855,
+            "excessPp": 0.7191688343366813,
+            "beatRate": 0.3333333333333333,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2024,
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": -3.690615240666185,
+            "meanMarketPct": 7.110034926076635,
+            "excessPp": -10.80065016674282,
+            "beatRate": 0,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "year": 2026,
+          "stats": {
+            "n": 2,
+            "quarters": 2,
+            "meanReturnPct": 9.85491953747409,
+            "meanMarketPct": 7.669906778759564,
+            "excessPp": 2.185012758714528,
+            "beatRate": 0.5,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "candidateN": 36788,
+      "unknownFinancialN": 28343,
+      "sectors": [
+        {
+          "sector": "XLB",
+          "stats": {
+            "n": 2,
+            "quarters": 2,
+            "meanReturnPct": 9.85491953747409,
+            "meanMarketPct": 7.669906778759564,
+            "excessPp": 2.185012758714528,
+            "beatRate": 0.5,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLE",
+          "stats": {
+            "n": 1,
+            "quarters": 1,
+            "meanReturnPct": -4.44651036594559,
+            "meanMarketPct": 3.8839854931512887,
+            "excessPp": -8.330495859096878,
+            "beatRate": 0,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLK",
+          "stats": {
+            "n": 2,
+            "quarters": 2,
+            "meanReturnPct": 16.612038587518732,
+            "meanMarketPct": 4.811364223369575,
+            "excessPp": 11.800674364149156,
+            "beatRate": 1,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        },
+        {
+          "sector": "XLV",
+          "stats": {
+            "n": 7,
+            "quarters": 6,
+            "meanReturnPct": 2.2350960338493295,
+            "meanMarketPct": 0.05874864679063168,
+            "excessPp": 2.1763473870586987,
+            "beatRate": 0.5714285714285714,
+            "brier": null,
+            "baselineBrier": null,
+            "uncertaintyPp": null
+          }
+        }
+      ],
+      "examples": [
+        {
+          "sym": "NEM",
+          "signalAt": 1780610400,
+          "endAt": 1788472800,
+          "returnPct": 24.35919681571671,
+          "marketPct": 2.831690724173097,
+          "sector": "XLB",
+          "filingAt": 1777032000,
+          "annualPeriodEnd": "2025-12-31",
+          "annualPE": 16.322934774716654,
+          "fcfYieldPct": 6.3113935817676925
+        },
+        {
+          "sym": "NEM",
+          "signalAt": 1772748000,
+          "endAt": 1780610400,
+          "returnPct": -4.6493577407685285,
+          "marketPct": 12.50812283334603,
+          "sector": "XLB",
+          "filingAt": 1771588800,
+          "annualPeriodEnd": "2025-12-31",
+          "annualPE": 17.825167718724863,
+          "fcfYieldPct": 5.779494891626691
+        },
+        {
+          "sym": "JNJ",
+          "signalAt": 1708466400,
+          "endAt": 1716242400,
+          "returnPct": -3.690615240666185,
+          "marketPct": 7.110034926076635,
+          "sector": "XLV",
+          "filingAt": 1708171200,
+          "annualPeriodEnd": "2023-12-31",
+          "annualPE": 10.81694296595667,
+          "fcfYieldPct": 4.798973351078923
+        }
+      ],
+      "cancelledN": 0,
+      "missingN": 0,
+      "status": "uncertain"
+    }
+  ],
+  "gates": [
+    {
+      "year": 2020,
+      "trainingFrom": 1514764800,
+      "trainingThrough": 1577836799,
+      "n": 535,
+      "months": 24,
+      "excessPp": -0.04079480038159643,
+      "brierSkill": -0.04423357046988308,
+      "allow": false
+    },
+    {
+      "year": 2021,
+      "trainingFrom": 1546300800,
+      "trainingThrough": 1609459199,
+      "n": 564,
+      "months": 24,
+      "excessPp": -0.23705200524216857,
+      "brierSkill": 0.008588625061907496,
+      "allow": false
+    },
+    {
+      "year": 2022,
+      "trainingFrom": 1577836800,
+      "trainingThrough": 1640995199,
+      "n": 617,
+      "months": 24,
+      "excessPp": -0.1731176238640443,
+      "brierSkill": -0.02024506959378969,
+      "allow": false
+    },
+    {
+      "year": 2023,
+      "trainingFrom": 1609459200,
+      "trainingThrough": 1672531199,
+      "n": 589,
+      "months": 24,
+      "excessPp": -0.17775599810217566,
+      "brierSkill": -0.07914230266155542,
+      "allow": false
+    },
+    {
+      "year": 2024,
+      "trainingFrom": 1640995200,
+      "trainingThrough": 1704067199,
+      "n": 504,
+      "months": 24,
+      "excessPp": -0.30327771748003185,
+      "brierSkill": -0.10237789500397487,
+      "allow": false
+    },
+    {
+      "year": 2025,
+      "trainingFrom": 1672531200,
+      "trainingThrough": 1735689599,
+      "n": 515,
+      "months": 24,
+      "excessPp": -0.41217336327521514,
+      "brierSkill": -0.061902967904331696,
+      "allow": false
+    },
+    {
+      "year": 2026,
+      "trainingFrom": 1704067200,
+      "trainingThrough": 1767225599,
+      "n": 502,
+      "months": 24,
+      "excessPp": -0.27037146808665574,
+      "brierSkill": -0.025029731320668658,
+      "allow": false
+    }
+  ],
+  "liveGate": {
+    "year": 2026,
+    "trainingFrom": 1704067200,
+    "trainingThrough": 1767225599,
+    "n": 502,
+    "months": 24,
+    "excessPp": -0.27037146808665574,
+    "brierSkill": -0.025029731320668658,
+    "allow": false
+  },
+  "costBpsPerSide": 10,
+  "dataDigest": "27986346c2867e43e8fd34230219d8bdc97644069b98333e2e5aace0d25a3614",
+  "caveats": [
+    "Historical reconstruction, not forecasts published at the time. These rules were designed after the historical period; chronological testing cannot remove that research bias.",
+    "Fixed panel of 22 surviving US stocks, two per sector. Missing delisted firms and historical constituents create survivorship bias. These results do not represent the whole market or live board selections.",
+    "2016–2017 warms the features; 2018–2019 supplies initial learning. Evaluation begins in 2020. Each yearly evidence filter uses only fully completed outcomes from the preceding two years; boundary-crossing outcomes are purged.",
+    "Next-session open, 10 basis points per side for both strategy and SPY. Dividend-adjusted return estimates use the free feed’s adjusted-close ratios. Early exits stay in cash at zero until the same benchmark horizon ends. Borrow costs, taxes and financing are excluded.",
+    "Returns are means per completed setup, not compounded portfolio returns or annual returns. Same-stock trades cannot overlap. Stocks moving together are clustered by calendar quarter with moving one-year bootstrap blocks.",
+    "The uncertainty range is a 99.44% block-bootstrap interval, adjusted for all 9 comparisons. A positive average alone is not evidence of a durable edge. Free prices and corporate-action adjustments may be revised.",
+    "Financial screens use only reports filed by next-day noon UTC at the signal date. Annual flows are not TTM. Missing values never become healthy; financials, utilities and REITs remain specialist-review exclusions. Sector classifications are a fixed present-day mapping, not historical classifications.",
+    "Historical valuation reconstructs market cap from dated common shares and split-consistent prices. Share observations expire after 180 days; ambiguous share counts and missing split metadata exclude valuation. This is an estimate, not historical vendor market cap.",
+    "Financial rules and thresholds were fixed before this run. All nine comparisons are reported, including failures. This is retrospective research, not untouched prospective validation. Sector breakdowns are descriptive and not independently validated strategies.",
+    "The three-session core is simulated without dated earnings exclusions; it is not a full replay of the production board. Price-only controls cannot validate the financial or social strategies; comparisons across differently selected trades do not isolate a causal effect of the filters. No simulation is added to the live forecast ledger."
+  ],
+  "unavailable": [
+    {
+      "label": "Complete live recovery strategy",
+      "reason": "Historical financial screens are now tested, but dated catalyst/news, report-trajectory gates and the live stop/target rules differ. Fixed-horizon financial tests do not validate the complete live recovery strategy."
+    },
+    {
+      "label": "YouTube / social ignition",
+      "reason": "Needs dated transcripts, channel coverage and attention history. Today’s content cannot stand in for historical evidence."
+    },
+    {
+      "label": "Complete board engine",
+      "reason": "Historical news, earnings gates and candidate rankings are incomplete. Only actually saved board forecasts are audited separately."
+    }
+  ]
+}

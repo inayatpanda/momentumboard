@@ -1,11 +1,12 @@
 import type { StrategyObservation } from './strategyLab'
 
-export const HISTORY_VERSION = 'long-history-walk-forward-v1'
+export const HISTORY_VERSION = 'long-history-financial-v2'
 export const HISTORY_GATED_MODEL = 'baseline-lift-history-gated-v5'
 export const HISTORY_CORE_MODEL = 'baseline-lift-250-session-v4'
 export interface HistoricalTrade {
   sym: string; signalAt: number; endAt: number; returnPct: number; marketPct: number
   brier?: number; baselineBrier?: number
+  sector?: string; filingAt?: number; annualPeriodEnd?: string; annualPE?: number | null; fcfYieldPct?: number | null
 }
 export interface HistoricalStats {
   n: number; quarters: number; meanReturnPct: number | null; meanMarketPct: number | null
@@ -21,12 +22,17 @@ export interface HistoricalStrategy {
   status: 'ahead' | 'behind' | 'uncertain' | 'no-trades'
   stats: HistoricalStats; years: { year: number; stats: HistoricalStats }[]
   cancelledN: number; missingN: number
+  financial?: boolean; unknownFinancialN?: number; candidateN?: number
+  sectors?: { sector: string; stats: HistoricalStats }[]
+  examples?: HistoricalTrade[]
 }
 export interface HistoricalStudy {
   version: string; coreModel: string; generatedAt: number; dataThrough: number
   dataFrom: number; evaluationFrom: number; symbols: string[]; missingSymbols: string[]
   strategies: HistoricalStrategy[]; gates: HistoryGate[]; liveGate: HistoryGate
   costBpsPerSide: number; dataDigest: string; caveats: string[]
+  financialCoverage?: { version: string; symbols: string[]; unavailableSymbols: string[]; snapshots: number; companies?: { sym: string; snapshots: number; firstAvailableAt: number | null; latestAvailableAt: number | null }[] }
+  comparisons?: number; confidencePct?: number
   unavailable: { label: string; reason: string }[]
 }
 const mean = (xs: number[]) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null
@@ -66,4 +72,20 @@ export function applyHistoryGate(observation: StrategyObservation, study: Histor
     forecast: { ...observation.forecast, modelVersion: HISTORY_GATED_MODEL },
     metrics: { ...observation.metrics, historyGate: allowed ? 'passed' : compatible ? 'not-supported' : 'unavailable', historyGateYear: year },
     risks: [...observation.risks, note] }
+}
+
+/** Attach measured research to recovery ideas without importing a simulated
+ * probability, score boost or target from a different execution strategy. */
+export function withFinancialHistory(observation: StrategyObservation, study: HistoricalStudy | null | undefined, now: number): StrategyObservation {
+  if (observation.sleeve !== 'quality-dip') return observation
+  const compatible = study?.version === HISTORY_VERSION && study.financialCoverage?.version === 'sec-asof-annual-v1' &&
+    study.generatedAt <= now && now - study.generatedAt <= 45 * 86400 && study.dataThrough <= now &&
+    now - study.dataThrough <= 14 * 86400 && study.financialCoverage.symbols.includes(observation.sym)
+  const comparison = compatible ? study?.strategies.find(s => s.key === 'healthy-value-drop') : undefined
+  const excess = comparison?.stats.excessPp
+  const detail = comparison && excess != null
+    ? `Related healthy-value recovery screen: ${excess >= 0 ? '+' : ''}${excess.toFixed(2)}pp per setup versus SPY across ${comparison.stats.n} historical setups; ${comparison.status === 'ahead' ? 'passed historical consistency checks' : 'no reliable advantage established'}. This fixed-horizon screen does not validate this idea’s catalyst or stop/target scenario.`
+    : 'No current comparable financial-history evidence covers this stock. The recovery scenario remains unvalidated.'
+  return { ...observation, metrics: { ...observation.metrics, historicalFinancialStatus: comparison?.status ?? 'unavailable',
+    historicalFinancialExcessPp: excess ?? null, historicalFinancialSetups: comparison?.stats.n ?? 0 }, risks: [...observation.risks, detail] }
 }

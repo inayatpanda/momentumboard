@@ -303,3 +303,8 @@
 .history-table-scroll td, .history-table-scroll th { text-align: right; padding: .55rem .35rem; border-bottom: 1px solid var(--border, #dfe4eb); }
 .history-table-scroll th:first-child { text-align: left; }
 @media (max-width: 700px) { .history-strategies { grid-template-columns: 1fr; } .history-strategy { padding: 1rem; } }
+.history-filters { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.25rem 0; }
+.history-filters button { font: inherit; font-size: .85rem; border: 1px solid var(--border); border-radius: 999px; padding: .65rem 1rem; background: var(--surface-1); color: var(--text-dim); cursor: pointer; }
+.history-filters button[aria-pressed="true"] { background: var(--accent); color: white; border-color: var(--accent); }
+.history-evidence { border-top: 1px solid var(--border); margin-top: 1rem; }
+.history-evidence h5 { font-size: .9rem; margin-bottom: .5rem; }

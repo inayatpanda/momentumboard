@@ -31,5 +31,5 @@ export interface ValuationCapitalization {
   marketCapUsdM: number
   currency: 'USD'
   observedAt: number
-  source: 'finnhub-profile'
+  source: 'finnhub-profile' | 'historical-sec-shares'
 }

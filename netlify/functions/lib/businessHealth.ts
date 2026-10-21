@@ -11,7 +11,7 @@ interface Fact {
   accn?: string
   form?: string
 }
-interface CompanyFacts {
+export interface CompanyFacts {
   cik?: number
   entityName?: string
   facts?: Record<string, Record<string, { units?: Record<string, Fact[]> }>>
@@ -81,7 +81,7 @@ function growth(rows: Evidence[], latest: Evidence | undefined): Evidence | unde
 
 /** The parser deliberately covers standard US-GAAP USD facts. Unsupported
  * taxonomies/currencies stay missing rather than being silently converted. */
-function parseBusinessHealthSnapshot(body: CompanyFacts, sym: string, asOf: number): BusinessHealthSnapshot {
+export function parseBusinessHealthSnapshot(body: CompanyFacts, sym: string, asOf: number): BusinessHealthSnapshot {
   const out = emptyBusinessHealth(sym, asOf, '')
   out.gaps = []
   out.company = typeof body.entityName === 'string' ? body.entityName : null
