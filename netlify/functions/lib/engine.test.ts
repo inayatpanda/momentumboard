@@ -1,3 +1,4 @@
+import { healthyBusiness } from '../../../tests/fixtures/healthyBusiness'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { VELOCITY_SHADOW_FIRST, buildBoard, gradeOutstanding, traceOpenIdeas, type EngineDeps } from './engine'
 import type { OpenTraceEntry } from '../../../shared/engine/openTrace'
@@ -332,12 +333,12 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   smartMoney: async () => [],
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
   newsCatalysts: async () => [], // no LLM catalysts by default
-  // the dip-news lane checks nothing by default, so every pre-5b test runs the
-  // engine it was written against: an unchecked dip still trades, honestly labelled.
+  // Gate-independent fixtures explicitly pass the business-health and news checks.
   // The cache is EMPTY by default — every candidate is a miss, so the budget tests
   // below measure fresh reads and nothing else.
   dipNewsCached: async () => null,
-  dipNews: async () => ({ verdict: 'unclear', reason: 'stub' }),
+  dipNews: async () => ({ verdict: 'transient', reason: 'verified one-off delay' }),
+  businessHealth: async sym => healthyBusiness(sym, NOW),
   recentIpos: async () => [], // no fresh listings by default
   earningsSyms: async () => new Set<string>(),
   earningsCalendar: async () => [], // no earnings prints ahead by default
@@ -1851,7 +1852,7 @@ describe('buildBoard', () => {
     expect(long.catalyst!.reason).toContain('SEC probe into revenue recognition')
   })
 
-  it('an UNREAD dip still demotes the short — unexamined price evidence stands, silence is not a release', async () => {
+  it('an unread dip cannot displace an independently qualified short', async () => {
     const store = await collisionStore()
     // Five deeper dips (−16%…−15.6%) take the whole news budget, so GLW's own
     // −14.3% dip is never read. 'budget' is not a verdict about GLW: the dip
@@ -1881,9 +1882,9 @@ describe('buildBoard', () => {
 
     const rows = (await ledgerOf(store))!.filter(p => p.sym === 'GLW')
     const short = rows.find(p => p.side === 'short')!
-    expect(short.shadow).toBe(true)
-    expect(short.riskPct).toBe(0)
-    expect(board.find(b => b.sym === 'GLW' && b.side === 'short')).toBeUndefined()
+    expect(short.shadow).toBeUndefined()
+    expect(short.riskPct).toBeGreaterThan(0)
+    expect(board.find(b => b.sym === 'GLW' && b.side === 'short')).toBeDefined()
     expect(rows.find(p => p.side === 'long')!.catalyst!.reason).toContain('budget')
   })
 
@@ -1907,7 +1908,7 @@ describe('buildBoard', () => {
 
     const rows = (await ledgerOf(store))!.filter(p => p.sym === 'GLW')
     expect(rows.map(p => p.side)).toEqual(['short']) // the dip long really was never constructed
-    expect(asked).toEqual([]) // …so no news read was ever spent on it either
+    expect(asked).toEqual(['GLW']) // the independent recovery-research pass still checks its selloff cause
 
     const shown = board.filter(b => b.sym === 'GLW')
     expect(shown).toHaveLength(1)
@@ -2156,7 +2157,7 @@ describe('buildBoard', () => {
     expect(call.note).toContain('holding')
   })
 
-  it('a dip-news lookup that fails never blocks the lane — the dip trades, labelled "news unchecked"', async () => {
+  it('a failed news lookup keeps the dip shadow-only with the missing evidence named', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
     await store.write('engine-calibration', calWith('long:amber:25-40'))
@@ -2167,24 +2168,26 @@ describe('buildBoard', () => {
     })
     const { board } = await buildBoard(store, d, NOW)
 
-    const call = board.find(b => b.sym === 'GLW')!
+    expect(board.find(b => b.sym === 'GLW' && b.side === 'long')).toBeUndefined()
+    const call = (await ledgerOf(store))!.find(b => b.sym === 'GLW' && b.side === 'long')!
     expect(call).toBeDefined()
-    expect(call.shadow).toBeUndefined()
-    expect(call.riskPct).toBeGreaterThan(0)
+    expect(call.shadow).toBe(true)
+    expect(call.riskPct).toBe(0)
     expect(call.catalyst!.reason).toContain('news unchecked')
     // …and the card says WHICH kind of unchecked: a dead dep reads differently
     // from a quiet news window, and the reader can tell them apart
     expect(call.catalyst!.reason).toContain('lookup failed')
   })
 
-  it('an unclear verdict trades too — the lane only stands aside on evidence of a broken thesis', async () => {
+  it('an unclear selloff cause remains shadow-only', async () => {
     const store = memoryStore()
     await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
     await store.write('engine-calibration', calWith('long:amber:25-40'))
-    const { board } = await buildBoard(store, dipDeps(), NOW) // the default stub is unclear/'stub'
+    const { board } = await buildBoard(store, dipDeps({ dipNews: async () => ({ verdict: 'unclear', reason: 'no cause established' }) }), NOW)
 
-    const call = board.find(b => b.sym === 'GLW')!
-    expect(call.shadow).toBeUndefined()
+    expect(board.find(b => b.sym === 'GLW' && b.side === 'long')).toBeUndefined()
+    const call = (await ledgerOf(store))!.find(b => b.sym === 'GLW' && b.side === 'long')!
+    expect(call.shadow).toBe(true)
     expect(call.catalyst!.reason).toContain('news unchecked')
   })
 
@@ -2226,12 +2229,9 @@ describe('buildBoard', () => {
       expect(row.shadow, `${sym} should shadow on a structural verdict`).toBe(true)
       expect(row.catalyst!.reason).toContain(`probe at ${sym}`)
     }
-    // the sixth was never read, so it cannot be shadowed by news it never saw
-    const unread = board.find(b => b.sym === 'GLW')!
-    expect(unread).toBeDefined()
-    expect(unread.shadow).toBeUndefined()
-    expect(unread.catalyst!.reason).toContain('news unchecked')
-    expect(unread.catalyst!.reason).toContain('budget')
+    // Unread evidence cannot qualify a sized dip.
+    expect(board.find(b => b.sym === 'GLW' && b.side === 'long')).toBeUndefined()
+    expect(ledger.filter(row => row.catalyst?.kind === 'dip').every(row => row.shadow && row.riskPct === 0)).toBe(true)
   })
 
   // Six sleeve names on six dip depths, deepest → shallowest:
@@ -2378,10 +2378,11 @@ describe('buildBoard', () => {
     expect(asked).toEqual(['NEM', 'FCX', 'DOW', 'MMM', 'GLW'])
     expect(asked).not.toContain('RR.L')
 
-    // …and RR.L still publishes, trading, with the coverage gap named on the card
-    const uk = board.find(b => b.sym === 'RR.L')!
+    // The coverage gap stays visible in research, not a sized recovery call.
+    expect(board.find(b => b.sym === 'RR.L' && b.side === 'long')).toBeUndefined()
+    const uk = (await ledgerOf(store))!.find(b => b.sym === 'RR.L' && b.side === 'long')!
     expect(uk).toBeDefined()
-    expect(uk.shadow).toBeUndefined() // an unservable venue is not a veto
+    expect(uk.shadow).toBe(true)
     expect(uk.catalyst!.reason).toContain('news unchecked')
     expect(uk.catalyst!.reason).toContain('no news source for LSE names yet')
   })

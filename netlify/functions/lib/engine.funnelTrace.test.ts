@@ -1,3 +1,4 @@
+import { healthyBusiness } from '../../../tests/fixtures/healthyBusiness'
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { buildBoard, type EngineDeps } from './engine'
@@ -58,7 +59,8 @@ const deps = (over: Partial<EngineDeps> = {}): EngineDeps => ({
   mediaTitles: async () => ['[Bloomberg] NVDA plunges as demand warns mount'],
   newsCatalysts: async () => [],
   dipNewsCached: async () => null,
-  dipNews: async () => ({ verdict: 'unclear', reason: 'stub' }),
+  dipNews: async () => ({ verdict: 'transient', reason: 'verified one-off delay' }),
+  businessHealth: async sym => healthyBusiness(sym, NOW),
   recentIpos: async () => [],
   earningsSyms: async () => new Set<string>(),
   earningsCalendar: async () => [],

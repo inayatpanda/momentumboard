@@ -156,7 +156,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100
 const r4 = (n: number) => Math.round(n * 10_000) / 10_000
 const DAY_SEC = 86_400
 const SHORT_HORIZON = 3
-export const SHORT_HORIZON_MODEL_VERSION = 'nonoverlapping-analogues-v2'
+export const SHORT_HORIZON_MODEL_VERSION = 'baseline-lift-analogues-v3'
 export const LAB_EXECUTION_VERSION = 'next-open-costs-v2'
 export const QUALITY_DIP_MODEL_VERSION = 'quality-dip-report-trends-v4'
 export const SOCIAL_IGNITION_MODEL_VERSION = 'social-ignition-next-open-v2'
@@ -332,8 +332,9 @@ export function shortHorizonObservations(
     const expectedLowPct = quantile(forwardReturns, 0.2)
     const expectedHighPct = quantile(forwardReturns, 0.8)
     const supported = forwardReturns.length >= 20 && mean(nearest.map(n => n.distance)) <= 2
-    const longEdge = supported && probabilityUp >= 0.6 && probabilityUpInterval[0] > 0.5 && expectedMovePct >= 0.35
-    const shortEdge = supported && probabilityDown >= 0.6 && probabilityDownInterval[0] > 0.5 && expectedMovePct <= -0.35
+    const longLift = probabilityUp - baselineUp, shortLift = probabilityDown - baselineDown
+    const longEdge = supported && longLift >= 0.05 && probabilityUp >= 0.6 && probabilityUpInterval[0] > 0.5 && expectedMovePct >= 0.35
+    const shortEdge = supported && shortLift >= 0.05 && probabilityDown >= 0.6 && probabilityDownInterval[0] > 0.5 && expectedMovePct <= -0.35
     const side: StrategyObservation['side'] = longEdge ? 'long' : shortEdge ? 'short' : 'neutral'
     const last = candles.at(-1)!.c
     const typicalAbsMove = quantile(forwardReturns.map(Math.abs), 0.5)
@@ -341,15 +342,15 @@ export function shortHorizonObservations(
     const rewardPct = Math.max(1.2, Math.min(8, typicalAbsMove * 1.1))
     const stop = side === 'neutral' ? null : r2(last * (side === 'long' ? 1 - riskPct / 100 : 1 + riskPct / 100))
     const target = side === 'neutral' ? null : r2(last * (side === 'long' ? 1 + rewardPct / 100 : 1 - rewardPct / 100))
-    const strength = Math.max(probabilityUp, probabilityDown) - 0.5
-    const score = clamp(30 + strength * 260 + Math.min(10, forwardReturns.length / 6) + Math.min(10, Math.abs(expectedMovePct) * 1.5))
+    const strength = Math.max(0, longLift, shortLift)
+    const score = clamp(20 + strength * 250 + Math.min(10, forwardReturns.length / 6) + (side !== 'neutral' ? 20 : 0))
     const lean = probabilityUp >= probabilityDown + 0.04 ? 'up' : probabilityDown >= probabilityUp + 0.04 ? 'down' : 'flat'
     observations.push({
       id: `${nowSec}:short-horizon:${row.sym}`,
       sleeve: 'short-horizon',
       sym: row.sym,
       side,
-      state: side === 'neutral' ? 'watch' : 'setup',
+      state: side === 'neutral' || row.earningsRisk ? 'watch' : 'setup',
       score,
       entry: last,
       stop,
@@ -360,17 +361,19 @@ export function shortHorizonObservations(
         `Historical up estimate ${Math.round(probabilityUp * 100)}% from ${forwardReturns.length} non-overlapping analogues (${up} finished higher), shrunk toward the symbol’s prior rate`,
         `analogue median move ${expectedMovePct >= 0 ? '+' : ''}${r1(expectedMovePct)}%; historical 20th–80th percentile range ${r1(expectedLowPct)}% to ${r1(expectedHighPct)}%`,
         `current tape: 1d ${current.return1Pct >= 0 ? '+' : ''}${r1(current.return1Pct)}%, 3d ${current.return3Pct >= 0 ? '+' : ''}${r1(current.return3Pct)}%, RSI ${Math.round(current.rsi14)}`,
+        `Added historical signal versus normal drift: up ${r1(longLift * 100)}pp; down ${r1(shortLift * 100)}pp. A setup needs at least 5pp; this is not validated predictive skill.`,
       ],
       risks: [
         ...(row.earningsRisk ? ['earnings fall inside the engine risk window; a gap can overwhelm a three-session model'] : []),
         ...(Math.abs(current.return3Pct) >= 7 ? ['the three-session move is already extended, increasing reversal and gap risk'] : []),
-        ...(side === 'neutral' ? ['neither direction clears the historical frequency, uncertainty, similarity and median-move gates'] : []),
+        ...(side === 'neutral' ? ['neither direction clears the historical frequency, uncertainty, similarity, base-rate improvement and median-move gates'] : []),
         ...(!supported ? ['fewer than 20 usable analogues or the current state is too far from prior states; no supported directional setup'] : []),
         'historical frequencies and intervals are descriptive; predictive skill must be earned in forward forecasts',
       ],
       dataGaps: ['live pre-market gaps, options positioning and intraday order flow are not in this daily-close forecast'],
       metrics: {
         lean,
+        baselineLiftUpPp: r1(longLift * 100), baselineLiftDownPp: r1(shortLift * 100),
         signalSessionAt: candles.at(-1)!.t,
         analogueCandidates: history.length,
         analogueEffectiveN: nearest.length,

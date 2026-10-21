@@ -42,6 +42,32 @@ function fixture() {
 }
 
 describe('reported business health', () => {
+  it('reads productive investment and explicit lease-inclusive debt without assuming missing borrowing is zero', () => {
+    const body = fixture()
+    const facts = body.facts['us-gaap']
+    facts.PaymentsToAcquireProductiveAssets = facts.PaymentsToAcquirePropertyPlantAndEquipment
+    delete facts.PaymentsToAcquirePropertyPlantAndEquipment
+    facts.LongTermDebtAndCapitalLeaseObligations = facts.LongTermDebtNoncurrent
+    delete facts.LongTermDebtNoncurrent
+    const value = parseBusinessHealthFacts(body, 'TEST', NOW)
+    expect(value.metrics.freeCashFlow).toBe(90)
+    expect(value.evidence.freeCashFlow?.tags).toContain('us-gaap:PaymentsToAcquireProductiveAssets')
+    expect(value.metrics.totalDebt).toBe(180)
+    delete facts.DebtCurrent
+    expect(parseBusinessHealthFacts(body, 'TEST', NOW).metrics.totalDebt).toBeNull()
+  })
+
+  it('does not add current maturities twice to total long-term debt or combine different balance dates', () => {
+    const body = fixture()
+    const facts = body.facts['us-gaap']
+    facts.LongTermDebt = facts.LongTermDebtNoncurrent
+    delete facts.LongTermDebtNoncurrent
+    facts.ShortTermBorrowings = { units: { USD: [{ ...facts.DebtCurrent.units.USD[0], val: 20 }] } }
+    expect(parseBusinessHealthFacts(body, 'TEST', NOW).metrics.totalDebt).toBe(140)
+    facts.ShortTermBorrowings.units.USD[0].end = '2026-03-31'
+    expect(parseBusinessHealthFacts(body, 'TEST', NOW).metrics.totalDebt).toBeNull()
+  })
+
   it('builds matched annual flows, balance ratios and filing provenance', () => {
     const value = parseBusinessHealthFacts(fixture(), 'TEST', NOW)
     expect(value.metrics).toMatchObject({ revenue: 1000, freeCashFlow: 90, totalDebt: 180, currentRatio: 2, debtToEquity: 0.3, shareCountChangePct: 0, netMarginPct: 10 })

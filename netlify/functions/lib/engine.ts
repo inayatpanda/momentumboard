@@ -138,7 +138,8 @@ import seed from '../../../shared/engine/seed.json'
 // The daily brain: grade what matured, learn from it, curate the roster,
 // score the board. All maths lives in shared/engine — this file is plumbing.
 
-import type { BusinessHealthSnapshot } from '../../../shared/businessHealth'
+import { assessBusinessHealth, type BusinessHealthSnapshot } from '../../../shared/businessHealth'
+import { loadUniverseSeed } from '../../../shared/engine/discovery/universeSeed'
 import { withRecoveryContext } from '../../../shared/engine/researchContext'
 import { labEvidenceCount, labGradingQueue, retainLabRecords } from '../../../shared/engine/labLifecycle'
 import { appendResearchReport, buildResearchLearning, type ResearchReportSnapshot } from '../../../shared/engine/researchLearning'
@@ -401,7 +402,7 @@ export function defaultDeps(
     // verdict, and a hiccup on the probe just means a fresh read instead.
     dipNewsCached: async sym => {
       const { getCached } = await import('./cache')
-      const hit = await getCached<DipNewsVerdict>(`dip-news:${sym.toUpperCase()}`).catch(() => null)
+      const hit = await getCached<DipNewsVerdict>(`dip-news:attributed-v2:${sym.toUpperCase()}`).catch(() => null)
       return hit?.verdict ? hit : null
     },
     // The read itself (Finnhub headlines → LLM → keyword fallback) lives in
@@ -417,9 +418,11 @@ export function defaultDeps(
     dipNews: async sym => {
       const { setCached } = await import('./cache')
       const { readDipNews, DIP_NEWS_TTL_SEC, DIP_NEWS_HEURISTIC_TTL_SEC } = await import('./dipNews')
-      const verdict = await readDipNews(sym, env.FINNHUB_API_KEY ?? '')
+      const { cachedCompanyName } = await import('./marketCache')
+      const name = await cachedCompanyName(sym, env.FINNHUB_API_KEY ?? '').catch(() => null)
+      const verdict = await readDipNews(sym, env.FINNHUB_API_KEY ?? '', undefined, fetch, {}, name ?? '')
       const ttl = verdict.via === 'llm' ? DIP_NEWS_TTL_SEC : DIP_NEWS_HEURISTIC_TTL_SEC
-      if (verdict.verdict !== 'unclear') await setCached(`dip-news:${sym.toUpperCase()}`, verdict, ttl).catch(() => {})
+      if (verdict.verdict !== 'unclear') await setCached(`dip-news:attributed-v2:${sym.toUpperCase()}`, verdict, ttl).catch(() => {})
       return verdict
     },
     // The paper's one sentence per sized loser (postMortemLlm.ts). Non-strict,
@@ -1569,6 +1572,8 @@ export async function gradeOutstanding(store: AppStore, deps: EngineDeps, nowSec
 
 const symToSector = (() => {
   const m = new Map<string, string>()
+  const etfs: Record<string,string> = { 'Information Technology':'XLK', Technology:'XLK', Financials:'XLF', 'Financial Services':'XLF', Energy:'XLE', 'Health Care':'XLV', Healthcare:'XLV', Industrials:'XLI', 'Consumer Discretionary':'XLY', 'Consumer Staples':'XLP', Utilities:'XLU', Materials:'XLB', 'Communication Services':'XLC', 'Real Estate':'XLRE' }
+  for (const row of loadUniverseSeed()) if (row.exchange === 'US' && row.sector && etfs[row.sector]) m.set(row.sym, etfs[row.sector])
   for (const [etf, members] of Object.entries(SECTOR_MEMBERS)) for (const sym of members) m.set(sym, etf)
   return m
 })()
@@ -2976,9 +2981,17 @@ export async function buildBoard(
   // Only an EXPLICIT structural verdict frees the composite short below, so the
   // set is built from what was actually read, never from what was skipped.
   const structuralVetoes = new Set<string>()
+  const healthReads = new Map<string, BusinessHealthSnapshot | null>()
+  if (deps.businessHealth) await mapLimit(dipCandidates.slice(0,16), 2, async ({sym}) => {
+    healthReads.set(sym, await deps.businessHealth!(sym).catch(() => null))
+  })
   for (const { sym, read, call, capUsdM } of dipCandidates) {
     const v = dipVerdicts.get(sym) ?? { verdict: 'unclear' as const, reason: 'not checked' }
     const why = v.reason ?? 'no reason given' // a dep may hand back a verdict with no reason at all
+    const snapshot = healthReads.get(sym)
+    const health = assessBusinessHealth(snapshot?.sym === sym ? snapshot : null, nowSec)
+    const healthBlocked = health.status !== 'healthy'
+    const healthNote = healthBlocked ? `Business evidence ${health.status}: ${health.risks[0] ?? health.gaps[0] ?? 'not established'}` : 'Reported profitability, cash flow and balance-sheet checks passed.'
     const note =
       v.verdict === 'structural' ? `news: broken thesis — ${why}` : v.verdict === 'transient' ? `news: overreaction — ${why}` : `news unchecked — ${why}`
     if (v.verdict === 'structural') {
@@ -2993,10 +3006,10 @@ export async function buildBoard(
     // clause. Same builder, same falsifier — the only thing that changes is
     // whether the story behind the fall gets named (voice.ts).
     publishCall(
-      { ...call, ...dipThesis({ sym, dropPct: read.dropPct, stop: call.stop, news: v.verdict }) },
+      { ...call, ...dipThesis({ sym, dropPct: read.dropPct, stop: call.stop, news: v.verdict }), note: `${call.note} · ${healthNote}`, evidence: { ...call.evidence, detail: `${call.evidence.detail} · ${healthNote}` } },
       capUsdM,
-      { kind: DIP_CATALYST_KIND, side: 'long', reason: `${read.detail} · ${note}`, strength: 40 },
-      v.verdict === 'structural',
+      { kind: DIP_CATALYST_KIND, side: 'long', reason: `${read.detail} · ${note} · ${healthNote}`, strength: 40 },
+      v.verdict !== 'transient' || healthBlocked,
     )
   }
 
@@ -4173,11 +4186,14 @@ export async function buildBoard(
     // re-open a settled wildcard debt and re-book a graded row.
     if (prev?.outcome21) p.outcome21 = prev.outcome21
   }
-  await store.write(`predictions:${today}`, final)
+  // First publication is immutable. A changed selection must not erase a
+  // losing forecast, reset its probability, or move its original entry.
+  const ledger = [...existing, ...final.filter(p => !byId.has(p.id))]
+  await store.write(`predictions:${today}`, ledger)
   const index = (await store.read<string[]>('predictions-index')) ?? []
   if (!index.includes(today)) await store.write('predictions-index', [...index, today].slice(-250))
   const pending = (await store.read<string[]>('predictions-pending')) ?? []
-  if (final.length && !pending.includes(today)) await store.write('predictions-pending', [...pending, today].slice(-250))
+  if (ledger.length && !pending.includes(today)) await store.write('predictions-pending', [...pending, today].slice(-250))
   // Global news tone: DISPLAY / LOG ONLY, explicitly NOT a factor. It rides the
   // board blob and accumulates its own bounded history — factor status must be
   // EARNED from that logged history before it may ever enter a composite/multiplier.
@@ -4226,13 +4242,21 @@ export async function buildBoard(
     return preliminary ? [{ row, score: preliminary.score }] : []
   }).sort((a, b) => b.score - a.score).slice(0, 16)
   if (deps.businessHealth) await mapLimit(healthCandidates, 2, async ({ row }) => {
-    row.businessHealth = await deps.businessHealth!(row.sym).catch(() => null)
+    row.businessHealth = healthReads.has(row.sym) ? healthReads.get(row.sym)! : await deps.businessHealth!(row.sym).catch(() => null)
   })
   const qualityRaw = qualityDipObservations(qualityRows, spy, nowSec)
+  // Recovery candidates may never enter the fast dip lane. Give their best
+  // five candidates an independent, bounded news read instead of leaving the
+  // cause-of-selloff gate permanently empty unless another lane warmed it.
+  const recoveryNews = new Map<string, DipNewsVerdict>()
+  await mapLimit(qualityRaw.filter(row => row.state !== 'avoid').slice(0, 5), 2, async row => {
+    const known = dipVerdicts.get(row.sym) ?? await deps.dipNewsCached(row.sym).catch(() => null)
+    recoveryNews.set(row.sym, known ?? await deps.dipNews(row.sym).catch(() => ({ verdict: 'unclear' as const, reason: 'news lookup unavailable' })))
+  })
   const recoveryWorldAvailable = worldReads.some(row => row.sym !== VIX_SYMBOL.sym && Number.isFinite(row.changePct))
   const qualityLab = await mapLimit(qualityRaw, 4, async observation => {
     const etf = symToSector.get(baseSym(observation.sym))
-    const news = dipVerdicts.get(observation.sym) ?? await deps.dipNewsCached(observation.sym).catch(() => null)
+    const news = recoveryNews.get(observation.sym) ?? dipVerdicts.get(observation.sym) ?? await deps.dipNewsCached(observation.sym).catch(() => null)
     return withRecoveryContext(observation, {
       sector: sectorRows.find(row => row.sym === etf) ?? null,
       worldTone: recoveryWorldAvailable ? tone.tone : null,

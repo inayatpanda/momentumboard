@@ -4,6 +4,7 @@ import { REPORT_TREND_METRICS, type FinancialReportPoint } from '../../../shared
 import { LAB_EXECUTION_VERSION, QUALITY_DIP_MODEL_VERSION, type EngineLabSnapshot, type StrategyLabRecord } from '../../../shared/engine/strategyLab'
 import type { ResearchLearningSnapshot, ResearchReportSnapshot } from '../../../shared/engine/researchLearning'
 import type { Candle } from '../../../shared/types'
+import type { Prediction } from '../../../shared/engine/types'
 import { buildBoard, type EngineDeps } from './engine'
 import { memoryStore } from './store'
 
@@ -16,6 +17,8 @@ for (let day = Date.parse('2026-10-16T13:30:00Z') / 1000; dates.length < 220; da
 }
 const tape = (values: number[]): Candle[] => values.map((c, i) => ({ t: dates[i], o: c, h: c * 1.01, l: c * 0.99, c, v: 2_000_000 }))
 const flat = tape(Array(220).fill(100))
+const dip = tape([...Array(214).fill(100), 94, 90, 87, 85, 85.5, 88])
+dip[dip.length - 1].v = 3_200_000
 const recovery = tape([...Array(200).fill(160), 149, 138, 128, 120, 115, 110, 106, 102, 100, 98, 99, 100, 102, 104, 105, 106, 107, 108, 109, 110])
 
 function health(sym: string): BusinessHealthSnapshot {
@@ -66,6 +69,50 @@ function recoveryRecord(sym: string, availableAt: number): StrategyLabRecord {
 }
 
 describe('recovery research through the production engine', () => {
+  it('checks a recovery selloff cause even when no fast dip ever warmed the news cache', async () => {
+    const store = await storeFor(['GOOD'])
+    const news = vi.fn(async () => ({ verdict: 'transient' as const, reason: 'Company-specific one-off delay' }))
+    await buildBoard(store, dependencies(['GOOD'], { dipNewsCached: async () => null, dipNews: news }), NOW)
+    expect(news).toHaveBeenCalledWith('GOOD')
+    const lab = (await store.read<EngineLabSnapshot>('engine-lab'))!
+    expect(lab.observations.find(row => row.sym === 'GOOD' && row.sleeve === 'quality-dip')).toMatchObject({ state: 'setup', metrics: { newsAssessment: 'transient' } })
+  })
+
+  it('keeps the original daily forecast ledger when a refreshed board changes selection', async () => {
+    const store = await storeFor(['GOOD'])
+    const deps = dependencies(['GOOD'], { capUsdM: async () => 20_000, candles: async sym => sym === 'GOOD' ? dip : flat })
+    await buildBoard(store, deps, NOW)
+    const key = 'predictions:2026-10-19'
+    const first = (await store.read<Prediction[]>(key))!
+    expect(first.length).toBeGreaterThan(0)
+    // Freeze a real publication, then remove every candidate from the next run.
+    await store.write('config', { watchlist: [], rules: [], ytChannels: [], levMap: {} })
+    await buildBoard(store, dependencies([]), NOW + 3600)
+    const retained = (await store.read<Prediction[]>(key))!
+    for (const original of first) expect(retained.find(row => row.id === original.id)).toEqual(original)
+    expect(await store.read<string[]>('predictions-pending')).toContain('2026-10-19')
+  })
+
+  it('does not size legacy dip calls without matching healthy business evidence', async () => {
+    const symbols = ['GOOD', 'BURN', 'MISSING', 'WRONG']
+    const store = await storeFor(symbols)
+    await buildBoard(store, dependencies(symbols, {
+      capUsdM: async () => 20_000,
+      candles: async sym => symbols.includes(sym) ? dip : flat,
+      businessHealth: async sym => {
+        if (sym === 'MISSING') throw new Error('no fundamentals')
+        const value = health(sym === 'WRONG' ? 'OTHER' : sym)
+        if (sym === 'BURN') value.metrics.operatingCashFlow = -20
+        return value
+      },
+    }), NOW)
+    const ledger = (await store.read<Prediction[]>('predictions:2026-10-19'))!
+    const dips = ledger.filter(row => row.catalyst?.kind === 'dip')
+    expect(dips.length).toBeGreaterThan(0)
+    expect(dips.map(row => row.sym)).toEqual(expect.arrayContaining(['BURN', 'MISSING', 'WRONG']))
+    expect(dips.filter(row => ['BURN', 'MISSING', 'WRONG'].includes(row.sym)).every(row => row.shadow && row.riskPct === 0)).toBe(true)
+  })
+
   it('hydrates real business evidence, applies cause-of-selloff context and records only qualified shadow setups', async () => {
     const symbols = ['GOOD', 'BURN', 'BROKEN', 'MISSING', 'UNCLEAR']
     const store = await storeFor(symbols)
@@ -95,7 +142,7 @@ describe('recovery research through the production engine', () => {
   })
 
   it('carries sector rotation, international selling and adverse news into recovery stand-down decisions', async () => {
-    const symbols = ['AAPL', 'OIL']
+    const symbols = ['AAPL', 'ADBE', 'OIL']
     const store = await storeFor(symbols)
     const fallingSector = tape([...Array(215).fill(100), 99, 97, 95, 93, 90])
     const d = dependencies(symbols)
@@ -107,6 +154,7 @@ describe('recovery research through the production engine', () => {
     const snapshot = (await store.read<EngineLabSnapshot>('engine-lab'))!
     const bySym = new Map(snapshot.observations.filter(row => row.sleeve === 'quality-dip').map(row => [row.sym, row]))
     expect(bySym.get('AAPL')).toMatchObject({ state: 'watch', metrics: { financialHealth: 'healthy', sectorName: 'Technology', sectorRotation: 'out', worldTone: 'risk-off' } })
+    expect(bySym.get('ADBE')).toMatchObject({ state: 'watch', metrics: { sectorName: 'Technology', sectorRotation: 'out' } })
     expect(bySym.get('OIL')).toMatchObject({ state: 'watch', metrics: { financialHealth: 'healthy', worldTone: 'risk-off' } })
     expect(bySym.get('OIL')?.risks).toContain('Adverse news interpretation: New export restrictions hurt this producer')
     expect((await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.filter(row => row.sleeve === 'quality-dip')).toHaveLength(0)

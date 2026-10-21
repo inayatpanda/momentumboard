@@ -362,10 +362,9 @@ describe('an S&P 500 / FTSE 100 listing is evidence of size; a band alone is not
     return { long: board.find(b => b.sym === 'ZDIP' && b.side === 'long') ?? null, any: board.some(b => b.sym === 'ZDIP') }
   }
 
-  it('an S&P 500 pick with no cap anywhere clears the dip lane’s quality door', async () => {
+  it('index membership alone cannot publish a dip without reported business health', async () => {
     const { long } = await dipRun('large')
-    expect(long).not.toBeNull()
-    expect(long!.riskPct).toBeGreaterThan(0) // a sized dip trade, built by the lane's own constructor
+    expect(long).toBeNull()
   })
 
   it('…and a mid-band one does not — the name was looked at, the lane just never admitted it', async () => {
@@ -383,9 +382,9 @@ describe('an S&P 500 / FTSE 100 listing is evidence of size; a band alone is not
     expect(any).toBe(true)
   })
 
-  it('a FTSE 100 listing opens it, exactly as the S&P 500 does', async () => {
+  it('a FTSE 100 listing also needs business evidence before publication', async () => {
     const { long } = await dipRun('large', { index: ['ftse100', 'ndx'] })
-    expect(long).not.toBeNull()
+    expect(long).toBeNull()
   })
 
   it('a fetched cap OVERRULES the listing: the number is judged, not the index', async () => {

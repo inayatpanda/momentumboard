@@ -250,3 +250,22 @@
   .v2 .research-learning-mark { display: none; }
   .v2 .research-strategies { grid-template-columns: 1fr; }
 }
+.v2 .recovery-shortlist { margin: 0 0 32px; padding: 22px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface-1); }
+.v2 .recovery-shortlist header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+.v2 .recovery-shortlist h2 { font-size:23px; letter-spacing:-.035em; margin:0; }
+.v2 .recovery-shortlist header button { min-height:44px; padding:8px 0; border:0; background:none; color:var(--accent); cursor:pointer; }
+.v2 .recovery-shortlist > p { color:var(--text-dim); font-size:13px; line-height:1.6; }
+.v2 .recovery-shortlist-rows { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:18px; }
+.v2 .recovery-shortlist-row { color:var(--text); text-decoration:none; padding:16px; border:1px solid var(--border); border-radius:14px; background:var(--surface-2); min-width:0; }
+.v2 .recovery-shortlist-row > div { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+.v2 .recovery-shortlist-row strong { font-size:19px; }
+.v2 .recovery-shortlist-row p { font-size:12px; line-height:1.5; color:var(--text-dim); margin:12px 0; }
+.v2 .recovery-shortlist-row > span { display:block; font-size:12px; line-height:1.6; }
+.v2 .recovery-shortlist-row > span b { display:block; font-weight:600; color:var(--text-dim); }
+.v2 .recovery-shortlist-row:hover { border-color:var(--accent); }
+.v2 .recovery-checklist { list-style:none; padding:16px 0 0; margin:0; display:grid; gap:14px; }
+.v2 .recovery-checklist li { display:flex; align-items:flex-start; gap:12px; font-size:12px; line-height:1.5; }
+.v2 .recovery-checklist li > span { flex:0 0 54px; text-align:center; border-radius:6px; padding:3px 5px; font-size:10px; background:var(--surface-2); color:var(--text-dim); }
+.v2 .recovery-checklist li > span.met { color:var(--accent); }
+.v2 .recovery-checklist p { color:var(--text-dim); margin:3px 0 0; }
+@media (max-width:760px) { .v2 .recovery-shortlist { padding:18px; } .v2 .recovery-shortlist-rows { grid-template-columns:1fr; } }

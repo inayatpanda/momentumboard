@@ -23,6 +23,7 @@ import { StrategyLabPanel } from './parts/StrategyLabPanel'
 import { LearningPanel } from './parts/LearningPanel'
 import { DecisionCockpit } from './parts/DecisionCockpit'
 import { BrandMark } from '../components/BrandMark'
+import { RecoveryShortlist } from './parts/RecoveryShortlist'
 import '../styles/research.css'
 
 const DESK_VIEWS = ['today', 'research', 'learning'] as const
@@ -118,6 +119,7 @@ export default function Today() {
         <MarketContext blob={blob} /><DecisionCockpit data={data} />
       </details>}
       <section id="published-calls" className="research-section research-calls" aria-label="Published and active calls">
+        <RecoveryShortlist lab={data?.engineLab} onResearch={() => { setView('research'); if (!mobile) document.getElementById('opportunities')?.scrollIntoView({behavior:'smooth'}) }} />
         <div className="research-section-head">
           <div><p className="research-eyebrow">01 / The live board</p><h2>Published calls</h2></div>
           {blob && <span className="research-count num">{sized.length} sized {sized.length === 1 ? 'call' : 'calls'}</span>}
@@ -129,7 +131,10 @@ export default function Today() {
           : <div className={`today-cards${mobile ? ' brief-call-list' : ''}`}>{sized.map(row => <CallCard key={row.id} row={row} quote={liveQuotes[row.sym]} compact={mobile} />)}</div>}
         {mobile && blob && sized.length === 0 && <button type="button" className="brief-research-link" onClick={() => setView('research')}>Explore research ideas <span aria-hidden="true">→</span><small>Quality dips, shorter-term setups and their evidence</small></button>}
         <IntradayFlagsStrip blob={data?.intradayFlags ?? null} />
-        <OpenCallsStrip entries={data?.openTrace?.entries} closed={data?.openTrace?.closed} />
+        {!!(data?.openTrace?.entries?.length || data?.openTrace?.closed?.length) && <details className="research-disclosure">
+          <summary>Follow earlier calls <span>{data?.openTrace?.entries?.length ?? 0} open · {data?.openTrace?.closed?.length ?? 0} awaiting grade</span></summary>
+          <div className="research-disclosure-body"><OpenCallsStrip entries={data?.openTrace?.entries} closed={data?.openTrace?.closed} /></div>
+        </details>}
         <CountsRail board={rows} />
       </section>
       {mobile && <nav className="mobile-brief-links" aria-label="Explore intelligence">

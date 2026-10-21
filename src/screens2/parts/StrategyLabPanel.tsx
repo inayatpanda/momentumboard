@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { Link } from 'wouter'
 import type { EngineLabSnapshot, StrategyObservation } from '../../../shared/engine/strategyLab'
+import { recoveryChecklist } from '../../../shared/engine/recoveryChecklist'
 import '../../styles/research.css'
 
 const LABELS: Record<StrategyObservation['sleeve'], string> = {
@@ -40,6 +41,7 @@ function ObservationCard({ row, linked = true }: { row: StrategyObservation; lin
       <div><span>Sector</span><strong>{row.metrics.sectorName ? `${row.metrics.sectorName}: ${row.metrics.sectorRotation === 'in' ? 'improving' : row.metrics.sectorRotation === 'out' ? 'weakening' : 'mixed'}` : 'Not mapped'}</strong></div>
       <div><span>International markets</span><strong>{String(row.metrics.worldTone ?? 'unavailable')}</strong></div>
     </div>}
+    {row.sleeve === 'quality-dip' && <details className="research-card-details"><summary>What needs to happen next</summary><ul className="recovery-checklist">{recoveryChecklist(row).map(check=><li key={check.label}><span className={check.passed?'met':'pending'}>{check.passed?'Met':'Pending'}</span><div><b>{check.label}</b><p>{check.detail}</p></div></li>)}</ul></details>}
     <details className="research-card-details" open={!linked}>
       <summary>Forecast & evidence <span aria-hidden="true">+</span></summary>
       <div className="research-card-detail-body">
@@ -74,7 +76,8 @@ export function StrategyLabPanel({ lab, observations, symbol }: { lab?: EngineLa
   const tabs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
   const available = (lab?.observations ?? observations ?? []).filter(row => !symbol || row.sym.toUpperCase() === symbol.toUpperCase())
-  const filtered = available.filter(row => sleeve === 'all' || row.sleeve === sleeve).sort((a, b) => Number(b.state === 'setup') - Number(a.state === 'setup') || b.score - a.score)
+  const filtered = available.filter(row => sleeve === 'all' || row.sleeve === sleeve).sort((a, b) =>
+    Number(a.state === 'avoid') - Number(b.state === 'avoid') || Number(b.sleeve === 'quality-dip') - Number(a.sleeve === 'quality-dip') || Number(b.state === 'setup') - Number(a.state === 'setup') || b.score - a.score)
   const rows = filtered.slice(0, expanded ? filtered.length : symbol ? 6 : 4)
   const select = (key: (typeof FILTERS)[number]) => { setSleeve(key); setExpanded(false) }
   function keyboard(event: KeyboardEvent<HTMLButtonElement>, index: number) {

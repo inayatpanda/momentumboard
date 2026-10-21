@@ -11,13 +11,12 @@ import { callLlm, type LlmEnv } from './llm'
 // So the lane asks one narrow question per dip: given ONLY this name's recent
 // headlines, does the drop read transient or structural? Structural stands the
 // trade down (it still publishes as a shadow, so the ledger learns whether the
-// veto was right). Anything else trades, honestly labelled.
+// veto was right). Unclear evidence remains a watch item.
 //
 // Deliberately tiny: at most DIP_NEWS_BUDGET fresh reads per run, deepest dip
 // first, and verdicts cached for three days. Fail-soft at every step — no
 // Finnhub key, no LLM provider, a malformed answer or a dead endpoint all land
-// on 'unclear', which trades. The lane never blocks a call on a lookup it
-// couldn't make; it only stands aside on evidence it actually has.
+// on 'unclear'. The engine keeps those ideas out of sized recovery calls.
 
 export interface DipNewsVerdict {
   /** transient = overreaction (tradeable) · structural = broken thesis (stand down) · unclear = no read */
@@ -32,8 +31,8 @@ export interface DipNewsVerdict {
   via?: 'llm' | 'heuristic'
 }
 
-/** The lookup could not be made at all: no key, a 429, a dead endpoint. Trades
- * exactly like any other 'unclear' — but the card must not claim the name had no
+/** The lookup could not be made at all: no key, a 429, a dead endpoint. Like
+ * any other 'unclear', this cannot qualify a recovery; do not claim there were no
  * headlines when the truth is that nobody asked. No `via`: nothing decided this,
  * so it is never cached and tomorrow's run asks again. */
 export const NEWS_UNAVAILABLE: DipNewsVerdict = { verdict: 'unclear', reason: 'news lookup unavailable' }
@@ -223,6 +222,7 @@ export async function fetchCompanyNews(
   toISO: string,
   key: string,
   fetchFn: typeof fetch = fetch,
+  companyName = '',
 ): Promise<string[] | null> {
   if (!key) return null
   try {
@@ -233,9 +233,20 @@ export async function fetchCompanyNews(
     if (!Array.isArray(j)) return null // an answer we cannot read is not an empty answer
     const seen = new Set<string>()
     const out: string[] = []
-    for (const item of j as { headline?: unknown }[]) {
+    for (const item of j as { headline?: unknown; related?: unknown }[]) {
       const h = typeof item?.headline === 'string' ? item.headline.trim() : ''
       if (!h || seen.has(h)) continue
+      // A company-news response can contain unrelated syndicated stories.
+      // Require a company name or ticker in the headline, and reject conflicting
+      // provider tags. The requested endpoint alone is not source attribution.
+      const related = typeof item.related === 'string' ? item.related.split(/[,;\s]+/).map(s => s.toUpperCase()) : []
+      const ticker = sym.toUpperCase()
+      const mentionsTicker = h.split(/[^A-Za-z0-9.-]+/).some(word => word.toUpperCase() === ticker && (ticker.length > 2 || word === ticker))
+      const nameWords = companyName.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+        .filter(word => word.length > 2 && !['inc','corp','corporation','company','group','holdings','limited','ltd','plc','class','ordinary','shares','the'].includes(word))
+      const normalHeadline = ` ${h.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ')} `
+      const mentionsName = nameWords.length > 0 && nameWords.slice(0,2).every(word => normalHeadline.includes(` ${word} `))
+      if ((!mentionsTicker && !mentionsName) || related.length > 0 && !related.includes(ticker)) continue
       seen.add(h)
       out.push(h)
       if (out.length >= MAX_HEADLINES) break
@@ -255,9 +266,10 @@ export async function readDipNews(
   nowSec: number = Math.floor(Date.now() / 1000),
   fetchFn: typeof fetch = fetch,
   env: Partial<LlmEnv> = {},
+  companyName = '',
 ): Promise<DipNewsVerdict> {
   const iso = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10)
-  const headlines = await fetchCompanyNews(sym, iso(nowSec - DIP_NEWS_WINDOW_DAYS * 86_400), iso(nowSec), finnhubKey, fetchFn)
+  const headlines = await fetchCompanyNews(sym, iso(nowSec - DIP_NEWS_WINDOW_DAYS * 86_400), iso(nowSec), finnhubKey, fetchFn, companyName)
   // The lookup itself failed — say so. Both answers are 'unclear' and both trade,
   // but only one of them is a fact about the NAME.
   if (headlines === null) return { ...NEWS_UNAVAILABLE }

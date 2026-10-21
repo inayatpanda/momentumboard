@@ -158,6 +158,15 @@ describe('classifyDipNews', () => {
 })
 
 describe('fetchCompanyNews', () => {
+  it('rejects an unrelated earnings story returned on another company feed', async () => {
+    const fetcher = async () => Response.json([
+      {headline:'GPC Q3 Earnings Miss Estimates on Automotive Margin Pressure',related:'GPC'},
+      {headline:'GPC Q3 Earnings Miss Estimates on Automotive Margin Pressure',related:'LCID'},
+      {headline:'Lucid cuts its outlook',related:'LCID'},
+      {headline:'LCID reports quarterly deliveries'},
+    ])
+    expect(await fetchCompanyNews('LCID','2026-10-14','2026-10-21','key',fetcher,'Lucid Group Inc')).toEqual(['Lucid cuts its outlook','LCID reports quarterly deliveries'])
+  })
   const body = JSON.stringify([
     { headline: 'ACME cuts guidance', datetime: 1 },
     { headline: 'ACME cuts guidance', datetime: 2 }, // wire duplicate

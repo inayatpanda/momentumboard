@@ -93,7 +93,7 @@ function parseBusinessHealthSnapshot(body: CompanyFacts, sym: string, asOf: numb
   const revenue = annual(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet'])
   const profit = annual(['NetIncomeLoss', 'ProfitLoss'])
   const ocf = annual(['NetCashProvidedByUsedInOperatingActivities'])
-  const capex = annual(['PaymentsToAcquirePropertyPlantAndEquipment'])
+  const capex = annual(CAPEX_TAGS)
   const annualEnd = [revenue[0], profit[0], ocf[0]].filter(Boolean).map(e => e.periodEnd).sort().at(-1) ?? null
   out.annualPeriodEnd = annualEnd
   const sameAnnual = (rows: Evidence[]) => rows.find(e => e.periodEnd === annualEnd)
@@ -111,7 +111,9 @@ function parseBusinessHealthSnapshot(body: CompanyFacts, sym: string, asOf: numb
     currentAssets: balance(['AssetsCurrent']), currentLiabilities: balance(['LiabilitiesCurrent']),
     totalEquity: balance(['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest']),
     totalLiabilities: balance(['Liabilities']), debtCurrent: balance(['DebtCurrent']),
-    debtNoncurrent: balance(['LongTermDebtNoncurrent']), debtLongCurrent: balance(['LongTermDebtCurrent']),
+    debtNoncurrent: balance(['LongTermDebtNoncurrent', 'LongTermDebtAndCapitalLeaseObligations']),
+    debtLongCurrent: balance(['LongTermDebtCurrent', 'LongTermDebtAndCapitalLeaseObligationsCurrent']),
+    debtLongTotal: balance(['LongTermDebt']),
     shortBorrowing: balance(['ShortTermBorrowings']),
   }
   // Anchor to the newest balance, so an older good balance cannot quietly
@@ -125,7 +127,11 @@ function parseBusinessHealthSnapshot(body: CompanyFacts, sym: string, asOf: numb
   // DebtCurrent already includes short-term borrowing/current maturities.
   // Without it, all three pieces must be explicit; absent borrowing != zero.
   const currentParts = derive(sameBalance(candidates.debtLongCurrent), sameBalance(candidates.shortBorrowing), (a, b) => a >= 0 && b >= 0 ? a + b : null, 'USD')
-  add('totalDebt', derive(current ?? currentParts, noncurrent, (a, b) => a >= 0 && b >= 0 ? a + b : null, 'USD'))
+  const sumDebt = (a: number, b: number) => a >= 0 && b >= 0 ? a + b : null
+  // LongTermDebt includes current maturities: add only explicit short-term
+  // borrowing, never DebtCurrent (which would count maturities twice).
+  const totalLongAndShort = derive(sameBalance(candidates.debtLongTotal), sameBalance(candidates.shortBorrowing), sumDebt, 'USD')
+  add('totalDebt', derive(current ?? currentParts, noncurrent, sumDebt, 'USD') ?? totalLongAndShort)
   add('currentRatio', derive(e.currentAssets, e.currentLiabilities, (a, b) => a >= 0 && b > 0 ? a / b : null, 'ratio'))
   add('debtToEquity', derive(e.totalDebt, e.totalEquity, (a, b) => a >= 0 && b > 0 ? a / b : null, 'ratio'))
   add('liabilitiesToEquity', derive(e.totalLiabilities, e.totalEquity, (a, b) => a >= 0 && b > 0 ? a / b : null, 'ratio'))
@@ -166,7 +172,9 @@ function parseBusinessHealthSnapshot(body: CompanyFacts, sym: string, asOf: numb
 const REVENUE_TAGS = ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet']
 const PROFIT_TAGS = ['NetIncomeLoss', 'ProfitLoss']
 const CASH_TAGS = ['NetCashProvidedByUsedInOperatingActivities']
-const CAPEX_TAGS = ['PaymentsToAcquirePropertyPlantAndEquipment']
+// ProductiveAssets also includes software/intangibles; subtracting the wider
+// disclosed investment outflow gives a conservative, traceable cash measure.
+const CAPEX_TAGS = ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets']
 const SHARE_TAGS = ['WeightedAverageNumberOfDilutedSharesOutstanding']
 const periodKind = (e: Evidence | undefined): ReportPeriodKind | null => {
   if (!e?.periodStart) return null
@@ -294,7 +302,7 @@ export async function fetchBusinessHealth(sym: string, fetchFn: typeof fetch = f
 const pending = new Map<string, Promise<BusinessHealthSnapshot>>()
 export async function cachedBusinessHealth(sym: string): Promise<BusinessHealthSnapshot> {
   const symbol = sym.trim().toUpperCase()
-  const key = `business-health:v2:${symbol}`
+  const key = `business-health:v3:${symbol}`
   const cached = await getCached<BusinessHealthSnapshot>(key)
   if (cached) return cached
   const existing = pending.get(key)

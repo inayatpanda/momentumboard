@@ -19,8 +19,10 @@ describe('visible strategy lab', () => {
     expect(goog.forecast.probabilityUp).toBeGreaterThan(0.9)
     expect(goog.forecast.probabilityDown).toBeLessThan(0.1)
     expect(goog.forecast.expectedLowPct).not.toBeNull()
-    expect(goog.side).toBe('long')
-    expect(goog.state).toBe('setup')
+    // A market that rises every day has a high base rate, not a new timing edge.
+    expect(goog.side).toBe('neutral')
+    expect(goog.state).toBe('watch')
+    expect(goog.metrics.baselineLiftUpPp).toBeLessThan(5)
   })
 
   it('shows no edge instead of forcing a direction when the tape is flat', () => {
