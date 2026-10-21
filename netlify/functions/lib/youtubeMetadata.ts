@@ -15,7 +15,7 @@ export async function publicVideoMetadata(store: AppStore, urls: string[], key: 
   const cache = await store.read<Record<string, YouTubeAvailability & { at: number }>>('video-public-metadata:v1') ?? {}
   const ids = [...new Set(urls.map(videoKey).filter(id => /^[\w-]{11}$/.test(id)))]
   const pending = ids.filter(id => !cache[id] || now - cache[id].at > (cache[id].state === 'ready' ? 7 * 86400 : 1800))
-  let unavailable = false
+  let unavailable = pending.length > 0 && !key
   for (let start = 0; key && start < pending.length; start += 50) {
     const batch = pending.slice(start, start + 50)
     try {

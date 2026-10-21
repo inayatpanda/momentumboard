@@ -148,6 +148,7 @@ export async function publishFreeVideoExtract(store: AppStore, extract: VideoExt
       progress.processedSeconds > (oldProgress?.processedSeconds ?? old.nativeTranscript?.limitSeconds ?? 0)
       || progress.completion !== 'partial' && !oldProgress
       || !!oldProgress && progress.sections >= oldProgress.sections && progress.completion !== oldProgress.completion
+      || !!oldProgress && progress.sections >= oldProgress.sections && !!progress.sourceDurationSeconds && progress.sourceDurationSeconds !== oldProgress.sourceDurationSeconds
     ))
     if (old && !upgradesNative) {
       if (!durable) await store.write(key, old)

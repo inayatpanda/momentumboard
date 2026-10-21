@@ -61,7 +61,7 @@ export async function assembledNativeDraft(store: AppStore, work: NativeVideoWor
   const unique = new Map<string, unknown>()
   for (const d of drafts) for (const t of d.result.tickers ?? []) unique.set(JSON.stringify(t), t)
   return { url: work.video.url, at: now, model: drafts[0].model, finishReason: 'STOP', limitSeconds: offset,
-    progress: { sections: drafts.length, processedSeconds: offset, sourceDurationSeconds: work.sourceDurationSeconds ?? null,
+    progress: { sections: drafts.length, processedSeconds: Math.min(offset, work.sourceDurationSeconds ?? Infinity), sourceDurationSeconds: work.sourceDurationSeconds ?? null,
       completion: work.stage === 'complete' ? 'complete' : work.stage === 'end-reported' ? 'end-reported' : 'partial' },
     result: { canAccessAudio: true, complete: finished(work), durationSeconds: work.sourceDurationSeconds ?? null,
       language: drafts[0].result.language, transcript, tickers: [...unique.values()], themes: [...new Set(drafts.flatMap(d => d.result.themes ?? []))] },
@@ -156,8 +156,12 @@ export async function collectNativeVideos(store: AppStore, deps: {
     await save()
     // Repair a process ending between the section checkpoint and publication.
     // Already completed reads need no model access to become visible again.
-    for (const work of selected.filter(w => w.parts.length > 0 && !alreadyRead.has(videoKey(w.video.url)))) {
-      if (work.sourceDurationSeconds && work.nextOffset >= work.sourceDurationSeconds) work.stage = 'complete'
+    const publishable = rows.filter(w => (!w.parked || w.selectedAt && deps.metadata?.[videoKey(w.video.url)])
+      && isFollowedChannel(w.video, followed) && (!deps.target || videoKey(w.video.url) === deps.target))
+    for (const work of publishable.filter(w => w.parts.length > 0 && !alreadyRead.has(videoKey(w.video.url)))) {
+      if (work.sourceDurationSeconds && work.nextOffset >= work.sourceDurationSeconds) {
+        work.stage = 'complete'; work.nextAttemptAt = 0; work.failures = 0; delete work.lastError
+      }
       const saved = await assembledNativeDraft(store, work, now())
       if (!saved) continue
       const publication = await publishNativeDraft(store, saved, work.video, now())

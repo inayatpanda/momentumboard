@@ -44,6 +44,7 @@ jobs:
           NATIVE_FREE_TIER_CONFIRMED: ${{ vars.YOUTUBE_FREE_TIER_CONFIRMED }}
           NATIVE_SCHEDULE_ENABLED: ${{ vars.YOUTUBE_NATIVE_SCHEDULE_ENABLED }}
           YOUTUBE_METADATA_ENABLED: ${{ vars.YOUTUBE_METADATA_ENABLED }}
+          YOUTUBE_METADATA_API_KEY: ${{ secrets.YOUTUBE_METADATA_API_KEY }}
           # Never fall back to the application's potentially billable key.
           GEMINI_YOUTUBE_FREE_API_KEY: ${{ vars.YOUTUBE_FREE_TIER_CONFIRMED == 'true' && inputs.cached_only != true && secrets.GEMINI_YOUTUBE_FREE_API_KEY || '' }}
           APP_TOKEN: ${{ secrets.APP_TOKEN }}

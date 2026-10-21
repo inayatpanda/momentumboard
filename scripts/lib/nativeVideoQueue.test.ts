@@ -20,6 +20,17 @@ async function setup(duration = 1860) {
 }
 
 describe('expanded free video queue', () => {
+  it('publishes exact source coverage for a previously selected video after the daily list rolls over, without another model call', async () => {
+    const {store,deps,advance}=await setup()
+    deps.availability.mockResolvedValue({state:'unknown' as 'ready',durationSeconds:undefined as unknown as number})
+    deps.readSection.mockImplementation(async (url,_key,_fetch,_duration,section)=>({url,at:deps.now(),model:NATIVE_VIDEO_MODEL,finishReason:'STOP',section,result:{...result,complete:true,durationSeconds:250}}))
+    await store.write('video-inbox',[{...video(),publishedAt:deps.now()-60}])
+    await collectNativeVideos(store,{...deps,latestOnly:true})
+    advance(86400)
+    await collectNativeVideos(store,{...deps,latestOnly:true,cachedOnly:true,metadata:{abcdefghijk:{state:'ready',durationSeconds:253}}})
+    expect(deps.readSection).toHaveBeenCalledTimes(1)
+    expect(await store.read('video-extract:v1:abcdefghijk')).toMatchObject({nativeTranscript:{progress:{processedSeconds:253,sourceDurationSeconds:253,completion:'complete'}},coverage:{complete:false}})
+  })
   it('processes only the recent daily list and preserves old work outside that list', async () => {
     const {store,deps}=await setup(600)
     await store.write('video-inbox',[video(),{...video('abcdefghijl','UCother'),publishedAt:deps.now()-100}])

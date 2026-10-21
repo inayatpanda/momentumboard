@@ -7,6 +7,25 @@ import { withDefaults } from '../../shared/channels'
 const now = Date.parse('2026-10-20T20:00:00Z') / 1000
 const entry = (id: string, days: number) => `<entry><title>A stock update</title><link rel="alternate" href="https://www.youtube.com/watch?v=${id}"/><published>${new Date((now-days*86400)*1000).toISOString()}</published></entry>`
 describe('selected channel discovery', () => {
+  it('uses official upload playlists when cloud feeds fail, without accepting future or invalid videos', async () => {
+    const store = memoryStore()
+    const channels = withDefaults([])
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+      const u = new URL(String(url))
+      if (u.hostname === 'www.youtube.com') return new Response('', {status:403})
+      if (u.pathname.endsWith('/channels')) return Response.json({items:channels.map(c=>({id:c.id,contentDetails:{relatedPlaylists:{uploads:c.id}}}))})
+      if (u.searchParams.get('playlistId') === channels[0].id) return Response.json({items:[
+        {snippet:{title:'Latest'},contentDetails:{videoId:'abcdefghijk',videoPublishedAt:new Date((now-60)*1000).toISOString()}},
+        {snippet:{title:'Future'},contentDetails:{videoId:'abcdefghijl',videoPublishedAt:new Date((now+60)*1000).toISOString()}},
+        {snippet:{title:'Bad ID'},contentDetails:{videoId:'bad',videoPublishedAt:new Date((now-60)*1000).toISOString()}},
+      ]})
+      if (u.searchParams.get('playlistId') === channels[1].id) return new Response('',{status:503})
+      return Response.json({items:[]})
+    })
+    expect(await discoverFollowedVideos(store,now,fetcher,'private-test-key')).toMatchObject({added:1,discovered:1,checkedChannels:9,unavailableChannels:1})
+    expect(await store.read('video-inbox')).toMatchObject([{url:'https://www.youtube.com/watch?v=abcdefghijk',channelId:channels[0].id}])
+    expect(fetcher.mock.calls.every(c=>!String(c[0]).includes('private-test-key'))).toBe(true)
+  })
   it('repairs only the two known bad defaults and retains custom subscriptions', () => {
     const channels = withDefaults([{ id: 'UCORi3Jj7kSHcdHdckrjhOsg', name: 'Tom Nash' }, { id: 'UCwMoQEGc4IqkuGLhJUkLwYQ', name: 'Humbled Trader' }, { id: 'custom', name: 'Custom' }])
     expect(channels.find(c => c.name === 'Tom Nash')?.id).toBe('UCJwKCyEIFHwUOPQQ-4kC1Zw')
