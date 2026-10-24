@@ -70,6 +70,15 @@ function recoveryRecord(sym: string, availableAt: number): StrategyLabRecord {
 }
 
 describe('recovery research through the production engine', () => {
+  it('preserves published market context when the board is rebuilt', async () => {
+    const store = await storeFor(['MSFT'])
+    const context = { version: 1, generatedAt: NOW, dataFrom: '2006-04-28', dataThrough: '2026-10-16', observations: 5000, digest: 'context-test', current: [], pairs: [], seasonal: [], similar: [] }
+    await store.write('engine-market-patterns', context)
+    await buildBoard(store, dependencies(['MSFT']), NOW)
+    expect((await store.read<EngineLabSnapshot>('engine-lab'))!.learning?.marketPatterns).toEqual(context)
+    expect((await store.read<ResearchLearningSnapshot>('engine-research-learning'))!.marketPatterns).toEqual(context)
+  })
+
   it('checks a recovery selloff cause even when no fast dip ever warmed the news cache', async () => {
     const store = await storeFor(['MSFT'])
     const news = vi.fn(async () => ({ verdict: 'transient' as const, reason: 'Company-specific one-off delay' }))

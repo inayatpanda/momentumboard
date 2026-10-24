@@ -4322,6 +4322,7 @@ export async function buildBoard(
   const compositeEvidenceN = Object.values(calibration.buckets).reduce((sum, bucket) => sum + (bucket.n ?? 0), 0)
   const learning = buildResearchLearning(labRecords, qualityPublicationAt)
   learning.historicalStudy = historicalStudy
+  learning.marketPatterns = await store.read<import('../../../shared/engine/marketPatterns').MarketPatternsSnapshot>('engine-market-patterns')
   const publishedAudit = await store.read<{ records: StrategyLabRecord[]; coverage?: import('../../../shared/engine/marketComparison').MarketComparisonSnapshot['auditCoverage'] }>('engine-published-market-audit')
   learning.marketComparison = buildMarketComparison([...labRecords, ...(publishedAudit?.records ?? [])], spy, qualityPublicationAt)
   learning.marketComparison.auditCoverage = publishedAudit?.coverage

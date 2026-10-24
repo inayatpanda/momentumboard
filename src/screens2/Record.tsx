@@ -307,7 +307,7 @@ export default function Record() {
   const { best, worst } = bestAndWorst(days)
   return (
     <div className="rec2">
-      <h1>Results</h1><p className="cc-reason">How our published predictions performed. For longer tests of different strategies, open <Link href="/today?view=results">Compare strategies with the market</Link>.</p>
+      <h1>Results</h1><p className="cc-reason">How our published predictions performed. For longer tests of different strategies, open <Link href="/today?view=strategies">Compare strategies with the market</Link>.</p>
       {learning == null ? (
         <DataStatus label="Results" error={learningError} refresh={learningRefresh} refreshing={learningRefreshing} />
       ) : (

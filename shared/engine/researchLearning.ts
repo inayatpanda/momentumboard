@@ -72,6 +72,7 @@ export interface ResearchLearningStrategy {
 }
 
 export interface ResearchLearningSnapshot {
+  marketPatterns?: import('./marketPatterns').MarketPatternsSnapshot | null
   historicalStudy?: HistoricalStudy | null
   marketComparison?: MarketComparisonSnapshot
   version: 1

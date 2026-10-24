@@ -1,0 +1,32 @@
+name: market-patterns
+on:
+  schedule:
+    - cron: '43 7 * * 2-6'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: daily-paper
+  cancel-in-progress: false
+jobs:
+  research:
+    if: github.repository == 'inayatpanda/momentumboard' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        id: modules
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
+      - run: npx tsx scripts/bg/market-patterns.mts --publish
+        env:
+          STORE_BACKEND: d1
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

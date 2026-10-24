@@ -20,6 +20,7 @@ import { StaleBoardNote } from './parts/StaleBoardNote'
 import { TodayHeadlines } from './parts/TodayHeadlines'
 import { YesterdayStrip } from './parts/YesterdayStrip'
 import { StrategyLabPanel } from './parts/StrategyLabPanel'
+import { MarketPatterns } from './parts/MarketPatterns'
 import { LearningPanel } from './parts/LearningPanel'
 import { DecisionCockpit } from './parts/DecisionCockpit'
 import { BrandMark } from '../components/BrandMark'
@@ -28,7 +29,7 @@ import '../styles/research.css'
 
 const DESK_VIEWS = ['today', 'research', 'learning'] as const
 type DeskView = typeof DESK_VIEWS[number]
-const VIEW_LABELS: Record<DeskView, string> = { today: 'Today', research: 'Research', learning: 'Results' }
+const VIEW_LABELS: Record<DeskView, string> = { today: 'Today', research: 'Research', learning: 'Patterns' }
 
 function useMobileDesk() {
   const read = () => typeof window !== 'undefined' && window.innerWidth <= 760
@@ -61,7 +62,7 @@ function MarketContext({ blob }: { blob: BoardBlob | null }) {
 export default function Today() {
   // One cached board slice owns the published calls, research and learning.
   const [newsOpen, setNewsOpen] = useState(false)
-  const [view, setView] = useState<DeskView>(() => new URLSearchParams(window.location.search).get('view') === 'results' ? 'learning' : 'today')
+  const [view, setView] = useState<DeskView>(() => ['results', 'patterns', 'strategies'].includes(new URLSearchParams(window.location.search).get('view') ?? '') ? 'learning' : 'today')
   const mobile = useMobileDesk()
   const tabs = useRef<Partial<Record<DeskView, HTMLButtonElement | null>>>({})
   const { data, refreshing, refresh, error } = useSlice('board', getBoardSlice)
@@ -93,7 +94,7 @@ export default function Today() {
         <nav className="research-jump" aria-label="Research desk sections">
           <a href="#published-calls">Predictions <span aria-hidden="true">↗</span></a>
           <a href="#opportunities">Research <span aria-hidden="true">↗</span></a>
-          <a href="#historical-learning">Results <span aria-hidden="true">↗</span></a>
+          <a href="#historical-learning">Patterns <span aria-hidden="true">↗</span></a>
         </nav>
       </header>
       {mobile && <nav className="mobile-desk-tabs" role="tablist" aria-label="Daily brief views">
@@ -147,8 +148,11 @@ export default function Today() {
       </div>
       <div id="brief-panel-learning" role={mobile ? 'tabpanel' : undefined} aria-labelledby={mobile ? 'brief-tab-learning' : undefined} hidden={mobile && view !== 'learning'}>
       <div id="historical-learning" className="research-section">
+        <MarketPatterns snapshot={data?.engineLab?.learning?.marketPatterns} />
+        <details className="patterns-results" open={new URLSearchParams(window.location.search).get('view') === 'strategies' ? true : undefined}><summary>Strategy results and prediction record</summary>
         <LearningPanel learning={data?.engineLab?.learning} onResearch={mobile ? () => setView('research') : undefined} />
         <YesterdayStrip yesterday={data?.yesterday ?? null} />
+        </details>
       </div>
       </div>
       {!mobile && <section className="research-section research-intelligence" aria-label="News and social intelligence">

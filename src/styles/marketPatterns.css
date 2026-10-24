@@ -1,0 +1,40 @@
+.market-patterns { display: grid; gap: 20px; min-width: 0; }
+.market-patterns .research-section-intro, .market-patterns h3, .market-patterns p { margin: 0; }
+.patterns-dateline, .patterns-note { color: var(--text-dim, #667085); font-size: .88rem; line-height: 1.6; }
+.patterns-card { border: 1px solid var(--border, #dfe4eb); border-radius: 20px; background: var(--surface-1, #fff); padding: clamp(18px, 3vw, 28px); display: grid; gap: 18px; min-width: 0; }
+.patterns-card h3 { font-size: 1.3rem; letter-spacing: -.025em; }
+.patterns-card > p { line-height: 1.6; }
+.patterns-move-header, .patterns-move { display: grid; grid-template-columns: minmax(0, 1fr) 76px 76px; align-items: center; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--border, #dfe4eb); }
+.patterns-move-header { font-size: .78rem; color: var(--text-dim, #667085); }
+.patterns-move > span, .patterns-move-header > span:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.patterns-move small, .patterns-table small { display: block; color: var(--text-dim, #667085); font-size: .75rem; margin-top: 5px; font-weight: 400; }
+.pattern-up { color: var(--long, #16835c); } .pattern-down { color: var(--short, #b64c46); }
+.patterns-pairs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.patterns-pair { border: 1px solid var(--border, #dfe4eb); padding: 16px; border-radius: 14px; display: grid; gap: 10px; }
+.patterns-pair > span { font-size: .87rem; }
+.patterns-pair-numbers { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; color: var(--text-dim, #667085); font-size: .78rem; }
+.patterns-pair-numbers b { color: var(--text, #18212e); font-size: 1rem; margin-left: 5px; font-variant-numeric: tabular-nums; }
+.patterns-asset-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.patterns-asset-picker button { border: 1px solid var(--border, #dfe4eb); border-radius: 20px; background: transparent; color: inherit; font: inherit; font-size: .82rem; padding: 10px 13px; cursor: pointer; }
+.patterns-asset-picker button[aria-pressed=true] { border-color: var(--accent, #2164c7); color: var(--accent, #2164c7); background: var(--surface-2, #eef5ff); }
+.patterns-season-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 14px 0; }
+.patterns-season-stats div { display: grid; gap: 8px; }
+.patterns-season-stats div:last-child { grid-column: 1 / -1; }
+.patterns-season-stats span { font-size: .82rem; color: var(--text-dim, #667085); }
+.patterns-season-stats strong { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.patterns-similar { display: grid; gap: 14px; }
+.patterns-similar > div { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border, #dfe4eb); }
+.patterns-similar span { grid-column: 1; font-size: .82rem; color: var(--text-dim, #667085); }
+.patterns-similar b { grid-column: 2; grid-row: 1 / 3; align-self: center; font-size: 1.3rem; }
+.patterns-table-scroll { max-width: 100%; overflow-x: auto; margin-top: 16px; }
+.patterns-table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+.patterns-table caption { text-align: left; padding-bottom: 14px; }
+.patterns-table th, .patterns-table td { text-align: right; padding: 14px 12px; border-bottom: 1px solid var(--border, #dfe4eb); min-width: 90px; font-variant-numeric: tabular-nums; }
+.patterns-table th:first-child { text-align: left; min-width: 140px; }
+.patterns-digest { overflow-wrap: anywhere; color: var(--text-dim, #667085); }
+.patterns-warning { border-left: 3px solid #bd7b27; padding: 12px; }
+.patterns-results { margin-top: 28px; }
+.patterns-results > summary { font-size: 1.1rem; font-weight: 650; padding: 18px 0; cursor: pointer; }
+@media (max-width: 600px) { .patterns-pairs { grid-template-columns: 1fr; } .patterns-move-header, .patterns-move { grid-template-columns: minmax(0, 1fr) 66px 66px; gap: 8px; font-size: .85rem; } }
+.patterns-highlight { padding: 16px; border-radius: 12px; background: var(--surface-2); line-height: 1.65; }
+.patterns-card .research-method .patterns-pairs { margin-top: 18px; }
