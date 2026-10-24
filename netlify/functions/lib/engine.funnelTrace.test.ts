@@ -191,6 +191,7 @@ const GOLDEN_KEYS = [
   'engine-research-reports:v1',
   'engine-roster',
   'engine-roster-log',
+  'engine-stock-contexts',
   'event-radar',
   'news-tone-history',
   'pattern-sightings',

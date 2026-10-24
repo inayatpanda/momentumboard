@@ -79,6 +79,22 @@ describe('recovery research through the production engine', () => {
     expect((await store.read<ResearchLearningSnapshot>('engine-research-learning'))!.marketPatterns).toEqual(context)
   })
 
+  it('publishes watchlist context and freezes the paired experiment with new forecasts', async () => {
+    const store = await storeFor(['MSFT', 'ZZQ.L'])
+    await store.write('engine-market-patterns', { version: 1, generatedAt: NOW - 60, dataFrom: '2006-04-28', dataThrough: '2026-10-16', observations: 5000, digest: 'context-test', current: ['SPY', 'TLT', 'USO'].map(symbol => ({ symbol, monthPct: 2, quarterPct: 3 })), pairs: [], seasonal: [], similar: [] })
+    await store.write('news-desk', [{ title: 'Microsoft results', url: 'https://example.com/msft', syms: ['MSFT'], at: NOW - 60, why: 'Company report', score: 70 }])
+    await buildBoard(store, dependencies(['MSFT'], { candles: async sym => sym === 'MSFT' ? recovery : flat }), NOW)
+    const saved = await store.read<{ items: Record<string, import('../../../shared/engine/stockContext').StockContext> }>('engine-stock-contexts')
+    expect(saved!.items.MSFT.news[0].title).toBe('Microsoft results')
+    expect(saved!.items['ZZQ.L'].status).toBe('limited')
+    const trials = (await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.filter(r => r.contextTrial)
+    expect(trials.length).toBeGreaterThan(0)
+    expect(trials.every(r => r.contextTrial!.savedAt === r.availableAt && r.contextTrial!.baselineUp === r.forecast.probabilityUp)).toBe(true)
+    const first = JSON.stringify(trials)
+    await buildBoard(store, dependencies(['MSFT'], { candles: async sym => sym === 'MSFT' ? recovery : flat }), NOW + 60)
+    expect(JSON.stringify((await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.filter(r => trials.some(t => t.id === r.id)).map(r => ({ ...r, lastGradeAttemptAt: undefined })))).toBe(first)
+  })
+
   it('checks a recovery selloff cause even when no fast dip ever warmed the news cache', async () => {
     const store = await storeFor(['MSFT'])
     const news = vi.fn(async () => ({ verdict: 'transient' as const, reason: 'Company-specific one-off delay' }))

@@ -19,6 +19,7 @@ export type SliceKey =
   | 'intel'
   | 'reports'
   | `journey:${string}`
+  | `stock-contexts:${string}`
   | `funnel:${string}`
   | `ledger:${number}`
   | `verdict:${string}`
@@ -30,6 +31,7 @@ export type SliceKey =
 export const SLICE_TTL: Record<string, number> = {
   board: 120_000,
   quotes: 120_000,
+  'stock-contexts': 120_000,
   journey: 120_000, // the open-trace verdict must not sit stale (DS-12)
   verdict: 900_000,
   movers: 300_000,

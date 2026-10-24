@@ -61,6 +61,7 @@ export interface ForecastContract {
 }
 
 export interface StrategyObservation {
+  contextTrial?: import('./stockContext').ContextTrial
   id: string
   sleeve: StrategySleeve
   sym: string

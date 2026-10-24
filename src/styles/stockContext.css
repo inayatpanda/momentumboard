@@ -1,0 +1,24 @@
+.stock-context-compact { border: 1px solid var(--border); border-top: 0; border-radius: 0 0 14px 14px; margin: -8px 0 6px; padding: 13px 16px 12px; background: var(--surface-1); }
+.stock-context-compact > summary { cursor: pointer; font-size: .8rem; color: var(--text-dim); }
+.stock-context-compact > summary strong { margin-left: 9px; color: var(--text); font-weight: 550; }
+.stock-context-body { padding-top: 16px; display: grid; gap: 15px; }
+.stock-context-panel { padding: clamp(18px, 3vw, 26px); border: 1px solid var(--border); border-radius: 18px; background: var(--surface-1); margin: 22px 0; display: grid; gap: 16px; }
+.stock-context-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; }
+.stock-context-heading h2 { margin: 0; font-size: 1.25rem; }
+.stock-context-heading span { color: var(--text-dim); font-size: .8rem; }
+.stock-context-body p, .stock-context-panel p { margin: 0; line-height: 1.6; font-size: .9rem; }
+.stock-context-summary { font-weight: 550; }
+.stock-context-reasons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.stock-context-reasons h4, .stock-context-evidence h4 { font-size: .85rem; margin: 8px 0; }
+.stock-context-reasons p + p { margin-top: 10px; }
+.stock-context-next { border-left: 2px solid var(--accent); padding: 10px 14px; background: var(--surface-2); border-radius: 0 8px 8px 0; }
+.stock-context-next strong { font-size: .85rem; }
+.stock-context-news strong, .stock-context-news a, .stock-context-evidence small, .stock-context-evidence span { display: block; margin: 6px 0; }
+.stock-context-news small, .stock-context-note, .stock-context-evidence { font-size: .8rem; color: var(--text-dim); }
+.stock-context-evidence > summary { cursor: pointer; color: var(--text); padding: 10px 0; }
+.stock-context-evidence p, .stock-context-evidence h4 { margin: 12px 0; }
+.stock-context-evidence dl div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.stock-context-evidence dd { margin: 0; text-align: right; }
+.stock-context-body a, .stock-context-panel a { color: var(--accent); overflow-wrap: anywhere; }
+.stock-context-warning { border-left: 3px solid var(--warn); padding-left: 12px; }
+@media (max-width: 600px) { .stock-context-reasons { grid-template-columns: 1fr; gap: 10px; } }

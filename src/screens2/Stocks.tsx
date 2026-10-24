@@ -1,3 +1,4 @@
+import { getStockContexts } from '../lib/apiViews'
 import { SectorIcon } from '../components/SectorIcon'
 // Stocks opens with the watchlist; market research loads when selected.
 
@@ -17,6 +18,7 @@ import { searchStocks, useStockDirectory } from '../lib/stockDirectory'
 import { WatchlistSectors, watchSector } from './parts/WatchlistSectors'
 import { BrandMark } from '../components/BrandMark'
 
+const StockContextPanel = lazy(() => import('./parts/StockContextPanel').then(module => ({ default: module.StockContextPanel })))
 const StockDiscovery = lazy(() => import('./parts/StockDiscovery').then(module => ({ default: module.StockDiscovery })))
 const StockMarkets = lazy(() => import('./parts/StockMarkets'))
 
@@ -37,6 +39,7 @@ const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
 function WatchlistRows({ items, onRemove, names }: { items: WatchItem[]; names: Map<string, string>; onRemove?: (sym: string) => void }) {
   const symbols = items.map(i => i.symbol)
   const { data: quotes, error, refresh, refreshing } = useSlice(`quotes:${symbols.join(',')}`, () => getQuotes(symbols))
+  const { data: contexts, refreshing: contextLoading } = useSlice(`stock-contexts:${symbols.join(',')}`, () => getStockContexts(symbols))
   // the market-hours ticker (owner 2026-08-17: "are the prices of stocks being
   // gathered live now?"): 45s revalidation while visible and the market is
   // open, same gates as Today's call cards. Its row is fresher than the
@@ -50,7 +53,7 @@ function WatchlistRows({ items, onRemove, names }: { items: WatchItem[]; names: 
   return (
     <>{error && <p className="watch-price-status" role="status">Live prices could not refresh. Available chart quotes are labelled. <button onClick={refresh} disabled={refreshing}>Retry prices</button></p>}<div className="stx-watchlist">
       {items.map(i => (
-        <StockRow key={i.symbol} symbol={i.symbol} name={quoteFor(i.symbol)?.name ?? names.get(i.symbol)} quote={quoteFor(i.symbol)} onRemove={onRemove ? () => onRemove(i.symbol) : undefined} />
+        <div key={i.symbol}><StockRow symbol={i.symbol} name={quoteFor(i.symbol)?.name ?? names.get(i.symbol)} quote={quoteFor(i.symbol)} onRemove={onRemove ? () => onRemove(i.symbol) : undefined} /><Suspense fallback={null}><StockContextPanel compact symbol={i.symbol} context={contexts?.items[i.symbol]} loading={contextLoading && !contexts} /></Suspense></div>
       ))}
     </div></>
   )
@@ -110,7 +113,7 @@ export default function Stocks() {
   const filteredItems = watchFilter ? items.filter(i => watchSector(i.symbol, directory?.rows ?? []) === watchFilter) : items
   const visibleItems = showAll ? filteredItems : filteredItems.slice(0, 6)
   const visibleSymbols = visibleItems.map(i => i.symbol)
-  if (visibleSymbols.length) refreshEntries.push({ key: `quotes:${visibleSymbols.join(',')}`, fetcher: () => getQuotes(visibleSymbols) })
+  if (visibleSymbols.length) refreshEntries.push({ key: `quotes:${visibleSymbols.join(',')}`, fetcher: () => getQuotes(visibleSymbols) }, { key: `stock-contexts:${visibleSymbols.join(',')}`, fetcher: () => getStockContexts(visibleSymbols) })
   const { refresh, refreshing } = useSlicesRefresh(refreshEntries)
   const { pull } = usePullRefresh(refresh)
 

@@ -1,3 +1,4 @@
+import type { StockContext } from '../../shared/engine/stockContext'
 import { appStore as blobAppStore } from './lib/storeProvider'
 import { authenticate } from './lib/auth'
 import type { Prediction } from '../../shared/engine/types'
@@ -393,12 +394,13 @@ const slimNearMiss = (m: FunnelNearMiss) => ({
  * verdict, its last-10-days funnel path, and every call on it in the 30-day
  * ledger window. THE funnel's first HTTP door. */
 async function viewJourney(sym: string, days = 30) {
-  const [traceIndex, predIndex, board, openTrace, engineLab] = await Promise.all([
+  const [traceIndex, predIndex, board, openTrace, engineLab, contexts] = await Promise.all([
     blobAppStore.read<string[]>(FUNNEL_TRACE_INDEX_KEY),
     blobAppStore.read<string[]>('predictions-index'),
     blobAppStore.read<{ date: string; board: Prediction[] }>('engine-board'),
     blobAppStore.read<{ entries: { sym: string }[] }>('open-trace'),
     blobAppStore.read<EngineLabSnapshot>('engine-lab'),
+    blobAppStore.read<{ items: Record<string, StockContext> }>('engine-stock-contexts'),
   ])
   const traceDates = (traceIndex ?? []).slice(-10)
   const traces = await Promise.all(traceDates.map(d => blobAppStore.read<FunnelTrace>(funnelTraceKey(d))))
@@ -426,6 +428,7 @@ async function viewJourney(sym: string, days = 30) {
     funnel,
     calls,
     lab: (engineLab?.observations ?? []).filter(o => o.sym.toUpperCase() === sym),
+    stockContext: contexts?.items?.[sym] ?? null,
   }
 }
 
@@ -630,6 +633,12 @@ export default async (req: Request) => {
   const view = url.searchParams.get('view')
   if (view !== null) {
     if (view === 'board') return json(await viewBoard())
+    if (view === 'stock-contexts') {
+      const symbols = [...new Set((url.searchParams.get('symbols') ?? '').toUpperCase().split(',').filter(Boolean))]
+      if (!symbols.length || symbols.length > 100 || symbols.some(sym => !SYM_RE.test(sym))) return json({ error: 'bad symbols' }, 400)
+      const stored = await blobAppStore.read<{ generatedAt: number; items: Record<string, StockContext> }>('engine-stock-contexts')
+      return json({ generatedAt: stored?.generatedAt ?? null, items: Object.fromEntries(symbols.map(sym => [sym, stored?.items?.[sym] ?? null])) })
+    }
     if (view === 'journey') {
       const sym = (url.searchParams.get('sym') ?? '').toUpperCase()
       if (!SYM_RE.test(sym)) return json({ error: 'bad sym' }, 400)

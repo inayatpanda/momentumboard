@@ -48,7 +48,7 @@ vi.mock('../lib/useLiveQuotes', () => ({ useLiveQuotes: liveQuotesMock }))
 // from whatever the test seeded into Dexie and nothing else.
 vi.mock('../lib/apiViews', async () => {
   const actual = await vi.importActual<typeof import('../lib/apiViews')>('../lib/apiViews')
-  return { ...actual, getBoardSlice: vi.fn(() => Promise.reject(new Error('not mocked in this test'))) }
+  return { ...actual, getStockContexts: vi.fn(() => Promise.reject(new Error('not mocked in this test'))), getBoardSlice: vi.fn(() => Promise.reject(new Error('not mocked in this test'))) }
 })
 
 import { getCandles, getMovers, getQuotes, getSectors } from '../lib/api'

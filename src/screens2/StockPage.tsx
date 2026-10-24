@@ -1,3 +1,4 @@
+import { StockContextPanel } from './parts/StockContextPanel'
 // StockPage (plan Task 17) — THE journey page: one name, the whole of the
 // engine's mind about it. Every symbol anywhere in the app links here.
 //
@@ -319,6 +320,7 @@ export default function StockPage({ sym }: { sym: string }) {
       )}
 
       </div>
+      <StockContextPanel symbol={sym} context={journey?.stockContext} loading={!journey && !journeyError} />
       <div className="company-next"><button onClick={() => setView('business')}><strong>Business & reports</strong><span>Cash flow, financial health and trends →</span></button><button onClick={() => setView('research')}><strong>Research & sources</strong><span>Setups, channel views and past outcomes →</span></button></div>
       </div>
       <div id="company-panel-business" role="tabpanel" aria-labelledby="company-tab-business" hidden={view !== 'business'}>

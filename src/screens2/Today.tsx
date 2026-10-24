@@ -1,3 +1,4 @@
+import { ContextTrialPanel } from './parts/ContextTrialPanel'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
@@ -149,6 +150,7 @@ export default function Today() {
       <div id="brief-panel-learning" role={mobile ? 'tabpanel' : undefined} aria-labelledby={mobile ? 'brief-tab-learning' : undefined} hidden={mobile && view !== 'learning'}>
       <div id="historical-learning" className="research-section">
         <MarketPatterns snapshot={data?.engineLab?.learning?.marketPatterns} />
+        <ContextTrialPanel audit={data?.engineLab?.learning?.contextTrial} />
         <details className="patterns-results" open={new URLSearchParams(window.location.search).get('view') === 'strategies' ? true : undefined}><summary>Strategy results and prediction record</summary>
         <LearningPanel learning={data?.engineLab?.learning} onResearch={mobile ? () => setView('research') : undefined} />
         <YesterdayStrip yesterday={data?.yesterday ?? null} />

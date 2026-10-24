@@ -1,3 +1,4 @@
+import type { StockContext } from '../../shared/engine/stockContext'
 // THE TYPED VIEW CLIENT (plan Task 9): one getter per /api/engine?view= slice.
 // Token handling stays in api.ts's apiGet — one place. Shapes mirror the
 // server's Phase-1 projections 1:1; engine types import straight from
@@ -155,6 +156,7 @@ export interface PostMortemRead {
 export type JourneyCall = LedgerPrediction & { postMortem: PostMortemRead | null; outcome21: { excessPct: number; rawPct: number; spyPct: number; stopped: boolean; hit: boolean } | null }
 
 export interface JourneySlice {
+  stockContext?: StockContext | null
   sym: string
   boardRow: EnginePrediction | null
   openTrace: OpenTraceEntry | null
@@ -262,3 +264,5 @@ export interface VerdictRead {
 }
 
 export const getVerdict = (sym: string) => apiGet<VerdictRead>(`/api/engine?view=verdict&sym=${encodeURIComponent(sym.toUpperCase())}`)
+
+export const getStockContexts = (symbols: string[]) => apiGet<{ generatedAt: number | null; items: Record<string, StockContext | null> }>(`/api/engine?view=stock-contexts&symbols=${encodeURIComponent(symbols.join(','))}`)

@@ -45,6 +45,19 @@ describe('engine ?view= slices', () => {
     expect(res.status).toBe(401)
   })
 
+  it('serves only requested stock contexts and the same context on the stock journey', async () => {
+    const context = { symbol: 'MSFT', status: 'mixed', summary: 'Signals differ.' }
+    await seed('engine-stock-contexts', { generatedAt: 123, items: { MSFT: context, OTHER: { symbol: 'OTHER' } } })
+    const result = await body(await handler(req('?view=stock-contexts&symbols=msft,MISSING,MSFT', 'user-key-1')))
+    expect(result.data).toEqual({ generatedAt: 123, items: { MSFT: context, MISSING: null } })
+    const journey = await body(await handler(req('?view=journey&sym=MSFT')))
+    expect(journey.data.stockContext).toEqual(context)
+    expect((await handler(req('?view=stock-contexts&symbols=BAD%20SYM'))).status).toBe(400)
+    expect((await handler(req('?view=stock-contexts'))).status).toBe(400)
+    expect((await handler(req('?view=stock-contexts&symbols=' + Array.from({ length: 101 }, (_, i) => 'SYM' + i).join(',')))).status).toBe(400)
+    expect((await handler(new Request('https://x/api/engine?view=stock-contexts&symbols=MSFT'))).status).toBe(401)
+  })
+
   it('rejects unknown views with 400', async () => {
     const res = await handler(req('?view=nope'))
     expect(res.status).toBe(400)

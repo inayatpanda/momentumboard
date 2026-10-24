@@ -143,7 +143,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     expect(grid.classList.contains('desk2-wide')).toBe(false)
     expect(grid.contains(col)).toBe(true)
     const pane = screen.getByRole('main')
-    expect(await within(pane).findByRole('heading', { name: /NVDA/ }, { timeout: 5000 })).toBeInTheDocument()
+    expect(await within(pane).findByRole('heading', { name: /NVDA/, level: 1 }, { timeout: 5000 })).toBeInTheDocument()
   })
 
   it('at 390px there is no desk grid and the nav stays the bottom tab bar', async () => {
@@ -182,7 +182,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     // so both stock-page waits here allow 5s (the assertion is what the DOM
     // ends up being, never how fast a dynamic import resolved).
     const pane = screen.getByRole('main')
-    expect(await within(pane).findByRole('heading', { name: /NVDA/ }, { timeout: 5000 })).toBeInTheDocument()
+    expect(await within(pane).findByRole('heading', { name: /NVDA/, level: 1 }, { timeout: 5000 })).toBeInTheDocument()
     // …and the layout did NOT remount around it: same column node, same row
     // node inside it (a remount would have built fresh elements), same scroll
     expect(screen.getByRole('complementary', { name: /board column/i })).toBe(col)
@@ -194,7 +194,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     setViewport(1440)
     render(<AppShell locationHook={memoryLocation({ path: '/app/stock/NVDA' }).hook} />)
 
-    await screen.findByRole('heading', { name: /NVDA/ }, { timeout: 5000 })
+    await screen.findByRole('heading', { name: /NVDA/, level: 1 }, { timeout: 5000 })
     expect(document.querySelectorAll('.sp-chart')).toHaveLength(1)
   })
 

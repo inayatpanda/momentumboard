@@ -1,3 +1,4 @@
+import { buildStockContext, withStockContext, auditContextTrials, type StockContext, type ContextHeadline } from '../../../shared/engine/stockContext'
 import { buildMarketComparison } from '../../../shared/engine/marketComparison'
 import { applyHistoryGate, withFinancialHistory, type HistoricalStudy } from '../../../shared/engine/historyEvidence'
 import type { ValuationCapitalization } from '../../../shared/sectorFinancials'
@@ -4300,10 +4301,25 @@ export async function buildBoard(
     : `${record.sleeve}:${record.sym}:${record.side}:${record.forecast.modelVersion ?? 'legacy'}`
   const activeLab = new Set(labRecords.filter(r => !r.outcome).map(labCampaignKey))
   labRecords = retainLabRecords(labRecords)
+  const marketPatterns = await store.read<import('../../../shared/engine/marketPatterns').MarketPatternsSnapshot>('engine-market-patterns')
+  const contextHeadlines = await store.read<ContextHeadline[]>('news-desk')
+  const stockContexts: Record<string, StockContext> = {}
+  for (const sym of new Set([...watchSyms, ...shortBySym.keys()])) {
+    const sectorSymbol = symToSector.get(sym)
+    const sectorRow = sectorRows.find(row => row.sym === sectorSymbol)
+    const sectorCandles = sectorPairs.find(([key]) => key === sectorSymbol)?.[1]
+    stockContexts[sym] = buildStockContext({ symbol: sym, now: nowSec,
+      candles: shortBySym.get(sym)?.candles ?? candleMap.get(sym) ?? [], spy,
+      sector: sectorRow && sectorCandles ? { symbol: sectorRow.sym, name: sectorRow.name, candles: sectorCandles } : null,
+      patterns: marketPatterns, headlines: Array.isArray(contextHeadlines) ? contextHeadlines : [],
+      catalyst: catalystBySym.get(sym), earningsRisk: earningsSet.has(baseSym(sym)) })
+  }
+  await store.write('engine-stock-contexts', { generatedAt: nowSec, items: stockContexts })
   // Freeze the same calibrated forecast readers see, using only earlier
   // completed campaigns. Later evaluation must never reconstruct its odds.
   const publishedLab = calibrateLabObservations([...shortLabRaw, ...qualityLab, ...socialLabRaw], labRecords)
     .map(observation => conditionRecoveryForecast(observation, labRecords))
+    .map(observation => withStockContext(observation, stockContexts[observation.sym]))
   for (const obs of publishedLab) {
     const key = labCampaignKey(obs)
     const recordableShortForecast = obs.sleeve === 'short-horizon' && obs.entry != null
@@ -4322,7 +4338,8 @@ export async function buildBoard(
   const compositeEvidenceN = Object.values(calibration.buckets).reduce((sum, bucket) => sum + (bucket.n ?? 0), 0)
   const learning = buildResearchLearning(labRecords, qualityPublicationAt)
   learning.historicalStudy = historicalStudy
-  learning.marketPatterns = await store.read<import('../../../shared/engine/marketPatterns').MarketPatternsSnapshot>('engine-market-patterns')
+  learning.marketPatterns = marketPatterns
+  learning.contextTrial = auditContextTrials(labRecords, qualityPublicationAt)
   const publishedAudit = await store.read<{ records: StrategyLabRecord[]; coverage?: import('../../../shared/engine/marketComparison').MarketComparisonSnapshot['auditCoverage'] }>('engine-published-market-audit')
   learning.marketComparison = buildMarketComparison([...labRecords, ...(publishedAudit?.records ?? [])], spy, qualityPublicationAt)
   learning.marketComparison.auditCoverage = publishedAudit?.coverage
