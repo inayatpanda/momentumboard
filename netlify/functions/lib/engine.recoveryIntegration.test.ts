@@ -87,12 +87,18 @@ describe('recovery research through the production engine', () => {
     const saved = await store.read<{ items: Record<string, import('../../../shared/engine/stockContext').StockContext> }>('engine-stock-contexts')
     expect(saved!.items.MSFT.news[0].title).toBe('Microsoft results')
     expect(saved!.items['ZZQ.L'].status).toBe('limited')
+    expect(saved!.items.MSFT.dropCheck?.status).toBe('holding-up')
+    expect(saved!.items.MSFT.changes?.baselineAt).toBeNull()
+    expect(saved!.items['ZZQ.L'].dropCheck?.status).toBe('not-applicable')
     const trials = (await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.filter(r => r.contextTrial)
     expect(trials.length).toBeGreaterThan(0)
     expect(trials.every(r => r.contextTrial!.savedAt === r.availableAt && r.contextTrial!.baselineUp === r.forecast.probabilityUp)).toBe(true)
     const first = JSON.stringify(trials)
+    const days = (await store.read<import('../../../shared/engine/stockUpdates').DailyStockSnapshot[]>('engine-stock-days'))!
+    expect(days.some(row => row.symbol === 'MSFT')).toBe(true)
     await buildBoard(store, dependencies(['MSFT'], { candles: async sym => sym === 'MSFT' ? recovery : flat }), NOW + 60)
     expect(JSON.stringify((await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.filter(r => trials.some(t => t.id === r.id)).map(r => ({ ...r, lastGradeAttemptAt: undefined })))).toBe(first)
+    expect((await store.read<import('../../../shared/engine/stockUpdates').DailyStockSnapshot[]>('engine-stock-days'))!.filter(row => row.symbol === 'MSFT')).toHaveLength(1)
   })
 
   it('checks a recovery selloff cause even when no fast dip ever warmed the news cache', async () => {
@@ -187,7 +193,7 @@ describe('recovery research through the production engine', () => {
     expect((await store.read<StrategyLabRecord[]>('engine-lab-ledger'))!.filter(row => row.sleeve === 'quality-dip')).toHaveLength(0)
   })
 
-  it('bounds fundamental hydration at sixteen candidates and two in-flight provider calls', async () => {
+  it('reuses recovery fundamentals and checks twenty watched companies with at most two in-flight calls', async () => {
     const symbols = Array.from({ length: 20 }, (_, i) => `REC${i}`)
     const store = await storeFor(symbols)
     let inFlight = 0
@@ -199,7 +205,7 @@ describe('recovery research through the production engine', () => {
       return health(sym)
     })
     await buildBoard(store, dependencies(symbols, { businessHealth }), NOW)
-    expect(businessHealth).toHaveBeenCalledTimes(16)
+    expect(businessHealth).toHaveBeenCalledTimes(20)
     expect(peak).toBe(2)
     const snapshot = (await store.read<EngineLabSnapshot>('engine-lab'))!
     const quality = snapshot.observations.filter(row => row.sleeve === 'quality-dip')

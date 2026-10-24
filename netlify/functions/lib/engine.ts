@@ -1,3 +1,4 @@
+import { buildDropCheck, stockChanges, snapshotStock, retainStockDays, type DailyStockSnapshot } from '../../../shared/engine/stockUpdates'
 import { buildStockContext, withStockContext, auditContextTrials, type StockContext, type ContextHeadline } from '../../../shared/engine/stockContext'
 import { buildMarketComparison } from '../../../shared/engine/marketComparison'
 import { applyHistoryGate, withFinancialHistory, type HistoricalStudy } from '../../../shared/engine/historyEvidence'
@@ -45,7 +46,7 @@ import { WILDCARD_SIZE_CAP, selectWildcard, wildcardDisabled } from '../../../sh
 import { wildcardThesis } from '../../../shared/engine/voice'
 import { extractNewsCatalysts, type NewsCatalyst } from './newsCatalysts'
 import type { NasdaqEarningsRow } from './nasdaqEarnings'
-import { DIP_NEWS_BUDGET, unservedVenue, type DipNewsVerdict } from './dipNews'
+import { heuristicDipVerdict, DIP_NEWS_BUDGET, unservedVenue, type DipNewsVerdict } from './dipNews'
 import { annotatePostMortems, POSTMORTEM_LLM_MAX_TOKENS, type PostMortemAsk } from './postMortemLlm'
 import { newsTone, worldMult, worldTone, VIX_SYMBOL, WORLD_SYMBOLS, type WorldRead } from '../../../shared/engine/worldTape'
 import {
@@ -4303,6 +4304,17 @@ export async function buildBoard(
   labRecords = retainLabRecords(labRecords)
   const marketPatterns = await store.read<import('../../../shared/engine/marketPatterns').MarketPatternsSnapshot>('engine-market-patterns')
   const contextHeadlines = await store.read<ContextHeadline[]>('news-desk')
+  const previousContexts = await store.read<{ items: Record<string, StockContext> }>('engine-stock-contexts')
+  const contextHistory = retainStockDays((await store.read<DailyStockSnapshot[]>('engine-stock-days')) ?? [], Object.values(previousContexts?.items ?? {}).map(snapshotStock), nowSec)
+  // Free cached SEC reports, bounded to 20 watched US companies per refresh.
+  // Rotate larger watchlists each day; never let missing data imply health.
+  for (const row of qualityRows) if (row.businessHealth) healthReads.set(row.sym, row.businessHealth)
+  const eligibleHealth = [...new Set(watchSyms)].filter(sym => !/[.\-]/.test(sym) || ['BRK.B', 'BF.B'].includes(sym)).sort()
+  const healthOffset = eligibleHealth.length > 20 ? (Math.floor(nowSec / 86400) * 20) % eligibleHealth.length : 0
+  const watchedHealth = [...eligibleHealth.slice(healthOffset), ...eligibleHealth.slice(0, healthOffset)].slice(0, 20)
+  if (deps.businessHealth) await mapLimit(watchedHealth, 2, async sym => {
+    if (!healthReads.has(sym)) healthReads.set(sym, await deps.businessHealth!(sym).catch(() => null))
+  })
   const stockContexts: Record<string, StockContext> = {}
   for (const sym of new Set([...watchSyms, ...shortBySym.keys()])) {
     const sectorSymbol = symToSector.get(sym)
@@ -4313,7 +4325,13 @@ export async function buildBoard(
       sector: sectorRow && sectorCandles ? { symbol: sectorRow.sym, name: sectorRow.name, candles: sectorCandles } : null,
       patterns: marketPatterns, headlines: Array.isArray(contextHeadlines) ? contextHeadlines : [],
       catalyst: catalystBySym.get(sym), earningsRisk: earningsSet.has(baseSym(sym)) })
+    const context = stockContexts[sym]
+    const candles = shortBySym.get(sym)?.candles ?? candleMap.get(sym) ?? []
+    context.dropCheck = buildDropCheck({ symbol: sym, now: nowSec, candles, sector: sectorSymbol,
+      health: healthReads.get(sym), news: context.news.length ? heuristicDipVerdict(context.news.map(n => n.title)) : null })
+    context.changes = stockChanges(context, candles, contextHistory)
   }
+  await store.write('engine-stock-days', retainStockDays(contextHistory, Object.values(stockContexts).map(snapshotStock), nowSec))
   await store.write('engine-stock-contexts', { generatedAt: nowSec, items: stockContexts })
   // Freeze the same calibrated forecast readers see, using only earlier
   // completed campaigns. Later evaluation must never reconstruct its odds.

@@ -22,3 +22,7 @@
 .stock-context-body a, .stock-context-panel a { color: var(--accent); overflow-wrap: anywhere; }
 .stock-context-warning { border-left: 3px solid var(--warn); padding-left: 12px; }
 @media (max-width: 600px) { .stock-context-reasons { grid-template-columns: 1fr; gap: 10px; } }
+
+.stock-context-update { border-top: 1px solid var(--border); padding-top: 14px; display: grid; gap: 8px; }
+.stock-context-update h3 { font-size: 1rem; margin: 0 0 2px; }
+.stock-context-update > strong { font-size: .9rem; }

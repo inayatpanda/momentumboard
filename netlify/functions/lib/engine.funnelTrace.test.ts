@@ -192,6 +192,7 @@ const GOLDEN_KEYS = [
   'engine-roster',
   'engine-roster-log',
   'engine-stock-contexts',
+  'engine-stock-days',
   'event-radar',
   'news-tone-history',
   'pattern-sightings',

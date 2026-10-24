@@ -1,3 +1,4 @@
+import type { DropCheck, StockChanges } from './stockUpdates'
 import { HISTORY_CORE_MODEL, HISTORY_GATED_MODEL } from './historyEvidence'
 import type { Candle } from '../types'
 import type { MarketPatternsSnapshot } from './marketPatterns'
@@ -16,6 +17,8 @@ export interface StockContext {
   news: { title: string; url: string; collectedAt: number; source?: string; interpretation: string }[]
   newsView: { side: 'long' | 'short'; reason: string } | null
   /** A fixed candidate probability adjustment, tested prospectively, never applied to live odds. */
+  dropCheck?: DropCheck
+  changes?: StockChanges
   trialShift: number | null
 }
 const DAY = 86400
