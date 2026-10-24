@@ -1,4 +1,4 @@
-// The paper — its own page (owner 2026-08-17: "a new fresh tab, move… just
+// Daily report — its own page (owner 2026-08-17: "a new fresh tab, move… just
 // the Today paper"). The collapsed-summary behaviour died with Intel's paper
 // section: here the edition IS the page, so it mounts OPEN. Same local-first
 // harness as Intel's tests: fetchers rejected, cases paint from seeded Dexie.
@@ -44,7 +44,7 @@ describe('Paper2', () => {
   it('mounts the edition OPEN — a sandboxed srcDoc iframe with no tap needed', async () => {
     await writeSlice('reports', { date: '2026-08-13', at: 1, html: '<h1>The Edition</h1>' })
     withRouter()
-    expect(screen.getByRole('heading', { name: /the paper/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /daily report/i })).toBeInTheDocument()
     const iframe = await screen.findByTitle(/today.?s paper/i)
     expect(iframe.getAttribute('srcdoc')).toContain('The Edition')
     expect(iframe.getAttribute('sandbox')).toBe('')

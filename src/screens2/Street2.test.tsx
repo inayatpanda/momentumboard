@@ -191,9 +191,9 @@ describe('Street2', () => {
     expect(screen.queryByText('Loading video evidence…')).not.toBeInTheDocument()
   })
 
-  it('has a heading "The street"', () => {
+  it('has a heading "YouTube & social"', () => {
     withRouter()
-    expect(screen.getByRole('heading', { level: 1, name: /the street/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: /YouTube & social/i })).toBeInTheDocument()
   })
 
   // THE ONE EXCEPTION to the honest-absent rule: a section may render nothing,
@@ -201,14 +201,14 @@ describe('Street2', () => {
   it('says so in one line when the wire has resolved and carries nothing at all', async () => {
     await seedWire()
     withRouter()
-    expect(await screen.findByText(/the wire fills as videos land/i)).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /the wire/i })).not.toBeInTheDocument()
+    expect(await screen.findByText(/No completed channel analysis yet/i)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /video summaries/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /deep reads/i })).not.toBeInTheDocument()
   })
 
   it('never claims an empty wire before the slice has resolved', () => {
     withRouter()
-    expect(screen.queryByText(/the wire fills as videos land/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/No completed channel analysis yet/i)).not.toBeInTheDocument()
   })
 
   // ONE REFRESH, THREE SLICES: the picks read the board, the wire is this
@@ -376,7 +376,7 @@ describe('Street2', () => {
       await seedWire({ videos: [mkVideo()] })
       withRouter()
       fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
-      await screen.findByRole('heading', { name: /the wire/i })
+      await screen.findByRole('heading', { name: /video summaries/i })
       expect(screen.queryByRole('heading', { name: /deep reads/i })).not.toBeInTheDocument()
     })
   })

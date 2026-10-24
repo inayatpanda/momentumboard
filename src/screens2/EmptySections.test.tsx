@@ -40,7 +40,7 @@ describe('remaining screens handle missing data', () => {
     for (const [key, data] of [['research:events', []], ['research:picks', {persistence:[],reports:0}], ['research:pickStats', {scores:[]}], ['research:outcomes', []]] as const) await db.slices.put({key,data,fetchedAt:Date.now()})
     show(<Research />)
     expect(await screen.findByText(/No event assessments have been published/)).toBeInTheDocument()
-    expect(await screen.findByRole('link',{name:'View Track record →'})).toHaveAttribute('href','/app/record')
+    expect(await screen.findByRole('link',{name:'View Results →'})).toHaveAttribute('href','/app/record')
     expect(await screen.findByRole('link',{name:'Open calendar →'})).toHaveAttribute('href','/app/more/calendar')
   })
   it('recovers a failed paper request through its retry button', async () => {
@@ -53,7 +53,7 @@ describe('remaining screens handle missing data', () => {
   })
   it('distinguishes unavailable record datasets from empty or zero performance', async () => {
     show(<Record />)
-    for (const name of ['Track record','Published calls','Paper book']) expect(await screen.findByRole('alert',{name:`${name} unavailable`})).toBeInTheDocument()
+    for (const name of ['Results','Published calls','Paper book']) expect(await screen.findByRole('alert',{name:`${name} unavailable`})).toBeInTheDocument()
     expect(screen.queryByText(/first run yet/)).not.toBeInTheDocument()
   })
 })

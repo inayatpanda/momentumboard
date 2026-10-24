@@ -20,7 +20,7 @@ describe('recovery shortlist', () => {
       <RecoveryShortlist lab={lab([row('REVIEW', 'watch'), row('REFUSED', 'avoid')])} onResearch={onResearch} />
     </Router>)
     expect(screen.getByRole('link')).toHaveAttribute('href', '/app/stock/REVIEW')
-    expect(screen.getByText('Financial evidence needs review')).toBeInTheDocument()
+    expect(screen.getByText('Check the latest profits, cash and debt.')).toBeInTheDocument()
     expect(screen.queryByText('REFUSED')).not.toBeInTheDocument()
     expect(screen.getByText(/1\/6 checks met/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /View research/ }))

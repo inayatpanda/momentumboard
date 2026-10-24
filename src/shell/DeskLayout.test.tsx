@@ -124,7 +124,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     render(<AppShell locationHook={memoryLocation({ path: '/app/today' }).hook} />)
 
     const pane = screen.getByRole('main')
-    expect(await within(pane).findByRole('heading', { level: 1, name: 'Research desk' })).toBeInTheDocument()
+    expect(await within(pane).findByRole('heading', { level: 1, name: 'Your daily brief' })).toBeInTheDocument()
     const grid = document.querySelector('.desk2')
     expect(grid).not.toBeNull()
     expect(grid!.classList.contains('desk2-wide')).toBe(true)
@@ -160,8 +160,8 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     expect([...nav.querySelectorAll('.v2-tab:not(.rail-only) .v2-tab-label')].map(el => el.textContent?.trim())).toEqual([
       'Stocks',
       'Today',
-      'Intel',
-      'Track record',
+      'News',
+      'Results',
       'More',
     ])
   })
@@ -203,7 +203,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     const location = memoryLocation({ path: '/app/today', record: true })
     render(<AppShell locationHook={location.hook} />)
 
-    await screen.findByRole('heading', { level: 1, name: 'Research desk' })
+    await screen.findByRole('heading', { level: 1, name: 'Your daily brief' })
     expect(spies.getSmartMoney).not.toHaveBeenCalled()
     expect(spies.getSeasonality).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
@@ -220,14 +220,14 @@ describe('DeskLayout — the desktop master–detail desk', () => {
   it('is reactive: widening the window past 1200px builds the desk without a reload', async () => {
     setViewport(1024)
     render(<AppShell locationHook={memoryLocation({ path: '/app/today' }).hook} />)
-    await screen.findByRole('heading', { level: 1, name: 'Research desk' })
+    await screen.findByRole('heading', { level: 1, name: 'Your daily brief' })
     expect(document.querySelector('.desk2')).toBeNull()
 
     setViewport(1440)
     fireEvent(window, new Event('resize'))
 
     await waitFor(() => expect(document.querySelector('.desk2')).not.toBeNull())
-    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'Research desk' })).toBeInTheDocument()
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'Your daily brief' })).toBeInTheDocument()
   })
 
   it('at desk width /board is the full-width Board page — no column, no duplicate list', async () => {
@@ -253,7 +253,7 @@ describe('DeskLayout — the desktop master–detail desk', () => {
     setViewport(1024)
     render(<AppShell locationHook={memoryLocation({ path: '/app/today' }).hook} />)
 
-    await screen.findByRole('heading', { level: 1, name: 'Research desk' })
+    await screen.findByRole('heading', { level: 1, name: 'Your daily brief' })
     expect(screen.getByRole('link', { name: /analytics/i })).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: /analytics/i })).toBeNull()
   })

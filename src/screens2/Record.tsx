@@ -1,4 +1,5 @@
 import '../styles/record.css'
+import { Link } from 'wouter'
 import { DataStatus } from './parts/DataStatus'
 // Record (plan Task 20) — Track record: the engine's accountability as a
 // first-class tab. Scorecard tiles → calibration → the ledger as cards
@@ -59,7 +60,7 @@ type Scorecard = NonNullable<EngineData['scorecard']>
  * either as "Grade shadow"/"Grade wildcard" would invent a tier neither has
  * (same rule EnginePanel.tsx:120-125 reads for the legacy panel). */
 function tileLabel(key: string): string {
-  if (key === 'shadow') return 'Shadow book'
+  if (key === 'shadow') return 'Test ideas'
   if (key === 'wildcard') return WILDCARD_LABEL
   return `Grade ${key}`
 }
@@ -79,7 +80,7 @@ export function tierRank(key: string): number {
 
 function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
   if (!scorecard || scorecard.totalGraded === 0) {
-    return <p className="cc-reason">No graded predictions yet — the scorecard fills in as calls mature.</p>
+    return <p className="cc-reason">No completed prediction results yet. Results appear after each prediction’s tracking period ends.</p>
   }
   return (
     <section aria-label="Scorecard">
@@ -90,7 +91,7 @@ function ScorecardTiles({ scorecard }: { scorecard: Scorecard | null }) {
           purpose — so an unqualified "Scorecard" reads as the whole record when
           it is one partition of it. The cohort's own panel sits below. */}
       <p className="sec-label">
-        Equity — excess vs SPY · <span className="num">{scorecard.totalGraded}</span> graded
+        Stocks compared with the US market (SPY) · <span className="num">{scorecard.totalGraded}</span> graded
       </p>
       <GradeTable scorecard={scorecard} />
     </section>
@@ -115,9 +116,9 @@ function GradeTable({ scorecard }: { scorecard: Scorecard }) {
         <thead>
           <tr>
             <th>Tier</th>
-            <th>n</th>
-            <th>Hit</th>
-            <th>Avg excess</th>
+            <th>Results</th>
+            <th>Passed test</th>
+            <th>Avg difference</th>
           </tr>
         </thead>
         <tbody>
@@ -284,7 +285,7 @@ function CalibrationSection({ calibration }: { calibration: LearningSlice['calib
 function LedgerSection({ days }: { days: LedgerDay[] }) {
   return (
     <section aria-label="The ledger">
-      <p className="sec-label">The ledger — the receipts</p>
+      <p className="sec-label">Daily prediction results</p>
       <LedgerDayCards days={days} />
     </section>
   )
@@ -306,9 +307,9 @@ export default function Record() {
   const { best, worst } = bestAndWorst(days)
   return (
     <div className="rec2">
-      <h1>Track record</h1>
+      <h1>Results</h1><p className="cc-reason">How our published predictions performed. For longer tests of different strategies, open <Link href="/today?view=results">Compare strategies with the market</Link>.</p>
       {learning == null ? (
-        <DataStatus label="Track record" error={learningError} refresh={learningRefresh} refreshing={learningRefreshing} />
+        <DataStatus label="Results" error={learningError} refresh={learningRefresh} refreshing={learningRefreshing} />
       ) : (
         <>
           <ScorecardTiles scorecard={learning.scorecard as unknown as Scorecard | null} />
@@ -321,10 +322,10 @@ export default function Record() {
       {/* the line and the two ends sit BETWEEN the tiles and the calibration:
           the tiles say what each tier did, this says what the whole book did,
           and the plot says whether the probabilities behind it were honest */}
-      {ledger ? <CumulativeLine points={series} days={LEDGER_DAYS} /> : <DataStatus label="Published calls" error={ledgerError} refresh={ledgerRefresh} refreshing={ledgerRefreshing} />}
+      {ledger ? <details className="company-detail"><summary>See the evidence: results over time</summary><CumulativeLine points={series} days={LEDGER_DAYS} /></details> : <DataStatus label="Published calls" error={ledgerError} refresh={ledgerRefresh} refreshing={ledgerRefreshing} />}
       {paperBook ? <PaperBookPanel data={paperBook} /> : <DataStatus label="Paper book" error={paperBookError} refresh={paperBookRefresh} refreshing={paperBookRefreshing} />}
       <ExtremesSection best={best} worst={worst} />
-      {learning != null && <CalibrationSection calibration={learning.calibration} />}
+      {learning != null && <details className="company-detail"><summary>See the evidence: prediction accuracy</summary><CalibrationSection calibration={learning.calibration} /></details>}
       {ledger && <LedgerSection days={days} />}
       <Regrets regrets={learning?.regrets ?? null} />
     </div>

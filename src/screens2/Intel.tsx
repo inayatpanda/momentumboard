@@ -384,7 +384,7 @@ export default function Intel() {
   return (
     <div className="itl">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
-      <h1>Intel</h1>
+      <h1>News & activity</h1>
       <div className="itl-tabs" role="tablist" aria-label="Intel views">
         <button type="button" role="tab" aria-selected={view === 'markets'} className={view === 'markets' ? 'active' : ''} onClick={() => selectView('markets')}>Markets</button>
         <button type="button" role="tab" aria-selected={view === 'social'} className={view === 'social' ? 'active' : ''} onClick={() => selectView('social')}>Social Radar</button>

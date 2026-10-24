@@ -86,10 +86,10 @@ describe('rowKind', () => {
 
 describe('unsizedReason', () => {
   it('gives each unsized kind its own sentence, and never a grade or a probability', () => {
-    expect(unsizedReason('near-miss')).toBe('Nearest miss — cleared no gate, so no grade, no probability and no size.')
-    expect(unsizedReason('observation')).toBe('Cleared every gate, but no ISA route — observation only, no size.')
-    expect(unsizedReason('watch')).toBe('Watch — no size yet.')
-    expect(unsizedReason('watch', true)).toBe('Tracking — below its own historical hit rate today, no size yet.')
+    expect(unsizedReason('near-miss')).toBe('Close to qualifying, but did not pass the required checks. No trade plan or probability estimate.')
+    expect(unsizedReason('observation')).toBe('Passed the checks, but no suitable ISA investment is available. Watching only.')
+    expect(unsizedReason('watch')).toBe('Watching only. No trade plan yet.')
+    expect(unsizedReason('watch', true)).toBe('Watching only. The estimated success rate is below its usual level.')
   })
 
   it('has nothing to say about a sized row — that one carries its grade instead', () => {

@@ -48,14 +48,14 @@ describe('More', () => {
     expect(screen.getByText('The engine')).toBeInTheDocument()
     expect(screen.getByText('Reading')).toBeInTheDocument()
     expect(screen.getByText('App')).toBeInTheDocument()
-    expect(screen.getByText('Gates & learning')).toBeInTheDocument()
-    expect(screen.getByText('The street')).toBeInTheDocument()
+    expect(screen.getByText('How predictions work')).toBeInTheDocument()
+    expect(screen.getByText('YouTube & social')).toBeInTheDocument()
     expect(screen.getByText('Research')).toBeInTheDocument()
     expect(screen.getByText('Calendar')).toBeInTheDocument()
     expect(screen.getByText('Settings')).toBeInTheDocument()
   })
 
-  // Owner (2026-08-17, with a screenshot): "Gates & learning is present twice,
+  // Owner (2026-08-17, with a screenshot): "How predictions work is present twice,
   // outside and inside More." Nothing may be listed twice on one screen: the
   // Reading group holds exactly the rail-promoted pages, so at rail widths CSS
   // hides that whole group (jsdom applies no stylesheet — the class the media
@@ -64,22 +64,22 @@ describe('More', () => {
     render(<Harness path="/app/more" />)
     const reading = screen.getByText('Reading').closest('.menu-group')!
     expect(reading).toHaveClass('on-rail')
-    // The street joined that group (owner 2026-08-17) the same way the others
-    // did. Gates & learning is DEMOTED from the rail — More is its only home,
+    // YouTube & social joined that group (owner 2026-08-17) the same way the others
+    // did. How predictions work is DEMOTED from the rail — More is its only home,
     // so its group must stay visible at every width; App likewise
     expect(screen.getByText('The engine').closest('.menu-group')!).not.toHaveClass('on-rail')
     expect(screen.getByText('App').closest('.menu-group')!).not.toHaveClass('on-rail')
   })
 
-  it('navigates to Gates & learning, Research, Calendar and Settings', () => {
+  it('navigates to How predictions work, Research, Calendar and Settings', () => {
     render(<Harness path="/app/more" />)
-    fireEvent.click(screen.getByText('Gates & learning'))
+    fireEvent.click(screen.getByText('How predictions work'))
     expect(screen.getByRole('heading', { name: 'Gates stub' })).toBeInTheDocument()
   })
 
-  it('navigates to The street', () => {
+  it('navigates to YouTube & social', () => {
     render(<Harness path="/app/more" />)
-    fireEvent.click(screen.getByText('The street'))
+    fireEvent.click(screen.getByText('YouTube & social'))
     expect(screen.getByRole('heading', { name: 'Street stub' })).toBeInTheDocument()
   })
 

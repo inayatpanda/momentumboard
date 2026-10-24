@@ -1,8 +1,8 @@
-// The shared pick row (The street page + Today's strip). Today.test.tsx already
+// The shared pick row (YouTube & social page + Today's strip). Today.test.tsx already
 // pins the STRIP's whole contract — the honesty rules, the grade law, the coin
 // alias — through ChannelPicksStrip, and those tests now exercise this row
 // underneath. What is tested here is only what the extraction ADDED: the
-// detailed rendering The street page asks for, which the home screen must not
+// detailed rendering YouTube & social page asks for, which the home screen must not
 // grow by accident.
 
 import { render, screen } from '@testing-library/react'
@@ -77,7 +77,7 @@ describe('ChannelPickRow', () => {
   })
 
   // the home screen's strip was ratified thin, and stays thin: the names and
-  // the flip chip are The street page's, not Today's
+  // the flip chip are YouTube & social page's, not Today's
   it('keeps the undetailed row exactly as the home screen has it', () => {
     withRouter(<ChannelPickRow pick={mkPick({ channels: 4, channelNames: ['Josh', 'Gareth'], shifted: true })} row={undefined} open={undefined} />)
     expect(screen.getByText(/from 4 channels/)).toBeInTheDocument()

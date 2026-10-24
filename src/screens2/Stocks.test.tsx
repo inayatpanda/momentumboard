@@ -193,7 +193,7 @@ describe('Stocks', () => {
     withRouter()
     const line = document.querySelector('.session-line')
     expect(line?.textContent).toMatch(/^US /)
-    expect(line?.textContent).not.toContain('board struck')
+    expect(line?.textContent).not.toContain('updated')
   })
 
   // WIRED REFRESH (dynamism wave). This screen's slices all live in children,
@@ -375,8 +375,8 @@ describe('Stocks', () => {
       const w = wire()
       expect(within(w).getByText('BTC-USD')).toBeInTheDocument()
       expect(within(w).getByText('ETH-USD')).toBeInTheDocument()
-      expect(within(w).getByText(/fourteen crypto bars/i)).toBeInTheDocument()
-      expect(within(w).getByText(/observation first/i)).toBeInTheDocument()
+      expect(within(w).getByText(/14 price periods/i)).toBeInTheDocument()
+      expect(within(w).getByText(/cannot be held directly in an ISA/i)).toBeInTheDocument()
     })
 
     it('paints both pairs off ONE crypto quotes slice, and links each to its journey page', async () => {
@@ -410,28 +410,28 @@ describe('Stocks', () => {
       withRouter()
       fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       await screen.findByRole('region', { name: 'Crypto wire' })
-      expect(await within(wire()).findByText(/only speaks when a coin sets up/i)).toBeInTheDocument()
+      expect(await within(wire()).findByText(/No crypto ideas met the checks/i)).toBeInTheDocument()
     })
 
-    it('says there is no board yet when the slice resolved without one — not "the lane is quiet"', async () => {
+    it('says there is No predictions published yet when the slice resolved without one — not "the lane is quiet"', async () => {
       await writeSlice('board', { ...mkBoardSlice([]), board: null })
       withRouter()
       fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       await screen.findByRole('region', { name: 'Crypto wire' })
-      expect(await within(wire()).findByText(/no board yet/i)).toBeInTheDocument()
-      expect(within(wire()).queryByText(/only speaks when a coin sets up/i)).not.toBeInTheDocument()
+      expect(await within(wire()).findByText(/No predictions published yet/i)).toBeInTheDocument()
+      expect(within(wire()).queryByText(/No crypto ideas met the checks/i)).not.toBeInTheDocument()
     })
 
     // THE ROW-KIND LAW, unchanged by which screen renders it: a near miss
     // cleared no gate, so it carries no letter, no probability and no size.
-    it('a crypto nearest miss shows its own reason and NO grade, probability or size', async () => {
+    it('a crypto Close to qualifying shows its own reason and NO grade, probability or size', async () => {
       await writeSlice('board', mkBoardSlice([mkRow({ sym: 'BTC-USD', cohort: 'crypto', watchOnly: true, nearMiss: true })]))
       withRouter()
       fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       await screen.findByRole('region', { name: 'Crypto wire' })
       const w = wire()
-      expect(await within(w).findByText(/nearest miss/i)).toBeInTheDocument()
-      expect(within(w).getByText(/no grade, no probability and no size/i)).toBeInTheDocument()
+      expect(await within(w).findByText(/Close to qualifying/i)).toBeInTheDocument()
+      expect(within(w).getByText(/No trade plan or probability estimate/i)).toBeInTheDocument()
       expect(within(w).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
       expect(within(w).queryByText(/61%/)).not.toBeInTheDocument()
       expect(within(w).queryByText(/risk 1\.25%/)).not.toBeInTheDocument()
@@ -444,7 +444,7 @@ describe('Stocks', () => {
       fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       await screen.findByRole('region', { name: 'Crypto wire' })
       const w = wire()
-      expect(await within(w).findByText(/watch — no size yet/i)).toBeInTheDocument()
+      expect(await within(w).findByText(/Watching only. No trade plan yet./i)).toBeInTheDocument()
       expect(within(w).queryByLabelText(/^Grade /)).not.toBeInTheDocument()
     })
 
@@ -466,7 +466,7 @@ describe('Stocks', () => {
       withRouter()
       fireEvent.click(screen.getByRole('tab', { name: 'Markets' }))
       await screen.findByRole('region', { name: 'Crypto wire' })
-      expect(await within(wire()).findByText(/nearest miss/i)).toBeInTheDocument()
+      expect(await within(wire()).findByText(/Close to qualifying/i)).toBeInTheDocument()
     })
   })
 

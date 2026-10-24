@@ -30,8 +30,8 @@ export const ROUTES: readonly RouteDef[] = [
   { path: '/stocks/movers', key: 'stocks', component: lazy(() => import('../screens2/Movers')) },
   { path: '/stocks/sectors', key: 'stocks', component: lazy(() => import('../screens2/Sectors')) },
   { path: '/stock/:sym', key: 'stocks', component: lazy(() => import('../screens2/StockPage')) as RouteDef['component'] },
-  { path: '/intel', key: 'intel', label: 'Intel', component: lazy(() => import('../screens2/Intel')) },
-  { path: '/record', key: 'record', label: 'Track record', component: lazy(() => import('../screens2/Record')) },
+  { path: '/intel', key: 'intel', label: 'News', component: lazy(() => import('../screens2/Intel')) },
+  { path: '/record', key: 'record', label: 'Results', component: lazy(() => import('../screens2/Record')) },
   // ANALYTICS, on the rail only for now: the screen is routed and reachable at
   // ≥1024px, and the phone's ratified five are untouched until the tab lands.
   { path: '/analytics', key: 'more', label: 'Analytics', railOnly: true, component: lazy(() => import('../screens2/Analytics')) },
@@ -42,10 +42,10 @@ export const ROUTES: readonly RouteDef[] = [
   // fresh tab in that slot ("move… just the Today paper"), and then The street
   // added ("all in a new page/tab altogether") — FIRST of the four, because it
   // is the one the reader will open most.
-  { path: '/more/street', key: 'more', label: 'The street', railOnly: true, component: lazy(() => import('../screens2/Street2')) },
+  { path: '/more/street', key: 'more', label: 'YouTube & social', railOnly: true, component: lazy(() => import('../screens2/Street2')) },
   { path: '/more/research', key: 'more', label: 'Research', railOnly: true, component: lazy(() => import('../screens2/Research2')) },
   { path: '/more/calendar', key: 'more', label: 'Calendar', railOnly: true, component: lazy(() => import('../screens2/Calendar2')) },
-  { path: '/more/paper', key: 'more', label: 'The paper', railOnly: true, component: lazy(() => import('../screens2/Paper2')) },
+  { path: '/more/paper', key: 'more', label: 'Daily report', railOnly: true, component: lazy(() => import('../screens2/Paper2')) },
   { path: '/more/gates', key: 'more', component: lazy(() => import('../screens2/GatesLearning')) },
   { path: '/more', key: 'more', label: 'More', component: lazy(() => import('../screens2/More')) },
   { path: '/settings', key: 'more', component: lazy(() => import('../screens2/Settings')) },

@@ -82,7 +82,7 @@ function OnDemandRead({ sym, openTrace }: { sym: string; openTrace?: OpenTraceEn
         Ask the desk
       </button>
       <AskSheet open={askOpen} onClose={() => setAskOpen(false)} sym={sym} verdict={data} openTrace={openTrace} />
-      <details className="company-detail"><summary>How this view was formed</summary><FactorVotes computed={data.computed} nulls={data.nulls} />
+      <details className="company-detail"><summary>See the evidence: why this view</summary><FactorVotes computed={data.computed} nulls={data.nulls} />
       <section aria-label="The funnel path">
         <p className="sec-label">The funnel path</p>
         <p className="cc-reason">Not in today's scan universe — the engine never put this name through its gates, so there is no path to show.</p>
@@ -274,7 +274,7 @@ export default function StockPage({ sym }: { sym: string }) {
         {candles.length > 1 ? (
           <Suspense fallback={<div className="skeleton sp-chart-skel" />}>
             <PriceChart candles={candles} priceLines={priceLines} height={260} interactive intraday={intradayRange} initialDisplay="line" />
-            <details className="company-detail"><summary>Momentum indicator · RSI</summary><RsiChart candles={candles} intraday={intradayRange} /></details>
+            <details className="company-detail"><summary>See the evidence: price momentum (RSI)</summary><RsiChart candles={candles} intraday={intradayRange} /></details>
           </Suspense>
         ) : chartError ? (
           <p role="alert">The price chart could not be loaded. <button onClick={retryChart}>Retry chart</button></p>
@@ -314,7 +314,7 @@ export default function StockPage({ sym }: { sym: string }) {
             openTrace={journey?.openTrace}
           />
           {/* 3 — the factor votes */}
-          <details className="company-detail"><summary>How this view was formed</summary><FactorVotes factors={row?.factors} /></details>
+          <details className="company-detail"><summary>See the evidence: why this view</summary><FactorVotes factors={row?.factors} /></details>
         </>
       )}
 

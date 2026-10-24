@@ -6,7 +6,7 @@ const PERIODS: Record<ReportPeriodKind, string> = { annual: 'Annual', quarter: '
 const CHARTS: { key: ReportTrendMetric; label: string; unit: '%' | 'pp' }[] = [
   { key: 'revenueGrowthPct', label: 'Revenue growth', unit: '%' },
   { key: 'netMarginChangePp', label: 'Margin change', unit: 'pp' },
-  { key: 'operatingCashFlowMarginChangePp', label: 'Cash conversion', unit: 'pp' },
+  { key: 'operatingCashFlowMarginChangePp', label: 'Cash flow margin change', unit: 'pp' },
 ]
 const finite = (n: number | null | undefined): n is number => n != null && Number.isFinite(n)
 const value = (n: number | null | undefined, unit = '%') => finite(n) ? `${n >= 0 ? '+' : ''}${n.toFixed(1)}${unit}` : 'Unavailable'
@@ -56,7 +56,7 @@ export function ReportHistoryPanel({ snapshot }: { snapshot: BusinessHealthSnaps
     ? `https://www.sec.gov/Archives/edgar/data/${snapshot.cik}/${selected.accession.replace(/-/g, '')}/${selected.accession}-index.html` : null
 
   return <div className="report-history" aria-label="Report history and business trajectory">
-    <div className="dossier-section-head"><div><span className="dossier-eyebrow">Business memory</span><h3>How the business is changing</h3></div><span className={`report-status ${trend.status}`}>{trend.status === 'insufficient' ? 'Building history' : trend.status}</span></div>
+    <div className="dossier-section-head"><div><span className="dossier-eyebrow">Past company reports</span><h3>How the business is changing</h3></div><span className={`report-status ${trend.status}`}>{trend.status === 'insufficient' ? 'Building history' : trend.status}</span></div>
     <p className="dossier-caption">{history.length ? `${trend.observations} dated reports · ${trend.comparisonN} with comparable operating evidence` : 'Historical filings are not available for this company yet.'}</p>
     {history.length > 0 && <>
       <div className="report-toolbar">
@@ -70,18 +70,18 @@ export function ReportHistoryPanel({ snapshot }: { snapshot: BusinessHealthSnaps
         {points.map(point => <button type="button" key={point.periodEnd} aria-pressed={point.periodEnd === selected?.periodEnd} onClick={() => setSelectedEnd(point.periodEnd)}><span>{shortDate(point.periodEnd)}</span><small>Filed {point.filed.slice(5)}</small></button>)}
       </div>
       {selected && <div className="report-selected" aria-live="polite">
-        <div className="report-selected-head"><b>{PERIODS[selected.periodKind]} report · {selected.periodEnd}</b><span>Known from {new Date(selected.availableAt * 1000).toLocaleDateString('en-GB', { timeZone: 'UTC' })}{reportUrl && <> · <a href={reportUrl} target="_blank" rel="noreferrer">Original filing ↗</a></>}</span></div>
+        <div className="report-selected-head"><b>{PERIODS[selected.periodKind]} report · {selected.periodEnd}</b><span>Known from {new Date(selected.availableAt * 1000).toLocaleDateString('en-GB', { timeZone: 'UTC' })}{reportUrl && <> · <a href={reportUrl} target="_blank" rel="noreferrer">Original report ↗</a></>}</span></div>
         <dl className="report-metrics">
           <div><dt>Revenue growth</dt><dd>{value(selected.metrics.revenueGrowthPct)}</dd><small>vs comparable prior year</small></div>
           <div><dt>Profit margin change</dt><dd>{value(selected.metrics.netMarginChangePp, 'pp')}</dd><small>vs comparable prior year</small></div>
           <div><dt>Operating cash margin</dt><dd>{value(selected.metrics.operatingCashFlowMarginChangePp, 'pp')}</dd><small>{selected.cashFlowPeriodKind ? PERIODS[selected.cashFlowPeriodKind] : 'Unknown period'} · vs prior year</small></div>
-          <div><dt>Diluted share growth</dt><dd>{value(selected.metrics.shareCountChangePct)}</dd><small>same-filing comparison</small></div>
+          <div><dt>Change in share count</dt><dd>{value(selected.metrics.shareCountChangePct)}</dd><small>same-filing comparison</small></div>
         </dl>
         <p className="dossier-caption">Financial screen at publication: <b>{selected.financialHealth}</b>. {selected.gaps.length > 0 ? `${selected.gaps.length} evidence gaps remain.` : 'Reported measures were available at the saved cutoff.'}</p>
         {selected.gaps.length > 0 && <details className="report-gaps"><summary>Evidence gaps in this report</summary><ul>{selected.gaps.map((gap, i) => <li key={i}>{gap}</li>)}</ul></details>}
       </div>}
     </>}
     <p className="report-method">Each point uses information available at that filing date. Growth compares like reporting windows with the prior year; quarter and year-to-date amounts are kept separate. Historical improvement does not establish a future return.</p>
-    <details className="report-gaps"><summary>How this trajectory is assessed</summary><ul>{[...trend.reasons, ...trend.gaps].map((reason, i) => <li key={i}>{reason}</li>)}</ul></details>
+    <details className="report-gaps"><summary>See the evidence: how we assess the trend</summary><ul>{[...trend.reasons, ...trend.gaps].map((reason, i) => <li key={i}>{reason}</li>)}</ul></details>
   </div>
 }

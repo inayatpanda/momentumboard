@@ -7,7 +7,7 @@
 // see also the old src/components/EngineBoard.tsx:239) without importing
 // from it or editing it. Two different surfaces, two copies of one idea, by
 // design — the paper's prose stays the paper's own.
-export const NO_SIZED_TODAY = 'Nothing sized today. The engine scanned, and nothing cleared its gates.'
+export const NO_SIZED_TODAY = 'No trade plans today. The scan found no ideas that passed all the required checks.'
 
 /** …AND THE OBSERVATION-ONLY DAY, which is a different fact told with the same
  * sentence until now (T13a). A board carrying observations and watch rows has
@@ -16,12 +16,12 @@ export const NO_SIZED_TODAY = 'Nothing sized today. The engine scanned, and noth
  * cleared its gates" above three such rows contradicts the list underneath it,
  * in the reader's own field of view, about the one thing this app sells: that
  * the engine says what actually happened. */
-export const NO_SIZED_NO_ROUTE = 'Nothing sized today — what cleared the gates has no route an ISA can take.'
+export const NO_SIZED_NO_ROUTE = 'No trade plans today. Some ideas are still being watched, or have no suitable ISA investment available.'
 
 /** The slice resolved and there IS no board (a cold store, or a weekday
  * morning before the engine's run) — said out loud, never a skeleton that
  * looks hung (walkthrough finding A1). */
-export const NO_BOARD_YET = 'No board yet — the engine publishes on weekday mornings.'
+export const NO_BOARD_YET = 'No predictions published yet. Check again after the weekday morning update.'
 
 /** THE CRYPTO WIRE'S STANDING LINE (owner, 2026-08-17: "i dont see any crpto
  * information anywhere"). Every crypto number in this app was struck on a
@@ -37,9 +37,9 @@ export const NO_BOARD_YET = 'No board yet — the engine publishes on weekday mo
  * unless a tracker route happens to be configured for the pair, which is why
  * the lane's rows carry `paperOnly`. */
 export const CRYPTO_BASIS =
-  'Graded apart — the move itself over fourteen crypto bars, absolute, nothing subtracted. An ISA cannot hold a coin, so the lane is observation first.'
+  'Crypto results are measured separately over 14 price periods, without a stock-market comparison. Coins cannot be held directly in an ISA.'
 
 /** …and the day the board carries no coin at all. The wire still renders: a
  * lane that vanishes when it is quiet is how crypto became invisible in an app
  * that prices it every morning. */
-export const NO_CRYPTO_TODAY = "No crypto read on today's board — the lane only speaks when a coin sets up."
+export const NO_CRYPTO_TODAY = "No crypto ideas met the checks in today’s scan."

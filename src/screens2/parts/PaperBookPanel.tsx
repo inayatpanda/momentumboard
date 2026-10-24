@@ -11,25 +11,25 @@ export function PaperBookPanel({ data }: { data: PaperBookSlice | null | undefin
   if (!book) {
     return (
       <section aria-label="Paper book" className="paper-book-panel">
-        <p className="sec-label">Paper book · execution reality</p>
-        <p className="cc-reason">The mock book has not completed its first run yet.</p>
+        <p className="sec-label">Practice portfolio</p>
+        <p className="cc-reason">The practice portfolio has not completed its first update yet.</p>
       </section>
     )
   }
   const s = paperBookStats(book)
   const tiles = [
-    ['Equity', money(s.equity), `${signed(s.returnPct)} this month`],
-    ['Maximum drawdown', `${s.maxDrawdownPct.toFixed(1)}%`, 'peak-to-trough'],
+    ['Portfolio value', money(s.equity), `${signed(s.returnPct)} this month`],
+    ['Biggest fall', `${s.maxDrawdownPct.toFixed(1)}%`, 'from its highest value'],
     ['Win rate', s.winRate == null ? '—' : `${Math.round(s.winRate * 100)}%`, `${s.wins} wins · ${s.losses} losses`],
     ['Profit factor', s.profitFactor == null ? '—' : s.profitFactor === Infinity ? '∞' : s.profitFactor.toFixed(2), 'gross wins ÷ gross losses'],
-    ['Expectancy', s.expectancyGBP == null ? '—' : money(s.expectancyGBP), 'average per closed trade'],
-    ['Exposure', `${s.exposurePct.toFixed(1)}%`, `${book.positions.length} open`],
+    ['Average gain or loss', s.expectancyGBP == null ? '—' : money(s.expectancyGBP), 'average per closed trade'],
+    ['Money invested', `${s.exposurePct.toFixed(1)}%`, `${book.positions.length} open`],
     ['Turnover', `${s.turnover.toFixed(1)}×`, 'capital deployed'],
   ]
   return (
     <section aria-label="Paper book" className="paper-book-panel">
-      <p className="sec-label">Paper book · execution reality</p>
-      <p className="cc-reason">The forecast is only useful if its simulated entries, stops and sizing survive contact with execution.</p>
+      <p className="sec-label">Practice portfolio</p>
+      <p className="cc-reason">A simulation using pretend money, planned entry prices and loss limits. No real trades are placed.</p>
       <div className="paper-book-grid">
         {tiles.map(([label, value, detail]) => (
           <div className="card paper-book-stat" key={label}>
@@ -50,10 +50,10 @@ export function PaperBookPanel({ data }: { data: PaperBookSlice | null | undefin
       )}
       {data.months.length > 0 && (
         <p className="paper-book-history">
-          Banked months: {data.months.slice(-4).reverse().map(m => `${m.month} ${signed(m.returnPct)}`).join(' · ')}
+          Completed months: {data.months.slice(-4).reverse().map(m => `${m.month} ${signed(m.returnPct)}`).join(' · ')}
         </p>
       )}
-      <p className="cc-reason paper-book-note">Mock capital only. Drawdown and expectancy matter more than a few spectacular winners.</p>
+      <p className="cc-reason paper-book-note">Pretend money only. Check losses and average results as well as the winners.</p>
     </section>
   )
 }

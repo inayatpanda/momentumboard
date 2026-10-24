@@ -58,7 +58,7 @@
 .v2 .research-state { font-size: 10px; color: var(--text-dim); }
 .v2 .research-state.setup { color: var(--long); }
 .v2 .research-state.avoid { color: var(--short); }
-.v2 .research-card-identity { display: flex; align-items: center; gap: 9px; }
+.v2 .research-card-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
 .v2 .research-card-identity h3 { font-size: 25px; letter-spacing: -.035em; margin: 0; line-height: 1.2; }
 .v2 .research-rank { margin-left: auto; color: var(--text-dim); font-size: 10px; }
 .v2 .research-thesis { font-size: 14px; line-height: 1.65; margin: 17px 0 20px; overflow-wrap: anywhere; }
@@ -308,3 +308,13 @@
 .history-filters button[aria-pressed="true"] { background: var(--accent); color: white; border-color: var(--accent); }
 .history-evidence { border-top: 1px solid var(--border); margin-top: 1rem; }
 .history-evidence h5 { font-size: .9rem; margin-bottom: .5rem; }
+
+/* Plain-language summaries remain readable at narrow phone widths. */
+@media (max-width: 480px) {
+  .history-card-heading { flex-direction: column; align-items: flex-start; gap: .4rem; }
+  .history-results dd { font-size: 1.15rem; }
+  .v2 .research-thesis, .v2 .research-risk p, .v2 .research-missing { font-size: 13px; line-height: 1.65; }
+}
+
+.v2 .cc-stock-link { display: block; color: inherit; text-decoration: none; }
+.v2 .cc-stock-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }

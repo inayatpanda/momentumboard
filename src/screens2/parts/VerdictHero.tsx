@@ -21,7 +21,7 @@ import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../../shared/engine/voice'
 import { CohortPill, WhySized } from './CohortMarks'
 import { RouteNote } from './RouteNote'
 
-const sideWord = (s: 'long' | 'short') => (s === 'long' ? 'Long' : 'Short')
+const sideWord = (s: 'long' | 'short') => (s === 'long' ? 'Expecting a rise' : 'Expecting a fall')
 
 // Which shape a row is, and the one line an unsized shape carries instead of a
 // grade, are ONE law shared with CallCard: src/lib/boardTaxonomy.ts. Two copies
@@ -31,7 +31,7 @@ const sideWord = (s: 'long' | 'short') => (s === 'long' ? 'Long' : 'Short')
  * labels themselves stay lower-case for the mid-sentence uses everywhere else. */
 const openWith = (label: string) => label.charAt(0).toUpperCase() + label.slice(1)
 
-const Q = <p className="sec-label">Would the engine trade it?</p>
+const Q = <p className="sec-label">What does StreetSignal think?</p>
 
 function Levels({ row }: { row: EnginePrediction }) {
   return (
@@ -100,23 +100,25 @@ export function VerdictHero({
       <>
         {Q}
         <div className="sp-hero-top">
-          <span className={`sp-side ${row.side}`}>Yes — {sideWord(row.side)}</span>
+          <span className={`sp-side ${row.side}`}>{sideWord(row.side)}</span>
           <CohortPill cohort={row.cohort} />
           <span className="pill accent" aria-label={`Grade ${row.grade}`}>
             {row.grade}
           </span>
         </div>
+        {row.thesis && <p className="sp-thesis">{row.thesis}</p>}
+        {wildcard}
+        <details className="company-detail"><summary>See the evidence</summary>
         <span className="num sp-prob">
-          {Math.round(row.probability * 100)}% · ~{row.expectedMovePct}%
+          Estimated success: {Math.round(row.probability * 100)}% · expected move: ~{row.expectedMovePct}%
         </span>
         <div className="convbar">
           <i style={{ width: `${conviction}%` }} />
         </div>
         <div className="cc-meta">
-          <span>conviction</span>
+          <span>Research score</span>
           <span className="num">{Math.round(Math.abs(row.composite))}</span>
         </div>
-        {wildcard}
         <Levels row={row} />
         <p className="cc-reason num">
           risk {fmtRiskPct(row.riskPct)}%
@@ -130,7 +132,7 @@ export function VerdictHero({
             like this — its 14-bar calibration, the cold start, the designed
             C-at-half-size floor, the missing tracker (parts/CohortMarks.tsx) */}
         <WhySized cohort={row.cohort} note={row.note} />
-        {row.thesis && <p className="sp-thesis">{row.thesis}</p>}
+        </details>
       </>,
     )
   }
@@ -151,7 +153,7 @@ export function VerdictHero({
           <i style={{ width: `${Math.max(0, Math.min(100, Math.abs(row.composite)))}%` }} />
         </div>
         <div className="cc-meta">
-          <span>conviction</span>
+          <span>Research score</span>
           <span className="num">{Math.round(Math.abs(row.composite))}</span>
         </div>
         {/* a near miss's levels are synthetic orientation, not a designed
@@ -159,7 +161,7 @@ export function VerdictHero({
         {!row.nearMiss && (
           <>
             <Levels row={row} />
-            <p className="cc-reason">Levels for orientation only — the engine did not size this row.</p>
+            <p className="cc-reason">Illustrative prices only. No trade allocation has been made.</p>
           </>
         )}
       </>,
@@ -179,12 +181,12 @@ export function VerdictHero({
         {refusal.row.detail && <p className="sp-refuse-detail">{refusal.row.detail}</p>}
         {refusal.row.core != null && (
           <div className="cc-meta sp-core">
-            <span className="sp-core-label">core</span>
+            <span className="sp-core-label">Research score</span>
             <b className="num">{refusal.row.core.toFixed(1)}</b>
           </div>
         )}
         <p className="cc-reason">
-          Refused on <span className="num">{refusal.date}</span> — a candidate a gate turned away never earned a letter or a calibrated read, so it has neither.
+          Checked on <span className="num">{refusal.date}</span>. It did not qualify, so no grade or probability is shown.
         </p>
       </>,
     )
@@ -202,7 +204,7 @@ export function VerdictHero({
         <p className="sp-verdict-line">
           {openWith(GATE_LABELS[published.gate])} on <span className="num">{published.date}</span> — not on today's board.
         </p>
-        <p className="cc-reason">That call belongs to its own day. Today the engine is not publishing this name, so there is no grade to print here — the call itself is below, in past calls.</p>
+        <p className="cc-reason">There is no new prediction for this stock today. Its earlier prediction is saved below.</p>
       </>,
     )
   }
@@ -213,9 +215,9 @@ export function VerdictHero({
     return shell(
       <>
         {Q}
-        <p className="sp-verdict-line">Nearest miss today — the engine looked, and this came closest without a call.</p>
+        <p className="sp-verdict-line">Close to qualifying, but no prediction was published.</p>
         <p className="cc-reason">
-          Recorded on <span className="num">{nearMissDate}</span> — no gate cleared, so no grade, no probability and no size.
+          Recorded on <span className="num">{nearMissDate}</span> — the required checks were not met. No trade plan or probability estimate.
         </p>
       </>,
     )
@@ -235,24 +237,24 @@ export function VerdictHero({
           // rather than publishing a lean nothing ever measured. NOT the
           // "could not price this name" sentence: the lane prices this pair
           // every morning, and the note below says which door to use.
-          <p className="sp-verdict-line">Not read here — this pair belongs to the crypto lane.</p>
+          <p className="sp-verdict-line">This asset is assessed separately in the crypto section.</p>
         ) : verdict.unavailable ? (
-          <p className="sp-verdict-line">No read available — the engine could not price this name right now.</p>
+          <p className="sp-verdict-line">No view available. A current price could not be found.</p>
         ) : (
           <>
             <div className="sp-hero-top">
-              <span className={`sp-side ${verdict.lean === 'none' ? 'flat' : verdict.lean}`}>{verdict.lean === 'none' ? 'No lean' : `Leans ${sideWord(verdict.lean)}`}</span>
+              <span className={`sp-side ${verdict.lean === 'none' ? 'flat' : verdict.lean}`}>{verdict.lean === 'none' ? 'No clear direction' : sideWord(verdict.lean)}</span>
             </div>
             {verdict.core != null && (
               <div className="cc-meta sp-core">
-                <span className="sp-core-label">core</span>
+                <span className="sp-core-label">Research score</span>
                 <b className="num">{verdict.core.toFixed(1)}</b>
               </div>
             )}
             <p className="cc-reason num">
               {computed} factor{computed === 1 ? '' : 's'} computed
             </p>
-            <p className="cc-reason">no calibrated grade — on-demand read</p>
+            <p className="cc-reason">Quick assessment only; no tested success estimate</p>
           </>
         )}
         <p className="sp-note">{verdict.note}</p>
@@ -270,7 +272,7 @@ export function VerdictHero({
     return shell(
       <>
         {Q}
-        <p className="sp-verdict-line">No read today — the engine neither called this name nor recorded a gate turning it away.</p>
+        <p className="sp-verdict-line">No assessment recorded for this stock today.</p>
       </>,
     )
   }

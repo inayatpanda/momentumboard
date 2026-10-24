@@ -147,7 +147,7 @@ function GateCard({ gate }: { gate: GateStructuredEntry }) {
 function GatesSection({ gates }: { gates: GateStructuredEntry[] }) {
   return (
     <section aria-label="Gates">
-      <p className="sec-label">The gates</p>
+      <p className="sec-label">Checks before publishing</p>
       <div className="gl-gates">
         {gates.map(g => (
           <GateCard gate={g} key={g.gate} />
@@ -161,7 +161,7 @@ function GateLinesSection({ lines }: { lines: LearningSlice['gateLines'] }) {
   if (!lines || (lines.moves.length === 0 && lines.notes.length === 0)) return null
   return (
     <section aria-label="The paper's own lines">
-      <p className="sec-label">What the paper has said about this</p>
+      <p className="sec-label">What the daily report says</p>
       <div className="gl-lines">
         {lines.moves.map((m, i) => (
           <blockquote key={`m${i}`} className="gl-line">
@@ -197,7 +197,7 @@ function WeightsSection({ weights }: { weights: LearningSlice['weights'] }) {
   const max = Math.max(1, ...keys.map(k => Math.max(weights.base[k] ?? 0, weights.current[k] ?? 0)))
   return (
     <section aria-label="Factor trust">
-      <p className="sec-label">Factor trust</p>
+      <p className="sec-label">How much each signal counts</p>
       <p className="cc-reason gl-intro">
         Each factor started at a weight the engine was launched with; the learning loop nudges that weight as priced outcomes arrive. The bars are launch
         (upper) against today (lower).
@@ -343,13 +343,12 @@ export default function GatesLearning() {
 
   return (
     <div className="gl2">
-      <h1>Gates &amp; learning</h1>
+      <h1>How predictions work</h1>
       {/* THE PAGE, IN TWO SENTENCES (owner iteration 2: "cant make anything out
           of it"). Everything below is a bar, a number or a date; without this
           the reader has no idea what any of it is FOR. */}
       <p className="cc-reason gl-page-intro">
-        The engine tunes its own strictness. Each gate below is a bar every candidate must clear; the engine may loosen or tighten them one notch at a
-        time when the priced record says so.
+        Every idea must pass a set of checks before it becomes a published prediction. Some checks can become stricter or looser as past results accumulate.
       </p>
       {data == null ? (
         <DataStatus label="Engine learning" error={error} refresh={refresh} refreshing={refreshing} />

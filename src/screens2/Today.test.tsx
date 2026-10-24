@@ -101,8 +101,8 @@ describe('CallCard', () => {
     withRouter(<CallCard row={mkRow({ provisional: true, paperOnly: true })} compact />)
     expect(screen.getByText('Planned entry')).toBeVisible()
     expect(screen.getByText('128.4')).toBeVisible()
-    expect(screen.getByText('Provisional')).toBeVisible()
-    expect(screen.getByText('Paper only')).toBeVisible()
+    expect(screen.getByText('Early estimate')).toBeVisible()
+    expect(screen.getByText('Practice only')).toBeVisible()
     expect(screen.getByRole('link')).toHaveAttribute('href', '/app/stock/NVDA')
     expect(screen.queryByLabelText(/^Probability/)).toBeNull()
   })
@@ -117,7 +117,7 @@ describe('CallCard', () => {
   it('renders a sized row: symbol, side word, grade pill, entry/stop/target as .num', () => {
     withRouter(<CallCard row={mkRow()} />)
     expect(screen.getByText('NVDA')).toBeInTheDocument()
-    expect(screen.getByText(/long/i)).toBeInTheDocument()
+    expect(screen.getByText(/Expecting a rise/i)).toBeInTheDocument()
     expect(screen.getByLabelText('Grade A')).toBeInTheDocument()
     expect(screen.getByLabelText(/^probability/i)).toBeInTheDocument()
     expect(screen.getByText('128.4')).toHaveClass('num')
@@ -138,23 +138,23 @@ describe('CallCard', () => {
       },
     })} />)
     const contract = screen.getByLabelText('Engine forecast contract')
-    expect(contract).toHaveTextContent('Main engine · 10 sessions')
+    expect(contract).toHaveTextContent('Main engine · 10 trading days')
     expect(contract).toHaveTextContent('target before stop')
-    expect(contract).toHaveTextContent('42 matured forecasts')
+    expect(contract).toHaveTextContent('42 completed forecasts')
   })
 
   it('a near-miss row shows no grade pill and no probability text', () => {
     withRouter(<CallCard row={mkRow({ nearMiss: true, watchOnly: true })} />)
     expect(screen.queryByLabelText(/^grade/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/^probability/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/nearest miss/i)).toBeInTheDocument()
+    expect(screen.getByText(/Close to qualifying/i)).toBeInTheDocument()
   })
 
   it('an observation row shows no grade pill and no probability text', () => {
     withRouter(<CallCard row={mkRow({ observation: true, watchOnly: true })} />)
     expect(screen.queryByLabelText(/^grade/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/^probability/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/no ISA route/i)).toBeInTheDocument()
+    expect(screen.getByText(/no suitable ISA investment/i)).toBeInTheDocument()
   })
 
   it('a plain watch-only row shows no grade pill and no probability text', () => {
@@ -362,7 +362,7 @@ describe('YesterdayStrip', () => {
 
   // THE PARTITION IN THE STRIP (crypto-v2 wave, finding 5). An equity verdict is
   // an excess over SPY across ten sessions; a cohort verdict is an absolute move
-  // across fourteen crypto bars. One line summing both means neither.
+  // across 14 price periods. One line summing both means neither.
   it('splits the verdicts when the day carried cohort rows', () => {
     withRouter(
       <YesterdayStrip
@@ -672,7 +672,7 @@ describe('ChannelPicksStrip', () => {
     expect(withRouter(<ChannelPicksStrip picks={[]} board={[]} openCalls={undefined} />).container).toBeEmptyDOMElement()
   })
 
-  it('renders the street’s read: symbol linked, bulls and bears in their own direction colours', () => {
+  it('renders YouTube & social’s read: symbol linked, bulls and bears in their own direction colours', () => {
     withRouter(<ChannelPicksStrip picks={[mkPick()]} board={[]} openCalls={undefined} />)
     expect(screen.getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
     expect(screen.getByText('3 bulls')).toHaveClass('cp-bull')
@@ -715,11 +715,11 @@ describe('ChannelPicksStrip', () => {
       />,
     )
     expect(screen.getByText('watch')).toBeInTheDocument()
-    expect(screen.getByText('nearest miss')).toBeInTheDocument()
+    expect(screen.getByText('Close to qualifying')).toBeInTheDocument()
     expect(screen.getByText('observation')).toBeInTheDocument()
     expect(screen.queryByLabelText(/^grade/i)).not.toBeInTheDocument()
     // …and the row-kind law's own sentence rides along, so the two can't drift
-    expect(screen.getByText('nearest miss')).toHaveAttribute('title', unsizedReason('near-miss'))
+    expect(screen.getByText('Close to qualifying')).toHaveAttribute('title', unsizedReason('near-miss'))
   })
 
   it('a wildcard row carries the experiment label and its standing warning', () => {
@@ -784,10 +784,10 @@ describe('Today', () => {
     await db.slices.put({ key: 'board', data, fetchedAt: Date.now() })
     withRouter(<Today />)
     const cockpit = await screen.findByLabelText('Decision cockpit')
-    expect(within(cockpit).getByText(/published calls/i)).toBeInTheDocument()
+    expect(within(cockpit).getByText(/published predictions/i)).toBeInTheDocument()
     expect(within(cockpit).queryByText(/2–3 sessions/i)).not.toBeInTheDocument()
     expect(within(cockpit).getByText(/NVDA short→long/)).toBeInTheDocument()
-    expect(within(cockpit).getByText(/Brier 0.210/)).toBeInTheDocument()
+    expect(within(cockpit).getByText(/Probability error \(Brier score\): 0.210/)).toBeInTheDocument()
     expect(within(cockpit).getByText(/long R2 \(n=18\).*short R1 \(n=9\)/i)).toBeInTheDocument()
   })
 
@@ -795,7 +795,7 @@ describe('Today', () => {
     await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() - 200_000 })
     withRouter(<Today />)
     expect(await screen.findByText('NVDA')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: /research desk/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: /your daily brief/i })).toBeInTheDocument()
   })
 
   // THE TIME-AWARENESS LINE (dynamism wave). The board has always carried its
@@ -808,7 +808,7 @@ describe('Today', () => {
     expect(await screen.findByText('NVDA')).toBeInTheDocument()
     const line = document.querySelector('.session-line')
     expect(line?.textContent).toMatch(/^US /)
-    expect(line?.textContent).toContain('board struck')
+    expect(line?.textContent).toContain('updated')
   })
 
   it('still says where the session stands on a morning with no board at all', async () => {
@@ -817,7 +817,7 @@ describe('Today', () => {
     expect(await screen.findByText(NO_BOARD_YET)).toBeInTheDocument()
     const line = document.querySelector('.session-line')
     expect(line?.textContent).toMatch(/^US /)
-    expect(line?.textContent).not.toContain('board struck')
+    expect(line?.textContent).not.toContain('updated')
   })
 
   // WIRED REFRESH (dynamism wave). `useSlice` has always returned refresh()
@@ -905,7 +905,7 @@ describe('Today', () => {
   // 2026-08-14 — a Friday, and permanently in the past — so the banner is the
   // honest read of it whenever this suite runs. parts/StaleBoardNote.test.tsx
   // pins the clock and covers the day arithmetic itself.
-  it('labels a board struck on an earlier day, above the cards', async () => {
+  it('labels a updated on an earlier day, above the cards', async () => {
     await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
     withRouter(<Today />)
     expect(await screen.findByText(/Friday's board \(14 Aug/)).toBeInTheDocument()
@@ -1068,7 +1068,7 @@ describe('Today', () => {
 })
 
 
-describe('Research desk hierarchy', () => {
+describe('Your daily brief hierarchy', () => {
   it('keeps published calls visible while letting readers open secondary intelligence', async () => {
     await db.slices.put({ key: 'board', data: mkBoardData([mkRow()]), fetchedAt: Date.now() })
     withRouter(<Today />)
@@ -1113,7 +1113,7 @@ describe('Mobile daily brief', () => {
     expect(screen.getByRole('region', { name: 'Research lab' })).toBeVisible()
     expect(screen.queryByRole('region', { name: 'Published and active calls' })).toBeNull()
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Research' }), { key: 'ArrowRight' })
-    expect(screen.getByRole('tab', { name: 'Learning' })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: 'Results' })).toHaveFocus()
     expect(screen.getByRole('region', { name: 'Historical learning' })).toBeVisible()
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
     fireEvent(window, new Event('resize'))

@@ -73,7 +73,7 @@ describe('SessionLine', () => {
 
   it('appends the board’s own stamp when the board slice carries one', () => {
     render(<SessionLine now={at('2026-08-17T15:00:00Z')} generatedAt={at('2026-08-17T05:42:00Z')} timeZone={LDN} />)
-    expect(screen.getByText('US market open · closes 21:00 · board struck 06:42')).toBeInTheDocument()
+    expect(screen.getByText('US market open · closes 21:00 · updated 06:42')).toBeInTheDocument()
   })
 
   it('ignores a missing or zero stamp rather than printing an epoch', () => {
@@ -86,7 +86,7 @@ describe('SessionLine', () => {
   // magnitude rule relativeStamp already uses applies here too.
   it('reads a seconds-unit stamp by magnitude, like every other stamp reader', () => {
     render(<SessionLine now={at('2026-08-17T15:00:00Z')} generatedAt={Math.floor(at('2026-08-17T05:42:00Z') / 1000)} timeZone={LDN} />)
-    expect(screen.getByText('US market open · closes 21:00 · board struck 06:42')).toBeInTheDocument()
+    expect(screen.getByText('US market open · closes 21:00 · updated 06:42')).toBeInTheDocument()
   })
 
   it('ticks on its own clock when none is injected, and clears the interval on unmount', () => {

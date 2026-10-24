@@ -1,4 +1,4 @@
-// Record (plan Task 20) — Track record: scorecard, calibration, the ledger
+// Record (plan Task 20) — Results: scorecard, calibration, the ledger
 // as cards, the regret surface. Same local-first pattern as Board.test.tsx/
 // StockPage.test.tsx: fetchers mocked to never resolve, every case paints
 // from a seeded Dexie slice.
@@ -108,9 +108,9 @@ beforeEach(async () => {
 })
 
 describe('Record', () => {
-  it('has a heading containing "Track record"', async () => {
+  it('has a heading containing "Results"', async () => {
     withRouter()
-    expect(await screen.findByRole('heading', { name: /track record/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /results/i })).toBeInTheDocument()
   })
 
   it('shows paper-book drawdown, expectancy, exposure and turnover without a wide table', async () => {
@@ -126,7 +126,7 @@ describe('Record', () => {
     await db.slices.put({ key: 'paper-book', data: paper, fetchedAt: Date.now() })
     withRouter()
     const panel = await screen.findByLabelText('Paper book')
-    for (const label of ['Maximum drawdown', 'Profit factor', 'Expectancy', 'Exposure', 'Turnover']) expect(within(panel).getByText(label)).toBeInTheDocument()
+    for (const label of ['Biggest fall', 'Profit factor', 'Average gain or loss', 'Money invested', 'Turnover']) expect(within(panel).getByText(label)).toBeInTheDocument()
     expect(within(panel).getByRole('link', { name: /NVDA/ })).toHaveAttribute('href', '/app/stock/NVDA')
     expect(panel.querySelector('table')).toBeNull()
   })
@@ -159,7 +159,7 @@ describe('Record', () => {
       expect(sc.querySelector('.rec-tiles')).toBeNull()
       const table = within(sc).getByLabelText('Per-grade record')
       expect(within(table).getByText('Grade A')).toBeInTheDocument()
-      expect(within(table).getByText('Shadow book')).toBeInTheDocument()
+      expect(within(table).getByText('Test ideas')).toBeInTheDocument()
       expect(within(table).getByText(/Wildcard/)).toBeInTheDocument()
       // never invents a tier neither key has
       expect(within(sc).queryByText('Grade shadow')).not.toBeInTheDocument()
@@ -176,8 +176,8 @@ describe('Record', () => {
       await seedLearning(mkLearning({ scorecard: { byGrade: { A: { n: 2, hits: 1, sumExcess: 3 } }, byRegime: {}, overlays: {}, brierTail: [], totalGraded: 2 } }))
       withRouter()
       const sc = await screen.findByLabelText('Scorecard')
-      expect(within(sc).getByText(/equity/i)).toBeInTheDocument()
-      expect(within(sc).getByText(/excess vs SPY/i)).toBeInTheDocument()
+      expect(within(sc).getByText(/stocks/i)).toBeInTheDocument()
+      expect(within(sc).getByText(/compared with the US market/i)).toBeInTheDocument()
     })
   })
 
@@ -311,7 +311,7 @@ describe('Record', () => {
       expect(within(ledger).getByLabelText('Grade A')).toBeInTheDocument()
       expect(within(ledger).queryByLabelText('Grade B')).not.toBeInTheDocument()
       // the watch row still carries the shared law's honest reason line
-      expect(within(ledger).getByText(/watch — no size yet/i)).toBeInTheDocument()
+      expect(within(ledger).getByText(/Watching only. No trade plan yet./i)).toBeInTheDocument()
     })
 
     // THE RECEIPT'S OWN BASIS (crypto-v2 wave, finding 2). `10d … vs SPY` is
@@ -389,8 +389,8 @@ describe('Record', () => {
     })
   })
 
-  // OWNER ITERATION 2: "Track record is basically useless, the graph doesnt
-  // mean anything. more information need to stay in track record."
+  // OWNER ITERATION 2: "Results is basically useless, the graph doesnt
+  // mean anything. more information need to stay in results."
   describe('the cumulative line', () => {
     const gradedCall = (id: string, date: string, excessPct: number, over: Partial<JourneyCall> = {}) =>
       mkCall({ id, date, outcome10: { excessPct, rawPct: excessPct, spyPct: 0, stopped: false, hit: excessPct > 0 }, ...over })
@@ -430,7 +430,7 @@ describe('Record', () => {
     })
 
     // the chart is an EXCESS-vs-SPY line; the cohort grades absolute over
-    // fourteen crypto bars, so one of its rows in here means the line is
+    // 14 price periods, so one of its rows in here means the line is
     // measuring neither thing
     it('leaves crypto rows out of the line entirely', async () => {
       await seedLedger('ledger:30', [
@@ -623,7 +623,7 @@ describe('Record — the page a reader can actually reach the end of', () => {
       withRouter()
       const table = await screen.findByLabelText('Per-grade record')
       const tiers = [...table.querySelectorAll('tbody tr td:first-child')].map(td => td.textContent)
-      expect(tiers).toEqual(['Grade A', 'Grade B', 'Grade C', 'Shadow book', 'Wildcard'])
+      expect(tiers).toEqual(['Grade A', 'Grade B', 'Grade C', 'Test ideas', 'Wildcard'])
     })
   })
 

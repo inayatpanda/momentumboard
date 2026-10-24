@@ -57,7 +57,7 @@ describe('GatesLearning', () => {
   it('has a heading containing "Gates"', async () => {
     await seedLearning(mkLearning())
     withRouter()
-    expect(await screen.findByRole('heading', { name: /gates/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /how predictions work/i })).toBeInTheDocument()
   })
 
   describe('a gate card', () => {
@@ -135,9 +135,9 @@ describe('GatesLearning', () => {
     it('opens with two sentences saying what the whole page is', async () => {
       await seedLearning(mkLearning())
       withRouter()
-      expect(await screen.findByText(/the engine tunes its own strictness/i)).toBeInTheDocument()
-      expect(screen.getByText(/a bar every candidate must clear/i)).toBeInTheDocument()
-      expect(screen.getByText(/one notch at a time when the priced record says so/i)).toBeInTheDocument()
+      expect(await screen.findByText(/Every idea must pass a set of checks/i)).toBeInTheDocument()
+      expect(screen.getByText(/before it becomes a published prediction/i)).toBeInTheDocument()
+      expect(screen.getByText(/stricter or looser as past results accumulate/i)).toBeInTheDocument()
     })
 
     it('says in plain English what each gate IS', async () => {
@@ -233,7 +233,7 @@ describe('GatesLearning', () => {
     })
   })
 
-  describe("the paper's own lines", () => {
+  describe("daily report's own lines", () => {
     it('renders gateLines moves and notes as a quote block', async () => {
       await seedLearning(mkLearning({ gateLines: { moves: ['dead zone 25 → 22.5 on 2026-07-20'], notes: ['context cap: eligible, held by the cadence'] } }))
       withRouter()

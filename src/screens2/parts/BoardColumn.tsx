@@ -246,12 +246,12 @@ export default function BoardColumn() {
 
           {observations.length > 0 && <p className="sec-label">Observations — no ISA route</p>}
           {observations.map(p => (
-            <BoardThinRow key={p.id} p={p} note="no ISA route — observation only" />
+            <BoardThinRow key={p.id} p={p} note="no suitable ISA investment — observation only" />
           ))}
 
           {nearMisses.length > 0 && <p className="sec-label">Nearest misses</p>}
           {nearMisses.map(p => (
-            <BoardThinRow key={p.id} p={p} note="nearest miss — no size" />
+            <BoardThinRow key={p.id} p={p} note="Close to qualifying — no trade plan" />
           ))}
         </>
       )}

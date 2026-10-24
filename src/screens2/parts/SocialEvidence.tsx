@@ -62,7 +62,7 @@ export function ProcessingJobs({ health, onRefresh }: { health: NonNullable<Stre
     {!!health.jobs?.length && <details className="social-processing">
       <summary>Follow individual videos ({health.jobs.length} shown)</summary>
       <ol>{health.jobs.map(job => <li key={job.id}>
-        <div><b>{job.title || 'Untitled video'}</b><span>{stageNames[job.stage] ?? 'Processing'} · {job.mode === 'watch' ? 'Deep read' : 'Claim extraction'}</span></div>
+        <div><b>{job.title || 'Untitled video'}</b><span>{stageNames[job.stage] ?? 'Processing'} · {job.mode === 'watch' ? 'Detailed review' : 'Finding stock claims'}</span></div>
         <p>{job.reason?.replace(/-/g, ' ') || 'Waiting for the next processing step.'} · {job.attempts} failed attempts</p>
         {job.stage === 'needs-attention' && <button type="button" disabled={busy != null} onClick={() => retry(job.id)}>{busy === job.id ? 'Queuing…' : 'Retry (owner)'}</button>}
       </li>)}</ol>
@@ -74,18 +74,18 @@ export function ProcessingJobs({ health, onRefresh }: { health: NonNullable<Stre
 export function SocialLearning({ learning }: { learning: StreetWire['socialLearning'] }) {
   if (!learning) return null
   return <section className="card itl-section social-learning" aria-label="Social evidence learning">
-    <div className="social-learning__heading"><h2 className="sec-label">Does the evidence hold up?</h2><span className="social-claim__badge">Forward study</span></div>
-    <p className="cc-reason">Track sourced, unconditional US stock views from the next market open. Compare the tenth session’s close with SPY, after a 0.20% round-trip cost estimate.</p>
+    <div className="social-learning__heading"><h2 className="sec-label">Does the evidence hold up?</h2><span className="social-claim__badge">Following new predictions</span></div>
+    <p className="cc-reason">We follow clear stock predictions from your channels and compare their results with the US market. Each test lasts 10 trading days.</p>
     <div className="social-learning__stats">
       <div><b>{learning.pending}</b><span>Awaiting outcomes</span></div>
-      <div><b>{learning.independent}</b><span>Independent results</span></div>
-      <div><b>{learning.repeats}</b><span>Grouped repeats</span></div>
+      <div><b>{learning.independent}</b><span>Separate results</span></div>
+      <div><b>{learning.repeats}</b><span>Repeated ideas</span></div>
     </div>
-    <p className="social-evidence__note">This common 10-session yardstick is not the creator’s stated horizon. It does not change position sizes or channel weights. Publication-time results are retrospective; app-time results start only after capture. Borrow costs and dividends are excluded.</p>
-    {learning.channels.length > 0 && <div className="social-table-wrap"><table className="social-learning__table"><thead><tr><th>Channel</th><th>Independent calls</th><th>Beat benchmark</th><th>Mean excess</th></tr></thead><tbody>
+    <details className="social-processing"><summary>See the evidence: how channel results are tested</summary><p>Comparisons start at the next market open and include estimated trading costs of 0.20% in total.</p><p className="social-evidence__note">This common 10-session yardstick is not the creator’s stated horizon. It does not change position sizes or channel weights. Publication-time results are retrospective; app-time results start only after capture. Borrow costs and dividends are excluded. Differences are measured in percentage points.</p></details>
+    {learning.channels.length > 0 && <div className="social-table-wrap"><table className="social-learning__table"><thead><tr><th>Channel</th><th>Independent calls</th><th>Beat the market</th><th>Avg difference</th></tr></thead><tbody>
       {learning.channels.map(c => <tr key={c.channel}><td>{c.channel}</td><td>{c.n}</td><td>{c.hits}/{c.n}</td><td>{signed(c.averageExcessPct)}</td></tr>)}
     </tbody></table></div>}
-    {learning.recent.length > 0 ? <details className="social-processing"><summary>Source calls and measured outcomes</summary><ul>{learning.recent.map(row => <li key={row.id}>
+    {learning.recent.length > 0 ? <details className="social-processing"><summary>See the evidence: predictions and results</summary><ul>{learning.recent.map(row => <li key={row.id}>
       <div><Link href={`/stock/${row.sym}`}><b>{row.sym}</b></Link><span>{row.channel}{row.repeated ? ' · Repeat campaign' : ''}</span></div>
       <p>App-time: {row.app ? signed(row.app.excessPct) : 'pending'} · Publication-time: {row.creator ? signed(row.creator.excessPct) : row.publishedAt ? 'pending' : 'unknown publication date'}</p>
       <a href={row.sourceUrl} target="_blank" rel="noreferrer">Original source ↗</a>

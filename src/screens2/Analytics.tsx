@@ -9,7 +9,7 @@ export default function Analytics() {
       <header className="analytics2-head">
         <span className="sec-label">Evidence, not promises</span>
         <h1 id="analytics-title">Analytics</h1>
-        <p>Calibration, market lean, seasonality and smart-money context behind the engine’s calls.</p>
+        <p>Explore how accurate past estimates were, seasonal market patterns and reported fund holdings. Open the evidence for the calculations.</p>
       </header>
       <AnalyticsPanels />
     </section>

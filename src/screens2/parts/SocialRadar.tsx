@@ -55,13 +55,13 @@ function RadarCard({ row, board }: { row: RadarRow; board: Awaited<ReturnType<ty
         </div>
         <div className="sr-badges">
           <span className={`pill ${statusTone(status)}`}>{STATUS_LABEL[status]}</span>
-          <span className={`pill sr-risk-${risk.level}`}>chase risk {risk.level}</span>
+          <span className={`pill sr-risk-${risk.level}`}>Risk of buying too late: {risk.level}</span>
         </div>
       </header>
 
       <div className="sr-grid">
         <div className="sr-pane">
-          <span className="sr-kicker">Social tape</span>
+          <span className="sr-kicker">Social activity</span>
           <strong>{evidenceLabel(row.evidenceScore)}</strong>
           <span>{row.sources} source{row.sources === 1 ? '' : 's'} · {risk.stage}{row.observedDays != null ? ` · day ${row.observedDays}` : ''}</span>
           <span>Reddit {row.redditMentions ?? '—'} mentions{row.redditRank != null ? ` · rank #${row.redditRank}` : ''}{row.surgeMultiple != null ? ` · ${row.surgeMultiple.toFixed(1)}× 24h` : ''}</span>
@@ -72,7 +72,7 @@ function RadarCard({ row, board }: { row: RadarRow; board: Awaited<ReturnType<ty
         <YoutubeEvidence row={row} />
 
         <div className="sr-pane">
-          <span className="sr-kicker">Independent engine verdict</span>
+          <span className="sr-kicker">Our separate stock checks</span>
           <strong>{read.summary}</strong>
           <span>{read.label} · {read.state}</span>
           {read.reasons.slice(0, 2).map((reason, i) => <span key={i}>{reason}</span>)}
@@ -83,10 +83,10 @@ function RadarCard({ row, board }: { row: RadarRow; board: Awaited<ReturnType<ty
         </div>
       </div>
 
-      {row.opinion && <p className="sr-opinion"><b>Desk note:</b> {decodeEntities(row.opinion)}</p>}
+      {row.opinion && <p className="sr-opinion"><b>Summary:</b> {decodeEntities(row.opinion)}</p>}
       <footer className="sr-footer">
         <span>{status === 'aligned' ? 'Social/YouTube direction agrees with an independently active setup.' : status === 'conflict' ? 'The independent engine points against the creator consensus.' : status === 'unconfirmed' ? 'Attention exists, but price/quality evidence has not confirmed a trade.' : status === 'mixed' ? 'Creators disagree; treat the claim as unresolved.' : 'No processed YouTube claim is available yet.'}</span>
-        <button type="button" className="stx-showmore" aria-expanded={memoryOpen} onClick={() => setMemoryOpen(open => !open)}>{memoryOpen ? 'Hide memory' : 'View dated memory'}</button>
+        <button type="button" className="stx-showmore" aria-expanded={memoryOpen} onClick={() => setMemoryOpen(open => !open)}>{memoryOpen ? 'Hide history' : 'See the evidence: history'}</button>
       </footer>
       {memoryOpen && <SocialStockMemory symbol={row.sym} />}
     </article>
@@ -113,15 +113,15 @@ export function SocialRadar() {
   return (
     <section id="social" className="sr-section">
       <div className="sr-intro">
-        <div><h2>Social Radar</h2><p>What is gaining attention, what creators actually claimed, and whether the price/quality engine confirms it independently.</p></div>
+        <div><h2>Stocks getting attention</h2><p>What is gaining attention, what creators said, and whether our stock checks agree.</p></div>
         {data && <span className="pill">{rows.length} names · updated {new Date(data.at * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>}
       </div>
       <div className="sr-filters" role="group" aria-label="Filter Social Radar">
-        {([['all', 'All'], ['aligned', 'Aligned'], ['conflict', 'Conflict'], ['unconfirmed', 'Social-only'], ['mixed', 'YouTube split'], ['no-youtube', 'No YouTube'], ['new', 'New'], ['multi', 'Multi-source']] as [Filter, string][]).map(([key, label]) => (
+        {([['all', 'All'], ['aligned', 'Views agree'], ['conflict', 'Views disagree'], ['unconfirmed', 'Not confirmed'], ['mixed', 'YouTube split'], ['no-youtube', 'No YouTube'], ['new', 'New'], ['multi', 'Several sources']] as [Filter, string][]).map(([key, label]) => (
           <button type="button" className={`pill${filter === key ? ' active' : ''}`} aria-pressed={filter === key} onClick={() => setFilter(key)} key={key}>{label}</button>
         ))}
       </div>
-      {!data ? <DataStatus label="Social Radar" error={error} refresh={refresh} refreshing={refreshing} /> : filtered.length === 0 ? <div className="data-status"><p className="cc-reason">{rows.length ? 'No names match this filter right now.' : 'No social observations are available in this update. Channel findings are available in The street.'}</p>{filter !== 'all' ? <button className="stocks-text-link" onClick={() => setFilter('all')}>Show all names</button> : <Link className="research-text-link" href="/more/street">View channel findings →</Link>}</div> : <div className="sr-list">{filtered.map(row => <RadarCard row={row} board={board} key={row.sym} />)}</div>}
+      {!data ? <DataStatus label="Social Radar" error={error} refresh={refresh} refreshing={refreshing} /> : filtered.length === 0 ? <div className="data-status"><p className="cc-reason">{rows.length ? 'No names match this filter right now.' : 'No social observations are available in this update. Channel findings are available in YouTube & social.'}</p>{filter !== 'all' ? <button className="stocks-text-link" onClick={() => setFilter('all')}>Show all names</button> : <Link className="research-text-link" href="/more/street">View channel findings →</Link>}</div> : <div className="sr-list">{filtered.map(row => <RadarCard row={row} board={board} key={row.sym} />)}</div>}
       <p className="sr-footnote">Attention evidence is not a probability of price appreciation. “Independent” excludes the Social Ignition sleeve to avoid circular confirmation.</p>
     </section>
   )

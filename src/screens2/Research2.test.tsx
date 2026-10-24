@@ -5,7 +5,7 @@
 // Three findings from the live desk walkthrough are pinned here:
 //   the event assessments arrived as one paragraph of literal `**asterisks**`
 //   the AI-read card printed the SERVER's own "AI gateway not configured"
-//   the AI read carried an `at` nothing rendered
+//   the AI summary carried an `at` nothing rendered
 
 import { render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -109,7 +109,7 @@ describe('MarkdownLite — the deterministic renderer', () => {
   })
 })
 
-describe('Research2 — the AI read card', () => {
+describe('Research2 — the AI summary card', () => {
   describe('aiReadCopy', () => {
     it('a real read is passed through and marked as a read', () => {
       expect(aiReadCopy({ text: 'The tape is thin.' })).toEqual({ body: 'The tape is thin.', isRead: true })
@@ -136,7 +136,7 @@ describe('Research2 — the AI read card', () => {
   it('never renders the raw server string on screen', async () => {
     await seed('research:aiRead', { unconfigured: true })
     withRouter()
-    const card = await screen.findByLabelText('AI read')
+    const card = await screen.findByLabelText('AI summary')
     expect(await within(card).findByText(AI_READ_UNAVAILABLE)).toBeInTheDocument()
     expect(card.textContent).not.toContain('AI gateway not configured')
   })
@@ -144,15 +144,15 @@ describe('Research2 — the AI read card', () => {
   it('stamps a real read with when the desk wrote it', async () => {
     await seed('research:aiRead', { text: 'The tape is thin.', provider: 'groq', at: Math.floor(Date.now() / 1000) - 7200 })
     withRouter()
-    const card = await screen.findByLabelText('AI read')
-    expect(await within(card).findByText(/AI read · 2h ago/)).toBeInTheDocument()
+    const card = await screen.findByLabelText('AI summary')
+    expect(await within(card).findByText(/AI summary · 2h ago/)).toBeInTheDocument()
   })
 
   it('carries no stamp when there is no read to date', async () => {
     await seed('research:aiRead', { unconfigured: true, at: Math.floor(Date.now() / 1000) - 7200 })
     withRouter()
-    const card = await screen.findByLabelText('AI read')
+    const card = await screen.findByLabelText('AI summary')
     await within(card).findByText(AI_READ_UNAVAILABLE)
-    expect(within(card).getByText('AI read')).toBeInTheDocument()
+    expect(within(card).getByText('AI summary')).toBeInTheDocument()
   })
 })

@@ -22,9 +22,9 @@ import { RouteNote } from './RouteNote'
 
 const SLEEVE_LABEL: Record<NonNullable<EnginePrediction['sleeve']>, string> = {
   'short-horizon': '2–3 day',
-  'quality-dip': 'Quality dip',
-  'social-ignition': 'Social ignition',
-  'macro-event': 'Macro event',
+  'quality-dip': 'Recovery after a fall',
+  'social-ignition': 'Growing attention',
+  'macro-event': 'Major market events',
   'composite-control': 'Main engine',
 }
 
@@ -126,17 +126,18 @@ export function CallCard({
       <span className="brief-call-avatar" aria-hidden="true">{row.sym.split(/[-.]/)[0].slice(0, 2)}</span>
       <span className="brief-call-identity"><strong>{row.sym}</strong><span>{row.name || 'Stock research'}</span></span>
       <span className="brief-call-price"><small>{usableQuote ? usableQuote.stale ? 'Last known price' : priceLabel(usableQuote, row.sym, now ?? Date.now()) : 'Planned entry'}</small><strong className="num">{usableQuote ? fmtPrice(usableQuote.price, usableQuote.currency) : row.entry}</strong></span>
-      <span className="brief-call-context"><span className={`brief-direction ${row.side}`}>{row.side === 'long' ? 'Long' : 'Short'}</span>{sized && <span aria-label={`Grade ${row.grade}`}>Grade {row.grade}</span>}{row.provisional && <span>Provisional</span>}{row.paperOnly && <span>Paper only</span>}{row.instrument && <span>{row.instrument.ticker} · {row.instrument.leverage}×</span>}{row.wildcard && <span>{WILDCARD_LABEL}</span>}</span>
+      <span className="brief-call-context"><span className={`brief-direction ${row.side}`}>{row.side === 'long' ? 'Expecting a rise' : 'Expecting a fall'}</span>{sized && <span aria-label={`Grade ${row.grade}`}>Grade {row.grade}</span>}{row.provisional && <span>Early estimate</span>}{row.paperOnly && <span>Practice only</span>}{row.instrument && <span>{row.instrument.ticker} · {row.instrument.leverage}×</span>}{row.wildcard && <span>{WILDCARD_LABEL}</span>}</span>
       {row.wildcard && <span className="brief-call-warning">{WILDCARD_WARNING}</span>}
-      <span className="brief-call-open">View setup <span aria-hidden="true">↗</span></span>
+      <span className="brief-call-open">View idea <span aria-hidden="true">↗</span></span>
     </Link>
   }
   const card = (
-    <Link href={`/stock/${row.sym}`} className={cohortNote ? 'pressable cc' : 'card pressable cc'}>
+    <article className={cohortNote ? 'cc' : 'card cc'}>
+      <Link href={`/stock/${row.sym}`} className="cc-stock-link">
       <div className="cc-top">
         <span className="cc-sym">
           {row.sym}
-          <span className={`pill ${row.side}`}>{row.side === 'long' ? 'Long' : 'Short'}</span>
+          <span className={`pill ${row.side}`}>{row.side === 'long' ? 'Expecting a rise' : 'Expecting a fall'}</span>
           <CohortPill cohort={row.cohort} />
           {row.name && <span className="cc-name">{row.name}</span>}
         </span>
@@ -146,6 +147,11 @@ export function CallCard({
           </span>
         )}
       </div>
+      </Link>
+      {row.thesis && <p className="cc-reason">{row.thesis}</p>}
+      {!sized && <p className="cc-reason">{unsizedReason(kind, row.belowBase)}</p>}
+      {row.wildcard && <p className="cc-wildcard">{WILDCARD_WARNING}</p>}
+      <details className="company-detail"><summary>See the evidence</summary>
       <div className="convbar">
         <i style={{ width: `${convictionPct}%` }} />
       </div>
@@ -153,7 +159,6 @@ export function CallCard({
       {row.wildcard && (
         <div className="cc-wildcard">
           <span className="pill">{WILDCARD_LABEL}</span>
-          <span>{WILDCARD_WARNING}</span>
         </div>
       )}
       <div className="cc-levels">
@@ -176,21 +181,22 @@ export function CallCard({
           <span className="num">{sizingNote}</span>
         </div>
       ) : (
-        <p className="cc-reason">{unsizedReason(kind, row.belowBase)}</p>
+        null
       )}
       {row.forecast && (
         <div className="cc-contract" aria-label="Engine forecast contract">
-          <span className="cc-contract-label">{row.sleeve ? SLEEVE_LABEL[row.sleeve] : 'Engine'} · {row.forecast.horizonSessions} sessions</span>
+          <span className="cc-contract-label">{row.sleeve ? SLEEVE_LABEL[row.sleeve] : 'Engine'} · {row.forecast.horizonSessions} trading days</span>
           <span>{row.forecast.label}</span>
           <span className="num">
-            {row.forecast.calibratedN > 0 ? `${row.forecast.calibratedN} matured forecasts` : 'new contract · collecting outcomes'}
+            {row.forecast.calibratedN > 0 ? `${row.forecast.calibratedN} completed forecasts` : 'awaiting results'}
           </span>
         </div>
       )}
       {/* the levels above are the UNDERLYING's, whatever the ticker beside them
           says — and only a geared route decays (parts/RouteNote.tsx) */}
       <RouteNote instrument={row.instrument} />
-    </Link>
+      </details>
+    </article>
   )
   if (!cohortNote) return card
   return (

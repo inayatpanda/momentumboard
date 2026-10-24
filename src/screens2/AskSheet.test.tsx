@@ -353,7 +353,7 @@ describe('buildAskContext', () => {
     expect(ctx.state).toBe('refused')
     expect(ctx.grade).toBeNull()
     expect(ctx.core).toBe(58.4)
-    expect(ctx.gateLabel).toMatch(/chase/)
+    expect(ctx.gateLabel).toMatch(/moved too far/)
   })
 
   it('an on-demand read: the lean, the core, no grade', () => {

@@ -22,29 +22,30 @@ export function DecisionCockpit({ data }: { data: BoardSlice | null | undefined 
   return (
     <section className="decision-cockpit" aria-label="Decision cockpit">
       <div className="decision-cockpit-head">
-        <span><b>Decision cockpit</b> <span className="pill">Published calls</span></span>
+        <span><b>Today at a glance</b> <span className="pill">Published predictions</span></span>
         <span className={`pill ${status}`}>{FRESHNESS_LABEL[read.freshness]}</span>
       </div>
       <div className="decision-cockpit-grid">
         <div className="decision-tile">
-          <span className="sec-label">Actionable now</span>
+          <span className="sec-label">Trade plans</span>
           <strong>{read.sized}</strong>
-          <small>{read.longs} long · {read.shorts} short</small>
-          <small>{riskLine}</small>
+          <small>{read.longs} expecting a rise · {read.shorts} expecting a fall</small>
+
         </div>
         <div className="decision-tile decision-tile-wide">
           <span className="sec-label">Changed since {read.priorDate ?? 'prior run'}</span>
           <strong className="decision-change">{boardChangeLine(read)}</strong>
         </div>
         <div className="decision-tile">
-          <span className="sec-label">Live evidence</span>
-          <strong>{read.liveN ? `n=${read.liveN}` : 'collecting'}</strong>
-          <small>{read.liveHitRate == null ? 'hit rate not mature' : `${Math.round(read.liveHitRate * 100)}% landed`}{read.latestBrier == null ? '' : ` · Brier ${read.latestBrier.toFixed(3)}`}</small>
+          <span className="sec-label">Completed results</span>
+          <strong>{read.liveN ? String(read.liveN) : 'Awaiting results'}</strong>
+          <small>{read.liveHitRate == null ? 'Success rate not available' : `${Math.round(read.liveHitRate * 100)}% passed the test`}</small>
         </div>
       </div>
+      <details className="company-detail"><summary>See the evidence: test measures</summary><p>{riskLine}</p><p>Probability error (Brier score): {read.latestBrier == null ? 'Not available' : read.latestBrier.toFixed(3)}. Lower is better. Risk levels and success rates use the published prediction rules.</p></details>
       <div className="decision-provenance">
         <span>Generated {generated} UK · {age}</span>
-        <span>Price · technicals · catalysts · social · calibrated outcomes</span>
+        <span>Prices · charts · news · channel views · past results</span>
       </div>
     </section>
   )

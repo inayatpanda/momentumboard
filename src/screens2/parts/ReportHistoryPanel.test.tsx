@@ -25,7 +25,7 @@ describe('historical company report explorer', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Annual$/ }))
     expect(screen.getByText('Annual report · 2024-12-31')).toBeInTheDocument()
     expect(screen.getByText(/At least two comparable/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Original filing ↗' })).toHaveAttribute('href', 'https://www.sec.gov/Archives/edgar/data/123456/000012345625000001/0000123456-25-000001-index.html')
+    expect(screen.getByRole('link', { name: 'Original report ↗' })).toHaveAttribute('href', 'https://www.sec.gov/Archives/edgar/data/123456/000012345625000001/0000123456-25-000001-index.html')
   })
   it('switches the metric with a labelled chart and keeps missing values unknown', () => {
     render(<ReportHistoryPanel snapshot={snapshot()} />)

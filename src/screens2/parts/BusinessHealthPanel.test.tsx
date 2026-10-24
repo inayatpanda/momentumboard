@@ -6,9 +6,9 @@ import { BusinessHealthRead } from './BusinessHealthPanel'
 describe('business health evidence', () => {
   it('never dresses unavailable accounts as a healthy cheap stock', () => {
     render(<BusinessHealthRead snapshot={emptyBusinessHealth('TEST', Date.now() / 1000, 'No coverage')} />)
-    expect(screen.getByText(/Financial screen: unknown/)).toBeInTheDocument()
+    expect(screen.getByText(/Not enough information/)).toBeInTheDocument()
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(5)
-    expect(screen.getByText(/they do not establish fair value/)).toBeInTheDocument()
+    expect(screen.getByText(/does not mean the stock is cheap/)).toBeInTheDocument()
   })
 
   it('keeps metric period and filing provenance beside the reported value', () => {

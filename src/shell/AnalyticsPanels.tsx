@@ -54,16 +54,17 @@ export default function AnalyticsPanels() {
 
   return (
     <div className="desk2-panels">
-      <LeanPanel
+      <details className="company-detail"><summary>See the evidence: the market outlook</summary><LeanPanel
         board={board?.board ?? null}
         calibration={calibration}
         vixChangePct={vix?.quote?.changePct ?? null}
         analogue={analogueDossier?.analogues ?? null}
         analogueSym={analogueDossier?.sym}
       />
-      <LearningPanel calibration={calibration} weights={weights} />
-      <SeasonalityPanel data={season ?? null} />
-      <SmartMoneyPanel data={smart ?? null} />
+      </details>
+      <details className="company-detail"><summary>See the evidence: prediction accuracy</summary><LearningPanel calibration={calibration} weights={weights} /></details>
+      <details className="company-detail"><summary>See the evidence: seasonal market patterns</summary><SeasonalityPanel data={season ?? null} /></details>
+      <details className="company-detail"><summary>See the evidence: what funds hold</summary><SmartMoneyPanel data={smart ?? null} /></details>
     </div>
   )
 }

@@ -21,7 +21,7 @@ export default function Paper2() {
   const [edition, setEdition] = useState<PaperEdition>('morning')
   return (
     <div className="paper2">
-      <h1>The paper</h1>
+      <h1>Daily report</h1>
       <div className="paper2-editions" role="tablist" aria-label="Paper edition">
         {EDITIONS.map(item => (
           <button

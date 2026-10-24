@@ -84,9 +84,9 @@ export default function Sectors() {
 
       {activeRow && (
         <div className="stx-sector-members">
-          <p className="sec-label">{activeRow.name} — constituents</p>
+          <p className="sec-label">{activeRow.name} — stocks</p>
           {activeRow.members.length === 0 ? (
-            <p className="cc-reason">No constituent symbols listed for this sector.</p>
+            <p className="cc-reason">No stocks are listed for this sector yet.</p>
           ) : (
             <div className="stx-watchlist">
               {activeRow.members.map(sym => (

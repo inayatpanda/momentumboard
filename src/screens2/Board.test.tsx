@@ -161,9 +161,9 @@ describe('Board', () => {
     // server order preserved: slot-cut(ZZZ) → dead-zone-core(AAA) → entry-chase(MMM), NOT sorted by core desc
     expect(rowEls.map(el => el.textContent)).toEqual(['ZZZ', 'AAA', 'MMM'])
 
-    expect(within(details).getByText(/lost the last slot/)).toBeInTheDocument()
-    expect(within(details).getByText(/below the conviction bar/)).toBeInTheDocument()
-    expect(within(details).getByText(/already ran — refused to chase/)).toBeInTheDocument()
+    expect(within(details).getByText(/other ideas ranked higher/)).toBeInTheDocument()
+    expect(within(details).getByText(/score below the required level/)).toBeInTheDocument()
+    expect(within(details).getByText(/price has already moved too far/)).toBeInTheDocument()
 
     // no letter grade, no probability, anywhere in the refused section
     expect(within(details).queryByLabelText(/^grade/i)).not.toBeInTheDocument()
@@ -271,11 +271,11 @@ describe('Board', () => {
     const observationLink = screen.getByText('ROKU').closest('a') as HTMLAnchorElement
 
     // (a) each renders its own distinct sentence
-    expect(within(nearMissLink).getByText('nearest miss — no size')).toBeInTheDocument()
-    expect(within(observationLink).getByText('no ISA route — observation only')).toBeInTheDocument()
+    expect(within(nearMissLink).getByText('Close to qualifying — no trade plan')).toBeInTheDocument()
+    expect(within(observationLink).getByText('no suitable ISA investment — observation only')).toBeInTheDocument()
     // neither borrows the other's reason
-    expect(within(nearMissLink).queryByText('no ISA route — observation only')).not.toBeInTheDocument()
-    expect(within(observationLink).queryByText('nearest miss — no size')).not.toBeInTheDocument()
+    expect(within(nearMissLink).queryByText('no suitable ISA investment — observation only')).not.toBeInTheDocument()
+    expect(within(observationLink).queryByText('Close to qualifying — no trade plan')).not.toBeInTheDocument()
 
     // (b) neither row shows a letter grade pill or any probability text
     expect(within(nearMissLink).queryByLabelText(/^grade/i)).not.toBeInTheDocument()
@@ -363,12 +363,12 @@ describe('the engine said no — grouped, counted, openable', () => {
   it('heads each group with the gate that refused them and its own count', async () => {
     const details = await openRefused([...rows('dead-zone-core', 3, 'DZ'), ...rows('slot-cut', 1, 'SC')])
     const heads = [...details.querySelectorAll('.board-refused-gate')].map(p => p.textContent)
-    expect(heads).toEqual(['below the conviction bar · 3', 'lost the last slot · 1'])
+    expect(heads).toEqual(['score below the required level · 3', 'other ideas ranked higher · 1'])
   })
 
   it('names the gate once per group, never again on every row under it', async () => {
     const details = await openRefused(rows('dead-zone-core', 3, 'DZ'))
-    expect(within(details).getAllByText(/below the conviction bar/)).toHaveLength(1)
+    expect(within(details).getAllByText(/score below the required level/)).toHaveLength(1)
   })
 
   it('paints 50 rows, then offers the rest — and the group shape is complete from the first paint', async () => {
@@ -376,7 +376,7 @@ describe('the engine said no — grouped, counted, openable', () => {
     expect(details.querySelectorAll('.board-row')).toHaveLength(REFUSED_PAGE)
     // both gates are named with their TRUE counts even though the second has no rows yet
     const heads = [...details.querySelectorAll('.board-refused-gate')].map(p => p.textContent)
-    expect(heads).toEqual(['below the conviction bar · 60', 'lost the last slot · 20'])
+    expect(heads).toEqual(['score below the required level · 60', 'other ideas ranked higher · 20'])
 
     const more = within(details).getByRole('button', { name: /show 30 more/i })
     fireEvent.click(more)

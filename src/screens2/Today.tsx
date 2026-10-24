@@ -28,7 +28,7 @@ import '../styles/research.css'
 
 const DESK_VIEWS = ['today', 'research', 'learning'] as const
 type DeskView = typeof DESK_VIEWS[number]
-const VIEW_LABELS: Record<DeskView, string> = { today: 'Today', research: 'Research', learning: 'Learning' }
+const VIEW_LABELS: Record<DeskView, string> = { today: 'Today', research: 'Research', learning: 'Results' }
 
 function useMobileDesk() {
   const read = () => typeof window !== 'undefined' && window.innerWidth <= 760
@@ -47,12 +47,12 @@ function MarketContext({ blob }: { blob: BoardBlob | null }) {
   return <section className="research-weather" aria-label="Market context">
     <div className="research-weather-title">
       <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true"><path d="M4 24h26M8 29h18M10 24a7 7 0 0 1 14 0M17 4v5M5 10l4 4M29 10l-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-      <div><span className="research-eyebrow">Daily weather</span><strong>Market context</strong></div>
+      <div><span className="research-eyebrow">Market overview</span><strong>Market context</strong></div>
     </div>
     <dl className="research-weather-readings">
-      <div><dt>International tape</dt><dd>{blob?.worldTape?.tone ?? 'Awaiting data'}</dd></div>
+      <div><dt>Global markets</dt><dd>{blob?.worldTape?.tone ?? 'Awaiting data'}</dd></div>
       <div><dt>News tone</dt><dd>{tone ?? 'Awaiting data'}</dd></div>
-      <div><dt>Board regime</dt><dd>{blob?.regime ?? 'Awaiting data'}</dd></div>
+      <div><dt>Market conditions</dt><dd>{blob?.regime ?? 'Awaiting data'}</dd></div>
     </dl>
     {(detail || tone) && <p className="today-tape research-weather-note">{detail}{detail && tone ? ' · ' : ''}{tone && <>news tone: {tone}</>}</p>}
   </section>
@@ -61,7 +61,7 @@ function MarketContext({ blob }: { blob: BoardBlob | null }) {
 export default function Today() {
   // One cached board slice owns the published calls, research and learning.
   const [newsOpen, setNewsOpen] = useState(false)
-  const [view, setView] = useState<DeskView>('today')
+  const [view, setView] = useState<DeskView>(() => new URLSearchParams(window.location.search).get('view') === 'results' ? 'learning' : 'today')
   const mobile = useMobileDesk()
   const tabs = useRef<Partial<Record<DeskView, HTMLButtonElement | null>>>({})
   const { data, refreshing, refresh, error } = useSlice('board', getBoardSlice)
@@ -86,14 +86,14 @@ export default function Today() {
       <header className="research-hero">
         <div>
           <p className="research-eyebrow">{mobile ? new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' }).format(new Date()) : 'StreetSignal / today'}</p>
-          <div className="research-heading"><h1>{mobile ? 'Your daily brief' : 'Research desk'}</h1>{boardIsNew && <span className="new-dot" aria-label="New board since your last visit" />}</div>
-          {!mobile && <p className="research-deck">Understand the setup. Test the thesis. Learn from the outcome.</p>}
+          <div className="research-heading"><h1>{mobile ? 'Your daily brief' : 'Your daily brief'}</h1>{boardIsNew && <span className="new-dot" aria-label="New board since your last visit" />}</div>
+          {!mobile && <p className="research-deck">Find ideas, understand the risks and check the results.</p>}
           <SessionLine generatedAt={blob?.generatedAt} />
         </div>
         <nav className="research-jump" aria-label="Research desk sections">
-          <a href="#published-calls">Calls <span aria-hidden="true">↗</span></a>
+          <a href="#published-calls">Predictions <span aria-hidden="true">↗</span></a>
           <a href="#opportunities">Research <span aria-hidden="true">↗</span></a>
-          <a href="#historical-learning">Learning <span aria-hidden="true">↗</span></a>
+          <a href="#historical-learning">Results <span aria-hidden="true">↗</span></a>
         </nav>
       </header>
       {mobile && <nav className="mobile-desk-tabs" role="tablist" aria-label="Daily brief views">
@@ -121,18 +121,18 @@ export default function Today() {
       <section id="published-calls" className="research-section research-calls" aria-label="Published and active calls">
         <RecoveryShortlist lab={data?.engineLab} onResearch={() => { setView('research'); if (!mobile) document.getElementById('opportunities')?.scrollIntoView({behavior:'smooth'}) }} />
         <div className="research-section-head">
-          <div><p className="research-eyebrow">01 / The live board</p><h2>Published calls</h2></div>
-          {blob && <span className="research-count num">{sized.length} sized {sized.length === 1 ? 'call' : 'calls'}</span>}
+          <div><p className="research-eyebrow">Today’s predictions</p><h2>Published predictions</h2></div>
+          {blob && <span className="research-count num">{sized.length} {sized.length === 1 ? 'prediction' : 'predictions'}</span>}
         </div>
         <StaleBoardNote date={blob?.date} />
         {error && blob === null ? null : data && blob === null ? <p className="research-empty">{NO_BOARD_YET}</p>
           : blob === null ? <div aria-label="Loading board"><div className="skeleton" style={{ height: 118, marginBottom: 10 }} /><div className="skeleton" style={{ height: 118 }} /></div>
           : sized.length === 0 ? <p className="research-empty">{clearedButUnsized ? NO_SIZED_NO_ROUTE : NO_SIZED_TODAY}</p>
           : <div className={`today-cards${mobile ? ' brief-call-list' : ''}`}>{sized.map(row => <CallCard key={row.id} row={row} quote={liveQuotes[row.sym]} compact={mobile} />)}</div>}
-        {mobile && blob && sized.length === 0 && <button type="button" className="brief-research-link" onClick={() => setView('research')}>Explore research ideas <span aria-hidden="true">→</span><small>Quality dips, shorter-term setups and their evidence</small></button>}
+        {mobile && blob && sized.length === 0 && <button type="button" className="brief-research-link" onClick={() => setView('research')}>Explore research ideas <span aria-hidden="true">→</span><small>Price falls, short-term ideas and the reasons behind them</small></button>}
         <IntradayFlagsStrip blob={data?.intradayFlags ?? null} />
         {!!(data?.openTrace?.entries?.length || data?.openTrace?.closed?.length) && <details className="research-disclosure">
-          <summary>Follow earlier calls <span>{data?.openTrace?.entries?.length ?? 0} open · {data?.openTrace?.closed?.length ?? 0} awaiting grade</span></summary>
+          <summary>Follow earlier calls <span>{data?.openTrace?.entries?.length ?? 0} open · {data?.openTrace?.closed?.length ?? 0} awaiting results</span></summary>
           <div className="research-disclosure-body"><OpenCallsStrip entries={data?.openTrace?.entries} closed={data?.openTrace?.closed} /></div>
         </details>}
         <CountsRail board={rows} />
@@ -152,13 +152,13 @@ export default function Today() {
       </div>
       </div>
       {!mobile && <section className="research-section research-intelligence" aria-label="News and social intelligence">
-        <div className="research-section-head"><div><p className="research-eyebrow">04 / Wider context</p><h2>Intelligence notebook</h2></div><span className="research-section-note">Open the evidence behind the noise</span></div>
+        <div className="research-section-head"><div><p className="research-eyebrow">04 / Wider context</p><h2>News & channel views</h2></div><span className="research-section-note">Read the sources behind each idea</span></div>
         <div className="research-notebook-grid">
           <details className="research-disclosure" onToggle={e => setNewsOpen(e.currentTarget.open)}><summary><span><strong>News & upcoming events</strong><small>Latest headlines and the earnings calendar</small></span><span className="research-disclosure-plus" aria-hidden="true">+</span></summary>
             <div className="research-disclosure-body">{newsOpen && <TodayHeadlines />}<EventRadarStrip radar={data?.eventRadar} /><Link className="research-text-link" href="/intel#news">Open the news desk →</Link></div>
           </details>
           <details className="research-disclosure"><summary><span><strong>What the channels are saying</strong><small>Video commentary alongside the engine’s own view</small></span><span className="research-disclosure-plus" aria-hidden="true">+</span></summary>
-            <div className="research-disclosure-body"><ChannelPicksStrip picks={data?.channelPicks} board={rows} openCalls={data?.openTrace?.entries} />{!data?.channelPicks?.length && <p className="research-muted">No channel picks are available in this board snapshot.</p>}<Link className="research-text-link" href="/more/street">Open the Street →</Link></div>
+            <div className="research-disclosure-body"><ChannelPicksStrip picks={data?.channelPicks} board={rows} openCalls={data?.openTrace?.entries} />{!data?.channelPicks?.length && <p className="research-muted">No channel picks are available in this board snapshot.</p>}<Link className="research-text-link" href="/more/street">Open YouTube & social →</Link></div>
           </details>
         </div>
       </section>}

@@ -28,7 +28,7 @@ import { VERDICT_CLASS, VERDICT_WORD, crossedWord } from './OpenCallsStrip'
  * does not — it labels the state, it does not explain it. */
 const UNSIZED_WORD: Record<Exclude<RowKind, 'sized-live'>, string> = {
   watch: 'watch',
-  'near-miss': 'nearest miss',
+  'near-miss': 'Close to qualifying',
   observation: 'observation',
 }
 

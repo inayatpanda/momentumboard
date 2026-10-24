@@ -82,7 +82,7 @@ export default function More() {
       <h1>More</h1>
       <div className="menu-group">
         <div className="menu-title">The engine</div>
-        <Row href="/more/gates" icon={<IconGate />} label="Gates & learning" sub="Every notch the engine has earned, and why" />
+        <Row href="/more/gates" icon={<IconGate />} label="How predictions work" sub="The checks we use and what we have learned" />
       </div>
       {/* every row in THIS group also sits on the desktop rail (routes.ts
           railOnly), so ≥1024px CSS hides the whole group — owner 2026-08-17:
@@ -90,9 +90,9 @@ export default function More() {
           is these pages' only home. */}
       <div className="menu-group on-rail">
         <div className="menu-title">Reading</div>
-        <Row href="/more/street" icon={<IconQuote />} tint="accent" label="The street" sub="What the channels said, and what the engine thinks" />
-        <Row href="/more/paper" icon={<IconNews />} label="The paper" sub="Today's edition, and the archive" />
-        <Row href="/more/research" icon={<IconNews />} tint="accent" label="Research" sub="AI reads, pick persistence, the scorecard" />
+        <Row href="/more/street" icon={<IconQuote />} tint="accent" label="YouTube & social" sub="Channel views, video summaries and stock mentions" />
+        <Row href="/more/paper" icon={<IconNews />} label="Daily report" sub="Today's edition, and the archive" />
+        <Row href="/more/research" icon={<IconNews />} tint="accent" label="Research" sub="Summaries, recurring ideas and their results" />
         <Row href="/more/calendar" icon={<IconCalendar />} tint="amber" label="Calendar" sub="Every day's paper, picks and notes" />
       </div>
       <div className="menu-group">

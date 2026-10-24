@@ -156,7 +156,7 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
   const filtered = filterStreetVideos(videos, channel, query, sourcedOnly)
   return (
     <section id="wire" className="card itl-section stt-wire">
-      <h2 className="sec-label">The wire — what the channels said</h2>
+      <h2 className="sec-label">Video summaries</h2>
       <p className="cc-reason itl-feed-intro">Latest findings, newest first. Coverage can be partial; open the evidence to check the creator’s words and timestamps.</p>
       <div className="street-filters">
       <label className="street-search">Find a video<input type="search" placeholder="Company, ticker or topic" value={query} onChange={e => { setQuery(e.target.value); setVisible(WIRE_PAGE) }} /></label>
@@ -212,9 +212,9 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
             )}
             {v.provenance === 'third-party' && <p className="social-evidence__note">Third-party coverage. The creator’s original statement has not been checked; excluded from consensus and learning.</p>}
             {v.provenance === 'manual' && <p className="social-evidence__note">Manually forwarded view. Excluded from automated consensus and learning.</p>}
-            {v.claims && <details className="street-video-evidence"><summary>Claims and source excerpts <span>{v.claims.length}</span></summary><ClaimEvidence video={v} /></details>}
+            {v.claims && <details className="street-video-evidence"><summary>See the evidence: claims and sources <span>{v.claims.length}</span></summary><ClaimEvidence video={v} /></details>}
             {!v.claims && v.tickers.some(t => t.thesis || t.evidenceQuote) && <details className="cc-reason">
-              <summary>What was said and supporting words</summary>
+              <summary>See the evidence: what was said</summary>
               {v.tickers.filter(t => t.thesis || t.evidenceQuote).map((ticker, j) => <div key={`${ticker.sym}-evidence-${j}`}>
                 <p><b>{ticker.company ?? ticker.sym}</b>{ticker.company ? ` (${ticker.sym})` : ''}: {ticker.thesis || 'Source excerpt only.'}{ticker.hype && ' Promotional language flagged.'}</p>
                 {ticker.evidenceQuote && <blockquote>{ticker.evidenceQuote}</blockquote>}
@@ -239,7 +239,7 @@ function ReadsSection({ reads }: { reads: StreetRead[] }) {
   if (reads.length === 0) return null
   return (
     <section id="reads" className="card itl-section stt-reads">
-      <h2 className="sec-label">The deep reads</h2>
+      <h2 className="sec-label">Detailed channel analysis</h2>
       <p className="cc-reason itl-feed-intro">AI summaries of the source material. Check the original video before relying on company identities, quoted levels or the creator’s claims.</p>
       <div className="stt-read-list">
         {reads.map((r, i) => (
@@ -289,7 +289,7 @@ export default function Street2() {
   return (
     <div className="stt">
       <RefreshStrip refreshing={refreshing} pull={pull} onRefresh={refresh} />
-      <div className="street-heading"><div><p className="stocks-eyebrow">VOICES. EVIDENCE. OUTCOMES.</p><h1>The street</h1></div><Link href="/">Stocks ↗</Link></div>
+      <div className="street-heading"><div><p className="stocks-eyebrow">YOUR FOLLOWED CHANNELS</p><h1>YouTube & social</h1></div><Link href="/">Stocks ↗</Link></div>
       <p className="cc-reason stt-intro">What creators are saying, what supports it and what happened next.</p>
       {wire && <button className="street-status" onClick={() => setView('tracking')}><span className="street-status__dot" aria-hidden="true" /><span>{wire.videoIngestion?.lastExtractAt ? `Latest analysis ${relativeStamp(wire.videoIngestion.lastExtractAt)}` : videos.length ? `${videos.length} completed videos in the feed` : 'Waiting for the first completed analysis'}<small>{queueSummary}</small></span><span aria-hidden="true">→</span></button>}
       <div className="stocks-tabs street-tabs" role="tablist" aria-label="Channel research views">
@@ -307,10 +307,10 @@ export default function Street2() {
       {!wire && !wireError && <p className="cc-reason" role="status">Loading video evidence…</p>}
       <div id="street-view" role="tabpanel" aria-labelledby={`street-tab-${view}`}>
       {view === 'insights' ? <>
-        {nothingYet && <p className="cc-reason">The channels haven’t said anything the engine has read yet — the wire fills as videos land.</p>}
+        {nothingYet && <p className="cc-reason">No completed channel analysis yet. Open Tracking to check video progress.</p>}
         <div className="street-insights-grid"><div>
           <PicksSection consensus={consensus} board={boardSlice?.board?.board ?? []} openCalls={boardSlice?.openTrace?.entries} />
-          {wire && !nothingYet && !consensus.some(p => p.bulls + p.bears > 0) && <section className="card itl-section"><h2 className="sec-label">No directional consensus yet</h2><p className="cc-reason">Completed videos are available below. A company mention alone does not count as a bullish or bearish call.</p></section>}
+          {wire && !nothingYet && !consensus.some(p => p.bulls + p.bears > 0) && <section className="card itl-section"><h2 className="sec-label">No clear view from the channels yet</h2><p className="cc-reason">Completed videos are available below. Mentioning a company does not mean the creator expects its price to rise or fall.</p></section>}
           {videos.length > 0 && <section className="card itl-section street-recent" aria-label="Recently analysed videos"><div className="discovery-heading"><h2>Recently analysed</h2><button className="stocks-text-link" onClick={() => openChannel('')}>View all →</button></div>{videos.slice(0, 3).map(v => <button className="street-recent__row" key={v.url} onClick={() => openChannel(v.channel)}><span className="street-recent__play" aria-hidden="true"><IconPlay size={18} /></span><span><small>{v.channel} · {relativeStamp(v.at)}</small><strong>{stripEmoji(decodeEntities(v.title))}</strong><small>{v.tickers.map(t => t.sym).slice(0, 4).join(' · ') || 'Market context'}</small></span><span aria-hidden="true">→</span></button>)}</section>}
         </div><div><SocialLearning learning={wire?.socialLearning} /><SocialPulse /></div></div>
       </> : view === 'videos' ? <><WireSection videos={videos} channel={channel} onChannel={setChannel} /><ReadsSection reads={channel ? reads.filter(r => r.channel === channel) : reads} /></> : <>

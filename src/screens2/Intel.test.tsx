@@ -100,10 +100,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('Intel', () => {
+describe('News', () => {
   it('has a heading containing "Intel"', () => {
     withRouter()
-    expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /news & activity/i })).toBeInTheDocument()
   })
 
   it('opens Social Radar with clickable tickers and the three evidence panes', async () => {
@@ -119,11 +119,11 @@ describe('Intel', () => {
     withRouter()
     fireEvent.click(screen.getByRole('tab', { name: /social radar/i }))
     expect(window.location.search).toBe('?view=social')
-    expect(await screen.findByText('Social tape')).toBeInTheDocument()
+    expect(await screen.findByText('Social activity')).toBeInTheDocument()
     expect(screen.getByText('YouTube claim')).toBeInTheDocument()
-    expect(screen.getByText('Independent engine verdict')).toBeInTheDocument()
+    expect(screen.getByText('Our separate stock checks')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
-    expect(screen.getByRole('button', { name: /view dated memory/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /See the evidence: history/i })).toBeInTheDocument()
   })
 
   it('restores Social Radar from the URL after returning from a stock', () => {
@@ -139,7 +139,7 @@ describe('Intel', () => {
     expect(screen.getByText('Headline 1')).toBeInTheDocument()
     // the page is not blank — the other feeds retain their loading state
     await waitFor(() => expect(screen.getAllByText(/could not be loaded\. Try again/)).toHaveLength(2))
-    expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /news & activity/i })).toBeInTheDocument()
   })
 
   // WIRED REFRESH (dynamism wave). Three independently-sliced sections, one
@@ -164,7 +164,7 @@ describe('Intel', () => {
       withRouter()
       const rail = screen.getByRole('navigation', { name: /jump to a section/i })
       const chips = [...rail.querySelectorAll('a')].map(a => [a.textContent?.trim(), a.getAttribute('href')])
-      // the paper left for its own tab and the pulse for The street (owner
+      // daily report left for its own tab and the pulse for YouTube & social (owner
       // 2026-08-17) — news leads, and three chips is the whole rail
       expect(chips).toEqual([
         ['News', '#news'],
@@ -173,7 +173,7 @@ describe('Intel', () => {
       ])
     })
 
-    it('every anchor target actually exists on the page — and the paper is gone', () => {
+    it('every anchor target actually exists on the page — and daily report is gone', () => {
       withRouter()
       for (const id of ['news', 'insiders', 'congress']) {
         expect(document.getElementById(id)).not.toBeNull()
@@ -338,7 +338,7 @@ describe('Intel', () => {
     withRouter()
     expect(await screen.findByText('4 buyers')).toBeInTheDocument()
     await waitFor(() => expect(screen.getAllByText(/could not be loaded\. Try again/)).toHaveLength(2))
-    expect(screen.getByRole('heading', { name: /intel/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /news & activity/i })).toBeInTheDocument()
   })
 
 })

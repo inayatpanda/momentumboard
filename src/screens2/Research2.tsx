@@ -21,11 +21,11 @@ import { MarkdownLite } from './parts/MarkdownLite'
  * configure. (Visibility wave, 2026-08-17.) */
 const SERVER_UNCONFIGURED = 'AI gateway not configured on this site.'
 
-/** What the reader is told when there is no AI read. Deliberately says the
+/** What the reader is told when there is no AI summary. Deliberately says the
  * page below is still whole: the desk's numbers are computed server-side and
  * owe the LLM nothing, so a missing read is a missing garnish, not a missing
  * page. */
-export const AI_READ_UNAVAILABLE = "The AI read is not available yet. Explore the research data below or open Today for the latest stock setups."
+export const AI_READ_UNAVAILABLE = "The AI summary is not available yet. Explore the research data below or open Today for the latest stock setups."
 
 /** One place that decides what the AI-read card says, so the "absent read"
  * cases cannot each invent their own wording. `isRead` is the difference
@@ -46,10 +46,10 @@ function AiReadCard() {
   // this morning's.
   const stamp = data?.at ? relativeStamp(data.at) : ''
   return (
-    <section className="card rs2-section" aria-label="AI read">
-      <p className="sec-label">AI read{copy?.isRead && stamp ? ` · ${stamp}` : ''}</p>
+    <section className="card rs2-section" aria-label="AI summary">
+      <p className="sec-label">AI summary{copy?.isRead && stamp ? ` · ${stamp}` : ''}</p>
       {!data || !copy ? (
-        <DataStatus label="AI read" error={error} refresh={refresh} refreshing={refreshing} />
+        <DataStatus label="AI summary" error={error} refresh={refresh} refreshing={refreshing} />
       ) : (
         <>
           <p className="cc-reason">{copy.body}</p>
@@ -64,7 +64,7 @@ function AiReadCard() {
 function EventsSection() {
   const { data, error, refresh, refreshing } = useSlice('research:events', getEventDossiers)
   const events = data ?? []
-  if (data && events.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Event assessments</h2><p className="cc-reason">No event assessments have been published yet. News and market context remain available in Intel.</p><Link className="research-text-link" href="/intel">Explore Intel →</Link></section>
+  if (data && events.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Event assessments</h2><p className="cc-reason">No event assessments have been published yet. News and market context remain available in News.</p><Link className="research-text-link" href="/intel">Explore news →</Link></section>
   return (
     <section aria-label="Event assessments">
       <p className="sec-label">Event assessments</p>
@@ -102,10 +102,10 @@ function PicksSection() {
   const { data, error, refresh, refreshing } = useSlice('research:picks', getPicks)
   const [visible, setVisible] = useState(PICK_PAGE)
   const rows = data?.persistence ?? []
-  if (data && rows.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Pick persistence</h2><p className="cc-reason">No repeated picks are available in this snapshot. Current stock setups are available in Today.</p><Link className="research-text-link" href="/today">View current research →</Link></section>
+  if (data && rows.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Recurring stock ideas</h2><p className="cc-reason">No repeated picks are available in this snapshot. Current stock setups are available in Today.</p><Link className="research-text-link" href="/today">View current research →</Link></section>
   return (
-    <section aria-label="Pick persistence">
-      <p className="sec-label">Pick persistence{data ? ` (${data.reports} reports)` : ''}</p>
+    <section aria-label="Recurring stock ideas">
+      <p className="sec-label">Recurring stock ideas{data ? ` (${data.reports} reports)` : ''}</p>
       {!data ? (
         <DataStatus label="Pick history" error={error} refresh={refresh} refreshing={refreshing} />
       ) : (
@@ -114,7 +114,7 @@ function PicksSection() {
             <div className="rs2-row" key={p.ticker + p.side}>
               <span>
                 {p.ticker} <span className={`pill ${p.side === 'long' ? 'long' : 'short'}`}>{p.side}</span>
-                {p.persistent && <span className="pill accent">persistent</span>}
+                {p.persistent && <span className="pill accent">Repeated idea</span>}
               </span>
               <span className="cc-reason num">
                 {p.streak > 1 ? `${p.streak} in a row` : `${p.appearances} of last 7`}
@@ -127,7 +127,7 @@ function PicksSection() {
               Show more ({rows.length - visible})
             </button>
           )}
-          <p className="cc-reason rs2-fine">A pick surviving several independent analyses is stronger evidence than one day's conviction.</p>
+          <p className="cc-reason rs2-fine">Repeated mentions show interest in a stock. They do not prove the idea will work.</p>
         </div>
       )}
     </section>
@@ -137,10 +137,10 @@ function PicksSection() {
 function ScorecardSection() {
   const { data, error, refresh, refreshing } = useSlice('research:pickStats', getPickStats)
   const rows = data?.scores ?? []
-  if (data && rows.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Research scorecard</h2><p className="cc-reason">No scored research picks are available yet. Published calls have a separate record.</p><Link className="research-text-link" href="/record">View Track record →</Link></section>
+  if (data && rows.length === 0) return <section className="card rs2-section"><h2 className="sec-label">Research scorecard</h2><p className="cc-reason">No scored research picks are available yet. Published calls have a separate record.</p><Link className="research-text-link" href="/record">View Results →</Link></section>
   return (
     <section aria-label="Scorecard">
-      <p className="sec-label">Scorecard — is the research earning?</p>
+      <p className="sec-label">How did these ideas perform?</p>
       {!data ? (
         <DataStatus label="Research scorecard" error={error} refresh={refresh} refreshing={refreshing} />
       ) : (
@@ -214,7 +214,7 @@ export default function Research2() {
       <PicksSection />
       <ScorecardSection />
       <OutcomesSection />
-      <footer className="rs2-fine">Research, measured. Nothing here predicts.</footer>
+      <footer className="rs2-fine">Research, measured. Results can differ from these research ideas.</footer>
     </div>
   )
 }

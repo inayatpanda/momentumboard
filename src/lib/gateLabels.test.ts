@@ -65,15 +65,15 @@ describe('GATE_LABELS', () => {
   // contradicted the sentence printed next to it. Neutral: the lane exists, and
   // this name was not admitted to it.
   it('crypto-contained is neutral about the lane, never a claim that the engine has no crypto market', () => {
-    expect(GATE_LABELS['crypto-contained']).toBe('not admitted to the crypto lane')
+    expect(GATE_LABELS['crypto-contained']).toBe('not included in the crypto scan')
     expect(GATE_LABELS['crypto-contained']).not.toMatch(/outside/i)
   })
 
   it('specific honest phrasings the reviewer will spot-check', () => {
-    expect(GATE_LABELS['dead-zone-core']).toMatch(/conviction/i)
-    expect(GATE_LABELS['entry-chase']).toMatch(/chase/i)
-    expect(GATE_LABELS['slot-cut']).toMatch(/slot/i)
+    expect(GATE_LABELS['dead-zone-core']).toMatch(/score/i)
+    expect(GATE_LABELS['entry-chase']).toMatch(/moved too far/i)
+    expect(GATE_LABELS['slot-cut']).toMatch(/ranked higher/i)
     expect(GATE_LABELS['no-candles']).toMatch(/chart/i)
-    expect(GATE_LABELS['called-full']).toMatch(/full size/i)
+    expect(GATE_LABELS['called-full']).toMatch(/full planned allocation/i)
   })
 })

@@ -55,11 +55,11 @@ export function rowKind(row: Pick<EnginePrediction, 'watchOnly' | 'nearMiss' | '
 export function unsizedReason(kind: RowKind, belowBase = false): string {
   switch (kind) {
     case 'near-miss':
-      return 'Nearest miss — cleared no gate, so no grade, no probability and no size.'
+      return 'Close to qualifying, but did not pass the required checks. No trade plan or probability estimate.'
     case 'observation':
-      return 'Cleared every gate, but no ISA route — observation only, no size.'
+      return 'Passed the checks, but no suitable ISA investment is available. Watching only.'
     case 'watch':
-      return belowBase ? 'Tracking — below its own historical hit rate today, no size yet.' : 'Watch — no size yet.'
+      return belowBase ? 'Watching only. The estimated success rate is below its usual level.' : 'Watching only. No trade plan yet.'
     case 'sized-live':
       // a sized row carries its grade and its probability; it has no reason line
       return ''

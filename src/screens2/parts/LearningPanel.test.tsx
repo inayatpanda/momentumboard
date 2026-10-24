@@ -34,7 +34,7 @@ describe('Historical learning', () => {
     expect(screen.getByText(/Historical learning is not available/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Learning history coverage')).not.toBeInTheDocument()
     rerender(<LearningPanel learning={buildResearchLearning([], 1_792_382_400)} />)
-    expect(screen.getByLabelText('Learning history coverage')).toHaveTextContent('0Outcomes for current models')
+    expect(screen.getByLabelText('Learning history coverage')).toHaveTextContent('0Completed results')
     expect(screen.queryByLabelText('Selected campaign results')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Research awaiting outcomes')).toHaveTextContent('What appears next')
     expect(screen.queryByText('+0.0%')).not.toBeInTheDocument()
@@ -45,13 +45,13 @@ describe('Historical learning', () => {
     const results = screen.getByLabelText('Selected campaign results')
     expect(results).toHaveTextContent('+1.2%')
     expect(results).toHaveTextContent('40 directional outcomes')
-    fireEvent.change(screen.getByLabelText('Observed condition'), { target: { value: 'world:risk-off' } })
+    fireEvent.change(screen.getByLabelText('Filter results'), { target: { value: 'world:risk-off' } })
     expect(results).toHaveTextContent('-2.0%')
     expect(results).toHaveTextContent('8 directional outcomes')
     expect(screen.getByText(/Eight recorded risk-off campaigns/)).toBeInTheDocument()
     expect(screen.getByRole('progressbar')).toHaveAttribute('value', '8')
-    fireEvent.change(screen.getByLabelText('Research strategy'), { target: { value: 'quality-dip' } })
-    expect(screen.queryByLabelText('Observed condition')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Strategy'), { target: { value: 'quality-dip' } })
+    expect(screen.queryByLabelText('Filter results')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Selected campaign results')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Research awaiting outcomes')).toHaveTextContent('a low price alone does not qualify')
   })
@@ -62,7 +62,7 @@ describe('Historical learning', () => {
     snapshot.strategies[0].tracking = { pendingN: 14, firstPublicationAt: 1_792_382_400, latestPublicationAt: 1_792_382_400, symbols: ['AAPL', 'MSFT'] }
     const onResearch = vi.fn()
     render(<LearningPanel learning={snapshot} onResearch={onResearch} />)
-    expect(screen.getByLabelText('Learning history coverage')).toHaveTextContent('14Current forecasts being tracked')
+    expect(screen.getByLabelText('Learning history coverage')).toHaveTextContent('14Predictions being followed')
     expect(screen.getByLabelText('Research awaiting outcomes')).toHaveTextContent('14 saved forecasts')
     expect(screen.getByRole('link', { name: 'AAPL ↗' })).toHaveAttribute('href', '/stock/AAPL')
     expect(screen.getByText(/73 additional unscored records/)).toBeInTheDocument()
@@ -73,13 +73,13 @@ describe('Historical learning', () => {
 
   it('keeps failed baseline skill, rolling retention and chronology limits inspectable', () => {
     render(<LearningPanel learning={fixture()} />)
-    const calibration = screen.getByText('Calibration, dates & measurement limits').closest('details')!
-    fireEvent.click(within(calibration).getByText('Calibration, dates & measurement limits'))
+    const calibration = screen.getByText('See the evidence: accuracy and measurement').closest('details')!
+    fireEvent.click(within(calibration).getByText('See the evidence: accuracy and measurement'))
     expect(calibration).toHaveAttribute('open')
     expect(calibration).toHaveTextContent('Brier skill -0.100')
     expect(calibration).toHaveTextContent('recorded baseline 0.200 across 40 paired forecasts')
-    const chronology = screen.getByText('Does the pattern hold in recent campaigns?').closest('details')!
-    fireEvent.click(within(chronology).getByText('Does the pattern hold in recent campaigns?'))
+    const chronology = screen.getByText('See the evidence: recent and earlier results').closest('details')!
+    fireEvent.click(within(chronology).getByText('See the evidence: recent and earlier results'))
     expect(chronology).toHaveTextContent('+2.0%')
     expect(chronology).toHaveTextContent('+0.4%')
     expect(chronology).toHaveTextContent('not held-out validation')
