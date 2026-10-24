@@ -28,14 +28,14 @@ export function ClaimEvidence({ video }: { video: StreetVideo }) {
       const timestampUrl = canonical && claim.startSec != null ? `${canonical}&t=${Math.floor(claim.startSec)}s` : null
       return <details className="social-claim" key={claim.id}>
         <summary>
-          <span className="social-claim__identity">{claim.sym} <span>{claim.stance === 'bull' ? 'Bullish' : claim.stance === 'bear' ? 'Bearish' : 'Neutral'}</span></span>
+          <span className="social-claim__identity">{claim.sym} <span>{claim.stance === 'bull' ? 'Expecting a rise' : claim.stance === 'bear' ? 'Expecting a fall' : 'No clear direction'}</span></span>
           <span className={`social-claim__badge ${sourced ? 'is-sourced' : ''}`}>{sourced ? 'Quote matched' : 'Needs source check'}</span>
         </summary>
         <p>{claim.rationale || 'Source excerpt only.'}</p>
         {claim.quote && <blockquote>{claim.quote}</blockquote>}
         {timestampUrl ? <a className="social-claim__jump" href={timestampUrl} target="_blank" rel="noreferrer">Play source at {stamp(claim.startSec!)} ↗</a> : <p className="social-evidence__note">No reliable timecode for this claim.</p>}
         <dl className="social-claim__facts">
-          <div><dt>Creator’s horizon</dt><dd>{claim.horizon || 'Not explicitly captured'}</dd></div>
+          <div><dt>Creator’s timeframe</dt><dd>{claim.horizon || 'Not explicitly captured'}</dd></div>
           <div><dt>Condition</dt><dd>{claim.condition || (claim.unconditional ? 'No condition stated in the quoted view' : 'Unclear — excluded from outcome tracking')}</dd></div>
           <div><dt>Fact check</dt><dd>{claim.verification.status === 'supported' ? 'Cited numerical facts supported' : claim.verification.status === 'contradicted' ? 'Conflicting filing evidence' : 'Not independently verified'}</dd></div>
         </dl>

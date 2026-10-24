@@ -38,7 +38,7 @@ function ObservationCard({ row, linked = true }: { row: StrategyObservation; lin
     <p className="research-muted">Time to follow: <b>{holdingPeriod(row.forecast.horizonSessions)}</b>. {row.forecast.calibratedN === 0 ? 'Not enough results to judge accuracy.' : 'Past examples do not tell us how reliably this will work next.'}</p>
     <div className="research-risk"><span>Main risk</span><p>{row.risks[0] ? researchWording(row.risks[0]) : 'No specific risk was recorded. This does not mean the idea is low risk.'}</p></div>
     {row.sleeve === 'quality-dip' && <p className="research-muted"><b>Business health:</b> {businessStatus(row.metrics.financialHealth)}. <b>What we’re waiting for:</b> {nextCheck ? nextCheckWording(nextCheck.label, nextCheck.detail) : 'The checks are met; review current prices and risks before deciding.'}</p>}
-    {row.dataGaps.length > 0 && <p className="research-missing"><b>Still missing</b> {row.dataGaps.slice(0, 2).map(researchWording).join(' · ')}</p>}
+    {row.dataGaps.length > 0 && <p className="research-missing"><b>Still missing</b> {row.dataGaps.length} {row.dataGaps.length === 1 ? 'piece' : 'pieces'} of information to check. Open the evidence below for details.</p>}
     <details className="research-card-details"><summary>See the evidence</summary>
     <p className="research-muted">Research rank {row.score}/100. This orders ideas for review; it is not a chance of success.</p>
     <div className="research-estimate">

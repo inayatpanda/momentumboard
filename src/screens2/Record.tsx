@@ -316,7 +316,7 @@ export default function Record() {
           {/* the cohort's own numbers, beside the equity ones and never inside
               them — rendered only once the partition has actually moved, so a
               reader who has never watched a coin sees nothing about one */}
-          {learning.crypto && <CryptoPanel crypto={learning.crypto} rows={flattenLedger(days)} />}
+          {learning.crypto && <details className="company-detail"><summary>See the evidence: crypto results</summary><p>Crypto is measured separately, without a stock-market comparison.</p><CryptoPanel crypto={learning.crypto} rows={flattenLedger(days)} /></details>}
         </>
       )}
       {/* the line and the two ends sit BETWEEN the tiles and the calibration:

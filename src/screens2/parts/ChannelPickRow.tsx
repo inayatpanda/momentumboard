@@ -129,9 +129,9 @@ export function ChannelPickRow({
         {pick.sym}
       </Link>
       <span className="cp-street">
-        {pick.bulls > 0 && <b className="cp-bull num">{plural(pick.bulls, 'bull')}</b>}
+        {pick.bulls > 0 && <b className="cp-bull num">{pick.bulls} {pick.bulls === 1 ? 'expects' : 'expect'} a rise</b>}
         {pick.bulls > 0 && pick.bears > 0 && <span className="cp-dot"> · </span>}
-        {pick.bears > 0 && <b className="cp-bear num">{plural(pick.bears, 'bear')}</b>}
+        {pick.bears > 0 && <b className="cp-bear num">{pick.bears} {pick.bears === 1 ? 'expects' : 'expect'} a fall</b>}
         {/* the names carry the count inside them ("+ 2 more"), so when they are
             shown the count goes with them, onto its own line below — a first
             line of variable length puts the engine's answer at a different

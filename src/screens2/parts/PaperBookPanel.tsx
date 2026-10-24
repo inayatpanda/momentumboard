@@ -31,12 +31,13 @@ export function PaperBookPanel({ data }: { data: PaperBookSlice | null | undefin
       <p className="sec-label">Practice portfolio</p>
       <p className="cc-reason">A simulation using pretend money, planned entry prices and loss limits. No real trades are placed.</p>
       <div className="paper-book-grid">
-        {tiles.map(([label, value, detail]) => (
+        {tiles.filter((_, i) => i !== 3 && i !== 6).map(([label, value, detail]) => (
           <div className="card paper-book-stat" key={label}>
             <span>{label}</span><strong className="num">{value}</strong><small>{detail}</small>
           </div>
         ))}
       </div>
+      <details className="company-detail"><summary>See the evidence: practice trades</summary><p>Profit factor (total gains divided by total losses): {tiles[3][1]}. Turnover (money used to open trades compared with portfolio capital): {tiles[6][1]}.</p>
       {book.positions.length > 0 && (
         <div className="paper-book-list" aria-label="Open paper positions">
           <p className="sec-label">Open positions</p>
@@ -53,6 +54,7 @@ export function PaperBookPanel({ data }: { data: PaperBookSlice | null | undefin
           Completed months: {data.months.slice(-4).reverse().map(m => `${m.month} ${signed(m.returnPct)}`).join(' · ')}
         </p>
       )}
+      </details>
       <p className="cc-reason paper-book-note">Pretend money only. Check losses and average results as well as the winners.</p>
     </section>
   )

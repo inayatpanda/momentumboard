@@ -675,15 +675,15 @@ describe('ChannelPicksStrip', () => {
   it('renders YouTube & social’s read: symbol linked, bulls and bears in their own direction colours', () => {
     withRouter(<ChannelPicksStrip picks={[mkPick()]} board={[]} openCalls={undefined} />)
     expect(screen.getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
-    expect(screen.getByText('3 bulls')).toHaveClass('cp-bull')
-    expect(screen.getByText('1 bear')).toHaveClass('cp-bear')
+    expect(screen.getByText('3 expect a rise')).toHaveClass('cp-bull')
+    expect(screen.getByText('1 expects a fall')).toHaveClass('cp-bear')
     expect(screen.getByText(/3 channels/)).toBeInTheDocument()
   })
 
   it('says nothing about a side nobody took, and counts one channel in the singular', () => {
     withRouter(<ChannelPicksStrip picks={[mkPick({ bulls: 0, bears: 1, channels: 1 })]} board={[]} openCalls={undefined} />)
     expect(screen.queryByText(/bull/)).not.toBeInTheDocument()
-    expect(screen.getByText('1 bear')).toBeInTheDocument()
+    expect(screen.getByText('1 expects a fall')).toBeInTheDocument()
     expect(screen.getByText(/1 channel$/)).toBeInTheDocument()
   })
 
