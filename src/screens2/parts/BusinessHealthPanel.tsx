@@ -58,7 +58,7 @@ export function BusinessHealthRead({ snapshot }: { snapshot: BusinessHealthSnaps
 export function BusinessHealthPanel({ sym }: { sym: string }) {
   const { data, error, refreshing, refresh } = useSlice(`business-health:${sym}`, () => getBusinessHealth(sym))
   return <section id={`${sym}-business`} className="card itl-section dossier-business" aria-label="Business health">
-    <div className="dossier-section-head"><div><span className="dossier-eyebrow">Company finances</span><h2>How healthy is the business?</h2></div><span className="dossier-caption">Company reports</span></div>
+    <div className="dossier-section-head"><div><span className="dossier-eyebrow">Company finances</span><h2>How healthy is the business?</h2></div><button className="dossier-caption" type="button" onClick={refresh} disabled={refreshing}>{refreshing ? 'Updating…' : 'Update reports'}</button></div>
     {error && <p role="alert" className="cc-reason">Business filings could not be refreshed. {data ? 'Showing saved evidence.' : 'Financial health is unknown.'} <button type="button" onClick={refresh} disabled={refreshing}>Retry business health</button></p>}
     {data ? <BusinessHealthRead snapshot={data} /> : !error && <p role="status" className="cc-reason">Checking reported business fundamentals…</p>}
   </section>

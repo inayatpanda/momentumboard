@@ -301,10 +301,11 @@ export async function fetchBusinessHealth(sym: string, fetchFn: typeof fetch = f
   }
 }
 
+export const businessHealthCacheKey = (symbol: string) => `business-health:v4:${symbol.trim().toUpperCase()}`
 const pending = new Map<string, Promise<BusinessHealthSnapshot>>()
 export async function cachedBusinessHealth(sym: string): Promise<BusinessHealthSnapshot> {
   const symbol = sym.trim().toUpperCase()
-  const key = `business-health:v4:${symbol}`
+  const key = businessHealthCacheKey(symbol)
   const cached = await getCached<BusinessHealthSnapshot>(key)
   if (cached) return cached
   const existing = pending.get(key)
