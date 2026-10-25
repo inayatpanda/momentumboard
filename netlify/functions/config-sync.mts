@@ -4,7 +4,7 @@ import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { authenticate } from './lib/auth'
 
 const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store', vary: 'x-app-token' } })
 
 export async function routeConfig(
   url: URL,
@@ -19,8 +19,12 @@ export async function routeConfig(
   const reportOk = !!env.REPORT_TOKEN && headers.get('x-report-token') === env.REPORT_TOKEN
   if (!auth && !(method === 'GET' && reportOk)) return json(401, { ok: false, error: 'unauthorized' })
   const ns = auth?.ns ?? '' // licensees get their own config/portfolio namespace
+  const ownerRead=auth?.level==='admin'||!!auth?.house||reportOk
 
   if (method === 'GET') {
+    // Owner rule/position alerts and operational logs are not shared market
+    // research. This also prevents old raw history views leaking private stops.
+    if(!ownerRead && ['signals','history','runlog'].includes(url.searchParams.get('view')??''))return json(200,{ok:true,data:[]})
     if (url.searchParams.get('view') === 'signals') {
       const signals = (await store.read<unknown[]>('signal-log')) ?? []
       return json(200, { ok: true, data: signals })
@@ -39,7 +43,7 @@ export async function routeConfig(
       const [index, picksHistory, history, dossiers] = await Promise.all([
         store.read<string[]>('report-index'),
         store.read<{ date: string; picks: unknown[] }[]>('report-picks'),
-        store.read<{ at: number }[]>('alert-history'),
+        ownerRead?store.read<{ at: number }[]>('alert-history'):Promise.resolve([]),
         store.read<{ at: number }[]>('event-dossiers'),
       ])
       const days: Record<string, { r?: boolean; p?: number; a?: number; e?: number }> = {}
@@ -64,7 +68,7 @@ export async function routeConfig(
       const [index, picksHistory, history, dossiers, videos] = await Promise.all([
         store.read<string[]>('report-index'),
         store.read<{ date: string; regime?: string; picks: { ticker: string; side: string; conviction?: string; strength?: string; priceAtPick?: number }[] }[]>('report-picks'),
-        store.read<{ text: string; tier: string; at: number }[]>('alert-history'),
+        ownerRead?store.read<{ text: string; tier: string; at: number }[]>('alert-history'):Promise.resolve([]),
         store.read<{ kind: string; name: string; assessment: string; at: number }[]>('event-dossiers'),
         store.read<{ title?: string; channel?: string; url: string; at: number }[]>('video-analyses'),
       ])

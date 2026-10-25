@@ -9,6 +9,7 @@ import { openSqliteD1 } from '../../scripts/lib/sqliteD1'
 import { ensureD1Schema } from './lib/d1Store'
 import { useBlobStore, useD1Store } from './lib/storeProvider'
 import handler from './engine.mts'
+import {issueFreeDeviceToken} from './lib/auth'
 
 const todayLondon = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date())
 
@@ -43,6 +44,13 @@ describe('engine ?view= slices', () => {
   it('401s without a token, on views too', async () => {
     const res = await handler(new Request('https://x/api/engine?view=board'))
     expect(res.status).toBe(401)
+  })
+  it('allows signed free devices to read shared strategy research without an admin or licence row',async()=>{
+    const token=await issueFreeDeviceToken('admin-master')
+    const result=await handler(req('?view=strategies',token))
+    expect(result.status).toBe(200)
+    expect((await body(result)).data).toEqual({snapshot:null,historicalStudy:null})
+    expect((await handler(req('?view=strategies',token.slice(0,-1)+'x'))).status).toBe(401)
   })
 
   it('serves only requested stock contexts and the same context on the stock journey', async () => {

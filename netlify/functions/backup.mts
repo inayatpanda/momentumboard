@@ -1,13 +1,14 @@
 import type { Context } from '@netlify/functions'
 import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { authenticate } from './lib/auth'
+import { backupSettings } from '../../shared/backupSettings'
 
 // Full journal/config backup to the site's private Blobs storage. The device's
 // IndexedDB is the primary copy; this protects it from cleared browser storage
 // and enables restore on a new device. App token only — this is personal data.
 
 const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store', vary: 'x-app-token' } })
 
 const MAX_BYTES = 2_000_000
 
@@ -23,7 +24,13 @@ export async function routeBackup(
   const ns = auth.ns
 
   if (method === 'GET') {
-    return json(200, { ok: true, data: (await store.read(`${ns}journal-backup`)) ?? null })
+    const saved = await store.read<Record<string, unknown>>(`${ns}journal-backup`)
+    if (!saved) return json(200, { ok: true, data: null })
+    const clean = { trades: saved.trades, rules: saved.rules, watchlist: saved.watchlist, settings: backupSettings(saved.settings), at: saved.at }
+    // Older clients uploaded every setting. Never restore a credential from
+    // those backups, and remove it from storage when that backup is opened.
+    if (JSON.stringify(saved) !== JSON.stringify(clean)) await store.write(`${ns}journal-backup`, clean)
+    return json(200, { ok: true, data: clean })
   }
 
   if (method === 'PUT') {
@@ -34,8 +41,8 @@ export async function routeBackup(
     } catch {
       return json(400, { ok: false, error: 'invalid-json' })
     }
-    if (!Array.isArray(parsed.trades)) return json(400, { ok: false, error: 'invalid-backup' })
-    await store.write(`${ns}journal-backup`, { ...parsed, at: Math.floor(Date.now() / 1000) })
+    if (!parsed || !Array.isArray(parsed.trades)) return json(400, { ok: false, error: 'invalid-backup' })
+    await store.write(`${ns}journal-backup`, { trades: parsed.trades, rules: parsed.rules, watchlist: parsed.watchlist, settings: backupSettings(parsed.settings), at: Math.floor(Date.now() / 1000) })
     return json(200, { ok: true })
   }
 

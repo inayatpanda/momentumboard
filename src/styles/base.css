@@ -3228,3 +3228,7 @@ p {
 
 .data-status { padding: 16px 0; }
 .data-status button { margin-top: 8px; }
+
+/* Five stock views stay reachable on a small phone without squeezing labels. */
+.stx > .stocks-tabs { overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+.stx > .stocks-tabs button { flex: 1 0 auto; padding-inline: 12px; white-space: nowrap; }

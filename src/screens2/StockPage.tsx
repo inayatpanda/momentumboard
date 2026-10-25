@@ -24,6 +24,7 @@ import { StockContextPanel } from './parts/StockContextPanel'
 // first paint, and jsdom (which cannot run it) mocks the module in tests.
 
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Link } from 'wouter'
 import { useSlice } from '../lib/useSlice'
 import { getJourney, getVerdict } from '../lib/apiViews'
 import { getCandles, getFilings, getNews } from '../lib/api'
@@ -321,6 +322,7 @@ export default function StockPage({ sym }: { sym: string }) {
 
       </div>
       <StockContextPanel symbol={sym} context={journey?.stockContext} loading={!journey && !journeyError} />
+      <Link className="stocks-today-link" href={`/stocks?view=sell&stock=${encodeURIComponent(sym)}`}><span><strong>Review selling {sym}</strong><small>Check business warnings, price weakness and valuation</small></span><span aria-hidden="true">→</span></Link>
       <div className="company-next"><button onClick={() => setView('business')}><strong>Business & reports</strong><span>Cash flow, financial health and trends →</span></button><button onClick={() => setView('research')}><strong>Research & sources</strong><span>Setups, channel views and past outcomes →</span></button></div>
       </div>
       <div id="company-panel-business" role="tabpanel" aria-labelledby="company-tab-business" hidden={view !== 'business'}>

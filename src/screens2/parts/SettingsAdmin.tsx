@@ -6,7 +6,7 @@ import { IconClose } from '../../components/ControlIcon'
 // whole Settings screen still lives here so a re-render never re-fires it.
 
 import { useCallback, useEffect, useState } from 'react'
-import { apiUrl, createLicence, getLicences, getToken, isSharedFreeToken, revokeLicence, setToken } from '../../lib/api'
+import { apiUrl, createLicence, getLicences, getToken, isSharedFreeToken, isFreeDeviceToken, revokeLicence, setToken } from '../../lib/api'
 
 type Licence = Awaited<ReturnType<typeof getLicences>>[number]
 
@@ -28,7 +28,7 @@ const IconKey = () => <Svg d="M21 2l-9.4 9.4M15.5 7.5l3 3M11.6 11.6a5 5 0 11-7.0
  * the log and a red row in the reader's devtools. Answering it locally is also
  * the honest answer: false, immediately, with no round trip. */
 export function useIsAdmin() {
-  const free = isSharedFreeToken()
+  const free = isSharedFreeToken()||isFreeDeviceToken()
   const [isAdmin, setIsAdmin] = useState<boolean | null>(free ? false : null)
   const [licences, setLicences] = useState<Licence[]>([])
   const reload = useCallback(() => {
@@ -52,13 +52,14 @@ export function useIsAdmin() {
 export function LicenceStatusRow({ isAdmin }: { isAdmin: boolean | null }) {
   const token = getToken()
   const free = isSharedFreeToken()
+  const freeDevice=isFreeDeviceToken()
   const tail = token ? token.slice(-6) : null
   // A SHARED TOKEN IS NOT A LICENCE ON THIS DEVICE. "A licence key is active on
   // this device, ending …97bd72" is true of the binary, not of the reader —
   // every free install carries the same six characters, and quoting them
   // invites the reader to treat a shared key as their own.
-  const label = free ? 'Free preview' : isAdmin === null ? 'Checking licence…' : isAdmin ? 'Admin access' : 'Licensed device'
-  const sub = free
+  const label = freeDevice?'Free access':free ? 'Free preview' : isAdmin === null ? 'Checking licence…' : isAdmin ? 'Admin access' : 'Licensed device'
+  const sub = freeDevice?'This browser has its own watchlist and data. No sign-up or expiry.':free
     ? 'Free preview — licence binding comes later. Nothing on this device is tied to an account yet.'
     : isAdmin === null
       ? "Confirming this device's key with the server."

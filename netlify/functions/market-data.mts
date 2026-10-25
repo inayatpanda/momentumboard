@@ -860,22 +860,37 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
   }
 
   if (type === 'social') {
+    const { normaliseTradableMention } = await import('../../shared/marketEntities')
+    const callerConfig=await blobAppStore.read<{watchlist?:{symbol:string}[]}>(`${auth.ns}config`).catch(()=>null)
+    const followed=new Set((callerConfig?.watchlist??[]).map(row=>normaliseTradableMention(row.symbol)).filter(Boolean))
+    // Cached social evidence is shared; watchlist membership is personal.
+    // Overlay even old cache entries so historical owner flags never escape.
+    const socialResponse=(raw:unknown)=>{
+      const data=raw&&typeof raw==='object'?{...raw as Record<string,unknown>}:{}
+      for(const key of ['discoveries','pulse'])if(Array.isArray(data[key]))data[key]=(data[key] as unknown[]).map(value=>{
+        if(!value||typeof value!=='object')return value
+        const row=value as Record<string,unknown>
+        return {...row,onWatchlist:typeof row.sym==='string'&&followed.has(normaliseTradableMention(row.sym))}
+      })
+      const response=json(200,{ok:true,data})
+      response.headers.set('cache-control','private, no-store');response.headers.set('vary','x-app-token')
+      return response
+    }
     const hit = await getCached<unknown>('social-pulse:v3')
-    if (hit) return json(200, { ok: true, data: hit })
+    if (hit) return socialResponse(hit)
     try {
       const { fetchRedditTrends, fetchStocktwitsTrending, combineSocialPulse, pickDiscoveries, isMega, plausibleCapUsdM } = await import('./lib/social')
       const { appStore: blobAppStore } = await import('./lib/storeProvider')
       const { computeConsensus } = await import('./lib/videoTrends')
-      const [reddit, stocktwits, extracts, cfg, socialHistory] = await Promise.all([
+      const [reddit, stocktwits, extracts, socialHistory] = await Promise.all([
         fetchRedditTrends(),
         fetchStocktwitsTrending(),
         blobAppStore.read<unknown[]>('video-extracts'),
-        blobAppStore.read<{ watchlist: { symbol: string }[] }>('config'),
         blobAppStore.read<import('../../shared/engine/strategyLab').SocialHistoryPoint[]>('engine-lab-social-history'),
       ])
       const nowSec = Math.floor(Date.now() / 1000)
       const consensus = computeConsensus(((extracts ?? []) as Parameters<typeof computeConsensus>[0]), nowSec)
-      const pulse = combineSocialPulse(reddit, stocktwits, consensus.tickers, (cfg?.watchlist ?? []).map(w => w.symbol))
+      const pulse = combineSocialPulse(reddit, stocktwits, consensus.tickers, [])
       for (const row of pulse) {
         const seen = (socialHistory ?? []).filter(point => point.rows.some(hist => hist.sym === row.sym))
         const previous = [...seen].sort((a, b) => b.observedAt - a.observedAt)[0]?.rows.find(hist => hist.sym === row.sym)
@@ -918,7 +933,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
       const discoveries = pickDiscoveries(candidates as never[])
 
       // the analyst's take on each up-and-comer: ONE model call, opinions not noise
-      if (discoveries.length) {
+      if (discoveries.length && (auth.level==='admin'||auth.house)) {
         try {
           const { callLlm } = await import('./ai-insights.mts')
           const prompt = `You are a seasoned, sceptical stock analyst. For each up-and-coming name below, give a 2-3 sentence take: what the company does, what the EVIDENCE says is driving attention, and YOUR opinion (worth investigating / needs a catalyst / likely promotion risk). Distinguish creator stance from audience engagement; neither is price confirmation. End with what would validate or invalidate the attention. Respond ONLY with JSON: {"opinions":[{"sym":"X","take":"..."}]}\n${discoveries
@@ -942,7 +957,7 @@ As a seasoned, friendly-but-honest analyst, respond in 2-3 sentences: is this co
         at: nowSec,
       }
       await setCached('social-pulse:v3', data, 3600)
-      return json(200, { ok: true, data })
+      return socialResponse(data)
     } catch (e) {
       return json(502, { ok: false, error: String(e) })
     }

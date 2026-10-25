@@ -21,5 +21,22 @@ describe('journal backup', () => {
   it('rejects garbage', async () => {
     expect((await routeBackup('PUT', auth, '{"nope":1}', env, memoryStore())).status).toBe(400)
     expect((await routeBackup('PUT', auth, 'not json', env, memoryStore())).status).toBe(400)
+    expect((await routeBackup('PUT', auth, 'null', env, memoryStore())).status).toBe(400)
+  })
+  it('never stores credentials or unknown settings from older clients', async () => {
+    const store = memoryStore()
+    const settings = [{ key: 'groqApiKey', value: 'test-secret' }, { key: 'futureApiKey', value: 'future-secret' }, { key: 'capital', value: '5000', extra: 'secret' }]
+    await routeBackup('PUT', auth, JSON.stringify({ trades: [], settings, token: 'also-secret' }), env, store)
+    const saved = await store.read<any>('journal-backup')
+    expect(saved.settings).toEqual([{ key: 'capital', value: '5000' }])
+    expect(JSON.stringify(saved)).not.toContain('secret')
+  })
+  it('scrubs previously stored credentials before returning or restoring a backup', async () => {
+    const store = memoryStore()
+    await store.write('journal-backup', { trades: [], settings: [{ key: 'groqApiKey', value: 'old-secret' }, { key: 'capital', value: '7000' }], at: 123 })
+    const got = await (await routeBackup('GET', auth, null, env, store)).json()
+    expect(got.data.settings).toEqual([{ key: 'capital', value: '7000' }])
+    expect(got.data.at).toBe(123)
+    expect(JSON.stringify(await store.read('journal-backup'))).not.toContain('old-secret')
   })
 })

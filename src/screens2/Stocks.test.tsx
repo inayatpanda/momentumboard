@@ -178,6 +178,12 @@ describe('Stocks', () => {
     expect(screen.getByRole('tab', { name: 'Strategies' })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByRole('heading', { name: 'Stocks by strategy' })).toBeInTheDocument()
   })
+  it('opens the sell review from a shared stock link and loads the cloud scan', async () => {
+    withRouter('/app/stocks', 'view=sell&stock=AAPL')
+    expect(screen.getByRole('tab', { name: 'Sell review' })).toHaveAttribute('aria-selected', 'true')
+    await waitFor(() => expect(getStrategyChoices).toHaveBeenCalled())
+    expect(await screen.findByRole('heading', { name: 'Review selling' })).toBeVisible()
+  })
   it('keeps the opening view focused and reveals sectors on Discover', async () => {
     withRouter()
     expect(screen.getByRole('tab', { name: 'Watchlist' })).toHaveAttribute('aria-selected', 'true')

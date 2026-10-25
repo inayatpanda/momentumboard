@@ -22,10 +22,11 @@ const StockContextPanel = lazy(() => import('./parts/StockContextPanel').then(mo
 const StockDiscovery = lazy(() => import('./parts/StockDiscovery').then(module => ({ default: module.StockDiscovery })))
 const StockMarkets = lazy(() => import('./parts/StockMarkets'))
 const StrategyChoicesView = lazy(() => import('./parts/StrategyChoicesView'))
-type StockSection = 'watchlist' | 'discover' | 'strategies' | 'markets'
+const SellReviewView = lazy(() => import('./parts/SellReviewView'))
+type StockSection = 'watchlist' | 'discover' | 'strategies' | 'sell' | 'markets'
 const sectionFromSearch = (search: string): StockSection => {
   const view = new URLSearchParams(search).get('view')
-  return view === 'discover' || view === 'strategies' || view === 'markets' ? view : 'watchlist'
+  return view === 'discover' || view === 'strategies' || view === 'sell' || view === 'markets' ? view : 'watchlist'
 }
 
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
@@ -79,6 +80,7 @@ export default function Stocks() {
     const params = new URLSearchParams(window.location.search)
     if (value === 'watchlist') params.delete('view'); else params.set('view', value)
     if (value !== 'strategies') params.delete('strategy')
+    if (value !== 'sell') params.delete('stock')
     navigate(`${location}${params.size ? `?${params}` : ''}`, { replace: true })
   }
   const [sector, setSector] = useState('')
@@ -125,7 +127,7 @@ export default function Stocks() {
     { key: 'movers', fetcher: getMovers },
     { key: 'sectors', fetcher: getSectors },
   ]
-  if (section === 'strategies') refreshEntries.push({ key: 'strategy-choices', fetcher: getStrategyChoices })
+  if (section === 'strategies' || section === 'sell') refreshEntries.push({ key: 'strategy-choices', fetcher: getStrategyChoices })
   const filteredItems = watchFilter ? items.filter(i => watchSector(i.symbol, directory?.rows ?? []) === watchFilter) : items
   const visibleItems = showAll ? filteredItems : filteredItems.slice(0, 6)
   const visibleSymbols = visibleItems.map(i => i.symbol)
@@ -198,11 +200,11 @@ export default function Stocks() {
       {searchError && <p className="stx-search-error">Enter a valid ticker — letters, numbers, &quot;.&quot; or &quot;-&quot;, up to 12 characters.</p>}
 
       <div className="stocks-tabs" role="tablist" aria-label="Stock views">
-        {(['watchlist', 'discover', 'strategies', 'markets'] as const).map((key, index, tabs) => <button key={key} role="tab" id={`stock-tab-${key}`} aria-controls="stock-view" tabIndex={(query.trim() ? 'discover' : section) === key ? 0 : -1} aria-selected={(query.trim() ? 'discover' : section) === key}
+        {(['watchlist', 'discover', 'strategies', 'sell', 'markets'] as const).map((key, index, tabs) => <button key={key} role="tab" id={`stock-tab-${key}`} aria-controls="stock-view" tabIndex={(query.trim() ? 'discover' : section) === key ? 0 : -1} aria-selected={(query.trim() ? 'discover' : section) === key}
           onClick={() => { setQuery(''); setSearchError(false); setSection(key) }} onKeyDown={event => {
             const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
             if (next >= 0) { event.preventDefault(); setQuery(''); setSearchError(false); setSection(tabs[next]); document.getElementById(`stock-tab-${tabs[next]}`)?.focus() }
-          }}>{key === 'watchlist' ? 'Watchlist' : key === 'discover' ? 'Discover' : key === 'strategies' ? 'Strategies' : 'Markets'}</button>)}
+          }}>{key === 'watchlist' ? 'Watchlist' : key === 'discover' ? 'Discover' : key === 'strategies' ? 'Strategies' : key === 'sell' ? 'Sell review' : 'Markets'}</button>)}
       </div>
       <div id="stock-view" role="tabpanel" aria-labelledby={`stock-tab-${query.trim() ? 'discover' : section}`}>
       {query.trim() || section === 'discover' ? <Suspense fallback={<p role="status">Loading stock discovery…</p>}><StockDiscovery directory={directory} error={directoryError} query={query} sector={sector} onSector={setSector} watchSymbols={new Set(symbols)} onAdd={add} /></Suspense> : section === 'watchlist' ? <>
@@ -217,7 +219,7 @@ export default function Stocks() {
         </section>
         <Link href="/today" className="stocks-today-link"><span><strong>Today’s research</strong><small>Market context, stock setups and what changed</small></span><span aria-hidden="true">→</span></Link>
         <Link href="/more/street" className="stocks-today-link"><span><strong>From your channels</strong><small>Latest video findings and supporting evidence</small></span><span aria-hidden="true">→</span></Link>
-      </> : section === 'strategies' ? <Suspense fallback={<p role="status">Loading strategies…</p>}><StrategyChoicesView /></Suspense> : <Suspense fallback={<p role="status">Loading markets…</p>}><StockMarkets watchSymbols={new Set(symbols)} onAdd={add} /></Suspense>}
+      </> : section === 'strategies' ? <Suspense fallback={<p role="status">Loading strategies…</p>}><StrategyChoicesView /></Suspense> : section === 'sell' ? <Suspense fallback={<p role="status">Loading sell review…</p>}><SellReviewView watchSymbols={symbols} watchLoaded={watchLoaded} /></Suspense> : <Suspense fallback={<p role="status">Loading markets…</p>}><StockMarkets watchSymbols={new Set(symbols)} onAdd={add} /></Suspense>}
       </div>
     </div>
   )

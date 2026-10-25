@@ -1,4 +1,5 @@
 import type { AppStore } from './store'
+import { freeDeviceId } from '../../../shared/deviceAccess'
 
 // Licensing: the site owner's APP_TOKEN is the ADMIN licence. Further licence
 // keys are generated in-app (admin only) and grant user-level access with
@@ -19,6 +20,16 @@ export interface AuthResult {
   level: 'admin' | 'user'
   ns: string // storage namespace prefix: '' for admin, 'u:<id>:' for licensees
   house?: boolean // carried from the licence — grants server-key LLM access without admin powers
+  freeDevice?: boolean
+}
+
+const deviceMessage=(id:string)=>new TextEncoder().encode(`StreetSignal free device v1:${id}`)
+const deviceSigningKey=(secret:string)=>crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign','verify'])
+export async function issueFreeDeviceToken(secret:string):Promise<string> {
+  if(!secret.trim())throw new Error('Free access is not configured')
+  const id=[...crypto.getRandomValues(new Uint8Array(24))].map(n=>n.toString(16).padStart(2,'0')).join('')
+  const signature=await crypto.subtle.sign('HMAC',await deviceSigningKey(secret),deviceMessage(id))
+  return `ss_free_v1.${id}.${[...new Uint8Array(signature)].map(n=>n.toString(16).padStart(2,'0')).join('')}`
 }
 
 /** First candidate that is actually SET — a blank value counts as unset.
@@ -44,6 +55,13 @@ export async function authenticate(headers: Headers, env: { APP_TOKEN?: string }
   const token = headers.get('x-app-token')
   if (!token) return null
   if (env.APP_TOKEN && token === env.APP_TOKEN) return { level: 'admin', ns: '' }
+  if(token.startsWith('ss_free_v1.')){
+    const id=freeDeviceId(token)
+    if(!id || !env.APP_TOKEN?.trim())return null
+    const signature=Uint8Array.from(token.split('.')[2].match(/../g)!,hex=>parseInt(hex,16))
+    const valid=await crypto.subtle.verify('HMAC',await deviceSigningKey(env.APP_TOKEN),signature,deviceMessage(id))
+    return valid?{level:'user',ns:`u:free:${id}:`,freeDevice:true}:null
+  }
   let licences = (await store.read<Licence[]>('licences')) ?? []
   let lic = licences.find(l => l.key === token && !l.revoked)
   // MISS → one strong-consistency retry. Blob reads are eventual, so a key

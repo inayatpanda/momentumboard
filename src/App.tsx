@@ -1,20 +1,20 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { syncFromServer } from './lib/sync'
 import { seedStarterWatchlist } from './lib/starter'
-import { AppGate } from './screens/AppGate'
 // The v2 shell IS the app (plan Task 24). Static import on purpose: it folds
 // the shell + base.css into the entry, so a first-visit install that goes
 // offline before opening still has the whole app (the walkthrough's precache
 // covers the entry closure). AppShell owns <Suspense> for its lazy routes;
 // the separate public-site boundary lives below.
 import AppShell from './shell/AppShell'
-import { clearToken, getToken, validateAccess } from './lib/api'
+import { getToken, validateAccess, provisionFreeAccess, reloadForAccess } from './lib/api'
 import { isDesktopShell } from './lib/platform'
 import { ChunkRecoveryBoundary } from './shell/ChunkRecoveryBoundary'
 
 // Public marketing pages are a separate surface. Product/PWA launches should
 // not download their prose and page-specific styles before Today can render.
 const PublicSite = lazy(() => import('./screens/PublicSite'))
+const AppGate=lazy(()=>import('./screens/AppGate').then(module=>({default:module.AppGate})))
 
 /** The surfaces this component still owns after the cutover deletion wave:
  *  the public website, the licence front door, and the boot-time sync. Every
@@ -33,9 +33,12 @@ export default function App() {
   const [surface, setSurface] = useState<'site' | 'app'>(() =>
     isDesktopShell() || location.pathname.startsWith('/app') ? 'app' : 'site',
   )
-  // licence gate: no token → the public landing page. main.tsx consumes ?key=
-  // unlock links before React mounts, so licensed arrivals never see it.
-  const [licensed, setLicensed] = useState(() => !!getToken())
+  // Public pages remain public. Product visits receive free device access;
+  // existing owner/reader credentials continue to use their own stored data.
+  const [access,setAccess]=useState<'checking'|'ready'|'error'>('checking')
+  const [error,setError]=useState<string|null>(null)
+  const [attempt,setAttempt]=useState(0)
+  const licensed=!!getToken()
   const enterApp = () => {
     // The URL is cosmetic in the desktop shell — there is no address bar and
     // the next launch loads index.html regardless — and a custom protocol is
@@ -46,31 +49,28 @@ export default function App() {
       /* the shell's local protocol refused the path — the surface below is what matters */
     }
     setSurface('app')
-    setLicensed(true)
   }
 
-  // boot check: a token the server rejects (revoked, or an expired trial) sends
-  // the reader back to the landing page instead of a screen of failed requests.
-  // Offline resolves valid — never lock a licensed reader out of cached data.
-  // MOUNT-ONLY on purpose: a trial minted seconds ago can 401 on a stale Blobs
-  // replica (eventual consistency); re-validating on the unlock transition
-  // silently bounced fresh trials back to the landing. By the next visit the
-  // write has long propagated, so the boot check still catches real expiry.
-  useEffect(() => {
-    if (!getToken()) return
-    validateAccess().then(ok => {
-      if (!ok) {
-        // a key claimed minutes ago can 401 off a stale Blobs replica even
-        // with the server's strong-read retry — never burn a fresh unlock on
-        // one bad answer; real expiry/revocation still catches the next boot
-        const claimedAt = Number(localStorage.getItem('mb-token-at') ?? 0)
-        if (Date.now() - claimedAt < 15 * 60_000) return
-        clearToken()
-        setLicensed(false)
-      }
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Verify existing access before syncing. Missing or expired legacy access
+  // receives a separate free identity; old personal data stays in its old DB.
+  useEffect(()=>{
+    if(surface!=='app')return
+    let active=true
+    setAccess('checking');setError(null)
+    void(async()=>{
+      try{
+        if(getToken() && await validateAccess()){
+          if(active)setAccess('ready')
+          return
+        }
+        if(!active)return
+        await provisionFreeAccess()
+        // Rebind module-level storage to the new device, retaining deep links.
+        if(active)reloadForAccess()
+      }catch(err){if(active){setError(err instanceof Error?err.message:'Could not open StreetSignal. Please try again.');setAccess('error')}}
+    })()
+    return()=>{active=false}
+  },[surface,attempt])
 
   // phone ↔ desktop: pull server state on launch. Starter seeding runs AFTER
   // the pull, so an existing watchlist is never polluted — a truly first launch
@@ -80,9 +80,9 @@ export default function App() {
   // invalidation (DS-10/CX-22, src/lib/sync.ts), and the v2 screens read the
   // watchlist when they mount, which happens after this on a normal launch.
   useEffect(() => {
-    if (!licensed || surface !== 'app') return
+    if (access!=='ready' || surface !== 'app') return
     syncFromServer().then(() => seedStarterWatchlist().catch(() => false))
-  }, [licensed, surface])
+  }, [access, surface])
 
   // The public URL stays the public website even on a licensed device. A clear
   // Open app action moves to `/app/`; licence links do this automatically.
@@ -96,12 +96,10 @@ export default function App() {
     </ChunkRecoveryBoundary>
   }
 
-  // an unlicensed device AT /app/ gets the app's own front door — never the
-  // marketing website (that lives on the site surface above; the two are
-  // different things, especially inside the desktop shell)
-  if (!licensed) {
-    return <AppGate onUnlocked={enterApp} />
-  }
+  // Account creation is automatic. Only connection/limit failures show retry
+  // controls; saved owner/reader keys remain an optional recovery path.
+  if(access==='checking')return <main className="app-gate" role="status"><div className="app-gate-card"><h1>Opening StreetSignal…</h1><p>Preparing your free access on this device.</p></div></main>
+  if(access==='error')return <Suspense fallback={null}><AppGate onUnlocked={reloadForAccess} error={error} onRetry={()=>setAttempt(n=>n+1)}/></Suspense>
 
   return <AppShell />
 }

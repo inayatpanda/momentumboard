@@ -5,6 +5,7 @@ import { assessBusinessHealth, type BusinessHealthSnapshot } from '../businessHe
 import { assessBusinessValuation } from '../businessValuation'
 import { sectorFinancialPolicy, type ValuationCapitalization } from '../sectorFinancials'
 import { quarterlyTrend } from '../quarterlyFinancials'
+import { buildSellReview, type SellReviewSnapshot } from './sellReview'
 import { completedLabCandles, shortHorizonObservations } from './strategyLab'
 import { applyHistoryGate, HISTORY_VERSION, HISTORY_CORE_MODEL, type HistoricalStudy } from './historyEvidence'
 import { STRATEGY_DEFINITIONS, STRATEGY_SCREEN_VERSION, strategyPriceSignals, strategyPriceEligible, strategyFinancialDecision, type StrategyScreenKey, type StrategyFinancialState } from './strategyScreens'
@@ -38,6 +39,7 @@ export interface StrategyChoicesSnapshot {
   generatedAt:number; scope:string; symbols:string[]; unavailableSymbols:string[]
   strategies:StrategyChoiceGroup[]
   universeVersion?:string
+  sellReview?:SellReviewSnapshot
 }
 export interface StrategyChoiceInputRow {
   symbol:string; name?:string; sector?:string|null; candles:Candle[]
@@ -196,5 +198,5 @@ export function buildStrategyChoices(input:StrategyChoicesInput):StrategyChoices
     if(group.counts.blocked)group.gaps.push(`${group.counts.blocked} rule matches remain on watch because a safety check did not pass.`)
     group.matches.sort((a,b)=>a.symbol.localeCompare(b.symbol))
   }
-  return {version:'current-strategy-choices-v1',rulesVersion:STRATEGY_SCREEN_VERSION,generatedAt:now,scope:input.scope??'Current research sample and followed US stocks; not the whole market.',symbols:unique.map(r=>r.symbol),unavailableSymbols:[...unavailable].sort(),strategies:groups,...(input.universeVersion?{universeVersion:input.universeVersion}:{})}
+  return {version:'current-strategy-choices-v1',rulesVersion:STRATEGY_SCREEN_VERSION,generatedAt:now,scope:input.scope??'Current research sample and followed US stocks; not the whole market.',symbols:unique.map(r=>r.symbol),unavailableSymbols:[...unavailable].sort(),strategies:groups,...(input.universeVersion?{universeVersion:input.universeVersion}:{}),sellReview:buildSellReview({now,rows:unique,spy:input.spy})}
 }

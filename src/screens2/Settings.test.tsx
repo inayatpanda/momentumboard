@@ -31,6 +31,14 @@ beforeEach(() => {
 })
 
 describe('Settings', () => {
+  it('shows permanent free access without probing admin or exposing an access key',async()=>{
+    localStorage.setItem('mb-token',`ss_free_v1.${'a'.repeat(48)}.${'b'.repeat(64)}`)
+    asNonAdmin();render(<Settings/>)
+    expect(await screen.findByText('Free access')).toBeInTheDocument()
+    expect(screen.getByText('This browser has its own watchlist and data. No sign-up or expiry.')).toBeInTheDocument()
+    expect(getLicences).not.toHaveBeenCalled()
+    expect(screen.queryByText('Licences')).toBeNull()
+  })
   it('has a heading "Settings"', async () => {
     asNonAdmin()
     render(<Settings />)

@@ -13,6 +13,7 @@ import type { EngineLabSnapshot, ForecastContract, StrategySleeve } from '../../
 import type { ChannelPick } from './apiViews'
 import type { LlmKeySource } from '../../shared/llmKey'
 import { deviceLlmHeader, hasDeviceGroqKey } from './deviceLlm'
+import { freeDeviceId } from '../../shared/deviceAccess'
 
 export const getToken = () => localStorage.getItem('mb-token')
 
@@ -39,6 +40,8 @@ export function isSharedFreeToken(): boolean {
 }
 export const setToken = (t: string) => localStorage.setItem('mb-token', t)
 export const clearToken = () => localStorage.removeItem('mb-token')
+export const isFreeDeviceToken=()=>!!freeDeviceId(getToken())
+export const reloadForAccess=()=>location.reload()
 
 /* ─────────────────────────── the API origin ───────────────────────────
  * THE ONE PLACE the server's origin is decided.
@@ -82,17 +85,40 @@ export async function startTrial(): Promise<{ key: string }> {
   return { key: body.data.key }
 }
 
+/** Provision a private, non-expiring device identity. Existing accepted keys
+ * are retained by the server; this never mints an admin or shared identity. */
+let freeAccessPending:Promise<{key:string}>|null=null
+export function provisionFreeAccess():Promise<{key:string}> {
+  if(freeAccessPending)return freeAccessPending
+  const before=getToken(),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000)
+  freeAccessPending=(async()=>{
+    for(let attempt=0;attempt<2;attempt++){
+      const response=await fetch(apiUrl('/api/licences'),{method:'POST',headers:{'content-type':'application/json','x-app-token':before??''},body:JSON.stringify({free:true}),signal:controller.signal})
+      const body=await response.json().catch(()=>null) as {ok?:boolean;data?:{key:string};error?:string}|null
+      if(attempt===0 && response.status===429 && body?.error==='free-access-busy'){await new Promise(resolve=>setTimeout(resolve,350));continue}
+      if(!response.ok || !body?.ok || !body.data?.key)throw new Error(response.status===429?'Free access is busy on this network. Please try again later.':'Could not open StreetSignal. Please check your connection and retry.')
+      // An explicit owner/reader unlock while this request was pending wins.
+      if(getToken()!==before)return {key:getToken()??''}
+      setToken(body.data.key);localStorage.setItem('mb-token-at',String(Date.now()))
+      return {key:body.data.key}
+    }
+    throw new Error('Free access is busy. Please try again.')
+  })().catch(error=>{if(controller.signal.aborted)throw new Error('Opening StreetSignal timed out. Please try again.');throw error}).finally(()=>{clearTimeout(timer);freeAccessPending=null})
+  return freeAccessPending
+}
+
 /** Cheap boot-time token check: true = valid (admin or licensee), false = the
  * server rejected it (revoked or an expired trial). Network failures resolve
  * true — being offline must never lock a licensed reader out of cached data. */
 export async function validateAccess(): Promise<boolean> {
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000)
   try {
-    const res = await fetch(apiUrl('/api/licences?check=1'), { headers: { 'x-app-token': getToken() ?? '' } })
+    const res = await fetch(apiUrl('/api/licences?check=1'), { headers: { 'x-app-token': getToken() ?? '' },signal:controller.signal })
     if (res.status === 401) return false
     return true
   } catch {
     return true
-  }
+  }finally{clearTimeout(timer)}
 }
 
 async function requestEnvelope<T>(path: string, headers: Record<string, string>, timeoutMs: number): Promise<T> {

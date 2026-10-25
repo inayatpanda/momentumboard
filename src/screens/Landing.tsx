@@ -1,185 +1,45 @@
-import { useState } from 'react'
-import { setToken, startTrial } from '../lib/api'
-import { humanError } from '../lib/format'
-import { SiteNav } from './SitePages'
+import { SiteFooter, SiteHeader } from './SitePages'
 
-// LANDING: the public face of the paper — everything a visitor without a licence
-// key sees. It borrows the app's own broadsheet identity (serif masthead, gold
-// accent, section rules, the .card surface, the .gate unlock card) so the door
-// and the room behind it read as one product. Licence-holders unlock here with
-// the same mechanic as the in-app gate: setToken(key) → onUnlocked().
-
-type Feature = { title: string; body: string }
-
-const FEATURES: Feature[] = [
-  {
-    title: 'The Morning Paper',
-    body: 'A pre-market edition in your inbox with a PDF print copy — the tape, the board, rotations and new listings, set before the open.',
-  },
-  {
-    title: 'An engine that grades itself',
-    body: 'Every call is probability-scored, tracked against SPY and published to a lifetime ledger — the hits and, in full, the misses.',
-  },
-  {
-    title: 'Catalyst-aware',
-    body: 'Major news, IPO debuts and sector rotations become candidates the day they matter — large caps included, not just the momentum tail.',
-  },
-  {
-    title: 'The Desk & Quant decks',
-    body: 'Wide dashboards built for big screens: a two-sleeve board, live levels on charts, sector heat, calibration curves and 13F flow.',
-  },
-  {
-    title: 'Pundit accountability',
-    body: 'YouTube and Reddit stock-callers are tracked and credibility-scored against reality before their picks can touch the board.',
-  },
-  {
-    title: 'Alerts where you live',
-    body: 'Telegram bulletins, push notifications and a two-way bot — the edition finds you, wherever you already are.',
-  },
+const FEATURES = [
+  { title: 'Keep each strategy separate', body: 'Explore recovery after a big fall, healthy businesses, strong sectors and other approaches. Each has its own stock list and past results.' },
+  { title: 'Look beyond the share price', body: 'Check quarterly company results, cash flow, debt and valuation. See whether a falling share price comes with a weakening business.' },
+  { title: 'Put the market in context', body: 'Explore how shares, bonds, oil, gold and silver moved in earlier conditions, alongside current news and sector trends.' },
+  { title: 'Follow selected YouTube channels', body: 'Read stock findings from selected channels, with source links and coverage labels. Processing gaps stay visible.' },
+  { title: 'Know what changed', body: 'Follow stocks you care about and review changes in their price, company reports and surrounding market conditions.' },
+  { title: 'Check the evidence', body: 'Compare each tested strategy with the market and its sector. Historical simulations, saved forecasts and current ideas are shown separately.' },
 ]
 
-export function Landing({ onUnlocked, licensed = false }: { onUnlocked: () => void; licensed?: boolean }) {
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const beginTrial = async () => {
-    if (pending) return
-    setError(null)
-    setPending(true)
-    try {
-      await startTrial() // stores the token itself (calls setToken internally)
-      onUnlocked()
-    } catch (err) {
-      setError(humanError(err))
-      setPending(false)
-    }
-  }
-
-  return (
-    <div className="landing">
-      <div className="landing-col">
-        {/* 1 — Masthead */}
-        <header className="landing-masthead">
-          <h1 className="landing-nameplate">
-            The Street <span>Signal</span>
-          </h1>
-          <p className="landing-tagline">
-            A daily engine-built market paper — calls, calibration, and an honest ledger.
-          </p>
-          <SiteNav active="home" />
-        </header>
-
-        {/* 2 — Hero */}
-        <section className="landing-hero">
-          <p className="landing-hero-line">The market, read like a paper. Graded like a quant.</p>
-          <p className="landing-hero-sub">
-            The engine composes a morning edition, makes calibrated calls, and grades itself in
-            public — every call lands in a ledger, hit or miss.
-          </p>
-          <div className="landing-hero-actions">
-            <button className="landing-hero-primary" onClick={licensed ? onUnlocked : beginTrial} disabled={pending}>
-              {licensed ? 'Open the app' : pending ? 'Setting up your access…' : 'Start free — 7 days'}
-            </button>
-            <a className="landing-hero-secondary" href="#access">I already have access</a>
-          </div>
-          <div className="landing-proof" aria-label="How StreetSignal is measured">
-            <span><b>5 &amp; 10 session</b> grading</span>
-            <span><b>SPY-relative</b> outcomes</span>
-            <span><b>Every miss</b> stays visible</span>
-          </div>
-        </section>
-
-        {/* 3 — Feature grid */}
-        <section className="landing-section">
-          <div className="section-title landing-rule">What lands on the page</div>
-          <div className="landing-grid">
-            {FEATURES.map(f => (
-              <article key={f.title} className="landing-feature">
-                <h3>{f.title}</h3>
-                <p>{f.body}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        {/* 4 — Get the app: free downloads; the licence gate lives INSIDE the
-            app, so an open download is still a gated reader on first launch */}
-        <section className="landing-section">
-          <div className="section-title landing-rule">Take it with you</div>
-          <div className="site-downloads">
-            <a className="dl-btn" href="/download/mac">
-              <b>Mac app</b>
-              <span>Apple&nbsp;Silicon (M-series Macs)</span>
-            </a>
-            <a className="dl-btn" href="/download/win">
-              <b>Windows app</b>
-              <span>one-click installer</span>
-            </a>
-            <div className="dl-btn dl-note">
-              <b>Phone</b>
-              <span>open this site → Install app (Android) or Share → Add to Home Screen (iPhone)</span>
-            </div>
-          </div>
-          <p className="landing-honesty" style={{ marginTop: 10 }}>
-            Free to download — a licence or reader pass unlocks the app itself, once, on each device.
-          </p>
-        </section>
-
-        {/* 5 — Honesty strip */}
-        <p className="landing-honesty">
-          Calibrated analysis, not advice. The ledger shows everything — including what went wrong.
-        </p>
-
-        {/* 5 — Unlock (the gate) */}
-        <section className="landing-unlock" id="access">
-          <div className="landing-gate-card">
-            <h2>Reader access</h2>
-            <p>
-              StreetSignal is licence-only. Enter your key once — this device stays unlocked.
-              Licence-holders: the one-tap unlock link in your welcome message does this
-              automatically.
-            </p>
-
-            {licensed ? (
-              <>
-                {/* the licensed reader browsing the public site — no gate, just the way back */}
-                <button className="landing-trial-btn" onClick={onUnlocked}>Open the app</button>
-                <p className="landing-trial-note">This device is already licensed — you were viewing the public site.</p>
-              </>
-            ) : (
-              <>
-                <button className="landing-trial-btn" onClick={beginTrial} disabled={pending}>
-                  {pending ? 'Setting up your access…' : 'Start free access — 7 days'}
-                </button>
-                <p className="landing-trial-note">
-                  No card, no signup — a 7-day reader pass for this device. After that, licences are
-                  issued personally by the publisher: ask whoever shared StreetSignal with you.
-                </p>
-                {error && <p className="landing-error" role="alert">{error}</p>}
-
-                <div className="landing-or">Already have a licence?</div>
-                <form
-                  className="landing-key-form"
-                  onSubmit={e => {
-                    e.preventDefault()
-                    const t = new FormData(e.currentTarget).get('t') as string
-                    if (t && t.trim()) {
-                      setToken(t.trim())
-                      onUnlocked()
-                    }
-                  }}
-                >
-                  <input name="t" type="password" placeholder="Licence key" autoComplete="off" />
-                  <button>Unlock</button>
-                </form>
-              </>
-            )}
-          </div>
-        </section>
-
-        {/* 6 — Footer */}
-        <footer className="landing-footer">© The Street Signal · informs, does not predict</footer>
-      </div>
+// Public calls to action are real links. The app creates browser access when
+// /app/ opens; the website never asks visitors to obtain or enter a key.
+export function Landing(_props: { onUnlocked?: () => void; licensed?: boolean } = {}) {
+  return <main className="landing">
+    <div className="landing-col">
+      <SiteHeader active="home" />
+      <section className="landing-hero" aria-labelledby="landing-title">
+        <div className="landing-hero-copy">
+          <p className="site-kicker">Free stock research, made clearer</p>
+          <h1 id="landing-title">Understand the stock.<br /><span>Then decide your next step.</span></h1>
+          <p className="landing-hero-sub">Explore ideas, review what you hold and understand what changed. StreetSignal brings company results, market patterns and selected sources into one place.</p>
+          <div className="landing-hero-actions"><a className="site-primary" href="/app/">Open the free app</a><a className="site-secondary" href="/engine">See how it works</a></div>
+          <p className="landing-access-note">No signup. No payment details. No access key to enter.</p>
+        </div>
+        <aside className="landing-preview" aria-label="Two ways to use StreetSignal">
+          <div className="landing-preview-top"><span>StreetSignal research</span><span>Two clear starting points</span></div>
+          <div className="landing-path"><span className="landing-path-number">01</span><div><h2>Buy ideas</h2><p>Find stocks that meet a strategy’s rules.</p><span>Company health · Price trends · Valuation</span></div></div>
+          <div className="landing-path"><span className="landing-path-number">02</span><div><h2>Review selling</h2><p>Check whether your reasons for holding still stand.</p><span>Weaker results · Broken trends · Stretched prices</span></div></div>
+          <p className="landing-preview-note">Research to review. You make the decision; the app does not place trades.</p>
+        </aside>
+      </section>
+      <section className="landing-facts" aria-label="What is included">
+        <div><strong>250 stocks</strong><span>in the shared research universe</span></div><div><strong>Separate strategies</strong><span>with their own rules and results</span></div><div><strong>Runs in the cloud</strong><span>your Mac can be switched off</span></div>
+      </section>
+      <section className="landing-section" aria-labelledby="research-title">
+        <div className="landing-section-head"><p className="site-kicker">Start with a useful question</p><h2 id="research-title">Less noise. More understanding.</h2><p>Plain explanations first. Open “See the evidence” when you want the numbers, sources and limitations.</p></div>
+        <div className="landing-grid">{FEATURES.map(feature=><article className="landing-feature" key={feature.title}><h3>{feature.title}</h3><p>{feature.body}</p></article>)}</div>
+      </section>
+      <section className="landing-free" aria-labelledby="free-title"><div><p className="site-kicker">On your phone or computer</p><h2 id="free-title">Open it. Make it your watchlist.</h2><p>Use the free web app in your browser, or add it to your phone’s home screen. Shared research updates in the cloud without your computer staying on.</p><p className="site-small">Free sources and processing limits can cause delays or missing coverage. Some optional personal AI tools need your own provider key; the shared research does not.</p></div><a className="site-primary" href="/app/">Start exploring</a></section>
+      <p className="landing-honesty">A rule match is a starting point for research. Past results do not establish future returns, and StreetSignal does not provide personal financial advice.</p>
+      <SiteFooter />
     </div>
-  )
+  </main>
 }

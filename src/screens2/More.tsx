@@ -97,7 +97,11 @@ export default function More() {
       </div>
       <div className="menu-group">
         <div className="menu-title">App</div>
-        <Row href="/settings" icon={<IconGear />} label="Settings" sub="Licence, notifications, AI key" />
+        <Row href="/settings" icon={<IconGear />} label="Settings" sub="Preferences, notifications and optional AI tools" />
+        <a href="/privacy" className="menu-row">
+          <span className="icon-tile"><Svg d="M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3zm-3 9 2 2 4-4" /></span>
+          <span className="set-main"><span>Privacy</span><span className="sub">How your browser and synced data are used</span></span><Chevron />
+        </a>
         <ThemeRow />
         <InstallRow />
       </div>

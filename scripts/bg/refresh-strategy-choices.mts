@@ -59,4 +59,4 @@ await appStore.write('engine-strategy-choices',snapshot)
 await appStore.write('engine-strategy-choice-history',recorded)
 console.log(JSON.stringify({scanned:rows.length,snapshotBytes,priceAvailable:rows.filter(row=>row.candles.length>0).length,financialCaptured:capturedFinancialN,financialCached:cachedFinancialN,
   strategies:snapshot.strategies.length,matched:snapshot.strategies.reduce((sum,s)=>sum+s.counts.matched,0),watchOnly:snapshot.strategies.reduce((sum,s)=>sum+s.counts.blocked,0),
-  unavailable:snapshot.unavailableSymbols.length,savedSessions:recorded.sessions.length,paidCalls:0}))
+  unavailable:snapshot.unavailableSymbols.length,savedSessions:recorded.sessions.length,sellReview:snapshot.sellReview?.coverage,paidCalls:0}))

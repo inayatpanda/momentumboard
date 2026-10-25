@@ -55,6 +55,12 @@ describe('More', () => {
     expect(screen.getByText('Settings')).toBeInTheDocument()
   })
 
+  it('links to the public privacy page without adding the app route prefix', () => {
+    render(<Harness path="/app/more" />)
+    expect(screen.getByRole('link',{name:/Privacy How your browser/})).toHaveAttribute('href','/privacy')
+    expect(screen.getByRole('link',{name:/Settings/})).not.toHaveTextContent('Licence')
+  })
+
   // Owner (2026-08-17, with a screenshot): "How predictions work is present twice,
   // outside and inside More." Nothing may be listed twice on one screen: the
   // Reading group holds exactly the rail-promoted pages, so at rail widths CSS

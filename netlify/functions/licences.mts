@@ -1,17 +1,19 @@
 import type { Context } from '@netlify/functions'
 import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
-import { addLicenceVerified, authenticate, generateLicenceKey, hash8, readLicencesFresh, type Licence } from './lib/auth'
+import { addLicenceVerified, authenticate, generateLicenceKey, hash8, issueFreeDeviceToken, readLicencesFresh, type Licence } from './lib/auth'
+import { acquireLease,releaseLease } from './lib/store'
 import { CANONICAL_SITE } from './lib/site'
 
 // Licence management: admin list/generate/revoke, plus two PUBLIC routes —
 // a rate-limited 7-day trial mint (the landing page's "free access") and a
 // cheap token check (lets the client detect an expired trial on boot).
 const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json','cache-control':'private, no-store' } })
 
 const TRIAL_DAYS = 7
 const TRIAL_PER_IP_WEEK = 2 // same device asking again inside a week = go get a licence
 const TRIAL_GLOBAL_PER_DAY = 25 // circuit breaker against scripted minting
+const FREE_PER_IP_DAY=8, FREE_GLOBAL_PER_DAY=250
 
 export async function routeLicences(
   method: string,
@@ -37,13 +39,11 @@ export async function routeLicences(
         const day = new Date(nowSec * 1000).toISOString().slice(0, 10)
         const desktop = (headers.get('user-agent') ?? '').includes('StreetSignalDesktop')
         const token = headers.get('x-app-token') ?? ''
-        const label = who.level === 'admin' ? 'admin' : ((await store.read<Licence[]>('licences')) ?? []).find(l => l.key === token)?.label ?? 'unknown'
+        const label = who.freeDevice ? null : who.level === 'admin' ? 'admin' : ((await store.read<Licence[]>('licences')) ?? []).find(l => l.key === token)?.label ?? 'unknown'
         const stats = (await store.read<{ byDay: Record<string, { web: number; desktop: number }>; byLicence: Record<string, { boots: number; lastAt: number }> }>('access-stats')) ?? { byDay: {}, byLicence: {} }
         const d = (stats.byDay[day] ??= { web: 0, desktop: 0 })
         d[desktop ? 'desktop' : 'web']++
-        const l = (stats.byLicence[label] ??= { boots: 0, lastAt: 0 })
-        l.boots++
-        l.lastAt = nowSec
+        if(label){const l = (stats.byLicence[label] ??= { boots: 0, lastAt: 0 });l.boots++;l.lastAt = nowSec}
         const days = Object.keys(stats.byDay).sort()
         for (const old of days.slice(0, Math.max(0, days.length - 90))) delete stats.byDay[old]
         await store.write('access-stats', stats)
@@ -52,6 +52,32 @@ export async function routeLicences(
       }
     }
     return who ? json(200, { ok: true, data: { level: who.level } }) : json(401, { ok: false, error: 'invalid-or-expired' })
+  }
+
+  // Permanent free device access. Credentials are signed rather than appended
+  // to the licence list, and never carry admin/house or owner-paid AI access.
+  if(method==='POST' && bodyText){
+    let free=false
+    try{free=JSON.parse(bodyText).free===true}catch{/* existing routes validate their own bodies */}
+    if(free){
+      const existing=await authenticate(headers,env,store)
+      if(existing)return json(200,{ok:true,data:{key:headers.get('x-app-token'),freeDevice:!!existing.freeDevice}})
+      if(!env.APP_TOKEN?.trim())return json(503,{ok:false,error:'free-access-unavailable'})
+      // These headers are supplied by the hosting platforms. Never trust a
+      // caller-provided X-Forwarded-For value for anonymous issuance limits.
+      const ip=headers.get('cf-connecting-ip')??headers.get('x-nf-client-connection-ip')??'unknown'
+      const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`free-device:${ip}`))
+      const ipHash=[...new Uint8Array(digest)].slice(0,16).map(n=>n.toString(16).padStart(2,'0')).join('')
+      const leaseKey='lease:free-device-issuance',lease=await acquireLease(store,leaseKey,nowSec,20)
+      if(!lease)return json(429,{ok:false,error:'free-access-busy'})
+      try{
+        const issues=((await (store.readStrong?store.readStrong<{ipHash:string;at:number}[]>('free-device-issues'):store.read<{ipHash:string;at:number}[]>('free-device-issues')))??[]).filter(row=>row.at<=nowSec && nowSec-row.at<86400)
+        if(issues.length>=FREE_GLOBAL_PER_DAY || issues.filter(row=>row.ipHash===ipHash).length>=FREE_PER_IP_DAY)return json(429,{ok:false,error:'free-access-limit'})
+        const key=await issueFreeDeviceToken(env.APP_TOKEN)
+        await store.write('free-device-issues',[...issues,{ipHash,at:nowSec}])
+        return json(200,{ok:true,data:{key,freeDevice:true}})
+      }finally{await releaseLease(store,leaseKey,lease)}
+    }
   }
 
   // PUBLIC: self-served trial. No auth by design; abuse is bounded by the

@@ -2,6 +2,8 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { seedFreeTierToken } from './lib/api'
+import { db } from './lib/db'
+import { deviceDatabaseName } from '../shared/deviceAccess'
 import { installExternalLinkOpener, normaliseDesktopPath } from './lib/platform'
 // ORDER IS LOAD-BEARING: site.css first, tokens.css second. The two collide on
 // --bg/--text (equal :root specificity, last-wins), and tokens.css must win —
@@ -40,7 +42,10 @@ seedFreeTierToken()
 normaliseDesktopPath()
 installExternalLinkOpener()
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+// Explicit legacy/admin links may switch away from a free device profile.
+// Never mount personal views using the previous identity's already-bound DB.
+if(db.name!==deviceDatabaseName(localStorage.getItem('mb-token')))location.reload()
+else ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>

@@ -1,5 +1,6 @@
 import { db, getCapital } from './db'
-import { apiUrl, getToken } from './api'
+import { apiUrl, getToken, isSharedFreeToken } from './api'
+import { backupSettings } from '../../shared/backupSettings'
 import { computeStats, exposureWarnings, tradePnl } from '../../shared/journal'
 
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -8,7 +9,9 @@ let timer: ReturnType<typeof setTimeout> | undefined
  * makes the morning research routine aware of what the user actually holds. */
 export function mirrorPortfolio(delayMs = 1500) {
   clearTimeout(timer)
+  if (isSharedFreeToken()) return
   timer = setTimeout(async () => {
+    if (isSharedFreeToken()) return
     const [trades, capital] = await Promise.all([db.trades.toArray(), getCapital()])
     const open = trades.filter(t => t.exitPrice == null)
     const closed = trades
@@ -41,13 +44,14 @@ export function mirrorPortfolio(delayMs = 1500) {
     fetch(apiUrl('/api/backup'), {
       method: 'PUT',
       headers: { 'x-app-token': getToken() ?? '', 'content-type': 'application/json' },
-      body: JSON.stringify({ trades, rules, watchlist, settings }),
+      body: JSON.stringify({ trades, rules, watchlist, settings: backupSettings(settings) }),
     }).catch(() => {/* offline is fine */})
   }, delayMs)
 }
 
 /** Pull the server backup and restore it into local IndexedDB (merge by id/key). */
 export async function restoreBackup(): Promise<{ trades: number; at: number } | null> {
+  if (isSharedFreeToken()) return null
   const res = await fetch(apiUrl('/api/backup'), { headers: { 'x-app-token': getToken() ?? '' } })
   const body = (await res.json()) as { ok: boolean; data?: { trades?: unknown[]; rules?: unknown[]; watchlist?: unknown[]; settings?: unknown[]; at: number } | null }
   if (!body.ok || !body.data) return null
@@ -55,6 +59,6 @@ export async function restoreBackup(): Promise<{ trades: number; at: number } | 
   if (Array.isArray(d.trades)) await db.trades.bulkPut(d.trades as never[])
   if (Array.isArray(d.rules)) await db.rules.bulkPut(d.rules as never[])
   if (Array.isArray(d.watchlist)) await db.watchlist.bulkPut(d.watchlist as never[])
-  if (Array.isArray(d.settings)) await db.settings.bulkPut(d.settings as never[])
+  if (Array.isArray(d.settings)) await db.settings.bulkPut(backupSettings(d.settings))
   return { trades: d.trades?.length ?? 0, at: d.at }
 }

@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { Trade } from '../../shared/journal'
+import { deviceDatabaseName } from '../../shared/deviceAccess'
 
 export interface WatchItem {
   symbol: string
@@ -43,7 +44,9 @@ class MBDatabase extends Dexie {
   candles!: Table<SliceRow, string>
   quotes!: Table<SliceRow, string>
   constructor() {
-    super('momentumboard')
+    // New free identities never inherit an old admin/reader's local notes,
+    // positions or API key. Legacy data is preserved in its original database.
+    super(deviceDatabaseName(typeof localStorage==='undefined'?null:localStorage.getItem('mb-token')))
     this.version(1).stores({ watchlist: 'symbol', settings: 'key' })
     this.version(2).stores({ watchlist: 'symbol', settings: 'key', rules: 'id, symbol' })
     this.version(3).stores({ watchlist: 'symbol', settings: 'key', rules: 'id, symbol', trades: 'id, symbol, openedAt' })
