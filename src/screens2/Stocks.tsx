@@ -75,6 +75,19 @@ export default function Stocks() {
   const [watchLoaded, setWatchLoaded] = useState(false)
   const [section, updateSection] = useState<StockSection>(() => sectionFromSearch(search))
   useEffect(() => { updateSection(sectionFromSearch(search)) }, [search])
+  const activeSection = query.trim() ? 'discover' : section
+  useEffect(() => {
+    const reveal = () => {
+      const button = document.getElementById(`stock-tab-${activeSection}`), tabs = button?.parentElement
+      if (!button || !tabs || tabs.scrollWidth <= tabs.clientWidth) return
+      // Keep the selected view readable on narrow phones, including direct
+      // links and orientation changes, without moving the page vertically.
+      tabs.scrollLeft += button.getBoundingClientRect().left - tabs.getBoundingClientRect().left - (tabs.clientWidth - button.clientWidth) / 2
+    }
+    reveal()
+    window.addEventListener('resize', reveal)
+    return () => window.removeEventListener('resize', reveal)
+  }, [activeSection])
   const setSection = (value: StockSection) => {
     updateSection(value)
     const params = new URLSearchParams(window.location.search)
