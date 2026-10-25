@@ -50,7 +50,7 @@ export function parseRecentFilings(cik: number, recent: SubmissionRecent, limit 
 export async function fetchRecentFilings(
   symbol: string,
   fetchFn: typeof fetch = fetch,
-  userAgent = process.env.SEC_USER_AGENT ?? 'StreetSignal thestreetsignal.rqai.co.uk',
+  userAgent = process.env.SEC_USER_AGENT?.trim() || 'StreetSignal research https://thestreetsignal.rqai.co.uk',
 ): Promise<{ company: string | null; cik: number | null; filings: SecFiling[]; asOf: number }> {
   const headers = { 'User-Agent': userAgent, Accept: 'application/json' }
   const company = await resolveSecCompany(symbol, fetchFn, userAgent)
@@ -71,7 +71,7 @@ export async function fetchRecentFilings(
 export async function resolveSecCompany(
   symbol: string,
   fetchFn: typeof fetch = fetch,
-  userAgent = process.env.SEC_USER_AGENT ?? 'StreetSignal thestreetsignal.rqai.co.uk',
+  userAgent = process.env.SEC_USER_AGENT?.trim() || 'StreetSignal research https://thestreetsignal.rqai.co.uk',
 ): Promise<TickerRow | null> {
   const headers = { 'User-Agent': userAgent, Accept: 'application/json' }
   if (!tickerCache || Date.now() - tickerCache.at > 24 * 3600_000) {

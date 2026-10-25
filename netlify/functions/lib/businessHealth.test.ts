@@ -274,7 +274,11 @@ describe('reported business health', () => {
       return new Response(JSON.stringify(String(input).includes('company_tickers')
         ? { 0: { cik_str: 1, ticker: 'TEST', title: 'Example plc' } } : fixture()))
     })
-    expect((await fetchBusinessHealth('TEST', fetcher as typeof fetch, NOW)).metrics.freeCashFlow).toBe(90)
+    vi.stubEnv('SEC_USER_AGENT', '')
+    try {
+      expect((await fetchBusinessHealth('TEST', fetcher as typeof fetch, NOW)).metrics.freeCashFlow).toBe(90)
+      expect(new Headers(fetcher.mock.calls.at(-1)![1]?.headers).get('User-Agent')).toContain('StreetSignal research https://')
+    } finally { vi.unstubAllEnvs() }
     expect((await fetchBusinessHealth('TEST', async () => new Response('', { status: 503 }), NOW)).status).toBe('unavailable')
     expect((await fetchBusinessHealth('VOD.L', fetcher as typeof fetch, NOW)).status).toBe('unavailable')
     expect(fetcher).toHaveBeenCalledTimes(2)

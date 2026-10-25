@@ -283,7 +283,7 @@ export function parseBusinessHealthFacts(body: CompanyFacts, sym: string, asOf: 
 export async function fetchBusinessHealth(sym: string, fetchFn: typeof fetch = fetch, nowSec = Math.floor(Date.now() / 1000)): Promise<BusinessHealthSnapshot> {
   const symbol = sym.trim().toUpperCase()
   if (!/^[A-Z][A-Z0-9.-]{0,14}$/.test(symbol) || symbol.endsWith('.L') || symbol.endsWith('-USD')) return emptyBusinessHealth(symbol, nowSec, 'No supported SEC US-GAAP listing coverage for this symbol.')
-  const userAgent = process.env.SEC_USER_AGENT ?? 'StreetSignal thestreetsignal.rqai.co.uk'
+  const userAgent = process.env.SEC_USER_AGENT?.trim() || 'StreetSignal research https://thestreetsignal.rqai.co.uk'
   // One deadline covers both ticker resolution and company facts.
   const signal = AbortSignal.timeout(12_000)
   const bounded: typeof fetch = (input, init) => fetchFn(input, { ...init, signal })
