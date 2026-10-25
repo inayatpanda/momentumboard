@@ -42,6 +42,10 @@ function health(sym: string): BusinessHealthSnapshot {
     metrics: { ...Object.fromEntries(REPORT_TREND_METRICS.map(key => [key, null])), revenueGrowthPct: 10,
       netMarginChangePp: 2, operatingCashFlowMarginChangePp: 2, shareCountChangePct: 0, operatingCashFlow: 40 } as FinancialReportPoint['metrics'],
   }))
+  value.quarterly = { version: 'quarterly-asof-v1', asOf: NOW, status: 'stable', gaps: [], trailingYear: null,
+    quarters: [['2025-10-01','2025-12-31'],['2026-01-01','2026-03-31'],['2026-04-01','2026-06-30']].map(([start,end]) => ({ start,end,availableAt: NOW-30*DAY,
+      values: { revenue: 100, netIncome: 20, operatingCashFlow: 30, capitalExpenditure: 10, freeCashFlow: 20 }, evidence: {}, derived: false,
+      revenueGrowthPct: 10, netMarginPct: 20, netMarginChangePp: 0, freeCashFlowMarginPct: 20, freeCashFlowMarginChangePp: 0 })) }
   return value
 }
 

@@ -10,7 +10,7 @@ const study = (): HistoricalStudy => ({ version: HISTORY_VERSION, coreModel: HIS
 describe('historical learning without future leakage', () => {
   it('adds comparable financial context without inventing probabilities or promoting setups', () => {
     const s = study(), recovery = { ...obs, sleeve: 'quality-dip' as const, state: 'watch' as const }
-    s.financialCoverage = { version: 'sec-asof-annual-v1', symbols: ['AAPL'], unavailableSymbols: [], snapshots: 100 }
+    s.financialCoverage = { version: 'sec-asof-quarterly-v2', symbols: ['AAPL'], unavailableSymbols: [], snapshots: 100 }
     s.strategies = [{ key: 'healthy-value-drop', label: 'test', horizon: 63, description: 'test', status: 'uncertain', stats: { n: 3, quarters: 2, meanReturnPct: 2, meanMarketPct: 1, excessPp: 1, beatRate: .5, brier: null, baselineBrier: null, uncertaintyPp: null }, years: [], cancelledN: 0, missingN: 0 }]
     const context = withFinancialHistory(recovery, s, now)
     expect(context.state).toBe('watch')

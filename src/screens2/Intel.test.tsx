@@ -328,7 +328,7 @@ describe('News', () => {
     it('gives the honest fallback when every upstream source is dead', async () => {
       await seedCongress({ source: 'none' })
       withRouter()
-      expect(await screen.findByText(/every upstream source is dead or unkeyed/i)).toBeInTheDocument()
+      expect(await screen.findByText(/Congressional reports are unavailable from the current free sources/i)).toBeInTheDocument()
     })
   })
 

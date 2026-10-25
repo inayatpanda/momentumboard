@@ -50,6 +50,8 @@ export function parseInfoTable(xml: string): Holding[] {
   const blocks = xml.match(/<(?:\w+:)?infoTable>[\s\S]*?<\/(?:\w+:)?infoTable>/g) ?? []
   const decode = (s: string) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#0?39;|&apos;/g, "'").replace(/&quot;/g, '"')
   for (const b of blocks) {
+    // A put, call or debt principal is not an outright share holding.
+    if (/<(?:\w+:)?putCall>\s*(?:PUT|CALL)\s*<\/(?:\w+:)?putCall>/i.test(b) || /<(?:\w+:)?sshPrnamtType>\s*PRN\s*<\/(?:\w+:)?sshPrnamtType>/i.test(b)) continue
     const issuer = decode(b.match(/<(?:\w+:)?nameOfIssuer>([\s\S]*?)<\/(?:\w+:)?nameOfIssuer>/)?.[1]?.trim() ?? '')
     const value = Number(b.match(/<(?:\w+:)?value>(\d+)<\/(?:\w+:)?value>/)?.[1])
     const shares = Number(b.match(/<(?:\w+:)?sshPrnamt>(\d+)<\/(?:\w+:)?sshPrnamt>/)?.[1])
@@ -122,9 +124,12 @@ export async function fetchFundMoves(cik: string, name: string, fetchFn: typeof 
       const dir = `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accn}`
       const index = (await fetchJson(`${dir}/index.json`, fetchFn)) as { directory: { item: { name: string }[] } }
       const xmlFile = index.directory.item.find(f => /\.xml$/i.test(f.name) && !/primary_doc/i.test(f.name))
-      if (!xmlFile) return []
+      if (!xmlFile) throw new Error('13F information table missing')
       const res = await fetchFn(`${dir}/${xmlFile.name}`, { headers: UA })
-      return parseInfoTable(await res.text())
+      if (!res.ok) throw new Error(`13F information table HTTP ${res.status}`)
+      const holdings = parseInfoTable(await res.text())
+      if (!holdings.length) throw new Error('13F equity holdings unavailable')
+      return holdings
     }
 
     const [current, prior] = await Promise.all([holdingsFor(idx[0]), holdingsFor(idx[1])])
@@ -151,7 +156,7 @@ export async function fetchAllFundMoves(fetchFn: typeof fetch = fetch): Promise<
  * no cache before — this is the one referenced by the engine dep. */
 export async function cachedFundMoves(fetchFn: typeof fetch = fetch): Promise<FundMoves[]> {
   const { getCached, setCached } = await import('./cache')
-  const KEY = 'edgar:fund-moves:v3' // v3: roster 10 → 15 (Bridgewater/Icahn/Soros/Elliott/Fundsmith) + norm-issuer diffs; bump skips the stale 12h blob
+  const KEY = 'edgar:fund-moves:v4' // Exclude options/debt and require both comparable filings.
   const hit = await getCached<FundMoves[]>(KEY)
   if (hit) return hit
   const moves = await fetchAllFundMoves(fetchFn)

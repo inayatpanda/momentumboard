@@ -22,16 +22,17 @@ export function SmartMoneyPanel({ data }: { data: SmartMoney | null }) {
 
   return (
     <section className="card quant-panel">
-      <h3 className="section-title">Smart money · 13F</h3>
+      <h3 className="section-title">Large-investor holdings</h3>
+      <p className="empty-line quant-cap">Quarter-end snapshots, published later. Share-count changes may include stock splits and share-class changes; they do not prove a purchase. Options and debt positions are excluded from this comparison.</p>
       {data?.lagNote && <p className="empty-line quant-cap" style={{ marginTop: 0 }}>{data.lagNote}</p>}
 
       {funds.length === 0 ? (
-        <p className="empty-line">No recent 13F filings.</p>
+        <p className="empty-line">Comparable holdings reports are unavailable right now. This does not mean investors made no changes.</p>
       ) : (
         <>
           <div className="quant-net">
-            <span className="quant-net-num" style={{ color: 'var(--green)' }}>▲ {inflow} added / new</span>
-            <span className="quant-net-num" style={{ color: 'var(--red)' }}>▼ {exited} exited</span>
+            <span className="quant-net-num" style={{ color: 'var(--green)' }}>{inflow} reported increases / new positions</span>
+            <span className="quant-net-num" style={{ color: 'var(--red)' }}>{exited} positions no longer reported</span>
           </div>
           <div className="quant-net-bar">
             <div className="quant-net-seg" style={{ width: `${(inflow / total) * 100}%`, background: 'var(--green)' }} />
@@ -51,7 +52,7 @@ export function SmartMoneyPanel({ data }: { data: SmartMoney | null }) {
               return (
                 <div key={`${f.fund}-${i}`} className="quant-fund" style={stale ? { opacity: 0.6 } : undefined}>
                   <div className="quant-fund-head">
-                    <span className="quant-fund-name">{f.fund}{stale && <span className="badge warn" style={{ marginLeft: 6 }}>no longer filing</span>}</span>
+                    <span className="quant-fund-name">{f.fund}{stale && <span className="badge warn" style={{ marginLeft: 6 }}>no recent report</span>}</span>
                     <span className="quant-fund-date num">{f.filedAt}</span>
                   </div>
                   <div className="quant-fund-flows">

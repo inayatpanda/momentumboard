@@ -1,13 +1,23 @@
+import { parseQuarterlyFinancials } from '../../netlify/functions/lib/quarterlyFinancials'
 import { parseBusinessHealthSnapshot, type CompanyFacts } from '../../netlify/functions/lib/businessHealth'
 import { assessBusinessHealth, type BusinessHealthSnapshot } from '../../shared/businessHealth'
 import { assessBusinessValuation } from '../../shared/businessValuation'
 
-export const FINANCIAL_HISTORY_VERSION = 'sec-asof-annual-v1'
-export const HISTORY_SECTORS: Record<string, string> = {
-  AAPL: 'XLK', MSFT: 'XLK', JPM: 'XLF', BAC: 'XLF', JNJ: 'XLV', PFE: 'XLV', XOM: 'XLE', CVX: 'XLE',
-  CAT: 'XLI', HON: 'XLI', PG: 'XLP', KO: 'XLP', HD: 'XLY', MCD: 'XLY', DIS: 'XLC', VZ: 'XLC',
-  DUK: 'XLU', SO: 'XLU', NEM: 'XLB', FCX: 'XLB', AMT: 'XLRE', SPG: 'XLRE',
+export const FINANCIAL_HISTORY_VERSION = 'sec-asof-quarterly-v2'
+// Fixed before viewing the new results: five established names per sector.
+export const HISTORY_SECTOR_GROUPS: Record<string, string[]> = {
+  XLK: ['AAPL','MSFT','INTC','CSCO','ORCL'], XLF: ['JPM','BAC','WFC','C','GS'],
+  XLV: ['JNJ','PFE','MRK','AMGN','GILD'], XLE: ['XOM','CVX','COP','EOG','SLB'],
+  XLI: ['CAT','HON','UPS','GE','MMM'], XLP: ['PG','KO','PEP','WMT','CL'],
+  XLY: ['HD','MCD','NKE','SBUX','TGT'], XLC: ['DIS','VZ','T','CMCSA','NFLX'],
+  XLU: ['DUK','SO','AEP','EXC','XEL'], XLB: ['NEM','FCX','APD','SHW','NUE'],
+  XLRE: ['AMT','SPG','O','PSA','WELL'],
 }
+// EA was considered but the free feed returns only its final acquisition-day
+// bar. NFLX replaces it for data coverage before any new results are inspected.
+// EQR and AVB likewise returned one bar; WELL had the required full history.
+export const HISTORY_SECTORS: Record<string,string> = Object.fromEntries(Object.entries(HISTORY_SECTOR_GROUPS).flatMap(([sector, symbols]) => symbols.map(sym => [sym,sector])))
+
 const DAY = 86400
 export interface FinancialPoint {
   availableAt: number
@@ -53,7 +63,7 @@ export function buildFinancialPanel(body: CompanyFacts, sym: string, now: number
     // Ambiguous share classes/contexts on the same date cannot silently become
     // aggregate shares. Standard facts do not encode every issuer-specific case.
     const ambiguous = row && rows.some(f => f.end === row.end && f.filed === row.filed && f.val !== row.val)
-    return { availableAt: at, snapshot: parseBusinessHealthSnapshot(body, sym, at),
+    return { availableAt: at, snapshot: { ...parseBusinessHealthSnapshot(body, sym, at), quarterly: parseQuarterlyFinancials(body, at) },
       shares: row && !ambiguous ? { value: row.val!, periodEnd: row.end!, availableAt: seconds(row.filed) + 1.5 * DAY, accession: row.accn! } : null }
   })
   return { sym, fetchedAt: now, points }

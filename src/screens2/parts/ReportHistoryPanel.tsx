@@ -1,3 +1,4 @@
+import { QuarterlyFinancialPanel } from './QuarterlyFinancialPanel'
 import { useState } from 'react'
 import type { BusinessHealthSnapshot } from '../../../shared/businessHealth'
 import { summarizeReportTrends, type FinancialReportPoint, type ReportPeriodKind, type ReportTrendMetric } from '../../../shared/reportTrends'
@@ -56,6 +57,7 @@ export function ReportHistoryPanel({ snapshot }: { snapshot: BusinessHealthSnaps
     ? `https://www.sec.gov/Archives/edgar/data/${snapshot.cik}/${selected.accession.replace(/-/g, '')}/${selected.accession}-index.html` : null
 
   return <div className="report-history" aria-label="Report history and business trajectory">
+    <QuarterlyFinancialPanel snapshot={snapshot} />
     <div className="dossier-section-head"><div><span className="dossier-eyebrow">Past company reports</span><h3>How the business is changing</h3></div><span className={`report-status ${trend.status}`}>{trend.status === 'insufficient' ? 'Building history' : trend.status}</span></div>
     <p className="dossier-caption">{history.length ? `${trend.observations} dated reports · ${trend.comparisonN} with comparable operating evidence` : 'Historical filings are not available for this company yet.'}</p>
     {history.length > 0 && <>

@@ -312,10 +312,23 @@ const healthyBusiness = (now: number): BusinessHealthSnapshot => {
       revenueGrowthPct: 10, netMarginChangePp: 2, operatingCashFlowMarginChangePp: 2, operatingCashFlow: 100, shareCountChangePct: 0 },
     evidence: {}, gaps: [],
   }))
+  snapshot.quarterly = { version: 'quarterly-asof-v1', asOf: now, status: 'stable', gaps: [], trailingYear: null,
+    quarters: [['2025-10-01','2025-12-31'],['2026-01-01','2026-03-31'],['2026-04-01','2026-06-30']].map(([start,end]) => ({ start,end,availableAt: now-20*DAY,
+      values: { revenue: 100, netIncome: 20, operatingCashFlow: 30, capitalExpenditure: 10, freeCashFlow: 20 }, evidence: {}, derived: false,
+      revenueGrowthPct: 10, netMarginPct: 20, netMarginChangePp: 0, freeCashFlowMarginPct: 20, freeCashFlowMarginChangePp: 0 })) }
   return snapshot
 }
 
 describe('fundamentals-backed recovery research', () => {
+  it('blocks repeated quarterly deterioration and keeps missing quarterly history on watch', () => {
+    const cs=recoveryTape(), now=after(cs), business=healthyBusiness(now)
+    const base={sym:'GOOD',candles:cs,capUsdM:10000,sector:'XLK',valuationCapitalization:{sym:'GOOD',marketCapUsdM:.003,currency:'USD' as const,observedAt:now-60,source:'finnhub-profile' as const}}
+    const weak={...business,quarterly:{...business.quarterly!,quarters:business.quarterly!.quarters.map(q=>({...q,revenueGrowthPct:-10,netMarginChangePp:-3}))}}
+    expect(qualityDipObservations([{...base,businessHealth:weak}],cs,now)[0]).toMatchObject({state:'avoid',metrics:{quarterlyTrend:'deteriorating'}})
+    expect(qualityDipObservations([{...base,businessHealth:{...business,quarterly:undefined}}],cs,now)[0]).toMatchObject({state:'watch',metrics:{quarterlyTrend:'insufficient'}})
+    const unpublished={...business,quarterly:{...business.quarterly!,quarters:business.quarterly!.quarters.map(q=>({...q,availableAt:now+1}))}}
+    expect(qualityDipObservations([{...base,businessHealth:unpublished}],cs,now)[0].state).toBe('watch')
+  })
   it('requires business health, a higher low and average reclaim before a 63-session setup', () => {
     const cs = recoveryTape()
     const now = after(cs)

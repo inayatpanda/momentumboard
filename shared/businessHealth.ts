@@ -43,6 +43,7 @@ export interface BusinessHealthSnapshot {
   warnings: string[]
   /** Frozen at each report’s first known filing cutoff, never retrospectively revised. */
   reportHistory?: FinancialReportPoint[]
+  quarterly?: import('./quarterlyFinancials').QuarterlyFinancials
   reportTrend?: ReportTrendSummary
 }
 

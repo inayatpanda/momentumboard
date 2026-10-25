@@ -1,5 +1,5 @@
 // Bounded, free historical research. No API keys, LLM calls or paid data.
-import { buildFinancialPanel, FINANCIAL_HISTORY_VERSION } from '../lib/historicalFundamentals'
+import { buildFinancialPanel, FINANCIAL_HISTORY_VERSION, HISTORY_SECTOR_GROUPS } from '../lib/historicalFundamentals'
 import { resolveSecCompany } from '../../netlify/functions/lib/secFilings'
 import type { CompanyFacts } from '../../netlify/functions/lib/businessHealth'
 import { createHash } from 'node:crypto'
@@ -13,12 +13,13 @@ const now = Math.floor(Date.now() / 1000), dir = '.history-cache'
 const publish = process.argv.includes('--publish')
 await mkdir(dir, { recursive: true })
 const tapes: HistoryTape[] = []
-for (const sym of ['SPY', ...HISTORY_SYMBOLS]) {
+for (const sym of ['SPY', ...Object.keys(HISTORY_SECTOR_GROUPS), ...HISTORY_SYMBOLS]) {
+  const minSessions = HISTORY_SYMBOLS.includes(sym) || sym === 'SPY' ? 2400 : 252
   const path = `${dir}/${sym}.json`
   let tape: HistoryTape | null = null
   try {
     const cached = JSON.parse(await readFile(path, 'utf8')) as HistoryTape
-    if (cached.sym === sym && cached.fetchedAt <= now && now - cached.fetchedAt < 7 * 86400 && cached.candles.length > 2400 && cached.adjustment.length === cached.candles.length && Array.isArray(cached.splits)) tape = cached
+    if (cached.sym === sym && cached.fetchedAt <= now && now - cached.fetchedAt < 7 * 86400 && cached.candles.length >= minSessions && cached.adjustment.length === cached.candles.length && Array.isArray(cached.splits)) tape = cached
   } catch { /* fetch a fresh public tape */ }
   if (!tape) {
     for (let attempt = 0; attempt < 3 && !tape; attempt++) {
@@ -28,7 +29,7 @@ for (const sym of ['SPY', ...HISTORY_SYMBOLS]) {
         const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (StreetSignal research)' }, signal: AbortSignal.timeout(25000) })
         if (!response.ok) throw new Error(`public-feed-http-${response.status}`)
         tape = parseHistoryTape(await response.json(), sym, now)
-        if (tape.candles.length < 2400 || now - tape.candles.at(-1)!.t > 7 * 86400) throw new Error('Insufficient or stale long history')
+        if (tape.candles.length < minSessions || now - tape.candles.at(-1)!.t > 7 * 86400) throw new Error('Insufficient or stale long history')
         await writeFile(path, JSON.stringify(tape))
       } catch (error) { tape = null; console.warn(`${sym}: ${String(error)}`); if (attempt < 2) await new Promise(r => setTimeout(r, 1500 * (attempt + 1))) }
     }
@@ -70,9 +71,9 @@ for (const sym of HISTORY_SYMBOLS) {
   await new Promise(r => setTimeout(r, 250))
 }
 const digest = createHash('sha256').update(JSON.stringify(tapes.map(t => ({ sym: t.sym, candles: t.candles, adjustment: t.adjustment, splits: t.splits })))).update(FINANCIAL_HISTORY_VERSION).update(JSON.stringify(financialHashes)).digest('hex')
-const study = buildHistoricalStudy(tapes.slice(1), tapes[0], now, digest, console.log, financialPanels)
+const study = buildHistoricalStudy(tapes.filter(t => HISTORY_SYMBOLS.includes(t.sym)), tapes[0], now, digest, console.log, financialPanels, tapes.filter(t => !!HISTORY_SECTOR_GROUPS[t.sym]))
 await writeFile(`${dir}/result.json`, JSON.stringify(study, null, 2))
-console.log(JSON.stringify({ dataThrough: study.dataThrough, digest, strategies: study.strategies.map(s => ({ label: s.label, status: s.status, stats: s.stats })), gates: study.gates }))
+console.log(JSON.stringify({ dataThrough: study.dataThrough, digest, strategies: study.strategies.map(s => ({ label: s.label, status: s.status, stats: s.stats, sectorStatus: s.sectorStatus, sectorStats: s.sectorStats })), gates: study.gates }))
 if (publish) {
   await configureStoreForScript()
   const key = 'lease:predict-background', lease = await acquireLease(appStore, key, Math.floor(Date.now() / 1000), 120)

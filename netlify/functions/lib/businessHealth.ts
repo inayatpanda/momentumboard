@@ -1,3 +1,4 @@
+import { parseQuarterlyFinancials } from './quarterlyFinancials'
 import { BUSINESS_HEALTH_METRICS, assessBusinessHealth, emptyBusinessHealth, type BusinessHealthEvidence, type BusinessHealthMetric, type BusinessHealthSnapshot } from '../../../shared/businessHealth'
 import { REPORT_TREND_METRICS, summarizeReportTrends, type FinancialReportPoint, type ReportPeriodKind, type ReportTrendMetric } from '../../../shared/reportTrends'
 import { getCached, setCached } from './cache'
@@ -275,6 +276,7 @@ export function parseBusinessHealthFacts(body: CompanyFacts, sym: string, asOf: 
   const snapshot = parseBusinessHealthSnapshot(body, sym, asOf)
   snapshot.reportHistory = reportPublications(body, asOf).map(publication => reportPoint(body, sym, publication))
   snapshot.reportTrend = summarizeReportTrends(snapshot.reportHistory, asOf)
+  snapshot.quarterly = parseQuarterlyFinancials(body, asOf)
   return snapshot
 }
 
@@ -302,7 +304,7 @@ export async function fetchBusinessHealth(sym: string, fetchFn: typeof fetch = f
 const pending = new Map<string, Promise<BusinessHealthSnapshot>>()
 export async function cachedBusinessHealth(sym: string): Promise<BusinessHealthSnapshot> {
   const symbol = sym.trim().toUpperCase()
-  const key = `business-health:v3:${symbol}`
+  const key = `business-health:v4:${symbol}`
   const cached = await getCached<BusinessHealthSnapshot>(key)
   if (cached) return cached
   const existing = pending.get(key)

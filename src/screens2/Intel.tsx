@@ -307,8 +307,7 @@ function CongressSection() {
         <DataStatus label="Congressional disclosures" error={error} refresh={refresh} refreshing={refreshing} />
       ) : data.source === 'none' && trades.length === 0 ? (
         <p className="cc-reason">
-          No congressional disclosures reachable right now — every upstream source is dead or unkeyed. The filings themselves are public; this section
-          fills in the moment one answers.
+          Congressional reports are unavailable from the current free sources. This does not mean no trades occurred; no trading signal is inferred from the gap.
         </p>
       ) : trades.length === 0 ? (
         <p className="cc-reason">No disclosures in the current sweep.</p>

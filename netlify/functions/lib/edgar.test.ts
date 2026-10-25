@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseInfoTable, diff13F, matchSmartMoney, matchesIssuer, normIssuer, type FundMoves } from './edgar'
+import { parseInfoTable, fetchFundMoves, diff13F, matchSmartMoney, matchesIssuer, normIssuer, type FundMoves } from './edgar'
 
 const xml = `<informationTable xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable">
 <infoTable><nameOfIssuer>APPLE INC</nameOfIssuer><value>1000000</value><shrsOrPrnAmt><sshPrnamt>5000</sshPrnamt></shrsOrPrnAmt></infoTable>
@@ -14,6 +14,22 @@ describe('parseInfoTable', () => {
     expect(apple.shares).toBe(7500)
     expect(apple.value).toBe(1_500_000)
     expect(h).toHaveLength(2)
+  })
+})
+
+describe('institutional evidence guards', () => {
+  it('does not label option exposure or debt principal as shares bought', () => {
+    const block = (extra: string) => `<infoTable><nameOfIssuer>APPLE INC</nameOfIssuer><value>100</value><sshPrnamt>10</sshPrnamt>${extra}</infoTable>`
+    expect(parseInfoTable(block('<putCall>Put</putCall>') + block('<putCall>CALL</putCall>') + block('<sshPrnamtType>PRN</sshPrnamtType>') + block('<sshPrnamtType>SH</sshPrnamtType>'))).toEqual([{issuer:'APPLE INC',value:100,shares:10}])
+  })
+  it('does not turn a failed prior filing download into an all-new portfolio', async () => {
+    const fetcher: typeof fetch = async input => {
+      const url = String(input)
+      if (url.includes('/submissions/')) return Response.json({filings:{recent:{form:['13F-HR','13F-HR'],accessionNumber:['new','old'],filingDate:['2026-08-15','2026-05-15']}}})
+      if (url.endsWith('index.json')) return Response.json({directory:{item:[{name:'holdings.xml'}]}})
+      return url.includes('/old/') ? new Response('Unavailable',{status:503}) : new Response(xml)
+    }
+    expect(await fetchFundMoves('123','Test',fetcher)).toBeNull()
   })
 })
 

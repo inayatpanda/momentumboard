@@ -64,7 +64,7 @@ export default function AnalyticsPanels() {
       </details>
       <details className="company-detail"><summary>See the evidence: prediction accuracy</summary><LearningPanel calibration={calibration} weights={weights} /></details>
       <details className="company-detail"><summary>See the evidence: seasonal market patterns</summary><SeasonalityPanel data={season ?? null} /></details>
-      <details className="company-detail"><summary>See the evidence: what funds hold</summary><SmartMoneyPanel data={smart ?? null} /></details>
+      <details id="funds" open={typeof window !== 'undefined' && window.location.hash === '#funds'} className="company-detail"><summary>See the evidence: what funds hold</summary><SmartMoneyPanel data={smart ?? null} /></details>
     </div>
   )
 }

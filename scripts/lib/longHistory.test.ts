@@ -35,6 +35,16 @@ describe('long-history input and measurement', () => {
     expect(result.stats.n).toBeGreaterThan(0)
     expect(result.stats.meanReturnPct).toBeCloseTo((1.001 ** 19 * .999 / (1.01 * 1.001) - 1) * 100)
     expect(result.stats.meanMarketPct).toBeCloseTo((1.0005 ** 19 * .999 / (1.01 * 1.001) - 1) * 100)
+    const sector=tape('XLK',1.002)
+    const matched=buildHistoricalStudy([stock],spy,now,'sector',()=>{},[],[sector]).strategies.find(s=>s.key==='trend-price')!
+    expect(matched.stats.excessPp).toBeGreaterThan(0)
+    expect(matched.sectorStats!.excessPp).toBeLessThan(0)
+    expect(matched.sectorStats!.n).toBe(matched.stats.n)
+    expect(matched.sectorStatus).toBe('behind')
+    sector.candles.splice(550,1);sector.adjustment.splice(550,1)
+    const gap=buildHistoricalStudy([stock],spy,now,'gap',()=>{},[],[sector]).strategies.find(s=>s.key==='trend-price')!
+    expect(gap.stats.n).toBe(matched.stats.n)
+    expect(gap.missingSectorN).toBeGreaterThan(0)
     spy.candles.splice(530, 1); spy.adjustment.splice(530, 1)
     const missing = buildHistoricalStudy([stock], spy, now, 'test').strategies.find(s => s.key === 'trend-price')!
     expect(missing.missingN).toBeGreaterThan(0)

@@ -25,6 +25,12 @@ jobs:
           key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
       - run: npm ci
         if: steps.modules.outputs.cache-hit != 'true'
+      - name: Reuse public historical data within the seven-day freshness limit
+        uses: actions/cache@v6.1.0
+        with:
+          path: .history-cache
+          key: public-history-v3-${{ github.run_id }}
+          restore-keys: public-history-v3-
       - run: npx tsx scripts/bg/test-history.mts --publish
         env:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
