@@ -67,7 +67,7 @@ describe('StrategyLabPanel', () => {
     const statuses = screen.getByLabelText('Strategy sleeve status')
     expect(within(statuses).getByText('Short-term direction')).toBeInTheDocument()
     expect(within(statuses).getByText('18 completed')).toBeInTheDocument()
-    expect(within(statuses).getByText('144 completed')).toBeInTheDocument()
+    expect(within(statuses).queryByText('144 completed')).not.toBeInTheDocument()
   })
 
   it('shows the forecast, reasons, risk, missing evidence and stock link', () => {
@@ -107,7 +107,7 @@ describe('StrategyLabPanel', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Recovery after a fall' }))
     expect(screen.getByText('No observations for this strategy in the latest scan.')).toBeInTheDocument()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('tab', { name: 'All strategies' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Short-term direction' }))
     expect(screen.getByRole('link')).toBeInTheDocument()
   })
 })
@@ -122,11 +122,8 @@ describe('Research strategy interactions', () => {
   }
   it('moves focus and filters with arrow keys, Home and End', () => {
     render(<Router hook={memoryLocation().hook}><StrategyLabPanel lab={{ ...lab, observations: [short, recovery] }} /></Router>)
-    const all = screen.getByRole('tab', { name: 'All strategies' })
-    all.focus()
-    fireEvent.keyDown(all, { key: 'ArrowRight' })
     const direction = screen.getByRole('tab', { name: 'Short-term direction' })
-    expect(direction).toHaveFocus()
+    direction.focus()
     expect(direction).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('article', { name: /MSFT/ })).not.toBeInTheDocument()
     fireEvent.keyDown(direction, { key: 'ArrowRight' })
@@ -139,8 +136,9 @@ describe('Research strategy interactions', () => {
     expect(social).toHaveFocus()
     expect(screen.getByRole('tabpanel')).toHaveTextContent('No observations for this strategy')
     fireEvent.keyDown(social, { key: 'Home' })
-    expect(all).toHaveFocus()
-    expect(screen.getAllByRole('article')).toHaveLength(2)
+    expect(direction).toHaveFocus()
+    expect(screen.getAllByRole('article')).toHaveLength(1)
+    expect(screen.queryByRole('tab', { name: 'All strategies' })).not.toBeInTheDocument()
   })
 
   it('keeps research rank distinct from probability and shows unknown calibration honestly', () => {
@@ -152,6 +150,20 @@ describe('Research strategy interactions', () => {
     expect(card).toHaveTextContent('Older scan')
     expect(card).toHaveTextContent('Not confirmed')
     expect(within(card).getByRole('link', { name: 'Open MSFT stock analysis' })).toHaveAttribute('href', '/stock/MSFT')
+  })
+
+  it('keeps models separate for one stock and falls back when an optional model disappears', () => {
+    const macro: StrategyObservation = { ...short, id:'macro:GOOGL', sleeve:'macro-event' }
+    const { rerender } = render(<StrategyLabPanel symbol="GOOGL" observations={[short,macro]} />)
+    expect(screen.getAllByRole('article')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('tab',{name:'Major market events'}))
+    expect(screen.getAllByRole('article')).toHaveLength(1)
+    expect(screen.getByRole('article')).toHaveAccessibleName('GOOGL Major market events research')
+    rerender(<StrategyLabPanel symbol="GOOGL" observations={[short]} />)
+    expect(screen.queryByRole('tab',{name:'Major market events'})).not.toBeInTheDocument()
+    expect(screen.getByRole('tab',{name:'Short-term direction'})).toHaveAttribute('aria-selected','true')
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Short-term direction')
+    expect(screen.getByRole('article')).toHaveAccessibleName('GOOGL Short-term direction research')
   })
 
   it('exposes forecast detail without nesting interactive controls in the stock link', () => {

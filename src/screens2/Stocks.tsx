@@ -1,9 +1,9 @@
-import { getStockContexts } from '../lib/apiViews'
+import { getStockContexts, getStrategyChoices } from '../lib/apiViews'
 import { SectorIcon } from '../components/SectorIcon'
 // Stocks opens with the watchlist; market research loads when selected.
 
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link, useLocation } from 'wouter'
+import { Link, useLocation, useSearch } from 'wouter'
 import { db, type WatchItem } from '../lib/db'
 import { useSlice } from '../lib/useSlice'
 import { usePullRefresh, useSlicesRefresh, type SliceRefreshEntry } from '../lib/usePullRefresh'
@@ -21,6 +21,12 @@ import { BrandMark } from '../components/BrandMark'
 const StockContextPanel = lazy(() => import('./parts/StockContextPanel').then(module => ({ default: module.StockContextPanel })))
 const StockDiscovery = lazy(() => import('./parts/StockDiscovery').then(module => ({ default: module.StockDiscovery })))
 const StockMarkets = lazy(() => import('./parts/StockMarkets'))
+const StrategyChoicesView = lazy(() => import('./parts/StrategyChoicesView'))
+type StockSection = 'watchlist' | 'discover' | 'strategies' | 'markets'
+const sectionFromSearch = (search: string): StockSection => {
+  const view = new URLSearchParams(search).get('view')
+  return view === 'discover' || view === 'strategies' || view === 'markets' ? view : 'watchlist'
+}
 
 const SYMBOL_RE = /^[A-Za-z0-9.\-]{1,12}$/
 
@@ -60,12 +66,21 @@ function WatchlistRows({ items, onRemove, names }: { items: WatchItem[]; names: 
 }
 
 export default function Stocks() {
-  const [, navigate] = useLocation()
+  const [location, navigate] = useLocation()
+  const search = useSearch()
   const [query, setQuery] = useState('')
   const [searchError, setSearchError] = useState(false)
   const [items, setItems] = useState<WatchItem[]>([])
   const [watchLoaded, setWatchLoaded] = useState(false)
-  const [section, setSection] = useState<'watchlist' | 'discover' | 'markets'>('watchlist')
+  const [section, updateSection] = useState<StockSection>(() => sectionFromSearch(search))
+  useEffect(() => { updateSection(sectionFromSearch(search)) }, [search])
+  const setSection = (value: StockSection) => {
+    updateSection(value)
+    const params = new URLSearchParams(window.location.search)
+    if (value === 'watchlist') params.delete('view'); else params.set('view', value)
+    if (value !== 'strategies') params.delete('strategy')
+    navigate(`${location}${params.size ? `?${params}` : ''}`, { replace: true })
+  }
   const [sector, setSector] = useState('')
   const [showAll, setShowAll] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -110,6 +125,7 @@ export default function Stocks() {
     { key: 'movers', fetcher: getMovers },
     { key: 'sectors', fetcher: getSectors },
   ]
+  if (section === 'strategies') refreshEntries.push({ key: 'strategy-choices', fetcher: getStrategyChoices })
   const filteredItems = watchFilter ? items.filter(i => watchSector(i.symbol, directory?.rows ?? []) === watchFilter) : items
   const visibleItems = showAll ? filteredItems : filteredItems.slice(0, 6)
   const visibleSymbols = visibleItems.map(i => i.symbol)
@@ -182,11 +198,11 @@ export default function Stocks() {
       {searchError && <p className="stx-search-error">Enter a valid ticker — letters, numbers, &quot;.&quot; or &quot;-&quot;, up to 12 characters.</p>}
 
       <div className="stocks-tabs" role="tablist" aria-label="Stock views">
-        {(['watchlist', 'discover', 'markets'] as const).map((key, index, tabs) => <button key={key} role="tab" id={`stock-tab-${key}`} aria-controls="stock-view" tabIndex={(query.trim() ? 'discover' : section) === key ? 0 : -1} aria-selected={(query.trim() ? 'discover' : section) === key}
+        {(['watchlist', 'discover', 'strategies', 'markets'] as const).map((key, index, tabs) => <button key={key} role="tab" id={`stock-tab-${key}`} aria-controls="stock-view" tabIndex={(query.trim() ? 'discover' : section) === key ? 0 : -1} aria-selected={(query.trim() ? 'discover' : section) === key}
           onClick={() => { setQuery(''); setSearchError(false); setSection(key) }} onKeyDown={event => {
             const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
             if (next >= 0) { event.preventDefault(); setQuery(''); setSearchError(false); setSection(tabs[next]); document.getElementById(`stock-tab-${tabs[next]}`)?.focus() }
-          }}>{key === 'watchlist' ? 'Watchlist' : key === 'discover' ? 'Discover' : 'Markets'}</button>)}
+          }}>{key === 'watchlist' ? 'Watchlist' : key === 'discover' ? 'Discover' : key === 'strategies' ? 'Strategies' : 'Markets'}</button>)}
       </div>
       <div id="stock-view" role="tabpanel" aria-labelledby={`stock-tab-${query.trim() ? 'discover' : section}`}>
       {query.trim() || section === 'discover' ? <Suspense fallback={<p role="status">Loading stock discovery…</p>}><StockDiscovery directory={directory} error={directoryError} query={query} sector={sector} onSector={setSector} watchSymbols={new Set(symbols)} onAdd={add} /></Suspense> : section === 'watchlist' ? <>
@@ -201,7 +217,7 @@ export default function Stocks() {
         </section>
         <Link href="/today" className="stocks-today-link"><span><strong>Today’s research</strong><small>Market context, stock setups and what changed</small></span><span aria-hidden="true">→</span></Link>
         <Link href="/more/street" className="stocks-today-link"><span><strong>From your channels</strong><small>Latest video findings and supporting evidence</small></span><span aria-hidden="true">→</span></Link>
-      </> : <Suspense fallback={<p role="status">Loading markets…</p>}><StockMarkets watchSymbols={new Set(symbols)} onAdd={add} /></Suspense>}
+      </> : section === 'strategies' ? <Suspense fallback={<p role="status">Loading strategies…</p>}><StrategyChoicesView /></Suspense> : <Suspense fallback={<p role="status">Loading markets…</p>}><StockMarkets watchSymbols={new Set(symbols)} onAdd={add} /></Suspense>}
       </div>
     </div>
   )

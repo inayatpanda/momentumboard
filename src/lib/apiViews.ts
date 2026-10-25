@@ -1,4 +1,6 @@
 import type { StockContext } from '../../shared/engine/stockContext'
+import type { StrategyChoicesSnapshot } from '../../shared/engine/strategyChoices'
+import type { HistoricalStudy } from '../../shared/engine/historyEvidence'
 // THE TYPED VIEW CLIENT (plan Task 9): one getter per /api/engine?view= slice.
 // Token handling stays in api.ts's apiGet — one place. Shapes mirror the
 // server's Phase-1 projections 1:1; engine types import straight from
@@ -266,3 +268,9 @@ export interface VerdictRead {
 export const getVerdict = (sym: string) => apiGet<VerdictRead>(`/api/engine?view=verdict&sym=${encodeURIComponent(sym.toUpperCase())}`)
 
 export const getStockContexts = (symbols: string[]) => apiGet<{ generatedAt: number | null; items: Record<string, StockContext | null> }>(`/api/engine?view=stock-contexts&symbols=${encodeURIComponent(symbols.join(','))}`)
+
+export interface StrategyChoicesSlice {
+  snapshot: StrategyChoicesSnapshot | null
+  historicalStudy: HistoricalStudy | null
+}
+export const getStrategyChoices = () => apiGet<StrategyChoicesSlice>('/api/engine?view=strategies')

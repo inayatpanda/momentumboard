@@ -30,3 +30,4 @@ docs/AUDIT-*.md
 # Local transcript retry spool (never commit captured words)
 .local/
 .history-cache/
+.strategy-input/

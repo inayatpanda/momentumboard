@@ -48,11 +48,12 @@ vi.mock('../lib/useLiveQuotes', () => ({ useLiveQuotes: liveQuotesMock }))
 // from whatever the test seeded into Dexie and nothing else.
 vi.mock('../lib/apiViews', async () => {
   const actual = await vi.importActual<typeof import('../lib/apiViews')>('../lib/apiViews')
-  return { ...actual, getStockContexts: vi.fn(() => Promise.reject(new Error('not mocked in this test'))), getBoardSlice: vi.fn(() => Promise.reject(new Error('not mocked in this test'))) }
+  return { ...actual, getStrategyChoices: vi.fn(() => Promise.resolve({ snapshot: null, historicalStudy: null })), getStockContexts: vi.fn(() => Promise.reject(new Error('not mocked in this test'))), getBoardSlice: vi.fn(() => Promise.reject(new Error('not mocked in this test'))) }
 })
 
 import { getCandles, getMovers, getQuotes, getSectors } from '../lib/api'
 import { mirrorConfig } from '../lib/configMirror'
+import { getStrategyChoices } from '../lib/apiViews'
 
 const mkQuote = (symbol: string, overrides: Partial<Quote> = {}): Quote => ({
   symbol,
@@ -108,9 +109,10 @@ const mkBoardSlice = (rows: EnginePrediction[]): BoardSlice => ({
 // A minimal router: `/stocks` mounts the screen under test, `/stock/:sym`
 // stands in for the real (stubbed elsewhere) journey page so a search
 // submit's navigation is directly observable.
-const withRouter = (path = '/app/stocks') =>
-  render(
-    <Router base="/app" hook={memoryLocation({ path }).hook}>
+const withRouter = (path = '/app/stocks', searchPath = '') => {
+  const location = memoryLocation({ path, searchPath })
+  return render(
+    <Router base="/app" hook={location.hook} searchHook={location.searchHook}>
       <Switch>
         <Route path="/stock/:sym">{(params: { sym: string }) => <div>Landed on {params.sym}</div>}</Route>
         <Route path="/stocks">
@@ -119,6 +121,7 @@ const withRouter = (path = '/app/stocks') =>
       </Switch>
     </Router>,
   )
+}
 
 // A controllable fake IntersectionObserver: records every `observe(el)` call
 // alongside the callback the component registered, so a test can fire the
@@ -160,6 +163,21 @@ afterEach(() => {
 })
 
 describe('Stocks', () => {
+  it('loads strategy choices only when selected and refreshes their own slice', async () => {
+    withRouter()
+    expect(getStrategyChoices).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('tab', { name: 'Strategies' }))
+    expect(await screen.findByRole('heading', { name: 'Stocks by strategy' })).toBeInTheDocument()
+    await waitFor(() => expect(getStrategyChoices).toHaveBeenCalledTimes(1))
+    fireEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
+    await waitFor(() => expect(getStrategyChoices).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('tab', { name: 'Strategies' })).toHaveAttribute('aria-selected', 'true')
+  })
+  it('opens the strategies view directly from a shared link', async () => {
+    withRouter('/app/stocks', 'view=strategies')
+    expect(screen.getByRole('tab', { name: 'Strategies' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('heading', { name: 'Stocks by strategy' })).toBeInTheDocument()
+  })
   it('keeps the opening view focused and reveals sectors on Discover', async () => {
     withRouter()
     expect(screen.getByRole('tab', { name: 'Watchlist' })).toHaveAttribute('aria-selected', 'true')

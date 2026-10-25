@@ -9,7 +9,7 @@ const LABELS: Record<StrategyObservation['sleeve'], string> = {
   'short-horizon': 'Short-term direction', 'quality-dip': 'Recovery after a fall', 'social-ignition': 'Growing attention',
   'macro-event': 'Major market events', 'composite-control': 'Main engine',
 }
-const FILTERS = ['all', 'short-horizon', 'quality-dip', 'social-ignition'] as const
+const FILTERS = ['short-horizon', 'quality-dip', 'social-ignition'] as const
 const pct = (n: number | null | undefined) => n == null || !Number.isFinite(n) ? '—' : `${Math.round(n * 100)}%`
 const signed = (n: number | null | undefined) => n == null || !Number.isFinite(n) ? '—' : `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`
 const price = (n: number | null) => n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 4 : 2 })
@@ -90,31 +90,33 @@ function ObservationCard({ row, linked = true }: { row: StrategyObservation; lin
 }
 
 export function StrategyLabPanel({ lab, observations, symbol }: { lab?: EngineLabSnapshot | null; observations?: StrategyObservation[]; symbol?: string }) {
-  const [sleeve, setSleeve] = useState<(typeof FILTERS)[number]>('all')
+  const [selectedSleeve, setSleeve] = useState<StrategyObservation['sleeve'] | null>(null)
   const [expanded, setExpanded] = useState(false)
   const tabs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
   const available = (lab?.observations ?? observations ?? []).filter(row => !symbol || row.sym.toUpperCase() === symbol.toUpperCase())
-  const filtered = available.filter(row => sleeve === 'all' || row.sleeve === sleeve).sort((a, b) =>
-    Number(a.state === 'avoid') - Number(b.state === 'avoid') || Number(b.sleeve === 'quality-dip') - Number(a.sleeve === 'quality-dip') || Number(b.state === 'setup') - Number(a.state === 'setup') || b.score - a.score)
+  const filters: StrategyObservation['sleeve'][] = [...FILTERS, ...(['macro-event', 'composite-control'] as const).filter(key => available.some(row => row.sleeve === key))]
+  const sleeve = selectedSleeve && filters.includes(selectedSleeve) ? selectedSleeve : filters.find(key => available.some(row => row.sleeve === key)) ?? 'short-horizon'
+  const filtered = available.filter(row => row.sleeve === sleeve).sort((a, b) =>
+    Number(a.state === 'avoid') - Number(b.state === 'avoid') || Number(b.state === 'setup') - Number(a.state === 'setup') || b.score - a.score)
   const rows = filtered.slice(0, expanded ? filtered.length : symbol ? 6 : 4)
-  const select = (key: (typeof FILTERS)[number]) => { setSleeve(key); setExpanded(false) }
+  const select = (key: StrategyObservation['sleeve']) => { setSleeve(key); setExpanded(false) }
   function keyboard(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    const next = event.key === 'ArrowRight' ? (index + 1) % FILTERS.length : event.key === 'ArrowLeft' ? (index + FILTERS.length - 1) % FILTERS.length : event.key === 'Home' ? 0 : event.key === 'End' ? FILTERS.length - 1 : null
+    const next = event.key === 'ArrowRight' ? (index + 1) % filters.length : event.key === 'ArrowLeft' ? (index + filters.length - 1) % filters.length : event.key === 'Home' ? 0 : event.key === 'End' ? filters.length - 1 : null
     if (next == null) return
-    event.preventDefault(); select(FILTERS[next]); tabs.current[next]?.focus()
+    event.preventDefault(); select(filters[next]); tabs.current[next]?.focus()
   }
   return <section className={`research-section research-lab${symbol ? ' research-lab-stock' : ''}`} aria-label={symbol ? `${symbol} research lab` : 'Research lab'}>
     <div className="research-section-head"><div><p className="research-eyebrow">{symbol ? 'Independent research' : '02 / Ideas under observation'}</p><h2>{symbol ? 'Ideas for this stock' : 'Stock ideas to explore'}</h2></div><span className="research-mode">Being tested · updated daily</span></div>
-    <p className="research-section-intro">{symbol ? `Separate research views for ${symbol}, with their own evidence and outcomes.` : 'Explore businesses recovering after a fall, short-term price moves and stocks getting more attention.'} These ideas are being tested. No real trades are placed.</p>
+    <p className="research-section-intro">{symbol ? `Separate research views for ${symbol}, with their own evidence and outcomes.` : 'Explore businesses recovering after a fall, short-term price moves and stocks getting more attention.'} Choose one strategy at a time. Its ideas and results stay separate. No real trades are placed.</p>
     {!available.length ? <div className="research-empty"><p>{symbol ? `No short-term, recovery or attention-based idea is available for ${symbol} in the latest scan.` : 'No research ideas are available from the latest scan. New ideas appear when there is enough information to assess them.'}</p>{!symbol && <div className="research-awaiting" aria-label="Forecast sleeves awaiting first run"><span>Short-term direction</span><span>Recovery after a fall</span><span>Growing attention</span></div>}</div> : <>
-      {!symbol && <div className="research-tabs" role="tablist" aria-label="Filter forecast strategies">{FILTERS.map((key, i) => <button key={key} ref={el => { tabs.current[i] = el }} id={`${id}-${key}`} type="button" role="tab" aria-selected={sleeve === key} aria-controls={`${id}-results`} tabIndex={sleeve === key ? 0 : -1} onClick={() => select(key)} onKeyDown={e => keyboard(e, i)}>{key === 'all' ? 'All strategies' : LABELS[key]} <span className="num" aria-hidden="true">{available.filter(row => key === 'all' || row.sleeve === key).length}</span></button>)}</div>}
-      <div id={`${id}-results`} role={symbol ? undefined : 'tabpanel'} aria-labelledby={symbol ? undefined : `${id}-${sleeve}`} tabIndex={symbol ? undefined : 0}>
-        {filtered.length === 0 && <div className="research-empty"><p>No observations for this strategy in the latest scan.</p><p>{sleeve === 'quality-dip' ? 'A selloff needs supporting business evidence before it becomes a recovery candidate. This screen stays empty when the scan cannot establish that evidence.' : sleeve === 'social-ignition' ? 'The scan has not recorded a usable attention setup. Channel commentary is still available in YouTube & social.' : 'A direction read needs sufficient completed price history; missing evidence is not a forecast.'}</p><button type="button" className="research-text-link" onClick={() => select('all')}>View other research →</button></div>}
+      <div className="research-tabs" role="tablist" aria-label="Filter forecast strategies">{filters.map((key, i) => <button key={key} ref={el => { tabs.current[i] = el }} id={`${id}-${key}`} type="button" role="tab" aria-selected={sleeve === key} aria-controls={`${id}-results`} tabIndex={sleeve === key ? 0 : -1} onClick={() => select(key)} onKeyDown={e => keyboard(e, i)}>{LABELS[key]} <span className="num" aria-hidden="true">{available.filter(row => row.sleeve === key).length}</span></button>)}</div>
+      <div id={`${id}-results`} role="tabpanel" aria-labelledby={`${id}-${sleeve}`} tabIndex={0}>
+        {filtered.length === 0 && <div className="research-empty"><p>No observations for this strategy in the latest scan.</p><p>{sleeve === 'quality-dip' ? 'A selloff needs supporting business evidence before it becomes a recovery candidate. This screen stays empty when the scan cannot establish that evidence.' : sleeve === 'social-ignition' ? 'The scan has not recorded a usable attention setup. Channel commentary is still available in YouTube & social.' : 'A direction read needs sufficient completed price history; missing evidence is not a forecast.'}</p><p>Choose another strategy above to see its own ideas.</p></div>}
         <div className="research-decision-grid">{rows.map(row => <ObservationCard key={row.id} row={row} linked={!symbol} />)}</div>
         {rows.length < filtered.length && <button type="button" className="research-showmore" onClick={() => setExpanded(true)}>Show all {filtered.length} ideas <span aria-hidden="true">↓</span></button>}
       </div>
     </>}
-    {lab && !symbol && <details className="research-method"><summary>See the evidence: how ideas are tested</summary><p><b>Scan cadence:</b> {lab.cadence}</p><p>Repeated mentions of the same idea count once. We check saved predictions against later results, including trading costs.</p><div className="research-strategies" aria-label="Strategy sleeve status">{lab.sleeves.map(s => <div key={s.key}><strong>{strategyName(s.key, s.label)}</strong><span>{s.status}</span><span className="num">{s.evidenceN} completed</span></div>)}</div></details>}
+    {lab && !symbol && <details className="research-method"><summary>See the evidence: how ideas are tested</summary><p><b>Scan cadence:</b> {lab.cadence}</p><p>Repeated mentions of the same idea count once. We check saved predictions against later results, including trading costs.</p><div className="research-strategies" aria-label="Strategy sleeve status">{lab.sleeves.filter(s => s.key === sleeve).map(s => <div key={s.key}><strong>{strategyName(s.key, s.label)}</strong><span>{s.status}</span><span className="num">{s.evidenceN} completed</span></div>)}</div></details>}
   </section>
 }

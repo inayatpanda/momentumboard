@@ -7,7 +7,8 @@ discovery and source-linked findings from tracked YouTube channels.
 
 ## Application
 
-- **Stocks:** watchlists, company search, sector browsing and market activity.
+- **Stocks:** watchlists, company search, sector browsing, independent strategy
+  choices and market activity.
 - **Today:** the daily research board and changes in market conditions.
 - **The street:** channel insights, searchable video analysis and visible
   discovery/transcript/analysis coverage.
@@ -55,6 +56,36 @@ The Electron dependency update does not update previously installed desktop
 binaries; those need a newly built installer. This release deploys the web app.
 
 ## Services and background processing
+
+### Independent strategy choices
+
+**Stocks → Strategies** (`/app/stocks?view=strategies`) shows one strategy's
+current stock matches, sector filters and historical results at a time. The 12
+rule sets are shared between the historical test and daily scan. The separate
+forecast models in Today and stock research also show one model at a time;
+there is no combined recommendation score across these lists.
+
+The `financial-refresh` public-runner workflow refreshes SEC facts and current
+strategy choices daily at 13:35 UTC and weekdays at 22:35 UTC. It reuses the SEC
+downloads, retrieves two years of free daily stock and sector prices, and checks
+only completed sessions. The fixed 55-stock historical sample is scanned first,
+then configured US research symbols, capped at 100. Unknown financial sectors,
+missing valuations, stale prices and insufficient specialist financial data
+remain coverage gaps. They are never assumed to pass a financial screen.
+
+Results are stored in `engine-strategy-choices` and served through the narrow,
+authenticated `/api/engine?view=strategies` view. A total price outage preserves
+the previous snapshot; the UI hides choices from scans older than 48 hours.
+`engine-strategy-choice-history` retains up to 90 first-published session/rule
+snapshots for future evaluation. These ungraded selections do not become
+historical predictions or change the sized trading board. The historical study
+continues to disclose its fixed-sample survivorship bias and uncertainty.
+
+No paid data or model call is added by this scanner. It runs without the
+owner's Mac. Run `financial-refresh` manually to publish a fresh scan; the app's
+update button retrieves the latest published results and does not launch a job.
+
+### Hosting and video processing
 
 The React/Vite client and API run on Cloudflare Pages, with D1 storage and a
 separate scheduled Worker. Shared backend handlers also run in GitHub Actions

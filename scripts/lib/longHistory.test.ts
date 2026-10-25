@@ -14,6 +14,11 @@ describe('long-history input and measurement', () => {
     const noAdjustment = json(); noAdjustment.chart.result[0].indicators.adjclose = []
     expect(() => parseHistoryTape(noAdjustment, 'SPY', now)).toThrow('missing history')
   })
+  it('can retain a same-day bar for the current scanner without admitting future timestamps', () => {
+    expect(parseHistoryTape(json(), 'SPY', 1578321000 + 1000, { includeCurrentDay: true }).candles).toHaveLength(3)
+    expect(parseHistoryTape(json(), 'SPY', 1578321000 - 1, { includeCurrentDay: true }).candles).toHaveLength(2)
+    expect(parseHistoryTape(json(), 'SPY', 1578321000 + 1000).candles).toHaveLength(2)
+  })
   it('credits dividend adjustments to longs and debits them to shorts on the same dates', () => {
     expect(adjustedReturn(100, 100, .9, .91)).toBeCloseTo(1.111111)
     expect(adjustedReturn(100, 100, .9, .91, true)).toBeCloseTo(-1.111111)
@@ -48,5 +53,30 @@ describe('long-history input and measurement', () => {
     spy.candles.splice(530, 1); spy.adjustment.splice(530, 1)
     const missing = buildHistoricalStudy([stock], spy, now, 'test').strategies.find(s => s.key === 'trend-price')!
     expect(missing.missingN).toBeGreaterThan(0)
+  })
+  it('preserves the pre-extraction historical results for every strategy', () => {
+    const days:number[]=[]
+    for(let t=Date.UTC(2018,0,1)/1000;days.length<800;t+=86400)if(![0,6].includes(new Date(t*1000).getUTCDay()))days.push(t+14*3600)
+    const tape=(sym:string,fn:(i:number)=>number):HistoryTape=>({sym,fetchedAt:0,adjustment:days.map((_,i)=>.95+i*.00005),candles:days.map((t,i)=>{const c=fn(i);return {t,o:c*1.005,h:c*1.01,l:c*.99,c,v:i%40===30?3000000:1000000}})})
+    const stock=tape('AAPL',i=>(110+25*Math.sin(i/14)+i*.01)*(i%40===29?.88:i%40===30?.93:1))
+    const spy=tape('SPY',i=>100+i*.03),sector=tape('XLK',i=>100+i*.05)
+    const result=buildHistoricalStudy([stock],spy,Date.UTC(2022,0,1)/1000,'fixture',()=>{},[],[sector])
+    const rounded=(value:number|null|undefined)=>value==null?null:Number(value.toFixed(8))
+    // Fixed outputs recorded from the original inline predicates before they
+    // moved into the shared rules. No thresholds are fitted to these results.
+    expect(result.strategies.map(s=>[s.key,s.stats.n,rounded(s.stats.meanReturnPct),rounded(s.stats.excessPp),rounded(s.sectorStats?.excessPp),s.unknownFinancialN??0])).toEqual([
+      ['direction-core',36,-.27834264,.35798171,.33284457,0],
+      ['direction-gated',0,null,null,null,0],
+      ['pullback-price',2,-3.66497253,-4.83268497,-5.61325616,0],
+      ['trend-price',3,-22.03601068,-21.91081723,-22.15074199,0],
+      ['big-drop-price',2,-3.66497253,-4.83268497,-5.61325616,0],
+      ['healthy-drop',0,null,null,null,31],
+      ['healthy-value-drop',0,null,null,null,31],
+      ['quality-trend',0,null,null,null,19],
+      ['quality-value',0,null,null,null,275],
+      ['quarterly-recovery',0,null,null,null,31],
+      ['sector-leader',6,5.4300057,5.55290232,5.31016624,0],
+      ['shock-rebound',6,-2.94682212,-2.82066313,-3.05940051,0],
+    ])
   })
 })

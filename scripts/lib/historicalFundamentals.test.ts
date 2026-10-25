@@ -18,6 +18,16 @@ function facts(): CompanyFacts {
   return { cik: 1, facts: { 'us-gaap': rows } }
 }
 describe('historical financial evidence', () => {
+  it('builds a single current snapshot without using undisclosed filings or stale share counts', () => {
+    const raw = facts(), now = at('2020-03-01')
+    raw.facts!['us-gaap'].NetIncomeLoss.units!.USD.push({ ...raw.facts!['us-gaap'].NetIncomeLoss.units!.USD[0], filed: '2020-05-15', accn: 'future', val: -900 })
+    const latest = buildFinancialPanel(raw, 'AAPL', now, 'latest')
+    expect(latest.points).toHaveLength(1)
+    expect(latest.points[0].snapshot.metrics.netIncome).toBe(100)
+    expect(latest.points[0].shares).toEqual(financialPointAt(buildFinancialPanel(raw, 'AAPL', now), now)?.shares)
+    expect(historicalFinancialState(latest, 'AAPL', now, 20, []).capitalization).toMatchObject({ marketCapUsdM: .002, observedAt: now })
+    expect(historicalFinancialState(latest, 'AAPL', at('2020-12-01'), 20, []).capitalization).toBeNull()
+  })
   it('waits for filing availability, and later restatements never change earlier decisions', () => {
     const raw = facts(), end = at('2021-01-01')
     const panel = buildFinancialPanel(raw, 'AAPL', end)

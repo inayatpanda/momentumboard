@@ -145,6 +145,7 @@ export default function Today() {
       </nav>}
       </div>
       <div id="brief-panel-research" role={mobile ? 'tabpanel' : undefined} aria-labelledby={mobile ? 'brief-tab-research' : undefined} hidden={mobile && view !== 'research'}>
+      <Link href="/stocks?view=strategies" className="stocks-today-link"><span><strong>Choose a strategy</strong><small>Current stock matches, sectors and past results for each approach</small></span><span aria-hidden="true">→</span></Link>
       <div id="opportunities"><StrategyLabPanel lab={data?.engineLab} /></div>
       </div>
       <div id="brief-panel-learning" role={mobile ? 'tabpanel' : undefined} aria-labelledby={mobile ? 'brief-tab-learning' : undefined} hidden={mobile && view !== 'learning'}>

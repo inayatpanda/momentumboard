@@ -43,7 +43,7 @@ export function financialPointAt(panel: FinancialPanel | undefined, at: number):
 
 /** Keep dates and units, reject weighted-average shares as a market-cap proxy.
  * Later split-restated filings never overwrite the earlier as-of snapshot. */
-export function buildFinancialPanel(body: CompanyFacts, sym: string, now: number): FinancialPanel {
+export function buildFinancialPanel(body: CompanyFacts, sym: string, now: number, mode: 'history' | 'latest' = 'history'): FinancialPanel {
   const dates = new Set<number>()
   for (const concepts of Object.values(body.facts ?? {})) for (const concept of Object.values(concepts)) {
     for (const facts of Object.values(concept.units ?? {})) for (const f of facts) {
@@ -56,7 +56,9 @@ export function buildFinancialPanel(body: CompanyFacts, sym: string, now: number
     ...(body.facts?.['us-gaap']?.CommonStockSharesOutstanding?.units?.shares ?? []),
   ].filter(f => f.start == null && f.accn && /^(10-[KQ]|20-F|40-F)(\/A)?$/.test(f.form ?? '') &&
     Number.isFinite(f.val) && f.val! > 0 && Number.isFinite(seconds(f.end)) && Number.isFinite(seconds(f.filed)) && f.end! <= f.filed!)
-  const points = [...dates].sort((a, b) => a - b).map(at => {
+  // The daily scanner needs one as-of snapshot. Historical tests retain every
+  // filing-anchored point, with exactly the same publication delay in both modes.
+  const points = (mode === 'latest' ? [now] : [...dates].sort((a, b) => a - b)).map(at => {
     const rows = shareRows.filter(f => seconds(f.filed) + 1.5 * DAY <= at)
       .sort((a, b) => b.end!.localeCompare(a.end!) || b.filed!.localeCompare(a.filed!))
     const row = rows[0]
@@ -88,5 +90,5 @@ export function historicalFinancialState(panel: FinancialPanel | undefined, sym:
     ? { sym, marketCapUsdM: shares.value * shareFactor * splitAdjustedPrice * priceFactor / 1e6, currency: 'USD' as const,
       observedAt: at, source: 'historical-sec-shares' as const } : null
   const valuation = assessBusinessValuation(snapshot, cap, sector, at)
-  return { health, valuation, snapshot, point, sector }
+  return { health, valuation, capitalization: cap, snapshot, point, sector }
 }

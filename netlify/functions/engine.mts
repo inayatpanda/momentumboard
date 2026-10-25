@@ -632,6 +632,13 @@ export default async (req: Request) => {
   const url = new URL(req.url)
   const view = url.searchParams.get('view')
   if (view !== null) {
+    if (view === 'strategies') {
+      const [snapshot, historicalStudy] = await Promise.all([
+        blobAppStore.read('engine-strategy-choices'),
+        blobAppStore.read('engine-historical-study'),
+      ])
+      return json({ snapshot: snapshot ?? null, historicalStudy: historicalStudy ?? null })
+    }
     if (view === 'board') return json(await viewBoard())
     if (view === 'stock-contexts') {
       const symbols = [...new Set((url.searchParams.get('symbols') ?? '').toUpperCase().split(',').filter(Boolean))]

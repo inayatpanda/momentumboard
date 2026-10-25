@@ -63,6 +63,22 @@ describe('engine ?view= slices', () => {
     expect(res.status).toBe(400)
   })
 
+  it('serves independent strategy choices with only their historical study to authenticated readers', async () => {
+    expect((await handler(new Request('https://x/api/engine?view=strategies'))).status).toBe(401)
+    expect((await body(await handler(req('?view=strategies')))).data).toEqual({ snapshot: null, historicalStudy: null })
+    const snapshot = { version: 'current-strategy-choices-v1', strategies: [{ key: 'quality-value', matches: [{ symbol: 'AAPL' }] }] }
+    const historicalStudy = { strategies: [{ key: 'quality-value', horizon: 63 }] }
+    await seed('engine-strategy-choices', snapshot)
+    await seed('engine-historical-study', historicalStudy)
+    await seed('config', { watchlist: ['PRIVATE-CONFIG'] })
+    await seed('holdings-reads', [{ sym: 'PRIVATE-HOLDING', quantity: 100 }])
+    for (const token of ['admin-master', 'user-key-1']) {
+      const response = await handler(req('?view=strategies', token))
+      expect(response.headers.get('cache-control')).toContain('no-store')
+      expect((await body(response)).data).toEqual({ snapshot, historicalStudy })
+    }
+  })
+
   it('?view=board serves only the board slice — no ledger, no predictions', async () => {
     await seed('engine-board', { date: '2026-08-14', regime: 'risk-on', board: [{ sym: 'NVDA', side: 'long' }] })
     await seed('engine-calibration', { buckets: {}, brier: [], referenceBase: 0.41 })
