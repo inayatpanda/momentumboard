@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Router } from 'wouter'
 import { StrategyChoices } from './StrategyChoices'
 import { STRATEGY_DEFINITIONS, STRATEGY_SCREEN_VERSION, type StrategyScreenKey } from '../../../shared/engine/strategyScreens'
-import type { StrategyChoicesSnapshot, StrategyChoiceMatch } from '../../../shared/engine/strategyChoices'
+import type { StrategyChoicesSnapshot, StrategyChoiceMatch, StrategyChoiceCandidate } from '../../../shared/engine/strategyChoices'
 import { HISTORY_VERSION, HISTORY_CORE_MODEL, type HistoricalStudy, type HistoricalStats } from '../../../shared/engine/historyEvidence'
 
 const now=()=>Math.floor(Date.now()/1000)
@@ -113,4 +113,72 @@ describe('independent current strategy choices',()=>{
     expect(screen.getByLabelText('Selected strategy history')).toHaveTextContent('No comparable historical result')
     expect(screen.getByLabelText('Selected strategy history')).not.toHaveTextContent('-2.00 pts')
   })
+  it('explains price-qualified exclusions without treating missing data or strict rules as an unhealthy business',()=>{
+    const data=snapshot()
+    const group=data.strategies.find(s=>s.key==='quarterly-recovery')!
+    group.diagnostics={priceMatched:4,priceFailed:3,missingPrices:2,failedFinancial:2,missingFinancial:2,specialist:1,candidatesTotal:4,candidatesTruncated:false,candidates:[
+      {symbol:'MCD',sector:'XLY',category:'financial-rule',healthStatus:'unknown',reasons:['Debt is above this strategy’s limit.'],missing:[],failed:['Debt is above this strategy’s limit.']},
+      {symbol:'NKE',sector:'XLY',category:'missing-data',healthStatus:'unknown',reasons:['Cash flow is not available.'],missing:['Cash flow is not available.'],failed:[]},
+      {symbol:'PEP',sector:'XLP',category:'mixed',healthStatus:'unknown',reasons:[],missing:['Quarterly sales comparison is missing.'],failed:['Latest profit margin is below the rule.']},
+      {symbol:'JPM',sector:'XLF',category:'specialist',healthStatus:'unknown',reasons:['Bank capital needs a specialist assessment.'],missing:[],failed:[]},
+    ]}
+    data.symbols=['MCD','NKE','PEP','JPM','AAPL','MSFT','XOM','TSLA','BA']
+    group.counts={evaluated:4,missing:5,noMatch:4,matched:0,blocked:0}
+    mount({snapshot:data})
+    const funnel=screen.getByLabelText('Why stocks passed or were excluded')
+    expect(within(funnel).getByText('Stocks in scan').parentElement).toHaveTextContent('9')
+    expect(within(funnel).getByText('Price rules met').parentElement).toHaveTextContent('4')
+    expect(within(funnel).getByText('Company checks passed').parentElement).toHaveTextContent('0')
+    expect(funnel).toHaveTextContent('3 did not meet this strategy’s price rules')
+    expect(funnel).toHaveTextContent('2 could not be checked because usable price history was missing')
+    expect(screen.getByText(/these counts can overlap/)).toBeVisible()
+    expect(screen.getByText(/does not mean the business is unhealthy/)).toBeVisible()
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
+    expect(screen.getByText('Debt is above this strategy’s limit.')).not.toBeVisible()
+    fireEvent.click(screen.getByText('See the evidence: why stocks were excluded'))
+    expect(screen.getByRole('link',{name:'MCD'})).toHaveAttribute('href','/app/stock/MCD')
+    expect(screen.getAllByText('Debt is above this strategy’s limit.')).toHaveLength(1)
+    expect(screen.getByText('Cash flow is not available.')).toBeVisible()
+    expect(screen.getByText('Bank capital needs a specialist assessment.')).toBeVisible()
+    expect(screen.getByText('Missing data and unmet rules')).toBeVisible()
+    fireEvent.change(screen.getByRole('combobox',{name:'Strategy'}),{target:{value:'sector-leader'}})
+    expect(screen.queryByRole('link',{name:'MCD'})).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Why stocks passed or were excluded')).not.toBeInTheDocument()
+  })
+  it('keeps the expanded scan count distinct from the smaller historical sample',()=>{
+    const data=snapshot();data.symbols=Array.from({length:180},(_,i)=>`STOCK${i}`);data.scope='Expanded US research sample and followed shares.'
+    const study=history();study.symbols=data.symbols.slice(0,55);study.financialCoverage!.symbols=data.symbols.slice(0,42)
+    mount({snapshot:data,historicalStudy:study})
+    expect(screen.getByText('180 stocks included in this scan')).toBeVisible()
+    expect(screen.getByText(/Historical sample: 55 stocks/)).toHaveTextContent('Company filings cover 42 stocks. This is separate from the current scan.')
+    expect(screen.queryByLabelText('Why stocks passed or were excluded')).not.toBeInTheDocument()
+  })
+  it('shows price failures without suggesting company health was assessed',()=>{
+    const data=snapshot(),group=data.strategies.find(s=>s.key==='quarterly-recovery')!
+    group.diagnostics={priceMatched:0,priceFailed:2,missingPrices:1,failedFinancial:0,missingFinancial:0,specialist:0,candidatesTotal:0,candidatesTruncated:false,candidates:[]}
+    mount({snapshot:data})
+    expect(screen.getByLabelText('Why stocks passed or were excluded')).toHaveTextContent('No stocks reached the company checks in this scan.')
+    expect(screen.queryByLabelText('Reasons for exclusion')).not.toBeInTheDocument()
+    expect(screen.queryByText('See the evidence: why stocks were excluded')).not.toBeInTheDocument()
+  })
+  it('distinguishes a capped example list from all exclusions and keeps valuation free of a price-pattern claim',()=>{
+    const data=snapshot(),group=data.strategies.find(s=>s.key==='quality-value')!
+    const candidates:StrategyChoiceCandidate[]=Array.from({length:9},(_,i)=>({symbol:`CO${i}`,sector:'XLK',category:'missing-data',healthStatus:'unknown',reasons:[],missing:['Company filings are incomplete.'],failed:[]}))
+    data.symbols=Array.from({length:90},(_,i)=>`CO${i}`)
+    group.counts={evaluated:0,missing:90,noMatch:0,matched:0,blocked:0}
+    group.diagnostics={priceMatched:90,priceFailed:0,missingPrices:0,failedFinancial:0,missingFinancial:90,specialist:0,candidatesTotal:90,candidatesTruncated:true,candidates}
+    mount({snapshot:data})
+    fireEvent.change(screen.getByRole('combobox',{name:'Strategy'}),{target:{value:'quality-value'}})
+    expect(screen.getByText('Price data usable')).toBeVisible()
+    expect(screen.queryByText('Price rules met')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('See the evidence: why stocks were excluded'))
+    expect(screen.getByText(/Showing 8 of 90 excluded stocks/)).toHaveTextContent('This scan includes 9 stock examples; the totals above cover all 90.')
+    expect(screen.queryByRole('link',{name:'CO8'})).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button',{name:'Show more excluded stocks'}))
+    expect(screen.getByRole('link',{name:'CO8'})).toBeVisible()
+    expect(screen.getByText(/Showing 9 of 90 excluded stocks/)).toBeVisible()
+    expect(screen.queryByRole('button',{name:'Show more excluded stocks'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
+  })
+
 })

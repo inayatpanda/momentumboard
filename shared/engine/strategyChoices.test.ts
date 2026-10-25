@@ -124,4 +124,80 @@ describe('independent current strategy screens',()=>{
     a.rows[0].financial!.availableAt=NOW+1
     expect(group(buildStrategyChoices(a),'healthy-drop').counts.missing).toBe(1)
   })
+  it('separates a known debt ceiling failure from missing financial evidence without changing the rule',()=>{
+    const a=input(recovery),s=financial();a.rows[0].financial=s
+    s.metrics.totalDebt=600e6
+    const g=group(buildStrategyChoices(a),'healthy-drop')
+    // Legacy unknown/missing classification is retained for comparability;
+    // the diagnostic explains that this is a known conservative limit.
+    expect(g.counts).toMatchObject({matched:0,missing:1})
+    expect(g.diagnostics).toMatchObject({priceMatched:1,priceFailed:0,missingPrices:0,failedFinancial:1,missingFinancial:0})
+    expect(g.diagnostics!.candidates[0]).toMatchObject({category:'financial-rule',healthStatus:'unknown',missing:[]})
+    expect(g.diagnostics!.candidates[0].failed[0]).toContain('ceiling')
+    s.metrics.totalDebt=null
+    const missing=group(buildStrategyChoices(a),'healthy-drop').diagnostics!
+    expect(missing).toMatchObject({failedFinancial:0,missingFinancial:1})
+    expect(missing.candidates[0].category).toBe('missing-data')
+  })
+  it('distinguishes uncertain debt upper bounds from a known liquidity failure',()=>{
+    const a=input(recovery),s=financial();a.rows[0].financial=s;a.rows[0].sector='XLP'
+    // PEP-like reported values: liabilities bound cannot prove actual debt,
+    // but the cash-flow liquidity floor can be checked with available data.
+    s.metrics.totalDebt=null;s.metrics.totalLiabilities=89489e6;s.metrics.cash=10675e6;s.metrics.operatingCashFlow=12087e6
+    s.metrics.currentRatio=.8;s.metrics.currentLiabilities=34529e6
+    for(const key of ['totalLiabilities','currentLiabilities'] as const)s.evidence[key]={...s.evidence.cash!,value:s.metrics[key]!}
+    const d=group(buildStrategyChoices(a),'healthy-drop').diagnostics!
+    expect(d).toMatchObject({failedFinancial:1,missingFinancial:1})
+    expect(d.candidates[0]).toMatchObject({category:'mixed',healthStatus:'unknown'})
+    expect(d.candidates[0].missing.join(' ')).toContain('cannot establish that actual debt is excessive')
+    expect(d.candidates[0].failed.join(' ')).toContain('0.7×')
+    expect(d.candidates[0].failed.join(' ')).not.toContain('net total-liabilities')
+  })
+  it('retains known deterioration when separate borrowing data is unavailable',()=>{
+    const a=input(recovery),s=financial();a.rows[0].financial=s
+    s.metrics.totalDebt=null;s.metrics.revenueGrowthPct=-4.3
+    const d=group(buildStrategyChoices(a),'healthy-drop').diagnostics!
+    expect(d).toMatchObject({failedFinancial:1,missingFinancial:1})
+    expect(d.candidates[0]).toMatchObject({category:'mixed',healthStatus:'deteriorating'})
+    expect(d.candidates[0].failed).toContain('Annual revenue declined against the comparable prior year.')
+  })
+  it('uses a proven minimum borrowing amount only to explain a strict-rule exclusion',()=>{
+    const a=input(recovery),s=financial();a.rows[0].financial=s;a.rows[0].sector='XLY'
+    s.metrics.totalDebt=null;s.metrics.cash=822e6;s.metrics.operatingCashFlow=10551e6
+    s.debtMinimum={...s.evidence.cash!,value:39863e6}
+    const g=group(buildStrategyChoices(a),'healthy-drop'),d=g.diagnostics!
+    expect(g.counts).toMatchObject({matched:0,missing:1})
+    expect(d).toMatchObject({failedFinancial:1,missingFinancial:1})
+    expect(d.candidates[0]).toMatchObject({category:'mixed',healthStatus:'unknown'})
+    expect(d.candidates[0].failed[0]).toContain('at least 3.7×')
+    s.debtMinimum.availableAt=NOW+1
+    expect(group(buildStrategyChoices(a),'healthy-drop').diagnostics!.failedFinancial).toBe(0)
+  })
+  it('reports specialist exclusions separately and carries the scan-universe version',()=>{
+    const a=input(recovery);a.rows[0].sector='XLF';a.universeVersion='balanced-test:123'
+    const s=buildStrategyChoices(a),d=group(s,'healthy-drop').diagnostics!
+    expect(d).toMatchObject({priceMatched:1,specialist:1,failedFinancial:0,missingFinancial:0})
+    expect(d.candidates[0]).toMatchObject({category:'specialist',missing:[],failed:[]})
+    expect(s.universeVersion).toBe('balanced-test:123')
+  })
+  it('counts incomplete prices and failed price rules before considering financial evidence',()=>{
+    const a=input(recovery);a.rows.push({symbol:'MSFT',sector:'XLK',candles:rising},{symbol:'BAD',candles:[]})
+    const d=group(buildStrategyChoices(a),'healthy-drop').diagnostics!
+    expect(d).toMatchObject({priceMatched:1,priceFailed:1,missingPrices:1,missingFinancial:1})
+    expect(d.candidates.map(c=>c.symbol)).toEqual(['AAPL'])
+  })
+  it('bounds example payloads while preserving the complete financial diagnosis counts',()=>{
+    const a=input(recovery);a.rows=Array.from({length:45},(_,i)=>({symbol:`T${i}`,sector:'XLK',candles:recovery}))
+    const d=group(buildStrategyChoices(a),'healthy-drop').diagnostics!
+    expect(d).toMatchObject({priceMatched:45,missingFinancial:45,failedFinancial:0,candidatesTotal:45,candidatesTruncated:true})
+    expect(d.candidates).toHaveLength(40)
+  })
+  it('keeps valuation failures and missing capitalization distinct',()=>{
+    const a=input(recovery);a.rows[0].financial=financial();a.rows[0].valuation=cap(100000)
+    const expensive=group(buildStrategyChoices(a),'healthy-value-drop').diagnostics!
+    expect(expensive).toMatchObject({failedFinancial:1,missingFinancial:0})
+    expect(expensive.candidates[0]).toMatchObject({category:'financial-rule',healthStatus:'healthy'})
+    a.rows[0].valuation=null
+    expect(group(buildStrategyChoices(a),'healthy-value-drop').diagnostics!.candidates[0].category).toBe('missing-data')
+  })
 })

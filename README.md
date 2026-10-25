@@ -68,16 +68,38 @@ there is no combined recommendation score across these lists.
 The `financial-refresh` public-runner workflow refreshes SEC facts and current
 strategy choices daily at 13:35 UTC and weekdays at 22:35 UTC. It reuses the SEC
 downloads, retrieves two years of free daily stock and sector prices, and checks
-only completed sessions. The fixed 55-stock historical sample is scanned first,
-then configured US research symbols, capped at 100. Unknown financial sectors,
+only completed sessions. The current scan covers a balanced pool of 250 US
+stocks: the fixed 55-stock historical sample, configured research symbols, then
+company listings spread across the 11 known sectors. The selection is
+deterministic, prefers the seed's larger companies and makes no claim to be a
+current index membership list. Unknown financial sectors,
 missing valuations, stale prices and insufficient specialist financial data
 remain coverage gaps. They are never assumed to pass a financial screen.
+
+Each strategy explains where its candidates were excluded: price rules,
+missing financial evidence, a known financial limit, or specialist review.
+One stock can have both missing evidence and a known failed check. A total-
+liabilities upper bound above the debt ceiling requires verification of actual
+debt; it does not prove excessive borrowing. Explicitly reported minimum debt
+can prove that a ceiling is already exceeded. These explanations do not change
+the strategy thresholds or historical pass/fail decisions. Up to 40 excluded
+stock examples are retained per strategy, with full-universe counts.
+
+The cloud job reuses compact SEC snapshots and dated share counts for up to
+18 hours before refreshing, so an evening scan normally reuses the morning's
+filings and updates prices. Original retrieval dates remain visible. The cache
+expires after 48 hours. Financial retrieval has an eight-minute work budget,
+prices an eleven-minute budget, inside the 25-minute job limit; unfinished
+stocks remain explicit coverage gaps. Raw SEC downloads are not retained as
+cloud artifacts.
 
 Results are stored in `engine-strategy-choices` and served through the narrow,
 authenticated `/api/engine?view=strategies` view. A total price outage preserves
 the previous snapshot; the UI hides choices from scans older than 48 hours.
 `engine-strategy-choice-history` retains up to 90 first-published session/rule
-snapshots for future evaluation. These ungraded selections do not become
+snapshots for future evaluation, also partitioned by the version of the stock
+pool. Expanding the universe does not rewrite an earlier publication. These
+ungraded selections do not become
 historical predictions or change the sized trading board. The historical study
 continues to disclose its fixed-sample survivorship bias and uncertainty.
 

@@ -1,13 +1,14 @@
 import { describe,expect,it,vi } from 'vitest'
-import { capturedStrategyFinancials,fetchStrategyTape,strategyChoiceUniverse,strategyInputRow,strategyPublicationSession,appendStrategyChoiceHistory } from './strategyChoiceInputs'
+import { capturedStrategyFinancials,fetchStrategyTape,strategyChoiceUniverse,strategyInputRow,strategyPublicationSession,appendStrategyChoiceHistory,strategyUniverseVersion,compactStrategyFinancialInput,cachedStrategyFinancialInput,strategyFinancialNeedsRefresh } from './strategyChoiceInputs'
 import { HISTORY_SECTORS } from './historicalFundamentals'
 import type { HistoryTape } from './longHistory'
 import { emptyBusinessHealth } from '../../shared/businessHealth'
 import { buildStrategyChoices } from '../../shared/engine/strategyChoices'
+import { loadUniverseSeed, type UniverseSeedRow } from '../../shared/engine/discovery/universeSeed'
 
 const now=Date.parse('2026-10-25T13:00:00Z')/1000, DAY=86400
 const tape=(sym:string,count=260):HistoryTape=>({sym,fetchedAt:now,splits:[],adjustment:Array(count).fill(1),candles:Array.from({length:count},(_,i)=>({t:now-(count-i+1)*DAY,o:100,h:102,l:99,c:101,v:1000}))})
-const chart=(symbol:string)=>({chart:{result:[{meta:{symbol},timestamp:[now-2*DAY,now-DAY],events:{splits:{}},indicators:{quote:[{open:[100,101],high:[102,103],low:[99,100],close:[101,102],volume:[1000,1200]}],adjclose:[{adjclose:[101,102]}]}}]}})
+const chart=(symbol:string,currency='USD')=>({chart:{result:[{meta:{symbol,currency},timestamp:[now-2*DAY,now-DAY],events:{splits:{}},indicators:{quote:[{open:[100,101],high:[102,103],low:[99,100],close:[101,102],volume:[1000,1200]}],adjclose:[{adjclose:[101,102]}]}}]}})
 const raw={sym:'AAPL',fetchedAt:now,body:{cik:320193,facts:{'us-gaap':{}}}}
 
 describe('free cloud strategy inputs',()=>{
@@ -21,8 +22,33 @@ describe('free cloud strategy inputs',()=>{
     expect(JSON.stringify(rows)).not.toMatch(/watchlist|followed|selected/)
     expect(new Set(rows.map(row=>row.symbol)).size).toBe(rows.length)
     const bounded=strategyChoiceUniverse(Array.from({length:100},(_,i)=>({symbol:`ZZ${i}`})))
-    expect(bounded).toHaveLength(100)
+    expect(bounded).toHaveLength(250)
     expect(bounded.filter(row=>HISTORY_SECTORS[row.symbol])).toHaveLength(55)
+    expect(bounded.filter(row=>row.symbol.startsWith('ZZ'))).toHaveLength(100)
+  })
+  it('adds a deterministic balanced 250-stock pool without changing the 55-stock historical sample',()=>{
+    const seed=loadUniverseSeed(),pool=strategyChoiceUniverse([],seed)
+    expect(pool).toHaveLength(250)
+    expect(strategyChoiceUniverse([],[...seed].reverse())).toEqual(pool)
+    const counts=Object.values(pool.reduce<Record<string,number>>((out,row)=>{out[row.sector!]=(out[row.sector!]??0)+1;return out},{}))
+    expect(counts).toHaveLength(11)
+    expect(Math.max(...counts)-Math.min(...counts)).toBeLessThanOrEqual(1)
+    expect(Object.keys(HISTORY_SECTORS)).toHaveLength(55)
+    expect(strategyUniverseVersion(pool)).toBe(strategyUniverseVersion([...pool].reverse()))
+    expect(strategyUniverseVersion(pool.slice(1))).not.toBe(strategyUniverseVersion(pool))
+  })
+  it('does not automatically add unknown-sector, non-USD, fund or depositary listings',()=>{
+    const seed:UniverseSeedRow[]=[
+      {sym:'AUTO',name:'Example Company',exchange:'US',index:['sp400'],sector:'Technology',capBand:'mid',currency:'USD'},
+      {sym:'FUNDS',name:'Example ETF Fund',exchange:'US',index:['sp400'],sector:'Technology',capBand:'mid',currency:'USD'},
+      {sym:'ADRS',name:'Example American Depositary Shares',exchange:'US',index:['sp400'],sector:'Technology',capBand:'mid',currency:'USD'},
+      {sym:'UNKN',name:'Unknown Company',exchange:'US',index:['sp400'],sector:null,capBand:'mid',currency:'USD'},
+      {sym:'EURO',name:'Non USD Company',exchange:'US',index:['sp400'],sector:'Technology',capBand:'mid',currency:'EUR'},
+    ]
+    const symbols=strategyChoiceUniverse([],seed).map(row=>row.symbol)
+    expect(symbols).toContain('AUTO')
+    for(const symbol of ['FUNDS','ADRS','UNKN','EURO'])expect(symbols).not.toContain(symbol)
+    expect(strategyChoiceUniverse([{symbol:'UNKN'},{symbol:'ADRS'}],seed).map(row=>row.symbol)).toEqual(expect.arrayContaining(['UNKN','ADRS']))
   })
   it('rejects wrong, expired, future and incomplete SEC handoffs',()=>{
     expect(capturedStrategyFinancials(raw,'AAPL',now)).toEqual(raw.body)
@@ -45,6 +71,7 @@ describe('free cloud strategy inputs',()=>{
     expect(await fetchStrategyTape('AAPL',now,wrong,pause)).toBeNull();expect(wrong).toHaveBeenCalledTimes(2)
     const broken=vi.fn(async()=>{throw new Error('network failed')})
     expect(await fetchStrategyTape('AAPL',now,broken,pause)).toBeNull();expect(broken).toHaveBeenCalledTimes(2)
+    expect(await fetchStrategyTape('AAPL',now,async()=>new Response(JSON.stringify(chart('AAPL','EUR'))),pause)).toBeNull()
   })
   it('uses a saved dated report without inventing market cap and rejects wrong-symbol fallbacks',()=>{
     const report=emptyBusinessHealth('AAPL',now,'missing')
@@ -62,6 +89,16 @@ describe('free cloud strategy inputs',()=>{
     expect(row.financial?.asOf).toBeLessThanOrEqual(now)
     const missingSplits={...tape('AAPL'),splits:undefined}
     expect(strategyInputRow({symbol:'AAPL',sector:'XLK'},missingSplits,body,null,now).valuation).toBeNull()
+    const compact=compactStrategyFinancialInput(body,'AAPL',now)
+    const next=now+9*3600, repriced={...tape('AAPL'),candles:tape('AAPL').candles.map(c=>({...c,o:200,h:202,l:199,c:201}))}
+    expect(strategyInputRow({symbol:'AAPL',sector:'XLK'},repriced,null,null,next,compact).valuation).toMatchObject({marketCapUsdM:100*201/1e6,observedAt:next})
+    expect(compact.fetchedAt).toBe(now)
+    expect(strategyFinancialNeedsRefresh(compact,'AAPL',next)).toBe(false)
+    expect(strategyFinancialNeedsRefresh(compact,'AAPL',now+18*3600)).toBe(true)
+    expect(cachedStrategyFinancialInput(compact,'AAPL',now+48*3600+1)).toBeNull()
+    expect(cachedStrategyFinancialInput(compact,'MSFT',now)).toBeNull()
+    expect(cachedStrategyFinancialInput({...compact,fetchedAt:now+1},'AAPL',now)).toBeNull()
+    expect(cachedStrategyFinancialInput({...compact,financialVersion:'unknown'},'AAPL',now)).toBeNull()
   })
   it('preserves the previous scan on missing, short, stale or misaligned market prices while allowing zero matches',()=>{
     const spy=tape('SPY'), rows=[{symbol:'AAPL',candles:tape('AAPL').candles}]
@@ -83,6 +120,16 @@ describe('first-published independent strategy selections',()=>{
     expect(appendStrategyChoiceHistory(saved,revised,sessionAt)).toEqual(saved)
     expect(saved.sessions[0]).toMatchObject({firstPublishedAt:now,scope:'US research universe',scanned:1})
     expect(JSON.stringify(saved)).not.toMatch(/meanReturn|probability|score|outcome/)
+  })
+  it('records expanded universe selections separately without rewriting an old session',()=>{
+    const first=snapshot(),sessionAt=Math.floor((now-2*DAY)/DAY)*DAY
+    const legacy=appendStrategyChoiceHistory(null,first,sessionAt)
+    const expanded={...first,generatedAt:now+1,universeVersion:'balanced-us-250-v1:new',symbols:['AAPL','MSFT']}
+    const saved=appendStrategyChoiceHistory(legacy,expanded,sessionAt)
+    expect(saved.sessions).toHaveLength(2)
+    expect(saved.sessions[0]).toEqual(legacy.sessions[0])
+    expect(saved.sessions[1]).toMatchObject({universeVersion:'balanced-us-250-v1:new',scanned:2,firstPublishedAt:now+1})
+    expect(appendStrategyChoiceHistory(saved,{...expanded,generatedAt:now+2},sessionAt)).toEqual(saved)
   })
   it('retains at most 90 sessions and never creates backdated future records',()=>{
     const scan=snapshot()

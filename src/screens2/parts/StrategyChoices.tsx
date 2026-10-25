@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { Link, useSearch } from 'wouter'
-import type { StrategyChoicesSnapshot, StrategyChoiceMatch, StrategyScreenKey } from '../../../shared/engine/strategyChoices'
+import type { StrategyChoicesSnapshot, StrategyChoiceMatch, StrategyChoiceGroup, StrategyScreenKey } from '../../../shared/engine/strategyChoices'
 import { STRATEGY_DEFINITIONS, STRATEGY_SCREEN_VERSION } from '../../../shared/engine/strategyScreens'
 import { HISTORY_VERSION, HISTORY_CORE_MODEL, type HistoricalStudy, type HistoricalStrategy } from '../../../shared/engine/historyEvidence'
 import { sectorFinancialPolicy } from '../../../shared/sectorFinancials'
@@ -69,6 +69,58 @@ function MatchCard({ row, strategyKey }: {row: StrategyChoiceMatch; strategyKey:
   </article>
 }
 
+const exclusionName = {
+  'missing-data': 'Company data is incomplete',
+  'financial-rule': 'A financial rule was not met',
+  deteriorating: 'Reported business trends weakened',
+  specialist: 'Needs a specialist review',
+  mixed: 'Missing data and unmet rules',
+}
+
+function StrategyFunnel({ group }: {group:StrategyChoiceGroup}) {
+  const [limit,setLimit]=useState(8)
+  useEffect(()=>setLimit(8),[group.key])
+  const detail=group.diagnostics
+  if(!detail)return null
+  const attempted=detail.priceMatched+detail.priceFailed+detail.missingPrices
+  const usableOnly=group.key==='quality-value'
+  const checksPassed=group.counts.matched+group.counts.blocked
+  const candidates=[...detail.candidates].sort((a,b)=>a.symbol.localeCompare(b.symbol))
+  const total=detail.candidatesTotal??candidates.length
+  return <section className="strategy-choice-funnel" aria-label="Why stocks passed or were excluded">
+    <h3>{group.counts.matched===0?'Why there are no ready choices':'How this list was made'}</h3>
+    <dl className="strategy-choice-funnel-stats">
+      <div><dt>Stocks in scan</dt><dd>{attempted.toLocaleString()}</dd></div>
+      <div><dt>{usableOnly?'Price data usable':'Price rules met'}</dt><dd>{detail.priceMatched.toLocaleString()}</dd></div>
+      {group.financial && <div><dt>Company checks passed</dt><dd>{checksPassed.toLocaleString()}</dd></div>}
+      <div><dt>Ready matches</dt><dd>{group.counts.matched.toLocaleString()}</dd></div>
+    </dl>
+    <p className="strategy-choice-muted">{detail.priceFailed>0 && `${detail.priceFailed} did not meet this strategy’s price rules. `}{detail.missingPrices>0 && `${detail.missingPrices} could not be checked because usable price history was missing. `}{group.counts.blocked>0 && `${group.counts.blocked} passed the rules but remain on watch because of a safety check. `}{group.financial && detail.priceMatched===0 && 'No stocks reached the company checks in this scan.'}</p>
+    {group.financial && total>0 && <>
+      <p className="strategy-choice-funnel-intro">{total} stock{total===1?'':'s'} reached the company checks but could not join this list:</p>
+      <ul className="strategy-choice-exclusion-counts" aria-label="Reasons for exclusion">
+        {detail.missingFinancial>0 && <li><strong>{detail.missingFinancial}</strong><span>Company data incomplete</span></li>}
+        {detail.failedFinancial>0 && <li><strong>{detail.failedFinancial}</strong><span>Financial rules not met</span></li>}
+        {detail.specialist>0 && <li><strong>{detail.specialist}</strong><span>Specialist review needed</span></li>}
+      </ul>
+      {detail.missingFinancial>0 && detail.failedFinancial>0 && <p className="strategy-choice-muted">A stock can have both missing data and an unmet rule, so these counts can overlap.</p>}
+      {detail.specialist>0 && <p className="strategy-choice-muted">Specialist review means this automated check does not cover that business model. It does not mean the business is unhealthy.</p>}
+      <details className="strategy-choice-exclusions"><summary>See the evidence: why stocks were excluded</summary>
+        <p>{usableOnly?'These stocks had usable prices.':'These stocks met the price rules.'} Each reason below belongs to this strategy only.</p>
+        <p>Showing {Math.min(limit,candidates.length)} of {total} excluded stocks.{detail.candidatesTruncated ? ` This scan includes ${candidates.length} stock examples; the totals above cover all ${total}.` : ''}</p>
+        <ul>{candidates.slice(0,limit).map(row=><li className="strategy-choice-excluded-stock" key={row.symbol}>
+          <div className="strategy-choice-excluded-head"><Link href={`/stock/${encodeURIComponent(row.symbol)}`}>{row.symbol}{row.name?` · ${row.name}`:''}</Link><span>{sectorName(row.sector)}</span></div>
+          <p><b>{exclusionName[row.category]}</b></p>
+          {row.reasons.some(reason=>!row.missing.includes(reason)&&!row.failed.includes(reason)) && <ul>{row.reasons.filter(reason=>!row.missing.includes(reason)&&!row.failed.includes(reason)).map((reason,i)=><li key={i}>{reason}</li>)}</ul>}
+          {row.missing.length>0 && <><p><b>Information still needed</b></p><ul>{row.missing.map((reason,i)=><li key={i}>{reason}</li>)}</ul></>}
+          {row.failed.length>0 && <><p><b>Rules not met</b></p><ul>{row.failed.map((reason,i)=><li key={i}>{reason}</li>)}</ul></>}
+        </li>)}</ul>
+        {candidates.length>limit && <button type="button" className="strategy-choice-more" onClick={()=>setLimit(n=>n+8)}>Show more excluded stocks</button>}
+      </details>
+    </>}
+  </section>
+}
+
 function StrategyHistory({ study, strategyKey }: {study?:HistoricalStudy|null;strategyKey:StrategyScreenKey}) {
   const now=Date.now()/1000
   const definition=STRATEGY_DEFINITIONS.find(d=>d.key===strategyKey)!
@@ -82,6 +134,7 @@ function StrategyHistory({ study, strategyKey }: {study?:HistoricalStudy|null;st
     <div className="strategy-choice-subhead"><h3>How this strategy tested</h3><span>All tested sectors · {holdingPeriod(row.horizon)}</span></div>
     <p>{historicalLabel(row.status,'the US market')}. {historicalLabel(row.sectorStatus,'sector funds')}.</p>
     <dl className="strategy-choice-stats"><div><dt>Above / below the market</dt><dd>{signed(row.stats.excessPp)}</dd></div><div><dt>Above / below the sector</dt><dd>{signed(row.sectorStats?.excessPp)}</dd></div><div><dt>Completed examples</dt><dd>{row.stats.n.toLocaleString()}</dd></div></dl>
+    <p className="strategy-choice-muted">Historical sample: {new Set(study!.symbols).size} stocks.{definition.financial && study!.financialCoverage ? ` Company filings cover ${new Set(study!.financialCoverage.symbols).size} stocks.` : ''} This is separate from the current scan.</p>
     <p className="strategy-choice-muted">Average difference per completed idea, after estimated costs. This does not establish future success.</p>
     <details><summary>See the evidence: this strategy’s results</summary>
       <p>Evaluated from {day(study!.evaluationFrom)} through {day(study!.dataThrough)}. Updated {day(study!.generatedAt)}. Current-stock filters above do not change these historical totals.</p>
@@ -123,17 +176,18 @@ export function StrategyChoices({snapshot,historicalStudy,onRefresh,refreshing=f
     <p className="strategy-choice-intro">Choose the approach you want to explore. Each strategy has its own stock list, rules and results.</p>
     <label className="strategy-choice-select" htmlFor={`${id}-strategy`}>Strategy<select id={`${id}-strategy`} value={selected} onChange={e=>select(e.target.value)}>{STRATEGY_DEFINITIONS.map(d=>{
       const g=snapshot?.strategies.find(s=>s.key===d.key)
-      return <option key={d.key} value={d.key}>{name(d.key,d.label)}{current && g ? ` · ${g.counts.matched} matches${g.counts.blocked?` / ${g.counts.blocked} watch only`:''}`:''}</option>
+      return <option key={d.key} value={d.key}>{name(d.key,d.label)}{current && g ? ` · ${g.counts.matched} ${g.counts.matched===1?'match':'matches'}${g.counts.blocked?` / ${g.counts.blocked} watch only`:''}`:''}</option>
     })}</select></label>
     <div className="strategy-choice-about"><div><h3>{name(selected,definition.label)}</h3><span>{holdingPeriod(definition.horizon)} · Research screen</span></div><p>{summary[selected]}</p><details><summary>See the evidence: exact rules</summary><p>{definition.description}</p><p>These rules are shared with this strategy’s historical test. No overall score combines it with other strategies. A stock can appear in more than one independent list.</p></details></div>
     {error && <p className="strategy-choice-alert" role="alert">The latest scan could not be retrieved. {snapshot?'The saved scan is shown with its original date.':'Please try checking for updates.'}</p>}
-    {snapshot && <p className="strategy-choice-muted">Scan: {stamp(snapshot.generatedAt)} · {snapshot.scope}</p>}
+    {snapshot && <div className="strategy-choice-scope"><p><strong>{new Set(snapshot.symbols).size} stocks included in this scan</strong> · {snapshot.scope}</p><p>Scan: {stamp(snapshot.generatedAt)}</p></div>}
     {!snapshot ? <div className="strategy-choice-empty" role="status"><h3>Waiting for the first strategy scan</h3><p>Current matches will appear here after the free cloud scan publishes. Historical results below are kept separate.</p></div>
       : !current ? <div className="strategy-choice-empty" role="status"><h3>A fresh scan is needed</h3><p>The saved scan is over two days old, has an invalid date or uses different rules. Its stock list is not presented as current choices.</p></div>
       : !group ? <div className="strategy-choice-empty" role="status"><h3>This strategy has not been scanned yet</h3><p>Its current list is unavailable. Other strategies are not used to fill the gap.</p></div>
       : <>
         <div className="strategy-choice-subhead"><h3>Current stock choices</h3><span>{group.counts.matched} match{group.counts.matched===1?'':'es'}{group.counts.blocked ? ` · ${group.counts.blocked} watch only` : ''}</span></div>
         <p className="strategy-choice-muted">{group.counts.evaluated} stocks checked for this strategy.{group.counts.missing ? ` ${group.counts.missing} could not be fully assessed; missing information never counts as a match.`:''} Matching the rules does not mean a stock will rise.</p>
+        <StrategyFunnel group={group}/>
         {matches.length>0 && <div className="strategy-choice-filters"><label htmlFor={`${id}-sector`}>Sector<select id={`${id}-sector`} value={sector} onChange={e=>{setSector(e.target.value);setLimit(12)}}><option value="">All sectors</option>{sectors.map(s=><option value={s} key={s}>{sectorName(s)}</option>)}</select></label><label htmlFor={`${id}-stock`}>Find a stock<input id={`${id}-stock`} type="search" value={query} placeholder="Name or ticker" onChange={e=>{setQuery(e.target.value);setLimit(12)}} /></label></div>}
         {!matches.length ? <div className="strategy-choice-empty" role="status"><h3>{group.status==='missing-data'?'Not enough data to make this list':'No stocks match these rules today'}</h3><p>{group.status==='missing-data'?'The scan could not assess enough of the required information. This is a data gap, not a negative view on the stocks.':`Of the stocks checked, none passed this strategy’s rules.${group.counts.missing?' Some stocks could not be fully assessed.':''} The criteria have not been loosened to fill the list.`}</p></div>
           : !filtered.length ? <div className="strategy-choice-empty" role="status"><p>No current choices match these stock and sector filters.</p><button type="button" onClick={()=>{setSector('');setQuery('')}}>Clear filters</button></div>

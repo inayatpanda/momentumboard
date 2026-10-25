@@ -76,3 +76,26 @@
 .strategy-choice-alternatives > div { display: flex; flex-wrap: wrap; gap: 9px; }
 .strategy-choice-alternatives button { font: inherit; font-size: 12px; text-align: left; color: var(--accent); background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
 .strategy-choice-alternatives button span { display: inline-block; margin-left: 5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+.strategy-choice-scope { margin: 18px 0; font-size: 12px; color: var(--text-dim); line-height: 1.7; }
+.strategy-choice-scope p { margin: 5px 0; }
+.strategy-choice-scope strong { color: var(--text); font-weight: 550; }
+.strategy-choice-funnel { margin: 20px 0; padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-1); }
+.strategy-choice-funnel > h3 { margin: 0 0 16px; font-size: 15px; }
+.strategy-choice-funnel-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; margin: 0; }
+.strategy-choice-funnel-stats dt { color: var(--text-dim); font-size: 11px; line-height: 1.6; }
+.strategy-choice-funnel-stats dd { margin: 6px 0 0; font-size: 23px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.strategy-choice-funnel-intro { margin: 20px 0 12px; font-size: 13px; line-height: 1.7; }
+.strategy-choice-exclusion-counts { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 10px; padding: 0; margin: 0; list-style: none; }
+.strategy-choice-exclusion-counts li { display: flex; gap: 10px; align-items: baseline; padding: 11px; border: 1px solid var(--border); border-radius: 9px; font-size: 11px; color: var(--text-dim); }
+.strategy-choice-exclusion-counts strong { color: var(--text); font-size: 17px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.strategy-choice-exclusions { margin-top: 12px; }
+.strategy-choice-exclusions > ul { list-style: none; padding: 0; margin: 0; }
+.strategy-choices .strategy-choice-excluded-stock { padding: 16px 0; margin: 0; border-top: 1px solid var(--border); }
+.strategy-choice-excluded-head { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; }
+.strategy-choice-excluded-head a { font-size: 13px; font-weight: 550; text-decoration: none; }
+.strategy-choice-excluded-head span { font-size: 11px; }
+@media (max-width:600px) {
+  .strategy-choice-funnel-stats { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+  .strategy-choice-excluded-head { flex-wrap: wrap; gap: 4px; }
+}

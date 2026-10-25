@@ -26,13 +26,19 @@ jobs:
           key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
       - run: npm ci
         if: steps.modules.outputs.cache-hit != 'true'
-      - run: npx tsx scripts/bg/refresh-financials.mts
+      - name: Refresh dated company reports
+        id: financial_reports
+        timeout-minutes: 10
+        run: npx tsx scripts/bg/refresh-financials.mts
         env:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
           STORE_BACKEND: d1
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      - run: npx tsx scripts/bg/refresh-strategy-choices.mts
+      - name: Scan independent stock strategies
+        timeout-minutes: 13
+        if: ${{ !cancelled() && (steps.financial_reports.outcome == 'success' || steps.financial_reports.outcome == 'failure') }}
+        run: npx tsx scripts/bg/refresh-strategy-choices.mts
         env:
           STORE_BACKEND: d1
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -43,6 +43,23 @@ function fixture() {
 }
 
 describe('reported business health', () => {
+  it('retains an explicitly reported debt minimum without inventing complete borrowing data', () => {
+    const body = fixture(), facts = body.facts['us-gaap']
+    delete facts.DebtCurrent
+    facts.LongTermDebtNoncurrent.units.USD[0].val = 600
+    facts.LongTermDebtCurrent = { units: { USD: [{ ...facts.LongTermDebtNoncurrent.units.USD[0], val: 40 }] } }
+    const value = parseBusinessHealthFacts(body, 'TEST', NOW)
+    expect(value.metrics.totalDebt).toBeNull()
+    expect(value.debtMinimum).toMatchObject({ value: 640, unit: 'USD', periodEnd: '2026-06-30' })
+    expect(value.debtMinimum?.tags).toEqual(['us-gaap:LongTermDebtNoncurrent', 'us-gaap:LongTermDebtCurrent'])
+    facts.LongTermDebtCurrent.units.USD[0].accn = 'different-filing-basis'
+    expect(parseBusinessHealthFacts(body, 'TEST', NOW).debtMinimum?.value).toBe(600)
+    facts.LongTermDebtCurrent.units.USD[0].end = '2026-03-31'
+    expect(parseBusinessHealthFacts(body, 'TEST', NOW).debtMinimum?.value).toBe(600)
+    facts.LongTermDebtNoncurrent.units.USD[0].filed = '2026-11-01'
+    expect(parseBusinessHealthFacts(body, 'TEST', NOW).debtMinimum).toBeUndefined()
+  })
+
   it('reads productive investment and explicit lease-inclusive debt without assuming missing borrowing is zero', () => {
     const body = fixture()
     const facts = body.facts['us-gaap']

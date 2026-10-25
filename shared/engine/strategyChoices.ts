@@ -4,9 +4,10 @@ import { sessionUtcHours } from '../rvol'
 import { assessBusinessHealth, type BusinessHealthSnapshot } from '../businessHealth'
 import { assessBusinessValuation } from '../businessValuation'
 import { sectorFinancialPolicy, type ValuationCapitalization } from '../sectorFinancials'
+import { quarterlyTrend } from '../quarterlyFinancials'
 import { completedLabCandles, shortHorizonObservations } from './strategyLab'
 import { applyHistoryGate, HISTORY_VERSION, HISTORY_CORE_MODEL, type HistoricalStudy } from './historyEvidence'
-import { STRATEGY_DEFINITIONS, STRATEGY_SCREEN_VERSION, strategyPriceSignals, strategyPriceEligible, strategyFinancialDecision, type StrategyScreenKey } from './strategyScreens'
+import { STRATEGY_DEFINITIONS, STRATEGY_SCREEN_VERSION, strategyPriceSignals, strategyPriceEligible, strategyFinancialDecision, type StrategyScreenKey, type StrategyFinancialState } from './strategyScreens'
 export type { StrategyScreenKey } from './strategyScreens'
 export interface StrategyChoiceMatch {
   symbol:string; name?:string; sector:string|null; lastPrice:number; asOf:number
@@ -17,11 +18,26 @@ export interface StrategyChoiceGroup {
   status:'ready'|'no-matches'|'missing-data'
   counts:{evaluated:number;missing:number;noMatch:number;matched:number;blocked:number}
   matches:StrategyChoiceMatch[]; gaps:string[]
+  diagnostics?:StrategyChoiceDiagnostics
+}
+export interface StrategyChoiceCandidate {
+  symbol:string; name?:string; sector:string|null
+  category:'missing-data'|'financial-rule'|'deteriorating'|'specialist'|'mixed'
+  healthStatus:'healthy'|'unknown'|'deteriorating'
+  reasons:string[]; missing:string[]; failed:string[]
+}
+/** Diagnostic financial counters can overlap when a candidate has both an
+ * unmet rule and missing evidence. Specialist exclusions are separate. */
+export interface StrategyChoiceDiagnostics {
+  priceMatched:number; priceFailed:number; missingPrices:number
+  failedFinancial:number; missingFinancial:number; specialist:number
+  candidates:StrategyChoiceCandidate[]; candidatesTotal:number; candidatesTruncated:boolean
 }
 export interface StrategyChoicesSnapshot {
   version:'current-strategy-choices-v1'; rulesVersion:typeof STRATEGY_SCREEN_VERSION
   generatedAt:number; scope:string; symbols:string[]; unavailableSymbols:string[]
   strategies:StrategyChoiceGroup[]
+  universeVersion?:string
 }
 export interface StrategyChoiceInputRow {
   symbol:string; name?:string; sector?:string|null; candles:Candle[]
@@ -30,6 +46,7 @@ export interface StrategyChoiceInputRow {
 export interface StrategyChoicesInput {
   now:number; rows:StrategyChoiceInputRow[]; spy:Candle[]; sectors:Record<string,Candle[]>
   historicalStudy?:HistoricalStudy|null; scope?:string; unavailableSymbols?:string[]
+  universeVersion?:string
 }
 const day=(t:number)=>Math.floor(t/86400)
 const pct=(n:number|null)=>n==null?'unavailable':`${n>=0?'+':''}${n.toFixed(1)}%`
@@ -72,6 +89,40 @@ function reasonsFor(key:StrategyScreenKey,signals:ReturnType<typeof strategyPric
     default:return [recovery]
   }
 }
+/** Explain exclusions without changing the historical pass/fail predicate.
+ * A conservative debt ceiling is a known rule failure, not absent data and
+ * not proof that the business is deteriorating. Keep both facts when mixed. */
+function explainFinancialExclusion(row:StrategyChoiceInputRow,key:StrategyScreenKey,state:StrategyFinancialState,now:number):StrategyChoiceCandidate {
+  const base={symbol:row.symbol,name:row.name,sector:row.sector??null,healthStatus:state.health.status}
+  const policy=sectorFinancialPolicy(row.sector)
+  if(policy?.specialist)return {...base,category:'specialist',reasons:[policy.specialist],missing:[],failed:[]}
+  const details=state.health.diagnostics
+  const missing=[...(details?.missing??(state.health.status==='unknown'?state.health.gaps:[]))]
+  const failed=[...(details?.limits??[]),...(details?.deterioration??(state.health.status==='deteriorating'?state.health.risks:[]))]
+  let deteriorating=state.health.status==='deteriorating'
+  if(!policy)missing.push('Sector classification is unavailable, so the sector-specific financial rules cannot be checked.')
+  if(key==='healthy-value-drop'||key==='quality-value'){
+    missing.push(...(state.valuation.diagnostics?.missing??(state.valuation.status==='unknown'?state.valuation.gaps:[])))
+    failed.push(...(state.valuation.diagnostics?.failed??(state.valuation.status==='demanding'?[state.valuation.summary]:[])))
+  }
+  if(key==='quarterly-recovery'){
+    const q=state.snapshot?.quarterly,last=q?.quarters.at(-1),trailing=q?.trailingYear
+    const trend=q?quarterlyTrend(q.quarters,now):'insufficient'
+    if(trend==='insufficient')missing.push('Three recent, consecutive and comparable quarters are needed to check the business trend.')
+    if(trend==='deteriorating'){failed.push('Several recent quarters show worsening sales, profit margin or cash-flow margin.');deteriorating=true}
+    if(!last||last.availableAt>now||last.revenueGrowthPct==null||!Number.isFinite(last.revenueGrowthPct))missing.push('The latest available quarter needs comparable year-on-year sales growth.')
+    else if(last.revenueGrowthPct<0){failed.push(`Latest quarterly sales fell ${Math.abs(last.revenueGrowthPct).toFixed(1)}% from a year earlier; this rule requires non-negative growth.`);deteriorating=true}
+    for(const [metric,label] of [['netIncome','profit'],['freeCashFlow','free cash flow']] as const){
+      const value=trailing?.values[metric]
+      if(!trailing||trailing.availableAt>now||value==null||!Number.isFinite(value))missing.push(`Comparable trailing-year ${label} is unavailable.`)
+      else if(value<=0){failed.push(`Trailing-year ${label} is not positive, as this recovery rule requires.`);deteriorating=true}
+    }
+  }
+  if(!missing.length&&!failed.length)missing.push('The financial evidence does not yet establish all of this strategy’s required checks.')
+  const uniqueMissing=[...new Set(missing)],uniqueFailed=[...new Set(failed)]
+  const category=uniqueMissing.length&&uniqueFailed.length?'mixed':uniqueMissing.length?'missing-data':deteriorating?'deteriorating':'financial-rule'
+  return {...base,category,reasons:[...uniqueFailed,...uniqueMissing],missing:uniqueMissing,failed:uniqueFailed}
+}
 /** Independent research screens. The same stock may qualify for several rules;
  * that is preserved, never turned into an invented consensus score. No result
  * here sizes money, alters the production board or creates a trade forecast. */
@@ -79,7 +130,7 @@ export function buildStrategyChoices(input:StrategyChoicesInput):StrategyChoices
   const {now}=input
   const history=input.historicalStudy
   const historyCurrent=history?.version===HISTORY_VERSION && history.coreModel===HISTORY_CORE_MODEL && history.generatedAt<=now && now-history.generatedAt<=45*86400 && history.dataThrough<=now && now-history.dataThrough<=14*86400
-  const groups:StrategyChoiceGroup[]=STRATEGY_DEFINITIONS.map(d=>({...d,status:'no-matches',counts:{evaluated:0,missing:0,noMatch:0,matched:0,blocked:0},matches:[],gaps:[]}))
+  const groups:StrategyChoiceGroup[]=STRATEGY_DEFINITIONS.map(d=>({...d,status:'no-matches',counts:{evaluated:0,missing:0,noMatch:0,matched:0,blocked:0},matches:[],gaps:[],diagnostics:{priceMatched:0,priceFailed:0,missingPrices:0,failedFinancial:0,missingFinancial:0,specialist:0,candidates:[],candidatesTotal:0,candidatesTruncated:false}}))
   const bySymbol=new Map<string,StrategyChoiceInputRow>(input.rows.map(row=>[row.symbol.toUpperCase(),{...row,symbol:row.symbol.toUpperCase()}]))
   for(const symbol of input.unavailableSymbols??[])if(!bySymbol.has(symbol.toUpperCase()))bySymbol.set(symbol.toUpperCase(),{symbol:symbol.toUpperCase(),candles:[]})
   const unique=[...bySymbol.values()].sort((a,b)=>a.symbol.localeCompare(b.symbol))
@@ -97,15 +148,26 @@ export function buildStrategyChoices(input:StrategyChoicesInput):StrategyChoices
     const direction=pricesFresh && bars.length>=250?shortHorizonObservations([{sym:row.symbol,candles:bars.slice(-250)}],now)[0]:undefined
     const gated=direction?applyHistoryGate(direction,input.historicalStudy,now):undefined
     for(const group of groups){
+      const diagnostics=group.diagnostics!
       const n=REQUIRED_SESSIONS[group.key]
       const priceKnown=pricesFresh && alignedWindow(bars,spy,n) && (group.key!=='sector-leader'||alignedWindow(bars,sector,n))
       const directionKnown=group.key!=='direction-core'&&group.key!=='direction-gated'||!!direction
       const eligible=priceKnown&&directionKnown?strategyPriceEligible(group.key,signals,direction?.state==='setup'):null
-      if(eligible==null){group.counts.missing++;continue}
-      if(!eligible){group.counts.evaluated++;group.counts.noMatch++;continue}
+      if(eligible==null){diagnostics.missingPrices++;group.counts.missing++;continue}
+      if(!eligible){diagnostics.priceFailed++;group.counts.evaluated++;group.counts.noMatch++;continue}
+      diagnostics.priceMatched++
       // The historical financial rules use a classified sector. An unknown
       // sector must not silently fall back to a different generic health rule.
       const financialDecision=group.financial&&!sectorFinancialPolicy(row.sector)?'missing':strategyFinancialDecision(group.key,state,now)
+      if(group.financial&&financialDecision!=='pass'){
+        const candidate=explainFinancialExclusion(row,group.key,state,now)
+        diagnostics.candidatesTotal++
+        if(diagnostics.candidates.length<40)diagnostics.candidates.push(candidate)
+        else diagnostics.candidatesTruncated=true
+        if(candidate.category==='specialist')diagnostics.specialist++
+        if(candidate.missing.length)diagnostics.missingFinancial++
+        if(candidate.failed.length)diagnostics.failedFinancial++
+      }
       if(financialDecision==='missing'){group.counts.missing++;continue}
       group.counts.evaluated++
       if(financialDecision==='fail'){group.counts.noMatch++;continue}
@@ -126,10 +188,13 @@ export function buildStrategyChoices(input:StrategyChoicesInput):StrategyChoices
   }
   for(const group of groups){
     group.status=group.counts.matched>0?'ready':group.counts.evaluated===0&&group.counts.missing>0?'missing-data':'no-matches'
-    if(group.counts.missing)group.gaps.push(`${group.counts.missing} scanned stocks lacked fresh, aligned prices or the financial evidence this strategy requires.`)
-    if(group.financial&&unique.some(row=>sectorFinancialPolicy(row.sector)?.specialist))group.gaps.push('Financials, utilities and real estate need specialist business checks and are excluded from these financial screens.')
+    const diagnostics=group.diagnostics!
+    if(diagnostics.missingPrices)group.gaps.push(`${diagnostics.missingPrices} scanned stocks lacked fresh, aligned prices for these rules.`)
+    if(diagnostics.missingFinancial)group.gaps.push(`${diagnostics.missingFinancial} price-qualified stocks are missing required financial evidence.`)
+    if(diagnostics.failedFinancial)group.gaps.push(`${diagnostics.failedFinancial} price-qualified stocks did not meet one or more financial rules. Known rule failures are separate from missing evidence; the counts can overlap.`)
+    if(diagnostics.specialist)group.gaps.push(`${diagnostics.specialist} price-qualified stocks need specialist financial, utility or real-estate models. This is not a judgement that their businesses are unhealthy.`)
     if(group.counts.blocked)group.gaps.push(`${group.counts.blocked} rule matches remain on watch because a safety check did not pass.`)
     group.matches.sort((a,b)=>a.symbol.localeCompare(b.symbol))
   }
-  return {version:'current-strategy-choices-v1',rulesVersion:STRATEGY_SCREEN_VERSION,generatedAt:now,scope:input.scope??'Current research sample and followed US stocks; not the whole market.',symbols:unique.map(r=>r.symbol),unavailableSymbols:[...unavailable].sort(),strategies:groups}
+  return {version:'current-strategy-choices-v1',rulesVersion:STRATEGY_SCREEN_VERSION,generatedAt:now,scope:input.scope??'Current research sample and followed US stocks; not the whole market.',symbols:unique.map(r=>r.symbol),unavailableSymbols:[...unavailable].sort(),strategies:groups,...(input.universeVersion?{universeVersion:input.universeVersion}:{})}
 }

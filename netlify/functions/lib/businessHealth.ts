@@ -133,6 +133,15 @@ export function parseBusinessHealthSnapshot(body: CompanyFacts, sym: string, asO
   // borrowing, never DebtCurrent (which would count maturities twice).
   const totalLongAndShort = derive(sameBalance(candidates.debtLongTotal), sameBalance(candidates.shortBorrowing), sumDebt, 'USD')
   add('totalDebt', derive(current ?? currentParts, noncurrent, sumDebt, 'USD') ?? totalLongAndShort)
+  // An incomplete borrowing breakdown cannot become total debt. Keep an
+  // explicitly reported minimum for explanations only: it can establish that
+  // a ceiling is already exceeded, but can never establish that debt is safe.
+  const minimumLong = sameBalance(balance(['LongTermDebtNoncurrent']))
+  const minimumCurrent = sameBalance(balance(['LongTermDebtCurrent']))
+  if (!e.totalDebt && minimumLong && minimumLong.value >= 0) {
+    const comparableCurrent = minimumCurrent?.accessions[0] === minimumLong.accessions[0] ? minimumCurrent : undefined
+    out.debtMinimum = derive(minimumLong, comparableCurrent, sumDebt, 'USD') ?? minimumLong
+  }
   add('currentRatio', derive(e.currentAssets, e.currentLiabilities, (a, b) => a >= 0 && b > 0 ? a / b : null, 'ratio'))
   add('debtToEquity', derive(e.totalDebt, e.totalEquity, (a, b) => a >= 0 && b > 0 ? a / b : null, 'ratio'))
   add('liabilitiesToEquity', derive(e.totalLiabilities, e.totalEquity, (a, b) => a >= 0 && b > 0 ? a / b : null, 'ratio'))
