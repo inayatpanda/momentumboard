@@ -19,6 +19,7 @@ export interface NativeVideoWork {
   mode?: 'captions' | 'video'; attempts: number; failures: number; nextAttemptAt: number; lastAttemptAt: number
   updatedAt: number; lastError?: string
   selectedAt?: number; parked?: boolean
+  deferredReason?: 'unavailable' | 'upcoming' | 'live'
   textSchemaVersion?: number
 }
 export interface NativeRunStatus {
@@ -26,7 +27,7 @@ export interface NativeRunStatus {
   capped: boolean; scheduled: boolean; status: string; pauseReason?: string; retryAt?: number
   dailyRequests: number; dailyMinutes: number; requestLimit: number; minuteLimit: number
   pending: number; partial: number; completed: number; endReported: number
-  latestOnly?: boolean; selectedToday?: number; dailyVideoLimit?: number
+  deferred?: number; latestOnly?: boolean; selectedToday?: number; dailyVideoLimit?: number
 }
 const finished = (w: NativeVideoWork) => w.stage === 'complete' || w.stage === 'end-reported'
 // A clipped input often makes the model repeat the requested end time as the
@@ -40,7 +41,7 @@ const channel = (w: NativeVideoWork) => w.video.channelId || w.video.channel
 export function nextNativeWork(rows: NativeVideoWork[], now: number, excluded = new Set<string>()): NativeVideoWork | undefined {
   const served = new Map<string, number>()
   for (const w of rows) served.set(channel(w), Math.max(served.get(channel(w)) ?? 0, w.lastAttemptAt))
-  return rows.filter(w => !w.parked && !finished(w) && w.stage !== 'needs-attention' && w.nextAttemptAt <= now && !excluded.has(videoKey(w.video.url)))
+  return rows.filter(w => !w.parked && !w.deferredReason && !finished(w) && w.stage !== 'needs-attention' && w.nextAttemptAt <= now && !excluded.has(videoKey(w.video.url)))
     .sort((a, b) => Number(b.parts.length > 0) - Number(a.parts.length > 0)
       || (served.get(channel(a)) ?? 0) - (served.get(channel(b)) ?? 0)
       || (b.video.publishedAt ?? b.video.at) - (a.video.publishedAt ?? a.video.at))[0]
@@ -89,7 +90,8 @@ export async function collectNativeVideos(store: AppStore, deps: {
     minuteLimit: NATIVE_DAILY_SECONDS / 60, pending: 0, partial: 0, completed: 0, endReported: 0 }
   let rows: NativeVideoWork[] = []
   const updateCounts = () => {
-    const active = rows.filter(w => !w.parked)
+    const active = rows.filter(w => !w.parked && !w.deferredReason)
+    status.deferred = rows.filter(w => w.selectedAt && w.deferredReason && !finished(w)).length
     status.pending = active.filter(w => !finished(w)).length; status.partial = active.filter(w => w.stage === 'partial' || w.parts.length > 0 && !finished(w)).length
     status.completed = active.filter(w => w.stage === 'complete').length; status.endReported = active.filter(w => w.stage === 'end-reported').length
   }
@@ -124,16 +126,34 @@ export async function collectNativeVideos(store: AppStore, deps: {
     }
     for (const work of rows) {
       const meta = deps.metadata?.[videoKey(work.video.url)]
+      // Official metadata is refreshed before selection: a removed/private or
+      // live upload must not occupy a reading slot forever. Retain all progress.
+      if (!finished(work) && meta && ['unavailable', 'upcoming', 'live'].includes(meta.state)) {
+        work.deferredReason = meta.state as NativeVideoWork['deferredReason']
+        work.lastError = meta.state; work.nextAttemptAt = now() + 3 * 3600
+      }
       if (meta?.state === 'ready' && meta.durationSeconds) {
+        if (work.deferredReason || ['unavailable', 'upcoming', 'live'].includes(work.lastError ?? '')) {
+          delete work.deferredReason; delete work.lastError; work.nextAttemptAt = 0
+        }
         work.sourceDurationSeconds = meta.durationSeconds
         if (work.stage === 'end-reported') work.stage = work.nextOffset >= meta.durationSeconds ? 'complete' : 'partial'
       }
+    }
+    for (const work of rows.filter(w => w.selectedAt && w.deferredReason && w.nextAttemptAt <= now() && !deps.metadata?.[videoKey(w.video.url)]).slice(0, 5)) {
+      const meta = await (deps.availability ?? youtubeAvailability)(work.video.url)
+      if (meta.state === 'ready') { delete work.deferredReason; delete work.lastError; work.nextAttemptAt = 0; if (meta.durationSeconds) work.sourceDurationSeconds = meta.durationSeconds }
+      else work.nextAttemptAt = now() + 3 * 3600
+    }
+    for (const work of rows) if (work.stage === 'needs-attention' && !work.deferredReason && work.nextAttemptAt <= now()) {
+      work.stage = 'retry' // one bounded retry after the durable cooldown
     }
     if (deps.latestOnly) {
       for (const work of rows) if (!isFollowedChannel(work.video, followed)) work.parked = true
       Object.assign(status, await selectDailyVideos(store, rows.filter(w => isFollowedChannel(w.video, followed)), now()))
     }
     await save()
+    if (!deps.latestOnly) for (const work of rows) if (work.deferredReason && work.nextAttemptAt <= now() && !deps.metadata?.[videoKey(work.video.url)]) delete work.deferredReason
     const selected = rows.filter(w => !w.parked && isFollowedChannel(w.video, followed) && (!deps.target || videoKey(w.video.url) === deps.target))
     for (const work of selected) if (work.lastError === 'native-invalid-text' && !work.textSchemaVersion) {
       work.textSchemaVersion = 1; work.nextAttemptAt = 0
@@ -197,7 +217,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
         checked.add(id)
         const availability = deps.metadata?.[id] ?? await (deps.availability ?? youtubeAvailability)(work.video.url)
         if (['upcoming', 'live', 'unavailable'].includes(availability.state)) {
-          work.nextAttemptAt = now() + 3 * 3600; work.lastError = availability.state; work.updatedAt = now(); await save()
+          work.nextAttemptAt = now() + 3 * 3600; work.deferredReason = availability.state as NativeVideoWork['deferredReason']; work.lastError = availability.state; work.updatedAt = now(); await save()
           deps.log?.({ videoId: id, deferred: availability.state }); continue
         }
         if (availability.durationSeconds) work.sourceDurationSeconds = availability.durationSeconds
@@ -268,7 +288,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
         }
         status.failed++; work.failures++; work.updatedAt = now(); work.stage = work.failures >= 5 ? 'needs-attention' : 'retry'
         work.lastError = /^native-[a-z0-9-]+$/.test(message) ? message : 'native-read-failed'
-        work.nextAttemptAt = now() + (message === 'native-http-403' ? 86400 : Math.min(86400, 1800 * 2 ** (work.failures - 1)))
+        work.nextAttemptAt = now() + (work.stage === 'needs-attention' || message === 'native-http-403' ? 86400 : Math.min(86400, 1800 * 2 ** (work.failures - 1)))
         excluded.add(id); await save()
         deps.log?.({ videoId: id, reason: work.lastError, nextAttemptAt: work.nextAttemptAt })
         // A 400 can reject one video's media/interval. Back off that video,
@@ -280,7 +300,8 @@ export async function collectNativeVideos(store: AppStore, deps: {
         }
       }
     }
-    status.status = status.failed ? 'partial' : 'complete'
+    updateCounts()
+    status.status = status.failed ? 'partial' : status.pending || status.deferred || status.capped ? 'waiting' : 'complete'
     return status
   } catch (error) { status.status = 'error'; throw error }
   finally {

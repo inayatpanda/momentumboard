@@ -62,7 +62,9 @@ const run = async () => {
       const { default: predict } = await import('../../netlify/functions/predict-background.mts')
       const res = await predict(adminReq())
       console.log(`engine: ${res.status} ${await res.text()}`)
-      // engine failure does NOT stop the paper — same contract as the old chain
+      // Keep publishing the brief, but never report a healthy cloud run when
+      // the engine failed. The next scheduled slot can retry.
+      if (!res.ok && res.status !== 409) process.exitCode = 1
     }
   }
 

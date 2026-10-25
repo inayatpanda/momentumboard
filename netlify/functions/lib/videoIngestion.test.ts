@@ -3,6 +3,18 @@ import { memoryStore } from './store'
 import { videoIngestionHealth } from './videoIngestion'
 
 describe('video ingestion health', () => {
+  it('keeps selected unavailable progress visible and hides internal errors', async () => {
+    const store = memoryStore()
+    const base = { video: { url: 'https://youtu.be/abcdefghijk', title: 'Selected video' }, selectedAt: 10, parked: true, nextOffset: 600, stage: 'partial', nextAttemptAt: 900, updatedAt: 20 }
+    await store.write('video-native-progress:v2', [
+      { ...base, deferredReason: 'unavailable' },
+      { ...base, video: { url: 'https://youtu.be/abcdefghijl', title: 'Another video' }, parked: false, lastError: 'https://provider?key=secret' },
+    ])
+    const health = await videoIngestionHealth(store, [], 100)
+    expect(health.nativeProgress).toHaveLength(2)
+    expect(health.nativeProgress[0]).toMatchObject({ reason: 'unavailable', processedSeconds: 600 })
+    expect(JSON.stringify(health)).not.toContain('secret')
+  })
   it('separates native model reads from downloaded transcripts and hides extra status fields', async () => {
     const store = memoryStore()
     await store.write('video-native-runner', { at: 100, running: false, published: 1, attempted: 1, failed: 0, reused: 0, capped: false, status: 'complete', secret: 'never-show' })

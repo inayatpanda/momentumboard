@@ -118,6 +118,20 @@ beforeEach(async () => {
 })
 
 describe('Street2', () => {
+  it('explains an unavailable selected video without calling the queue complete', async () => {
+    await seedWire({ videoIngestion: {
+      nativeRunner: { at: hoursAgo(1), running: false, published: 1, attempted: 1, failed: 0, reused: 0, capped: false, scheduled: true, status: 'waiting', stale: false, deferred: 1, pending: 0, partial: 0, completed: 1, latestOnly: true },
+      nativeProgress: [{ url: 'https://youtu.be/abcdefghijk', title: 'Unavailable upload', stage: 'pending', reason: 'unavailable', processedSeconds: 0, sourceDurationSeconds: null, nextAttemptAt: hoursAgo(-2) }],
+      pendingTranscripts: 0, queued: 0, deferred: 0, failed: 0, lastTranscriptAt: null, lastExtractAt: null, nextRetryAt: null, recentFailures: [],
+    } })
+    withRouter()
+    fireEvent.click(screen.getByRole('tab', { name: 'Tracking' }))
+    const status = await screen.findByLabelText('YouTube processing status')
+    expect(within(status).getByText('Waiting')).toBeInTheDocument()
+    expect(status).toHaveTextContent('not counted as fully read')
+    expect(status).toHaveTextContent('Not publicly available to the reader')
+    expect(status).toHaveTextContent('Next check')
+  })
   it('labels direct AI transcription and exposes its excerpt without claiming source verification', async () => {
     await seedWire({ videos: [mkVideo({ nativeTranscript: { model: 'gemini-3.5-flash-lite', characters: 123, limitSeconds: 5400, reportedDurationSeconds: 52, reportedComplete: true, excerpt: 'A newly captured speech passage.' }, via: 'gemini-video' })] })
     withRouter()

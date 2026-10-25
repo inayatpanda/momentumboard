@@ -20,6 +20,31 @@ async function setup(duration = 1860) {
 }
 
 describe('expanded free video queue', () => {
+  it('parks an unavailable selection, continues another channel and resumes when metadata becomes ready', async () => {
+    const {store,deps,advance}=await setup(600)
+    const blocked={...video(),publishedAt:deps.now()-100}
+    await store.write('video-inbox',[blocked])
+    await collectNativeVideos(store,{...deps,latestOnly:true,cachedOnly:true})
+    await store.write('video-inbox',[blocked,{...video('abcdefghijl','UCother'),publishedAt:deps.now()-60}])
+    const state=await collectNativeVideos(store,{...deps,latestOnly:true,metadata:{abcdefghijk:{state:'unavailable'},abcdefghijl:{state:'ready',durationSeconds:600}}})
+    expect(state).toMatchObject({status:'waiting',deferred:1,completed:1,pending:0,attempted:1})
+    expect(deps.readSection.mock.calls[0][0]).toContain('abcdefghijl')
+    expect(await store.read(NATIVE_PROGRESS_KEY)).toEqual(expect.arrayContaining([expect.objectContaining({parked:true,deferredReason:'unavailable',nextOffset:0})]))
+    advance(3600)
+    const recovered=await collectNativeVideos(store,{...deps,latestOnly:true,metadata:{abcdefghijk:{state:'ready',durationSeconds:600}}})
+    expect(recovered).toMatchObject({deferred:0,completed:2,pending:0})
+    expect(deps.readSection.mock.calls.at(-1)![0]).toContain('abcdefghijk')
+  })
+  it('retries an exhausted source after cooldown without discarding its saved offset', async () => {
+    const {store,deps}=await setup(600)
+    await store.write(NATIVE_PROGRESS_KEY,[{video:video(),nextOffset:0,parts:[],stage:'needs-attention',attempts:5,failures:5,nextAttemptAt:deps.now()-1,lastAttemptAt:deps.now()-86400,updatedAt:deps.now()-86400,lastError:'native-timeout'}])
+    expect(await collectNativeVideos(store,deps)).toMatchObject({completed:1,attempted:1})
+  })
+  it('reports unfinished full-video sections as waiting rather than complete', async () => {
+    const {store,deps}=await setup(2400)
+    expect(await collectNativeVideos(store,{...deps,maxCalls:1})).toMatchObject({status:'waiting',partial:1,pending:1,completed:0})
+  })
+
   it('publishes exact source coverage for a previously selected video after the daily list rolls over, without another model call', async () => {
     const {store,deps,advance}=await setup()
     deps.availability.mockResolvedValue({state:'unknown' as 'ready',durationSeconds:undefined as unknown as number})

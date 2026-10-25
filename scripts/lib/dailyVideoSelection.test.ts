@@ -9,6 +9,34 @@ const work = (n: number, channel = `Channel ${n}`, publishedAt = now - n * 60): 
   nextOffset: 0, parts: [], stage: 'pending', attempts: 0, failures: 0, lastAttemptAt: 0, nextAttemptAt: 0, updatedAt: now,
 })
 describe('five recent videos from distinct channels', () => {
+  it('releases an unattempted inaccessible slot but never refunds a model attempt', async () => {
+    const store=memoryStore(),rows=[1,2,3,4,5,6,7].map(n=>work(n))
+    await selectDailyVideos(store,rows,now)
+    rows[0].deferredReason='unavailable'
+    rows[1].deferredReason='live';rows[1].attempts=1
+    expect(await selectDailyVideos(store,rows,now+60)).toMatchObject({selectedToday:5})
+    expect(rows[0].parked).toBe(true)
+    expect(rows[1].parked).toBe(true)
+    expect(rows[5].parked).toBe(false)
+    expect(rows[6].parked).toBe(true)
+    expect(rows[0].selectedAt).toBe(now)
+  })
+
+  it('keeps recovered work saved without opening more than five unfinished reads', async () => {
+    const store=memoryStore(),rows=[1,2,3,4,5,6].map(n=>work(n))
+    await selectDailyVideos(store,rows,now)
+    rows[0].deferredReason='unavailable'
+    await selectDailyVideos(store,rows,now+60)
+    delete rows[0].deferredReason
+    await selectDailyVideos(store,rows,now+120)
+    expect(rows.filter(w=>!w.parked)).toHaveLength(5)
+    expect(rows[0].parked).toBe(true)
+    rows[1].stage='complete'
+    await selectDailyVideos(store,rows,now+180)
+    expect(rows[0].parked).toBe(false)
+    expect(rows.filter(w=>!w.parked&&w.stage!=='complete')).toHaveLength(5)
+  })
+
   it('selects at most five, rejects old/unknown/future uploads and parks the archive honestly', async () => {
     const store = memoryStore(), rows = [work(1), work(2,'Channel 1'), ...[3,4,5,6,7].map(n=>work(n)), work(8,'Old',now-90000), work(9,'Future',now+100), work(10)]
     rows.at(-1)!.video.publishedAt = undefined
