@@ -23,6 +23,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=low
+      - name: Check optional desktop dependencies
+        run: |
+          npm audit --prefix desktop --audit-level=low
+          node --check desktop/main.js
       - run: npm test
       - run: npm run build
       - run: node scripts/check-budgets.mjs --enforce

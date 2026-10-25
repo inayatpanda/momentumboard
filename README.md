@@ -19,7 +19,7 @@ later outcomes; a discussion or price drop is not evidence of a future return.
 
 ## Development
 
-Node.js 22 or later is required.
+Node.js 22.12 or later is required. Cloud jobs use Node.js 22.
 
 ```sh
 npm ci
@@ -30,13 +30,29 @@ The development server serves the client. Live market data, authentication and
 background processing require the corresponding backend configuration.
 
 ```sh
-npm test -- --maxWorkers=2 --minWorkers=1
+npm test -- --maxWorkers=2
 npm run build
 node scripts/check-budgets.mjs --enforce
 ```
 
 The initial client dependency closure has a 100 KB gzip target and a 120 KB
 enforced maximum.
+
+## Security checks
+
+The `verify` workflow runs the web tests, build, bundle limit and dependency
+audits for both the web app and optional Electron shell. GitHub dependency
+alerts, secret scanning and push protection are enabled for this public repo.
+
+As of 25 October 2026, both npm audits report zero known vulnerabilities.
+One separate Rust advisory remains in the optional Tauri Linux dependency
+chain: `glib` 0.18.5 (GHSA-wrw7-89jp-8q8g). Tauri's GTK3 dependencies require
+the 0.18 family; forcing glib 0.20 would break that dependency graph. This is
+not part of the deployed website or GitHub video processing. Keep the alert
+open until a compatible upstream fix is available; see
+[Tauri's upstream discussion](https://github.com/tauri-apps/tauri/issues/16264).
+The Electron dependency update does not update previously installed desktop
+binaries; those need a newly built installer. This release deploys the web app.
 
 ## Services and background processing
 
