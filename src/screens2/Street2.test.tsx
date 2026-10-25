@@ -128,6 +128,8 @@ describe('Street2', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Tracking' }))
     const status = await screen.findByLabelText('YouTube processing status')
     expect(within(status).getByText('Waiting')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /1 awaiting access or a finished broadcast/ })).toBeInTheDocument()
+    expect(status).toHaveTextContent('1 selected video is unavailable')
     expect(status).toHaveTextContent('not counted as fully read')
     expect(status).toHaveTextContent('Not publicly available to the reader')
     expect(status).toHaveTextContent('Next check')
