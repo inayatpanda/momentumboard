@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 import { useEffect, useId, useState } from 'react'
 import { Link, useSearch } from 'wouter'
 import type { StrategyChoicesSnapshot, StrategyChoiceMatch, StrategyChoiceGroup, StrategyScreenKey } from '../../../shared/engine/strategyChoices'
@@ -56,7 +57,7 @@ function selectionFromSearch(search:string): StrategyScreenKey {
 function MatchCard({ row, strategyKey }: {row: StrategyChoiceMatch; strategyKey:StrategyScreenKey}) {
   const direction = strategyKey==='direction-core' || strategyKey==='direction-gated'
   return <article className={`strategy-choice-card${row.status==='blocked'?' strategy-choice-blocked':''}`} aria-label={`${row.symbol} strategy match`}>
-    <div className="strategy-choice-card-head"><div><Link href={`/stock/${encodeURIComponent(row.symbol)}`}>{row.symbol}</Link>{row.name && <span>{row.name}</span>}</div><span className="strategy-choice-state">{row.status==='blocked'?'Watch only':'Matches the rules'}</span></div>
+    <div className="strategy-choice-card-head"><div><Link href={`/stock/${encodeURIComponent(row.symbol)}`}>{row.symbol}</Link><span><StockIdentity symbol={row.symbol} name={row.name} nameOnly /></span></div><span className="strategy-choice-state">{row.status==='blocked'?'Watch only':'Matches the rules'}</span></div>
     <p className="strategy-choice-sector">{sectorName(row.sector)}{direction && <> · {row.side==='short'?'Watching for a fall':'Watching for a rise'}</>}</p>
     <p className="strategy-choice-reason">{cardReason[strategyKey]}</p>
     <div className="strategy-choice-close"><span>Last checked close</span><strong>{new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2}).format(row.lastPrice)}</strong><small>{day(row.asOf)}</small></div>

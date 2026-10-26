@@ -263,14 +263,14 @@ describe('Street2', () => {
     it('drops a name nobody took a side on — a neutral mention is not a pick', async () => {
       await seedWire({ consensus: [mkPick({ sym: 'NVDA' }), mkPick({ sym: 'SAIDOUTLOUD', bulls: 0, bears: 0, net: 0 })] })
       withRouter()
-      await screen.findByRole('link', { name: 'NVDA' })
+      await screen.findByRole('link', { name: /NVDA/ })
       expect(screen.queryByText('SAIDOUTLOUD')).not.toBeInTheDocument()
     })
 
     it('names the channels behind each pick', async () => {
       await seedWire({ consensus: [mkPick({ channels: 5, channelNames: ['Josh', 'Gareth', 'Nash'] })] })
       withRouter()
-      await screen.findByRole('link', { name: 'NVDA' })
+      await screen.findByRole('link', { name: /NVDA/ })
       expect(document.querySelector('.cp-who')).toHaveTextContent('Josh, Gareth, Nash + 2 more')
     })
 
@@ -325,12 +325,12 @@ describe('Street2', () => {
       })
       withRouter()
       fireEvent.click(screen.getByRole('tab', { name: 'Videos' }))
-      const bull = await screen.findByRole('link', { name: 'NVDA' })
+      const bull = await screen.findByRole('link', { name: 'Nvidia (NVDA)' })
       expect(bull).toHaveClass('pill', 'long')
       expect(bull).toHaveAttribute('href', '/app/stock/NVDA')
-      expect(screen.getByRole('link', { name: 'COIN' })).toHaveClass('pill', 'short')
+      expect(screen.getByRole('link', { name: /COIN/ })).toHaveClass('pill', 'short')
       // neutral is neither direction, and must not borrow a direction's colour
-      const flat = screen.getByRole('link', { name: 'SPY' })
+      const flat = screen.getByRole('link', { name: /SPY/ })
       expect(flat).toHaveClass('pill')
       expect(flat).not.toHaveClass('long')
       expect(flat).not.toHaveClass('short')

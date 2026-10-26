@@ -1,3 +1,4 @@
+import { StockIdentity } from '../components/StockIdentity'
 import { StockContextPanel } from './parts/StockContextPanel'
 // StockPage (plan Task 17) — THE journey page: one name, the whole of the
 // engine's mind about it. Every symbol anywhere in the app links here.
@@ -229,7 +230,7 @@ export default function StockPage({ sym }: { sym: string }) {
           </button>
           <h1>
             {sym}
-            {(row?.name ?? quote?.name) && <span className="sp-name">{row?.name ?? quote?.name}</span>}
+            <span className="sp-name"><StockIdentity symbol={sym} name={row?.name ?? quote?.name} nameOnly /></span>
           </h1>
         </div>
         <WatchStockButton symbol={sym} />

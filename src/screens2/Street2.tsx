@@ -1,3 +1,5 @@
+import { useStockDirectory } from '../lib/stockDirectory'
+import { StockIdentity } from '../components/StockIdentity'
 import { IconPlay, stripEmoji } from '../components/icons'
 import '../styles/street.css'
 import { ClaimEvidence, ProcessingJobs, SocialLearning } from './parts/SocialEvidence'
@@ -154,11 +156,13 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
   const [visible, setVisible] = useState(WIRE_PAGE)
   const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('stock')?.slice(0, 15) ?? '')
   const [sourcedOnly, setSourcedOnly] = useState(false)
-  const filtered = filterStreetVideos(videos, channel, query, sourcedOnly)
+  const { data: directory } = useStockDirectory()
+  const names = useMemo(() => new Map(directory?.rows.map(r => [r.sym, r.name]) ?? []), [directory])
+  const filtered = filterStreetVideos(videos, channel, query, sourcedOnly, names)
   return (
     <section id="wire" className="card itl-section stt-wire">
       <h2 className="sec-label">Video summaries</h2>
-      <p className="cc-reason itl-feed-intro">Latest findings, newest first. Coverage can be partial; open the evidence to check the creator’s words and timestamps.</p>
+      <p className="cc-reason itl-feed-intro">Latest findings, newest first. Open a stock to explore it, or see the evidence for the original video.</p>
       <div className="street-filters">
       <label className="street-search">Find a video<input type="search" placeholder="Company, ticker or topic" value={query} onChange={e => { setQuery(e.target.value); setVisible(WIRE_PAGE) }} /></label>
       <label className="discovery-market">YouTube channel
@@ -184,10 +188,6 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
             <a className="stt-video-title" href={v.url} target="_blank" rel="noreferrer">
               {stripEmoji(decodeEntities(v.title))}
             </a>
-            {v.nativeTranscript && <p className="social-evidence__note">{v.nativeTranscript.progress?.completion === 'complete' ? 'All video sections processed · AI transcription'
-              : v.nativeTranscript.progress?.completion === 'end-reported' ? 'Ending reported by AI · full coverage unconfirmed'
-                : `Partial video coverage${v.nativeTranscript.progress ? ` · ${Math.round(v.nativeTranscript.progress.processedSeconds / 60)} minutes processed` : ''}`}</p>}
-            {v.transcriptMethod === 'speech' && <p className="social-evidence__note">Transcribed from audio{v.via === 'github' ? ' on GitHub' : ' on the Mac'}. Machine transcription can mishear names and numbers; check the linked source.</p>}
             {v.nativeTranscript && <details className="street-video-evidence">
               <summary>AI transcript{v.nativeTranscript.characters > v.nativeTranscript.excerpt.length ? ' excerpt' : ''}</summary>
               <p className="social-evidence__note">{v.nativeTranscript.progress
@@ -201,7 +201,7 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
               <div className="stt-video-meta">
                 {v.tickers.map((t, j) => (
                   <Link key={`${t.sym}-${j}`} href={`/stock/${t.sym}`} className={STANCE_CLASS[t.stance] ?? STANCE_CLASS.neutral}>
-                    {t.sym}
+                    <StockIdentity symbol={t.sym} name={t.company} />
                   </Link>
                 ))}
                 {v.themes.map((th, j) => (
@@ -217,13 +217,14 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
             {!v.claims && v.tickers.some(t => t.thesis || t.evidenceQuote) && <details className="cc-reason">
               <summary>See the evidence: what was said</summary>
               {v.tickers.filter(t => t.thesis || t.evidenceQuote).map((ticker, j) => <div key={`${ticker.sym}-evidence-${j}`}>
-                <p><b>{ticker.company ?? ticker.sym}</b>{ticker.company ? ` (${ticker.sym})` : ''}: {ticker.thesis || 'Source excerpt only.'}{ticker.hype && ' Promotional language flagged.'}</p>
+                <p><b><StockIdentity symbol={ticker.sym} name={ticker.company} /></b>: {ticker.thesis || 'Source excerpt only.'}{ticker.hype && ' Promotional language flagged.'}</p>
                 {ticker.evidenceQuote && <blockquote>{ticker.evidenceQuote}</blockquote>}
               </div>)}
             </details>}
           </div>
         ))}
       </div>
+      <p className="social-evidence__note">Research, not personal advice. Video summaries may be incomplete or contain errors; see the evidence for coverage and sources.</p>
       {visible < filtered.length && (
         <button type="button" className="stx-showmore" onClick={() => setVisible(filtered.length)}>
           Show more ({filtered.length - visible})

@@ -233,8 +233,8 @@ describe('Sectors', () => {
     // paint now — as plain links in the "what's inside" list, which is what the
     // dead two thirds of a desk screen is spent on. Tapping the tile is what
     // turns THIS sector's into full rows.
-    expect(screen.getByText('AAPL').closest('.stx-sector-inside-row')).not.toBeNull()
-    expect(screen.queryByText('AAPL')!.closest('.stx-row')).toBeNull()
+    expect(screen.getByRole('link', { name: /AAPL/ }).closest('.stx-sector-inside-row')).not.toBeNull()
+    expect(screen.getByRole('link', { name: /AAPL/ }).closest('.stx-row')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: /technology/i }))
     expect((await screen.findByText('AAPL')).closest('.stx-row')).not.toBeNull()
@@ -281,7 +281,7 @@ describe('Sectors', () => {
       const inside = document.querySelector('.stx-sector-inside') as HTMLElement
       const names = [...inside.querySelectorAll('.stx-sector-inside-name')].map(n => n.textContent)
       expect(names).toEqual(['Technology', 'Energy'])
-      expect(within(inside).getByText('XOM').closest('a')).toHaveAttribute('href', '/app/stock/XOM')
+      expect(within(inside).getByRole('link', { name: /XOM/ })).toHaveAttribute('href', '/app/stock/XOM')
     })
 
     it('renders no StockRow at all — fifty-five live tapes is the burst sparkCachedOnly exists to prevent', async () => {

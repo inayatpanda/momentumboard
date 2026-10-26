@@ -1,3 +1,4 @@
+import { StockIdentity } from '../components/StockIdentity'
 import { DataStatus } from './parts/DataStatus'
 // Sectors (plan Task 16; CX-24) — the "See all" landing for the Stocks
 // rail's Sector-rotation tile. The server's relative strength is measured in
@@ -115,7 +116,7 @@ export default function Sectors() {
                   ? '—'
                   : row.members.map(sym => (
                       <Link key={sym} href={`/stock/${sym}`} className="pill">
-                        {sym}
+                        <StockIdentity symbol={sym} />
                       </Link>
                     ))}
               </span>

@@ -1,3 +1,4 @@
+import { reportStockName, reportStockLabel } from './reportStockNames'
 // The "print edition": a self-contained PDF of the morning paper, composed on
 // Netlify with pdf-lib (pure JS — no headless browser, no rendering service, no
 // new keys) and attached to the report email. The publish pipe only hands us the
@@ -666,7 +667,7 @@ function drawBoard(c: Cursor, board: NonNullable<PaperExtras['engineBoard']>, fo
     const sideCol = isShort ? RED : GREEN
     const { chip, route, probability } = boardPrintRow(b)
     const segs: Seg[] = [{ kind: 'text', text: b.sym, font: fonts.sansBold, size: 11, color: INK }]
-    if (b.name) segs.push({ kind: 'text', text: `- ${b.name}`, font: fonts.sans, size: 9.5, color: GREY })
+    if (reportStockName(b.sym, b.name)) segs.push({ kind: 'text', text: `- ${reportStockName(b.sym, b.name)}`, font: fonts.sans, size: 9.5, color: GREY })
     segs.push({ kind: 'text', text: isShort ? 'SHORT' : 'LONG', font: fonts.sansBold, size: 9, color: sideCol })
     segs.push({ kind: 'chip', text: chip, font: fonts.sans, size: 7.5, color: GREY, border: HAIR })
     drawSegments(c, segs, 15, { right: probability ? [{ text: probability, font: fonts.sansBold, size: 10, color: INK }] : [] })
@@ -749,19 +750,19 @@ function drawCalendar(c: Cursor, calendar: CalendarRow[], fonts: Fonts): void {
 
 function drawSocial(c: Cursor, social: SocialRow[], fonts: Fonts): void {
   const cols: GCol[] = [
-    { header: 'Ticker', w: CONTENT_W * 0.18 },
-    { header: 'Mkt cap', w: CONTENT_W * 0.18, align: 'r' },
-    { header: 'r/ rank', w: CONTENT_W * 0.14, align: 'r' },
-    { header: 'Mentions', w: CONTENT_W * 0.16, align: 'r' },
-    { header: '24h surge', w: CONTENT_W * 0.17, align: 'r' },
-    { header: 'Platforms', w: CONTENT_W * 0.17, align: 'r' },
+    { header: 'Company', w: CONTENT_W * 0.40 },
+    { header: 'Mkt cap', w: CONTENT_W * 0.12, align: 'r' },
+    { header: 'r/ rank', w: CONTENT_W * 0.10, align: 'r' },
+    { header: 'Mentions', w: CONTENT_W * 0.12, align: 'r' },
+    { header: '24h surge', w: CONTENT_W * 0.13, align: 'r' },
+    { header: 'Platforms', w: CONTENT_W * 0.13, align: 'r' },
   ]
   const rows: GCell[][] = social
     .slice(0, 10)
     // same door as the emailed edition: an unbelievable cap is an unknown cap
     .map(s => ({ ...s, capUsdM: plausibleCapUsdM(s.capUsdM, s.sym) }))
     .map(s => [
-    { text: s.sym || '', bold: true },
+    { text: reportStockLabel(s.sym || ''), bold: true },
     { text: s.capUsdM == null ? '·' : s.capUsdM >= 1000 ? `$${(s.capUsdM / 1000).toFixed(1)}B` : `$${Math.round(s.capUsdM)}M`, align: 'r' },
     { text: s.redditRank == null ? '·' : `#${s.redditRank}`, align: 'r' },
     { text: s.redditMentions == null ? '·' : String(s.redditMentions), align: 'r' },
@@ -825,7 +826,7 @@ function drawRotation(c: Cursor, tables: NonNullable<ReportPrintData['rotationTa
       { header: '1 week', w: CONTENT_W * 0.33, align: 'r' },
     ]
     const rows: GCell[][] = (t.rows ?? []).map(row => [
-      { text: row.sym || '', bold: true },
+      { text: reportStockLabel(row.sym || ''), bold: true },
       { text: row.price == null ? '·' : row.price.toLocaleString('en-US', { maximumFractionDigits: 2 }), align: 'r' },
       { text: row.wkPct == null ? '·' : `${row.wkPct >= 0 ? '+' : ''}${row.wkPct.toFixed(1)}%`, align: 'r', color: row.wkPct == null ? INK : row.wkPct >= 0 ? GREEN : RED },
     ])
@@ -865,7 +866,7 @@ function drawIdea(c: Cursor, idea: Idea, fonts: Fonts): void {
 
   c.gap(6)
   const segs: Seg[] = [{ kind: 'text', text: idea.ticker || '', font: fonts.serifBold, size: 15, color: INK }]
-  if (idea.name) segs.push({ kind: 'text', text: `- ${idea.name}`, font: fonts.serif, size: 12, color: GREY })
+  if (reportStockName(idea.ticker, idea.name)) segs.push({ kind: 'text', text: `- ${reportStockName(idea.ticker, idea.name)}`, font: fonts.serif, size: 12, color: GREY })
   segs.push({ kind: 'text', text: isShort ? 'SHORT' : 'LONG', font: fonts.sansBold, size: 10, color: sideCol })
   segs.push({ kind: 'chip', text: PLAYBOOK[idea.playbook] ?? String(idea.playbook || ''), font: fonts.sans, size: 8, color: GREY, border: HAIR })
   segs.push({ kind: 'chip', text: `Grade ${idea.conviction || ''}`, font: fonts.sans, size: 8, color: INK, border: INK })

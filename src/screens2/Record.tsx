@@ -1,3 +1,4 @@
+import { StockIdentity } from '../components/StockIdentity'
 import '../styles/record.css'
 import { Link } from 'wouter'
 import { DataStatus } from './parts/DataStatus'
@@ -145,7 +146,7 @@ function ExtremesSection({ best, worst }: { best: LedgerExtreme | null; worst: L
   const card = (kind: 'best' | 'worst', row: LedgerExtreme) => (
     <div className={`card rec-extreme rec-extreme-${kind}`}>
       <span className="rec-tile-label">{kind === 'best' ? 'Best of the window' : 'Worst of the window'}</span>
-      <span className="rec-extreme-sym">{row.sym}</span>
+      <span className="rec-extreme-sym"><StockIdentity symbol={row.sym} /></span>
       <span className={`num rec-extreme-pp ${row.excessPct >= 0 ? 'up' : 'down'}`}>
         {row.excessPct >= 0 ? '+' : '−'}
         {Math.abs(row.excessPct).toFixed(1)}pp

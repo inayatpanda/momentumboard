@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 import { IconClose } from '../../components/ControlIcon'
 // StockRow (plan Task 15) — one watchlist row: avatar, symbol + name, price,
 // change pill, sparkline. The sparkline is THIS row's own `candles:SYM:3mo`
@@ -143,7 +144,7 @@ function StockRowContent({ symbol, name, quote, onRemove, flipKey, spark, priceN
         </span>
         <span className="stx-row-main">
           <span className="stx-sym">{symbol}</span>
-          {name && <span className="stx-name">{name}</span>}
+          <span className="stx-name"><StockIdentity symbol={symbol} name={name ?? quote?.name} nameOnly /></span>
         </span>
         {spark}
         <span className="stx-row-prices">

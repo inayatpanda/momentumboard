@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 import { useState } from 'react'
 import { Link } from 'wouter'
 import type { StreetVideo, StreetWire } from '../../lib/api'
@@ -28,7 +29,7 @@ export function ClaimEvidence({ video }: { video: StreetVideo }) {
       const timestampUrl = canonical && claim.startSec != null ? `${canonical}&t=${Math.floor(claim.startSec)}s` : null
       return <details className="social-claim" key={claim.id}>
         <summary>
-          <span className="social-claim__identity">{claim.sym} <span>{claim.stance === 'bull' ? 'Expecting a rise' : claim.stance === 'bear' ? 'Expecting a fall' : 'No clear direction'}</span></span>
+          <span className="social-claim__identity"><StockIdentity symbol={claim.sym} /> <span>{claim.stance === 'bull' ? 'Expecting a rise' : claim.stance === 'bear' ? 'Expecting a fall' : 'No clear direction'}</span></span>
           <span className={`social-claim__badge ${sourced ? 'is-sourced' : ''}`}>{sourced ? 'Quote matched' : 'Needs source check'}</span>
         </summary>
         <p>{claim.rationale || 'Source excerpt only.'}</p>
@@ -86,7 +87,7 @@ export function SocialLearning({ learning }: { learning: StreetWire['socialLearn
       {learning.channels.map(c => <tr key={c.channel}><td>{c.channel}</td><td>{c.n}</td><td>{c.hits}/{c.n}</td><td>{signed(c.averageExcessPct)}</td></tr>)}
     </tbody></table></div>}
     {learning.recent.length > 0 ? <details className="social-processing"><summary>See the evidence: predictions and results</summary><ul>{learning.recent.map(row => <li key={row.id}>
-      <div><Link href={`/stock/${row.sym}`}><b>{row.sym}</b></Link><span>{row.channel}{row.repeated ? ' · Repeat campaign' : ''}</span></div>
+      <div><Link href={`/stock/${row.sym}`}><b><StockIdentity symbol={row.sym} /></b></Link><span>{row.channel}{row.repeated ? ' · Repeat campaign' : ''}</span></div>
       <p>App-time: {row.app ? signed(row.app.excessPct) : 'pending'} · Publication-time: {row.creator ? signed(row.creator.excessPct) : row.publishedAt ? 'pending' : 'unknown publication date'}</p>
       <a href={row.sourceUrl} target="_blank" rel="noreferrer">Original source ↗</a>
     </li>)}</ul></details> : <p className="social-evidence__note">The study begins with newly captured, source-matched claims. Old summaries are not assigned invented historical evidence.</p>}

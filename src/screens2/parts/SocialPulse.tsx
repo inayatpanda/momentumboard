@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 // THE SOCIAL PULSE — what the crowd is loud about.
 //
 // This was Intel's fifth section until the owner's review of that page: "i
@@ -52,7 +53,7 @@ export function SocialPulse() {
                   {/* the pulse's names arrive from the same feeds the news desk
                       reads, entities and all — "SPDR S&amp;P 500 ETF Trust" was
                       on screen (visibility wave). Same decode the desk uses. */}
-                  {d.companyName && <span className="itl-pulse-name">{decodeEntities(d.companyName)}</span>}
+                  <span className="itl-pulse-name"><StockIdentity symbol={d.sym} name={d.companyName ? decodeEntities(d.companyName) : undefined} nameOnly /></span>
                   {d.opinion && <p className="cc-reason">{decodeEntities(d.opinion)}</p>}
                 </Link>
               ))}
@@ -62,7 +63,7 @@ export function SocialPulse() {
             {rows.slice(0, visible).map(r => (
               <Link key={r.sym} href={`/stock/${r.sym}`} className="card pressable itl-pulse-row">
                 <span className="itl-pulse-sym">{r.sym}</span>
-                {r.name && <span className="itl-pulse-name">{decodeEntities(r.name)}</span>}
+                <span className="itl-pulse-name"><StockIdentity symbol={r.sym} name={r.name ? decodeEntities(r.name) : undefined} nameOnly /></span>
                 <span className="itl-pulse-meta">
                   {r.redditMentions != null && <span className="num">{r.redditMentions} Reddit mentions</span>}
                   {r.stocktwits && <span>Stocktwits trending</span>}

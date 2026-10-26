@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 // CallCard (plan Task 13) — one board row, the way Today shows it. Reused
 // later by the Board screen (Task 14), so it stays honest about EVERY row
 // shape the engine publishes, not just the sized ones Today leads with.
@@ -124,7 +125,7 @@ export function CallCard({
     const usableQuote = quote && Number.isFinite(quote.price) && quote.price > 0 ? quote : null
     return <Link href={`/stock/${row.sym}`} className="brief-call">
       <span className="brief-call-avatar" aria-hidden="true">{row.sym.split(/[-.]/)[0].slice(0, 2)}</span>
-      <span className="brief-call-identity"><strong>{row.sym}</strong><span>{row.name || 'Stock research'}</span></span>
+      <span className="brief-call-identity"><strong>{row.sym}</strong><span><StockIdentity symbol={row.sym} name={row.name ?? quote?.name} nameOnly /></span></span>
       <span className="brief-call-price"><small>{usableQuote ? usableQuote.stale ? 'Last known price' : priceLabel(usableQuote, row.sym, now ?? Date.now()) : 'Planned entry'}</small><strong className="num">{usableQuote ? fmtPrice(usableQuote.price, usableQuote.currency) : row.entry}</strong></span>
       <span className="brief-call-context"><span className={`brief-direction ${row.side}`}>{row.side === 'long' ? 'Expecting a rise' : 'Expecting a fall'}</span>{sized && <span aria-label={`Grade ${row.grade}`}>Grade {row.grade}</span>}{row.provisional && <span>Early estimate</span>}{row.paperOnly && <span>Practice only</span>}{row.instrument && <span>{row.instrument.ticker} · {row.instrument.leverage}×</span>}{row.wildcard && <span>{WILDCARD_LABEL}</span>}</span>
       {row.wildcard && <span className="brief-call-warning">{WILDCARD_WARNING}</span>}
@@ -139,7 +140,7 @@ export function CallCard({
           {row.sym}
           <span className={`pill ${row.side}`}>{row.side === 'long' ? 'Expecting a rise' : 'Expecting a fall'}</span>
           <CohortPill cohort={row.cohort} />
-          {row.name && <span className="cc-name">{row.name}</span>}
+          <span className="cc-name"><StockIdentity symbol={row.sym} name={row.name ?? quote?.name} nameOnly /></span>
         </span>
         {sized && (
           <span className="pill accent" aria-label={`Grade ${row.grade}`}>

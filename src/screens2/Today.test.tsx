@@ -505,7 +505,7 @@ describe('OpenCallsStrip', () => {
 
   it('renders one row per open call: sym link, side, day, move as .num, and a progress bar', () => {
     withRouter(<OpenCallsStrip entries={[mkTrace()]} />)
-    expect(screen.getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
+    expect(screen.getByRole('link', { name: /^NVDA\b/ })).toHaveAttribute('href', '/app/stock/NVDA')
     expect(screen.getByText('long')).toBeInTheDocument()
     expect(screen.getByText('day 4')).toHaveClass('num')
     expect(screen.getByText('+3.2%')).toHaveClass('num')
@@ -674,7 +674,7 @@ describe('ChannelPicksStrip', () => {
 
   it('renders YouTube & social’s read: symbol linked, bulls and bears in their own direction colours', () => {
     withRouter(<ChannelPicksStrip picks={[mkPick()]} board={[]} openCalls={undefined} />)
-    expect(screen.getByRole('link', { name: 'NVDA' })).toHaveAttribute('href', '/app/stock/NVDA')
+    expect(screen.getByRole('link', { name: /^NVDA\b/ })).toHaveAttribute('href', '/app/stock/NVDA')
     expect(screen.getByText('3 expect a rise')).toHaveClass('cp-bull')
     expect(screen.getByText('1 expects a fall')).toHaveClass('cp-bear')
     expect(screen.getByText(/3 channels/)).toBeInTheDocument()
@@ -1026,7 +1026,7 @@ describe('Today', () => {
     withRouter(<Today />)
     expect(await screen.findByLabelText('Channel picks')).toBeInTheDocument()
     fireEvent.click(screen.getByText('What the channels are saying'))
-    expect(screen.getByRole('link', { name: 'GME' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /^GME\b/ })).toBeInTheDocument()
     expect(screen.getByText('no view')).toBeInTheDocument() // GME — the engine has no read
     expect(screen.getAllByLabelText('Grade A').length).toBeGreaterThan(0) // NVDA — it does
   })

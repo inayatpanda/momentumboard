@@ -1,3 +1,4 @@
+import { reportStockLabel } from './reportStockNames'
 import type { AppStore } from './store'
 import type { StrategyChoicesSnapshot } from '../../../shared/engine/strategyChoices'
 import type { StockContext } from '../../../shared/engine/stockContext'
@@ -29,13 +30,6 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const day = (at: number) => new Date(at * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
 const stamp = (at: number) => new Date(at * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })
 
-export function videoCoverage(v: VideoExtract): string {
-  const p = v.nativeTranscript?.progress
-  if (v.via === 'gemini-video') return p?.completion === 'complete' && Number.isFinite(p.sourceDurationSeconds) && p.sourceDurationSeconds! > 0 && Number.isFinite(p.processedSeconds) && p.processedSeconds >= p.sourceDurationSeconds!
-    ? 'Full duration processed by AI; wording unverified' : 'Partial or unverified video coverage'
-  return v.coverage?.complete === true ? 'Full transcript analysed; visuals not checked' : 'Partial or unverified transcript coverage'
-}
-
 /** Shared recipients and the public archive must never receive the owner's
  * watchlist, positions or notes. Only shared engine research is loaded here.
  * No provider calls: scheduled briefs reuse existing evidence. */
@@ -56,14 +50,14 @@ export function buildDailyBrief(edition: BriefEdition, now: number, input: Brief
   const add = (title: string, lines: string[], path: string) => sections.push({ title, lines: lines.map(l => clean(l, 220)).slice(0, 3), path })
   if (edition !== 'morning') {
     const quotes = (input.market ?? []).filter(q => !q.stale && fresh(q.asOf, now, 1) && q.changePct != null && Number.isFinite(q.changePct))
-    add('Latest market check', quotes.length ? quotes.slice(0, 2).map(q => `${q.name}: ${q.changePct! >= 0 ? '+' : ''}${q.changePct!.toFixed(1)}% versus its previous close; quoted ${stamp(q.asOf)} UK. This is a snapshot, not a session result.`) : ['Fresh market quotes are unavailable. No opening or closing direction is inferred.'], '/app/today')
+    add('Latest market check', quotes.length ? quotes.slice(0, 2).map(q => `${q.name}: ${q.changePct! >= 0 ? '+' : ''}${q.changePct!.toFixed(1)}% versus its previous close; quoted ${stamp(q.asOf)} UK.`) : ['Fresh market quotes are unavailable.'], '/app/today')
   }
   const snapshot = fresh(input.strategies?.generatedAt, now) ? input.strategies : null
   const contexts = fresh(input.contexts?.generatedAt, now) ? Object.values(input.contexts!.items).filter(c => fresh(c.generatedAt, now) && c.changes?.baselineAt && c.changes.baselineAt < c.generatedAt && fresh(c.changes.baselineAt, now, 8)) : []
   const changes = contexts.flatMap(c => (c.changes?.lines ?? []).filter(l => !/No material change|No new completed|tracking has started/.test(l)).slice(0, 1).map(l => {
     const headline = c.news?.find(n => n.collectedAt > c.changes!.baselineAt! && n.collectedAt <= now)
     const line = /newly collected company/.test(l) && headline ? `New headline collected: ${clean(headline.title, 120)}` : l
-    return `${c.symbol} (since ${day(c.changes!.baselineAt!)}): ${line}`
+    return `${reportStockLabel(c.symbol)} (since ${day(c.changes!.baselineAt!)}): ${line}`
   })).sort()
   add('What changed', changes.length ? changes.slice(0, 2) : ['No fresh, comparable changes are available in this summary. Open your stocks for the latest saved checks.'], '/app/stocks')
 
@@ -72,29 +66,28 @@ export function buildDailyBrief(edition: BriefEdition, now: number, input: Brief
     const group = snapshot?.strategies.find(g => g.key === key)
     if (!group) continue
     const matches = (group.status === 'ready' ? group.matches : []).filter(m => m.status === 'matches' && m.side === 'long' && fresh(m.asOf, now, 7)).sort((a, b) => a.symbol.localeCompare(b.symbol))
-    choices.push(matches.length ? `${label}: ${matches.slice(0, 2).map(m => `${m.symbol}${m.sector ? ` (${sectorName(m.sector)})` : ''}`).join(', ')}. ${matches.length} match${matches.length === 1 ? '' : 'es'}; alphabetical examples, not a ranking.` : `${label}: ${group.status === 'missing-data' ? 'not enough data to check' : 'no current matches in the available data'}.`)
+    choices.push(matches.length ? `${label}: ${matches.slice(0, 2).map(m => `${reportStockLabel(m.symbol, m.name)}${m.sector ? ` (${sectorName(m.sector)})` : ''}`).join(', ')}. ${matches.length} match${matches.length === 1 ? '' : 'es'}.` : `${label}: ${group.status === 'missing-data' ? 'not enough data to check' : 'no current matches in the available data'}.`)
   }
   add('Stocks to research', choices.length ? choices : ['The strategy scan needs a fresh update. Older matches are not presented as today’s choices.'], '/app/stocks?view=strategies')
 
   const sell = snapshot?.sellReview
   const reviews = fresh(sell?.generatedAt, now) ? sell!.rows.filter(r => r.status === 'review' && r.signals.length && r.signals.every(s => s.evidenceAt <= now)).sort((a, b) => Number(b.signals.some(s => s.kind === 'business')) - Number(a.signals.some(s => s.kind === 'business')) || a.symbol.localeCompare(b.symbol)) : []
   add('If you own these stocks', reviews.length ? [
-    ...reviews.slice(0, 2).map(r => `${r.symbol}: ${r.signals.map(s => clean(s.label, 40)).join('; ')}.${r.gaps.length ? ' Some checks are incomplete.' : ''}`),
-    'Reasons to review a holding, not automatic sell instructions. Check the evidence and your original reason for owning it.',
-  ] : [fresh(sell?.generatedAt, now) ? 'No selling-review warnings in the available checks. Missing checks do not mean a holding is safe.' : 'The selling review needs fresh data; no conclusion is drawn from missing checks.'], '/app/stocks?view=sell')
+    ...reviews.slice(0, 2).map(r => `${reportStockLabel(r.symbol, r.name)}: ${r.signals.map(s => clean(s.label, 40)).join('; ')}.${r.gaps.length ? ' Some checks are incomplete.' : ''}`),
+  ] : [fresh(sell?.generatedAt, now) ? 'No selling-review warnings in the available checks.' : 'The selling review needs fresh data; no conclusion is drawn from missing checks.'], '/app/stocks?view=sell')
 
   const seen = new Set<string>()
   const videos = (input.videos ?? []).filter(v => fresh(v.at, now)).sort((a, b) => b.at - a.at).filter(v => { if (seen.has(v.url)) return false; seen.add(v.url); return true }).slice(0, 2)
   add('Newly processed videos', videos.length ? videos.map(v => {
     const claim = v.tickers.find(t => t.thesis && !t.hype)
     const view = claim && /RSI|MACD|divergence|Fibonacci/i.test(claim.thesis!) ? `Chart patterns suggest ${claim.stance === 'bull' ? 'a possible rise' : claim.stance === 'bear' ? 'a possible fall' : 'an uncertain direction'}.` : claim?.thesis
-    return `${clean(v.channel, 40)}: ${claim ? `${clean(claim.sym, 15)} — creator’s view: ${clean(view!, 65)}` : clean(v.title, 75)} — ${videoCoverage(v)}.`
+    return `${clean(v.channel, 40)}: ${claim ? `${clean(reportStockLabel(claim.sym, claim.company), 65)} — ${clean(view!, 100)}` : clean(v.title, 75)}`
   }) : ['No newly processed video findings in the last 48 hours. Earlier findings and processing status are in the app.'], '/app/more/street')
 
   const events = (input.calendar ?? []).filter(e => e.at > now && e.at <= now + 36 * 3600).sort((a, b) => a.at - b.at).slice(0, 2)
   add('What to watch next', events.length ? events.map(e => `${stamp(e.at)} UK — ${e.title} (${e.country}).`) : ['Check upcoming company results before acting. Recheck the business and sector evidence if a stock moves sharply.'], '/app/today')
   const updated = snapshot ? `Strategy scan updated ${stamp(snapshot.generatedAt)} UK. Prices may be from the last completed session.` : 'Strategy data is missing or more than 48 hours old.'
-  const note = 'Examples from the shared scan, not your personal holdings. A screen match is not proof that a strategy beats the market.'
+  const note = 'Research, not personal advice. Examples are alphabetical, not ranked. Video summaries may be incomplete or contain errors; check the linked evidence.'
   const reportUrl = `${CANONICAL_SITE}/report?date=${date}`
   // Bounded section counts and line lengths keep this below Telegram's 4096
   // limit without truncating a caveat or cutting the evidence link.

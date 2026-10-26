@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildDailyBrief, loadDailyBrief, videoCoverage, type BriefInputs } from './dailyBrief'
+import { buildDailyBrief, loadDailyBrief, type BriefInputs } from './dailyBrief'
 import type { StrategyChoicesSnapshot } from '../../../shared/engine/strategyChoices'
 import type { VideoExtract } from './videoTrends'
 import type { StockContext } from '../../../shared/engine/stockContext'
@@ -15,8 +15,8 @@ describe('daily evidence brief', () => {
   it('keeps research separate from sell warnings and does not turn matches into orders', () => {
     const result = buildDailyBrief('morning', now, { strategies: strategy() })
     expect(result.text).toContain('Healthy businesses after a fall: TEST (Technology)')
-    expect(result.text).toContain('alphabetical examples, not a ranking')
-    expect(result.text).toContain('not proof that a strategy beats the market')
+    expect(result.text).toContain('Examples are alphabetical, not ranked')
+    expect(result.text).toContain('Research, not personal advice')
     expect(result.text).toContain('selling review needs fresh data')
   })
   it.each([now - 3 * 86400, now + 60, NaN])('does not promote stale/future/invalid scans (%s)', generatedAt => {
@@ -38,18 +38,18 @@ describe('daily evidence brief', () => {
     c.changes!.baselineAt = now + 60
     expect(buildDailyBrief('morning', now, input).text).not.toContain('TEST (since')
   })
-  it('does not claim a full video from a model completion flag alone', () => {
-    const v = video({ via: 'gemini-video', nativeTranscript: { model: 'test', characters: 1, limitSeconds: 600, reportedComplete: true, reportedDurationSeconds: 600, excerpt: '' } })
-    expect(videoCoverage(v)).toContain('Partial or unverified')
-    v.nativeTranscript!.progress = { sections: 2, processedSeconds: 1200, sourceDurationSeconds: 1600, completion: 'complete' }
-    expect(videoCoverage(v)).toContain('Partial or unverified')
-    v.nativeTranscript!.progress.processedSeconds = 1600
-    expect(videoCoverage(v)).toBe('Full duration processed by AI; wording unverified')
+  it('uses company names and one short footer instead of repeated video caveats', () => {
+    const r = buildDailyBrief('morning', now, { videos: [video({ tickers: [{ sym: 'PLTR', stance: 'bull', levels: [], thesis: 'Sales are growing' }] }), video({ url: 'second', tickers: [{ sym: 'SOUN', stance: 'bull', levels: [], thesis: 'Demand is growing' }] })] })
+    expect(r.text).toContain('Palantir Technologies (PLTR)')
+    expect(r.text).toContain('SoundHound AI (SOUN)')
+    expect(r.text).not.toContain('visuals not checked')
+    expect(r.text).not.toContain('Full transcript')
+    expect(r.text.match(/Video summaries may be incomplete/g)).toHaveLength(1)
   })
   it('deduplicates video URLs and excludes old and future processing dates', () => {
     const result = buildDailyBrief('morning', now, { videos: [video(), video(), video({ at: now + 1, channel: 'Future' }), video({ at: now - 3 * 86400, channel: 'Old' })] })
     expect(result.sections.find(s => s.title === 'Newly processed videos')!.lines).toHaveLength(1)
-    expect(result.text).toContain('creator’s view: Sales are growing')
+    expect(result.text).toContain('Sales are growing')
     expect(result.text).not.toMatch(/Future:|Old:/)
   })
   it('escapes untrusted text and only supplies fixed first-party links', () => {
@@ -62,7 +62,7 @@ describe('daily evidence brief', () => {
     const summer = Date.parse('2026-07-01T16:00:00Z') / 1000
     const r = buildDailyBrief('evening', summer, { market: [{ name: 'US shares', changePct: 1.2, asOf: summer }] })
     expect(r.text).toContain('17:00 UK')
-    expect(r.text).toContain('snapshot, not a session result')
+    expect(r.text).toContain('versus its previous close; quoted')
     expect(r.title).toBe('Your afternoon update')
   })
   it('never presents stale, undated or future quotes as current', () => {
@@ -85,8 +85,8 @@ describe('daily evidence brief', () => {
     const input: BriefInputs = { strategies: s, contexts: { generatedAt: now, items: contexts }, videos: [video({ channel: long }), video({ url: 'different', channel: long })], calendar: [1, 2].map(i => ({ title: long, country: long, at: now + i * 3600, impact: 'High' })), market: [1, 2].map(() => ({ name: long, changePct: 2, asOf: now })) }
     const r = buildDailyBrief('evening', now, input)
     expect(r.text.length).toBeLessThanOrEqual(4096)
-    expect(r.text).toContain('not automatic sell instructions')
-    expect(r.text).toContain('Partial or unverified transcript coverage')
+    expect(r.text).toContain('Research, not personal advice')
+    expect(r.text).toContain('Video summaries may be incomplete or contain errors')
     expect(r.text).toContain('Full report: https://thestreetsignal.rqai.co.uk/report?date=2026-10-26')
   })
 })

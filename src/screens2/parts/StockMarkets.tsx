@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'wouter'
 import { useSlice } from '../../lib/useSlice'
@@ -31,7 +32,7 @@ function RailMoverCard({ r, inWatchlist, onAdd }: { r: MoverRow; inWatchlist: bo
   return (
     <div className="card pressable stx-rail-card" data-flip-key={r.sym}>
       <Link href={`/stock/${r.sym}`} className="stx-rail-card-link">
-        <span className="stx-rail-card-top">{r.sym}</span>
+        <span className="stx-rail-card-top">{r.sym}</span><span className="stx-name"><StockIdentity symbol={r.sym} nameOnly /></span>
         {closes && closes.length > 1 && <Sparkline closes={closes} width={100} height={26} />}
         <span className="num">{r.price != null ? r.price.toFixed(2) : '—'}</span>
         {r.changePct != null && <span className={`pill ${up ? 'long' : 'short'}`}><span className="num">{fmtPct(r.changePct)}</span></span>}

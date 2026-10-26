@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 import { DataStatus } from './DataStatus'
 import { useMemo, useState } from 'react'
 import { Link } from 'wouter'
@@ -51,7 +52,7 @@ function RadarCard({ row, board }: { row: RadarRow; board: Awaited<ReturnType<ty
       <header className="sr-card-head">
         <div>
           <Link href={`/stock/${row.sym}`} className="sr-symbol">{row.sym}</Link>
-          <span className="sr-name">{decodeEntities(row.companyName ?? row.name ?? '')}</span>
+          <span className="sr-name"><StockIdentity symbol={row.sym} name={decodeEntities(row.companyName ?? row.name ?? '')} nameOnly /></span>
         </div>
         <div className="sr-badges">
           <span className={`pill ${statusTone(status)}`}>{STATUS_LABEL[status]}</span>

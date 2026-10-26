@@ -38,7 +38,7 @@ describe('selling review', () => {
     mount()
     const card = screen.getByRole('article', { name: 'DDD sell review' })
     expect(within(card).getByText('No warning found')).toBeVisible()
-    expect(within(card).getByText(/does not establish/)).toBeVisible()
+    expect(screen.getByText(/Research, not personal advice/)).toBeVisible()
     expect(screen.queryByRole('article', { name: 'AAA sell review' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('link', { name: 'Back to your watchlist review' }))
     expect(screen.getByRole('button', { name: 'My watchlist' })).toHaveAttribute('aria-pressed', 'true')

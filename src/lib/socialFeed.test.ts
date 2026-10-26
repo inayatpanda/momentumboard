@@ -19,6 +19,10 @@ describe('social feed', () => {
     expect(filterStreetVideos(rows, 'Research channel', 'Apple earnings', false)).toEqual([rows[0]])
     expect(filterStreetVideos(rows, 'Other', 'AAPL', false)).toEqual([])
   })
+  it('finds a company by its directory name when the video only has a ticker', () => {
+    const rows = [video({tickers:[{sym:'PLTR',stance:'bull'}]})]
+    expect(filterStreetVideos(rows, '', 'Palantir', false, new Map([['PLTR','Palantir Technologies']]))).toEqual(rows)
+  })
   it('does not mistake third-party, unmatched or unidentified statements for sourced claims', () => {
     const matched = { sourceMatch: 'matched', identityMatched: true } as NonNullable<StreetVideo['claims']>[number]
     const rows = [

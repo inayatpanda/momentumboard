@@ -995,7 +995,8 @@ p {
   font-size: 13.5px;
   color: var(--text);
   text-decoration: none;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  max-width: 100%;
 }
 .v2 .cp-street {
   min-width: 0;
@@ -3232,3 +3233,5 @@ p {
 /* Five stock views stay reachable on a small phone without squeezing labels. */
 .stx > .stocks-tabs { overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
 .stx > .stocks-tabs button { flex: 1 0 auto; padding-inline: 12px; white-space: nowrap; }
+
+.v2 .cp-company { display: block; font-size: 12px; font-weight: 400; color: var(--text-dim); overflow-wrap: anywhere; }

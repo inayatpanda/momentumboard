@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 // Open calls, still walking (owner iteration 2) — the money already on the
 // table, on the home screen.
 //
@@ -48,7 +49,7 @@ function OpenCallRow({ e }: { e: OpenTraceEntry }) {
   return (
     <div className="oc-row">
       <Link href={`/stock/${e.sym}`} className="oc-sym">
-        {e.sym}
+        <StockIdentity symbol={e.sym} />
       </Link>
       <span className={`pill ${e.side}`}>{e.side}</span>
       {word && <span className={`oc-verdict ${cls}`}>{word}</span>}

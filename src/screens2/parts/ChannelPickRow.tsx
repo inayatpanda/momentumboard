@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 // ONE ROW, TWO SCREENS — the street's read on a name beside the engine's own.
 //
 // This was ChannelPicksStrip's private row until The street page needed the
@@ -126,7 +127,7 @@ export function ChannelPickRow({
   return (
     <div className="cp-row">
       <Link href={`/stock/${pick.sym}`} className="cp-sym">
-        {pick.sym}
+        {pick.sym}<span className="cp-company"><StockIdentity symbol={pick.sym} name={row?.name} nameOnly /></span>
       </Link>
       <span className="cp-street">
         {pick.bulls > 0 && <b className="cp-bull num">{pick.bulls} {pick.bulls === 1 ? 'expects' : 'expect'} a rise</b>}

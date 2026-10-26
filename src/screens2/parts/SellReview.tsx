@@ -1,3 +1,4 @@
+import { StockIdentity } from '../../components/StockIdentity'
 import { useEffect, useState } from 'react'
 import { Link, useSearch } from 'wouter'
 import type { SellReviewSnapshot, SellReviewRow } from '../../../shared/engine/sellReview'
@@ -12,9 +13,9 @@ const LABELS: Record<Kind, string> = { all: 'All reasons', business: 'Business w
 function ReviewCard({ row, kind }: { row: SellReviewRow; kind: Kind }) {
   const signals = row.signals.filter(signal => kind === 'all' || signal.kind === kind)
   return <article aria-label={`${row.symbol} sell review`} className={`strategy-choice-card sell-review-card sell-review-${row.status}`}>
-    <div className="strategy-choice-card-head"><div><Link href={`/stock/${encodeURIComponent(row.symbol)}`}>{row.symbol}</Link><span>{row.name}</span></div><span className="sell-review-state">{row.status === 'review' ? 'Worth reviewing' : row.status === 'data-gap' ? 'Checks incomplete' : 'No warning found'}</span></div>
+    <div className="strategy-choice-card-head"><div><Link href={`/stock/${encodeURIComponent(row.symbol)}`}>{row.symbol}</Link><span><StockIdentity symbol={row.symbol} name={row.name} nameOnly /></span></div><span className="sell-review-state">{row.status === 'review' ? 'Worth reviewing' : row.status === 'data-gap' ? 'Checks incomplete' : 'No warning found'}</span></div>
     <p className="strategy-choice-sector">{SECTORS[row.sector ?? ''] ?? row.sector ?? 'Sector unavailable'}{row.asOf ? ` · prices ${day(row.asOf)}` : ''}</p>
-    {signals.length ? signals.map(signal => <div className="sell-review-reason" key={signal.kind}><h3>{signal.label}</h3><p>{signal.summary}</p></div>) : <p className="strategy-choice-reason">{row.status === 'data-gap' ? 'We need more information before we can finish these checks.' : 'These checks found no current warning. That does not establish that the stock is safe or worth holding.'}</p>}
+    {signals.length ? signals.map(signal => <div className="sell-review-reason" key={signal.kind}><h3>{signal.label}</h3><p>{signal.summary}</p></div>) : <p className="strategy-choice-reason">{row.status === 'data-gap' ? 'We need more information before we can finish these checks.' : 'These checks found no current warning.'}</p>}
     {!!row.gaps.length && <p className="sell-review-gap">{row.gaps.length} {row.gaps.length === 1 ? 'check needs' : 'checks need'} more information.</p>}
     <details><summary>See the evidence</summary>
       {signals.map(signal => <section key={signal.kind}><h4>{signal.label}</h4><p>Evidence available by {day(signal.evidenceAt)}.{signal.periodEnd && signal.kind !== 'price' ? ` Financial period ended ${day(signal.periodEnd)}.` : ''}{signal.financialAvailableAt ? ` Filing available ${day(signal.financialAvailableAt)}.` : ''}{signal.priceObservedAt ? ` Price observed ${day(signal.priceObservedAt)}.` : ''}</p><ul>{signal.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>{signal.sources?.filter(source => /^https:\/\//i.test(source.url)).map(source => <p key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.label}</a></p>)}</section>)}
@@ -50,7 +51,6 @@ export function SellReview({ snapshot, watchSymbols, watchLoaded = true, error, 
   return <section className="strategy-choices sell-review" aria-label="Review selling">
     <div className="strategy-choice-heading"><div><p className="strategy-choice-eyebrow">The other side of investing</p><h2>Review selling</h2></div>{onRefresh && <button className="strategy-choice-refresh" onClick={onRefresh} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>}</div>
     <p className="strategy-choice-intro">Has your reason for owning a stock changed? Check weakening businesses, sustained price weakness and demanding valuations separately.</p>
-    <p className="sell-review-note">A warning is a reason to review your holding, not an instruction to sell. Your watchlist may include stocks you do not own.</p>
     {error && <p className="strategy-choice-alert" role="status">The latest scan could not load. {fresh ? 'Showing the recent saved scan.' : 'Try refreshing shortly.'}</p>}
     {!fresh ? <div className="strategy-choice-empty"><h3>{snapshot ? 'This review needs a fresh scan' : 'The first sell review is being prepared'}</h3><p>{snapshot ? 'Older or unverified results are hidden so they are not mistaken for current warnings.' : 'The cloud checks run alongside the daily stock scan. Your computer can stay off.'}</p></div> : <>
       <div className="sell-review-scope" role="group" aria-label="Stocks to review"><button aria-pressed={scope === 'watchlist' && !selectedStock} onClick={() => setScope('watchlist')} disabled={!!selectedStock}>My watchlist</button><button aria-pressed={scope === 'all' || !!selectedStock} onClick={() => setScope('all')}>{selectedStock ? selectedStock : `All ${snapshot!.coverage.scanned} stocks`}</button></div>
@@ -68,5 +68,6 @@ export function SellReview({ snapshot, watchSymbols, watchLoaded = true, error, 
       </>}
     </>}
     <details className="sell-review-guide"><summary>See the evidence: how to use this review</summary><p>Start with the reason you bought the stock. Check the latest company report and whether the weakness is temporary. A high valuation, a weak chart and a deteriorating business are different reasons to investigate; they are not added into a made-up sell score.</p><p>Before deciding, consider your time horizon, how much of your portfolio this holding represents, and any costs or tax consequences. Reducing a position is also different from selling it all.</p><p>We do not know your full portfolio or personal circumstances. This pathway does not place trades. The existing buy-strategy backtests do not validate these sell checks.</p><a href="https://www.investor.gov/introduction-investing/investing-basics/asset-allocation" target="_blank" rel="noreferrer">Investor.gov: diversification and rebalancing</a></details>
+    <p className="sell-review-note">Research, not personal advice. A warning is a reason to review, not an instruction to sell.</p>
   </section>
 }
