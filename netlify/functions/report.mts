@@ -3,11 +3,15 @@ import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { sendTelegram } from './lib/telegram'
 import { scopedToken } from './lib/auth'
 import type { AppConfig } from '../../shared/config'
+import { CANONICAL_SITE } from './lib/site'
 
 const MAX_BYTES = 800_000
 
+// Update the publisher address on saved editions without rewriting their research.
+const currentReportHtml = (html: string) => html.replaceAll('streetsignal.netlify.app/report', `${new URL(CANONICAL_SITE).host}/report`)
+
 const page = (status: number, body: string, downloadName?: string) =>
-  new Response(body, {
+  new Response(currentReportHtml(body), {
     status,
     headers: {
       'content-type': 'text/html; charset=utf-8',
@@ -46,6 +50,7 @@ export async function routeReport(
   // emailed copies (which use the stored HTML directly) carry no stale price.
   // FAIL-SOFT throughout — a quote outage must serve the paper, not break it.
   const withCallStatus = async (html: string, dateISO: string): Promise<string> => {
+    html = currentReportHtml(html)
     try {
       const calls = await store.read<import('./lib/callStrip').EditionCall[]>(`report-calls:${dateISO}`)
       if (!calls?.length) return html
@@ -84,7 +89,7 @@ export async function routeReport(
       const hit = day.find(b => b.kind === bKind)
       if (asJson) {
         if (!hit) return json(404, { ok: false, error: 'no bulletin for that date and edition' })
-        return json(200, { ok: true, data: hit })
+        return json(200, { ok: true, data: { ...hit, html: currentReportHtml(hit.html) } })
       }
       return page(hit ? 200 : 404, hit?.html ?? PLACEHOLDER)
     }

@@ -1359,6 +1359,6 @@ ${r.readersNotes ? dept("Reader's Notes", paras(r.readersNotes)) : ''}
 ${r.editorial ? wide('The Long View', `<div class="editorial">${paras(r.editorial)}</div>`) : ''}
 ${dept('The Honest Close', paras(r.honestClose))}
 </div>
-<footer>THE STREET SIGNAL · streetsignal.netlify.app/report</footer>
+<footer>THE STREET SIGNAL · ${new URL(CANONICAL_SITE).host}/report</footer>
 </div></body></html>`
 }
