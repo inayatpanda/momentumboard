@@ -224,7 +224,6 @@ function WireSection({ videos, channel, onChannel }: { videos: StreetVideo[]; ch
           </div>
         ))}
       </div>
-      <p className="social-evidence__note">Research, not personal advice. Video summaries may be incomplete or contain errors; see the evidence for coverage and sources.</p>
       {visible < filtered.length && (
         <button type="button" className="stx-showmore" onClick={() => setVisible(filtered.length)}>
           Show more ({filtered.length - visible})
@@ -242,7 +241,7 @@ function ReadsSection({ reads }: { reads: StreetRead[] }) {
   return (
     <section id="reads" className="card itl-section stt-reads">
       <h2 className="sec-label">Detailed channel analysis</h2>
-      <p className="cc-reason itl-feed-intro">AI summaries of the source material. Check the original video before relying on company identities, quoted levels or the creator’s claims.</p>
+      <p className="cc-reason itl-feed-intro">Longer channel write-ups, with a link to each original video.</p>
       <div className="stt-read-list">
         {reads.map((r, i) => (
           <figure className="stt-read" key={`${r.url}-${i}`}>
@@ -313,13 +312,14 @@ export default function Street2() {
         <div className="street-insights-grid"><div>
           <PicksSection consensus={consensus} board={boardSlice?.board?.board ?? []} openCalls={boardSlice?.openTrace?.entries} />
           {wire && !nothingYet && !consensus.some(p => p.bulls + p.bears > 0) && <section className="card itl-section"><h2 className="sec-label">No clear view from the channels yet</h2><p className="cc-reason">Completed videos are available below. Mentioning a company does not mean the creator expects its price to rise or fall.</p></section>}
-          {videos.length > 0 && <section className="card itl-section street-recent" aria-label="Recently analysed videos"><div className="discovery-heading"><h2>Recently analysed</h2><button className="stocks-text-link" onClick={() => openChannel('')}>View all →</button></div>{videos.slice(0, 3).map(v => <button className="street-recent__row" key={v.url} onClick={() => openChannel(v.channel)}><span className="street-recent__play" aria-hidden="true"><IconPlay size={18} /></span><span><small>{v.channel} · {relativeStamp(v.at)}</small><strong>{stripEmoji(decodeEntities(v.title))}</strong><small>{v.tickers.map(t => t.sym).slice(0, 4).join(' · ') || 'Market context'}</small></span><span aria-hidden="true">→</span></button>)}</section>}
+          {videos.length > 0 && <section className="card itl-section street-recent" aria-label="Recently analysed videos"><div className="discovery-heading"><h2>Recently analysed</h2><button className="stocks-text-link" onClick={() => openChannel('')}>View all →</button></div>{videos.slice(0, 3).map(v => <button className="street-recent__row" key={v.url} onClick={() => openChannel(v.channel)}><span className="street-recent__play" aria-hidden="true"><IconPlay size={18} /></span><span><small>{v.channel} · {relativeStamp(v.at)}</small><strong>{stripEmoji(decodeEntities(v.title))}</strong><small>{v.tickers.length ? v.tickers.slice(0, 4).map((t, i) => <span key={`${t.sym}-${i}`}>{i > 0 && ' · '}<StockIdentity symbol={t.sym} name={t.company} /></span>) : 'Market context'}</small></span><span aria-hidden="true">→</span></button>)}</section>}
         </div><div><SocialLearning learning={wire?.socialLearning} /><SocialPulse /></div></div>
       </> : view === 'videos' ? <><WireSection videos={videos} channel={channel} onChannel={setChannel} /><ReadsSection reads={channel ? reads.filter(r => r.channel === channel) : reads} /></> : <>
         <VideoHealth health={wire?.videoIngestion} onRefresh={refresh} />
         <ChannelCoverage health={wire?.videoIngestion} onChannel={openChannel} />
       </>}
       </div>
+      <p className="social-evidence__note">Research, not personal advice. Video summaries may be incomplete or contain errors; see the evidence for coverage and sources.</p>
     </div>
   )
 }

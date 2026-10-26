@@ -10,6 +10,11 @@ describe('stock identity', () => {
     expect(screen.getByText('SoundHound AI (SOUN)')).toBeInTheDocument()
     expect(screen.queryByText(/Palantir/)).not.toBeInTheDocument()
   })
+  it('prefers verified identities over transcription misspellings', () => {
+    render(<><span><StockIdentity symbol="RGTI" name="Righetti" /></span><span><StockIdentity symbol="IONQ" /></span></>)
+    expect(screen.getByText('Rigetti Computing (RGTI)')).toBeInTheDocument()
+    expect(screen.getByText('IonQ (IONQ)')).toBeInTheDocument()
+  })
   it('uses a supplied name, and never invents a name for an unknown ticker', () => {
     const { rerender } = render(<StockIdentity symbol="TEST" name="Example Company" />)
     expect(screen.getByText('Example Company (TEST)')).toBeInTheDocument()
