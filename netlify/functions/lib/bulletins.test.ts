@@ -23,26 +23,26 @@ const mark = (over: Partial<BulletinBoardMark> = {}): BulletinBoardMark => ({
 describe('the bulletin board line — Telegram', () => {
   it('an ordinary call is worded exactly as it always was', () => {
     expect(bulletinBoardLine(mark())).toBe('SOFI LONG B · in 14.8 → 15.4 (+4.1%) · stop 13.9 · tgt 17.2')
-    expect(bulletinBoardLine(mark())).not.toContain('🃏')
+    expect(bulletinBoardLine(mark())).not.toContain('Experimental:')
   })
 
   it('a wildcard row wears the mark', () => {
     const line = bulletinBoardLine(mark({ wildcard: true }))
-    expect(line).toBe('🃏 SOFI LONG B · in 14.8 → 15.4 (+4.1%) · stop 13.9 · tgt 17.2')
+    expect(line).toBe('Experimental: SOFI LONG B · in 14.8 → 15.4 (+4.1%) · stop 13.9 · tgt 17.2')
   })
 
   it('the mark is the ONLY difference — every number and both optional halves survive', () => {
     const bare = mark({ now: null, movePct: null })
     expect(bulletinBoardLine(bare)).toBe('SOFI LONG B · in 14.8 · stop 13.9 · tgt 17.2')
-    expect(bulletinBoardLine({ ...bare, wildcard: true })).toBe(`🃏 ${bulletinBoardLine(bare)}`)
-    expect(bulletinBoardLine({ ...mark(), wildcard: true })).toBe(`🃏 ${bulletinBoardLine(mark())}`)
+    expect(bulletinBoardLine({ ...bare, wildcard: true })).toBe(`Experimental: ${bulletinBoardLine(bare)}`)
+    expect(bulletinBoardLine({ ...mark(), wildcard: true })).toBe(`Experimental: ${bulletinBoardLine(mark())}`)
   })
 })
 
 describe('the bulletin board row — email', () => {
   it('an ordinary call carries no mark and keeps its two stacked lines', () => {
     const html = bulletinBoardRowHtml(mark())
-    expect(html).not.toContain('🃏')
+    expect(html).not.toContain('Experimental:')
     expect(html).toContain('<b>SOFI</b>')
     expect(html).toContain('in 14.8 → 15.4 · stop 13.9 · tgt 17.2')
     expect(html).toContain('+4.1%')
@@ -50,9 +50,9 @@ describe('the bulletin board row — email', () => {
 
   it('a wildcard row wears the mark beside the ticker', () => {
     const html = bulletinBoardRowHtml(mark({ wildcard: true }))
-    expect(html).toContain('🃏 <b>SOFI</b>')
+    expect(html).toContain('Experimental: <b>SOFI</b>')
     // …and nothing else about the row moved
-    expect(html.replace('🃏 ', '')).toBe(bulletinBoardRowHtml(mark()))
+    expect(html.replace('Experimental: ', '')).toBe(bulletinBoardRowHtml(mark()))
   })
 
   it('escapes the ticker like the rest of the mini-edition', () => {

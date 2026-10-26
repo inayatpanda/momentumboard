@@ -2,7 +2,6 @@ import type { Context } from '@netlify/functions'
 import { appStore as blobAppStore, type AppStore } from './lib/storeProvider'
 import { sendTelegram } from './lib/telegram'
 import { scopedToken } from './lib/auth'
-import { CANONICAL_SITE } from './lib/site'
 import type { AppConfig } from '../../shared/config'
 
 const MAX_BYTES = 800_000
@@ -151,14 +150,8 @@ export async function routeReport(
       archive.push(picks)
       await store.write(monthKey, archive)
       const fresh = newlyPersistent(history.slice(-60))
-      const lines: string[] = []
-      for (const p of picks.picks.filter(p => p.strength === 'strong')) {
-        lines.push(`🎯 STRONG call: ${p.ticker} (${p.side})${p.reasons?.length ? ` — ${p.reasons[0]}` : ''}. Full reasoning in the report.`)
-      }
-      lines.push(...fresh.map(p => `📌 ${p.ticker} (${p.side}) is now a PERSISTENT pick — ${p.streak >= 3 ? `${p.streak} reports running` : `${p.appearances} of the last 7 reports`}. Independent daily analyses keep converging on it.`))
-      if (lines.length && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-        await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, lines.join('\n')).catch(() => {})
-      }
+      // Repetition is not independent confirmation. Keep the history, but send
+      // research once in the brief instead of extra STRONG/PERSISTENT pings.
       return json(200, { ok: true, data: { stored: picks.date, newlyPersistent: fresh } })
     }
 
@@ -182,12 +175,14 @@ export async function routeReport(
       }
     }
     const at = Math.floor(Date.now() / 1000)
+    const { loadDailyBrief } = await import('./lib/dailyBrief')
+    const brief = await loadDailyBrief(store, 'morning', at, print?.calendar)
     const report: StoredReport = { html, at }
-    const dateKey = new Date(at * 1000).toISOString().slice(0, 10)
+    const dateKey = brief.date
     // same-day re-publish? Gmail threads identical subjects and hides "repeated"
     // sections behind ⋯ trims — a unique suffix keeps every edition whole.
     const prior = await store.read<StoredReport>('morning-report').catch(() => null)
-    const republished = !!prior && new Date(prior.at * 1000).toISOString().slice(0, 10) === dateKey
+    const republished = !!prior && new Date(prior.at * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) === dateKey
     await store.write('morning-report', report)
     await store.write(`report:${dateKey}`, report) // daily archive
     const index = (await store.read<string[]>('report-index')) ?? []
@@ -195,13 +190,12 @@ export async function routeReport(
       index.push(dateKey)
       await store.write('report-index', index.slice(-90))
     }
-    const link = `${CANONICAL_SITE}/report`
     if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-      await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, `📰 Morning report is ready → ${link}`).catch(() => {})
+      await telegramSend(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, brief.text).catch(() => {})
     }
     // the same paper lands in the inbox — fail-soft, skipped when no key is set
     try {
-      const { emailReadyHtml, sendReportEmail, recipientsForEdition } = await import('./lib/email')
+      const { sendReportEmail, recipientsForEdition } = await import('./lib/email')
       const cfg = await store.read<AppConfig>('config').catch(() => null)
       const dateLabel = new Date(at * 1000).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })
       // A print-edition PDF rides along with the email, composed on-box from the
@@ -219,8 +213,8 @@ export async function routeReport(
       }
       await sendReportEmail(
         { RESEND_API_KEY: process.env.RESEND_API_KEY, REPORT_EMAIL_TO: process.env.REPORT_EMAIL_TO, REPORT_EMAIL_FROM: process.env.REPORT_EMAIL_FROM },
-        `The Street Signal — ${dateLabel}${republished ? ` · updated ${new Date(at * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}` : ''}`,
-        emailReadyHtml(html, `${link}?date=${dateKey}`),
+        `${brief.subject}${republished ? ` · updated ${new Date(at * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}` : ''}`,
+        brief.html,
         fetch,
         attachments,
         recipientsForEdition('morning', cfg?.reportRecipients),
@@ -230,7 +224,7 @@ export async function routeReport(
     }
     try {
       const { sendPushAll } = await import('./lib/pushSend')
-      await sendPushAll(store, { VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY }, { title: 'Morning report is ready', body: 'Tap to read today’s analysis', url: '/report' })
+      await sendPushAll(store, { VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY }, { title: 'Your morning brief', body: 'What changed, stocks to research and reasons to review your holdings.', url: '/report' })
     } catch {
       /* push is best-effort */
     }
