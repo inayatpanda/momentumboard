@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { FinancialQuarter, QuarterlyMetric } from '../../../shared/quarterlyFinancials'
 const METRICS: { key: QuarterlyMetric; label: string }[] = [{ key: 'revenue', label: 'Sales' }, { key: 'netIncome', label: 'Profit' }, { key: 'freeCashFlow', label: 'Free cash flow' }]
-const money = (n: number | null) => n == null || !Number.isFinite(n) ? 'Unavailable' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(n)
+const money = (n: number | null) => n == null || !Number.isFinite(n) ? 'Unavailable' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(n)
 const date = (end: string) => new Date(`${end}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: '2-digit', timeZone: 'UTC' })
 export function QuarterlyTrendChart({ quarters }: { quarters: FinancialQuarter[] }) {
   const [metric, setMetric] = useState<QuarterlyMetric>('revenue')
