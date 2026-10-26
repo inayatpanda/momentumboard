@@ -98,6 +98,7 @@ export async function sendReportEmail(
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         from: env.REPORT_EMAIL_FROM ?? 'The Street Signal <onboarding@resend.dev>',
+        reply_to: 'hello@rqai.co.uk',
         to,
         subject,
         html: emailFitHtml(html),

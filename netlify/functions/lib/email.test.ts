@@ -39,6 +39,7 @@ describe('sendReportEmail', () => {
     const body = JSON.parse((ok.mock.calls[0] as unknown as [string, { body: string }])[1].body)
     expect(body.to).toEqual(['a@b.com'])
     expect(body.subject).toBe('Morning')
+    expect(body.reply_to).toBe('hello@rqai.co.uk')
     const thrower = vi.fn(async () => { throw new Error('net') })
     expect(await sendReportEmail({ RESEND_API_KEY: 'k', REPORT_EMAIL_TO: 'a@b.com' }, 's', 'x', thrower as unknown as typeof fetch)).toBe(false)
   })
