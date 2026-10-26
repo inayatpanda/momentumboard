@@ -21,6 +21,7 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { useLocation } from 'wouter'
 import { Nav } from './Nav'
+import { ChunkRecoveryBoundary } from './ChunkRecoveryBoundary'
 
 const BoardColumn = lazy(() => import('../screens2/parts/BoardColumn'))
 
@@ -81,6 +82,7 @@ export default function DeskLayout({ children }: { children: ReactNode }) {
           <header className="desk2-colhead">
             <span className="sec-label">Board</span>
           </header>
+          <ChunkRecoveryBoundary>
           <Suspense
             fallback={
               <>
@@ -91,6 +93,7 @@ export default function DeskLayout({ children }: { children: ReactNode }) {
           >
             <BoardColumn />
           </Suspense>
+          </ChunkRecoveryBoundary>
         </aside>
       )}
 
