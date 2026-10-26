@@ -79,3 +79,49 @@
   .v2 .report-trend-chart { height: 170px; }
   .v2 .report-chart-axis { top: 21px; height: 122px; font-size: 10px; }
 }
+
+/* Research first: price, comparison and readable operating trends. */
+.v2 .company-dossier .sp-title h1 { font-size: clamp(23px, 3.8vw, 34px); line-height: 1.18; overflow-wrap: anywhere; }
+.v2 .stock-quote-stamp { font-size: 11px; color: var(--text-dim); margin: 8px 0 12px; }
+.v2 .sp-side small { color: var(--text-dim); font-size: 11px; font-weight: 400; }
+.v2 .comparison-takeaway { font-size: 14px; line-height: 1.6; margin: 20px 0; }
+.v2 .comparison-key { display: flex; gap: 20px; flex-wrap: wrap; margin: 16px 0 0; }
+.v2 .comparison-key > div { flex: 1 1 120px; }
+.v2 .comparison-key dt { font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+.v2 .comparison-key dt i { display: inline-block; flex: 0 0 8px; height: 8px; border-radius: 50%; background: var(--comparison-colour); }
+.v2 .comparison-key dd { margin: 6px 0 0; font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.v2 .comparison-chart { width: 100%; display: block; margin-top: 18px; }
+.v2 .comparison-dates { display: flex; justify-content: space-between; padding-right: 10%; color: var(--text-dim); font-size: 11px; }
+.v2 .strategy-glance { margin: 24px 0; }
+.v2 .strategy-glance-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; }
+.v2 .strategy-glance-grid article { padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-1); }
+.v2 .strategy-glance h3 { font-size: 14px; margin: 0 0 12px; }
+.v2 .strategy-glance p { font-size: 12px; line-height: 1.65; color: var(--text-dim); }
+.v2 .strategy-glance small { font-size: 10px; color: var(--text-dim); }
+.v2 .strategy-glance-state { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 6px; padding: 5px 8px; color: var(--text-dim); background: var(--surface-2); }
+.v2 .strategy-glance-state.setup { color: var(--long); background: color-mix(in srgb, var(--long) 9%, transparent); }
+.v2 .strategy-glance-state.avoid { color: var(--short); background: color-mix(in srgb, var(--short) 9%, transparent); }
+.v2 .strategy-evidence-link { padding: 14px 0; border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; }
+.v2 .quarter-trends { padding: 20px; border: 1px solid var(--border); border-radius: 16px; margin: 22px 0; }
+.v2 .quarter-trends .report-segments { width: fit-content; max-width: 100%; }
+.v2 .quarter-selected { display: flex; gap: 7px; flex-direction: column; margin: 22px 0; }
+.v2 .quarter-selected strong { font-size: 28px; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+.v2 .quarter-selected span { font-size: 11px; color: var(--text-dim); }
+.v2 .quarter-bars { display: flex; gap: clamp(4px, 2vw, 16px); }
+.v2 .quarter-bars button { display: flex; flex: 1; min-width: 0; align-items: stretch; flex-direction: column; gap: 10px; color: var(--text-dim); border: 0; padding: 5px 0; border-radius: 5px; background: none; font: inherit; font-size: 10px; cursor: pointer; }
+.v2 .quarter-bar-track { position: relative; height: 130px; margin-inline: 10%; }
+.v2 .quarter-zero { position: absolute; left: -15%; right: -15%; height: 1px; background: var(--border); }
+.v2 .quarter-bar { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--accent) 55%, var(--surface-1)); border-radius: 4px; }
+.v2 .quarter-bar.negative { background: color-mix(in srgb, var(--short) 55%, var(--surface-1)); }
+.v2 .quarter-bars button[aria-pressed=true] .quarter-bar { background: var(--accent); }
+.v2 .quarter-bars button[aria-pressed=true] .quarter-bar.negative { background: var(--short); }
+.v2 .quarter-missing { display: grid; place-items: center; height: 100%; }
+.v2 .quarter-bars button:focus-visible, .v2 .report-segments button:focus-visible, .v2 .strategy-evidence-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .v2 .quarter-trends { padding: 14px 10px; }
+  .v2 .quarter-bar-track { height: 105px; }
+  .v2 .strategy-glance-grid { grid-template-columns: 1fr; }
+}
+.v2 .company-dossier .sp-title h1 { display: block; min-width: 0; }
+.v2 .company-dossier .sp-title .sp-name { display: block; max-width: none; white-space: normal; overflow: visible; font-size: 11px; line-height: 1.5; margin-top: 7px; }
+.v2 .strategy-glance p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }

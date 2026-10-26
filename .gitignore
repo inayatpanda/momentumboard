@@ -31,3 +31,6 @@ docs/AUDIT-*.md
 .local/
 .history-cache/
 .strategy-input/
+# Read-only Webull sandbox probe output (no production integration).
+webull-sandbox-result.json
+webull_data_sdk.log

@@ -1,4 +1,4 @@
-import { StockIdentity } from '../components/StockIdentity'
+import { StockIdentity, useStockName } from '../components/StockIdentity'
 import { StockContextPanel } from './parts/StockContextPanel'
 // StockPage (plan Task 17) — THE journey page: one name, the whole of the
 // engine's mind about it. Every symbol anywhere in the app links here.
@@ -47,9 +47,11 @@ import type { OpenTraceEntry } from '../lib/api'
 import { StrategyLabPanel } from './parts/StrategyLabPanel'
 import { BusinessHealthPanel } from './parts/BusinessHealthPanel'
 import { CompanySources } from './parts/CompanySources'
+import { StrategyGlance } from './parts/StrategyGlance'
 import { WatchStockButton } from './parts/WatchStockButton'
 import '../styles/dossier.css'
 
+const PerformanceComparison = lazy(() => import('./parts/PerformanceComparison'))
 const PriceChart = lazy(() => import('../components/PriceChart').then(m => ({ default: m.PriceChart })))
 const RsiChart = lazy(() => import('../components/RsiChart').then(m => ({ default: m.RsiChart })))
 
@@ -141,6 +143,7 @@ function Filings({ sym }: { sym: string }) {
 }
 
 export default function StockPage({ sym }: { sym: string }) {
+  const [chartMode, setChartMode] = useState<'price' | 'compare'>('price')
   const [view, setView] = useState<'overview' | 'business' | 'research' | 'tools'>('overview')
   useEffect(() => setView('overview'), [sym])
   // The reader's own last choice, or the month (chartRange.ts owns both). Read
@@ -166,6 +169,7 @@ export default function StockPage({ sym }: { sym: string }) {
   const row = journey?.boardRow ?? null
   const quote = chart?.quote ?? null
   const candles = chart?.candles ?? []
+  const companyName = useStockName(sym, row?.name ?? quote?.name) ?? sym
   const intradayRange = chartRangeOf(range).intraday
   // WHAT THE HERO MAY SAY, AND FROM WHICH DAY (Task 17 review, C1).
   //
@@ -229,8 +233,8 @@ export default function StockPage({ sym }: { sym: string }) {
             ←
           </button>
           <h1>
-            {sym}
-            <span className="sp-name"><StockIdentity symbol={sym} name={row?.name ?? quote?.name} nameOnly /></span>
+            {companyName}
+            <span className="sp-name">{sym}{journey?.stockContext?.sector ? ` · ${journey.stockContext.sector}` : ''}</span>
           </h1>
         </div>
         <WatchStockButton symbol={sym} />
@@ -240,11 +244,12 @@ export default function StockPage({ sym }: { sym: string }) {
             title={quote.stale ? 'last known price — the live quote is not answering' : undefined}
           >
             {fmtPrice(quote.price, quote.currency)}
-            {quote.changePct != null && <span className={quote.changePct >= 0 ? 'sp-side long' : 'sp-side short'}> {fmtPct(quote.changePct)}</span>}
+            {quote.changePct != null && <span className={quote.changePct >= 0 ? 'sp-side long' : 'sp-side short'}> {fmtPct(quote.changePct)} <small>today</small></span>}
           </span>
         )}
         {!quote && <p className="cc-reason" role="status">{chartError ? 'Price temporarily unavailable' : 'Loading price…'}</p>}
       </div>
+      {quote && <p className="stock-quote-stamp">{quote.stale ? 'Last known price' : 'Price updated'} · {new Date(quote.asOf * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {quote.currency}</p>}
       <SessionLine />
       <nav className="dossier-nav stocks-tabs" role="tablist" aria-label="Company research sections">
         {(['overview', 'business', 'research', 'tools'] as const).map((tab, index, tabs) => <button type="button" key={tab} id={`company-tab-${tab}`} role="tab" aria-selected={view === tab} aria-controls={`company-panel-${tab}`} tabIndex={view === tab ? 0 : -1}
@@ -257,10 +262,10 @@ export default function StockPage({ sym }: { sym: string }) {
 
       {/* 1 — the chart, pinned at the top */}
       <section id={`${sym}-price`} className="sp-chart dossier-chart" aria-label="Price chart">
-        <div className="dossier-section-head"><h2>Price & trend</h2><span className="dossier-caption">Explore the chart</span></div>
+        <div className="dossier-section-head"><h2>Price & trend</h2><div className="report-segments" role="group" aria-label="Chart view"><button aria-pressed={chartMode === 'price'} onClick={() => setChartMode('price')}>Price</button><button aria-pressed={chartMode === 'compare'} onClick={() => { setChartMode('compare'); if (intradayRange) pickRange('1mo') }}>Compare</button></div></div>
         <div className="seg" role="group" aria-label="Chart range">
           {CHART_RANGES.map(r => (
-            <button key={r.id} aria-pressed={r.id === range} onClick={() => pickRange(r.id)}>
+            <button key={r.id} aria-pressed={r.id === range} onClick={() => { pickRange(r.id); if (r.intraday) setChartMode('price') }}>
               {r.label}
             </button>
           ))}
@@ -269,15 +274,15 @@ export default function StockPage({ sym }: { sym: string }) {
             bar size, and WHOSE session — markets are shut most of the hours a
             UK reader is awake, so a 1D chart of a US name at breakfast is
             Friday's tape and must say so rather than imply a live one. */}
-        {intradayRange && candles.length > 0 && (
+        {chartMode === 'price' && intradayRange && candles.length > 0 && (
           <p className="sp-chart-when" data-testid="chart-when">
             {chartRangeOf(range).bars} · {sessionLabel(candles[candles.length - 1].t)}
           </p>
         )}
         {candles.length > 1 ? (
           <Suspense fallback={<div className="skeleton sp-chart-skel" />}>
-            <PriceChart candles={candles} priceLines={priceLines} height={260} interactive intraday={intradayRange} initialDisplay="line" />
-            <details className="company-detail"><summary>See the evidence: price momentum (RSI)</summary><RsiChart candles={candles} intraday={intradayRange} /></details>
+            {chartMode === 'compare' ? <PerformanceComparison key={`${sym}:${range}`} symbol={sym} name={companyName} candles={candles} range={range} sectorSymbol={journey?.stockContext?.sectorSymbol} sectorName={journey?.stockContext?.sector} /> : <><PriceChart candles={candles} priceLines={priceLines} height={260} interactive intraday={intradayRange} initialDisplay="line" />
+            <details className="company-detail"><summary>See the evidence: price momentum (RSI)</summary><RsiChart candles={candles} intraday={intradayRange} /></details></>}
           </Suspense>
         ) : chartError ? (
           <p role="alert">The price chart could not be loaded. <button onClick={retryChart}>Retry chart</button></p>
@@ -322,8 +327,9 @@ export default function StockPage({ sym }: { sym: string }) {
       )}
 
       </div>
+      <StrategyGlance symbol={sym} observations={journey?.lab} onEvidence={() => { setView('research'); document.getElementById('company-tab-research')?.focus() }} />
       <StockContextPanel symbol={sym} context={journey?.stockContext} loading={!journey && !journeyError} />
-      <Link className="stocks-today-link" href={`/stocks?view=sell&stock=${encodeURIComponent(sym)}`}><span><strong>Review selling {sym}</strong><small>Check business warnings, price weakness and valuation</small></span><span aria-hidden="true">→</span></Link>
+      <Link className="stocks-today-link" href={`/stocks?view=sell&stock=${encodeURIComponent(sym)}`}><span><strong>Review selling <StockIdentity symbol={sym} name={companyName} /></strong><small>Check business warnings, price weakness and valuation</small></span><span aria-hidden="true">→</span></Link>
       <div className="company-next"><button onClick={() => setView('business')}><strong>Business & reports</strong><span>Cash flow, financial health and trends →</span></button><button onClick={() => setView('research')}><strong>Research & sources</strong><span>Setups, channel views and past outcomes →</span></button></div>
       </div>
       <div id="company-panel-business" role="tabpanel" aria-labelledby="company-tab-business" hidden={view !== 'business'}>

@@ -1,3 +1,4 @@
+import { QuarterlyTrendChart } from './QuarterlyTrendChart'
 import type { BusinessHealthSnapshot } from '../../../shared/businessHealth'
 import { quarterlyTrend } from '../../../shared/quarterlyFinancials'
 const money = (n: number | null | undefined) => n == null || !Number.isFinite(n) ? 'Unavailable' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(n)
@@ -16,6 +17,7 @@ export function QuarterlyFinancialPanel({ snapshot }: { snapshot: BusinessHealth
       <div><dt>Profit from sales</dt><dd>{pct(last.netMarginPct)}</dd><small>net profit margin</small></div>
       <div><dt>Cash left after investment</dt><dd>{money(last.values.freeCashFlow)}</dd><small>free cash flow this quarter</small></div>
     </dl><p className="dossier-caption">{status === 'deteriorating' ? 'Repeated weakening blocks a recovery setup, even if the share price looks cheap.' : status === 'improving' ? 'Recent operating trends are improving. Price, debt and valuation checks still need to pass.' : status === 'stable' ? 'Recent comparisons show no persistent broad improvement or decline.' : 'There are not enough recent, comparable quarters to judge a sustained trend.'}</p></>}
+    {last && <QuarterlyTrendChart quarters={quarters} />}
     <details className="report-gaps"><summary>See the evidence: quarterly figures</summary>
       {year && <p>Last four consecutive quarters ({year.start} to {year.end}): sales <b>{money(year.values.revenue)}</b>, profit <b>{money(year.values.netIncome)}</b>, free cash flow <b>{money(year.values.freeCashFlow)}</b>.</p>}
       {quarters.length > 0 && <div className="history-table-scroll"><table><caption>Individual quarters · USD · most recent eight</caption><thead><tr><th>Quarter ended</th><th>Sales</th><th>Sales growth</th><th>Profit</th><th>Free cash flow</th><th>Known from</th></tr></thead><tbody>{quarters.slice(-8).map(q => <tr key={q.end}><th>{q.end}{q.derived ? '*' : ''}</th><td>{money(q.values.revenue)}</td><td>{pct(q.revenueGrowthPct)}</td><td>{money(q.values.netIncome)}</td><td>{money(q.values.freeCashFlow)}</td><td>{new Date(q.availableAt*1000).toISOString().slice(0,10)}</td></tr>)}</tbody></table></div>}
