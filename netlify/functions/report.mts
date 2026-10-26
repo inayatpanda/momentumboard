@@ -195,7 +195,7 @@ export async function routeReport(
     }
     // the same paper lands in the inbox — fail-soft, skipped when no key is set
     try {
-      const { sendReportEmail, recipientsForEdition } = await import('./lib/email')
+      const { sendReportEmail, recipientsForEdition, emailReadyHtml } = await import('./lib/email')
       const cfg = await store.read<AppConfig>('config').catch(() => null)
       const dateLabel = new Date(at * 1000).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })
       // A print-edition PDF rides along with the email, composed on-box from the
@@ -213,8 +213,10 @@ export async function routeReport(
       }
       await sendReportEmail(
         { RESEND_API_KEY: process.env.RESEND_API_KEY, REPORT_EMAIL_TO: process.env.REPORT_EMAIL_TO, REPORT_EMAIL_FROM: process.env.REPORT_EMAIL_FROM },
-        `${brief.subject}${republished ? ` · updated ${new Date(at * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}` : ''}`,
-        brief.html,
+        `StreetSignal — your morning report · ${dateKey}${republished ? ` · updated ${new Date(at * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}` : ''}`,
+        // Telegram is a quick summary; the morning email carries the complete
+        // edition already generated above, including the full news analysis.
+        emailReadyHtml(html, `https://thestreetsignal.rqai.co.uk/report?date=${dateKey}`),
         fetch,
         attachments,
         recipientsForEdition('morning', cfg?.reportRecipients),
