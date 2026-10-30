@@ -12,6 +12,7 @@ import { boardFootnote, stripLeadingNumber } from './newspaper'
 import { plausibleCapUsdM } from './social'
 import { WILDCARD_MARK } from '../../../shared/engine/voice'
 import type { ComposedReport, PaperExtras, Idea, SocialRow, CalendarRow } from './newspaper'
+import { earningsTimeWords } from './weekAhead'
 
 // The structured payload the compose pipe now ships alongside the HTML (see
 // report-compose-background.mts). When present we TYPESET the paper from this
@@ -26,6 +27,7 @@ export interface ReportPrintData {
   calendar?: PaperExtras['calendar']
   ipos?: PaperExtras['ipos']
   eventRadar?: PaperExtras['eventRadar'] // earnings binaries ahead — the shape going in, never a call
+  weekAhead?: PaperExtras['weekAhead'] // Sunday only — the coming Monday-to-Friday
   socialBoard?: PaperExtras['socialBoard']
   // rotation rows arrive slimmed — the per-row sparkline closes are dropped at
   // the payload boundary (bulky), so the print table shows price + 1-week move.
@@ -748,6 +750,28 @@ function drawCalendar(c: Cursor, calendar: CalendarRow[], fonts: Fonts): void {
   drawGridTable(c, cols, rows, fonts)
 }
 
+function drawWeekAhead(c: Cursor, days: NonNullable<PaperExtras['weekAhead']>, fonts: Fonts): void {
+  const cols: GCol[] = [
+    { header: 'Day', w: CONTENT_W * 0.2 },
+    { header: 'Data & events (UK)', w: CONTENT_W * 0.46 },
+    { header: 'Reporting', w: CONTENT_W * 0.34 },
+  ]
+  const rows: GCell[][] = days.map(d => [
+    { text: d.label || d.date, bold: true },
+    {
+      text:
+        (d.events ?? [])
+          .map(e => {
+            const at = new Date((e.at || 0) * 1000).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/London' })
+            return `${at} ${e.title || ''} [${e.impact || ''}] ${e.country || ''}`.trim()
+          })
+          .join('; ') || (d.eventsKnown === false ? 'Calendar not yet published' : 'No major US/UK data'),
+    },
+    { text: (d.earnings ?? []).map(r => `${r.sym} (${earningsTimeWords(r.time)})`).join('; ') || (d.earningsKnown === false ? 'Earnings calendar unavailable' : 'No major earnings') },
+  ])
+  drawGridTable(c, cols, rows, fonts)
+}
+
 function drawSocial(c: Cursor, social: SocialRow[], fonts: Fonts): void {
   const cols: GCol[] = [
     { header: 'Company', w: CONTENT_W * 0.40 },
@@ -927,10 +951,16 @@ function drawPrintEdition(c: Cursor, fonts: Fonts, p: ReportPrintData): void {
     }
   }
 
+  if (R.weekAhead) proseSection('The Week Ahead', R.weekAhead)
+  if (p.weekAhead?.length) {
+    sectionHeader(c, 'The Week Ahead — Day by Day', fonts)
+    drawWeekAhead(c, p.weekAhead, fonts)
+  }
+
   proseSection('Portfolio Desk', R.portfolioDesk)
   proseSection('The Tape', R.tape)
 
-  if (p.calendar?.length) {
+  if (p.calendar?.length && !p.weekAhead?.length) {
     sectionHeader(c, 'On the Calendar — What to Expect', fonts)
     drawCalendar(c, p.calendar, fonts)
   }

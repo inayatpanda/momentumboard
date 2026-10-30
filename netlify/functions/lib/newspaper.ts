@@ -3,6 +3,7 @@ import type { GateCode, Prediction } from '../../../shared/engine/types'
 import { WILDCARD_MARK } from '../../../shared/engine/voice'
 import { CANONICAL_SITE } from './site'
 import { plausibleCapUsdM } from './social'
+import { earningsTimeWords, type WeekAheadDay } from './weekAhead'
 
 // THE STREET SIGNAL — the guaranteed morning newspaper. The LLM writes the
 // journalism (strict JSON); THIS code owns the layout, tables and charts, so
@@ -183,6 +184,7 @@ export interface ComposedReport {
     action: string
   } | null
   signalWhy?: string
+  weekAhead?: string // Sunday only: THE WEEK AHEAD preview (lib/weekAhead.ts)
   honestClose: string
   regime: 'green' | 'amber' | 'red'
   fedStance: 'hawkish' | 'neutral' | 'dovish'
@@ -474,6 +476,7 @@ export interface PaperExtras {
   calendar?: CalendarRow[]
   spyCloses?: number[] // ~3 months for the masthead chart
   sectorBars?: { name: string; rs21: number | null }[]
+  weekAhead?: WeekAheadDay[] // Sunday only — the coming Monday-to-Friday, typeset in code
 }
 
 /** The row's thesis with the falsifier sentence taken off the end, because the
@@ -775,6 +778,23 @@ NO-SIGNAL DAYS: the reader values a real explanation — signalWhy is 3-5 tight 
   },
 ]
 
+/** SUNDAY ONLY: the week-ahead preview. Not in SECTIONS because it is not part
+ * of an ordinary edition — planSections adds it on week-ahead days, where it
+ * also REPLACES the Tape: a 48-hour preview beside a five-day one is the same
+ * events twice. Its schedule and index levels reach it as FACTS (weekAhead.ts),
+ * never as dates, for the reason the Tape's do. */
+export const WEEK_AHEAD_SECTION: SectionSpec = {
+  key: 'weekAhead',
+  fields: ['weekAhead'],
+  brief: `weekAhead: THE WEEK AHEAD — Sunday's preview of the coming Monday to Friday, 3-5 tight paragraphs, \\n\\n separated. Markets are shut today; this is what a reader needs before Monday's open.
+1) POSTURE: what conditions the indices left on Friday — quote the index levels from the FACTS exactly — and what that means for opening new positions this week (lean in, be selective, or wait).
+2) THE DAYS THAT MATTER: walk the week in order, but only the days that carry something. Quote the schedule fragments VERBATIM and add what a beat or a miss would do. Name the big earnings on the day they fall, with the time words given (before the open / after the close); single out any name that is also on the engine's board or the watchlist. Say which days carry overnight gap risk.
+3) CRYPTO OVER THE WEEKEND: BTC and ETH trade while equities sleep — say what they did, using only prices in the data.
+4) WHAT WOULD CHANGE THE VIEW: the one or two outcomes or index levels that would flip the posture.
+No predictions stated as facts. Nothing about any individual reader's own positions. If a day has nothing scheduled, skip it rather than filling it.`,
+  shape: '{"weekAhead":"<3-5 tight paragraphs \\n\\n separated>"}',
+}
+
 /** What the Short Desk says on a day the board has no short side at all. The
  * desk writes this itself — no model is called, so there is nothing to fill the
  * silence with. Honest, and one line, because there is one line's worth to say. */
@@ -784,15 +804,18 @@ export const SHORT_DESK_EMPTY = 'No shorts on the board today — nothing on thi
  * writes second, knowing what is already fully cased. Fully parallel writers
  * cannot avoid duplicating each other — the reader met the same pick in four
  * sections before this split existed. */
-const WAVE1_KEYS = new Set(['lead', 'desk', 'ideas', 'rotation'])
+const WAVE1_KEYS = new Set(['lead', 'desk', 'ideas', 'rotation', 'weekAhead'])
 
 /** WHICH SECTIONS ARE WRITTEN, and what the desk fills in without asking a model.
  *
  * Exported and pure because "the model is never called for an empty short desk"
  * is a promise about a control-flow decision, and a promise like that is only
  * worth what its test is worth: an omitted spec cannot be written by anybody. */
-export function planSections(opts: { shortsLive: boolean }): { wave1: SectionSpec[]; wave2: SectionSpec[]; fixed: { shortDesk?: string } } {
-  const live = SECTIONS.filter(s => s.key !== 'shorts' || opts.shortsLive)
+export function planSections(opts: { shortsLive: boolean; weekAhead?: boolean }): { wave1: SectionSpec[]; wave2: SectionSpec[]; fixed: { shortDesk?: string } } {
+  const live = [
+    ...SECTIONS.filter(s => (s.key !== 'shorts' || opts.shortsLive) && (s.key !== 'desk' || !opts.weekAhead)),
+    ...(opts.weekAhead ? [WEEK_AHEAD_SECTION] : []),
+  ]
   return {
     wave1: live.filter(s => WAVE1_KEYS.has(s.key)),
     wave2: live.filter(s => !WAVE1_KEYS.has(s.key)),
@@ -1084,6 +1107,25 @@ export function buildNewspaperHtml(r: ComposedReport, dateLabel: string, x: Pape
     })
     .join('')
 
+  // THE WEEK AHEAD, Sunday only: one row per trading day — the economic events
+  // and the big earnings, typeset from the calendars (lib/weekAhead.ts) so the
+  // written preview above it is checked against a table, never the other way.
+  const weekAheadRows = (x.weekAhead ?? [])
+    .map(d => {
+      const events = d.events
+        .map(e => {
+          const at = new Date(e.at * 1000).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/London' })
+          const fp = e.forecast || e.previous ? ` <span class="subtle">${esc(e.forecast ?? '·')} / ${esc(e.previous ?? '·')}</span>` : ''
+          return `<div><span class="num">${at}</span> ${esc(e.title)} <span class="chip ${e.impact === 'High' ? 'hi' : ''}">${esc(e.impact)}</span> <span class="subtle">${esc(e.country)}</span>${fp}</div>`
+        })
+        .join('')
+      const earnings = d.earnings
+        .map(r => `<div><b>${esc(r.sym)}</b>${r.name ? ` <span class="subtle">${esc(r.name)}</span>` : ''} <span class="subtle">· ${esc(earningsTimeWords(r.time))}</span></div>`)
+        .join('')
+      return `<tr><td style="vertical-align:top"><b>${esc(d.label)}</b></td><td style="vertical-align:top">${events || `<span class="subtle">${d.eventsKnown === false ? 'Calendar not yet published' : 'No major US/UK data'}</span>`}</td><td style="vertical-align:top">${earnings || `<span class="subtle">${d.earningsKnown === false ? 'Earnings calendar unavailable' : 'No major earnings'}</span>`}</td></tr>`
+    })
+    .join('')
+
   const rotationBlocks = (x.rotationTables ?? [])
     .map(
       t => `<h3 class="subhead">${esc(t.sector)} <span class="etf">(${esc(t.etf)})</span></h3>
@@ -1257,6 +1299,15 @@ ${
         : ''
   }
 <div class="cols">
+${r.weekAhead ? wide('The Week Ahead', paras(r.weekAhead)) : ''}
+${
+    weekAheadRows
+      ? wide(
+          'The Week Ahead — Day by Day',
+          `<table><thead><tr><th style="width:92px">Day</th><th>Data &amp; events (UK time) · fcst / prev</th><th>Reporting</th></tr></thead><tbody>${weekAheadRows}</tbody></table><p class="foot">Earnings: companies worth $100B or more, plus any on the watchlist. Economic data: high- and medium-impact US and UK releases.</p>`,
+        )
+      : ''
+  }
 ${wide(
     'Markets at a Glance',
     // SPY sparkline is SVG (web-only; Gmail strips it — acceptable, price trend is
@@ -1323,7 +1374,7 @@ ${
   }
 ${dept('The Tape', paras(r.tape))}
 ${
-    calendarRows
+    calendarRows && !weekAheadRows // Sunday: the day-by-day table above already carries these events
       ? wide('On the Calendar — What to Expect', `<table><thead><tr><th>Event</th><th style="width:104px">When</th><th style="width:104px">Fcst / Prev</th></tr></thead><tbody>${calendarRows}</tbody></table>`)
       : ''
   }

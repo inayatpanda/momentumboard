@@ -411,7 +411,7 @@ describe('the compose handler actually wires the deterministic passes', () => {
     expect(src).toContain("honestCloseFacts(postMortems ?? [], wildcard)")
     expect(src).toContain("key === 'voice' ? closeFacts : ''")
     expect(src).toContain("const dataFor = (key: string) => (key === 'shorts' ? shortsJson : data)")
-    expect(src).toContain('planSections({ shortsLive: shortsOn })')
+    expect(src).toContain('planSections({ shortsLive: shortsOn, weekAhead: !!weekDays })')
   })
 
   it('keeps the desk-written empty line out of the freshness rewrite', () => {

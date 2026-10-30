@@ -8,6 +8,8 @@ import { gateAnnouncement, GATE_STATE_KEY } from '../../shared/engine/gateState'
 import { WILDCARD_LABEL, WILDCARD_WARNING } from '../../shared/engine/voice'
 import { cachedQuote, cachedCandles, cachedCompanyName } from './lib/marketCache'
 import { regimeFromCandles } from '../../shared/setups'
+import { earningsCalendarRows } from './lib/nasdaqEarnings'
+import { coversWeek, indexLevelLine, isWeekAheadDay, londonISO, weekAheadDates, weekAheadDays, weekAheadEarnings, weekAheadEventLines, weekAheadEvents, weekAheadFacts } from './lib/weekAhead'
 import type { AppConfig } from '../../shared/config'
 import type { Prediction } from '../../shared/engine/types'
 
@@ -141,7 +143,9 @@ export default async (req: Request) => {
       grab(async () => {
         const { parseEconFeed } = await import('./lib/econCalendar')
         const res = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json')
-        return parseEconFeed((await res.json()) as never).slice(0, 8)
+        // the whole week: the weekday paper slices its own 5-day window below, and
+        // Sunday's week-ahead table needs every day of the coming one
+        return parseEconFeed((await res.json()) as never)
       }),
       grab(async () => ((await blobAppStore.read<unknown[]>('event-dossiers')) ?? []).slice(-2)),
       grab(async () => {
@@ -350,12 +354,32 @@ export default async (req: Request) => {
     const calendarRows = (econ ?? []).filter(e => e.at > nowSec && e.at < nowSec + 5 * 86_400).slice(0, 6)
     const tapeEvents = tapeEventLines(calendarRows)
 
+    // ---- Sunday: THE WEEK AHEAD (lib/weekAhead.ts) ----
+    // ForexFactory's week runs Sunday-Saturday, so on a Sunday "this week" IS the
+    // coming one. The earnings come from the durable Nasdaq snapshot, which every
+    // weekday engine run carries 14 days forward — Friday's covers next week.
+    const weekAheadOn = isWeekAheadDay(nowSec)
+    const weekAheadInput = weekAheadOn
+      ? await grab(async () => {
+          const dates = weekAheadDates(nowSec)
+          const earningRows = await earningsCalendarRows(blobAppStore)
+          return {
+            dates,
+            events: weekAheadEvents(econ ?? [], dates),
+            earnings: weekAheadEarnings(earningRows, dates, symbols),
+            // a feed that has not rolled over must read "not published", not "quiet"
+            known: { events: coversWeek((econ ?? []).map(e => londonISO(e.at)), dates), earnings: coversWeek(earningRows.map(r => r.date), dates) },
+          }
+        })
+      : null
+
     const extras = {
       rotationTables,
       socialBoard,
       ipos,
       eventRadar: eventRadar ?? undefined,
       calendar: calendarRows,
+      weekAhead: undefined as import('./lib/weekAhead').WeekAheadDay[] | undefined, // set once the company register exists
       spyCloses: spy?.slice(-63).map(c => c.c),
       sectorBars: (sectors ?? []).map(s => ({ name: SECTORS.find(x => x.sym === s.sym)?.name ?? s.sym, rs21: s.rs21 })),
       // the board typeset in code — grades and levels never depend on the LLM.
@@ -375,6 +399,7 @@ export default async (req: Request) => {
         ...(engineBoard ?? []).map(b => b.sym),
         ...(eventRadar ?? []).map(e => e.sym),
         ...socialBoard.map(s => s.sym),
+        ...(weekAheadInput?.earnings ?? []).map(r => r.sym),
       ])].slice(0, 40)
       const radarName = new Map((eventRadar ?? []).filter(e => e.name).map(e => [e.sym, e.name as string]))
       const pairs = await Promise.all(
@@ -383,6 +408,13 @@ export default async (req: Request) => {
       return new Map(pairs.filter((p): p is [string, string] => !!p[1]))
     })()
     console.log('COMPOSE: company register', companyNames.size, 'names')
+
+    const weekDays = weekAheadInput ? weekAheadDays(weekAheadInput.dates, weekAheadInput.events, weekAheadInput.earnings, companyNames, weekAheadInput.known) : null
+    const weekEvents = weekDays ? weekAheadEventLines(weekDays) : []
+    if (weekDays) {
+      extras.weekAhead = weekDays
+      console.log('COMPOSE: week ahead', weekDays.map(d => `${d.date}:${d.events.length}ev/${d.earnings.length}er`).join(' '), `| calendars known: events=${weekAheadInput!.known.events} earnings=${weekAheadInput!.known.earnings}`)
+    }
 
     // Budget-aware: whole low-priority keys drop first — never a mid-JSON cut
     // that silently deletes whatever serialized last (it was the headlines).
@@ -448,8 +480,23 @@ export default async (req: Request) => {
       ? `THE EVENT SCHEDULE — every fragment below is the calendar table's own row, already rendered. Weave the ones you preview in VERBATIM and write your interpretation around them. NEVER restate a weekday, a time or a number from memory, and never work one out from a date:\n${tapeEvents.map(e => `- ${e.line}`).join('\n')}`
       : ''
     const closeFacts = honestCloseFacts(postMortems ?? [], wildcard)
+    // Sunday: the front page and the week-ahead desk work from the WEEK's
+    // schedule and the index levels; the 48-hour schedule is the Tape's, and the
+    // Tape is not written on a week-ahead day (planSections).
+    const weekFacts = weekDays
+      ? weekAheadFacts(weekDays, [indexLevelLine('The S&P 500 (SPY)', spy), indexLevelLine('The Nasdaq 100 (QQQ)', qqq)])
+      : ''
+    const sundayLead = weekDays
+      ? 'THIS IS THE SUNDAY WEEK-AHEAD EDITION. Markets are shut, so the front page previews the coming week: lead with its biggest scheduled event or the posture it calls for, not a recap of Friday. The Week Ahead section carries the day-by-day detail, so do not walk every day here.'
+      : ''
     const factsFor = (key: string) =>
-      [names, key === 'desk' || key === 'lead' ? schedule : '', key === 'voice' ? closeFacts : ''].filter(Boolean).join('\n\n')
+      [
+        names,
+        (key === 'desk' || key === 'lead') && !weekDays ? schedule : '',
+        key === 'lead' ? sundayLead : '',
+        key === 'lead' || key === 'weekAhead' ? weekFacts : '',
+        key === 'voice' ? closeFacts : '',
+      ].filter(Boolean).join('\n\n')
     const dataFor = (key: string) => (key === 'shorts' ? shortsJson : data)
 
     const writeSection = async (spec: (typeof SECTIONS)[0], covered?: string[]) => {
@@ -472,7 +519,7 @@ export default async (req: Request) => {
     // each other — the reader met the same pick in four sections. planSections
     // also DROPS the short desk on a day with no short side: the desk states
     // that itself, and a section nobody writes cannot wander.
-    const plan = planSections({ shortsLive: shortsOn })
+    const plan = planSections({ shortsLive: shortsOn, weekAhead: !!weekDays })
     const wave1Results = await Promise.all(plan.wave1.map(s => writeSection(s)))
     const ideasParsed = wave1Results[plan.wave1.findIndex(s => s.key === 'ideas')]?.parsed as { ideas?: { ticker?: unknown }[] } | null
     const covered = [...new Set((ideasParsed?.ideas ?? []).map(i => String(i.ticker ?? '').toUpperCase()).filter(Boolean))]
@@ -648,6 +695,12 @@ export default async (req: Request) => {
       composed.tape = text
       if (fixes.length) console.log('COMPOSE: tape weekdays corrected from the table —', fixes.map(f => `${f.title}: ${f.from}→${f.to}`).join(', '))
     }
+    if (composed.weekAhead && weekEvents.length) {
+      // the same check, against the week's table
+      const { text, fixes } = correctTapeWeekdays(composed.weekAhead, weekEvents)
+      composed.weekAhead = text
+      if (fixes.length) console.log('COMPOSE: week-ahead weekdays corrected from the table —', fixes.map(f => `${f.title}: ${f.from}→${f.to}`).join(', '))
+    }
     if (companyNames.size) {
       const nameFixes: string[] = []
       const lock = (s: string | undefined) => {
@@ -656,7 +709,7 @@ export default async (req: Request) => {
         for (const f of fixes) nameFixes.push(`${f.sym}: ${f.from}→${f.to}`)
         return text
       }
-      for (const field of ['headline', 'standfirst', 'lead', 'tape', 'shortDesk', 'smallCap', 'rotation', 'crypto', 'channels', 'readersNotes', 'editorial', 'signalWhy', 'honestClose'] as const) {
+      for (const field of ['headline', 'standfirst', 'lead', 'tape', 'shortDesk', 'smallCap', 'rotation', 'crypto', 'channels', 'readersNotes', 'editorial', 'signalWhy', 'weekAhead', 'honestClose'] as const) {
         const cur = (composed as unknown as Record<string, unknown>)[field]
         if (typeof cur === 'string') (composed as unknown as Record<string, unknown>)[field] = lock(cur)
       }
@@ -704,6 +757,7 @@ export default async (req: Request) => {
       ipos: extras.ipos,
       socialBoard: extras.socialBoard,
       eventRadar: extras.eventRadar,
+      weekAhead: extras.weekAhead,
       rotationTables: (extras.rotationTables ?? []).map(t => ({ sector: t.sector, etf: t.etf, rows: t.rows.map(r => ({ sym: r.sym, price: r.price, wkPct: r.wkPct })) })),
     }
     const putHtml = await fetch(`${SITE}/report`, {
