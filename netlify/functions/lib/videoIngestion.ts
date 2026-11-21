@@ -22,7 +22,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
     store.read<{ at: number; running: boolean; saved: number; unavailable: number; attempted: number; captions: number; speech: number; reused?: number; status: string; reasons: Record<string, number> }>('video-github-runner'),
     store.read<{ at: number; running: boolean; published: number; attempted: number; failed: number; reused: number; capped: boolean; scheduled?: boolean; status: string;
       deferred?: number; latestOnly?: boolean; selectedToday?: number; dailyVideoLimit?: number; dailyRequests?: number; dailyMinutes?: number; requestLimit?: number; minuteLimit?: number; pending?: number; partial?: number; completed?: number; endReported?: number; pauseReason?: string; retryAt?: number }>('video-native-runner'),
-    store.read<{ video: InboxVideo; nextOffset: number; sourceDurationSeconds?: number; parked?: boolean; selectedAt?: number; deferredReason?: string; lastError?: string; stage: string; mode?: string; nextAttemptAt: number; updatedAt: number }[]>('video-native-progress:v2'),
+    store.read<{ video: InboxVideo; nextOffset: number; sourceDurationSeconds?: number; parked?: boolean; expiredAt?: number; selectedAt?: number; deferredReason?: string; lastError?: string; stage: string; mode?: string; nextAttemptAt: number; updatedAt: number }[]>('video-native-progress:v2'),
     store.read<{ channels: ChannelDiscovery[] }>('video-channel-discovery:v1'),
   ])
   const completed = new Set(extracts.map(v => videoKey(v.url)))
@@ -74,7 +74,7 @@ export async function videoIngestionHealth(store: AppStore, extracts: { url: str
       pauseReason: nativeRunner.pauseReason, retryAt: nativeRunner.retryAt,
       stale: nowSec - nativeRunner.at > 18 * 3600,
     } : null,
-    nativeProgress: (nativeProgress ?? []).filter(w => (!w.parked || !!w.selectedAt && !!w.deferredReason) && !['complete', 'end-reported'].includes(w.stage))
+    nativeProgress: (nativeProgress ?? []).filter(w => !w.expiredAt && (!w.parked || !!w.selectedAt && !!w.deferredReason) && !['complete', 'end-reported'].includes(w.stage))
       .sort((a, b) => Number(b.nextOffset > 0) - Number(a.nextOffset > 0) || b.updatedAt - a.updatedAt).slice(0, 12)
       .map(w => ({ url: w.video.url, title: w.video.title, stage: w.stage, reason: ['unavailable', 'upcoming', 'live'].includes(w.deferredReason ?? w.lastError ?? '') ? (w.deferredReason ?? w.lastError) : undefined, mode: w.mode, processedSeconds: w.nextOffset, sourceDurationSeconds: w.sourceDurationSeconds ?? null, nextAttemptAt: w.nextAttemptAt })),
     githubRunner: githubRunner ? {

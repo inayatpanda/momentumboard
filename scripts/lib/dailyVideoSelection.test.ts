@@ -56,6 +56,22 @@ describe('five recent videos from distinct channels', () => {
     expect(rows.find(w=>w.video.title==='Video 8')!.parked).toBe(true)
     expect(oldPartial.parked).toBe(true)
   })
+  it('retires an unfinished video two days after it was published and frees its slot', async () => {
+    const store = memoryStore(), rows = [1,2,3,4,5].map(n=>work(n))
+    await selectDailyVideos(store,rows,now)
+    const refused = rows[0]; refused.stage='retry'; refused.attempts=2; refused.failures=2; refused.lastError='native-http-403'
+    rows.slice(1).forEach(w=>w.stage='complete')
+    await selectDailyVideos(store,rows,now+86400)
+    expect(refused).toMatchObject({parked:false}); expect(refused.expiredAt).toBeUndefined()
+    const fresh = work(9,'Channel 9',now+2*86400)
+    rows.push(fresh)
+    await selectDailyVideos(store,rows,now+2*86400+600)
+    expect(refused).toMatchObject({parked:true,expiredAt:now+2*86400+600,stage:'retry'})
+    expect(fresh.parked).toBe(false)
+    await selectDailyVideos(store,rows,now+30*86400)
+    expect(refused).toMatchObject({parked:true,expiredAt:now+2*86400+600})
+    expect(rows.filter(w=>w.stage==='complete').every(w=>w.expiredAt===undefined)).toBe(true)
+  })
   it('rotates previously unserved channels ahead of yesterday’s channels', async () => {
     const store=memoryStore(), rows=[1,2,3,4,5].map(n=>work(n))
     await selectDailyVideos(store,rows,now)

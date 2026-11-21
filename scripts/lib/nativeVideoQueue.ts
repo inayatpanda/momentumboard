@@ -19,6 +19,8 @@ export interface NativeVideoWork {
   mode?: 'captions' | 'video'; attempts: number; failures: number; nextAttemptAt: number; lastAttemptAt: number
   updatedAt: number; lastError?: string
   selectedAt?: number; parked?: boolean
+  /** Set once an unfinished video passes the age limit; it is never read again. */
+  expiredAt?: number
   deferredReason?: 'unavailable' | 'upcoming' | 'live'
   textSchemaVersion?: number
 }
@@ -41,7 +43,7 @@ const channel = (w: NativeVideoWork) => w.video.channelId || w.video.channel
 export function nextNativeWork(rows: NativeVideoWork[], now: number, excluded = new Set<string>()): NativeVideoWork | undefined {
   const served = new Map<string, number>()
   for (const w of rows) served.set(channel(w), Math.max(served.get(channel(w)) ?? 0, w.lastAttemptAt))
-  return rows.filter(w => !w.parked && !w.deferredReason && !finished(w) && w.stage !== 'needs-attention' && w.nextAttemptAt <= now && !excluded.has(videoKey(w.video.url)))
+  return rows.filter(w => !w.parked && !w.expiredAt && !w.deferredReason && !finished(w) && w.stage !== 'needs-attention' && w.nextAttemptAt <= now && !excluded.has(videoKey(w.video.url)))
     .sort((a, b) => Number(b.parts.length > 0) - Number(a.parts.length > 0)
       || (served.get(channel(a)) ?? 0) - (served.get(channel(b)) ?? 0)
       || (b.video.publishedAt ?? b.video.at) - (a.video.publishedAt ?? a.video.at))[0]
@@ -140,7 +142,7 @@ export async function collectNativeVideos(store: AppStore, deps: {
         if (work.stage === 'end-reported') work.stage = work.nextOffset >= meta.durationSeconds ? 'complete' : 'partial'
       }
     }
-    for (const work of rows.filter(w => w.selectedAt && w.deferredReason && w.nextAttemptAt <= now() && !deps.metadata?.[videoKey(w.video.url)]).slice(0, 5)) {
+    for (const work of rows.filter(w => w.selectedAt && !w.expiredAt && w.deferredReason && w.nextAttemptAt <= now() && !deps.metadata?.[videoKey(w.video.url)]).slice(0, 5)) {
       const meta = await (deps.availability ?? youtubeAvailability)(work.video.url)
       if (meta.state === 'ready') { delete work.deferredReason; delete work.lastError; work.nextAttemptAt = 0; if (meta.durationSeconds) work.sourceDurationSeconds = meta.durationSeconds }
       else work.nextAttemptAt = now() + 3 * 3600
@@ -150,7 +152,9 @@ export async function collectNativeVideos(store: AppStore, deps: {
     }
     if (deps.latestOnly) {
       for (const work of rows) if (!isFollowedChannel(work.video, followed)) work.parked = true
-      Object.assign(status, await selectDailyVideos(store, rows.filter(w => isFollowedChannel(w.video, followed)), now()))
+      const at = now()
+      Object.assign(status, await selectDailyVideos(store, rows.filter(w => isFollowedChannel(w.video, followed)), at))
+      for (const work of rows) if (work.expiredAt === at) deps.log?.({ videoId: videoKey(work.video.url), retired: 'older-than-two-days', lastError: work.lastError })
     }
     await save()
     if (!deps.latestOnly) for (const work of rows) if (work.deferredReason && work.nextAttemptAt <= now() && !deps.metadata?.[videoKey(work.video.url)]) delete work.deferredReason

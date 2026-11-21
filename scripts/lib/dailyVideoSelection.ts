@@ -1,6 +1,6 @@
 import type { AppStore } from '../../netlify/functions/lib/storeProvider'
 import { videoKey } from '../../shared/youtubeCaptions.mjs'
-import { nativeQuotaDay } from '../../shared/nativeVideoPolicy'
+import { nativeQuotaDay, NATIVE_MAX_VIDEO_AGE_SECONDS } from '../../shared/nativeVideoPolicy'
 import type { NativeVideoWork } from './nativeVideoQueue'
 
 export const DAILY_VIDEO_LIMIT = 5
@@ -14,6 +14,10 @@ export async function selectDailyVideos(store: AppStore, rows: NativeVideoWork[]
   const history = await store.read<Record<string, number>>('video-channel-last-selected:v1') ?? {}
   const complete = (w: NativeVideoWork) => ['complete', 'end-reported'].includes(w.stage)
   const channel = (w: NativeVideoWork) => w.video.channelId || w.video.channel
+  // Past is past in the market: an unfinished video older than two days is
+  // retired for good (for example a members-only stream that is refused every
+  // day). It stops retrying and frees its slot; sections already saved stay published.
+  for (const w of rows) if (!w.expiredAt && !complete(w) && (w.video.publishedAt ?? w.video.at) < now - NATIVE_MAX_VIDEO_AGE_SECONDS) w.expiredAt = now
   // Only an unread, unattempted inaccessible source can return today's slot.
   // Paid/free request accounting is never refunded, and completed videos remain counted.
   selection.ids = selection.ids.filter(id => {
@@ -21,9 +25,9 @@ export async function selectDailyVideos(store: AppStore, rows: NativeVideoWork[]
     return !work?.deferredReason || work.attempts > 0 || work.parts.length > 0 || complete(work)
   })
   selection.channels = [...new Set(selection.ids.map(id => rows.find(w => videoKey(w.video.url) === id)).filter((w): w is NativeVideoWork => !!w).map(channel))]
-  const carry = rows.filter(w => w.selectedAt && !w.deferredReason && !complete(w) && w.stage !== 'needs-attention')
+  const carry = rows.filter(w => w.selectedAt && !w.expiredAt && !w.deferredReason && !complete(w) && w.stage !== 'needs-attention')
   // Recovered sources keep their progress but wait if five reads are already open.
-  const selectedUnfinished = rows.filter(w => selection.ids.includes(videoKey(w.video.url)) && !w.deferredReason && !complete(w)).length
+  const selectedUnfinished = rows.filter(w => selection.ids.includes(videoKey(w.video.url)) && !w.expiredAt && !w.deferredReason && !complete(w)).length
   const resumable = carry.filter(w => !selection.ids.includes(videoKey(w.video.url))).slice(0, Math.max(0, DAILY_VIDEO_LIMIT - selectedUnfinished))
   const active = new Set([...selection.ids, ...resumable.map(w => videoKey(w.video.url))])
   const activeChannels = new Set([...selection.channels, ...resumable.map(channel)])
@@ -32,7 +36,7 @@ export async function selectDailyVideos(store: AppStore, rows: NativeVideoWork[]
     && !['upcoming', 'live', 'unavailable'].includes(w.lastError ?? ''))
     .sort((a, b) => (history[channel(a)] ?? 0) - (history[channel(b)] ?? 0)
       || b.video.publishedAt! - a.video.publishedAt!)
-  let unfinished = rows.filter(w => active.has(videoKey(w.video.url)) && !complete(w)).length
+  let unfinished = rows.filter(w => active.has(videoKey(w.video.url)) && !w.expiredAt && !complete(w)).length
   for (const work of candidates) {
     if (selection.ids.length >= DAILY_VIDEO_LIMIT || unfinished >= DAILY_VIDEO_LIMIT) break
     const id = videoKey(work.video.url), source = channel(work)
@@ -42,7 +46,7 @@ export async function selectDailyVideos(store: AppStore, rows: NativeVideoWork[]
     work.selectedAt = now; history[source] = now
   }
   for (const work of rows) {
-    work.parked = !!work.deferredReason || !active.has(videoKey(work.video.url))
+    work.parked = !!work.deferredReason || !!work.expiredAt || !active.has(videoKey(work.video.url))
     if (!work.parked && !work.selectedAt) work.selectedAt = now
   }
   await store.write(key, selection)

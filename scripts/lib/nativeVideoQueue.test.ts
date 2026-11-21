@@ -20,6 +20,21 @@ async function setup(duration = 1860) {
 }
 
 describe('expanded free video queue', () => {
+  it('never reads a refused video again once it is more than two days old', async () => {
+    const {store,deps,advance}=await setup(600)
+    const old={...video(),publishedAt:deps.now()-27*86400}
+    await store.write('video-inbox',[old])
+    await store.write(NATIVE_PROGRESS_KEY,[{video:old,nextOffset:0,parts:[],stage:'retry',attempts:27,failures:3,nextAttemptAt:deps.now()-1,lastAttemptAt:deps.now()-86400,updatedAt:deps.now()-86400,lastError:'native-http-403',selectedAt:deps.now()-27*86400}])
+    const log=vi.fn()
+    const status=await collectNativeVideos(store,{...deps,latestOnly:true,log})
+    expect(status).toMatchObject({attempted:0,failed:0,pending:0})
+    expect(deps.readSection).not.toHaveBeenCalled()
+    expect(log).toHaveBeenCalledWith({videoId:'abcdefghijk',retired:'older-than-two-days',lastError:'native-http-403'})
+    expect(await store.read(NATIVE_PROGRESS_KEY)).toMatchObject([{parked:true,expiredAt:deps.now(),stage:'retry'}])
+    log.mockClear(); advance(3600)
+    expect(await collectNativeVideos(store,{...deps,latestOnly:true,log})).toMatchObject({attempted:0,failed:0})
+    expect(log).not.toHaveBeenCalledWith(expect.objectContaining({retired:'older-than-two-days'}))
+  })
   it('parks an unavailable selection, continues another channel and resumes when metadata becomes ready', async () => {
     const {store,deps,advance}=await setup(600)
     const blocked={...video(),publishedAt:deps.now()-100}
