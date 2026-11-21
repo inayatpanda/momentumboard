@@ -44,7 +44,8 @@ jobs:
               brew install ffmpeg
             else
               sudo apt-get update -qq
-              sudo apt-get install -y --no-install-recommends ffmpeg
+              # The package mirror is sometimes briefly unavailable; try once more before failing.
+              sudo apt-get install -y --no-install-recommends ffmpeg || { sleep 30; sudo apt-get update -qq; sudo apt-get install -y --no-install-recommends ffmpeg; }
             fi
           fi
       - name: Cache CPU speech engine and model

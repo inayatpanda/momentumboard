@@ -43,7 +43,12 @@ async function main() {
       },
     })
     console.log(JSON.stringify(status))
-    if (status.failed && !status.published && !status.reused && !status.capped) process.exitCode = 1
+    // A video that could not be read this hour already has its own retry time
+    // and shows in app Tracking, so it is not a failed run (and must not send a
+    // failure email every hour). Only a thrown error fails the job: the store
+    // being unreachable, or a new result missing from the app.
+    if (status.failed && !status.published && !status.reused && !status.capped)
+      console.log(`::warning::${status.failed} video read(s) put back for a later retry; nothing new this run`)
   } finally { await setCached('street-wire:v3', null, 0) }
 }
 main().catch(() => { console.error('Free video run incomplete; saved sections remain available. Inspect app Tracking.'); process.exitCode = 1 })
